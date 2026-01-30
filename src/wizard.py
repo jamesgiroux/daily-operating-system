@@ -946,9 +946,9 @@ Personal productivity workspace using the PARA organizational system.
 
 ## Guiding Principles
 
-1. **Value shows up without asking** - The system does work before you arrive
-2. **Skip a day, nothing breaks** - No accumulated guilt from missed days
-3. **Incremental improvement** - Small, compounding gains over time
+1. **Consuming, not producing** - You shouldn't have to maintain your productivity tools
+2. **Works when you work** - The system adapts to your rhythm
+3. **Everything changeable or removable** - No sacred cows
 '''
 
         self.file_ops.write_file(claude_md_path, content)
@@ -1149,6 +1149,6 @@ Your Daily Operating System is ready at:
   • Skills Reference (slides 13-18)
   • Account Structure (slide 31)
 
-{Colors.DIM}Philosophy: Value shows up without asking.
-Skip a day, nothing breaks.{Colors.RESET}
+{Colors.DIM}Zero-guilt design: Consuming, not producing.
+Works when you work. Everything changeable.{Colors.RESET}
 """)
