@@ -1293,6 +1293,8 @@
         if (slideParam) {
             const targetSlide = parseInt(slideParam, 10) - 1;
             if (targetSlide >= 0 && targetSlide < totalSlides) {
+                // Remove hardcoded active class from all slides first
+                slides.forEach(slide => slide.classList.remove('active'));
                 currentSlide = targetSlide;
             }
         }
