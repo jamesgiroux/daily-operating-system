@@ -4,11 +4,11 @@ A productivity framework built on Claude Code for managing your daily work, stra
 
 ## Philosophy
 
-**Value shows up without asking.** The system does work before you arrive.
+**Consuming, not producing.** You shouldn't have to maintain your productivity tools. They should just be productive.
 
-**Skip a day, nothing breaks.** Each run rebuilds fresh—no accumulated guilt from missed days.
+**Works when you work.** Tuesday and Thursday this week. Wednesday and Friday next week. The system adapts to your rhythm.
 
-**Incremental improvement.** Small, compounding gains over time.
+**Everything changeable or removable.** If it's not working for you, change it or remove it. No sacred cows.
 
 ## Quick Start
 
@@ -28,21 +28,21 @@ python3 setup.py --verify  # Check existing installation
 
 | Command | Purpose |
 |---------|---------|
-| `/today` | Morning dashboard—meeting prep, actions, email triage, look-ahead agendas |
-| `/wrap` | End-of-day closure—reconcile actions, capture impacts, archive |
-| `/week` | Monday review—overview, hygiene alerts, time blocking, impact template |
-| `/month` | Monthly roll-up—aggregate weekly impacts into monthly report |
-| `/quarter` | Quarterly prep—pre-fill review templates with evidence |
-| `/email-scan` | Email triage—surface important, draft responses, archive noise |
-| `/git-commit` | Atomic commits—stage, commit, push with meaningful messages |
+| `/today` | Your morning—dashboard, meeting prep, inbox processing |
+| `/wrap` | Your evening—close loops, capture wins, archive |
+| `/week` | Monday—plan the week ahead, surface what's coming |
+| `/month` | Roll up your monthly impacts from weekly captures |
+| `/quarter` | Pre-fill your quarterly review with tracked evidence |
+| `/email-scan` | Triage inbox—surface important, draft responses, archive noise |
+| `/git-commit` | Save your work—atomic commits with clear messages |
 
 ### Skills (3)
 
 | Skill | Purpose |
 |-------|---------|
-| **inbox** | Three-phase document flow (preparation, enrichment, delivery) |
-| **strategy-consulting** | McKinsey-style strategic analysis with multi-agent workflow |
-| **editorial** | Writing review standards with multi-stage review process |
+| **inbox** | Drop any file—it gets renamed, summarized, tagged, and filed automatically |
+| **strategy-consulting** | McKinsey in your terminal—SCQA framing, issue trees, pyramid principle |
+| **editorial** | Multi-pass writing review—catch AI-tells, check voice, challenge premises |
 
 ### Agents (16)
 
@@ -72,23 +72,19 @@ python3 setup.py --verify  # Check existing installation
 
 ## Directory Structure
 
-After setup, your workspace will look like:
+Setup creates this folder structure for you:
 
 ```
 workspace/
-├── Projects/           # Active initiatives with deadlines
-├── Areas/              # Ongoing responsibilities
-├── Resources/          # Reference materials
-├── Archive/            # Completed/inactive items
-├── _inbox/             # Unprocessed documents
-├── _today/             # Daily working files
+├── _today/             # Your daily command center
 │   ├── tasks/          # Persistent task tracking
-│   ├── archive/        # Previous days
-│   └── 90-agenda-needed/
-├── _templates/         # Document templates
-├── _tools/             # Python automation scripts
-├── _reference/         # Standards and guidelines
-├── .config/google/     # Google API credentials
+│   └── archive/        # Previous days (auto-managed)
+├── _inbox/             # Drop zone—files get processed and filed
+├── Accounts/           # Per client: meetings, transcripts, actions
+├── Projects/           # Active initiatives with deadlines
+├── Areas/              # Ongoing responsibilities (leadership, development)
+├── Resources/          # Templates, reference docs, standards
+├── .config/google/     # Google API credentials (optional)
 ├── .claude/
 │   ├── commands/       # Slash commands
 │   ├── skills/         # Skill packages
@@ -192,7 +188,7 @@ Open `ui/index.html` in a browser for visual documentation including:
 The project structure:
 
 ```
-Projects/Daily-Operating-System/
+daily-operating-system/
 ├── setup.py              # Main entry point
 ├── requirements.txt      # Python dependencies
 ├── src/
@@ -205,17 +201,22 @@ Projects/Daily-Operating-System/
 │   ├── skills/           # Skill packages
 │   ├── agents/           # Agent definitions
 │   └── scripts/          # Python tools
-├── ui/                   # HTML documentation
+├── ui/                   # HTML companion guide
 └── docs/                 # Additional documentation
 ```
 
 ## Contributing
 
-This is a personal productivity system. Fork and customize for your needs.
+Contributions welcome! Open an issue or submit a PR:
+- **New skills or agents** — Share workflows that work for you
+- **Bug fixes** — Found something broken? Let us know
+- **Documentation** — Help make setup clearer for others
+
+Fork and customize for your needs.
 
 ## License
 
-MIT
+GPL-3.0
 
 ---
 
