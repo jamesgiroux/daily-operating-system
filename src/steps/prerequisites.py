@@ -8,7 +8,7 @@ Verifies that the system has the required dependencies:
 """
 
 from typing import Tuple, List
-from ..utils.validators import (
+from utils.validators import (
     validate_python_version,
     validate_command_exists
 )

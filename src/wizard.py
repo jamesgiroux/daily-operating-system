@@ -240,6 +240,14 @@ class SetupWizard:
             spinner.fail(f"Failed: {e}")
             return 1
 
+        # Install Python tools
+        spinner = Spinner("Installing Python tools...")
+        try:
+            self._install_python_tools()
+            spinner.succeed("Python tools installed")
+        except Exception as e:
+            spinner.warn(f"Python tools skipped: {e}")
+
         # Verify
         print("\n" + header("Verification"))
         return 0 if self._verify_installation() else 1
@@ -250,9 +258,9 @@ class SetupWizard:
 
     def _open_companion_guide(self):
         """Open the HTML companion guide in the default browser."""
-        # Find the UI file relative to this script
+        # Find the docs file relative to this script
         script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
-        ui_path = script_dir / 'ui' / 'index.html'
+        ui_path = script_dir / 'docs' / 'index.html'
 
         if ui_path.exists():
             try:
@@ -777,23 +785,27 @@ venv/
 
     def _install_google_api_script(self):
         """Install the Google API helper script."""
-        # This will be populated from the templates
-        # For now, create a placeholder
         workspace = self.config['workspace']
         script_path = workspace / '.config' / 'google' / 'google_api.py'
 
-        # The actual script will be copied from templates/
-        # during the full implementation
-        placeholder = '''#!/usr/bin/env python3
+        # Find templates directory (relative to this script)
+        script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
+        src_path = script_dir / 'templates' / 'scripts' / 'google' / 'google_api.py'
+
+        if src_path.exists():
+            content = src_path.read_text()
+            self.file_ops.write_file(script_path, content)
+        else:
+            # Fallback placeholder if template not found
+            placeholder = '''#!/usr/bin/env python3
 """
 Google API Helper Script.
 
-This script will be replaced with the full implementation
-during skill installation.
+Template not found - please reinstall from the DailyOS repository.
 """
-print("Google API script - run setup.py to install full version")
+print("Google API script template not found")
 '''
-        self.file_ops.write_file(script_path, placeholder)
+            self.file_ops.write_file(script_path, placeholder)
 
     def _create_basic_claude_md(self):
         """Create a basic CLAUDE.md from template."""
@@ -971,30 +983,53 @@ Personal productivity workspace using the PARA organizational system.
         """Install the default set of skills and commands."""
         workspace = self.config['workspace']
 
-        # Create placeholder files - actual content will be
-        # copied from the templates/ directory
-        commands = ['today', 'wrap', 'week', 'month', 'quarter', 'email-scan', 'git-commit']
+        # Find templates directory (relative to this script)
+        script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
+        templates_dir = script_dir / 'templates'
+
+        # Copy command files from templates
+        commands = ['today', 'wrap', 'week', 'month', 'quarter', 'email-scan', 'git-commit', 'setup']
         for cmd in commands:
-            cmd_path = workspace / '.claude' / 'commands' / f'{cmd}.md'
-            self.file_ops.write_file(cmd_path, f'# /{cmd}\n\nCommand will be installed.\n')
+            src_path = templates_dir / 'commands' / f'{cmd}.md'
+            dst_path = workspace / '.claude' / 'commands' / f'{cmd}.md'
+
+            if src_path.exists():
+                content = src_path.read_text()
+                self.file_ops.write_file(dst_path, content)
+            else:
+                # Fallback to placeholder if template not found
+                self.file_ops.write_file(dst_path, f'# /{cmd}\n\nCommand template not found.\n')
 
     def _install_python_tools(self):
         """Install Python automation tools."""
         workspace = self.config['workspace']
         tools_dir = workspace / '_tools'
 
-        # Create placeholder scripts
-        tools = ['prepare_inbox.py', 'deliver_inbox.py', 'generate_dashboard.py']
-        for tool in tools:
-            tool_path = tools_dir / tool
-            self.file_ops.write_file(tool_path, f'''#!/usr/bin/env python3
-"""
-{tool} - Placeholder
+        # Find templates directory (relative to this script)
+        script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
+        templates_dir = script_dir / 'templates' / 'scripts'
 
-This script will be replaced with the full implementation.
-"""
-print("{tool} - run setup.py to install full version")
-''')
+        # Tool mappings: (source_subdir, source_file, dest_file)
+        tools = [
+            ('inbox', 'prepare_inbox.py', 'prepare_inbox.py'),
+            ('inbox', 'deliver_inbox.py', 'deliver_inbox.py'),
+            ('accounts', 'generate_account_dashboard.py', 'generate_account_dashboard.py'),
+        ]
+
+        for subdir, src_name, dst_name in tools:
+            src_path = templates_dir / subdir / src_name
+            dst_path = tools_dir / dst_name
+
+            if src_path.exists():
+                content = src_path.read_text()
+                self.file_ops.write_file(dst_path, content)
+
+        # Also install google_api.py to .config/google/
+        google_src = templates_dir / 'google' / 'google_api.py'
+        google_dst = workspace / '.config' / 'google' / 'google_api.py'
+        if google_src.exists():
+            content = google_src.read_text()
+            self.file_ops.write_file(google_dst, content)
 
     def _verify_installation(self) -> bool:
         """Verify the installation is complete."""
@@ -1080,7 +1115,7 @@ Your Daily Operating System is ready at:
 {Colors.BOLD}Documentation:{Colors.RESET}
 
   The visual guide should already be open in your browser.
-  If not, open: ui/index.html
+  If not, open: docs/index.html (or visit https://daily-os.com)
 
   Key slides to bookmark:
   • Commands Reference (slides 19-24)

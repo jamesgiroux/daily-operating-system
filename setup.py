@@ -65,22 +65,19 @@ Examples:
     args = parser.parse_args()
 
     # Create and run wizard
-    wizard = SetupWizard(
-        workspace=args.workspace,
-        verbose=args.verbose
-    )
+    wizard = SetupWizard(args)
 
     try:
         if args.google:
-            success = wizard.run_google_setup_only()
+            exit_code = wizard.run_google_setup_only()
         elif args.verify:
-            success = wizard.run_verification_only()
+            exit_code = wizard.run_verification_only()
         elif args.quick:
-            success = wizard.run_quick_setup()
+            exit_code = wizard.run_quick_setup()
         else:
-            success = wizard.run()
+            exit_code = wizard.run()
 
-        sys.exit(0 if success else 1)
+        sys.exit(exit_code)
 
     except KeyboardInterrupt:
         print("\n\nSetup cancelled by user.")
