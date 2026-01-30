@@ -40,7 +40,7 @@ python3 setup.py --verify  # Check existing installation
 
 | Skill | Purpose |
 |-------|---------|
-| **inbox-processing** | Three-phase document flow (preparation, enrichment, delivery) |
+| **inbox** | Three-phase document flow (preparation, enrichment, delivery) |
 | **strategy-consulting** | McKinsey-style strategic analysis with multi-agent workflow |
 | **editorial** | Writing review standards with multi-stage review process |
 
@@ -63,7 +63,7 @@ python3 setup.py --verify  # Check existing installation
 - writer-challenger: Red-team premises and claims
 - writer-scrutiny: Executive specificity check
 
-**Inbox** (from inbox-processing):
+**Inbox** (from inbox):
 - file-organizer: PARA routing for documents
 - integration-linker: External system links
 
