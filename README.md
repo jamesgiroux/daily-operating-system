@@ -80,7 +80,7 @@ workspace/
 │   ├── tasks/          # Persistent task tracking
 │   └── archive/        # Previous days (auto-managed)
 ├── _inbox/             # Drop zone—files get processed and filed
-├── Accounts/           # Per client: meetings, transcripts, actions
+├── Accounts/           # Per customer: meetings, transcripts, actions
 ├── Projects/           # Active initiatives with deadlines
 ├── Areas/              # Ongoing responsibilities (leadership, development)
 ├── Resources/          # Templates, reference docs, standards
