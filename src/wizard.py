@@ -137,10 +137,10 @@ class SetupWizard:
                 "Enter your workspace path",
                 default="~/Documents/productivity"
             )
-        self.config['workspace'] = Path(workspace)
+        self.config['workspace'] = Path(workspace).expanduser()
 
         if not self.config['workspace'].exists():
-            print_error(f"Workspace does not exist: {workspace}")
+            print_error(f"Workspace does not exist: {self.config['workspace']}")
             return 1
 
         return 0 if self._step_google_api() else 1
@@ -163,10 +163,10 @@ class SetupWizard:
                 "Enter your workspace path to verify",
                 default="~/Documents/productivity"
             )
-        self.config['workspace'] = Path(workspace)
+        self.config['workspace'] = Path(workspace).expanduser()
 
         if not self.config['workspace'].exists():
-            print_error(f"Workspace does not exist: {workspace}")
+            print_error(f"Workspace does not exist: {self.config['workspace']}")
             return 1
 
         return 0 if self._step_verification() else 1
@@ -999,6 +999,33 @@ Personal productivity workspace using the PARA organizational system.
             else:
                 # Fallback to placeholder if template not found
                 self.file_ops.write_file(dst_path, f'# /{cmd}\n\nCommand template not found.\n')
+
+        # Copy skill packages from templates
+        skills_src = templates_dir / 'skills'
+        skills_dst = workspace / '.claude' / 'skills'
+        if skills_src.exists():
+            for skill_dir in skills_src.iterdir():
+                if skill_dir.is_dir():
+                    skill_name = skill_dir.name
+                    # Copy all files in the skill directory
+                    for skill_file in skill_dir.iterdir():
+                        if skill_file.is_file():
+                            dst_path = skills_dst / skill_name / skill_file.name
+                            content = skill_file.read_text()
+                            self.file_ops.write_file(dst_path, content)
+
+        # Copy agent definitions from templates
+        agents_src = templates_dir / 'agents'
+        agents_dst = workspace / '.claude' / 'agents'
+        if agents_src.exists():
+            for agent_category in agents_src.iterdir():
+                if agent_category.is_dir():
+                    category_name = agent_category.name
+                    for agent_file in agent_category.iterdir():
+                        if agent_file.is_file():
+                            dst_path = agents_dst / category_name / agent_file.name
+                            content = agent_file.read_text()
+                            self.file_ops.write_file(dst_path, content)
 
     def _install_python_tools(self):
         """Install Python automation tools."""
