@@ -39,7 +39,7 @@ Examples:
 
     parser.add_argument(
         "--workspace", "-w",
-        help="Workspace location (default: ~/Documents/DailyOS)"
+        help="Workspace location (default: ~/Documents/productivity)"
     )
     parser.add_argument(
         "--google",
