@@ -12,13 +12,37 @@ A productivity framework built on Claude Code for managing your daily work, stra
 
 ## Quick Start
 
-```bash
-# Run the setup wizard
-python3 setup.py
+### Step 1: Download the project
 
-# Or with options
-python3 setup.py --workspace ~/Documents/productivity
-python3 setup.py --quick  # Use defaults
+**Option A: Download ZIP (easiest)**
+1. Click the green **Code** button above
+2. Click **Download ZIP**
+3. Unzip to a folder on your computer (e.g., `Documents/daily-operating-system`)
+
+**Option B: Clone with Git**
+```bash
+git clone https://github.com/jamesgiroux/daily-operating-system.git
+```
+
+### Step 2: Open Terminal and navigate to the folder
+
+```bash
+cd ~/Documents/daily-operating-system
+```
+
+### Step 3: Run the setup wizard
+
+```bash
+python3 setup.py
+```
+
+The wizard walks you through everything—just follow the prompts.
+
+### Optional flags
+
+```bash
+python3 setup.py --workspace ~/Documents/productivity  # Custom location
+python3 setup.py --quick   # Use defaults, fewer prompts
 python3 setup.py --verify  # Check existing installation
 ```
 
