@@ -1,0 +1,31 @@
+# Credentials and secrets
+.config/google/token.json
+.config/google/credentials.json
+*.credentials
+*.secret
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Temporary files
+*.tmp
+*.bak
+
+# Node (if any)
+node_modules/
