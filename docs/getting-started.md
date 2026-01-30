@@ -4,7 +4,7 @@ Welcome! This guide will help you understand what you're setting up, what you ne
 
 ## What Is This?
 
-The Daily Operating System is a productivity framework that uses AI (Claude) to help you:
+The Daily Operating System is a productivity framework that uses AI (Claude Code) to help you:
 - Prepare for meetings automatically
 - Track action items across all your work
 - Process documents and meeting transcripts
@@ -44,7 +44,7 @@ The system can connect to your Google Calendar, Gmail, and Sheets to:
 - This uses Google's **standard APIs**, not Google's AI features
 - You won't be charged for Google AI usage
 - The connection is free with any Google account
-- All the "intelligence" comes from Claude, not Google
+- All the "intelligence" comes from Claude Code, not Google
 
 ### 3. A Place to Store Files
 
@@ -123,7 +123,7 @@ When viewed in a preview tool, that same text looks like a nicely formatted docu
 2. **Future-proof** - Plain text never becomes obsolete
 3. **Searchable** - Easy to find things across files
 4. **Version-controlled** - Works perfectly with Git
-5. **AI-friendly** - Claude can read and write it easily
+5. **AI-friendly** - Claude Code can read and write it easily
 
 ---
 
@@ -228,7 +228,7 @@ Once set up, your typical day looks like this:
 > /today
 ```
 
-Claude will:
+Claude Code will:
 - Show your meetings for the day
 - Prepare context for customer/client calls
 - Surface action items due today
@@ -240,7 +240,7 @@ Claude will:
 > /wrap
 ```
 
-Claude will:
+Claude Code will:
 - Check if meeting transcripts were processed
 - Ask about action items due today
 - Capture any wins or accomplishments
@@ -252,7 +252,7 @@ Claude will:
 > /week
 ```
 
-Claude will:
+Claude Code will:
 - Show all meetings this week
 - Surface overdue items
 - Help plan your time blocks
@@ -301,7 +301,7 @@ productivity/
 ### Step 6: CLAUDE.md Configuration
 - Creates your personalized Claude Code config
 - Captures your preferences and working style
-- Tells Claude how to help you best
+- Tells Claude Code how to help you best
 
 ### Step 7: Install Commands & Skills
 - Installs `/today`, `/wrap`, `/week`, etc.
@@ -343,7 +343,7 @@ Check the organized output in your folders!
 
 ### In Claude Code
 - Type `/help` for available commands
-- Ask Claude questions naturally
+- Ask Claude Code questions naturally
 
 ### Documentation
 - Open `ui/index.html` in a browser for visual docs
@@ -390,7 +390,7 @@ Accounts/
 └── Future/           # Nurture pipeline
 ```
 
-**To change after setup**, ask Claude:
+**To change after setup**, ask Claude Code:
 ```
 "Reorganize my Accounts folder to have Active, Qualified, Disqualified,
 and Future subdirectories for BDR workflow"
@@ -409,7 +409,7 @@ Accounts/
 └── Handoff/          # Transitioning to another RM
 ```
 
-**To change after setup**, ask Claude:
+**To change after setup**, ask Claude Code:
 ```
 "Create an Active/Inactive account structure since I rotate
 through accounts based on renewal cycles"
@@ -425,7 +425,7 @@ Accounts/
 └── Pool/            # Accounts you may be assigned
 ```
 
-**To change after setup**, ask Claude:
+**To change after setup**, ask Claude Code:
 ```
 "Set up a rotation-based account structure with Current,
 Previous, and Pool folders since I don't own accounts permanently"
@@ -433,7 +433,7 @@ Previous, and Pool folders since I don't own accounts permanently"
 
 ### Prompt Examples for Customization
 
-After running the setup wizard, you can paste these into Claude to customize:
+After running the setup wizard, you can paste these into Claude Code to customize:
 
 **Add engagement tracking:**
 ```
@@ -459,7 +459,7 @@ and archive its action items. When I reactivate, move it back."
 ## Privacy & Security
 
 - **Your files stay local** - Nothing is uploaded unless you choose to
-- **Transcripts are processed locally** - Claude reads them on your machine
+- **Transcripts are processed locally** - Claude Code reads them on your machine
 - **Google API is read-mostly** - Only creates drafts, never sends emails automatically
 - **Git is optional** - Only push to GitHub if you want backup
 
