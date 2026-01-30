@@ -67,10 +67,10 @@ AVAILABLE_SKILLS = {
         'description': 'McKinsey-style strategic analysis with multi-agent workflow',
         'category': 'advanced',
         'agents': [
-            'engagement-manager',
+            'problem-framer',
             'framework-strategist',
-            'partner-critic',
-            'analyst-research-logic',
+            'red-team',
+            'evidence-analyst',
             'executive-storyteller',
         ],
     },

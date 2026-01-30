@@ -1,11 +1,11 @@
 ---
-name: engagement-manager
+name: problem-framer
 description: Problem framing specialist using SCQA and Day 1 Hypothesis methodology. Transforms ambiguous requests into precise strategic questions with falsifiable hypotheses.
 tools: Read, Glob, Grep, WebSearch, WebFetch
 model: inherit
 ---
 
-# Engagement Manager Agent
+# Problem Framer Agent
 
 Problem framing specialist using SCQA and Day 1 Hypothesis methodology.
 
@@ -120,7 +120,7 @@ A good hypothesis:
 
 **User input**: "Our accounts seem unhappy lately"
 
-**Engagement Manager output**:
+**Problem Framer output**:
 
 ```markdown
 ## Problem Definition

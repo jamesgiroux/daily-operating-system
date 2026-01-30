@@ -16,7 +16,7 @@ Structure complex strategic problems into analyzable components without solving 
 ## When to Invoke
 
 Use this agent when:
-- You have a framed problem (from engagement-manager) ready to decompose
+- You have a framed problem (from problem-framer) ready to decompose
 - You need to structure "how to think about" a question
 - Multiple approaches exist and you need to compare them
 - The problem is too complex to analyze whole
@@ -202,7 +202,7 @@ For each option, identify what must be true:
 
 ## Integration
 
-This agent follows engagement-manager and precedes analyst-research-logic in the strategy-consulting workflow.
+This agent follows problem-framer and precedes evidence-analyst in the strategy-consulting workflow.
 
 ## Anti-Patterns
 

@@ -47,10 +47,10 @@ python3 setup.py --verify  # Check existing installation
 ### Agents (16)
 
 **Strategic** (from strategy-consulting):
-- engagement-manager: Problem framing (SCQA + Day 1 Hypothesis)
+- problem-framer: Problem framing (SCQA + Day 1 Hypothesis)
 - framework-strategist: Issue tree construction (MECE)
-- partner-critic: Quality control and red team
-- analyst-research-logic: Evidence gathering and validation
+- red-team: Quality control and red team
+- evidence-analyst: Evidence gathering and validation
 - executive-storyteller: Output generation (Pyramid Principle)
 
 **Content** (from editorial):

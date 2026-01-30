@@ -226,10 +226,10 @@ Link to full analysis: [link]
 
 | Agent | Role | When Invoked |
 |-------|------|--------------|
-| **engagement-manager** | Problem framing (SCQA + Day 1 Hypothesis) | Step 1 |
+| **problem-framer** | Problem framing (SCQA + Day 1 Hypothesis) | Step 1 |
 | **framework-strategist** | Issue tree construction (MECE) | Step 3 |
-| **partner-critic** | Quality control and red team | Steps 4, 6 |
-| **analyst-research-logic** | Evidence gathering and validation | Step 5 |
+| **red-team** | Quality control and red team | Steps 4, 6 |
+| **evidence-analyst** | Evidence gathering and validation | Step 5 |
 | **executive-storyteller** | Output generation (Pyramid Principle) | Step 7 |
 
 ## Mental Models Applied
