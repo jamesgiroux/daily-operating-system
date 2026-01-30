@@ -1,0 +1,2423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Operating System — Overview</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cream: #f5f2ef;
+            --cream-dark: #ebe5e0;
+            --charcoal: #1a1f24;
+            --charcoal-light: #2d343c;
+            --gold: #c9a227;
+            --gold-muted: #d4b85c;
+            --peach: #e8967a;
+            --sage: #7fb685;
+            --text-primary: #1a1f24;
+            --text-secondary: #5a6370;
+            --text-muted: #8a929d;
+            --white: #ffffff;
+            --border: rgba(26, 31, 36, 0.1);
+            --red: #e57373;
+            --green: #81c784;
+
+            --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--cream);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Slide Container */
+        .presentation {
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slides-wrapper {
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        /* Individual Slide */
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 80px 120px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(40px);
+            transition: all 0.7s var(--ease-out-expo);
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        .slide.prev {
+            transform: translateX(-40px);
+        }
+
+        /* Slide Content */
+        .slide-content {
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .slide-number {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.5s var(--ease-out-quart) 0.2s;
+        }
+
+        .slide.active .slide-number {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* The Problem Statement - in gold */
+        .slide-problem {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.5s var(--ease-out-quart) 0.15s;
+        }
+
+        .slide.active .slide-problem {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-title {
+            font-size: clamp(2rem, 4vw, 3.25rem);
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            margin-bottom: 24px;
+            color: var(--charcoal);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.1s;
+        }
+
+        .slide.active .slide-title {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-subtitle {
+            font-size: 1.25rem;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            max-width: 650px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.2s;
+        }
+
+        .slide.active .slide-subtitle {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-body {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.3s;
+        }
+
+        .slide.active .slide-body {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Typography */
+        .highlight {
+            color: var(--gold);
+        }
+
+        .highlight-sage {
+            color: var(--sage);
+        }
+
+        /* Terminal Window */
+        .terminal {
+            background: var(--charcoal);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 700px;
+        }
+
+        .terminal-header {
+            background: #3d444d;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ff5f56; }
+        .terminal-dot.yellow { background: #ffbd2e; }
+        .terminal-dot.green { background: #27ca40; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .terminal-body {
+            padding: 24px;
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            line-height: 1.8;
+            color: var(--cream);
+        }
+
+        .terminal-body .prompt {
+            color: var(--sage);
+        }
+
+        .terminal-body .command {
+            color: var(--cream);
+        }
+
+        .terminal-body .comment {
+            color: var(--text-muted);
+        }
+
+        .terminal-body .output {
+            color: rgba(245, 242, 239, 0.7);
+        }
+
+        .terminal-body .success {
+            color: var(--sage);
+        }
+
+        .terminal-body .error {
+            color: var(--peach);
+        }
+
+        .terminal-body .highlight-line {
+            background: rgba(201, 162, 39, 0.15);
+            margin: 0 -24px;
+            padding: 0 24px;
+        }
+
+        /* Why Box */
+        .why-box {
+            background: linear-gradient(135deg, rgba(201, 162, 39, 0.1) 0%, rgba(201, 162, 39, 0.05) 100%);
+            border-left: 4px solid var(--gold);
+            padding: 20px 24px;
+            border-radius: 0 12px 12px 0;
+            margin: 24px 0;
+            max-width: 600px;
+        }
+
+        .why-box strong {
+            color: var(--gold);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .why-box p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin: 0;
+        }
+
+        /* Rule List */
+        .rule-list {
+            list-style: none;
+            margin: 24px 0;
+        }
+
+        .rule-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 24px;
+            font-size: 1.15rem;
+        }
+
+        .rule-number {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            background: var(--charcoal);
+            color: var(--cream);
+            border-radius: 50%;
+            font-weight: 600;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .rule-content strong {
+            display: block;
+            color: var(--charcoal);
+            margin-bottom: 4px;
+        }
+
+        .rule-content span {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        /* Bullet List */
+        .bullet-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .bullet-list li {
+            position: relative;
+            padding-left: 24px;
+            margin-bottom: 12px;
+            font-size: 1.05rem;
+            color: var(--text-secondary);
+        }
+
+        .bullet-list li::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 10px;
+            width: 8px;
+            height: 8px;
+            background: var(--gold);
+            border-radius: 50%;
+        }
+
+        /* Folder Grid */
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+            max-width: 700px;
+        }
+
+        .folder-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 16px 20px;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .folder-item:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+        }
+
+        .folder-item.highlight-folder {
+            background: var(--charcoal);
+            border-color: var(--charcoal);
+        }
+
+        .folder-item.highlight-folder .folder-name {
+            color: var(--cream);
+        }
+
+        .folder-item.highlight-folder .folder-desc {
+            color: rgba(245, 242, 239, 0.7);
+        }
+
+        .folder-icon {
+            font-size: 1.25rem;
+            margin-bottom: 2px;
+        }
+
+        .folder-name {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--charcoal);
+        }
+
+        .folder-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Command Cascade */
+        .cascade {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 24px 0;
+        }
+
+        .cascade-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .cascade-cmd {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--cream);
+            background: var(--charcoal);
+            padding: 10px 18px;
+            border-radius: 8px;
+            min-width: 100px;
+            text-align: center;
+        }
+
+        .cascade-cmd.primary {
+            background: var(--gold);
+            color: var(--charcoal);
+        }
+
+        .cascade-desc {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        .cascade-arrow {
+            color: var(--gold);
+            margin-left: 48px;
+            font-size: 1rem;
+        }
+
+        /* Getting Started Cards */
+        .start-grid {
+            display: grid;
+            gap: 20px;
+            margin: 24px 0;
+        }
+
+        .start-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .start-number {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gold);
+            background: rgba(201, 162, 39, 0.15);
+            padding: 8px 14px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .start-text strong {
+            color: var(--charcoal);
+            display: block;
+            margin-bottom: 4px;
+            font-size: 1.05rem;
+        }
+
+        .start-text span {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* Sample Output Card */
+        .output-preview {
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+        }
+
+        .output-preview h4 {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+        }
+
+        .output-preview .meeting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+
+        .output-preview .meeting-row:last-child {
+            border-bottom: none;
+        }
+
+        .output-preview .time {
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+        }
+
+        .output-preview .meeting-name {
+            flex: 1;
+            margin: 0 16px;
+            color: var(--charcoal);
+        }
+
+        .output-preview .meeting-name.customer {
+            font-weight: 500;
+        }
+
+        .output-preview .tag {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .output-preview .tag.internal {
+            background: var(--cream-dark);
+            color: var(--text-muted);
+        }
+
+        .output-preview .tag.customer {
+            background: rgba(201, 162, 39, 0.15);
+            color: var(--gold);
+        }
+
+        /* File Tree */
+        .file-tree {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px 24px;
+            max-width: 500px;
+        }
+
+        .file-tree .tree-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            color: var(--text-secondary);
+        }
+
+        .file-tree .tree-line.highlight {
+            color: var(--charcoal);
+            font-weight: 500;
+        }
+
+        .file-tree .tree-line .icon {
+            color: var(--gold);
+        }
+
+        .file-tree .tree-comment {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            margin-left: auto;
+        }
+
+        /* Agent Grid */
+        .agent-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+            max-width: 800px;
+        }
+
+        .agent-item {
+            padding: 14px 16px;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .agent-item .agent-name {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--charcoal);
+            margin-bottom: 4px;
+        }
+
+        .agent-item .agent-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Flow Diagram */
+        .flow-diagram {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin: 24px 0;
+            flex-wrap: wrap;
+        }
+
+        .flow-step {
+            padding: 12px 20px;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .flow-step.highlight {
+            background: var(--charcoal);
+            color: var(--cream);
+            border-color: var(--charcoal);
+        }
+
+        .flow-arrow {
+            color: var(--gold);
+            font-weight: bold;
+        }
+
+        /* Calendar Week */
+        .calendar-week {
+            display: flex;
+            gap: 8px;
+            margin: 24px 0;
+        }
+
+        .calendar-day {
+            padding: 12px 16px;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            text-align: center;
+            min-width: 70px;
+        }
+
+        .calendar-day .day-name {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .calendar-day .day-status {
+            font-size: 1.25rem;
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 40px;
+            right: 40px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+            background: var(--white);
+            padding: 12px 20px;
+            border-radius: 100px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: transparent;
+            color: var(--charcoal);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover {
+            background: var(--cream);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .nav-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .nav-progress {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: var(--gold);
+            transition: width 0.4s var(--ease-out-quart);
+            z-index: 100;
+        }
+
+        /* Special Slides */
+        .slide.title-slide {
+            background: var(--charcoal);
+            color: var(--cream);
+        }
+
+        .slide.title-slide .slide-title {
+            color: var(--cream);
+            font-size: clamp(2.5rem, 5vw, 4rem);
+        }
+
+        .slide.title-slide .slide-subtitle {
+            color: rgba(245, 242, 239, 0.7);
+        }
+
+        .slide.title-slide .slide-number {
+            color: rgba(245, 242, 239, 0.4);
+        }
+
+        .slide.title-slide .slide-problem {
+            color: var(--gold);
+        }
+
+        .slide.closing-slide {
+            background: linear-gradient(135deg, var(--charcoal) 0%, var(--charcoal-light) 100%);
+            color: var(--cream);
+        }
+
+        .slide.closing-slide .slide-title {
+            color: var(--cream);
+        }
+
+        .slide.closing-slide .start-number {
+            background: rgba(201, 162, 39, 0.2);
+            color: var(--gold-muted);
+        }
+
+        .slide.closing-slide .start-text strong,
+        .slide.closing-slide .start-text span {
+            color: var(--cream);
+        }
+
+        .slide.closing-slide .start-text span {
+            opacity: 0.8;
+        }
+
+        .closing-cta {
+            margin-top: 40px;
+        }
+
+        .closing-cta a {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--gold);
+            color: var(--charcoal);
+            padding: 14px 28px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .closing-cta a:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(201, 162, 39, 0.3);
+        }
+
+        /* Two Column Compare */
+        .compare-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin: 24px 0;
+            max-width: 700px;
+        }
+
+        .compare-col h4 {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            color: var(--charcoal);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .compare-col p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .slide {
+                padding: 60px 24px;
+            }
+
+            .nav {
+                bottom: 24px;
+                padding: 8px 16px;
+            }
+
+            .folder-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .agent-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .terminal {
+                font-size: 0.8rem;
+            }
+
+            .compare-columns {
+                grid-template-columns: 1fr;
+                gap: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div class="presentation">
+        <div class="slides-wrapper">
+
+            <!-- SECTION 1: THE PROBLEM (Slides 1-4) -->
+
+            <!-- Slide 1: Opening Hook -->
+            <div class="slide title-slide active" data-slide="1">
+                <div class="slide-content">
+                    <div class="slide-number">01 / 43</div>
+                    <p class="slide-problem">The Problem</p>
+                    <h1 class="slide-title">Productivity systems die because <span class="highlight">their work gets in the way of yours</span>.</h1>
+                    <p class="slide-subtitle">You've abandoned Todoist. Notion. That weekend workspace build. Now AI tools fill the same graveyard.</p>
+                </div>
+            </div>
+
+            <!-- Slide 2: The Overhead -->
+            <div class="slide" data-slide="2">
+                <div class="slide-content">
+                    <div class="slide-number">02 / 43</div>
+                    <p class="slide-problem">The Burden</p>
+                    <h1 class="slide-title">The overhead <span class="highlight">outweighs the benefit</span>.</h1>
+                    <p class="slide-subtitle">Filing. Organizing. Updating. Capturing. Maintaining the system becomes its own job.</p>
+                    <div class="slide-body">
+                        <div class="flow-diagram">
+                            <span class="flow-step">Open app</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step">Compile info</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step">Update fields</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step">Organize</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step highlight">Repeat</span>
+                        </div>
+                        <div class="why-box">
+                            <strong>The reality</strong>
+                            <p>The tools meant to save time cost time.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 3: The Guilt -->
+            <div class="slide" data-slide="3">
+                <div class="slide-content">
+                    <div class="slide-number">03 / 43</div>
+                    <p class="slide-problem">The Pattern</p>
+                    <h1 class="slide-title">Skip a day, then two, then the guilt makes <span class="highlight">three easier than facing the backlog</span>.</h1>
+                    <p class="slide-subtitle">The system punishes you for being human.</p>
+                    <div class="slide-body">
+                        <div class="flow-diagram">
+                            <span class="flow-step">Day 1: Skip</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step">Day 2: Skip</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step">"I'll start fresh Monday"</span>
+                            <span class="flow-arrow">→</span>
+                            <span class="flow-step highlight">Never</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 4: The Question -->
+            <div class="slide" data-slide="4">
+                <div class="slide-content">
+                    <div class="slide-number">04 / 43</div>
+                    <p class="slide-problem">The Alternative</p>
+                    <h1 class="slide-title">What if the system <span class="highlight">did the work</span> instead of adding to it?</h1>
+                    <p class="slide-subtitle">What if you consumed instead of produced?</p>
+                </div>
+            </div>
+
+            <!-- SECTION 2: ZERO-GUILT DESIGN (Slides 5-7) -->
+
+            <!-- Slide 5: Zero-Guilt Design Introduction -->
+            <div class="slide" data-slide="5">
+                <div class="slide-content">
+                    <div class="slide-number">05 / 43</div>
+                    <p class="slide-problem">The Design Philosophy</p>
+                    <h1 class="slide-title"><span class="highlight">Zero-guilt</span> design.</h1>
+                    <p class="slide-subtitle">Three rules that keep you using it.</p>
+                    <div class="slide-body">
+                        <ul class="rule-list">
+                            <li>
+                                <span class="rule-number">1</span>
+                                <div class="rule-content">
+                                    <strong>Consuming, not producing.</strong>
+                                    <span>You shouldn't have to maintain your productivity tools. They should just be productive.</span>
+                                </div>
+                            </li>
+                            <li>
+                                <span class="rule-number">2</span>
+                                <div class="rule-content">
+                                    <strong>Works when you work.</strong>
+                                    <span>Tuesday and Thursday this week. Wednesday and Friday next week. The system adapts to your rhythm.</span>
+                                </div>
+                            </li>
+                            <li>
+                                <span class="rule-number">3</span>
+                                <div class="rule-content">
+                                    <strong>Everything changeable or removable.</strong>
+                                    <span>If it's not working for you, change it or remove it. No sacred cows.</span>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 6: What This Means -->
+            <div class="slide" data-slide="6">
+                <div class="slide-content">
+                    <div class="slide-number">06 / 43</div>
+                    <p class="slide-problem">In Practice</p>
+                    <h1 class="slide-title">The system compiles. <span class="highlight">You consume</span>.</h1>
+                    <p class="slide-subtitle">Information already gathered. Insights already surfaced. You open it and the work is done.</p>
+                    <div class="slide-body">
+                        <div class="compare-columns">
+                            <div class="compare-col">
+                                <h4>Traditional</h4>
+                                <p>You → Gather → Compile → Organize → Act</p>
+                            </div>
+                            <div class="compare-col">
+                                <h4>Zero-guilt</h4>
+                                <p>System gathers, compiles, organizes → <strong>You act</strong></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 7: Skip Without Guilt -->
+            <div class="slide" data-slide="7">
+                <div class="slide-content">
+                    <div class="slide-number">07 / 43</div>
+                    <p class="slide-problem">The Forgiveness</p>
+                    <h1 class="slide-title">Skip a day. <span class="highlight">Nothing breaks</span>.</h1>
+                    <p class="slide-subtitle">Miss a week. Still works. No accumulated backlog. No red badges shaming you.</p>
+                    <div class="slide-body">
+                        <div class="calendar-week">
+                            <div class="calendar-day">
+                                <div class="day-name">Mon</div>
+                                <div class="day-status">✓</div>
+                            </div>
+                            <div class="calendar-day">
+                                <div class="day-name">Tue</div>
+                                <div class="day-status">–</div>
+                            </div>
+                            <div class="calendar-day">
+                                <div class="day-name">Wed</div>
+                                <div class="day-status">✓</div>
+                            </div>
+                            <div class="calendar-day">
+                                <div class="day-name">Thu</div>
+                                <div class="day-status">–</div>
+                            </div>
+                            <div class="calendar-day">
+                                <div class="day-name">Fri</div>
+                                <div class="day-status">✓</div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>The key insight</strong>
+                            <p>You pick up where you are, not where you left off.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: THE FOUNDATION (Slides 8-10) -->
+
+            <!-- Slide 8: The Structure -->
+            <div class="slide" data-slide="8">
+                <div class="slide-content">
+                    <div class="slide-number">08 / 43</div>
+                    <p class="slide-problem">Your Structure</p>
+                    <h1 class="slide-title">A place for <span class="highlight">everything</span>.</h1>
+                    <p class="slide-subtitle">Setup creates this folder structure. Here's what each one does.</p>
+                    <div class="slide-body">
+                        <div class="folder-grid" style="grid-template-columns: repeat(3, 1fr);">
+                            <div class="folder-item highlight-folder">
+                                <span class="folder-icon">⚡</span>
+                                <span class="folder-name">_today/</span>
+                                <span class="folder-desc">Daily dashboard, meeting preps, actions, tasks</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">📥</span>
+                                <span class="folder-name">_inbox/</span>
+                                <span class="folder-desc">Raw transcripts, notes, docs—processed by /inbox</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">👥</span>
+                                <span class="folder-name">Accounts/</span>
+                                <span class="folder-desc">Per customer: Info, Meetings, Transcripts, Actions</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">🎯</span>
+                                <span class="folder-name">Projects/</span>
+                                <span class="folder-desc">Per project: planning, docs, meetings, deliverables</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">🔄</span>
+                                <span class="folder-name">Areas/</span>
+                                <span class="folder-desc">Leadership, development, team responsibilities</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">📚</span>
+                                <span class="folder-name">Resources/</span>
+                                <span class="folder-desc">Templates, reference docs, standards</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Why this matters</strong>
+                            <p>PARA: Projects, Areas, Resources, Archive. When AI knows where things live, it pulls context instantly. No searching.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 9: Inside Each Account -->
+            <div class="slide" data-slide="9">
+                <div class="slide-content">
+                    <div class="slide-number">09 / 43</div>
+                    <p class="slide-problem">Identical Structure</p>
+                    <h1 class="slide-title">Every account has the <span class="highlight">same structure</span>.</h1>
+                    <p class="slide-subtitle">Acme, BigCorp, MegaTech—all your accounts, identical folders.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 550px;">
+                            <h4>📂 Accounts / Acme-Corp /</h4>
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-family: var(--font-mono); font-size: 0.85rem;">
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">00 Index.md</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">01 Customer-Info</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">02 Meetings</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">03 Transcripts</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">04 Action-Items</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">05 Projects</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">06 Integrations</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">07 Reporting</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">08 Health-Reviews</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">09 Incidents</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">10 Decisions</div>
+                                <div style="padding: 8px; background: var(--cream); border-radius: 6px;">11 Commercial</div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Predictable paths</strong>
+                            <p>AI knows exactly where to look for meeting notes, actions, or context—across every account. No hunting.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 10: Everything is Markdown -->
+            <div class="slide" data-slide="10">
+                <div class="slide-content">
+                    <div class="slide-number">10 / 43</div>
+                    <p class="slide-problem">The File Format</p>
+                    <h1 class="slide-title">Everything is a <span class="highlight">.md</span> file.</h1>
+                    <p class="slide-subtitle">Plain text with simple formatting. Opens anywhere, pastes everywhere.</p>
+                    <div class="slide-body">
+                        <ul class="bullet-list">
+                            <li><strong>Portable:</strong> Copy/paste directly into WordPress, Google Docs, Notion, Slack</li>
+                            <li><strong>Future-proof:</strong> Plain text never becomes unreadable. No app lock-in.</li>
+                            <li><strong>AI-friendly:</strong> LLMs work better with plain text than complex formats</li>
+                            <li><strong>Searchable:</strong> grep, spotlight, any text search finds your content</li>
+                        </ul>
+                        <div class="why-box">
+                            <strong>That's all you need</strong>
+                            <p># is a heading. **bold**, *italic*. - for bullets. That's 90% of what you need.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 4: THE COMMANDS (Slides 11-19) -->
+
+            <!-- Slide 11: Commands Overview -->
+            <div class="slide" data-slide="11">
+                <div class="slide-content">
+                    <div class="slide-number">11 / 43</div>
+                    <p class="slide-problem">Building Block 1</p>
+                    <h1 class="slide-title"><span class="highlight">Commands</span> — Type a slash, get a result.</h1>
+                    <p class="slide-subtitle">Quick actions you invoke directly. Like keyboard shortcuts for your work.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">/today</span><br>
+                                <span class="output">Generates your daily dashboard...</span><br><br>
+                                <span class="prompt">></span> <span class="command">/wrap</span><br>
+                                <span class="output">Closes out your day...</span><br><br>
+                                <span class="prompt">></span> <span class="command">/week</span><br>
+                                <span class="output">Plans your week ahead...</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>The pattern</strong>
+                            <p>Always start with /. Commands are direct instructions. Type the slash, type the name, hit enter. Done.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 12: /today — What You Get -->
+            <div class="slide" data-slide="12">
+                <div class="slide-content">
+                    <div class="slide-number">12 / 43</div>
+                    <p class="slide-problem">Your Morning</p>
+                    <h1 class="slide-title">Type <span class="highlight">/today</span>. Your day is ready.</h1>
+                    <p class="slide-subtitle">One command. Calendar fetched, meetings prepped, actions surfaced, email scanned.</p>
+                    <div class="slide-body">
+                        <div class="file-tree">
+                            <div class="tree-line highlight"><span class="icon">📄</span> 00-overview.md <span class="tree-comment">← Your dashboard</span></div>
+                            <div class="tree-line"><span class="icon">📄</span> 01-0930-internal-standup.md</div>
+                            <div class="tree-line highlight"><span class="icon">📄</span> 02-1100-customer-acme-prep.md <span class="tree-comment">← Full context</span></div>
+                            <div class="tree-line"><span class="icon">📄</span> 03-1400-internal-project.md</div>
+                            <div class="tree-line highlight"><span class="icon">📄</span> 80-actions-due.md <span class="tree-comment">← What's due</span></div>
+                            <div class="tree-line"><span class="icon">📄</span> 83-email-summary.md</div>
+                            <div class="tree-line"><span class="icon">📁</span> 90-agenda-needed/ <span class="tree-comment">← Draft agendas</span></div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Why numbered files?</strong>
+                            <p>00 is always overview. 01-79 are meetings in order. 80-89 are reference. Open any folder and know what's what.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 13: /today — Sample Dashboard -->
+            <div class="slide" data-slide="13">
+                <div class="slide-content">
+                    <div class="slide-number">13 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">Your day <span class="highlight">at a glance</span>.</h1>
+                    <p class="slide-subtitle">00-overview.md</p>
+                    <div class="slide-body">
+                        <div class="output-preview">
+                            <h4>Today's Schedule</h4>
+                            <div class="meeting-row">
+                                <span class="time">10:30 AM</span>
+                                <span class="meeting-name">Partner Sync</span>
+                                <span class="tag internal">Project</span>
+                            </div>
+                            <div class="meeting-row">
+                                <span class="time">11:30 AM</span>
+                                <span class="meeting-name customer">Acme Check-In</span>
+                                <span class="tag customer">Customer</span>
+                            </div>
+                            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+                                <h4>⚠️ Actions Due Today</h4>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary); padding: 8px 0;">• Send follow-up docs — Acme</div>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary); padding: 8px 0;">• Review proposal draft — Internal</div>
+                                <div style="font-size: 0.9rem; color: var(--peach); padding: 8px 0;">• Schedule demo — BigCorp (overdue)</div>
+                            </div>
+                            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);">
+                                <h4>Email - Needs Attention (2)</h4>
+                                <div style="font-size: 0.85rem; padding: 6px 0;"><span style="color: var(--peach);">🔴 RISK</span> | Escalation from Acme Corp</div>
+                                <div style="font-size: 0.85rem; padding: 6px 0;"><span style="color: var(--sage);">🟢 OPPORTUNITY</span> | BigCorp wants to expand</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 14: /today — Customer Prep -->
+            <div class="slide" data-slide="14">
+                <div class="slide-content">
+                    <div class="slide-number">14 / 43</div>
+                    <p class="slide-problem">Meeting Context</p>
+                    <h1 class="slide-title">Full context for <span class="highlight">every customer call</span>.</h1>
+                    <p class="slide-subtitle">02-customer-prep.md</p>
+                    <div class="slide-body">
+                        <div class="output-preview">
+                            <h4>Customer Meeting Prep</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); font-size: 1.1rem;">Acme Corp — 11:30 AM</div>
+                                <div style="font-size: 0.85rem; color: var(--sage); margin-top: 4px;">● Active Account &nbsp;&nbsp; Renewal: Q3 2026</div>
+                            </div>
+                            <div style="padding: 12px 0; font-size: 0.9rem; color: var(--text-secondary);">
+                                <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px;">
+                                    <span style="font-weight: 500;">ARR:</span> <span>$180k</span>
+                                    <span style="font-weight: 500;">Contract:</span> <span>2-year</span>
+                                    <span style="font-weight: 500;">Last Contact:</span> <span>Platform migration planning</span>
+                                    <span style="font-weight: 500;">Open Action:</span> <span>Send integration docs</span>
+                                </div>
+                            </div>
+                            <div style="padding-top: 12px; border-top: 1px solid var(--border); margin-top: 8px;">
+                                <div style="font-size: 0.85rem; color: var(--gold); font-weight: 500;">Key Question:</div>
+                                <div style="font-size: 0.9rem; color: var(--charcoal);">What's blocking the migration timeline?</div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Context you'd forget to look up</strong>
+                            <p>Last meeting notes, open actions, relationship history—all pulled from your account folder automatically.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 15: /wrap — Day Closure -->
+            <div class="slide" data-slide="15">
+                <div class="slide-content">
+                    <div class="slide-number">15 / 43</div>
+                    <p class="slide-problem">Your Evening</p>
+                    <h1 class="slide-title"><span class="highlight">/wrap</span> — Close the loops.</h1>
+                    <p class="slide-subtitle">Reconcile what happened. Capture what mattered. Archive and prepare for tomorrow.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">/wrap</span><br><br>
+                                <span class="success">✓ Verified transcripts in inbox</span><br>
+                                <span class="success">✓ Meeting summaries checked (3/3 processed)</span><br>
+                                <span class="success">✓ Action items reconciled</span><br>
+                                <span class="success">✓ Daily impact captured</span><br>
+                                <span class="success">✓ Files archived to _today/archive/</span><br><br>
+                                <span class="output">Ready for tomorrow's /today</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Zero-guilt design</strong>
+                            <p>If you skip /wrap, /today catches the gaps tomorrow. No accumulated debt.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 16: /wrap — Sample Output -->
+            <div class="slide" data-slide="16">
+                <div class="slide-content">
+                    <div class="slide-number">16 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">The day <span class="highlight">journals itself</span>.</h1>
+                    <p class="slide-subtitle">Impact captured, gaps identified, tomorrow prepared.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 600px;">
+                            <h4>Daily Wrap — Jan 28, 2026</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Meetings Reconciled</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                                        <span>Acme migration check-in</span>
+                                        <span style="color: var(--sage);">✓ Summary filed</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                                        <span>Internal project sync</span>
+                                        <span style="color: var(--sage);">✓ Notes captured</span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding: 4px 0;">
+                                        <span>BigCorp quarterly</span>
+                                        <span style="color: var(--peach);">⚠️ No transcript found</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Impact Captured</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--sage);">🟢</span> Expansion signal — Marcus interested in AI features</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--gold);">⭐</span> Unblocked staging deployment for Acme</div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Actions Reconciled</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;">2 completed today | 3 still open | 1 new from meetings</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>What got flagged</strong>
+                            <p>BigCorp meeting has no transcript — you'll be prompted to add notes or mark as "no action needed."</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 17: /week — Weekly Review -->
+            <div class="slide" data-slide="17">
+                <div class="slide-content">
+                    <div class="slide-number">17 / 43</div>
+                    <p class="slide-problem">Monday Mornings</p>
+                    <h1 class="slide-title"><span class="highlight">/week</span> — Plan the week ahead.</h1>
+                    <p class="slide-subtitle">Review what happened, surface what's coming, prepare for customer meetings.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">/week</span><br><br>
+                                <span class="success">✓ Calendar analyzed (12 meetings this week)</span><br>
+                                <span class="success">✓ Customer meetings identified (4 accounts)</span><br>
+                                <span class="success">✓ Actions due this week surfaced (8 items)</span><br>
+                                <span class="success">✓ Impact template pre-populated</span><br><br>
+                                <span class="output">Week overview: _today/week-00-overview.md</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Feeds your monthly</strong>
+                            <p>Weekly captures roll up to monthly. By month-end, your impact report writes itself.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 18: /week — Sample Output -->
+            <div class="slide" data-slide="18">
+                <div class="slide-content">
+                    <div class="slide-number">18 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">The week <span class="highlight">at a glance</span>.</h1>
+                    <p class="slide-subtitle">week-00-overview.md</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Week of Jan 27, 2026</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Customer Meetings (4)</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">Tue</span> — Acme migration check-in</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">Wed</span> — BigCorp quarterly review</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">Thu</span> — MegaTech kickoff</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">Fri</span> — Acme exec sync</div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Actions Due This Week (8)</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--peach);">●</span> 2 overdue from last week</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--gold);">●</span> 4 due this week</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">●</span> 2 upcoming (next week)</div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Impact Template (Pre-filled)</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--sage);">🟢</span> Expansion signal captured (Acme — AI features)</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--gold);">⭐</span> Unblocked staging deployment</div>
+                                    <div style="padding: 4px 0; color: var(--text-muted); font-style: italic;">+ space for this week's wins...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Pre-populated, not empty</strong>
+                            <p>The impact template already has last week's wins. You just add this week's as they happen.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 19: /month — Monthly Roll-up -->
+            <div class="slide" data-slide="19">
+                <div class="slide-content">
+                    <div class="slide-number">19 / 43</div>
+                    <p class="slide-problem">End of Month</p>
+                    <h1 class="slide-title"><span class="highlight">/month</span> — Your impact, aggregated.</h1>
+                    <p class="slide-subtitle">Four weeks of daily captures become one monthly report.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>January 2026 Impact Report</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Summary</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <div><span style="font-weight: 500;">Customer meetings:</span> 16</div>
+                                        <div><span style="font-weight: 500;">Actions completed:</span> 23</div>
+                                        <div><span style="font-weight: 500;">Expansion signals:</span> 3</div>
+                                        <div><span style="font-weight: 500;">At-risk flags:</span> 1</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Highlights</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--sage);">🟢</span> Acme — AI content expansion identified ($50k potential)</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--sage);">🟢</span> BigCorp — Renewed 2-year contract</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--gold);">⭐</span> MegaTech — Successful platform launch</div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Attention Needed</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--peach);">🔴</span> TechStart — No contact in 45 days, renewal in Q2</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Evidence-based reporting</strong>
+                            <p>Every line links back to the meeting or action where it was captured. No more "what did I do this month?"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 20: /quarter — Quarterly Review -->
+            <div class="slide" data-slide="20">
+                <div class="slide-content">
+                    <div class="slide-number">20 / 43</div>
+                    <p class="slide-problem">Review Time</p>
+                    <h1 class="slide-title"><span class="highlight">/quarter</span> — Your review, pre-filled.</h1>
+                    <p class="slide-subtitle">Three months of tracked work becomes your performance narrative.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Q1 2026 Performance Review — Draft</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Business Impact</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;">• Identified $150k in expansion opportunities across 3 accounts</div>
+                                    <div style="padding: 4px 0;">• Renewed 4 contracts totaling $420k ARR</div>
+                                    <div style="padding: 4px 0;">• Reduced at-risk accounts from 3 to 1</div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Key Wins (with evidence)</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0;">• Acme AI expansion — <span style="color: var(--text-muted);">[[Jan/week-03]], [[Feb/week-01]]</span></div>
+                                    <div style="padding: 4px 0;">• BigCorp renewal — <span style="color: var(--text-muted);">[[Jan/week-02]], [[Feb/week-04]]</span></div>
+                                    <div style="padding: 4px 0;">• MegaTech launch — <span style="color: var(--text-muted);">[[Mar/week-01]], [[Mar/week-02]]</span></div>
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Development Focus</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <div style="padding: 4px 0; font-style: italic; color: var(--text-muted);">← Add your growth areas and learnings here</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Mostly editing, not writing</strong>
+                            <p>The hard part — remembering what you did — is already done. You refine the narrative and add context.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 21: The Command Cascade -->
+            <div class="slide" data-slide="21">
+                <div class="slide-content">
+                    <div class="slide-number">21 / 43</div>
+                    <p class="slide-problem">The System</p>
+                    <h1 class="slide-title">Commands that <span class="highlight">build on each other</span>.</h1>
+                    <div class="slide-body">
+                        <div class="cascade">
+                            <div class="cascade-item">
+                                <span class="cascade-cmd primary">/today</span>
+                                <span class="cascade-desc">Your morning—dashboard, prep, inbox processing</span>
+                            </div>
+                            <div class="cascade-arrow">↓</div>
+                            <div class="cascade-item">
+                                <span class="cascade-cmd">/wrap</span>
+                                <span class="cascade-desc">Your evening—close loops, capture wins</span>
+                            </div>
+                            <div class="cascade-arrow">↓</div>
+                            <div class="cascade-item">
+                                <span class="cascade-cmd">/week</span>
+                                <span class="cascade-desc">Monday—plan the week ahead</span>
+                            </div>
+                            <div class="cascade-arrow">↓</div>
+                            <div class="cascade-item">
+                                <span class="cascade-cmd">/month</span>
+                                <span class="cascade-desc">Roll up your monthly impacts</span>
+                            </div>
+                            <div class="cascade-arrow">↓</div>
+                            <div class="cascade-item">
+                                <span class="cascade-cmd">/quarter</span>
+                                <span class="cascade-desc">Pre-fill your quarterly review</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Why they cascade</strong>
+                            <p>Daily wins feed weekly. Weekly feeds monthly. By quarter end, your review is mostly written—from actual tracked work.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 22: The Inbox -->
+            <div class="slide" data-slide="22">
+                <div class="slide-content">
+                    <div class="slide-number">22 / 43</div>
+                    <p class="slide-problem">The Drop Zone</p>
+                    <h1 class="slide-title">Drop files in _inbox/. <span class="highlight">Watch them organize</span>.</h1>
+                    <p class="slide-subtitle">Meeting transcripts, notes, docs—drop them in and let AI handle filing.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="comment"># You drop a transcript in _inbox/</span><br>
+                                <span class="output">_inbox/2026-01-28-acme-call-transcript.md</span><br><br>
+                                <span class="comment"># /today processes it, or run /inbox directly:</span><br>
+                                <span class="output">Phase 1: Analyzing file, detecting account...</span><br>
+                                <span class="output">Phase 2: Generating summary, extracting actions...</span><br>
+                                <span class="output">Phase 3: Delivering to canonical location...</span><br><br>
+                                <span class="success">✓ Accounts/Acme-Corp/02-Meetings/2026-01-28-summary.md</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>When to use /inbox</strong>
+                            <p>/today processes the inbox each morning. Use /inbox when you want to process files right now.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 23: What Goes In (Raw Input) -->
+            <div class="slide" data-slide="23">
+                <div class="slide-content">
+                    <div class="slide-number">23 / 43</div>
+                    <p class="slide-problem">Before Processing</p>
+                    <h1 class="slide-title">What goes <span class="highlight">in</span>.</h1>
+                    <p class="slide-subtitle">A raw transcript. No structure. No metadata. Just notes from a call.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 600px;">
+                            <h4 style="font-family: var(--font-mono); color: var(--text-muted);">_inbox/2026-01-28-call-recording.md</h4>
+                            <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); padding: 12px 0; line-height: 1.7;">
+                                <div style="color: var(--text-muted);">[00:00:15]</div>
+                                <div><strong>Sarah Chen:</strong> Thanks for joining. Quick check-in on the migration timeline.</div>
+                                <div style="margin-top: 8px; color: var(--text-muted);">[00:02:30]</div>
+                                <div><strong>You:</strong> The staging environment is ready. What's blocking the go-live?</div>
+                                <div style="margin-top: 8px; color: var(--text-muted);">[00:05:45]</div>
+                                <div><strong>Sarah:</strong> Legal wants to review the data handling. Can you send the security docs?</div>
+                                <div style="margin-top: 8px; color: var(--text-muted);">[00:08:20]</div>
+                                <div><strong>Sarah:</strong> Also, Marcus mentioned interest in the AI content features...</div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>The problem</strong>
+                            <p>Raw transcripts are useful but unusable. You need to read the whole thing to remember what happened, and action items get buried.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 24: Enriched Summary Output -->
+            <div class="slide" data-slide="24">
+                <div class="slide-content">
+                    <div class="slide-number">24 / 43</div>
+                    <p class="slide-problem">After Processing</p>
+                    <h1 class="slide-title">What comes <span class="highlight">out</span>.</h1>
+                    <p class="slide-subtitle">Renamed, summarized, tagged, cross-linked, and filed.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4 style="font-family: var(--font-mono); color: var(--sage);">Accounts/Acme-Corp/02-Meetings/2026-01-28-acme-migration-checkin.md</h4>
+                            <div style="font-family: var(--font-mono); font-size: 0.75rem; background: var(--cream); padding: 12px; border-radius: 6px; margin: 12px 0; line-height: 1.6;">
+                                <span style="color: var(--text-muted);">---</span><br>
+                                <span style="color: var(--gold);">date:</span> 2026-01-28<br>
+                                <span style="color: var(--gold);">account:</span> Acme-Corp<br>
+                                <span style="color: var(--gold);">attendees:</span> [Sarah Chen, Marcus Webb]<br>
+                                <span style="color: var(--gold);">tags:</span> [migration, security-review, <span style="color: var(--sage);">expansion-signal</span>]<br>
+                                <span style="color: var(--gold);">confidentiality:</span> internal<br>
+                                <span style="color: var(--gold);">related:</span> [[04-Action-Items/2026-01-28-actions]]<br>
+                                <span style="color: var(--text-muted);">---</span>
+                            </div>
+                            <div style="font-size: 0.85rem; color: var(--text-secondary); padding-top: 8px;">
+                                <strong style="color: var(--charcoal);">Summary:</strong> Migration staging complete. Go-live blocked by legal security review. Sarah requested data handling docs. <span style="background: rgba(127, 182, 133, 0.2); padding: 2px 6px; border-radius: 4px; color: var(--sage);">Marcus expressed interest in AI content features</span> — potential expansion.
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>What got added</strong>
+                            <p>File renamed with context. Frontmatter with account, attendees, tags. Expansion signal flagged. Confidentiality evaluated. Cross-linked to action items.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 25: Action Items Extraction -->
+            <div class="slide" data-slide="25">
+                <div class="slide-content">
+                    <div class="slide-number">25 / 43</div>
+                    <p class="slide-problem">Extracted & Linked</p>
+                    <h1 class="slide-title">Action items <span class="highlight">with context</span>.</h1>
+                    <p class="slide-subtitle">Every action traced back to its source.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4 style="font-family: var(--font-mono); color: var(--sage);">Accounts/Acme-Corp/04-Action-Items/2026-01-28-actions.md</h4>
+                            <div style="padding: 12px 0;">
+                                <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border);">
+                                    <span style="color: var(--peach); font-size: 1.1rem;">☐</span>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 500; color: var(--charcoal);">Send security documentation to legal</div>
+                                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                            <span style="background: var(--cream); padding: 2px 6px; border-radius: 4px;">Owner: You</span>
+                                            <span style="background: var(--cream); padding: 2px 6px; border-radius: 4px; margin-left: 8px;">Due: 2026-01-30</span>
+                                        </div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">
+                                            Source: [[02-Meetings/2026-01-28-acme-migration-checkin]] — Sarah requested for legal review
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px 0;">
+                                    <span style="color: var(--peach); font-size: 1.1rem;">☐</span>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 500; color: var(--charcoal);">Schedule AI content demo with Marcus</div>
+                                        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                            <span style="background: var(--cream); padding: 2px 6px; border-radius: 4px;">Owner: You</span>
+                                            <span style="background: rgba(201, 162, 39, 0.15); padding: 2px 6px; border-radius: 4px; margin-left: 8px; color: var(--gold);">Expansion</span>
+                                        </div>
+                                        <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 6px;">
+                                            Source: [[02-Meetings/2026-01-28-acme-migration-checkin]] — Marcus mentioned AI content interest
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Never lose the thread</strong>
+                            <p>Every action links back to the meeting where it was discussed. When someone asks "why are we doing this?" — the source is one click away.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 26: Index Updates -->
+            <div class="slide" data-slide="26">
+                <div class="slide-content">
+                    <div class="slide-number">26 / 43</div>
+                    <p class="slide-problem">Automatically Updated</p>
+                    <h1 class="slide-title">The index <span class="highlight">stays current</span>.</h1>
+                    <p class="slide-subtitle">00-Index.md captures what matters most — without you maintaining it.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4 style="font-family: var(--font-mono); color: var(--sage);">Accounts/Acme-Corp/00-Index.md</h4>
+                            <div style="font-size: 0.85rem; padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Recent Meetings</div>
+                                <div style="color: var(--text-secondary); padding-left: 12px; border-left: 2px solid var(--gold);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">2026-01-28</span> — Migration check-in <span style="background: rgba(127, 182, 133, 0.2); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; color: var(--sage);">NEW</span></div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">2026-01-15</span> — Quarterly review</div>
+                                    <div style="padding: 4px 0;"><span style="color: var(--text-muted);">2026-01-03</span> — Kickoff 2026</div>
+                                </div>
+                                <div style="font-weight: 600; color: var(--charcoal); margin: 16px 0 8px 0;">Open Actions (2)</div>
+                                <div style="color: var(--text-secondary); padding-left: 12px; border-left: 2px solid var(--peach);">
+                                    <div style="padding: 4px 0;">☐ Send security docs — Due Jan 30</div>
+                                    <div style="padding: 4px 0;">☐ Schedule AI demo with Marcus <span style="color: var(--gold);">↑ Expansion</span></div>
+                                </div>
+                                <div style="font-weight: 600; color: var(--charcoal); margin: 16px 0 8px 0;">Signals</div>
+                                <div style="color: var(--text-secondary); padding-left: 12px; border-left: 2px solid var(--sage);">
+                                    <div style="padding: 4px 0;"><span style="color: var(--sage);">🟢</span> Expansion interest — AI content features (Marcus, Jan 28)</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>One place to look</strong>
+                            <p>The index is your account home page. Recent meetings, open actions, signals — all maintained automatically as documents flow through.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 27: Beyond Customer Work -->
+            <div class="slide" data-slide="27">
+                <div class="slide-content">
+                    <div class="slide-number">27 / 43</div>
+                    <p class="slide-problem">Adaptable</p>
+                    <h1 class="slide-title">Works for <span class="highlight">any knowledge work</span>.</h1>
+                    <p class="slide-subtitle">Project managers, marketers, consultants — same workflow, different context.</p>
+                    <div class="slide-body">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 800px;">
+                            <div class="output-preview" style="padding: 16px;">
+                                <h4 style="color: var(--gold);">Project Manager</h4>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0;">
+                                    <div style="margin-bottom: 8px;"><strong>Drop in:</strong> Stakeholder call notes</div>
+                                    <div style="margin-bottom: 8px;"><strong>Get out:</strong></div>
+                                    <div style="padding-left: 12px; font-size: 0.8rem;">
+                                        → Projects/Website-Redesign/02-Meetings/<br>
+                                        → Decisions extracted to 10-Decisions/<br>
+                                        → Blockers flagged in 00-Index.md<br>
+                                        → RACI updates suggested
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="output-preview" style="padding: 16px;">
+                                <h4 style="color: var(--gold);">Marketing Manager</h4>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0;">
+                                    <div style="margin-bottom: 8px;"><strong>Drop in:</strong> Campaign brief draft</div>
+                                    <div style="margin-bottom: 8px;"><strong>Get out:</strong></div>
+                                    <div style="padding-left: 12px; font-size: 0.8rem;">
+                                        → Projects/Q2-Campaign/03-Briefs/<br>
+                                        → KPIs extracted and linked<br>
+                                        → Dependencies flagged<br>
+                                        → Timeline cross-referenced
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>10 role templates built in</strong>
+                            <p>Account management, sales, project management, product, marketing, engineering, consulting — each with purpose-built folder structures. Setup asks about your work and configures accordingly.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 28: Make It Your Own -->
+            <div class="slide" data-slide="28">
+                <div class="slide-content">
+                    <div class="slide-number">28 / 43</div>
+                    <p class="slide-problem">Customize It</p>
+                    <h1 class="slide-title">Make it <span class="highlight">your own</span>.</h1>
+                    <p class="slide-subtitle">Every command is just a markdown file. Ask Claude to change anything.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">/setup</span><br>
+                                <span class="output">What would you like to configure?</span><br>
+                                <span class="output" style="color: var(--text-muted);">1. Update folder structure  2. Review skills  3. Update CLAUDE.md</span><br><br>
+                                <span class="prompt">></span> <span class="command">Add a section to /today that shows stale contacts</span><br>
+                                <span class="output">Adding "30+ days since last contact" alert to your overview...</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Structured or conversational — your choice</strong>
+                            <p>Use <code>/setup</code> for guided configuration, or just ask Claude to change anything in natural language.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 5: THE SKILLS (Slides 29-34) -->
+
+            <!-- Slide 29: Skills Overview -->
+            <div class="slide" data-slide="29">
+                <div class="slide-content">
+                    <div class="slide-number">29 / 43</div>
+                    <p class="slide-problem">Building Block 2</p>
+                    <h1 class="slide-title"><span class="highlight">Skills</span> — Deeper workflows you collaborate with.</h1>
+                    <p class="slide-subtitle">Bundles of knowledge and procedures. Call them naturally when you're working.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">Use editorial to review this draft</span><br><br>
+                                <span class="prompt">></span> <span class="command">Can we work with strategy-consulting on this?</span><br><br>
+                                <span class="prompt">></span> <span class="command">Let's run this through inbox processing</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>No slash required</strong>
+                            <p>Skills are conversational. Just mention them by name and Claude knows what to do. Think of them as specialized collaborators.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 30: Why These Skills? -->
+            <div class="slide" data-slide="30">
+                <div class="slide-content">
+                    <div class="slide-number">30 / 43</div>
+                    <p class="slide-problem">The Reasoning</p>
+                    <h1 class="slide-title">Skills solve the hardest <span class="highlight">communication problems</span>.</h1>
+                    <p class="slide-subtitle">Two things kill credibility: sounding like you don't know what you're talking about, and sounding like AI.</p>
+                    <div class="slide-body">
+                        <div class="compare-columns">
+                            <div class="compare-col">
+                                <h4>strategy-consulting</h4>
+                                <p>Sound like you know what you're talking about</p>
+                            </div>
+                            <div class="compare-col">
+                                <h4>editorial</h4>
+                                <p>Sound like you, not like AI</p>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Skills grow over time</strong>
+                            <p>Skills encode expertise so you don't reinvent it each time. The system grows with new skills and capabilities over time.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 31: strategy-consulting — Overview -->
+            <div class="slide" data-slide="31">
+                <div class="slide-content">
+                    <div class="slide-number">31 / 43</div>
+                    <p class="slide-problem">Included Skill</p>
+                    <h1 class="slide-title"><span class="highlight">strategy-consulting</span> — McKinsey in your terminal.</h1>
+                    <p class="slide-subtitle">Structure problems, build hypotheses, synthesize into executive narratives.</p>
+                    <div class="slide-body">
+                        <ul class="bullet-list">
+                            <li><strong>SCQA framing</strong> — Situation, Complication, Question, Answer</li>
+                            <li><strong>Issue Trees</strong> — MECE decomposition of complex problems</li>
+                            <li><strong>Day 1 Hypotheses</strong> — Start with an answer, then validate</li>
+                            <li><strong>Pyramid Principle</strong> — Lead with conclusions, not analysis</li>
+                        </ul>
+                        <div class="why-box">
+                            <strong>The problem it solves</strong>
+                            <p>Strategic thinking is a skill, not a talent. This encodes proven frameworks so you don't reinvent them each time.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 32: strategy-consulting — Sample Output -->
+            <div class="slide" data-slide="32">
+                <div class="slide-content">
+                    <div class="slide-number">32 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">Strategic framing <span class="highlight">in seconds</span>.</h1>
+                    <p class="slide-subtitle">SCQA output from strategy-consulting</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Strategic Framing</h4>
+                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--gold); font-size: 0.8rem; text-transform: uppercase; margin-bottom: 4px;">Situation</div>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary);">Acme is evaluating platform migration but hesitant on timeline.</div>
+                            </div>
+                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--gold); font-size: 0.8rem; text-transform: uppercase; margin-bottom: 4px;">Complication</div>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary);">Competitor offering bundled features at renewal. Decision window is narrowing—Q2 renewal in 8 weeks.</div>
+                            </div>
+                            <div style="padding: 8px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--gold); font-size: 0.8rem; text-transform: uppercase; margin-bottom: 4px;">Question</div>
+                                <div style="font-size: 0.9rem; color: var(--text-secondary);">How do we accelerate decision before renewal window closes?</div>
+                            </div>
+                            <div style="padding: 8px 0;">
+                                <div style="font-weight: 600; color: var(--gold); font-size: 0.8rem; text-transform: uppercase; margin-bottom: 4px;">Answer</div>
+                                <div style="font-size: 0.9rem; color: var(--charcoal);"><strong>1. Fast-track POC completion (Recommended)</strong> — Proves value before competitor can respond</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">2. Executive alignment session — Builds champion support</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">3. Competitive displacement analysis — Addresses objections directly</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 33: editorial — Overview -->
+            <div class="slide" data-slide="33">
+                <div class="slide-content">
+                    <div class="slide-number">33 / 43</div>
+                    <p class="slide-problem">Included Skill</p>
+                    <h1 class="slide-title"><span class="highlight">editorial</span> — Multi-pass writing review.</h1>
+                    <p class="slide-subtitle">Catch AI-tells, check voice, verify structure, challenge premises.</p>
+                    <div class="slide-body">
+                        <ul class="bullet-list">
+                            <li><strong>Mechanical review</strong> — Typography, terminology, anti-patterns</li>
+                            <li><strong>Structural review</strong> — Logic flow, evidence integration</li>
+                            <li><strong>Voice review</strong> — Fidelity to content type</li>
+                            <li><strong>Authenticity check</strong> — Detect formulaic AI patterns</li>
+                            <li><strong>Red team</strong> — Challenge claims and premises</li>
+                        </ul>
+                        <div class="why-box">
+                            <strong>The problem it solves</strong>
+                            <p>AI-generated content often sounds... AI-generated. This catches the tells and pushes for genuine voice.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 34: editorial — Sample Output -->
+            <div class="slide" data-slide="34">
+                <div class="slide-content">
+                    <div class="slide-number">34 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">Catches <span class="highlight">what you'd miss</span>.</h1>
+                    <p class="slide-subtitle">Authenticity review from editorial</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Authenticity Review</h4>
+                            <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+                                <div style="font-weight: 600; color: var(--peach); margin-bottom: 8px;">⚠️ Flagged patterns:</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                    • <span style="color: var(--charcoal);">"In today's rapidly evolving landscape..."</span> → Generic opener, signals AI. Try: "Three months ago, we couldn't do this."
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                    • <span style="color: var(--charcoal);">"Leverage synergies..."</span> → Jargon. What specifically?
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    • Three consecutive sentences starting with "This..." → Repetitive structure. Vary your rhythm.
+                                </div>
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-size: 0.85rem; color: var(--sage);">✓ Voice check: Matches strategic advisor tone</div>
+                                <div style="font-size: 0.85rem; color: var(--sage);">✓ Structure check: SCQA framework applied correctly</div>
+                                <div style="font-size: 0.85rem; color: var(--sage);">✓ Evidence check: Claims supported with specifics</div>
+                                <div style="margin-top: 12px; font-size: 0.9rem; font-weight: 500; color: var(--charcoal);">Recommendation: Revise opener and paragraph 3. Ready for red-team review after revisions.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 6: THE AGENTS (Slides 35-39) -->
+
+            <!-- Slide 35: Agents Overview -->
+            <div class="slide" data-slide="35">
+                <div class="slide-content">
+                    <div class="slide-number">35 / 43</div>
+                    <p class="slide-problem">Building Block 3</p>
+                    <h1 class="slide-title"><span class="highlight">Agents</span> — Specialists you can call directly.</h1>
+                    <p class="slide-subtitle">Focused experts for specific tasks. Skills use them, but you can call them too.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">Can you red-team this hypothesis?</span><br><br>
+                                <span class="prompt">></span> <span class="command">Run writer-voice-review on this draft</span><br><br>
+                                <span class="prompt">></span> <span class="command">Use the agenda-generator for next week's meetings</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Specialists on demand</strong>
+                            <p>No slash, no special syntax. Just ask for what you need. Agents do one thing really well. Call them by name when you need focused expertise.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 36: Included Agents -->
+            <div class="slide" data-slide="36">
+                <div class="slide-content">
+                    <div class="slide-number">36 / 43</div>
+                    <p class="slide-problem">Included Agents</p>
+                    <h1 class="slide-title">Specialists <span class="highlight">ready to help</span>.</h1>
+                    <div class="slide-body">
+                        <div class="agent-grid">
+                            <div class="agent-item">
+                                <div class="agent-name">problem-framer</div>
+                                <div class="agent-desc">SCQA, problem definition</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">framework-strategist</div>
+                                <div class="agent-desc">Issue trees, MECE</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">evidence-analyst</div>
+                                <div class="agent-desc">Evidence gathering</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">executive-storyteller</div>
+                                <div class="agent-desc">P2s, decks, Slack</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">red-team</div>
+                                <div class="agent-desc">Challenge assumptions</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">agenda-generator</div>
+                                <div class="agent-desc">Draft meeting agendas</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">writer-voice-review</div>
+                                <div class="agent-desc">Voice fidelity</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">writer-structural-review</div>
+                                <div class="agent-desc">Logic and flow</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">writer-authenticity-review</div>
+                                <div class="agent-desc">Detect AI patterns</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">writer-challenger</div>
+                                <div class="agent-desc">Challenge claims</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">file-organizer</div>
+                                <div class="agent-desc">Route to PARA</div>
+                            </div>
+                            <div class="agent-item">
+                                <div class="agent-name">integration-linker</div>
+                                <div class="agent-desc">Link external systems</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 37: red-team — Sample Output -->
+            <div class="slide" data-slide="37">
+                <div class="slide-content">
+                    <div class="slide-number">37 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">The skeptic <span class="highlight">in your corner</span>.</h1>
+                    <p class="slide-subtitle">red-team challenges your assumptions before someone else does.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Red Team Assessment</h4>
+                            <div style="padding: 8px 0; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid var(--border);">Claim: "Fast-track POC will close the deal"</div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--peach); margin-bottom: 12px;">⚠️ Challenged Assumptions:</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+                                    <strong style="color: var(--charcoal);">1. "Proves value before competitor can respond"</strong><br>
+                                    → Assumption: Competitor isn't already engaged<br>
+                                    → Risk: What if they're further along than you think?<br>
+                                    → Test: <span style="color: var(--sage);">Ask directly about competitive evaluation</span>
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+                                    <strong style="color: var(--charcoal);">2. "2-week sprint is achievable"</strong><br>
+                                    → Assumption: Customer resources are available<br>
+                                    → Risk: Their team may have conflicting priorities<br>
+                                    → Test: <span style="color: var(--sage);">Get named commitment from their side</span>
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    <strong style="color: var(--charcoal);">3. "POC success leads to contract"</strong><br>
+                                    → Assumption: Decision maker is bought in<br>
+                                    → Risk: Champion ≠ budget holder<br>
+                                    → Test: <span style="color: var(--sage);">Who signs? Have they been briefed?</span>
+                                </div>
+                            </div>
+                            <div style="padding-top: 12px; border-top: 1px solid var(--border); font-weight: 500; color: var(--gold);">
+                                Verdict: Proceed with caution. Validate assumptions 1 and 3 before committing resources.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 38: writer-challenger — Sample Output -->
+            <div class="slide" data-slide="38">
+                <div class="slide-content">
+                    <div class="slide-number">38 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">Did you actually <span class="highlight">deliver on the promise</span>?</h1>
+                    <p class="slide-subtitle">writer-challenger asks the hard questions before you publish.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Challenger Review</h4>
+                            <div style="padding: 8px 0; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                Document: "Q1 Strategic Priorities Memo" | Promise: "Clear direction for the quarter"
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-weight: 600; color: var(--peach); margin-bottom: 12px;">❌ Gaps Identified:</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                    "Clear direction" requires:
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); padding-left: 16px; margin-bottom: 12px;">
+                                    • Specific priorities (not just themes) → <span style="color: var(--peach);">MISSING</span><br>
+                                    • Success metrics for each priority → <span style="color: var(--peach);">MISSING</span><br>
+                                    • Resource allocation guidance → <span style="color: var(--gold);">VAGUE</span><br>
+                                    • Trade-off decisions made explicit → <span style="color: var(--peach);">NOT ADDRESSED</span>
+                                </div>
+                                <div style="font-weight: 600; color: var(--charcoal); margin-bottom: 8px;">Hard Questions:</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    1. If everything is a priority, nothing is. Which 2 would you cut if forced?<br>
+                                    2. "Improve customer engagement" — what does success look like? By when?<br>
+                                    3. Who is accountable for each priority? No names = no accountability.
+                                </div>
+                            </div>
+                            <div style="padding-top: 12px; border-top: 1px solid var(--border); font-weight: 500; color: var(--peach);">
+                                Verdict: Not ready. This reads like a wish list, not a strategic plan.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 39: writer-voice-review — Sample Output -->
+            <div class="slide" data-slide="39">
+                <div class="slide-content">
+                    <div class="slide-number">39 / 43</div>
+                    <p class="slide-problem">Sample Output</p>
+                    <h1 class="slide-title">Does this sound <span class="highlight">like you</span>?</h1>
+                    <p class="slide-subtitle">writer-voice-review checks fidelity to your intended voice.</p>
+                    <div class="slide-body">
+                        <div class="output-preview" style="max-width: 650px;">
+                            <h4>Voice Review</h4>
+                            <div style="padding: 8px 0; font-size: 0.85rem; color: var(--text-muted); border-bottom: 1px solid var(--border);">
+                                Target Voice: Strategic Advisor (direct, evidence-based) | Document: Executive Briefing
+                            </div>
+                            <div style="padding: 12px 0;">
+                                <div style="font-size: 0.85rem; color: var(--sage); margin-bottom: 12px;">
+                                    ✓ Leads with conclusions, not preamble<br>
+                                    ✓ Uses specific numbers and dates<br>
+                                    ✓ Direct recommendations without hedging
+                                </div>
+                                <div style="font-weight: 600; color: var(--peach); margin-bottom: 8px;">⚠️ Deviations:</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                    • Paragraph 2: "It could potentially be argued that..." → Too tentative. Try: "The evidence suggests..." or state the claim directly.
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px;">
+                                    • Paragraph 4: Three sentences start with "Additionally..." → List-like rhythm. Vary connectors or combine points.
+                                </div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                                    • Closing: "Please let me know if you have questions" → Weak close. Try: "Next step: [specific action] by [date]"
+                                </div>
+                            </div>
+                            <div style="padding-top: 12px; border-top: 1px solid var(--border); font-weight: 500; color: var(--sage);">
+                                Verdict: Minor revisions needed. Voice is 80% there. Fix the three flagged items.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 7: THE TOOLS (Slides 40-41) -->
+
+            <!-- Slide 40: Tools Overview -->
+            <div class="slide" data-slide="40">
+                <div class="slide-content">
+                    <div class="slide-number">40 / 43</div>
+                    <p class="slide-problem">Building Block 4</p>
+                    <h1 class="slide-title"><span class="highlight">Tools</span> — Scripts that extend Claude's reach.</h1>
+                    <p class="slide-subtitle">Python utilities Claude runs to interact with external services.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">You never run tools directly</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">What's on my calendar this week?</span><br><br>
+                                <span class="comment">Claude runs google_api.py calendar list 7</span><br><br>
+                                <span class="success">You have 12 meetings this week. Here's the breakdown...</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Claude handles the complexity</strong>
+                            <p>Tools are the bridge between Claude and external systems. You ask in plain English. Claude figures out which tool to run.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 41: Included Tools -->
+            <div class="slide" data-slide="41">
+                <div class="slide-content">
+                    <div class="slide-number">41 / 43</div>
+                    <p class="slide-problem">Included Tools</p>
+                    <h1 class="slide-title">Scripts <span class="highlight">ready to work</span>.</h1>
+                    <div class="slide-body">
+                        <div class="folder-grid" style="grid-template-columns: repeat(2, 1fr);">
+                            <div class="folder-item highlight-folder">
+                                <span class="folder-icon">📅</span>
+                                <span class="folder-name">google_api.py</span>
+                                <span class="folder-desc">Calendar, Gmail, Sheets, Docs — the backbone of /today</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">📥</span>
+                                <span class="folder-name">prepare_inbox.py</span>
+                                <span class="folder-desc">Phase 1: Analyze files, generate processing directives</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">📤</span>
+                                <span class="folder-name">deliver_inbox.py</span>
+                                <span class="folder-desc">Phase 3: Move enriched files to PARA locations</span>
+                            </div>
+                            <div class="folder-item">
+                                <span class="folder-icon">📊</span>
+                                <span class="folder-name">generate_account_dashboard.py</span>
+                                <span class="folder-desc">Create account dashboards from CSV or blank templates</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Extend by example</strong>
+                            <p>These tools show the pattern. Need to connect a different service? Write a script, document it in CLAUDE.md, and Claude will use it.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 8: WHAT'S NEXT (Slides 42-43) -->
+
+            <!-- Slide 42: This is Only the Beginning -->
+            <div class="slide" data-slide="42">
+                <div class="slide-content">
+                    <div class="slide-number">42 / 43</div>
+                    <p class="slide-problem">What's Next</p>
+                    <h1 class="slide-title">This is only the <span class="highlight">beginning</span>.</h1>
+                    <p class="slide-subtitle">Use Claude Code to create your own commands, skills, and agents.</p>
+                    <div class="slide-body">
+                        <div class="terminal">
+                            <div class="terminal-header">
+                                <span class="terminal-dot red"></span>
+                                <span class="terminal-dot yellow"></span>
+                                <span class="terminal-dot green"></span>
+                                <span class="terminal-title">Terminal — Claude Code</span>
+                            </div>
+                            <div class="terminal-body">
+                                <span class="prompt">></span> <span class="command">Create a command called /standup that summarizes what I did yesterday</span><br><br>
+                                <span class="prompt">></span> <span class="command">Build me a skill for preparing board presentations</span><br><br>
+                                <span class="prompt">></span> <span class="command">I need an agent that reviews contracts for red flags</span>
+                            </div>
+                        </div>
+                        <div class="why-box">
+                            <strong>Your system, your rules</strong>
+                            <p>The included commands, skills, and agents are starting points. The real power is building what you need, how you need it.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 43: The Question -->
+            <div class="slide closing-slide" data-slide="43">
+                <div class="slide-content">
+                    <div class="slide-number">43 / 43</div>
+                    <h1 class="slide-title">What would zero-guilt design <span class="highlight">look like for you</span>?</h1>
+                    <div class="slide-body">
+                        <div class="start-grid">
+                            <div class="start-item">
+                                <span class="start-number">01</span>
+                                <div class="start-text">
+                                    <strong>Commands</strong>
+                                    <span>Type a slash, get a result</span>
+                                </div>
+                            </div>
+                            <div class="start-item">
+                                <span class="start-number">02</span>
+                                <div class="start-text">
+                                    <strong>Skills</strong>
+                                    <span>Deeper workflows you collaborate with</span>
+                                </div>
+                            </div>
+                            <div class="start-item">
+                                <span class="start-number">03</span>
+                                <div class="start-text">
+                                    <strong>Agents</strong>
+                                    <span>Specialists for focused tasks</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="closing-cta">
+                            <a href="index.html">
+                                Start Setup
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <button class="nav-btn" id="homeBtn" title="Back to start">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="13 18 7 12 13 6"></polyline>
+                <polyline points="19 18 13 12 19 6"></polyline>
+            </svg>
+        </button>
+        <button class="nav-btn" id="prevBtn" title="Previous slide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+        </button>
+        <span class="nav-progress" id="navProgress">1 / 43</span>
+        <button class="nav-btn" id="nextBtn" title="Next slide">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+        </button>
+    </nav>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        const progressBar = document.getElementById('progressBar');
+        const navProgress = document.getElementById('navProgress');
+        const homeBtn = document.getElementById('homeBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        let currentSlide = 0;
+        const totalSlides = slides.length;
+
+        function goToSlide(index) {
+            updateSlide(index, index > currentSlide ? 'next' : 'prev');
+        }
+
+        function updateSlide(newIndex, direction = 'next') {
+            if (newIndex < 0 || newIndex >= totalSlides) return;
+
+            slides[currentSlide].classList.remove('active');
+            if (direction === 'next') {
+                slides[currentSlide].classList.add('prev');
+            }
+
+            currentSlide = newIndex;
+
+            slides.forEach(slide => {
+                slide.classList.remove('prev');
+            });
+            slides[currentSlide].classList.add('active');
+
+            const progress = ((currentSlide + 1) / totalSlides) * 100;
+            progressBar.style.width = `${progress}%`;
+            navProgress.textContent = `${currentSlide + 1} / ${totalSlides}`;
+
+            homeBtn.disabled = currentSlide === 0;
+            prevBtn.disabled = currentSlide === 0;
+            nextBtn.disabled = currentSlide === totalSlides - 1;
+        }
+
+        function nextSlide() {
+            updateSlide(currentSlide + 1, 'next');
+        }
+
+        function prevSlide() {
+            updateSlide(currentSlide - 1, 'prev');
+        }
+
+        function goHome() {
+            updateSlide(0, 'prev');
+        }
+
+        homeBtn.addEventListener('click', goHome);
+        nextBtn.addEventListener('click', nextSlide);
+        prevBtn.addEventListener('click', prevSlide);
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                prevSlide();
+            }
+        });
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            const diff = touchStartX - touchEndX;
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) nextSlide();
+                else prevSlide();
+            }
+        });
+
+        updateSlide(0);
+    </script>
+</body>
+</html>

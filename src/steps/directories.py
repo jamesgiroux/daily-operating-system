@@ -225,6 +225,328 @@ Current/
 - Pool accounts have minimal context until assigned
 '''
     },
+    'project_management': {
+        'name': 'Project Management',
+        'description': 'PMs, Program Managers: Project-centric with stakeholders',
+        'directories': [
+            'Projects/Active',
+            'Projects/Planning',
+            'Projects/Completed',
+            'Stakeholders',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Project-Information',
+            '02-Meetings',
+            '03-Call-Transcripts',
+            '04-Action-Items',
+            '05-Milestones',
+            '06-Risks-Issues',
+            '07-Decisions',
+            '08-Status-Reports',
+            '_attachments',
+        ],
+        'readme': '''# Projects
+
+Organized by project lifecycle stage.
+
+## Folders
+
+- **Active/** - Currently executing (in delivery phase)
+- **Planning/** - In planning or initiation phase
+- **Completed/** - Delivered projects (reference and lessons learned)
+
+## Structure
+
+Each project folder:
+```
+Active/
+└── Website-Redesign/
+    ├── 00-Index.md           # Project overview, quick links
+    ├── 01-Project-Information/   # Charter, scope, RACI
+    ├── 02-Meetings/          # Meeting summaries
+    ├── 03-Call-Transcripts/  # Full meeting transcripts
+    ├── 04-Action-Items/      # Tasks and follow-ups
+    ├── 05-Milestones/        # Key deliverables and dates
+    ├── 06-Risks-Issues/      # Risk register, issue log
+    ├── 07-Decisions/         # Decision records
+    ├── 08-Status-Reports/    # Weekly/monthly status
+    └── _attachments/         # Supporting documents
+```
+
+## Stakeholders Folder
+
+Track key stakeholders across all projects:
+```
+Stakeholders/
+├── Executive-Sponsor.md     # Preferences, communication style
+├── Tech-Lead.md
+└── Business-Owner.md
+```
+'''
+    },
+    'product_management': {
+        'name': 'Product Management',
+        'description': 'Product Managers: Feature-centric with discovery and delivery',
+        'directories': [
+            'Products',
+            'Features/Discovery',
+            'Features/In-Progress',
+            'Features/Shipped',
+            'Research',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Product-Information',
+            '02-Meetings',
+            '03-User-Research',
+            '04-Requirements',
+            '05-Decisions',
+            '_attachments',
+        ],
+        'readme': '''# Products & Features
+
+Organized around product discovery and delivery.
+
+## Folders
+
+- **Products/** - Product-level context and strategy
+- **Features/Discovery/** - Features being researched and defined
+- **Features/In-Progress/** - Features in development
+- **Features/Shipped/** - Launched features (learnings, metrics)
+- **Research/** - User research, competitive analysis
+
+## Structure
+
+Each feature folder:
+```
+Features/In-Progress/
+└── AI-Recommendations/
+    ├── 00-Index.md           # Feature overview
+    ├── 01-Product-Information/   # PRD, specs
+    ├── 02-Meetings/          # Design reviews, syncs
+    ├── 03-User-Research/     # Interviews, testing
+    ├── 04-Requirements/      # User stories, acceptance criteria
+    ├── 05-Decisions/         # Technical and product decisions
+    └── _attachments/         # Mockups, diagrams
+```
+
+## Workflow
+
+Move features between folders as they progress through discovery → development → ship.
+'''
+    },
+    'marketing': {
+        'name': 'Marketing',
+        'description': 'Marketing Managers: Campaign and content-centric',
+        'directories': [
+            'Campaigns/Active',
+            'Campaigns/Planned',
+            'Campaigns/Completed',
+            'Content',
+            'Research',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Campaign-Brief',
+            '02-Meetings',
+            '03-Assets',
+            '04-Action-Items',
+            '05-Performance',
+            '_attachments',
+        ],
+        'readme': '''# Campaigns & Content
+
+Organized around marketing campaigns and content production.
+
+## Folders
+
+- **Campaigns/Active/** - Currently running campaigns
+- **Campaigns/Planned/** - Upcoming campaigns in planning
+- **Campaigns/Completed/** - Past campaigns (with results)
+- **Content/** - Evergreen content and brand assets
+- **Research/** - Market research, competitive intelligence
+
+## Structure
+
+Each campaign folder:
+```
+Campaigns/Active/
+└── Q2-Product-Launch/
+    ├── 00-Index.md           # Campaign overview, KPIs
+    ├── 01-Campaign-Brief/    # Strategy, messaging, audience
+    ├── 02-Meetings/          # Planning meetings, reviews
+    ├── 03-Assets/            # Creative assets, copy
+    ├── 04-Action-Items/      # Tasks and deadlines
+    ├── 05-Performance/       # Metrics and reporting
+    └── _attachments/         # Designs, vendor docs
+```
+
+## Workflow
+
+Move campaigns through Planned → Active → Completed as they progress.
+'''
+    },
+    'engineering': {
+        'name': 'Engineering',
+        'description': 'Engineers, Tech Leads: Codebase and sprint-centric',
+        'directories': [
+            'Projects/Active',
+            'Projects/Backlog',
+            'Projects/Completed',
+            'Documentation',
+            'Learning',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Technical-Specs',
+            '02-Meetings',
+            '03-Notes',
+            '04-Action-Items',
+            '05-ADRs',
+            '_attachments',
+        ],
+        'readme': '''# Engineering Projects
+
+Organized around technical projects and learning.
+
+## Folders
+
+- **Projects/Active/** - Currently working on
+- **Projects/Backlog/** - Queued for future work
+- **Projects/Completed/** - Finished projects (for reference)
+- **Documentation/** - System docs, runbooks, guides
+- **Learning/** - Technical learning, courses, experiments
+
+## Structure
+
+Each project folder:
+```
+Projects/Active/
+└── API-Refactor/
+    ├── 00-Index.md           # Project overview, goals
+    ├── 01-Technical-Specs/   # Design docs, diagrams
+    ├── 02-Meetings/          # Sprint planning, reviews
+    ├── 03-Notes/             # Working notes, research
+    ├── 04-Action-Items/      # Tasks, blockers
+    ├── 05-ADRs/              # Architecture Decision Records
+    └── _attachments/         # Diagrams, screenshots
+```
+
+## ADRs (Architecture Decision Records)
+
+Track technical decisions with context:
+- What was decided
+- Why (context and constraints)
+- Consequences and trade-offs
+'''
+    },
+    'consulting': {
+        'name': 'Consulting / Strategy',
+        'description': 'Consultants, Analysts: Engagement and deliverable-centric',
+        'directories': [
+            'Engagements/Active',
+            'Engagements/Completed',
+            'Frameworks',
+            'Research',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Engagement-Information',
+            '02-Meetings',
+            '03-Call-Transcripts',
+            '04-Action-Items',
+            '05-Analysis',
+            '06-Deliverables',
+            '07-Decisions',
+            '_attachments',
+        ],
+        'readme': '''# Consulting Engagements
+
+Organized around client engagements and deliverables.
+
+## Folders
+
+- **Engagements/Active/** - Current client work
+- **Engagements/Completed/** - Past engagements (reference)
+- **Frameworks/** - Reusable frameworks and templates
+- **Research/** - Industry research, benchmarks
+
+## Structure
+
+Each engagement folder:
+```
+Engagements/Active/
+└── Acme-Digital-Strategy/
+    ├── 00-Index.md           # Engagement overview
+    ├── 01-Engagement-Information/  # SOW, stakeholders
+    ├── 02-Meetings/          # Client meetings
+    ├── 03-Call-Transcripts/  # Interview transcripts
+    ├── 04-Action-Items/      # Tasks and follow-ups
+    ├── 05-Analysis/          # Working analysis
+    ├── 06-Deliverables/      # Final outputs
+    ├── 07-Decisions/         # Client decisions
+    └── _attachments/         # Data, documents
+```
+
+## Workflow
+
+Engagements move to Completed when delivered. Keep frameworks folder updated with reusable assets.
+'''
+    },
+    'general': {
+        'name': 'General Knowledge Work',
+        'description': 'Flexible structure for any knowledge worker',
+        'directories': [
+            'Projects',
+            'Areas',
+            'Resources',
+            'Archive',
+        ],
+        'account_subdirectories': [
+            '00-Index.md',
+            '01-Information',
+            '02-Meetings',
+            '03-Notes',
+            '04-Action-Items',
+            '_attachments',
+        ],
+        'readme': '''# PARA Structure
+
+Flexible organization for any knowledge work.
+
+## Folders
+
+- **Projects/** - Active initiatives with defined outcomes
+- **Areas/** - Ongoing responsibilities (no end date)
+- **Resources/** - Reference materials and information
+- **Archive/** - Completed or inactive items
+
+## Structure
+
+Each project or area folder:
+```
+Projects/
+└── Website-Redesign/
+    ├── 00-Index.md           # Overview and quick links
+    ├── 01-Information/       # Context and background
+    ├── 02-Meetings/          # Meeting notes
+    ├── 03-Notes/             # Working notes
+    ├── 04-Action-Items/      # Tasks and follow-ups
+    └── _attachments/         # Supporting files
+```
+
+## Philosophy
+
+PARA is about organizing by actionability:
+- **Projects** = outcomes you're actively working toward
+- **Areas** = standards you're maintaining
+- **Resources** = information you might need
+- **Archive** = things you're done with
+
+Move items between folders as their status changes.
+'''
+    },
 }
 
 # Supporting directories
