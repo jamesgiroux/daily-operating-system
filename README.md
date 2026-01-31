@@ -36,7 +36,18 @@ cd ~/Documents/daily-operating-system
 python3 setup.py
 ```
 
-The wizard walks you through everything—just follow the prompts.
+The wizard walks you through 10 steps:
+
+1. **Prerequisites** — Checks Python, Claude Code, Git
+2. **Workspace Location** — Where to create your productivity folder
+3. **Directory Structure** — Creates PARA folders based on your role
+4. **Git Setup** — Initializes version control
+5. **Google API** — Optional calendar/email/sheets integration
+6. **CLAUDE.md** — Generates your Claude Code configuration
+7. **Skills & Commands** — Installs slash commands and skill packages
+8. **Web Dashboard** — Optional browser-based UI for navigation
+9. **Python Tools** — Installs automation scripts
+10. **Verification** — Confirms everything works
 
 ### Optional flags
 
@@ -44,11 +55,27 @@ The wizard walks you through everything—just follow the prompts.
 python3 setup.py --workspace ~/Documents/productivity  # Custom location
 python3 setup.py --quick   # Use defaults, fewer prompts
 python3 setup.py --verify  # Check existing installation
+python3 setup.py --google  # Configure Google API only
 ```
+
+## Role-Based Setup
+
+The wizard asks how you manage your work and configures the folder structure accordingly:
+
+| Role | Description | Primary Folders |
+|------|-------------|-----------------|
+| **Customer Success** | TAMs, RMs, CSMs, AOs with dedicated portfolios | Accounts/ (12 subfolders each) |
+| **Sales** | AEs, BDRs, SEs with pipeline stages | Accounts/Active, Qualified, Future |
+| **Project Management** | PMs, Program Managers | Projects/Active, Planning, Completed |
+| **Product Management** | Product Managers | Features/Discovery, In-Progress, Shipped |
+| **Marketing** | Campaign and content managers | Campaigns/Active, Planned, Completed |
+| **Engineering** | Engineers, Tech Leads | Projects/Active, Backlog, Completed |
+| **Consulting** | Consultants, Analysts | Engagements/Active, Completed |
+| **General** | Flexible knowledge work | Standard PARA structure |
 
 ## What You Get
 
-### Commands (7)
+### Commands (8)
 
 | Command | Purpose |
 |---------|---------|
@@ -59,6 +86,7 @@ python3 setup.py --verify  # Check existing installation
 | `/quarter` | Pre-fill your quarterly review with tracked evidence |
 | `/email-scan` | Triage inbox—surface important, draft responses, archive noise |
 | `/git-commit` | Save your work—atomic commits with clear messages |
+| `/setup` | Re-run setup or configure additional components |
 
 ### Skills (3)
 
@@ -94,6 +122,44 @@ python3 setup.py --verify  # Check existing installation
 **Commands**:
 - agenda-generator: Draft agendas for upcoming meetings
 
+## Web Dashboard (Optional)
+
+The setup wizard can install a browser-based dashboard for visual navigation of your workspace.
+
+### Features
+
+- **Visual sidebar** — Navigate accounts, projects, and daily files
+- **Markdown rendering** — View your documents formatted in the browser
+- **Search** — Find content across all your documents
+- **Health indicators** — See account status at a glance (Customer Success roles)
+- **Ring badges** — Visual lifecycle positioning (Summit, Influence, Evolution, Foundation)
+
+### Requirements
+
+- Node.js (for running the local server)
+
+### Manual Start
+
+If you installed the dashboard during setup:
+
+```bash
+cd ~/Documents/productivity/_ui
+npm start
+```
+
+Then open http://localhost:5050 in your browser.
+
+### Configuration
+
+The dashboard reads from `_ui/config/config.json`, which is auto-generated based on your role selection. You can customize:
+
+- **Sections** — Which folders appear in the sidebar
+- **Subsections** — Folder icons and labels
+- **Features** — Enable/disable health status, ring badges, etc.
+- **Today links** — Quick access to daily files
+
+Role-specific templates are in `_ui/config/roles/`.
+
 ## Directory Structure
 
 Setup creates this folder structure for you:
@@ -104,6 +170,10 @@ workspace/
 │   ├── tasks/          # Persistent task tracking
 │   └── archive/        # Previous days (auto-managed)
 ├── _inbox/             # Drop zone—files get processed and filed
+├── _ui/                # Web dashboard (if installed)
+│   ├── config/         # Dashboard configuration
+│   ├── public/         # Frontend assets
+│   └── server.js       # Express server
 ├── Accounts/           # Per customer: meetings, transcripts, actions
 ├── Projects/           # Active initiatives with deadlines
 ├── Areas/              # Ongoing responsibilities (leadership, development)
@@ -191,20 +261,12 @@ email_domains:
   newsletters: [substack.com, mailchimp.com]
 ```
 
-## HTML Documentation
-
-Open `ui/index.html` in a browser for visual documentation including:
-- Setup guide with screenshots
-- Skills and commands reference
-- Account structure explorer
-- Google API setup walkthrough
-- Troubleshooting FAQ
-
 ## Requirements
 
 - Python 3.8+
 - Claude Code CLI (recommended)
 - Git (recommended)
+- Node.js (optional, for web dashboard)
 - Google Cloud project (optional, for API integration)
 
 ## Development
@@ -216,17 +278,31 @@ daily-operating-system/
 ├── setup.py              # Main entry point
 ├── requirements.txt      # Python dependencies
 ├── src/
-│   ├── wizard.py         # Main orchestrator
+│   ├── wizard.py         # Main orchestrator (10 steps)
 │   ├── steps/            # Setup step modules
+│   │   ├── directories.py    # Role-based folder creation
+│   │   ├── ui_setup.py       # Web dashboard installation
+│   │   └── ...
 │   ├── ui/               # Terminal UI helpers
 │   └── utils/            # File operations, validators
 ├── templates/
 │   ├── commands/         # Command definitions
 │   ├── skills/           # Skill packages
 │   ├── agents/           # Agent definitions
-│   └── scripts/          # Python tools
-├── ui/                   # HTML companion guide
-└── docs/                 # Additional documentation
+│   ├── scripts/          # Python tools
+│   └── ui/               # Web dashboard template
+│       ├── config/
+│       │   └── roles/    # Role-specific configs
+│       ├── public/       # Frontend (HTML, CSS, JS)
+│       └── server.js     # Express server
+├── docs/                 # HTML companion guide
+└── tests/                # Test suite
+```
+
+### Running Tests
+
+```bash
+python3 -m pytest tests/ -v
 ```
 
 ## Contributing
@@ -235,6 +311,7 @@ Contributions welcome! Open an issue or submit a PR:
 - **New skills or agents** — Share workflows that work for you
 - **Bug fixes** — Found something broken? Let us know
 - **Documentation** — Help make setup clearer for others
+- **Role templates** — Add configurations for new work styles
 
 Fork and customize for your needs.
 
