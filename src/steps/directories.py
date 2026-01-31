@@ -19,9 +19,9 @@ PARA_DIRECTORIES = [
 
 # Role-specific account structures
 ROLE_STRUCTURES = {
-    'key_accounts': {
-        'name': 'Key Accounts',
-        'description': 'TAMs, RMs, AOs: Dedicated portfolio with full context',
+    'customer_success': {
+        'name': 'Customer Success',
+        'description': 'TAMs, RMs, CSMs, AOs: Dedicated portfolio with full context',
         'directories': [
             'Accounts',
         ],
@@ -127,102 +127,6 @@ Active/
 
 Move accounts between folders as their status changes.
 When a prospect advances, drag their folder to the next stage.
-'''
-    },
-    'mid_market': {
-        'name': 'Mid-Market',
-        'description': '100+ accounts: Active/Inactive rotation',
-        'directories': [
-            'Accounts/Active',
-            'Accounts/Inactive',
-            'Accounts/Watchlist',
-        ],
-        'account_subdirectories': [
-            '00-Index.md',
-            '01-Customer-Information',
-            '02-Meetings',
-            '03-Call-Transcripts',
-            '04-Action-Items',
-            '07-Reporting',
-            '_attachments',
-        ],
-        'readme': '''# Accounts
-
-Organized by engagement status for high-volume account management.
-
-## Folders
-
-- **Active/** - Currently engaged (regular touchpoints)
-- **Inactive/** - Between engagements (monitoring only)
-- **Watchlist/** - Accounts needing attention (at-risk, renewal, opportunity)
-
-## Structure
-
-Streamlined structure for efficient management at scale:
-```
-Active/
-└── AccountA/
-    ├── 00-Index.md           # Quick account overview
-    ├── 01-Customer-Information/  # Key contacts
-    ├── 02-Meetings/          # Meeting summaries
-    ├── 03-Call-Transcripts/  # Call transcripts
-    ├── 04-Action-Items/      # Open items
-    ├── 07-Reporting/         # Health metrics
-    └── _attachments/         # Supporting docs
-```
-
-## Workflow
-
-- When you complete work with an account, move it to Inactive
-- When you pick it up again, move it back to Active
-- Accounts needing attention go to Watchlist for prioritization
-'''
-    },
-    'tactical_custom': {
-        'name': 'Tactical / Custom',
-        'description': 'On-demand: Current/Previous/Pool structure',
-        'directories': [
-            'Accounts/Current',
-            'Accounts/Previous',
-            'Accounts/Pool',
-        ],
-        'account_subdirectories': [
-            '00-Index.md',
-            '01-Customer-Information',
-            '02-Meetings',
-            '03-Call-Transcripts',
-            '04-Action-Items',
-            '_attachments',
-        ],
-        'readme': '''# Accounts
-
-Organized for rotation-based or on-demand account work.
-
-## Folders
-
-- **Current/** - This period's assignments (actively working)
-- **Previous/** - Past assignments (reference for handoffs)
-- **Pool/** - Accounts you may be assigned (shared pool)
-
-## Structure
-
-Focused structure for tactical engagements:
-```
-Current/
-└── AccountA/
-    ├── 00-Index.md           # Account overview
-    ├── 01-Customer-Information/  # Key contacts and context
-    ├── 02-Meetings/          # Meeting summaries
-    ├── 03-Call-Transcripts/  # Call transcripts
-    ├── 04-Action-Items/      # Current action items
-    └── _attachments/         # Supporting documents
-```
-
-## Workflow
-
-- At the start of each rotation, move assigned accounts to Current
-- At the end, move them to Previous (or back to Pool)
-- Pool accounts have minimal context until assigned
 '''
     },
     'project_management': {
@@ -622,7 +526,7 @@ def get_role_choices() -> List[Dict[str, str]]:
     ]
 
 
-def create_all_directories(workspace: Path, file_ops, role: str = 'key_accounts') -> List[str]:
+def create_all_directories(workspace: Path, file_ops, role: str = 'customer_success') -> List[str]:
     """
     Create all directories in the workspace.
 
@@ -644,7 +548,7 @@ def create_all_directories(workspace: Path, file_ops, role: str = 'key_accounts'
             created.append(dir_path)
 
     # Create role-specific account directories
-    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['key_accounts'])
+    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['customer_success'])
     for dir_path in role_info.get('directories', []):
         full_path = workspace / dir_path
         if not full_path.exists():
@@ -688,7 +592,7 @@ def get_account_subdirectories(role: str) -> List[str]:
     Returns:
         List of subdirectory names/files to create within account folders
     """
-    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['key_accounts'])
+    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['customer_success'])
     return role_info.get('account_subdirectories', [])
 
 
@@ -709,10 +613,10 @@ def create_example_account(workspace: Path, file_ops, role: str, account_name: s
         List of created paths (relative to workspace)
     """
     created = []
-    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['key_accounts'])
+    role_info = ROLE_STRUCTURES.get(role, ROLE_STRUCTURES['customer_success'])
 
     # Determine the base path based on role structure
-    # For key_accounts: Accounts/ExampleAccount/
+    # For customer_success: Accounts/ExampleAccount/
     # For sales: Accounts/Active/ExampleAccount/
     # For mid_market: Accounts/Active/ExampleAccount/
     # For tactical_custom: Accounts/Current/ExampleAccount/
