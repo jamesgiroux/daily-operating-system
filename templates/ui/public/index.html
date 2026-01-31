@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DailyOS</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="/css/design-system.css">
+  <link rel="stylesheet" href="/css/components.css">
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C9A227' stroke-width='2'><polygon points='13 2 3 14 12 14 11 22 21 10 12 10 13 2'/></svg>">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <a href="/" class="sidebar-logo">
+          <svg class="sidebar-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          DailyOS
+        </a>
+      </div>
+
+      <!-- Dynamic navigation populated by config -->
+      <nav class="sidebar-nav">
+        <!-- Loading state - replaced by app.js after config loads -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">Loading...</div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <!-- Header -->
+      <header class="header">
+        <button class="mobile-menu-toggle" id="menuToggle" aria-label="Toggle menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+
+        <nav class="header-breadcrumb" id="breadcrumb">
+          <a href="/">DailyOS</a>
+        </nav>
+
+        <div class="header-actions">
+          <div class="search">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="text" class="search-input" placeholder="Search..." id="searchInput">
+          </div>
+        </div>
+      </header>
+
+      <!-- Content -->
+      <div class="content">
+        <div class="content-inner" id="content">
+          <div class="loading">
+            <div class="loading-spinner"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Search Results Modal -->
+  <div class="search-modal hidden" id="searchModal">
+    <div class="search-modal-content">
+      <div class="search-modal-header">
+        <h3>Search Results</h3>
+        <button class="btn btn-ghost btn-icon" id="closeSearch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="search-modal-body" id="searchResults">
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts - config.js must load before app.js -->
+  <script src="/js/icons.js"></script>
+  <script src="/js/markdown.js"></script>
+  <script src="/js/router.js"></script>
+  <script src="/js/config.js"></script>
+  <script src="/js/app.js"></script>
+
+  <style>
+    /* Search modal styles */
+    .search-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(26, 31, 36, 0.5);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 100px;
+      z-index: var(--z-modal);
+    }
+
+    .search-modal.hidden {
+      display: none;
+    }
+
+    .search-modal-content {
+      background: var(--white);
+      border-radius: var(--radius-xl);
+      width: 600px;
+      max-width: 90vw;
+      max-height: 60vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: var(--shadow-xl);
+    }
+
+    .search-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--space-4) var(--space-6);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .search-modal-header h3 {
+      margin: 0;
+      font-size: var(--text-lg);
+    }
+
+    .search-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-4);
+    }
+
+    .search-result-item {
+      display: block;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md);
+      margin-bottom: var(--space-2);
+      text-decoration: none;
+      color: var(--text-primary);
+      transition: background var(--duration-fast) var(--ease-in-out);
+    }
+
+    .search-result-item:hover {
+      background: var(--cream);
+      transform: translateX(4px);
+    }
+
+    .search-result-item {
+      transition: all var(--duration-fast) var(--ease-in-out);
+    }
+
+    .search-result-name {
+      font-weight: var(--font-medium);
+      margin-bottom: var(--space-1);
+    }
+
+    .search-result-path {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-bottom: var(--space-1);
+    }
+
+    .search-result-context {
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+
+    /* Sidebar link icon wrapper for proper spacing */
+    .sidebar-link-icon {
+      display: inline-flex;
+      align-items: center;
+      margin-right: var(--space-2);
+    }
+  </style>
+</body>
+</html>

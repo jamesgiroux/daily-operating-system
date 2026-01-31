@@ -1,0 +1,229 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DailyOS UI Configuration",
+  "description": "Configuration schema for the DailyOS web UI",
+  "type": "object",
+  "required": ["workspace", "sections", "today"],
+  "properties": {
+    "workspace": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name for the workspace"
+        },
+        "basePath": {
+          "type": "string",
+          "description": "Base path to the workspace (auto-detected if not specified)"
+        }
+      }
+    },
+    "sections": {
+      "type": "array",
+      "description": "Main navigation sections",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "icon", "directory"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for the section (used in API routes)"
+          },
+          "label": {
+            "type": "string",
+            "description": "Display label in the sidebar"
+          },
+          "icon": {
+            "type": "string",
+            "description": "Icon name from the Icons object"
+          },
+          "directory": {
+            "type": "string",
+            "description": "Directory name relative to workspace root"
+          },
+          "indexFile": {
+            "type": "string",
+            "default": "00-Index.md",
+            "description": "Name of the index file in each subdirectory"
+          },
+          "structure": {
+            "type": "string",
+            "enum": ["nested", "flat", "staged", "status-based", "multi-bu"],
+            "default": "nested",
+            "description": "How subdirectories are organized. 'multi-bu' enables business unit detection."
+          },
+          "subsections": {
+            "type": "array",
+            "description": "Standard subfolder structure within each item",
+            "items": {
+              "type": "object",
+              "required": ["pattern", "icon", "label"],
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Folder name pattern (e.g., '01-Customer-Information')"
+                },
+                "icon": {
+                  "type": "string",
+                  "description": "Icon name for this subfolder"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Display label for this subfolder"
+                }
+              }
+            }
+          },
+          "stages": {
+            "type": "array",
+            "description": "For staged structure, defines the stage folders",
+            "items": {
+              "type": "object",
+              "required": ["name", "label"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Folder name"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Display label"
+                },
+                "color": {
+                  "type": "string",
+                  "description": "Optional color for the stage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "today": {
+      "type": "object",
+      "required": ["directory"],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "default": "_today",
+          "description": "Directory for daily files"
+        },
+        "files": {
+          "type": "object",
+          "description": "Mapping of file types to filenames",
+          "properties": {
+            "overview": { "type": "string" },
+            "actions": { "type": "string" },
+            "focus": { "type": "string" },
+            "email": { "type": "string" }
+          }
+        },
+        "weekFiles": {
+          "type": "object",
+          "description": "Mapping of week file types to filenames",
+          "properties": {
+            "overview": { "type": "string" },
+            "meetings": { "type": "string" },
+            "actions": { "type": "string" },
+            "hygiene": { "type": "string" },
+            "focus": { "type": "string" }
+          }
+        },
+        "sidebarLinks": {
+          "type": "array",
+          "description": "Daily section links in sidebar",
+          "items": {
+            "type": "object",
+            "required": ["route", "label", "icon"],
+            "properties": {
+              "route": { "type": "string" },
+              "label": { "type": "string" },
+              "icon": { "type": "string" },
+              "file": { "type": "string", "description": "Optional file key from files object" }
+            }
+          }
+        },
+        "weekSidebarLinks": {
+          "type": "array",
+          "description": "Weekly section links in sidebar",
+          "items": {
+            "type": "object",
+            "required": ["route", "label", "icon"],
+            "properties": {
+              "route": { "type": "string" },
+              "label": { "type": "string" },
+              "icon": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "description": "Feature flags for optional functionality",
+      "properties": {
+        "healthStatus": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show health status indicators"
+        },
+        "ringBadges": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show lifecycle ring badges"
+        },
+        "multiBusinessUnit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Support multi-BU account detection"
+        },
+        "stageBadges": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show pipeline stage badges"
+        }
+      }
+    },
+    "display": {
+      "type": "object",
+      "description": "Display customization options",
+      "properties": {
+        "healthIndicators": {
+          "type": "object",
+          "description": "How to detect health status",
+          "properties": {
+            "healthy": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Strings that indicate healthy status"
+            },
+            "attention": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Strings that indicate attention needed"
+            },
+            "critical": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Strings that indicate critical status"
+            }
+          }
+        },
+        "rings": {
+          "type": "array",
+          "description": "Lifecycle ring definitions",
+          "items": {
+            "type": "object",
+            "required": ["tag", "label"],
+            "properties": {
+              "tag": { "type": "string" },
+              "label": { "type": "string" },
+              "color": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
