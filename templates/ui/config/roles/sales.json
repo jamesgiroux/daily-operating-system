@@ -1,0 +1,67 @@
+{
+  "workspace": {
+    "name": "Sales Workspace",
+    "role": "sales"
+  },
+  "sections": [
+    {
+      "id": "accounts",
+      "label": "Pipeline",
+      "icon": "users",
+      "directory": "Accounts",
+      "indexFile": "00-Index.md",
+      "structure": "staged",
+      "stages": [
+        { "folder": "Active", "label": "Active", "color": "#2e7d32" },
+        { "folder": "Qualified", "label": "Qualified", "color": "#1565c0" },
+        { "folder": "Disqualified", "label": "Disqualified", "color": "#c62828" },
+        { "folder": "Future", "label": "Future", "color": "#8a929d" }
+      ],
+      "subsections": [
+        { "pattern": "01-Opportunity-Info", "icon": "user", "label": "Opportunity" },
+        { "pattern": "02-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "03-Call-Notes", "icon": "mic", "label": "Notes" },
+        { "pattern": "04-Action-Items", "icon": "checkSquare", "label": "Actions" },
+        { "pattern": "05-Proposals", "icon": "fileText", "label": "Proposals" },
+        { "pattern": "06-Contracts", "icon": "dollarSign", "label": "Contracts" }
+      ]
+    },
+    {
+      "id": "resources",
+      "label": "Resources",
+      "icon": "bookOpen",
+      "directory": "Resources",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "80-actions-due.md",
+      "focus": "81-suggested-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar", "file": "overview" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare", "file": "actions" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target", "file": "focus" }
+    ],
+    "weekSidebarLinks": [
+      { "route": "/today/week-overview", "label": "Week Overview", "icon": "list" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "weeklySection": true,
+    "stageIndicators": true
+  },
+  "pagePatterns": {
+    "overview": "Today:",
+    "actions": "Action Items",
+    "focus": "Suggested Focus|Focus Areas",
+    "weekOverview": "Week Overview"
+  }
+}
