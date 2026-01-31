@@ -33,7 +33,7 @@ class SetupWizard:
     explanations, safe defaults, and the ability to rollback on errors.
     """
 
-    TOTAL_STEPS = 9
+    TOTAL_STEPS = 10
 
     def __init__(self, args):
         """
@@ -91,11 +91,15 @@ class SetupWizard:
             if not self._step_skills():
                 return 1
 
-            # Step 8: Python Tools
+            # Step 8: Web Dashboard (UI)
+            if not self._step_ui():
+                return 1
+
+            # Step 9: Python Tools
             if not self._step_python_tools():
                 return 1
 
-            # Step 9: Verification
+            # Step 10: Verification
             if not self._step_verification():
                 return 1
 
@@ -296,8 +300,9 @@ What we'll configure:
   5. Set up Google API integration (optional)
   6. Generate your CLAUDE.md configuration
   7. Install skills and commands
-  8. Set up Python tools
-  9. Verify everything works
+  8. Install web dashboard (optional)
+  9. Set up Python tools
+  10. Verify everything works
 
 The entire process takes about 10-15 minutes.
 """)
@@ -677,9 +682,79 @@ Available commands:
             print_error(f"Installation failed: {e}")
             return False
 
+    def _step_ui(self) -> bool:
+        """Step 8: Install web dashboard."""
+        print_step_header(8, "Web Dashboard", self.TOTAL_STEPS)
+
+        print("""
+The web dashboard provides a visual interface for navigating your
+workspace. It runs locally on your machine and displays your
+accounts, projects, and daily files in a browser.
+
+Features:
+  - Visual sidebar navigation
+  - Markdown file rendering
+  - Search across all documents
+  - Account health indicators (for Customer Success roles)
+
+Requirements:
+  - Node.js (for running the server)
+""")
+
+        # Check if Node.js is available
+        from steps.ui_setup import check_nodejs_available, setup_ui
+
+        node_ok, node_info = check_nodejs_available()
+
+        if node_ok:
+            print_success(f"Node.js found: {node_info}")
+        else:
+            print_warning(f"Node.js not found: {node_info}")
+            print_info("You can install Node.js later and run 'npm install' in _ui/")
+
+        if not confirm("\nInstall web dashboard?"):
+            print_info("Dashboard installation skipped")
+            press_enter_to_continue()
+            return True
+
+        # Run the UI setup
+        workspace = self.config['workspace']
+        role = self.config.get('role', 'customer_success')
+
+        with Spinner("Installing dashboard...") as spinner:
+            try:
+                result = setup_ui(
+                    workspace=workspace,
+                    file_ops=self.file_ops,
+                    role=role,
+                    workspace_name=workspace.name,
+                    install_deps=node_ok
+                )
+
+                if result['success']:
+                    spinner.succeed("Dashboard installed")
+                else:
+                    spinner.fail(f"Installation failed: {result['message']}")
+                    return True  # Non-fatal, continue setup
+
+            except Exception as e:
+                spinner.fail(f"Installation failed: {e}")
+                return True  # Non-fatal, continue setup
+
+        # Show results
+        if result.get('deps_installed'):
+            print_success("Dependencies installed")
+        elif node_ok:
+            print_warning("Dependencies not installed - run 'npm install' in _ui/")
+
+        print(result.get('startup_instructions', ''))
+
+        press_enter_to_continue()
+        return True
+
     def _step_python_tools(self) -> bool:
-        """Step 8: Install Python tools."""
-        print_step_header(8, "Python Tools", self.TOTAL_STEPS)
+        """Step 9: Install Python tools."""
+        print_step_header(9, "Python Tools", self.TOTAL_STEPS)
 
         print("""
 Python tools provide automation for common tasks:
@@ -703,8 +778,8 @@ Python tools provide automation for common tasks:
             return False
 
     def _step_verification(self) -> bool:
-        """Step 9: Verify installation."""
-        print_step_header(9, "Verification", self.TOTAL_STEPS)
+        """Step 10: Verify installation."""
+        print_step_header(10, "Verification", self.TOTAL_STEPS)
 
         print("Verifying installation...\n")
         return self._verify_installation()
@@ -1099,6 +1174,12 @@ Personal productivity workspace using the PARA organizational system.
         else:
             checks.append(("Google credentials", "skip"))
 
+        # Check UI dashboard
+        if (workspace / '_ui' / 'server.js').exists():
+            checks.append(("Web dashboard", "done"))
+        else:
+            checks.append(("Web dashboard", "skip"))
+
         print_checklist(checks, "Installation Status")
 
         # Determine overall status
@@ -1138,6 +1219,11 @@ Your Daily Operating System is ready at:
   /wrap       - End-of-day closure
   /week       - Weekly review
   /email-scan - Email triage
+
+{Colors.BOLD}Web Dashboard:{Colors.RESET}
+
+  cd {workspace}/_ui && npm start
+  Open http://localhost:5050
 
 {Colors.BOLD}Documentation:{Colors.RESET}
 
