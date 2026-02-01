@@ -13,6 +13,44 @@ Run Monday morning (or Sunday evening for prep). This command:
 - **Analyzes open time blocks and suggests task scheduling**
 - **Creates calendar events for approved time blocks**
 
+---
+
+## First-Run Check
+
+**Before running scripts, verify workspace setup:**
+
+```bash
+# Check for workspace configuration
+ls _config/workspace.json 2>/dev/null || echo "FIRST_RUN"
+```
+
+### If FIRST_RUN:
+
+Welcome to /week! This command works best with Google API configured for full calendar integration. Without it:
+
+**What still works:**
+- Priority setting (interactive)
+- Action item aggregation from master task list
+- Week file structure creation
+- Impact template pre-population
+
+**What requires Google API:**
+- Calendar event fetching
+- Meeting classification
+- Time block analysis
+- Calendar event creation
+
+**Google API status:**
+```bash
+ls .config/google/token.json 2>/dev/null && echo "Configured" || echo "Manual mode"
+```
+
+In **manual mode**, you can still plan your week - just add meetings manually to the overview files.
+
+To set up Google API: `/setup --google`
+
+---
+
 ## Philosophy
 
 `/week` does strategic planning for the whole week. `/today` handles tactical execution each day. Together they act as your admin assistant, keeping you on top of schedule and priorities.
