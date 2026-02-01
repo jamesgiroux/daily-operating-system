@@ -448,7 +448,7 @@ import sys
 
 def main():
     print("Google API helper - install full version with setup wizard")
-    print("Run: python3 setup.py")
+    print("Run: python3 advanced-start.py")
     sys.exit(1)
 
 if __name__ == "__main__":
