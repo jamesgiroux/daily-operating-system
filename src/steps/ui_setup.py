@@ -27,8 +27,33 @@ ROLE_CONFIG_MAP = {
 
 
 def get_templates_dir() -> Path:
-    """Get the templates directory path."""
-    return Path(__file__).parent.parent.parent / 'templates'
+    """
+    Get the templates directory path.
+
+    Tries multiple resolution strategies to handle cases where
+    setup is run from different locations or custom workspaces.
+    """
+    import os
+
+    # Try relative to script location first (standard case)
+    script_dir = Path(__file__).parent.parent.parent
+    templates_dir = script_dir / 'templates'
+
+    if templates_dir.exists():
+        return templates_dir
+
+    # Try relative to current working directory
+    cwd_templates = Path.cwd() / 'templates'
+    if cwd_templates.exists():
+        return cwd_templates
+
+    # Try environment variable override
+    env_templates = os.environ.get('DAILYOS_TEMPLATES')
+    if env_templates and Path(env_templates).exists():
+        return Path(env_templates)
+
+    # Fall back to original (will fail with clear error later)
+    return templates_dir
 
 
 def check_nodejs_available() -> tuple[bool, str]:
@@ -105,6 +130,11 @@ def copy_ui_to_workspace(workspace: Path, file_ops) -> bool:
         shutil.rmtree(ui_dst)
 
     shutil.copytree(ui_src, ui_dst)
+
+    # Track for rollback capability
+    if hasattr(file_ops, 'created_dirs'):
+        file_ops.created_dirs.append(ui_dst)
+
     return True
 
 

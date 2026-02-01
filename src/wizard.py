@@ -702,7 +702,7 @@ Requirements:
 """)
 
         # Check if Node.js is available
-        from steps.ui_setup import check_nodejs_available, setup_ui
+        from steps.ui_setup import check_nodejs_available, setup_ui, get_templates_dir
 
         node_ok, node_info = check_nodejs_available()
 
@@ -716,6 +716,17 @@ Requirements:
             print_info("Dashboard installation skipped")
             press_enter_to_continue()
             return True
+
+        # Validate templates exist before proceeding
+        templates_dir = get_templates_dir()
+        ui_templates = templates_dir / 'ui'
+        if not ui_templates.exists():
+            print_error(f"UI templates not found at: {ui_templates}")
+            print_info("This may happen if setup files were moved or partially installed.")
+            print_info("Please run setup.py from the original repository location,")
+            print_info("or set DAILYOS_TEMPLATES environment variable to the templates path.")
+            press_enter_to_continue()
+            return True  # Continue setup without UI
 
         # Run the UI setup
         workspace = self.config['workspace']
@@ -798,7 +809,7 @@ Python tools provide automation for common tasks:
         from steps.directories import create_all_directories
 
         workspace = self.config['workspace']
-        role = self.config.get('role', 'account_owner')
+        role = self.config.get('role', 'customer_success')
 
         create_all_directories(workspace, self.file_ops, role)
 
