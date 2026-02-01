@@ -321,20 +321,181 @@ Generate comprehensive prep by reading from account documentation:
 2. [Blocker or decision needed]
 ```
 
-#### For Internal/Personal Meetings
+#### For Internal Meetings
+
+Internal meetings still deserve prep, just with a different focus on relationship context and shared work.
+
+**1:1 meetings with colleagues you work closely with:**
+
+```markdown
+# [Colleague] 1:1 Prep
+**[Time] | Internal**
+
+## Relationship Context
+*(From CRM or recent interactions)*
+
+| Metric | Value |
+|--------|-------|
+| **Last Interaction** | [Date] |
+| **Working Together On** | [Shared projects/accounts] |
+| **Recent Notes** | [Brief context] |
+
+## Shared Work Status
+*(Projects or accounts you both touch)*
+
+| Project/Account | Your Actions | Their Actions | Status |
+|-----------------|--------------|---------------|--------|
+| [Shared item] | [Your pending items] | [Their pending items] | [Active/On hold] |
+
+## Pre-Read Check
+
+- [ ] Pre-read shared in calendar invite?
+- [ ] Linked doc needs review?
+
+## Potential Topics
+
+Based on shared context:
+1. [Shared work updates]
+2. [Coordination needs]
+3. [Feedback or asks]
+4. [Open questions]
+
+## Notes
+
+```
+
+**Team syncs and larger group meetings:**
+
+```markdown
+# [Meeting Title]
+**[Time] | Internal**
+
+## Attendees
+- [List from calendar]
+
+## Your Updates to Share
+
+**Progress/Wins:**
+- [Recent accomplishments worth sharing]
+- [Milestones reached]
+
+**Blockers/Needs:**
+- [Where you need input or support]
+- [Dependencies on others]
+
+**FYIs:**
+- [Announcements or updates]
+
+## Notes
+
+```
+
+#### For Personal Meetings
 
 Generate minimal placeholder:
 
 ```markdown
 # [Meeting Title]
-**[Time] | [Type]**
-
-## Attendees
-- [List from calendar]
+**[Time] | Personal**
 
 ## Notes
 
 ```
+
+### Step 5B: Update Week Overview with Prep Status
+
+After generating meeting files, update week-00-overview.md to reflect prep progress.
+
+**Key principle:** This happens automatically. User sees updated status without doing anything.
+
+```python
+def update_week_prep_status(today_date):
+    """
+    Update week overview to reflect prep files generated today.
+    If week overview doesn't exist, create a minimal one.
+    """
+    week_overview_path = '_today/week-00-overview.md'
+
+    # Fallback: Create minimal week overview if /week wasn't run
+    if not os.path.exists(week_overview_path):
+        create_minimal_week_overview(calendar_events, today_date)
+
+    week_overview = read_file(week_overview_path)
+
+    for meeting in todays_meetings:
+        # Determine new status based on prep file generation
+        if meeting['type'] == 'customer':
+            if meeting.get('agenda_owner') == 'you':
+                # Agenda draft was generated
+                old_status = '📅 Agenda needed'
+                new_status = '✏️ Draft ready'
+            else:
+                # Prep file was generated
+                old_status = '📋 Prep needed'
+                new_status = '✅ Prep ready'
+
+        elif meeting['type'] == 'project':
+            old_status = '🔄 Bring updates'
+            new_status = '✅ Prep ready'
+
+        elif meeting['type'] == 'internal':
+            old_status = '👥 Context needed'
+            new_status = '✅ Prep ready'
+
+        else:
+            continue  # Skip personal/unknown
+
+        # Update the table row in week overview
+        week_overview = update_table_row(
+            week_overview,
+            match_columns={'Day': format_day(today_date), 'Account/Meeting': meeting['name']},
+            update_column='Prep Status',
+            new_value=new_status
+        )
+
+    write_file(week_overview_path, week_overview)
+
+
+def create_minimal_week_overview(calendar_events, today_date):
+    """
+    Create a lightweight week overview from calendar if /week wasn't run.
+    This ensures /today can work independently.
+    """
+    week_num = get_week_number(today_date)
+    monday = get_monday_of_week(today_date)
+    friday = monday + timedelta(days=4)
+
+    overview_content = f"""# Week Overview: W{week_num:02d} - {monday.strftime('%B %d')}-{friday.strftime('%d, %Y')}
+
+*Minimal overview created by /today - run /week for full planning*
+
+## This Week's Meetings
+
+| Day | Time | Account/Meeting | Category | Prep Status | Meeting Type |
+|-----|------|-----------------|----------|-------------|--------------|
+"""
+
+    # Add meetings from calendar
+    for event in calendar_events:
+        meeting_date = parse_date(event['start'])
+        if monday <= meeting_date <= friday:
+            prep_status = determine_initial_prep_status(event)
+            overview_content += f"| {format_day(meeting_date)} | {format_time(event['start'])} | {event.get('account', event['summary'])} | {event.get('category', '-')} | {prep_status} | {event.get('meeting_type', 'Unknown')} |\n"
+
+    overview_content += """
+---
+
+*Run /week for complete planning including action items, hygiene alerts, and time blocking.*
+"""
+
+    write_file('_today/week-00-overview.md', overview_content)
+```
+
+**Resilience:** If /week hasn't been run:
+- /today still works - reads directly from Google Calendar
+- Creates a minimal week overview on-the-fly
+- All prep files still generated correctly
+- Impact: No week-at-a-glance view, but daily operations unaffected
 
 ### Step 6: Aggregate Action Items
 
@@ -444,8 +605,10 @@ Create `00-overview.md`:
 | Time | Event | Type | Prep Status |
 |------|-------|------|-------------|
 | 9:00 AM | Daily Prep | Personal | - |
-| 11:00 AM | Project Sync | Internal | - |
-| 12:00 PM | **Client Meeting** | **Customer** | See [filename] |
+| 10:00 AM | Manager 1:1 | Internal | ✅ Prep ready |
+| 11:00 AM | Project Sync | Project | ✅ Prep ready |
+| 12:00 PM | **Client Meeting** | **Customer** | ✅ Prep ready - See [filename] |
+| 2:00 PM | **Client B** | **Customer** | ✏️ Draft ready - agenda in 90-agenda-needed/ |
 
 ## Customer Meetings Today
 
@@ -476,8 +639,9 @@ Create `00-overview.md`:
 
 | Meeting | Date | Status | Action |
 |---------|------|--------|--------|
-| [Account] | [Date] | Needs agenda | Draft in 90-agenda-needed/ |
-| [Account] | [Date] | Exists | None |
+| [Account] | [Date] | 📅 Agenda needed | Draft in 90-agenda-needed/ |
+| [Account] | [Date] | ✅ Exists | None |
+| [Account] | [Date] | ✏️ Draft ready | Review and send |
 
 ## Suggested Focus for Downtime
 
