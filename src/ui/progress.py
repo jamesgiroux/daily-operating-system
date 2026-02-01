@@ -53,13 +53,28 @@ class ProgressBar:
 
 
 class Spinner:
-    """Simple spinner for long operations."""
+    """Simple spinner for long operations. Can be used as context manager."""
 
     FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
     def __init__(self, message: str = ""):
         self.message = message
         self.frame_index = 0
+        self._entered = False
+
+    def __enter__(self):
+        """Enter context manager - display initial spinner state."""
+        self._entered = True
+        self.spin()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exit context manager - ensure line is cleared."""
+        if exc_type is not None:
+            # Exception occurred - show failure
+            self.fail(f"{self.message} (error)")
+        # Don't suppress exceptions
+        return False
 
     def spin(self):
         """Display next spinner frame."""
