@@ -494,6 +494,43 @@ Recommended locations:
 
         self.config['workspace'] = workspace
         print_success(f"Workspace: {workspace}")
+
+        # Collect workspace name and organization info
+        print_section("Workspace Identity")
+
+        workspace_name = prompt_text(
+            "Workspace name",
+            default=workspace.name.replace('-', ' ').replace('_', ' ').title()
+        )
+        self.config['workspace_name'] = workspace_name
+
+        print("""
+Organization settings help classify meetings and emails. Internal domains
+are email domains that belong to your organization (e.g., company.com).
+""")
+
+        org_name = prompt_text(
+            "Organization/company name",
+            default=""
+        )
+        self.config['organization_name'] = org_name
+
+        domains_input = prompt_text(
+            "Internal email domains (comma-separated)",
+            default=""
+        )
+        # Parse comma-separated domains
+        if domains_input.strip():
+            domains = [d.strip().lower() for d in domains_input.split(',') if d.strip()]
+        else:
+            domains = []
+        self.config['internal_domains'] = domains
+
+        if domains:
+            print_success(f"Internal domains: {', '.join(domains)}")
+        else:
+            print_info("No internal domains set. You can configure this later in _config/workspace.json")
+
         press_enter_to_continue()
         return True
 
@@ -544,6 +581,11 @@ The Accounts folder structure depends on how you work:
         try:
             self._create_directories()
             print_success("Directory structure created")
+
+            # Write workspace configuration
+            self._write_workspace_config()
+            print_success("Workspace configuration saved")
+
             press_enter_to_continue()
             return True
         except FileOperationError as e:
@@ -662,7 +704,7 @@ To set up Google API:
 
             if not confirm("Have you saved credentials.json?"):
                 print_info("You can complete Google setup later by running:")
-                print(f"  python3 setup.py --google --workspace {workspace}")
+                print(f"  python3 advanced-start.py --google --workspace {workspace}")
                 press_enter_to_continue()
                 return True
 
@@ -805,7 +847,7 @@ Requirements:
         if not ui_templates.exists():
             print_error(f"UI templates not found at: {ui_templates}")
             print_info("This may happen if setup files were moved or partially installed.")
-            print_info("Please run setup.py from the original repository location,")
+            print_info("Please run advanced-start.py from the original repository location,")
             print_info("or set DAILYOS_TEMPLATES environment variable to the templates path.")
             press_enter_to_continue()
             return True  # Continue setup without UI
@@ -840,6 +882,10 @@ Requirements:
         elif node_ok:
             print_warning("Dependencies not installed - run 'npm install' in _ui/")
 
+        # Update workspace config to mark dashboard as installed
+        if result.get('success'):
+            self._update_workspace_config({'features': {'web_dashboard': True}})
+
         print(result.get('startup_instructions', ''))
 
         press_enter_to_continue()
@@ -851,9 +897,24 @@ Requirements:
 
         print("""
 Python tools provide automation for common tasks:
+
+  Inbox Processing:
   - prepare_inbox.py: Prepare documents for processing
   - deliver_inbox.py: Deliver processed documents to PARA
+
+  Daily Operating System:
+  - prepare_today.py / deliver_today.py: Morning dashboard automation
+  - prepare_wrap.py / deliver_wrap.py: End-of-day closure
+  - prepare_week.py / deliver_week.py: Weekly review automation
+
+  Account Management:
   - generate_dashboard.py: Create account dashboards
+
+  Shared Libraries (_tools/lib/):
+  - calendar_utils.py: Calendar API helpers
+  - task_utils.py: Task list parsing
+  - file_utils.py: File operations
+  - meeting_utils.py: Meeting classification
 """)
 
         if not confirm("Install Python tools?"):
@@ -863,6 +924,7 @@ Python tools provide automation for common tasks:
 
         try:
             self._install_python_tools()
+            self._update_workspace_config({'features': {'python_tools': True}})
             print_success("Python tools installed")
             press_enter_to_continue()
             return True
@@ -894,6 +956,82 @@ Python tools provide automation for common tasks:
         role = self.config.get('role', 'customer_success')
 
         create_all_directories(workspace, self.file_ops, role)
+
+    def _write_workspace_config(self):
+        """Write the centralized workspace configuration file."""
+        import json
+        from datetime import datetime
+
+        workspace = self.config['workspace']
+        config_path = workspace / '_config' / 'workspace.json'
+
+        # Ensure _config directory exists
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        config_data = {
+            "$schema": "./workspace-schema.json",
+            "workspace": {
+                "name": self.config.get('workspace_name', workspace.name),
+                "role": self.config.get('role', 'general')
+            },
+            "organization": {
+                "name": self.config.get('organization_name', ''),
+                "internal_domains": self.config.get('internal_domains', [])
+            },
+            "features": {
+                "google_api": self.config.get('google_api', 'skip') != 'skip',
+                "web_dashboard": False,  # Updated later in _step_ui
+                "python_tools": False    # Updated later in _step_python_tools
+            },
+            "metadata": {
+                "created_at": datetime.now().isoformat(),
+                "setup_version": "1.0.0",
+                "last_updated": datetime.now().isoformat()
+            }
+        }
+
+        self.file_ops.write_file(config_path, json.dumps(config_data, indent=2))
+
+        # Also copy the schema file
+        script_dir = Path(__file__).parent.parent
+        schema_src = script_dir / 'templates' / 'config' / 'workspace-schema.json'
+        schema_dst = workspace / '_config' / 'workspace-schema.json'
+        if schema_src.exists():
+            self.file_ops.write_file(schema_dst, schema_src.read_text())
+
+    def _update_workspace_config(self, updates: Dict[str, Any]):
+        """Update specific fields in the workspace configuration file."""
+        import json
+        from datetime import datetime
+
+        workspace = self.config['workspace']
+        config_path = workspace / '_config' / 'workspace.json'
+
+        if not config_path.exists():
+            return  # Config not created yet
+
+        try:
+            with open(config_path) as f:
+                config_data = json.load(f)
+
+            # Deep merge updates
+            for key, value in updates.items():
+                if isinstance(value, dict) and key in config_data:
+                    config_data[key].update(value)
+                else:
+                    config_data[key] = value
+
+            # Update last_updated timestamp
+            if 'metadata' in config_data:
+                config_data['metadata']['last_updated'] = datetime.now().isoformat()
+
+            with open(config_path, 'w') as f:
+                json.dump(config_data, f, indent=2)
+
+        except Exception as e:
+            # Non-fatal - don't break setup if config update fails
+            if self.verbose:
+                print(f"Warning: Could not update workspace config: {e}")
 
     def _init_git(self):
         """Initialize Git repository."""
@@ -1209,6 +1347,13 @@ Personal productivity workspace using the PARA organizational system.
             ('inbox', 'prepare_inbox.py', 'prepare_inbox.py'),
             ('inbox', 'deliver_inbox.py', 'deliver_inbox.py'),
             ('accounts', 'generate_account_dashboard.py', 'generate_account_dashboard.py'),
+            # Daily operating scripts
+            ('daily', 'prepare_today.py', 'prepare_today.py'),
+            ('daily', 'deliver_today.py', 'deliver_today.py'),
+            ('daily', 'prepare_wrap.py', 'prepare_wrap.py'),
+            ('daily', 'deliver_wrap.py', 'deliver_wrap.py'),
+            ('daily', 'prepare_week.py', 'prepare_week.py'),
+            ('daily', 'deliver_week.py', 'deliver_week.py'),
         ]
 
         for subdir, src_name, dst_name in tools:
@@ -1218,6 +1363,16 @@ Personal productivity workspace using the PARA organizational system.
             if src_path.exists():
                 content = src_path.read_text()
                 self.file_ops.write_file(dst_path, content)
+
+        # Install shared library modules to _tools/lib/
+        lib_src = templates_dir / 'lib'
+        lib_dst = tools_dir / 'lib'
+        if lib_src.exists():
+            for lib_file in lib_src.iterdir():
+                if lib_file.is_file() and lib_file.suffix == '.py':
+                    dst_path = lib_dst / lib_file.name
+                    content = lib_file.read_text()
+                    self.file_ops.write_file(dst_path, content)
 
         # Also install google_api.py to .config/google/
         google_src = templates_dir / 'google' / 'google_api.py'

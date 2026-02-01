@@ -607,21 +607,27 @@ class VerificationStep(SetupStep):
 
         self.progress("Verification complete", 100)
 
-        # Convert to UI-friendly format
+        # Convert to UI-friendly format with section and optional info
         checks = []
         for section_name, section in results.get("sections", {}).items():
             if isinstance(section, dict) and "results" in section:
                 for item in section["results"]:
+                    status = item.get("status", "")
+                    is_optional = item.get("required") is False or status == "optional"
                     checks.append({
                         "name": item.get("name", section_name),
-                        "passed": item.get("status") == "ok",
-                        "message": item.get("description", item.get("status", "")),
+                        "section": section_name,
+                        "passed": status == "ok",
+                        "optional": is_optional,
+                        "message": item.get("description", status),
                     })
             elif isinstance(section, dict):
                 # Simple section like git
                 checks.append({
                     "name": section_name.replace("_", " ").title(),
+                    "section": section_name,
                     "passed": section.get("status") == "ok",
+                    "optional": False,
                     "message": section.get("status", ""),
                 })
 
@@ -714,12 +720,77 @@ class CompleteStep(SetupStep):
     step_name = "Complete"
 
     def execute(self) -> Dict[str, Any]:
+        import json
+        from datetime import datetime
+
         workspace = self.workspace
 
-        self.progress("Finalizing setup...", 50)
+        self.progress("Finalizing setup...", 30)
 
-        # Could write a completion marker or log
         if workspace:
+            # Write configuration file with user's choices
+            config_data = {
+                "version": 1,
+                "installedAt": datetime.now().isoformat(),
+                "role": self.config.get("role", "general"),
+                "google": {
+                    "mode": self.config.get("googleApiMode", "skip"),
+                    "calendar": self.config.get("googleApiMode") != "skip",
+                    "gmail": self.config.get("googleApiMode") != "skip",
+                    "sheets": self.config.get("googleApiMode") != "skip",
+                    "docs": self.config.get("googleApiMode") != "skip",
+                },
+                "features": {
+                    "skills": self.config.get("skillsMode", "none") != "none",
+                    "ui": not self.config.get("skipUI", True),
+                    "git": not self.config.get("skipGit", False),
+                },
+            }
+
+            self.progress("Writing configuration...", 60)
+
+            config_path = workspace / ".dailyos-config.json"
+            with open(config_path, "w") as f:
+                json.dump(config_data, f, indent=2)
+
+            # Write centralized workspace configuration
+            self.progress("Writing workspace configuration...", 70)
+            workspace_config_dir = workspace / "_config"
+            workspace_config_dir.mkdir(parents=True, exist_ok=True)
+
+            workspace_config = {
+                "$schema": "./workspace-schema.json",
+                "workspace": {
+                    "name": self.config.get("workspaceName", workspace.name),
+                    "role": self.config.get("role", "general"),
+                },
+                "organization": {
+                    "name": self.config.get("organizationName", ""),
+                    "internal_domains": self.config.get("internalDomains", []),
+                },
+                "features": {
+                    "google_api": self.config.get("googleApiMode", "skip") != "skip",
+                    "web_dashboard": not self.config.get("skipUI", True),
+                    "python_tools": False,  # Will be updated when Python tools installed
+                },
+                "metadata": {
+                    "created_at": datetime.now().isoformat(),
+                    "setup_version": "1.0.0",
+                    "last_updated": datetime.now().isoformat(),
+                },
+            }
+
+            workspace_config_path = workspace_config_dir / "workspace.json"
+            with open(workspace_config_path, "w") as f:
+                json.dump(workspace_config, f, indent=2)
+
+            # Copy the schema file
+            schema_template = Path(__file__).parent.parent.parent / "templates" / "config" / "workspace-schema.json"
+            if schema_template.exists():
+                schema_dest = workspace_config_dir / "workspace-schema.json"
+                shutil.copy(schema_template, schema_dest)
+
+            # Also write completion marker
             completion_marker = workspace / ".dailyos-setup-complete"
             completion_marker.touch()
 
@@ -730,6 +801,7 @@ class CompleteStep(SetupStep):
             "result": {
                 "message": "Daily Operating System is ready!",
                 "workspacePath": str(workspace) if workspace else None,
+                "configWritten": True,
                 "nextSteps": [
                     "Open your workspace in your preferred editor",
                     "Run 'claude' to start Claude Code",

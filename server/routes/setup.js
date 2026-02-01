@@ -299,8 +299,9 @@ async function executeStep(stepId, session, sseResponse) {
       }
 
       try {
-        // Find the last JSON object in stdout
-        const jsonMatch = stdout.match(/\{[\s\S]*\}$/);
+        // Find the last JSON object in stdout (trim to handle trailing newlines)
+        const trimmedOutput = stdout.trim();
+        const jsonMatch = trimmedOutput.match(/\{[\s\S]*\}$/);
         if (jsonMatch) {
           const result = JSON.parse(jsonMatch[0]);
           resolve({
@@ -310,12 +311,14 @@ async function executeStep(stepId, session, sseResponse) {
             error: result.error,
           });
         } else {
+          console.error('No JSON match found in stdout:', trimmedOutput);
           resolve({
             success: true,
             result: { output: stdout },
           });
         }
       } catch (e) {
+        console.error('JSON parse error:', e.message, 'stdout:', stdout);
         resolve({
           success: true,
           result: { output: stdout },

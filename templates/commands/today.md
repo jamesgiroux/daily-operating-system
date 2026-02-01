@@ -4,66 +4,140 @@ Populate `_today/` with everything needed for today's work.
 
 ## When to Use
 
-Run every morning during your "Daily Prep" time block. This command:
+Run every morning during "Daily Prep" calendar block. This command:
 - Preps you for all meetings
 - Surfaces action items due today
-- Generates draft agendas for upcoming meetings
+- Generates draft agendas for upcoming customer meetings
 - Suggests focus areas for downtime
 
-## Philosophy
+## Three-Phase Execution
 
-**Value shows up without asking.** The system does work before you arrive.
+This command uses a three-phase approach for efficiency:
 
-**Skip a day, nothing breaks.** Each run rebuilds fresh - no accumulated guilt from missed days.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    THREE-PHASE COMMAND FLOW                     │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 1: PREPARATION (Python Script)                           │
+│  • Fetch calendar events, classify meetings                     │
+│  • Aggregate action items, check files                          │
+│  • Fetch emails, identify agenda needs                          │
+│  • Output: _today/.today-directive.json                         │
+│                                                                 │
+│  Phase 2: AI ENRICHMENT (Claude)                                │
+│  • Generate meeting prep content                                │
+│  • Analyze email tone, draft responses                          │
+│  • Synthesize action priorities                                 │
+│  • Create agenda drafts                                         │
+│                                                                 │
+│  Phase 3: DELIVERY (Python Script)                              │
+│  • Write files to _today/                                       │
+│  • Update week overview prep status                             │
+│  • Optional: Create calendar blocks                             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Execution Steps
 
-### Step 0: Resilience Checks
+### Phase 1: Run Preparation Script
 
-Before starting, verify yesterday's closure and catch issues:
+**ALWAYS RUN THIS FIRST:**
 
-```python
-from datetime import datetime, timedelta
-import os
-import glob
-
-yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
-warnings = []
-
-# 1. Check if /wrap ran yesterday (archive should exist)
-archive_path = f"_today/archive/{yesterday}"
-if not os.path.exists(archive_path):
-    warnings.append(f"Yesterday's files not archived - /wrap may not have run")
-
-# 2. Check for unprocessed transcripts from yesterday
-yesterday_transcripts = glob.glob(f"_inbox/*{yesterday}*transcript*.md")
-if yesterday_transcripts:
-    warnings.append(f"{len(yesterday_transcripts)} transcripts from yesterday not processed")
-
-# 3. Check for action items due yesterday still open
-overdue_from_yesterday = check_overdue_actions(yesterday)
-if overdue_from_yesterday:
-    warnings.append(f"{len(overdue_from_yesterday)} action items due yesterday still open")
-
-# 4. Check if master task list exists
-if not os.path.exists("_today/tasks/master-task-list.md"):
-    warnings.append("Master task list not found - will create")
+```bash
+python3 /Users/jamesgiroux/Documents/VIP/_tools/prepare_today.py
 ```
 
-**Display warnings in overview if any exist:**
-```markdown
-## Attention Needed
+This script performs all deterministic operations:
+- Resilience checks (yesterday's archive, unprocessed transcripts)
+- Archive yesterday's files if needed
+- Fetch account data from Google Sheet
+- Fetch today's calendar and classify meetings
+- Aggregate action items from master task list
+- Fetch and classify emails
+- Identify agendas needed for look-ahead
+- Check existing files in _today/
 
-- Yesterday's files not archived - running cleanup now
-- 2 transcripts from yesterday not processed
+**Output:** `_today/.today-directive.json` containing structured data for Phase 2.
 
-**Suggested:** Run `/wrap` to reconcile, or address items manually.
+**Options:**
+- `--skip-archive` - Don't archive yesterday's files
+- `--skip-email` - Don't fetch emails
+- `--output FILE` - Custom output path
+
+### Phase 2: AI Enrichment (Claude Tasks)
+
+After the script completes, read the directive and execute AI tasks:
+
+```bash
+# Read the directive
+cat /Users/jamesgiroux/Documents/VIP/_today/.today-directive.json
 ```
 
-**Auto-remediation:**
-- If archive missing: Run archive step for yesterday before proceeding
-- If task list missing: Create from template
-- Other issues: Surface warnings but continue (don't block)
+**For each task in directive['ai_tasks'], execute based on type:**
+
+#### Customer Meeting Prep (`generate_customer_prep`)
+
+For each customer meeting in the directive, generate prep using these sources:
+1. **Account Dashboard** (PRIMARY) - `Accounts/[Account]/01-Customer-Information/*-dashboard.md`
+2. **Recent Meetings** - `Accounts/[Account]/02-Meetings/*.md` (last 2-3)
+3. **Action Items** - `Accounts/[Account]/04-Action-Items/current-actions.md`
+4. **Clay** (if available) - Attendee relationship intel
+
+**Generate prep file:** `_today/[NN]-[HHMM]-customer-[account]-prep.md`
+
+Reference: The original Step 4-5 sections below for detailed prep format.
+
+#### Internal Meeting Prep (`generate_internal_prep`)
+
+Generate relationship-aware prep:
+- Clay lookup for attendees
+- Shared accounts context
+- Political intelligence if relevant
+
+#### Project Meeting Prep (`generate_project_prep`)
+
+Generate project-focused prep:
+- Project status from `Projects/[Project]/00-Index.md`
+- Recent activity and blockers
+
+#### Email Summarization (`summarize_email`)
+
+For high-priority emails:
+- Fetch full thread if applicable
+- Classify: OPPORTUNITY / INFO / RISK / ACTION NEEDED
+- Extract specific asks for James
+- Recommend action and owner
+
+#### Agenda Drafts (`generate_agenda_draft`)
+
+For meetings in look-ahead window needing agendas:
+- Generate draft in `_today/90-agenda-needed/[account]-[date].md`
+
+### Phase 3: Run Delivery Script
+
+**AFTER completing AI tasks:**
+
+```bash
+python3 /Users/jamesgiroux/Documents/VIP/_tools/deliver_today.py
+```
+
+This script:
+- Writes 00-overview.md with schedule and summaries
+- Writes 80-actions-due.md with action items
+- Writes 83-email-summary.md with email triage
+- Writes 81-suggested-focus.md with priorities
+- Updates week overview with prep status
+- Cleans up directive file
+
+**Options:**
+- `--skip-calendar` - Don't create calendar blocks
+- `--keep-directive` - Keep directive file for debugging
+
+---
+
+## Legacy Reference: Detailed Prep Formats
+
+The following sections are reference material for Phase 2 AI enrichment.
 
 ### Step 1: Archive Yesterday and Clear _today/
 
@@ -75,142 +149,239 @@ if not os.path.exists("_today/tasks/master-task-list.md"):
 
 ```bash
 # Get yesterday's date
-YESTERDAY=$(date -v-1d +%Y-%m-%d)  # macOS
-# YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)  # Linux
+YESTERDAY=$(date -v-1d +%Y-%m-%d)
 
 # Archive yesterday's content (if exists)
-if [ -f "_today/00-overview.md" ]; then
-    mkdir -p _today/archive/$YESTERDAY
+if [ -f "/Users/jamesgiroux/Documents/VIP/_today/00-overview.md" ]; then
+    mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY
 
-    # Move all daily files EXCEPT week-* files
-    for f in _today/*.md; do
+    # Move all daily files EXCEPT week-* files (NOT archive, tasks, or 90-agenda-needed folders)
+    # IMPORTANT: Preserve week-* files - they persist until /week archives them
+    for f in /Users/jamesgiroux/Documents/VIP/_today/*.md; do
         filename=$(basename "$f")
         if [[ ! "$filename" == week-* ]]; then
-            mv "$f" _today/archive/$YESTERDAY/ 2>/dev/null
+            mv "$f" /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/ 2>/dev/null
         fi
     done
 
     # Move agenda-needed drafts if any
-    if [ -d "_today/90-agenda-needed" ] && [ "$(ls -A _today/90-agenda-needed/ 2>/dev/null)" ]; then
-        mkdir -p _today/archive/$YESTERDAY/90-agenda-needed
-        mv _today/90-agenda-needed/*.md _today/archive/$YESTERDAY/90-agenda-needed/ 2>/dev/null
+    if [ -d "/Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed" ] && [ "$(ls -A /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/ 2>/dev/null)" ]; then
+        mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/90-agenda-needed
+        mv /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/*.md /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/90-agenda-needed/ 2>/dev/null
     fi
 fi
 
 # Create fresh structure for today (tasks/ persists - don't recreate)
-mkdir -p _today/90-agenda-needed
-mkdir -p _today/tasks
+mkdir -p /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed
+mkdir -p /Users/jamesgiroux/Documents/VIP/_today/tasks
 ```
 
 **IMPORTANT:**
 - The `tasks/` directory is NEVER archived - it persists across days.
 - The `week-*` files are NEVER archived by /today - they persist until /week archives them.
 
-### Step 1.5: Process Inbox (Clear Yesterday's Documents)
-
-Before building today's dashboard, clear any documents from `_inbox/`:
-
-```python
-# Check if inbox has files to process
-inbox_files = glob.glob("_inbox/*.md")
-inbox_files = [f for f in inbox_files if not os.path.basename(f).startswith('.')]
-
-if inbox_files:
-    print(f"Found {len(inbox_files)} files in _inbox/ to process")
-    # Invoke /inbox skill to process all files
-    # This enriches transcripts, summaries, and routes to PARA locations
+**Archive structure:**
+```
+_today/
+├── 00-overview.md              # Today's files (archived daily)
+├── 01-1100-project-agentforce.md
+├── ...
+├── week-00-overview.md         # PERSISTENT - archived only by /week
+├── week-01-customer-meetings.md
+├── week-02-actions.md
+├── week-03-hygiene-alerts.md
+├── week-04-focus.md
+├── 90-agenda-needed/           # Today's draft agendas
+├── tasks/                      # PERSISTENT - never archived
+│   └── master-task-list.md
+└── archive/                    # Rolling archive (cleared by /week)
+    ├── 2026-01-07/
+    │   ├── 00-overview.md
+    │   ├── 01-customer-nielsen-prep.md
+    │   └── 90-agenda-needed/
+    ├── 2026-01-06/
+    └── 2026-01-05/
 ```
 
-**Why process inbox during /today?**
-- Yesterday's meeting transcripts become today's context
-- Action items extracted from transcripts appear in today's actions
-- Account dashboards stay current with latest meeting data
-- Zero accumulated backlog - fresh start each day
+**Note:** Daily archives are NOT auto-deleted by /today. They persist until /week moves them to `_inbox/` for canonical processing.
 
-**Integration with /inbox skill:**
-```
-1. Run Phase 1: python3 _tools/prepare_inbox.py
-2. Execute Phase 2: Claude enrichment (summaries, actions, tags)
-3. Run Phase 3: python3 _tools/deliver_inbox.py
-```
-
-**If inbox empty:** Skip this step and proceed.
-
-**If processing fails:**
-- Log warning in overview
-- Continue with rest of /today
-- Surface in "Attention Needed" section
-
-### Step 2: Fetch Account Data (Optional)
-
-If you have a Google Sheet with account data, fetch it:
+### Step 2: Fetch Account Data from Google Sheet
 
 ```bash
-python3 .config/google/google_api.py sheets get "YOUR_SHEET_ID" "A1:Z50"
+python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py sheets get "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g" "A1:AB50"
 ```
 
-Configure columns in your CLAUDE.md to map:
-- Account name
-- Email domain (for meeting classification)
-- Key metrics (ARR, renewal date, etc.)
-- Contact frequency expectations
+Parse the JSON to build account lookup and domain mapping:
 
-**If no account sheet configured:** Skip this step, classify meetings based on attendee domains.
+| Column | Field | Usage |
+|--------|-------|-------|
+| A | Account name | Display name |
+| D | Lifecycle Ring | Context for prep |
+| I | 2025 ARR | Display in prep |
+| F | Last Engagement Date | Stale contact alerts |
+| P | Next Renewal Date | Renewal countdown |
+| X | Meeting Cadence | Engagement expectations |
+| **AB** | **Email Domain** | **Domain → Account mapping** |
+
+**Build Domain Mapping from Sheet:**
+
+```python
+# Parse Sheet data to create domain → account lookup
+domain_map = {}
+for row in sheet_data[1:]:  # Skip header
+    account_name = row[0]   # Column A
+    email_domain = row[27] if len(row) > 27 else None  # Column AB
+    if email_domain:
+        domain_map[email_domain] = account_name
+
+# Multi-BU domains (same domain, multiple accounts)
+multi_bu_domains = ['salesforce.com', 'hilton.com', 'coxautoinc.com']
+```
+
+**Multi-BU Accounts** (require title-matching or user prompt):
+- `salesforce.com` → 8 BUs (Digital Experience, AppExchange, Engineering, etc.)
+- `hilton.com` → 5 BUs (Domestic, Careers, Corporate, B2B Engagement, Newsroom)
+- `coxautoinc.com` → 4 BUs (Consumer Brands, Corporate Services B2B, Diversification, Enterprises)
 
 ### Step 3: Fetch Today's Calendar
 
 ```bash
-python3 .config/google/google_api.py calendar list 1
+python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 1
 ```
 
 Parse JSON output. For each event extract:
 - `id`: Event ID
 - `summary`: Meeting title
-- `start`: Start time
+- `start`: Start time (parse to get HHMM for filename)
 - `end`: End time
 - `attendees`: List of email addresses
 
-**Filter out declined events** by checking responseStatus.
+**Filter out declined events:**
+For events where you need detailed response status, use `calendar get <event_id>` to check if your responseStatus is "declined". Skip events where you declined.
 
-### Step 3.5: Scan Email Inbox (Optional)
-
-If Gmail API is configured:
-
-```bash
-python3 .config/google/google_api.py gmail search "is:unread in:inbox" 30
+```python
+# Example filter logic
+for event in events:
+    # Get full event details if needed
+    if is_multi_attendee(event):
+        details = get_event_details(event['id'])
+        my_response = find_my_response(details['attendees'], 'your.email@company.com')
+        if my_response == 'declined':
+            continue  # Skip this event
 ```
 
-**Classification:**
+### Step 3.5: Scan Email Inbox
+
+Fetch recent/unread emails and classify by priority:
+
+```bash
+python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py gmail search "is:unread in:inbox" 30
+```
+
+**Classification (from /email-scan logic):**
 
 | Priority | Criteria | Action |
 |----------|----------|--------|
-| **HIGH** | From customer/client domain, from leadership, action words in subject | Surface in overview with full summary |
-| **MEDIUM** | Internal colleagues, meeting-related | Note count |
-| **LOW** | Newsletters, automated notifications | Archive automatically |
+| **HIGH** | From customer domain (match to Sheet), from leadership, action words in subject | Surface in overview with full summary |
+| **MEDIUM** | Internal colleagues, meeting-related, P2 notifications | Note count |
+| **LOW** | Newsletters, GitHub (no @mention), automated | Archive automatically |
 
-Create `83-email-summary.md` with HIGH priority email summaries.
+**CRITICAL: For HIGH priority emails, provide actual summaries not just snippets.**
+
+Reference: `.claude/commands/email-scan.md` → Step 4: Thread Summarization Framework
+
+For each HIGH priority email:
+
+1. **Check if threaded** (threadId != id means it's part of a conversation)
+2. **If threaded, fetch full thread** to understand conversation arc
+3. **Summarize with classification:**
+
+| Type | Indicator | Icon |
+|------|-----------|------|
+| OPPORTUNITY | Expansion, new work, positive signal | 🟢 |
+| INFORMATIONAL | FYI, status update, no action needed | 🟡 |
+| RISK | Concern, complaint, churn signal, blocker | 🔴 |
+| ACTION NEEDED | Explicit ask for James | 🔵 |
+
+4. **For each HIGH priority email, answer:**
+   - What's the conversation arc? (Who initiated, what's discussed, current status)
+   - Is there a specific ask for James? (Yes/No, what and by when)
+   - Who is the owner? (James, or someone else - e.g., "Renan handling, monitor only")
+   - What action (if any) should James take?
+
+**Email Summary for Overview:**
+```python
+email_summary = {
+    'high_priority': [],      # Need attention - with full summaries
+    'customer_emails': [],    # From accounts (with context and classification)
+    'action_requested': [],   # Explicit action needed
+    'medium_count': 0,        # Labeled for later
+    'archived_count': 0       # Noise removed
+}
+```
+
+**Integration with meetings:**
+If a HIGH priority email is from an account with a meeting today:
+- Add email context to that meeting's prep file
+- Flag: "📧 Email from [sender] received [time] - may need discussion"
+
+**Output file:** `83-email-summary.md` - Must include:
+- Conversation arc (not just snippet)
+- Classification type with reasoning
+- Specific ask identification
+- "For James" section with recommended action and owner
 
 ### Step 4: Classify Each Meeting
 
+For each event, check attendee domains:
+
 ```
-STEP 1: Check for known PROJECTS first
+STEP 1: Check for known PROJECTS first (before customer classification)
+
+Known projects with external partners:
+- "Agentforce" → Projects/Agentforce/ (partners: @salesforce.com, @rtcamp.com)
+- [Add other projects as needed]
 
 IF meeting title contains known project name:
     type = "project"
-    → Generate project meeting prep
+    project = matched project name
+    → Generate project meeting prep (not customer prep)
 
 STEP 2: If not a project, classify by attendees
 
-IF no attendees OR only you:
+IF no attendees OR only owner:
     type = "personal"
+    account = None
 
-ELSE IF all attendees are internal (your organization's domain):
+ELSE IF all attendees are from internal domains (defined in _config/workspace.json):
     type = "internal"
+    account = None
 
 ELSE (external attendees present):
-    Match external domains to accounts (if account data available)
-    type = "customer" or "external"
+    Extract external domains
+    Match to domain mapping above
+
+    IF exactly one account matched:
+        type = "customer"
+        account = matched account name
+
+    ELSE IF multiple accounts matched (e.g., @salesforce.com with 8 BUs):
+        type = "customer"
+        Use AskUserQuestion: "Which BU is this meeting for? [list options]"
+        account = user's answer
+
+    ELSE (unknown external domain):
+        type = "external"
+        account = None
+        Note the unknown domain for future mapping
 ```
+
+**Project Detection Logic:**
+
+| Project | Title Keywords | Partner Domains | Location |
+|---------|---------------|-----------------|----------|
+| Agentforce | "Agentforce", "VIP <> Salesforce" | @salesforce.com, @rtcamp.com | Projects/Agentforce/ |
+| [Add others as identified] | | | |
 
 ### Step 5: Generate Meeting Files (Numbered by Time)
 
@@ -220,7 +391,7 @@ Create files in chronological order with naming convention:
 **File numbering:**
 - `00` = overview (always first)
 - `01-79` = meetings in chronological order
-- `80-89` = reference documents (actions, focus, email summary)
+- `80-89` = reference documents (actions, focus)
 - `90-99` = action-needed items (agendas)
 
 **Time-aware behavior:**
@@ -231,72 +402,242 @@ from datetime import datetime
 current_time = datetime.now()
 
 def get_meeting_status(meeting_start, meeting_end):
+    """
+    Returns: 'past', 'in_progress', 'upcoming'
+    """
     if current_time > meeting_end:
         return 'past'
     elif current_time >= meeting_start:
         return 'in_progress'
     else:
         return 'upcoming'
+
+# For each meeting:
+status = get_meeting_status(meeting['start'], meeting['end'])
+
+if status == 'past':
+    # Don't generate full prep
+    # Mark as "✓ Past" in overview
+    # Still include in file list but with minimal content
+
+elif status == 'in_progress':
+    # Mark as "🔴 In Progress" in overview
+    # Include prep link in case user needs quick reference
+
+else:  # upcoming
+    # Generate full prep for customer meetings
+    # Mark as "Upcoming" in overview
 ```
 
+**Meeting Status Display:**
 | Status | Icon | Action |
 |--------|------|--------|
-| Past | Done | Skip prep generation, minimal file |
-| In Progress | Active | Link to existing prep if available |
-| Upcoming | Pending | Generate full prep |
+| Past | ✓ | Skip prep generation, minimal file |
+| In Progress | 🔴 | Link to existing prep if available |
+| Upcoming | ⏳ | Generate full prep for customer meetings |
 
-#### For Customer/Client Meetings
+#### For CUSTOMER Meetings
 
-Generate comprehensive prep by reading from account documentation:
+**IMPORTANT**: The **Account Dashboard** is the PRIMARY source of truth for customer prep.
+
+Reference: `.claude/skills/daily-csm/MEETING-PREP.md`
+
+**Step-by-step:**
+
+1. **Load Account Dashboard** (PRIMARY SOURCE):
+   ```bash
+   # Find account folder (handle multi-BU structure)
+   ls Accounts/ | grep -i "[Account]"
+   # OR for multi-BU:
+   ls Accounts/Salesforce/ | grep -i "[BU-Name]"
+   ```
+   ```
+   Read: Accounts/[Account]/01-Customer-Information/[account]-account-dashboard.md
+   ```
+
+   **Key Dashboard Sections to Extract:**
+   | Section | Use For |
+   |---------|---------|
+   | Executive Summary | Quick context, current state |
+   | Quick View | ARR, Ring, Health, Renewal date, Last Contact |
+   | ⚠️ Current Risks | What to address/monitor |
+   | ✅ Recent Wins | What to acknowledge/build on |
+   | 🎯 Next Actions | Open commitments |
+   | Stakeholder Map | Who's in the meeting, their role/influence |
+   | Value Gaps | Opportunities to explore |
+   | Unknown/Need to Discover | Questions to ask |
+
+2. **Check Recent Activity** (SUPPLEMENT dashboard):
+   ```
+   Glob: Accounts/[Account]/02-Meetings/*.md (last 3 files by date)
+   Read most recent meeting summary for "Since Last Meeting" context
+
+   Glob: Accounts/[Account]/04-Action-Items/*.md
+   Read current-actions.md (or most recent) for open items
+   ```
+
+3. **Check for Stale Data**:
+   - Dashboard "Last Updated" date > 30 days: add ⚠️ warning
+   - Action file last modified > 30 days: add ⚠️ warning
+   - If conflict between dashboard and action file: note discrepancy
+
+3.5. **Lookup Attendees in Clay** (if Clay MCP available):
+   For each external attendee email from the calendar event:
+
+   ```python
+   # Search Clay for each external attendee
+   for attendee_email in external_attendees:
+       # Extract name/company from email domain
+       name = extract_name_from_email(attendee_email)
+       company = map_domain_to_company(attendee_email)
+
+       # Search Clay
+       contact = mcp__clay__searchContacts(
+           query=name,
+           company_name=[company] if company else [],
+           limit=1
+       )
+
+       if contact:
+           # Get full details
+           details = mcp__clay__getContact(contact['id'])
+           clay_intel.append({
+               'name': contact['name'],
+               'title': contact.get('headline'),
+               'last_interaction': contact.get('last_interaction_date'),
+               'score': contact.get('score'),
+               'linkedin': details.get('social_links', [])[0] if details.get('social_links') else None,
+               'notes': details.get('notes', [])
+           })
+   ```
+
+   **Staleness thresholds:**
+   | Days Since Last Interaction | Alert |
+   |-----------------------------|-------|
+   | 0-60 | (none) - relationship is fresh |
+   | 61-180 | ⚠️ May need warming |
+   | >180 | 🔴 Stale - re-establish context |
+
+   **Score interpretation:**
+   | Score | Meaning |
+   |-------|---------|
+   | >500 | Strong relationship |
+   | 100-500 | Moderate relationship |
+   | <100 | Weak/new - extra prep needed |
+
+4. **Generate Prep Summary** using this format:
 
 ```markdown
 # [Account] Call Prep
 **[Date] | [Meeting Title]**
 
 ## Quick Context
+*(From: [account]-account-dashboard.md → Quick View)*
 
 | Metric | Value |
 |--------|-------|
-| **Status** | [Account status] |
-| **Key Metric** | [e.g., ARR, contract value] |
-| **Next Milestone** | [Date] |
+| **Ring** | [Ring] - [Implication from dashboard] |
+| **ARR** | $[Amount] |
+| **Health** | [Score/Status] |
+| **Renewal** | [Date] ([X months]) |
 | **Last Contact** | [Date] - [Topic] |
 
 ## Attendees
+*(Cross-reference: Dashboard → Stakeholder Map + Clay)*
 
-| Name | Role | Notes |
-|------|------|-------|
-| [Name] | [Role] | [Context] |
+| Name | Role | Influence | Notes |
+|------|------|-----------|-------|
+| [Name] | [Role] | [High/Med/Low] | [From stakeholder map] |
+
+## Attendee Intelligence
+*(From Clay - if available)*
+
+| Attendee | Title | Last Interaction | Score | Alert |
+|----------|-------|------------------|-------|-------|
+| [Name] | [Headline from Clay] | [Date] | [Score] | [⚠️ if stale] |
+
+**Quick Links:**
+- [Name]: [LinkedIn](url) | email@company.com
+
+**Not in Clay:** [unknown emails - consider adding after meeting]
+
+**Recent Notes:** [Any Clay notes about key attendees]
 
 ## Since Last Meeting
+*(From: [most-recent-meeting-summary.md])*
 
-[Summary from most recent meeting notes]
+[Summary of key points, decisions, and commitments from last meeting]
+
+**Source**: `Accounts/[Account]/02-Meetings/[filename].md`
 
 ## Open Action Items
+*(From: Dashboard → Next Actions + Action Items file)*
 
 - [ ] **[Action]** - Owner: [name] - Due: [date]
   - **Context**: [Why this action exists]
-  - **Source**: [file path]
+  - **Requested by**: [Who initiated]
+  - **Source**: `[path/to/source-file.md]`
+  - **Related to**: [Project/initiative]
+
+Example:
+- [ ] **Review Gustavo's Node.js/log analysis support ticket** - Owner: James - Due: Dec 18
+  - **Context**: Customer has 40GB of logs over 4 days, needs analysis tooling to diagnose performance issues
+  - **Requested by**: Renan (on behalf of Gustavo at Nielsen)
+  - **Source**: `Accounts/Nielsen/02-Meetings/2025-12-15-summary-nielsen-vip-sync.md`
+  - **Related to**: Node.js migration support
+
+**⚠️ Action file last updated: [date]** (if >30 days, show warning)
+
+## Current Risks to Monitor
+*(From: Dashboard → ⚠️ Current Risks)*
+
+- [ ] **[Risk]**
+  - **Source**: `[account]-account-dashboard.md`
+
+## Recent Wins to Acknowledge
+*(From: Dashboard → ✅ Recent Wins)*
+
+- **[Win]** ([Date])
+  - **Source**: `[account]-account-dashboard.md`
 
 ## Suggested Talking Points
+*(Synthesized from dashboard + recent meetings)*
 
 1. **Follow up on**: [from open actions]
-2. **Check in on**: [from recent discussions]
-3. **Explore**: [opportunity or concern]
+   - **Reference**: `[source-file.md]`
+2. **Check in on**: [from success plan objectives]
+   - **Reference**: `[account]-account-dashboard.md → Success Plan`
+3. **Explore**: [expansion or value delivery opportunity]
+   - **Reference**: `[account]-account-dashboard.md → Value Gaps`
 
 ## Questions to Ask
+*(From: Dashboard → Unknown/Need to Discover)*
 
 - [Discovery question]
+  - **Source**: `[account]-account-dashboard.md`
 - [Follow-up from previous discussion]
+  - **Source**: `[meeting-summary.md]`
 
 ## Key References
 | Document | Path | Last Updated |
 |----------|------|--------------|
-| Account Dashboard | `path/to/dashboard.md` | [Date] |
-| Last Meeting | `path/to/meeting.md` | [Date] |
+| Account Dashboard | `Accounts/[Account]/01-Customer-Information/[account]-account-dashboard.md` | [Date] |
+| Last Meeting Summary | `Accounts/[Account]/02-Meetings/[filename].md` | [Date] |
+| Action Items | `Accounts/[Account]/04-Action-Items/current-actions.md` | [Date] |
+| Success Plan | `Accounts/[Account]/success-plan.md` | [Date] |
 ```
 
-#### For Project Meetings
+#### For PROJECT Meetings
+
+Generate project-focused prep by reading from Projects/ directory:
+
+1. **Load Project Context**:
+   ```
+   Read: Projects/[Project]/00-Index.md (or similar overview)
+   Glob: Projects/[Project]/*.md (recent files)
+   ```
+
+2. **Generate Project Prep**:
 
 ```markdown
 # [Project] Sync
@@ -304,11 +645,11 @@ Generate comprehensive prep by reading from account documentation:
 
 ## Project Context
 - **Project**: [Project Name]
-- **Status**: [Current status]
-- **Partners**: [List partners if applicable]
+- **Status**: [From project docs]
+- **Partners**: [List partner organizations]
 
 ## Attendees
-- [Name] ([Organization]) - [Role in project]
+- [Name] ([Company]) - [Role in project]
 
 ## Recent Activity
 [Summary from recent project files]
@@ -319,33 +660,91 @@ Generate comprehensive prep by reading from account documentation:
 ## Discussion Topics
 1. [Topic from recent activity]
 2. [Blocker or decision needed]
+
+## Notes
+
 ```
 
-#### For Internal Meetings
+#### For INTERNAL Meetings
 
-Internal meetings still deserve prep, just with a different focus on relationship context and shared work.
+Internal meetings still deserve prep, just with a different focus. Generate relationship-aware prep.
 
-**1:1 meetings with colleagues you work closely with:**
+**Data Sources for Internal Prep:**
+- Clay: Relationship score, last interaction, notes
+- Google Sheet: Find colleague's accounts (match by domain or name)
+- Account action files: Find items owned by either party
+- Political intelligence folder: Any relevant context
+
+**Step-by-step:**
+
+1. **Lookup Attendee in Clay** (if Clay MCP available):
+   ```python
+   for attendee_email in internal_attendees:
+       name = extract_name_from_email(attendee_email)
+
+       contact = mcp__clay__searchContacts(
+           query=name,
+           company_name=['Automattic', 'WordPress VIP'],
+           limit=1
+       )
+
+       if contact:
+           details = mcp__clay__getContact(contact['id'])
+           clay_intel = {
+               'last_interaction': contact.get('last_interaction_date'),
+               'score': contact.get('score'),
+               'notes': details.get('notes', [])
+           }
+   ```
+
+2. **Find Shared Accounts** (if applicable):
+   ```python
+   # Check if this colleague shares any accounts with James
+   # Look in Google Sheet for accounts where they're listed as co-owner
+   # Or check account files for their name in stakeholder/owner fields
+
+   shared_accounts = find_shared_accounts(attendee_email, account_data)
+   # Returns: [{'account': 'Salesforce DMT', 'ring': 'Summit', 'your_actions': [...], 'their_actions': [...]}]
+   ```
+
+3. **Check Political Intelligence** (if exists):
+   ```
+   Glob: Leadership/06-Political-Intelligence/*.md
+   Grep: [attendee name] or [attendee email domain]
+   ```
+
+4. **Generate Internal Prep**:
 
 ```markdown
 # [Colleague] 1:1 Prep
 **[Time] | Internal**
 
 ## Relationship Context
-*(From CRM or recent interactions)*
+*(From Clay - if available)*
 
 | Metric | Value |
 |--------|-------|
-| **Last Interaction** | [Date] |
-| **Working Together On** | [Shared projects/accounts] |
-| **Recent Notes** | [Brief context] |
+| **Last Interaction** | [Date from Clay] |
+| **Relationship Score** | [Score from Clay] |
+| **Recent Notes** | [Brief from Clay notes] |
 
-## Shared Work Status
-*(Projects or accounts you both touch)*
+## Shared Account Status
+*(Accounts you both work on - if applicable)*
 
-| Project/Account | Your Actions | Their Actions | Status |
-|-----------------|--------------|---------------|--------|
-| [Shared item] | [Your pending items] | [Their pending items] | [Active/On hold] |
+| Account | Ring | Your Actions | Their Actions | Status |
+|---------|------|--------------|---------------|--------|
+| [Account] | [Ring] | [Your pending items] | [Their pending items] | [Active/On hold] |
+
+**Cross-Account Context:**
+- [Any recent developments on shared accounts]
+- [Alignment opportunities or blockers]
+
+## Political/Relational Context
+*(From Leadership/06-Political-Intelligence/ - if available)*
+
+- [Any relevant dynamics, sensitivities, or positioning notes]
+- [Working relationship observations]
+- [Stakeholder alignment context]
 
 ## Pre-Read Check
 
@@ -355,16 +754,16 @@ Internal meetings still deserve prep, just with a different focus on relationshi
 ## Potential Topics
 
 Based on shared context:
-1. [Shared work updates]
-2. [Coordination needs]
-3. [Feedback or asks]
-4. [Open questions]
+1. [Shared account updates]
+2. [Project coordination]
+3. [Feedback or coaching]
+4. [Open questions or asks]
 
 ## Notes
 
 ```
 
-**Team syncs and larger group meetings:**
+**Lighter-weight internal prep** (for team syncs, large group meetings):
 
 ```markdown
 # [Meeting Title]
@@ -374,23 +773,17 @@ Based on shared context:
 - [List from calendar]
 
 ## Your Updates to Share
+*(Based on your accounts/projects)*
 
-**Progress/Wins:**
-- [Recent accomplishments worth sharing]
-- [Milestones reached]
-
-**Blockers/Needs:**
-- [Where you need input or support]
-- [Dependencies on others]
-
-**FYIs:**
-- [Announcements or updates]
+- [Recent wins or progress]
+- [Blockers needing input]
+- [Announcements or FYIs]
 
 ## Notes
 
 ```
 
-#### For Personal Meetings
+#### For PERSONAL Meetings
 
 Generate minimal placeholder:
 
@@ -448,7 +841,7 @@ def update_week_prep_status(today_date):
         # Update the table row in week overview
         week_overview = update_table_row(
             week_overview,
-            match_columns={'Day': format_day(today_date), 'Account/Meeting': meeting['name']},
+            match_columns={'Day': format_day(today_date), 'Account/Meeting': meeting['account']},
             update_column='Prep Status',
             new_value=new_status
         )
@@ -471,8 +864,8 @@ def create_minimal_week_overview(calendar_events, today_date):
 
 ## This Week's Meetings
 
-| Day | Time | Account/Meeting | Category | Prep Status | Meeting Type |
-|-----|------|-----------------|----------|-------------|--------------|
+| Day | Time | Account/Meeting | Ring | Prep Status | Meeting Type |
+|-----|------|-----------------|------|-------------|--------------|
 """
 
     # Add meetings from calendar
@@ -480,7 +873,7 @@ def create_minimal_week_overview(calendar_events, today_date):
         meeting_date = parse_date(event['start'])
         if monday <= meeting_date <= friday:
             prep_status = determine_initial_prep_status(event)
-            overview_content += f"| {format_day(meeting_date)} | {format_time(event['start'])} | {event.get('account', event['summary'])} | {event.get('category', '-')} | {prep_status} | {event.get('meeting_type', 'Unknown')} |\n"
+            overview_content += f"| {format_day(meeting_date)} | {format_time(event['start'])} | {event.get('account', event['summary'])} | {event.get('ring', '-')} | {prep_status} | {event.get('meeting_type', 'Unknown')} |\n"
 
     overview_content += """
 ---
@@ -499,17 +892,48 @@ def create_minimal_week_overview(calendar_events, today_date):
 
 ### Step 6: Aggregate Action Items
 
-Scan master task list and any distributed action files:
+Scan master task list and account action files for items due today, overdue, or related to today's meetings:
 
 ```
 Read: _today/tasks/master-task-list.md (PRIMARY SOURCE)
-Glob: [Account folders]/action-items/*.md (if applicable)
+Glob: Accounts/*/04-Action-Items/*.md (SUPPLEMENTAL)
 Grep: "- [ ]" (unchecked items)
 ```
 
+Parse each action for:
+- Action text
+- Owner
+- Due date (look for "Due:" or date patterns)
+
 **CRITICAL: Filter by Owner**
 
-Only include items where you are the owner. Items owned by others are their responsibility.
+Only include items in the main sections where **Owner = James**. Items owned by others should NOT appear in the daily actions file - those are their responsibilities, not yours.
+
+```python
+def should_include_action(action):
+    """
+    Only include actions where James is the owner.
+    """
+    owner = action.get('owner', '').lower()
+
+    # Include if James owns it
+    if 'james' in owner:
+        return True
+
+    # Include if no owner specified (needs triage)
+    if not owner or owner == 'unassigned':
+        return True
+
+    # Exclude if owned by someone else
+    return False
+```
+
+**Owner patterns to exclude:**
+- "Owner: Rachel" → Rachel's responsibility
+- "Owner: Shilpa/Hayley" → Their responsibility
+- "Owner: Amy" → Amy's responsibility
+- "Owner: Abdul" → Abdul's responsibility
+- Any name that isn't James
 
 Create `80-actions-due.md`:
 
@@ -518,25 +942,31 @@ Create `80-actions-due.md`:
 
 ## Overdue
 
-- [ ] **[Action]** - [Account/Project] - Due: [Date] (X days overdue)
+- [ ] **[Action]** - [Account] - Due: [Date] (X days overdue)
   - **Context**: [Why this action exists]
-  - **Source**: [file path]
+  - **Requested by**: [Who initiated this]
+  - **Source**: [file path - link to meeting/conversation]
+  - **Impact if delayed**: [What's at risk]
 
 ## Due Today
 
-- [ ] **[Action]** - [Account/Project]
-  - **Context**: [Why]
+- [ ] **[Action]** - [Account]
+  - **Context**: [Why this action exists]
   - **Source**: [file path]
 
 ## Related to Today's Meetings
 
-### [Account/Project Name] (Meeting at [Time])
+### [Account Name] (Meeting at [Time])
 - [ ] **[Action]** - Due: [Date]
+  - **Context**: [Why - so you can speak to it in the meeting]
+  - **Requested by**: [Who to follow up with]
   - **Status update to share**: [What progress to report]
 
 ## Due This Week
 
-- [ ] **[Action]** - [Account/Project] - Due: [Date]
+- [ ] **[Action]** - [Account] - Due: [Date]
+  - **Context**: [Why this action exists]
+  - **Source**: [file path]
 
 ## Waiting On (Delegated)
 
@@ -546,31 +976,107 @@ Create `80-actions-due.md`:
 
 ## Upcoming (Next 2 Weeks)
 
-- [ ] **[Action]** - [Account/Project] - Due: [Date]
+- [ ] **[Action]** - [Account] - Due: [Date]
+
+## Completed Today
+
+- [x] **[Action]** - [Account]
+  - Completed: [Date]
+  - Outcome: [Brief result]
 ```
+
+**Note:** The "Waiting On" section tracks items James delegated to others - these are outbound asks where James is blocked until they respond. This is different from items others own independently.
+
+**Parsing Action Context:**
+When reading action files, look for these patterns to extract context:
+- Lines after the action checkbox often contain context
+- "Source:" or "From:" indicates origin meeting
+- "Requested by:" or "@[name]" indicates requester
+- "Owner:" indicates who is responsible (FILTER ON THIS)
+- Related section headers indicate project/initiative
 
 ### Step 7: Look-Ahead for Agendas (3-4 Business Days)
 
 Fetch next 5 calendar days:
 ```bash
-python3 .config/google/google_api.py calendar list 5
+python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 5
 ```
 
-For each customer/client meeting in look-ahead window:
+**Business Day Calculation:**
+```python
+from datetime import datetime, timedelta
 
-**Check if agenda exists:**
-1. Calendar event description contains Google Doc link → EXISTS
+def get_business_days_ahead(start_date, num_days):
+    """Return list of next N business days (skip Sat=5, Sun=6)"""
+    business_days = []
+    current = start_date
+    while len(business_days) < num_days:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Mon=0 through Fri=4
+            business_days.append(current)
+    return business_days
+
+# Look 3-4 business days ahead
+look_ahead_dates = get_business_days_ahead(datetime.now(), 4)
+```
+
+For each CUSTOMER meeting in look-ahead window:
+
+**Check if agenda exists** (in priority order):
+1. Calendar event description contains Google Doc link (`docs.google.com`) → EXISTS
 2. Calendar event description has substantial text (>100 chars) → EXISTS
-3. Agenda file exists in account folder → EXISTS
+3. File exists matching pattern:
+   ```bash
+   ls Accounts/[Account]/02-Meetings/ | grep -i "agenda.*[YYYY-MM-DD]"
+   ```
+   → EXISTS
 4. None of above → **NEEDS AGENDA**
 
-**If agenda needed:**
-- Create draft in `_today/90-agenda-needed/[account]-[date].md`
-- Use agenda-generator agent if available
+**If agenda needed, invoke agenda-generator agent:**
+
+```
+Task(subagent_type="agenda-generator", prompt="
+Generate a meeting agenda for:
+
+Account: [Account Name]
+Meeting: [Meeting Title from calendar]
+Date: [Meeting Date]
+Attendees: [List from calendar]
+
+Account Context:
+- Ring: [from Sheet]
+- ARR: [from Sheet]
+- Last Meeting: [from recent summary]
+- Open Actions: [from action file]
+
+Output to: _today/90-agenda-needed/[account-lowercase]-[date].md
+")
+```
+
+**Agenda File Format:**
+```
+_today/90-agenda-needed/
+├── nielsen-2026-01-12.md
+├── blackstone-2026-01-15.md
+└── salesforce-digital-experience-2026-01-16.md
+```
 
 ### Step 8: Generate Suggested Focus
 
-Create `81-suggested-focus.md`:
+Create `81-suggested-focus.md` based on:
+
+1. **Priority 1: Pre-Meeting Prep**
+   - Review customer prep docs before calls
+
+2. **Priority 2: Overdue Items**
+   - Actions past due date
+
+3. **Priority 3: Agenda Sending**
+   - Draft agendas in 90-agenda-needed/ to review and send
+
+4. **Priority 4: Account Hygiene** (if time)
+   - Stale dashboards
+   - Accounts without recent contact
 
 ```markdown
 # Suggested Focus Areas - [Date]
@@ -589,7 +1095,7 @@ Create `81-suggested-focus.md`:
 - [ ] Refresh [Account] dashboard (last updated [date])
 
 ## Energy-Aware Notes
-- Morning (high energy): Strategic prep, important calls
+- Morning (high energy): Strategic prep, customer calls
 - Afternoon (lower energy): Admin capture, follow-ups
 ```
 
@@ -605,25 +1111,33 @@ Create `00-overview.md`:
 | Time | Event | Type | Prep Status |
 |------|-------|------|-------------|
 | 9:00 AM | Daily Prep | Personal | - |
-| 10:00 AM | Manager 1:1 | Internal | ✅ Prep ready |
-| 11:00 AM | Project Sync | Project | ✅ Prep ready |
-| 12:00 PM | **Client Meeting** | **Customer** | ✅ Prep ready - See [filename] |
-| 2:00 PM | **Client B** | **Customer** | ✏️ Draft ready - agenda in 90-agenda-needed/ |
+| 11:00 AM | Agentforce Sync | Internal | - |
+| 12:00 PM | **Nielsen Monthly** | **Customer** | See 04-1200-customer-nielsen-prep.md |
 
 ## Customer Meetings Today
 
 ### [Account] ([Time])
-- **Status**: [Status]
-- **Key Metric**: [Value]
+- **Ring**: [Ring]
+- **ARR**: $[Amount]
+- **Renewal**: [Date] ([X months])
 - **Prep**: See [filename]
 
-## Email - Needs Attention (if email scan enabled)
+## Email - Needs Attention
 
 ### HIGH Priority ([count])
 
 | From | Subject | Type | Notes |
 |------|---------|------|-------|
-| [sender] | [subject] | [type] | Brief summary |
+| [sender] | [subject] | 🟢 OPPORTUNITY / 🟡 INFO / 🔴 RISK / 🔵 ACTION | Brief summary |
+
+**See `83-email-summary.md` for full thread summaries including:**
+- Conversation arc (who initiated, what's discussed, current status)
+- Specific asks for James (if any)
+- Owner and recommended action
+
+### Summary
+- **Archived**: [X] (newsletters, GitHub, automated)
+- **Labeled**: [X] (internal, P2, meetings)
 
 *Full details: 83-email-summary.md*
 
@@ -639,15 +1153,86 @@ Create `00-overview.md`:
 
 | Meeting | Date | Status | Action |
 |---------|------|--------|--------|
-| [Account] | [Date] | 📅 Agenda needed | Draft in 90-agenda-needed/ |
+| [Account] | [Date] | ⚠️ Needs agenda | Draft in 90-agenda-needed/ |
 | [Account] | [Date] | ✅ Exists | None |
-| [Account] | [Date] | ✏️ Draft ready | Review and send |
 
 ## Suggested Focus for Downtime
 
 1. [Top priority from 81-suggested-focus.md]
 2. [Second priority]
 ```
+
+### Step 9B: Coaching Tracker (Integrated)
+
+Add coaching opportunities to the daily overview by matching active coaching commitments to today's meetings.
+
+**Source file:** `Leadership/03-Development/active-coaching-commitments.md`
+
+**Process:**
+
+```python
+def generate_coaching_tracker(calendar_events, commitments_file):
+    """
+    Match coaching commitments to today's meetings
+    Returns tracker section for daily overview
+    """
+    commitments = read_coaching_commitments(commitments_file)
+    opportunities = []
+
+    for event in calendar_events:
+        attendees = get_attendee_names(event)
+        title = event.get('summary', '')
+
+        for commitment in commitments:
+            if matches_trigger(commitment, attendees, title):
+                opportunities.append({
+                    'commitment': commitment['name'],
+                    'meeting': event['summary'],
+                    'time': event['start'],
+                    'practice': commitment['practice'],
+                    'applies_to': commitment.get('applies_to', [])
+                })
+
+    return opportunities
+```
+
+**Output section in daily overview:**
+
+```markdown
+## Coaching Opportunities Today
+
+| Commitment | Meeting | Practice |
+|------------|---------|----------|
+| Driver/Passenger | Amy/James: Blackstone (11am) | Ask "what do you need from me?" first |
+| Surface Unknowns | Nielsen docs prep | Lead with "what we don't know" |
+
+**Active Commitments This Quarter:**
+1. Driver/Passenger Dynamic (with Amy, Rachel)
+2. Surface Unknowns Explicitly (in strategy docs)
+3. Watchtower Pattern (check with Josiah before bold moves)
+
+*Source: `Leadership/03-Development/active-coaching-commitments.md`*
+```
+
+**Per-meeting coaching notes:**
+
+For each meeting where a coaching commitment applies, add a brief note to the prep file:
+
+```markdown
+## Coaching Note
+
+**Commitment**: Driver/Passenger Dynamic
+**Practice**: Let Amy drive the narrative. Open by asking what she needs from you.
+**Source**: `Leadership/03-Development/active-coaching-commitments.md`
+```
+
+**Matching logic:**
+
+| Commitment | Triggers |
+|------------|----------|
+| Driver/Passenger | Attendee in `applies_to` list (Amy, Rachel) |
+| Surface Unknowns | Meeting involves strategy doc or conservative stakeholder |
+| Watchtower | Meeting involves bold initiative or could surprise leadership |
 
 ## Output Structure
 
@@ -657,35 +1242,48 @@ After running `/today`:
 _today/
 ├── 00-overview.md                      # Today's dashboard
 ├── 01-0900-personal-daily-prep.md      # First meeting
-├── 02-1100-internal-project.md         # Second meeting
-├── 03-1200-customer-client-prep.md     # Customer meeting (FULL PREP)
+├── 02-1100-internal-agentforce.md      # Second meeting
+├── 03-1130-internal-donut.md           # Third meeting
+├── 04-1200-customer-nielsen-prep.md    # Customer meeting (FULL PREP)
+├── 05-1245-personal-catchup.md         # Post-meeting block
 ├── 80-actions-due.md                   # Action items
 ├── 81-suggested-focus.md               # Focus suggestions
-├── 83-email-summary.md                 # Email triage results (if enabled)
+├── 83-email-summary.md                 # Email triage results
 ├── 90-agenda-needed/                   # Draft agendas
-│   └── client-jan-12.md               # Agenda to review and send
+│   └── blackstone-jan-12.md            # Agenda to review and send
 ├── tasks/                              # Persistent task tracking
-│   └── master-task-list.md            # Global task list (survives archive)
-└── archive/                           # Previous days (processed by /week)
+│   └── master-task-list.md             # Global task list (survives archive)
+└── archive/                            # Previous days (processed by /week)
     └── 2026-01-07/
 ```
 
+**Note:** `tasks/` directory is NOT archived daily - it persists and is updated by both `/today` and `/wrap`.
+
 ## Dependencies
 
-**APIs (Optional but recommended):**
+**APIs:**
 - Google Calendar (read + write)
-- Google Sheets (read) - for account data
-- Gmail (read) - for email triage
+- Google Sheets (read)
+- Gmail (read, draft, labels)
+
+**Skills/Workflows:**
+- daily-csm/MEETING-PREP.md - Customer prep generation
+- inbox-processing/MEETING-TYPE-DETECTION.md - Classification patterns
+
+**Agents:**
+- agenda-generator - Draft agendas for look-ahead meetings
 
 **Data Sources:**
-- `_today/tasks/master-task-list.md`
-- Account/project documentation folders
-- Calendar events
+- Google Sheet: `1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g`
+- Accounts/*/00-Index.md
+- Accounts/*/01-Customer-Information/*-dashboard.md
+- Accounts/*/02-Meetings/*.md
+- Accounts/*/04-Action-Items/*.md
 
 ## Error Handling
 
-**If Google API unavailable:**
-- Proceed with calendar data from cache if available
+**If Google Sheet unavailable:**
+- Fall back to `_reference/tam-account-list.csv`
 - Show warning in overview
 
 **If account folder doesn't exist:**
@@ -693,11 +1291,219 @@ _today/
 - Note: "Account folder not found - limited context"
 
 **If action file is stale (>30 days):**
-- Show warning: "Action file last updated [date] - review for accuracy"
+- Show warning: "⚠️ Action file last updated [date] - review for accuracy"
+
+**If domain not recognized:**
+- Classify as "external"
+- Note unknown domain in overview for future mapping
+
+## Calendar Write (Optional)
+
+After generating suggested focus areas, offer to create calendar blocks:
+
+### Step 10: Offer Calendar Blocks
+
+**Use AskUserQuestion to confirm before creating:**
+
+```python
+suggested_blocks = []
+
+# Post-meeting catch-up blocks (15 min after customer meetings)
+for meeting in customer_meetings:
+    if meeting['status'] == 'upcoming':
+        catch_up_start = meeting['end']
+        catch_up_end = meeting['end'] + timedelta(minutes=15)
+        suggested_blocks.append({
+            'title': f"Catch-up: {meeting['account']} notes",
+            'start': catch_up_start,
+            'end': catch_up_end,
+            'purpose': 'Document meeting outcomes, update action items'
+        })
+
+# Agenda prep blocks (for meetings needing agendas)
+for agenda in agendas_needed:
+    # Schedule for 3 days before meeting
+    prep_date = agenda['meeting_date'] - timedelta(days=3)
+    suggested_blocks.append({
+        'title': f"Agenda: {agenda['account']} ({agenda['meeting_date']})",
+        'start': prep_date.replace(hour=9, minute=0),
+        'end': prep_date.replace(hour=9, minute=30),
+        'purpose': 'Review and send meeting agenda'
+    })
+```
+
+**AskUserQuestion format:**
+```
+"I've identified [X] calendar blocks to create:
+
+1. Catch-up: Nielsen notes (12:30 PM - 12:45 PM)
+   Purpose: Document meeting outcomes, update action items
+
+2. Agenda: Blackstone (Jan 9, 9:00 AM)
+   Purpose: Review and send meeting agenda
+
+Which blocks would you like me to create?"
+
+Options:
+- Create all
+- Create catch-up blocks only
+- Create agenda prep blocks only
+- None
+```
+
+**If confirmed, create events:**
+```bash
+python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar create "[title]" "[start_datetime]" "[end_datetime]" "[description]"
+```
+
+**Event description template:**
+```
+Purpose: [purpose]
+Related: [account/meeting]
+Created by: /today command
+
+DO NOT DELETE - auto-generated focus block
+```
+
+---
+
+### Step 11: Chief of Staff Layer (Optional)
+
+After completing all tactical steps, optionally invoke `/cos` to add executive-level decision support.
+
+**When to invoke:**
+- User explicitly requests `/cos`
+- User runs `/today --cos` or `/today --full`
+
+**What /cos adds (decision support, not coaching):**
+- **DECIDE**: Decisions needed with options + recommendation
+- **WAITING ON**: Delegated items awaiting response
+- **PORTFOLIO ALERTS**: Accounts/projects needing attention
+- **CANCEL/PROTECT**: Meetings safe to skip with draft decline
+- **SKIP TODAY**: Items that don't need attention
+
+**Note:** Coaching is already integrated into the daily overview via Step 9B. /cos focuses on executive decision support, delegation tracking, and time protection.
+
+**Integration flow:**
+```
+1. /today completes Steps 0-10 (including 9B coaching tracker)
+2. /today creates *-daily-overview.md with coaching integrated
+3. If /cos requested:
+   a. Parse master task list for decisions due + delegations stale
+   b. Pull portfolio data from Google Sheets
+   c. Scan calendar for cancelable meetings
+   d. Generate 60-second scannable CoS briefing
+4. Result: Tactical overview + strategic CoS briefing
+```
+
+**Output format:** Concise sections (DECIDE, WAITING ON, PORTFOLIO ALERTS, CANCEL/PROTECT, SKIP TODAY)
+
+**See also:** `.claude/commands/cos.md` for full /cos workflow
+
+---
+
+## Multi-BU Learning
+
+When user answers a multi-BU prompt, store the mapping for future automatic classification.
+
+### BU Classification Cache
+
+**Location**: `_reference/bu-classification-cache.json`
+
+```json
+{
+  "version": 1,
+  "mappings": [
+    {
+      "domain": "salesforce.com",
+      "attendee_pattern": "sarah.chen@salesforce.com",
+      "bu": "Digital-Experience",
+      "confidence": "user_confirmed",
+      "created": "2026-01-08",
+      "source": "/today classification"
+    },
+    {
+      "domain": "hilton.com",
+      "title_pattern": "Newsroom",
+      "bu": "Newsroom",
+      "confidence": "title_match",
+      "created": "2026-01-08"
+    }
+  ],
+  "default_bus": {
+    "salesforce.com": "Digital-Experience",
+    "hilton.com": "Domestic",
+    "coxautoinc.com": "Corporate-Services-B2B",
+    "intuit.com": "Credit-Karma"
+  }
+}
+```
+
+### Classification Flow with Learning
+
+```python
+def classify_multi_bu_meeting(domain, attendees, title, cache):
+    """
+    1. Check for exact attendee match in cache
+    2. Check for title pattern match in cache
+    3. Use default BU for domain
+    4. If no match, prompt user and save answer
+    """
+
+    # 1. Check attendee patterns
+    for attendee in attendees:
+        cached = find_attendee_mapping(cache, attendee)
+        if cached:
+            return cached['bu']
+
+    # 2. Check title patterns
+    for mapping in cache.get('mappings', []):
+        if mapping.get('title_pattern') and mapping['title_pattern'].lower() in title.lower():
+            return mapping['bu']
+
+    # 3. Try default BU
+    default = cache.get('default_bus', {}).get(domain)
+    if default:
+        return default, 'suggest_confirmation'
+
+    # 4. Prompt user
+    bu = prompt_user_for_bu(domain, attendees, title)
+
+    # Save for future
+    save_mapping(cache, {
+        'domain': domain,
+        'attendee_pattern': attendees[0],  # Primary attendee
+        'bu': bu,
+        'confidence': 'user_confirmed',
+        'created': datetime.now().isoformat(),
+        'source': '/today classification'
+    })
+
+    return bu
+```
+
+### Update Step 4 Classification
+
+When classifying multi-BU meetings, add this check before prompting:
+
+```python
+# Load BU cache
+bu_cache_path = '_reference/bu-classification-cache.json'
+bu_cache = load_json(bu_cache_path) if file_exists(bu_cache_path) else {'mappings': [], 'default_bus': {}}
+
+# For multi-BU domains
+if domain in ['salesforce.com', 'hilton.com', 'coxautoinc.com', 'intuit.com']:
+    bu = classify_multi_bu_meeting(domain, attendees, title, bu_cache)
+    account = f"{parent_company}/{bu}"
+```
+
+---
 
 ## Related Commands
 
+- `/cos` - Chief of Staff strategic layer (can be invoked after /today)
 - `/wrap` - End-of-day closure and reconciliation
 - `/week` - Monday weekly review
 - `/month` - Monthly roll-up
-- `/email-scan` - Email inbox triage (standalone)
+- `/quarter` - Quarterly pre-population
+- `/email-scan` - Email inbox triage (standalone, also integrated here)

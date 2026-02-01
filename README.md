@@ -34,13 +34,13 @@ git clone https://github.com/jamesgiroux/daily-operating-system.git
 
 ### Step 2: Launch the setup wizard
 
-**Web-based wizard (recommended for Mac):**
-Double-click `start.command` in the downloaded folder. A browser opens with an interactive setup wizard.
+**Web-based wizard (recommended for beginners):**
+Double-click `easy-start.command` in the downloaded folder. A browser opens with an interactive setup wizard.
 
-**Terminal wizard:**
+**Terminal wizard (more options):**
 ```bash
 cd ~/Documents/daily-operating-system
-python3 setup.py
+python3 advanced-start.py
 ```
 
 Both wizards walk you through 10 steps:
@@ -56,13 +56,13 @@ Both wizards walk you through 10 steps:
 9. **Python Tools** — Installs automation scripts
 10. **Verification** — Confirms everything works
 
-### Optional flags
+### Optional flags (advanced-start.py only)
 
 ```bash
-python3 setup.py --workspace ~/Documents/productivity  # Custom location
-python3 setup.py --quick   # Use defaults, fewer prompts
-python3 setup.py --verify  # Check existing installation
-python3 setup.py --google  # Configure Google API only
+python3 advanced-start.py --workspace ~/Documents/productivity  # Custom location
+python3 advanced-start.py --quick   # Use defaults, fewer prompts
+python3 advanced-start.py --verify  # Check existing installation
+python3 advanced-start.py --google  # Configure Google API only
 ```
 
 ## Role-Based Setup
@@ -282,7 +282,8 @@ The project structure:
 
 ```
 daily-operating-system/
-├── setup.py              # Main entry point
+├── easy-start.command    # Web-based setup wizard (beginners)
+├── advanced-start.py     # CLI setup wizard (more options)
 ├── requirements.txt      # Python dependencies
 ├── src/
 │   ├── wizard.py         # Main orchestrator (10 steps)

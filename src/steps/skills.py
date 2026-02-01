@@ -4,8 +4,25 @@ Step 7: Skills and Commands Installation.
 Installs Claude Code skills, commands, and agents into the workspace.
 """
 
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+
+def get_project_root() -> Path:
+    """
+    Get the DailyOS project root directory.
+
+    This is where the templates/ directory lives.
+    """
+    # This file is at: src/steps/skills.py
+    # Project root is: ../../ (two levels up)
+    return Path(__file__).parent.parent.parent.resolve()
+
+
+def get_templates_dir() -> Path:
+    """Get the templates directory path."""
+    return get_project_root() / 'templates'
 
 
 # Available commands with descriptions
@@ -95,6 +112,14 @@ AVAILABLE_SKILLS = {
 CORE_COMMANDS = ['today', 'wrap', 'week']
 CORE_SKILLS = ['inbox-processing']
 
+# Mapping from skill key to template directory name (if different)
+SKILL_TEMPLATE_MAP = {
+    'inbox-processing': 'inbox',
+    # These match directly:
+    # 'strategy-consulting': 'strategy-consulting',
+    # 'editorial': 'editorial',
+}
+
 
 def get_command_list(category: Optional[str] = None) -> List[Dict[str, Any]]:
     """
@@ -132,7 +157,7 @@ def get_skill_list(category: Optional[str] = None) -> List[Dict[str, Any]]:
 
 def install_command(workspace: Path, command_key: str, file_ops) -> bool:
     """
-    Install a single command.
+    Install a single command by copying from templates.
 
     Args:
         workspace: Root workspace path
@@ -148,14 +173,26 @@ def install_command(workspace: Path, command_key: str, file_ops) -> bool:
     cmd = AVAILABLE_COMMANDS[command_key]
     cmd_path = workspace / '.claude' / 'commands' / f'{command_key}.md'
 
-    # Create placeholder - actual content loaded from templates
+    # Ensure commands directory exists
+    cmd_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Try to copy from templates first
+    template_path = get_templates_dir() / 'commands' / f'{command_key}.md'
+
+    if template_path.exists():
+        # Copy actual template content
+        content = template_path.read_text()
+        file_ops.write_file(cmd_path, content)
+        return True
+
+    # Fallback to placeholder if template not found
     content = f"""# {cmd['name']}
 
 {cmd['description']}
 
 ## When to Use
 
-[Usage guidance will be added during setup]
+[Template not found - please check templates/commands/{command_key}.md]
 
 ## Execution Steps
 
@@ -171,7 +208,7 @@ def install_command(workspace: Path, command_key: str, file_ops) -> bool:
 
 def install_skill(workspace: Path, skill_key: str, file_ops) -> bool:
     """
-    Install a single skill with its agents.
+    Install a single skill by copying from templates.
 
     Args:
         workspace: Root workspace path
@@ -190,14 +227,33 @@ def install_skill(workspace: Path, skill_key: str, file_ops) -> bool:
     # Create skill directory
     file_ops.create_directory(skill_dir)
 
-    # Create SKILL.md
-    skill_md_content = f"""# {skill['name']}
+    # Get template directory name (may be different from skill key)
+    template_name = SKILL_TEMPLATE_MAP.get(skill_key, skill_key)
+    template_dir = get_templates_dir() / 'skills' / template_name
+
+    if template_dir.exists():
+        # Copy all files from template directory
+        for template_file in template_dir.glob('**/*'):
+            if template_file.is_file():
+                # Calculate relative path within the skill
+                rel_path = template_file.relative_to(template_dir)
+                dest_path = skill_dir / rel_path
+
+                # Ensure parent directories exist
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Copy file content
+                content = template_file.read_text()
+                file_ops.write_file(dest_path, content)
+    else:
+        # Fallback to placeholder if template not found
+        skill_md_content = f"""# {skill['name']}
 
 {skill['description']}
 
 ## Overview
 
-[Skill overview will be added during setup]
+[Template not found - please check templates/skills/{template_name}/]
 
 ## Agents
 
@@ -212,9 +268,9 @@ This skill includes the following agents:
 *Installed by Daily Operating System Setup Wizard*
 """
 
-    file_ops.write_file(skill_dir / 'SKILL.md', skill_md_content)
+        file_ops.write_file(skill_dir / 'SKILL.md', skill_md_content)
 
-    # Install agents for this skill
+    # Install agents for this skill (from templates or placeholders)
     for agent in skill['agents']:
         install_agent(workspace, agent, skill_key, file_ops)
 
@@ -223,7 +279,7 @@ This skill includes the following agents:
 
 def install_agent(workspace: Path, agent_key: str, skill_key: str, file_ops) -> bool:
     """
-    Install a single agent.
+    Install a single agent by copying from templates.
 
     Args:
         workspace: Root workspace path
@@ -239,13 +295,30 @@ def install_agent(workspace: Path, agent_key: str, skill_key: str, file_ops) -> 
 
     agent_path = agent_dir / f'{agent_key}.md'
 
+    # Search for agent template in all subdirectories
+    templates_agents_dir = get_templates_dir() / 'agents'
+    template_file = None
+
+    if templates_agents_dir.exists():
+        # Search for agent in any subdirectory
+        for found_file in templates_agents_dir.glob(f'**/{agent_key}.md'):
+            template_file = found_file
+            break
+
+    if template_file and template_file.exists():
+        # Copy from template
+        content = template_file.read_text()
+        file_ops.write_file(agent_path, content)
+        return True
+
+    # Fallback to placeholder if template not found
     content = f"""# {agent_key}
 
 Agent for {skill_key} skill.
 
 ## Purpose
 
-[Agent purpose will be configured during setup]
+[Template not found - please check templates/agents/**/{agent_key}.md]
 
 ## When to Use
 

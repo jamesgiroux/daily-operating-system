@@ -262,7 +262,7 @@ Claude Code will:
 
 ## What Happens During Setup
 
-When you run the setup wizard (`python3 setup.py`), here's what happens:
+When you run the setup wizard (`python3 advanced-start.py` or `easy-start.command`), here's what happens:
 
 ### Step 1: Prerequisites Check
 - Verifies Python is installed
@@ -355,7 +355,7 @@ Check the organized output in your folders!
 → Install it: `npm install -g @anthropic-ai/claude-code`
 
 **"Google API not working"**
-→ Re-run: `python3 setup.py --google`
+→ Re-run: `python3 advanced-start.py --google`
 
 **"Where are my files?"**
 → Check `_today/` for today's files
@@ -467,7 +467,7 @@ and archive its action items. When I reactivate, move it back."
 
 ## Next Steps
 
-1. Run the setup wizard: `python3 setup.py`
+1. Run the setup wizard: `python3 advanced-start.py` (or double-click `easy-start.command`)
 2. Follow the prompts
 3. Try `/today` tomorrow morning
 4. Process your first transcript
