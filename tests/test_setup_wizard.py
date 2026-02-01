@@ -638,11 +638,11 @@ class TestCLAUDEMD:
 
 
 class TestSetupPyEntryPoint:
-    """Test the main setup.py entry point."""
+    """Test the main advanced-start.py entry point."""
 
     def test_setup_py_imports_correctly(self):
-        """setup.py should import without errors."""
-        setup_py = Path(__file__).parent.parent / "setup.py"
+        """advanced-start.py should import without errors."""
+        setup_py = Path(__file__).parent.parent / "advanced-start.py"
         assert setup_py.exists()
 
         # Read and check for correct imports
@@ -652,7 +652,7 @@ class TestSetupPyEntryPoint:
 
     def test_argparse_arguments_defined(self):
         """All expected arguments should be defined."""
-        setup_py = Path(__file__).parent.parent / "setup.py"
+        setup_py = Path(__file__).parent.parent / "advanced-start.py"
         content = setup_py.read_text()
 
         expected_args = ['--workspace', '--google', '--verify', '--quick', '--verbose']
