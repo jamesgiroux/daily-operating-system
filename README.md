@@ -32,19 +32,18 @@ A productivity framework built on Claude Code for managing your daily work, stra
 git clone https://github.com/jamesgiroux/daily-operating-system.git
 ```
 
-### Step 2: Open Terminal and navigate to the folder
+### Step 2: Launch the setup wizard
 
+**Web-based wizard (recommended for beginners):**
+Double-click `easy-start.command` in the downloaded folder. A browser opens with an interactive setup wizard.
+
+**Terminal wizard (more options):**
 ```bash
 cd ~/Documents/daily-operating-system
+python3 advanced-start.py
 ```
 
-### Step 3: Run the setup wizard
-
-```bash
-python3 setup.py
-```
-
-The wizard walks you through 10 steps:
+Both wizards walk you through 10 steps:
 
 1. **Prerequisites** — Checks Python, Claude Code, Git
 2. **Workspace Location** — Where to create your productivity folder
@@ -57,13 +56,13 @@ The wizard walks you through 10 steps:
 9. **Python Tools** — Installs automation scripts
 10. **Verification** — Confirms everything works
 
-### Optional flags
+### Optional flags (advanced-start.py only)
 
 ```bash
-python3 setup.py --workspace ~/Documents/productivity  # Custom location
-python3 setup.py --quick   # Use defaults, fewer prompts
-python3 setup.py --verify  # Check existing installation
-python3 setup.py --google  # Configure Google API only
+python3 advanced-start.py --workspace ~/Documents/productivity  # Custom location
+python3 advanced-start.py --quick   # Use defaults, fewer prompts
+python3 advanced-start.py --verify  # Check existing installation
+python3 advanced-start.py --google  # Configure Google API only
 ```
 
 ## Role-Based Setup
@@ -283,7 +282,8 @@ The project structure:
 
 ```
 daily-operating-system/
-├── setup.py              # Main entry point
+├── easy-start.command    # Web-based setup wizard (beginners)
+├── advanced-start.py     # CLI setup wizard (more options)
 ├── requirements.txt      # Python dependencies
 ├── src/
 │   ├── wizard.py         # Main orchestrator (10 steps)
