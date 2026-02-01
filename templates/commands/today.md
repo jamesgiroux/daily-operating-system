@@ -84,7 +84,7 @@ This command uses a three-phase approach for efficiency:
 **ALWAYS RUN THIS FIRST:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/prepare_today.py
+python3 _tools/prepare_today.py
 ```
 
 This script performs all deterministic operations:
@@ -140,7 +140,7 @@ After the script completes, read the directive and execute AI tasks:
 
 ```bash
 # Read the directive
-cat /Users/jamesgiroux/Documents/VIP/_today/.today-directive.json
+cat _today/.today-directive.json
 ```
 
 **For each task in directive['ai_tasks'], execute based on type:**
@@ -188,7 +188,7 @@ For meetings in look-ahead window needing agendas:
 **AFTER completing AI tasks:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/deliver_today.py
+python3 _tools/deliver_today.py
 ```
 
 This script:
@@ -222,28 +222,28 @@ The following sections are reference material for Phase 2 AI enrichment.
 YESTERDAY=$(date -v-1d +%Y-%m-%d)
 
 # Archive yesterday's content (if exists)
-if [ -f "/Users/jamesgiroux/Documents/VIP/_today/00-overview.md" ]; then
-    mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY
+if [ -f "_today/00-overview.md" ]; then
+    mkdir -p _today/archive/$YESTERDAY
 
     # Move all daily files EXCEPT week-* files (NOT archive, tasks, or 90-agenda-needed folders)
     # IMPORTANT: Preserve week-* files - they persist until /week archives them
-    for f in /Users/jamesgiroux/Documents/VIP/_today/*.md; do
+    for f in _today/*.md; do
         filename=$(basename "$f")
         if [[ ! "$filename" == week-* ]]; then
-            mv "$f" /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/ 2>/dev/null
+            mv "$f" _today/archive/$YESTERDAY/ 2>/dev/null
         fi
     done
 
     # Move agenda-needed drafts if any
-    if [ -d "/Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed" ] && [ "$(ls -A /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/ 2>/dev/null)" ]; then
-        mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/90-agenda-needed
-        mv /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/*.md /Users/jamesgiroux/Documents/VIP/_today/archive/$YESTERDAY/90-agenda-needed/ 2>/dev/null
+    if [ -d "_today/90-agenda-needed" ] && [ "$(ls -A _today/90-agenda-needed/ 2>/dev/null)" ]; then
+        mkdir -p _today/archive/$YESTERDAY/90-agenda-needed
+        mv _today/90-agenda-needed/*.md _today/archive/$YESTERDAY/90-agenda-needed/ 2>/dev/null
     fi
 fi
 
 # Create fresh structure for today (tasks/ persists - don't recreate)
-mkdir -p /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed
-mkdir -p /Users/jamesgiroux/Documents/VIP/_today/tasks
+mkdir -p _today/90-agenda-needed
+mkdir -p _today/tasks
 ```
 
 **IMPORTANT:**
@@ -278,7 +278,7 @@ _today/
 ### Step 2: Fetch Account Data from Google Sheet
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py sheets get "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g" "A1:AB50"
+python3 .config/google/google_api.py sheets get "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g" "A1:AB50"
 ```
 
 Parse the JSON to build account lookup and domain mapping:
@@ -316,7 +316,7 @@ multi_bu_domains = ['salesforce.com', 'hilton.com', 'coxautoinc.com']
 ### Step 3: Fetch Today's Calendar
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 1
+python3 .config/google/google_api.py calendar list 1
 ```
 
 Parse JSON output. For each event extract:
@@ -345,7 +345,7 @@ for event in events:
 Fetch recent/unread emails and classify by priority:
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py gmail search "is:unread in:inbox" 30
+python3 .config/google/google_api.py gmail search "is:unread in:inbox" 30
 ```
 
 **Classification (from /email-scan logic):**
@@ -1069,7 +1069,7 @@ When reading action files, look for these patterns to extract context:
 
 Fetch next 5 calendar days:
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 5
+python3 .config/google/google_api.py calendar list 5
 ```
 
 **Business Day Calculation:**
@@ -1423,7 +1423,7 @@ Options:
 
 **If confirmed, create events:**
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar create "[title]" "[start_datetime]" "[end_datetime]" "[description]"
+python3 .config/google/google_api.py calendar create "[title]" "[start_datetime]" "[end_datetime]" "[description]"
 ```
 
 **Event description template:**

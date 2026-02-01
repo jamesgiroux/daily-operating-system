@@ -91,7 +91,7 @@ This command uses a three-phase approach for efficiency:
 **ALWAYS RUN THIS FIRST:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/prepare_week.py
+python3 _tools/prepare_week.py
 ```
 
 This script performs all deterministic operations:
@@ -117,7 +117,7 @@ After the script completes, read the directive and execute AI tasks:
 
 ```bash
 # Read the directive
-cat /Users/jamesgiroux/Documents/VIP/_today/.week-directive.json
+cat _today/.week-directive.json
 ```
 
 **Execute these AI tasks from directive['ai_tasks']:**
@@ -183,7 +183,7 @@ Store approved blocks for Phase 3 calendar creation.
 **AFTER completing AI tasks:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/deliver_week.py
+python3 _tools/deliver_week.py
 ```
 
 This script:
@@ -236,18 +236,18 @@ Before creating new week files, archive any existing `week-*` files from the pre
 
 ```bash
 # Check if week-* files exist
-WEEK_FILES=$(ls /Users/jamesgiroux/Documents/VIP/_today/week-*.md 2>/dev/null)
+WEEK_FILES=$(ls _today/week-*.md 2>/dev/null)
 
 if [ -n "$WEEK_FILES" ]; then
     # Determine previous week number (for archive folder naming)
     # Use the date in the first week file, or calculate from current week
     PREV_WEEK=$(printf "W%02d" $(($(date +%V) - 1)))
-    ARCHIVE_DIR="/Users/jamesgiroux/Documents/VIP/_today/archive/$PREV_WEEK"
+    ARCHIVE_DIR="_today/archive/$PREV_WEEK"
 
     mkdir -p "$ARCHIVE_DIR"
 
     # Move all week-* files to archive
-    for f in /Users/jamesgiroux/Documents/VIP/_today/week-*.md; do
+    for f in _today/week-*.md; do
         mv "$f" "$ARCHIVE_DIR/" 2>/dev/null
     done
 
@@ -308,7 +308,7 @@ Store responses for use in time block suggestions.
 ### Step 3: Fetch This Week's Calendar
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 5
+python3 .config/google/google_api.py calendar list 5
 ```
 
 Filter events to only Mon-Fri of current week.
@@ -316,7 +316,7 @@ Filter events to only Mon-Fri of current week.
 ### Step 4: Fetch Account Data from Google Sheet
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py sheets get "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g" "A1:AB50"
+python3 .config/google/google_api.py sheets get "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g" "A1:AB50"
 ```
 
 Parse columns for account lookup:
@@ -691,7 +691,7 @@ For approved blocks, create calendar events:
 # "Admin: Dashboard Updates"
 # "Prep: Cox Parse.ly Demo"
 
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar create \
+python3 .config/google/google_api.py calendar create \
   "[Task Type]: [Description]" \
   "2026-01-12T09:30:00-05:00" \
   "2026-01-12T10:30:00-05:00" \
@@ -899,16 +899,16 @@ Move the week's archived daily files to `_inbox/` for canonical processing:
 
 ```bash
 # Move all archived days to inbox for processing
-if [ -d "/Users/jamesgiroux/Documents/VIP/_today/archive" ]; then
-    for day_dir in /Users/jamesgiroux/Documents/VIP/_today/archive/*/; do
+if [ -d "_today/archive" ]; then
+    for day_dir in _today/archive/*/; do
         if [ -d "$day_dir" ]; then
             day_name=$(basename "$day_dir")
 
             # Create inbox folder for this day's files
-            mkdir -p "/Users/jamesgiroux/Documents/VIP/_inbox/daily-archive-$day_name"
+            mkdir -p "_inbox/daily-archive-$day_name"
 
             # Move all files
-            mv "$day_dir"* "/Users/jamesgiroux/Documents/VIP/_inbox/daily-archive-$day_name/" 2>/dev/null
+            mv "$day_dir"* "_inbox/daily-archive-$day_name/" 2>/dev/null
 
             # Remove empty archive folder
             rmdir "$day_dir" 2>/dev/null
