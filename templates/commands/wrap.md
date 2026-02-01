@@ -12,6 +12,36 @@ Run at end of workday (or when leaving for the day). This command:
 - Archives today's files for tomorrow
 - Prepares `_today/` for the next `/today` run
 
+---
+
+## First-Run Check
+
+**Before running scripts, verify workspace setup:**
+
+```bash
+# Check for workspace configuration
+ls _config/workspace.json 2>/dev/null || echo "FIRST_RUN"
+```
+
+### If FIRST_RUN:
+
+This command works best after running `/today` at least once. If this is your first day:
+- The script will still archive files and check for tasks
+- Calendar-based reconciliation requires Google API (optional)
+- You can still capture impacts and update tasks manually
+
+**Google API status:**
+```bash
+ls .config/google/token.json 2>/dev/null && echo "Configured" || echo "Manual mode"
+```
+
+In **manual mode**, the script skips calendar fetching but still handles:
+- Task list reconciliation
+- File archival
+- Impact capture prompts
+
+---
+
 ## Philosophy
 
 **"Close the loops"** - Every customer meeting should result in:
