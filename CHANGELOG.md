@@ -11,6 +11,67 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.9.0] - 2026-02-01
+
+### Added
+
+- **Web-based setup wizard** (`easy-start.command`)
+  - Visual step-by-step setup with real-time progress indicators
+  - Node.js backend with Express server at localhost:5050
+  - Same capabilities as CLI wizard in a friendlier interface
+  - Auto-launches in default browser on macOS
+
+- **Centralized workspace configuration** (`_config/workspace.json`)
+  - Single source of truth for workspace settings
+  - JSON schema validation (`workspace-schema.json`)
+  - Organization name and internal email domains stored here
+  - Feature flags for Google API, web dashboard, Python tools
+
+- **Organization config collection** during setup
+  - Workspace name (human-readable)
+  - Organization/company name
+  - Internal email domains (for meeting classification)
+  - Both CLI and Web UI collect identical configuration
+
+- **First-run detection** in `/today`, `/wrap`, `/week`
+  - Detects fresh workspaces and provides friendly onboarding
+  - Explains manual mode vs full mode clearly
+  - Guides users to `/setup --google` for API configuration
+
+- **Claude local installation step** in setup wizard
+  - Checks for Claude Code CLI availability
+  - Creates `.claude/` directory structure
+  - IDE selection for post-setup instructions
+
+- **Quick install mode** in CLI wizard (`--quick`)
+  - Skips optional features for faster setup
+  - Uses sensible defaults
+
+### Changed
+
+- **Renamed entry points** for clarity
+  - `setup.py` → `advanced-start.py` (CLI wizard)
+  - `start.command` → `easy-start.command` (Web wizard)
+
+- **Relative paths in command templates**
+  - All commands now use relative paths (e.g., `_tools/prepare_today.py`)
+  - Templates portable across different workspace locations
+  - No more hardcoded `/Users/*/Documents/VIP/` paths
+
+- **Internal domains loaded from config** instead of hardcoded
+  - `meeting_utils.py` reads from `_config/workspace.json`
+  - `prepare_today.py` uses config-based domain classification
+  - Empty set fallback for unconfigured workspaces
+
+### Fixed
+
+- Session persistence errors in web wizard
+- Missing `file_ops` arguments in Git, Google API, and Skills steps
+- Visual indicators and error handling improvements
+- CLAUDE.md generation edge cases
+
+---
+
 ## [0.8.0] - 2026-02-01
 
 ### Added
@@ -80,7 +141,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jamesgiroux/daily-operating-system/releases/tag/v0.6.0
