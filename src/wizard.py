@@ -6,7 +6,6 @@ productivity framework on Claude Code.
 """
 
 import sys
-import webbrowser
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -342,33 +341,8 @@ class SetupWizard:
     # Step Implementations
     # =========================================================================
 
-    def _open_companion_guide(self):
-        """Open the HTML companion guide in the default browser."""
-        # Find the docs file relative to this script
-        script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
-        ui_path = script_dir / 'docs' / 'index.html'
-
-        if ui_path.exists():
-            try:
-                # Convert to file:// URL
-                file_url = ui_path.as_uri()
-                webbrowser.open(file_url)
-                return True
-            except Exception:
-                return False
-        return False
-
     def _print_intro(self):
         """Print the introduction and overview."""
-        # Open the companion guide in browser
-        if self._open_companion_guide():
-            print("""
-📖 Opening the visual setup guide in your browser...
-
-Follow along in the slides while the CLI guides you through each step.
-The HTML guide explains the "why" behind each decision.
-""")
-
         print("""
 This wizard will help you set up the Daily Operating System - a
 productivity framework built on Claude Code for managing your daily
@@ -1475,13 +1449,8 @@ Your Daily Operating System is ready at:
 
 {Colors.BOLD}Documentation:{Colors.RESET}
 
-  The visual guide should already be open in your browser.
-  If not, open: docs/index.html (or visit https://daily-os.com)
-
-  Key slides to bookmark:
-  • Commands Reference (slides 19-24)
-  • Skills Reference (slides 13-18)
-  • Account Structure (slide 31)
+  For the visual setup guide, open: docs/index.html
+  Or run: easy-start.command
 
 {Colors.DIM}Zero-guilt design: Consuming, not producing.
 Works when you work. Everything changeable.{Colors.RESET}
