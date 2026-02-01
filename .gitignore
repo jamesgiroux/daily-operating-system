@@ -2,6 +2,9 @@
 .claude/
 CLAUDE.md
 
+# Local working documents (PRDs, drafts, notes)
+.docs/
+
 # Credentials and secrets
 .config/
 *.credentials
