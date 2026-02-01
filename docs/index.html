@@ -278,6 +278,22 @@
             margin: 24px 0;
         }
 
+        /* Scrollbar styling for verification list */
+        .setup-steps::-webkit-scrollbar {
+            width: 6px;
+        }
+        .setup-steps::-webkit-scrollbar-track {
+            background: var(--cream-dark);
+            border-radius: 3px;
+        }
+        .setup-steps::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: 3px;
+        }
+        .setup-steps::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
         .setup-step {
             display: flex;
             gap: 16px;
@@ -861,7 +877,7 @@
                         <p style="color: rgba(245, 242, 239, 0.7); margin-bottom: 32px;">
                             This wizard will set up your workspace, configure your tools, and get you ready to use /today.
                         </p>
-                        <div class="action-buttons" style="flex-direction: column; gap: 12px;">
+                        <div class="action-buttons">
                             <button class="btn btn-primary" onclick="startSetup()">
                                 Custom Setup
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -919,7 +935,7 @@
                         <span class="step-label">Workspace</span>
                     </div>
                     <h1 class="slide-title">Where should we set up?</h1>
-                    <p class="slide-subtitle">Choose a location for your productivity workspace.</p>
+                    <p class="slide-subtitle">Configure your workspace location and identity.</p>
                     <div class="slide-body">
                         <div class="form-group">
                             <label class="form-label" for="workspacePath">Workspace Path</label>
@@ -927,6 +943,24 @@
                                    placeholder="~/Documents/productivity"
                                    value="~/Documents/productivity">
                             <p class="form-hint">This folder will contain all your notes, templates, and daily files.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="workspaceName">Workspace Name</label>
+                            <input type="text" class="form-input" id="workspaceName"
+                                   placeholder="My Productivity">
+                            <p class="form-hint">A friendly name for your workspace.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="organizationName">Organization Name</label>
+                            <input type="text" class="form-input" id="organizationName"
+                                   placeholder="Acme Corp (optional)">
+                            <p class="form-hint">Your company or organization name (helps with meeting classification).</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="internalDomains">Internal Email Domains</label>
+                            <input type="text" class="form-input" id="internalDomains"
+                                   placeholder="company.com, subsidiary.com">
+                            <p class="form-hint">Comma-separated list of your organization's email domains (for meeting classification).</p>
                         </div>
                         <div id="workspaceStatus"></div>
                         <div class="action-buttons">
@@ -1098,7 +1132,7 @@
                                             <a href="https://console.cloud.google.com/" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
                                                 Open Console →
                                             </a>
-                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(1)">Done ✓</button>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(1)">Done ✓</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1110,7 +1144,7 @@
                                         <strong>Create a New Project</strong>
                                         <p class="step-detail">Click project dropdown → "New Project" → name it "DailyOS" → Create</p>
                                         <div style="margin-top: 8px; display: none;" class="step-actions">
-                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(2)">Done ✓</button>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(2)">Done ✓</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1129,7 +1163,7 @@
                                             <a href="https://console.cloud.google.com/apis/library" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
                                                 Open API Library →
                                             </a>
-                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(3)">Done ✓</button>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(3)">Done ✓</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1145,7 +1179,7 @@
                                             <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
                                                 Open OAuth Consent →
                                             </a>
-                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(4)">Done ✓</button>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(4)">Done ✓</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1161,7 +1195,7 @@
                                             <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
                                                 Open Credentials →
                                             </a>
-                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(5)">Done ✓</button>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(5)">Done ✓</button>
                                         </div>
                                     </div>
                                 </div>
@@ -1328,10 +1362,10 @@
                         <span class="step-number">11</span>
                         <span class="step-label">Verification</span>
                     </div>
-                    <h1 class="slide-title">Verifying installation...</h1>
-                    <p class="slide-subtitle">Checking that everything is set up correctly.</p>
+                    <h1 class="slide-title" id="verifyTitle">Verifying installation...</h1>
+                    <p class="slide-subtitle" id="verifySummary">Checking that everything is set up correctly.</p>
                     <div class="slide-body">
-                        <div class="setup-steps" id="verifyChecks">
+                        <div class="setup-steps" id="verifyChecks" style="max-height: 320px; overflow-y: auto; padding-right: 8px;">
                             <div class="setup-step checking">
                                 <div class="spinner"></div>
                                 <div class="step-content">
@@ -1361,11 +1395,11 @@
                     <p class="slide-subtitle">Pick your preferred way to use Claude Code.</p>
                     <div class="slide-body">
                         <div class="role-grid" id="ideGrid" style="grid-template-columns: repeat(2, 1fr);">
-                            <label class="role-option" data-ide="cursor">
-                                <input type="radio" name="ide" value="cursor">
+                            <label class="role-option" data-ide="antigravity">
+                                <input type="radio" name="ide" value="antigravity">
                                 <div class="role-info">
-                                    <span class="role-name">Cursor</span>
-                                    <span class="role-desc">AI-native code editor with Claude built-in</span>
+                                    <span class="role-name">Antigravity</span>
+                                    <span class="role-desc">Google's AI-powered collaborative IDE</span>
                                 </div>
                             </label>
                             <label class="role-option" data-ide="vscode">
@@ -1375,11 +1409,11 @@
                                     <span class="role-desc">Microsoft's popular editor + Claude extension</span>
                                 </div>
                             </label>
-                            <label class="role-option" data-ide="windsurf">
-                                <input type="radio" name="ide" value="windsurf">
+                            <label class="role-option" data-ide="cursor">
+                                <input type="radio" name="ide" value="cursor">
                                 <div class="role-info">
-                                    <span class="role-name">Windsurf</span>
-                                    <span class="role-desc">Codeium's AI-powered IDE</span>
+                                    <span class="role-name">Cursor</span>
+                                    <span class="role-desc">AI-native code editor with Claude built-in</span>
                                 </div>
                             </label>
                             <label class="role-option" data-ide="terminal">
@@ -1398,6 +1432,7 @@
                         </div>
                         <div class="action-buttons">
                             <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            <button class="btn btn-secondary" onclick="skipIDESelection()">I'll decide later</button>
                         </div>
                     </div>
                 </div>
@@ -1851,9 +1886,19 @@
 
         async function executeWorkspaceStep() {
             const pathInput = document.getElementById('workspacePath');
+            const nameInput = document.getElementById('workspaceName');
+            const orgInput = document.getElementById('organizationName');
+            const domainsInput = document.getElementById('internalDomains');
             const statusDiv = document.getElementById('workspaceStatus');
 
             config.workspacePath = pathInput.value;
+            config.workspaceName = nameInput.value.trim() || pathInput.value.split('/').pop().replace(/[-_]/g, ' ');
+            config.organizationName = orgInput.value.trim();
+            // Parse comma-separated domains into array
+            config.internalDomains = domainsInput.value
+                .split(',')
+                .map(d => d.trim().toLowerCase())
+                .filter(d => d.length > 0);
 
             statusDiv.innerHTML = `
                 <div class="status-message loading">
@@ -2182,18 +2227,43 @@
             `;
 
             const result = await executeStep('skills');
+            console.log('Skills step result:', JSON.stringify(result, null, 2));
 
             if (result.success) {
-                const installed = result.result.installed || {};
-                const count = Object.keys(installed).length;
-                const commands = Object.keys(installed).filter(k => k.startsWith('command:')).length;
-                const skills = Object.keys(installed).filter(k => k.startsWith('skill:')).length;
+                // Handle both possible response structures
+                const resultData = result.result || {};
+                const installed = resultData.installed || {};
+                console.log('Installed data:', installed);
+
+                const installedKeys = Object.keys(installed);
+                const commands = installedKeys.filter(k => k.startsWith('command:')).length;
+                const skills = installedKeys.filter(k => k.startsWith('skill:')).length;
+
+                // Build list of what was installed
+                const commandNames = installedKeys
+                    .filter(k => k.startsWith('command:'))
+                    .map(k => '/' + k.replace('command:', ''))
+                    .join(', ');
+                const skillNames = installedKeys
+                    .filter(k => k.startsWith('skill:'))
+                    .map(k => k.replace('skill:', ''))
+                    .join(', ');
+
+                let detailsHtml = '';
+                if (commandNames) {
+                    detailsHtml += `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">Commands: ${commandNames}</div>`;
+                }
+                if (skillNames) {
+                    detailsHtml += `<div style="font-size: 0.85rem; color: var(--text-secondary);">Skills: ${skillNames}</div>`;
+                }
+
                 statusDiv.innerHTML = `
                     <div class="status-message success">
                         <span>✓ Installed ${commands} commands and ${skills} skills</span>
                     </div>
+                    ${detailsHtml}
                 `;
-                setTimeout(() => nextSlide(), 1000);
+                setTimeout(() => nextSlide(), 1500);
             } else {
                 showError(statusDiv, result.error, 'executeSkillsStep()');
             }
@@ -2230,20 +2300,31 @@
             `;
 
             const result = await executeStep('ui');
+            console.log('UI step result:', JSON.stringify(result, null, 2));
 
             if (result.success) {
+                const resultData = result.result || {};
                 let msg = 'Dashboard installed';
-                if (result.result.depsInstalled) {
-                    msg += ' with dependencies';
-                } else if (!result.result.nodeAvailable) {
-                    msg += ' (run npm install to complete)';
+                let details = '';
+
+                if (resultData.depsInstalled) {
+                    msg = 'Dashboard installed and ready';
+                    details = 'Dependencies installed successfully.';
+                } else if (!resultData.nodeAvailable) {
+                    msg = 'Dashboard files installed';
+                    details = 'Node.js not found. Install Node.js, then run <code>cd _ui && npm install && npm start</code>';
+                } else {
+                    msg = 'Dashboard files installed';
+                    details = 'Run <code>cd _ui && npm install && npm start</code> to launch the dashboard.';
                 }
+
                 statusDiv.innerHTML = `
                     <div class="status-message success">
                         <span>✓ ${msg}</span>
                     </div>
+                    ${details ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">${details}</div>` : ''}
                 `;
-                setTimeout(() => nextSlide(), 1000);
+                setTimeout(() => nextSlide(), 1500);
             } else {
                 showError(statusDiv, result.error, 'executeUIStep()');
             }
@@ -2251,16 +2332,16 @@
 
         // IDE instructions content
         const ideInstructions = {
-            cursor: {
-                title: 'Getting Started with Cursor',
+            antigravity: {
+                title: 'Getting Started with Antigravity',
                 content: `
                     <ol style="margin: 10px 0; padding-left: 20px;">
-                        <li>Download Cursor from <a href="https://cursor.sh" target="_blank" style="color: var(--gold);">cursor.sh</a></li>
-                        <li>Open Cursor → File → Open Folder → select your workspace</li>
-                        <li>Open terminal in Cursor (View → Terminal)</li>
+                        <li>Download Antigravity from <a href="https://antigravity.google" target="_blank" style="color: var(--gold);">antigravity.google</a></li>
+                        <li>Open Antigravity → File → Open Folder → select your workspace</li>
+                        <li>Open terminal (View → Terminal)</li>
                         <li>Type <code>claude</code> and press Enter</li>
                     </ol>
-                    <p style="margin-top: 10px; font-size: 0.85rem;">Cursor has Claude built-in via its AI features, plus you can use Claude Code in the terminal for slash commands.</p>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Antigravity offers AI-powered collaboration features plus Claude Code in the integrated terminal.</p>
                 `
             },
             vscode: {
@@ -2275,16 +2356,16 @@
                     <p style="margin-top: 10px; font-size: 0.85rem;">Consider installing the Claude extension for VS Code for inline assistance.</p>
                 `
             },
-            windsurf: {
-                title: 'Getting Started with Windsurf',
+            cursor: {
+                title: 'Getting Started with Cursor',
                 content: `
                     <ol style="margin: 10px 0; padding-left: 20px;">
-                        <li>Download Windsurf from <a href="https://codeium.com/windsurf" target="_blank" style="color: var(--gold);">codeium.com/windsurf</a></li>
-                        <li>Open Windsurf → File → Open Folder → select your workspace</li>
-                        <li>Open terminal (View → Terminal)</li>
+                        <li>Download Cursor from <a href="https://cursor.sh" target="_blank" style="color: var(--gold);">cursor.sh</a></li>
+                        <li>Open Cursor → File → Open Folder → select your workspace</li>
+                        <li>Open terminal in Cursor (View → Terminal)</li>
                         <li>Type <code>claude</code> and press Enter</li>
                     </ol>
-                    <p style="margin-top: 10px; font-size: 0.85rem;">Windsurf includes Codeium's AI features plus Claude Code in the terminal.</p>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Cursor has Claude built-in via its AI features, plus you can use Claude Code in the terminal for slash commands.</p>
                 `
             },
             terminal: {
@@ -2326,25 +2407,113 @@
             }
         }
 
+        function skipIDESelection() {
+            // Clear any selection
+            const ideOptions = document.querySelectorAll('[data-ide]');
+            ideOptions.forEach(o => o.classList.remove('selected'));
+            document.querySelectorAll('input[name="ide"]').forEach(i => i.checked = false);
+
+            // Hide instructions
+            document.getElementById('ideInstructions').style.display = 'none';
+
+            // Clear preference and continue
+            config.preferredIDE = null;
+            nextSlide();
+        }
+
         async function runVerification() {
             const checksDiv = document.getElementById('verifyChecks');
             const actionsDiv = document.getElementById('verifyActions');
+            const titleEl = document.getElementById('verifyTitle');
+            const summaryEl = document.getElementById('verifySummary');
 
             const result = await executeStep('verification');
+            console.log('Verification result:', JSON.stringify(result, null, 2));
 
             if (result.success && result.result) {
+                const stats = result.result.stats || {};
                 const checks = result.result.checks || [];
 
-                checksDiv.innerHTML = checks.map(check => `
-                    <div class="setup-step ${check.passed ? 'passed' : 'failed'}">
-                        <span class="step-number ${check.passed ? 'ok' : 'fail'}">${check.passed ? '✓' : '✗'}</span>
-                        <div class="step-content">
-                            <strong>${check.name}</strong>
-                            <p class="step-detail">${check.message || (check.passed ? 'OK' : 'Failed')}</p>
-                        </div>
-                    </div>
-                `).join('');
+                // Update title based on results
+                const allPassed = result.result.allPassed;
+                titleEl.textContent = allPassed ? 'All systems go!' : 'Installation Summary';
+                summaryEl.textContent = `${stats.passed || 0} passed, ${stats.failed || 0} issues${stats.optional_missing ? `, ${stats.optional_missing} optional skipped` : ''}`;
 
+                // Group checks by section from backend
+                const sectionLabels = {
+                    'directories': 'Directory Structure',
+                    'configuration': 'Configuration Files',
+                    'commands': 'Commands',
+                    'skills': 'Skills',
+                    'git': 'Git Repository',
+                    'python_tools': 'Python Tools'
+                };
+
+                const groups = {};
+                const skippedSections = [];
+
+                checks.forEach(check => {
+                    const section = check.section || 'other';
+                    const name = check.name || '';
+                    const isOptional = check.optional || false;
+
+                    // Skip Google-related checks if user skipped Google setup
+                    if (config.googleApiMode === 'skip' && (name.includes('google') || name.includes('.config/google'))) {
+                        if (!skippedSections.includes('Google API')) skippedSections.push('Google API');
+                        return;
+                    }
+
+                    // Skip python_tools section (not installed by web wizard)
+                    if (section === 'python_tools') {
+                        return;
+                    }
+
+                    const groupName = sectionLabels[section] || section;
+                    if (!groups[groupName]) {
+                        groups[groupName] = [];
+                    }
+                    groups[groupName].push({ ...check, isOptional });
+                });
+
+                // Build display HTML
+                let html = '';
+
+                for (const [groupName, items] of Object.entries(groups)) {
+                    if (items.length === 0) continue;
+
+                    const passedCount = items.filter(i => i.passed).length;
+                    const failedItems = items.filter(i => !i.passed && !i.isOptional);
+                    const allGroupPassed = failedItems.length === 0;
+
+                    html += `<div style="margin-bottom: 16px;">`;
+                    html += `<div class="setup-step ${allGroupPassed ? 'passed' : 'failed'}" style="margin-bottom: 4px;">`;
+                    html += `<span class="step-number ${allGroupPassed ? 'ok' : 'fail'}">${allGroupPassed ? '✓' : '!'}</span>`;
+                    html += `<div class="step-content">`;
+                    html += `<strong>${groupName}</strong>`;
+                    html += `<p class="step-detail">${passedCount}/${items.length} items ready</p>`;
+                    html += `</div></div>`;
+
+                    // Only show details for failed required items
+                    if (failedItems.length > 0) {
+                        html += `<div style="margin-left: 40px; font-size: 0.85rem; color: var(--text-secondary);">`;
+                        failedItems.forEach(item => {
+                            html += `<div style="margin: 4px 0;">• ${item.name}: ${item.message || 'missing'}</div>`;
+                        });
+                        html += `</div>`;
+                    }
+
+                    html += `</div>`;
+                }
+
+                // Add note about skipped items if applicable
+                if (skippedSections.length > 0) {
+                    html += `<div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; padding: 8px; background: var(--cream-dark); border-radius: 6px;">
+                        <em>Skipped by choice: ${skippedSections.join(', ')}</em>
+                    </div>`;
+                }
+
+                checksDiv.innerHTML = html;
+                checksDiv.scrollTop = 0; // Scroll to top
                 actionsDiv.style.display = 'block';
             }
         }
