@@ -185,6 +185,7 @@ class DirectoriesStep(SetupStep):
 
     def execute(self) -> Dict[str, Any]:
         from steps.directories import create_all_directories, get_directory_descriptions
+        from utils.file_ops import FileOperations
 
         error = self.validate_config(["workspacePath", "role"])
         if error:
@@ -200,9 +201,12 @@ class DirectoriesStep(SetupStep):
 
         self.progress("Creating directories...", 30)
 
+        # Create file operations tracker
+        file_ops = FileOperations()
+
         # Create directories (this function handles role-specific structure)
         try:
-            created, skipped = create_all_directories(workspace, role)
+            created = create_all_directories(workspace, file_ops, role)
         except Exception as e:
             return {"success": False, "error": str(e)}
 
@@ -211,13 +215,12 @@ class DirectoriesStep(SetupStep):
         return {
             "success": True,
             "result": {
-                "created": [str(p.relative_to(workspace)) for p in created],
-                "skipped": [str(p.relative_to(workspace)) for p in skipped],
+                "created": created,  # Already strings from the function
                 "descriptions": descriptions,
             },
             "rollbackData": {
                 "workspacePath": str(workspace),
-                "created": [str(p) for p in created],
+                "created": [str(workspace / p) for p in created],
             },
         }
 
