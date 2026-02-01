@@ -108,6 +108,92 @@ Add transcripts now, or defer to tomorrow?
 - Missing transcripts = missing action items in master list
 - Better to capture same-day while memory is fresh
 
+### Step 2B: Prep Completion Reconciliation
+
+For meetings that happened today, update week overview and optionally prompt for agenda status.
+
+**Key principle:** Only ask questions when the answer can't be determined from existing data.
+
+#### Auto-Detection (No User Input Required)
+
+```python
+def reconcile_prep_status(completed_meetings, today_date):
+    """
+    Auto-update prep status for completed meetings.
+    Detects meeting completion from calendar (past end time).
+    """
+    week_overview_path = '_today/week-00-overview.md'
+
+    if not os.path.exists(week_overview_path):
+        return []  # No week overview to update
+
+    week_overview = read_file(week_overview_path)
+    agenda_tasks_pending = []
+
+    for meeting in completed_meetings:
+        # Update week overview to mark meeting as complete
+        week_overview = update_table_row(
+            week_overview,
+            match_columns={'Day': format_day(today_date), 'Account/Meeting': meeting['name']},
+            update_column='Prep Status',
+            new_value='✅ Done'
+        )
+
+        # Check if there was an agenda task that wasn't completed
+        if meeting.get('agenda_owner') == 'you':
+            # Check if agenda draft exists
+            agenda_file_pattern = f"_today/90-agenda-needed/{meeting['account'].lower()}*"
+            agenda_files = glob.glob(agenda_file_pattern)
+
+            if agenda_files:
+                # Draft exists - check if it was sent
+                # Look for evidence: calendar event description updated with agenda link
+                event_details = get_calendar_event(meeting['event_id'])
+                description = event_details.get('description', '')
+
+                if 'agenda' in description.lower() and ('docs.google.com' in description or len(description) > 200):
+                    # Agenda appears to have been added to calendar
+                    pass  # Auto-mark as complete
+                else:
+                    # Draft exists but may not have been sent
+                    agenda_tasks_pending.append(meeting)
+
+    write_file(week_overview_path, week_overview)
+    return agenda_tasks_pending
+```
+
+#### Smart Prompting (Only When Needed)
+
+If agenda tasks are pending and can't be auto-resolved:
+
+```python
+if agenda_tasks_pending:
+    # Only ask about unresolved agenda items
+    prompt = "Agenda status for completed meetings:\n\n"
+
+    for meeting in agenda_tasks_pending:
+        prompt += f"• **{meeting['account']}** ({meeting['time']})\n"
+        prompt += f"  Draft: _today/90-agenda-needed/{meeting['draft_file']}\n"
+        prompt += f"  Did you send the agenda?\n\n"
+
+    # Use AskUserQuestion with options
+    options = [
+        {"label": "Sent all", "description": "I sent agendas for all listed meetings"},
+        {"label": "Some sent", "description": "Let me specify which ones"},
+        {"label": "Didn't send", "description": "Customer handled or not needed"},
+        {"label": "Skip", "description": "I'll address this later"}
+    ]
+```
+
+**Auto-Completion Logic:**
+If agenda file exists AND calendar event description now contains agenda link:
+→ Mark task as completed automatically in master-task-list.md
+
+**Resilience:** If /today wasn't run:
+- /wrap still marks completed meetings as "✅ Done" in week overview
+- Surfaces "no prep file found" as info (not error)
+- System continues gracefully
+
 ### Step 3: Check Transcript/Notes Processing Status
 
 For each important meeting:
@@ -365,11 +451,12 @@ Create `_today/archive/[TODAY]/wrap-summary.md`:
 # Day Wrap Summary - [Date]
 
 ## Meetings Completed
-| Account | Time | Notes | Summary | Actions |
-|---------|------|-------|---------|---------|
-| Client A | 10:00 AM | Processed | Exists | 2 new |
-| Client B | 2:00 PM | Processed | Exists | 1 new |
-| Client C | 4:00 PM | Missing | None | - |
+| Account | Time | Prep Status | Notes | Actions |
+|---------|------|-------------|-------|---------|
+| Client A | 10:00 AM | ✅ Done | Processed | 2 new |
+| Client B | 2:00 PM | ✅ Done | Processed | 1 new |
+| Client C | 4:00 PM | ✅ Done | Missing | - |
+| Manager 1:1 | 1:00 PM | ✅ Done | N/A | - |
 
 ## Action Items Reconciled
 
@@ -387,6 +474,12 @@ Create `_today/archive/[TODAY]/wrap-summary.md`:
 ## Impacts Captured
 - **Value Delivered**: Client B demo successful
 - **Risk Identified**: Client A timeline may slip
+
+## Agenda Tasks
+| Meeting | Status | Notes |
+|---------|--------|-------|
+| Client B renewal (tomorrow) | ✅ Sent | Added to calendar description |
+| Client C check-in (Wed) | ✏️ Draft ready | Review and send tomorrow |
 
 ## Inbox Status
 - Processed: 0
@@ -408,14 +501,18 @@ Create `_today/archive/[TODAY]/wrap-summary.md`:
 DAY WRAP COMPLETE - [Date]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Meetings: 3 completed, 2 notes processed
+Meetings: 4 completed → all marked ✅ Done in week overview
+  - 3 customer/project meetings
+  - 1 internal meeting
 Actions: 2 completed, 3 new added, 1 carried forward
 Impact: 2 highlights captured
+Agendas: 1 sent, 1 draft ready for tomorrow
 Attention: 1 transcript missing (Client C)
 Archived: Today's files moved to archive/2026-01-08/
 Ready: _today/ prepared for tomorrow
 
 Outstanding items for tomorrow:
+- Send agenda for Client C check-in (✏️ Draft ready)
 - Process Client C transcript when available
 - 2 files in _inbox/ to process
 
