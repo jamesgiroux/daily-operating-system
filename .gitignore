@@ -2,6 +2,9 @@
 .claude/
 CLAUDE.md
 
+# Local working documents (PRDs, drafts, notes)
+.docs/
+
 # Credentials and secrets
 .config/
 *.credentials
@@ -39,3 +42,8 @@ htmlcov/
 # Node (if any)
 node_modules/
 package-lock.json
+
+# Setup wizard state
+.setup-state.json
+.dailyos-setup-complete
+.dailyos-test

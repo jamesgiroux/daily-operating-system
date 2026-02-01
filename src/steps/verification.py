@@ -159,6 +159,9 @@ def verify_python_tools(workspace: Path) -> Tuple[bool, List[Dict[str, Any]]]:
     """
     Verify Python tools are installed.
 
+    Note: Python tools are optional and not installed by the web wizard.
+    They are only included if manually added or via CLI setup.
+
     Args:
         workspace: Root workspace path
 
@@ -182,7 +185,8 @@ def verify_python_tools(workspace: Path) -> Tuple[bool, List[Dict[str, Any]]]:
             'name': tool_name,
             'description': description,
             'exists': exists,
-            'status': 'ok' if exists else 'not installed',
+            'required': False,  # Mark as optional
+            'status': 'ok' if exists else 'optional',  # Not a failure
         })
         if exists:
             any_installed = True
@@ -323,6 +327,6 @@ def get_verification_summary(results: Dict[str, Any]) -> str:
         lines.append("Status: INCOMPLETE")
         lines.append("")
         lines.append("Some required components are missing.")
-        lines.append("Re-run setup.py to complete installation.")
+        lines.append("Re-run advanced-start.py to complete installation.")
 
     return "\n".join(lines)

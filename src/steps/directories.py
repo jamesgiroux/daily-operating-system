@@ -463,6 +463,7 @@ SUPPORT_DIRECTORIES = [
     '_templates',
     '_tools',
     '_reference',
+    '_config',
 ]
 
 # Configuration directories
@@ -500,6 +501,7 @@ def get_directory_descriptions() -> Dict[str, str]:
         '_templates': 'Reusable document templates',
         '_tools': 'Python automation scripts',
         '_reference': 'Standards and guidelines',
+        '_config': 'Centralized workspace configuration',
 
         # Config
         '.config/google': 'Google API credentials and scripts',
