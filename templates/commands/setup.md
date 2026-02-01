@@ -4,7 +4,7 @@ Interactive workspace configuration and verification for Daily Operating System.
 
 ## When to Use
 
-- **First run**: After running `setup.py`, use `/setup` to personalize
+- **First run**: After running setup wizard, use `/setup` to personalize
 - **Reconfigure**: When you want to adjust folder structure, enable/disable skills, or update CLAUDE.md
 - **Verify**: When something isn't working, use `/setup --verify` to check configuration
 - **After updates**: After pulling new DailyOS features, verify everything still works
@@ -389,7 +389,7 @@ Available:
 - Sheets (read/write)
 - Docs (read/write)
 
-To reconfigure: Run `python3 setup.py --google`
+To reconfigure: Run `python3 advanced-start.py --google`
 ```
 
 ### Git Configuration
