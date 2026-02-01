@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://daily-os.com/schemas/workspace.json",
+  "title": "Daily Operating System Workspace Configuration",
+  "description": "Centralized configuration for Daily Operating System workspace",
+  "type": "object",
+  "required": ["workspace", "organization"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this schema"
+    },
+    "workspace": {
+      "type": "object",
+      "description": "Workspace identification",
+      "required": ["name", "role"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable workspace name",
+          "minLength": 1,
+          "examples": ["My Productivity", "VIP Workspace", "Sales Hub"]
+        },
+        "role": {
+          "type": "string",
+          "description": "User's role for folder structure",
+          "enum": ["customer_success", "sales", "project_management", "product_management", "marketing", "engineering", "consulting", "general"],
+          "examples": ["customer_success"]
+        }
+      }
+    },
+    "organization": {
+      "type": "object",
+      "description": "Organization settings for meeting classification and email filtering",
+      "required": ["name", "internal_domains"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Organization or company name",
+          "examples": ["Acme Corp", "WordPress VIP"]
+        },
+        "internal_domains": {
+          "type": "array",
+          "description": "Email domains that belong to your organization (for meeting classification)",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\\.[a-zA-Z]{2,}$"
+          },
+          "uniqueItems": true,
+          "examples": [["company.com", "subsidiary.com"]]
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "description": "Enabled features",
+      "properties": {
+        "google_api": {
+          "type": "boolean",
+          "description": "Whether Google API integration is configured",
+          "default": false
+        },
+        "web_dashboard": {
+          "type": "boolean",
+          "description": "Whether the web dashboard is installed",
+          "default": false
+        },
+        "python_tools": {
+          "type": "boolean",
+          "description": "Whether Python automation tools are installed",
+          "default": false
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Setup metadata",
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the workspace was created"
+        },
+        "setup_version": {
+          "type": "string",
+          "description": "Version of setup wizard used",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When configuration was last modified"
+        }
+      }
+    }
+  }
+}
