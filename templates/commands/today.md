@@ -10,6 +10,46 @@ Run every morning during "Daily Prep" calendar block. This command:
 - Generates draft agendas for upcoming customer meetings
 - Suggests focus areas for downtime
 
+---
+
+## First-Run Check
+
+**Before running any scripts, check if this is a fresh workspace:**
+
+```bash
+# Check for workspace configuration
+ls _config/workspace.json 2>/dev/null || echo "FIRST_RUN"
+```
+
+### If FIRST_RUN (no workspace.json found):
+
+**Welcome to /today!** This appears to be your first time running this command. Here's what you need to know:
+
+**Required for basic operation:**
+- ✅ Workspace directory structure (created during setup)
+- ✅ `_today/` folder for daily files
+
+**Optional but recommended:**
+- 📅 **Google Calendar** - Automatically fetches today's meetings
+- 📧 **Gmail** - Surfaces important emails for triage
+- 📊 **Google Sheets** - Loads account data for meeting classification
+
+**Current status check:**
+```bash
+# Check Google API setup
+ls .config/google/token.json 2>/dev/null && echo "Google API: Configured" || echo "Google API: Not configured (manual mode)"
+```
+
+**If Google API is not configured:**
+That's okay! The command will run in **manual mode**:
+- You can add meetings manually to your prep files
+- Action items still work from your master task list
+- You can set up Google API later with `/setup --google`
+
+**Ready to continue?** Proceed to Phase 1 below. The script will clearly indicate which features are available.
+
+---
+
 ## Three-Phase Execution
 
 This command uses a three-phase approach for efficiency:
@@ -50,10 +90,10 @@ python3 /Users/jamesgiroux/Documents/VIP/_tools/prepare_today.py
 This script performs all deterministic operations:
 - Resilience checks (yesterday's archive, unprocessed transcripts)
 - Archive yesterday's files if needed
-- Fetch account data from Google Sheet
-- Fetch today's calendar and classify meetings
+- Fetch account data from Google Sheet (if configured)
+- Fetch today's calendar and classify meetings (if configured)
 - Aggregate action items from master task list
-- Fetch and classify emails
+- Fetch and classify emails (if configured)
 - Identify agendas needed for look-ahead
 - Check existing files in _today/
 
@@ -63,6 +103,36 @@ This script performs all deterministic operations:
 - `--skip-archive` - Don't archive yesterday's files
 - `--skip-email` - Don't fetch emails
 - `--output FILE` - Custom output path
+
+#### Understanding Script Output
+
+The script will clearly indicate what's available:
+
+**Full Mode** (Google API configured):
+```
+Step 2: Fetching account data from Google Sheets...
+  Loaded 35 accounts
+Step 3: Fetching calendar events...
+  Found 6 events for today
+Step 7: Fetching and classifying emails...
+  Found 12 emails
+```
+
+**Manual Mode** (Google API not configured):
+```
+Step 2: Fetching account data from Google Sheets...
+  Skipped (Google API unavailable: token.json not found)
+Step 3: Fetching calendar events...
+  Skipped (Google API unavailable: token.json not found)
+  NOTE: Add meetings manually or complete Google API setup
+```
+
+**This is normal for new workspaces!** The script still creates the directive file with:
+- Action items from your master task list
+- Existing file inventory
+- Empty meeting slots you can populate manually
+
+To set up Google API later: `/setup --google`
 
 ### Phase 2: AI Enrichment (Claude Tasks)
 
