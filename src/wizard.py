@@ -47,6 +47,7 @@ class SetupWizard:
         self.verbose = getattr(args, 'verbose', False)
         self.config: Dict[str, Any] = {}
         self.file_ops = FileOperations()
+        self._current_step_name: Optional[str] = None
 
     def run(self) -> int:
         """
@@ -64,42 +65,52 @@ class SetupWizard:
                 return 0
 
             # Step 1: Prerequisites
+            self._current_step_name = "Prerequisites Check"
             if not self._step_prerequisites():
                 return 1
 
             # Step 2: Workspace Location
+            self._current_step_name = "Workspace Location"
             if not self._step_workspace():
                 return 1
 
             # Step 3: Directory Structure
+            self._current_step_name = "Directory Structure"
             if not self._step_directories():
                 return 1
 
             # Step 4: Git Setup
+            self._current_step_name = "Git Setup"
             if not self._step_git():
                 return 1
 
             # Step 5: Google API (optional)
+            self._current_step_name = "Google API Integration"
             if not self._step_google_api():
                 return 1
 
             # Step 6: CLAUDE.md Configuration
+            self._current_step_name = "CLAUDE.md Configuration"
             if not self._step_claude_md():
                 return 1
 
             # Step 7: Skills & Commands
+            self._current_step_name = "Skills & Commands"
             if not self._step_skills():
                 return 1
 
             # Step 8: Web Dashboard (UI)
+            self._current_step_name = "Web Dashboard"
             if not self._step_ui():
                 return 1
 
             # Step 9: Python Tools
+            self._current_step_name = "Python Tools"
             if not self._step_python_tools():
                 return 1
 
             # Step 10: Verification
+            self._current_step_name = "Verification"
             if not self._step_verification():
                 return 1
 
@@ -114,13 +125,36 @@ class SetupWizard:
             return 130
 
         except Exception as e:
+            import traceback
+
             print_error(f"Unexpected error: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
-            if confirm("\nRollback changes made so far?"):
+            print()
+
+            # Always show helpful diagnostic info
+            print_info("Diagnostic information:")
+            print(f"  Error type: {type(e).__name__}")
+            print(f"  Error message: {e}")
+            print(f"  Last completed step: {self._current_step_name or 'unknown'}")
+            print()
+
+            # Show traceback (always useful for bug reports)
+            print_info("Traceback (for bug reports):")
+            print("-" * 40)
+            traceback.print_exc()
+            print("-" * 40)
+            print()
+
+            print_info("What you can do:")
+            print("  1. Report this issue at: https://github.com/jamesgiroux/daily-operating-system/issues")
+            print("  2. Include the traceback above in your report")
+            print("  3. Try running with --verbose for more detail")
+            print()
+
+            if confirm("Rollback changes made so far?"):
                 count = self.file_ops.rollback()
                 print(f"Rolled back {count} operations.")
+            else:
+                print_info("Changes preserved. You can manually clean up or retry setup.")
             return 1
 
     def run_google_setup_only(self) -> int:
