@@ -125,37 +125,85 @@ class SetupWizard:
             return 130
 
         except Exception as e:
-            import traceback
+            self._handle_error(e)
+            return 1
 
-            print_error(f"Unexpected error: {e}")
+    def _handle_error(self, e: Exception):
+        """
+        Handle errors in a beginner-friendly way.
+
+        Shows a clear message, saves an error report, and offers simple next steps.
+        Technical details are hidden unless requested.
+        """
+        import traceback
+        import io
+        from datetime import datetime
+
+        step_name = self._current_step_name or "setup"
+
+        # Friendly message first
+        print()
+        print_error(f"Something went wrong during {step_name.lower()}")
+        print()
+        print("  Don't worry - this is usually fixable!")
+        print()
+
+        # Generate error report content
+        error_report = io.StringIO()
+        error_report.write("=" * 60 + "\n")
+        error_report.write("Daily Operating System - Error Report\n")
+        error_report.write("=" * 60 + "\n\n")
+        error_report.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        error_report.write(f"Step: {step_name}\n")
+        error_report.write(f"Error: {type(e).__name__}: {e}\n\n")
+        error_report.write("Traceback:\n")
+        error_report.write("-" * 40 + "\n")
+        traceback.print_exc(file=error_report)
+        error_report.write("-" * 40 + "\n\n")
+        error_report.write("System Info:\n")
+        error_report.write(f"  Python: {sys.version}\n")
+        error_report.write(f"  Platform: {sys.platform}\n")
+        if self.config.get('workspace'):
+            error_report.write(f"  Workspace: {self.config['workspace']}\n")
+        error_report_content = error_report.getvalue()
+
+        # Save error report to file
+        error_file = Path.home() / "dailyos-error-report.txt"
+        try:
+            error_file.write_text(error_report_content)
+            print(f"  An error report was saved to: {error_file}")
             print()
+        except Exception:
+            pass  # Don't fail on failing to save error report
 
-            # Always show helpful diagnostic info
-            print_info("Diagnostic information:")
-            print(f"  Error type: {type(e).__name__}")
-            print(f"  Error message: {e}")
-            print(f"  Last completed step: {self._current_step_name or 'unknown'}")
+        # Simple next steps
+        print("What to do next:")
+        print()
+        print("  1. Try running setup again - many errors are temporary")
+        print()
+        print("  2. If it keeps failing, get help:")
+        print("     - Email the error report to: james@giroux.io")
+        print("     - Or open an issue: github.com/jamesgiroux/daily-operating-system/issues")
+        print()
+
+        # Offer technical details (hidden by default)
+        if confirm("Show technical details?", default=False):
             print()
-
-            # Show traceback (always useful for bug reports)
-            print_info("Traceback (for bug reports):")
             print("-" * 40)
+            print(f"Error type: {type(e).__name__}")
+            print(f"Message: {e}")
+            print()
             traceback.print_exc()
             print("-" * 40)
             print()
 
-            print_info("What you can do:")
-            print("  1. Report this issue at: https://github.com/jamesgiroux/daily-operating-system/issues")
-            print("  2. Include the traceback above in your report")
-            print("  3. Try running with --verbose for more detail")
-            print()
-
-            if confirm("Rollback changes made so far?"):
-                count = self.file_ops.rollback()
-                print(f"Rolled back {count} operations.")
-            else:
-                print_info("Changes preserved. You can manually clean up or retry setup.")
-            return 1
+        # Handle rollback with friendly language
+        print()
+        if confirm("Undo the changes made so far?", default=True):
+            count = self.file_ops.rollback()
+            print_success(f"Cleaned up {count} items. You can safely try again.")
+        else:
+            print_info("Changes kept. You can continue from where you left off.")
 
     def run_google_setup_only(self) -> int:
         """
