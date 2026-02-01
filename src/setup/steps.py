@@ -382,6 +382,7 @@ class ClaudeMdStep(SetupStep):
 
     def execute(self) -> Dict[str, Any]:
         from steps.claude_md import generate_claude_md, generate_basic_template, create_claude_md
+        from utils.file_ops import FileOperations
 
         error = self.validate_config(["workspacePath"])
         if error:
@@ -409,12 +410,17 @@ class ClaudeMdStep(SetupStep):
         self.progress("Writing configuration file...", 70)
 
         try:
+            # Generate content based on mode
             if mode == "questionnaire" and answers:
-                content = generate_claude_md(answers, self.config.get("role", "general"))
+                # Pass workspace and answers dict to generate_claude_md
+                content = generate_claude_md(workspace, answers)
             else:
-                content = generate_basic_template(self.config.get("role", "general"))
+                # Template mode just needs workspace
+                content = generate_basic_template(workspace)
 
-            create_claude_md(workspace, content)
+            # Create file with FileOperations for tracking
+            file_ops = FileOperations()
+            create_claude_md(workspace, content, file_ops)
         except Exception as e:
             return {"success": False, "error": f"Failed to create CLAUDE.md: {e}"}
 
