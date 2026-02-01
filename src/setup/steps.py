@@ -253,6 +253,7 @@ class GitStep(SetupStep):
 
     def execute(self) -> Dict[str, Any]:
         from steps.git_setup import is_git_repo, init_git_repo, create_gitignore
+        from utils.file_ops import FileOperations
 
         error = self.validate_config(["workspacePath"])
         if error:
@@ -287,7 +288,8 @@ class GitStep(SetupStep):
         self.progress("Creating .gitignore...", 75)
 
         try:
-            create_gitignore(workspace)
+            file_ops = FileOperations()
+            create_gitignore(workspace, file_ops)
         except Exception as e:
             return {"success": False, "error": f"Failed to create .gitignore: {e}"}
 
@@ -328,6 +330,7 @@ class GoogleApiStep(SetupStep):
             get_api_features,
             install_google_api_script,
         )
+        from utils.file_ops import FileOperations
 
         error = self.validate_config(["workspacePath"])
         if error:
@@ -345,19 +348,20 @@ class GoogleApiStep(SetupStep):
 
         self.progress("Checking for existing credentials...", 20)
 
-        has_credentials = check_credentials_exist(workspace)
-        has_token = check_token_exists(workspace)
+        has_credentials, _ = check_credentials_exist(workspace)
+        has_token, _ = check_token_exists(workspace)
 
         self.progress("Installing Google API script...", 50)
 
         try:
-            install_google_api_script(workspace)
+            file_ops = FileOperations()
+            install_google_api_script(workspace, file_ops)
         except Exception as e:
             return {"success": False, "error": f"Failed to install API script: {e}"}
 
         self.progress("Google API ready", 100)
 
-        features = get_api_features(mode)
+        features = get_api_features()
 
         return {
             "success": True,
@@ -463,6 +467,7 @@ class SkillsStep(SetupStep):
             install_core_package,
             install_all_packages,
         )
+        from utils.file_ops import FileOperations
 
         error = self.validate_config(["workspacePath"])
         if error:
@@ -485,10 +490,11 @@ class SkillsStep(SetupStep):
         self.progress("Installing skills...", 40)
 
         try:
+            file_ops = FileOperations()
             if mode == "all":
-                installed = install_all_packages(workspace)
+                installed = install_all_packages(workspace, file_ops)
             else:
-                installed = install_core_package(workspace)
+                installed = install_core_package(workspace, file_ops)
         except Exception as e:
             return {"success": False, "error": f"Failed to install skills: {e}"}
 
