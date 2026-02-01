@@ -87,7 +87,7 @@ This command uses a three-phase approach for efficiency:
 **ALWAYS RUN THIS FIRST:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/prepare_wrap.py
+python3 _tools/prepare_wrap.py
 ```
 
 This script performs all deterministic operations:
@@ -105,7 +105,7 @@ After the script completes, read the directive and execute interactive prompts:
 
 ```bash
 # Read the directive
-cat /Users/jamesgiroux/Documents/VIP/_today/.wrap-directive.json
+cat _today/.wrap-directive.json
 ```
 
 **Execute these AI tasks from directive['ai_tasks']:**
@@ -176,7 +176,7 @@ Did you send the agenda? [Yes / No / N/A]"
 **AFTER completing AI prompts:**
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/_tools/deliver_wrap.py
+python3 _tools/deliver_wrap.py
 ```
 
 This script:
@@ -208,7 +208,7 @@ The following sections are reference material for Phase 2 AI enrichment.
 ### Step 1: Identify Today's Meetings
 
 ```bash
-python3 /Users/jamesgiroux/Documents/VIP/.config/google/google_api.py calendar list 1
+python3 .config/google/google_api.py calendar list 1
 ```
 
 Filter to customer and project meetings that already happened (check end time < now).
@@ -800,21 +800,21 @@ Update dashboards now? [Yes for all / Select individually / Skip]"
 TODAY=$(date +%Y-%m-%d)
 
 # Create archive directory
-mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$TODAY
+mkdir -p _today/archive/$TODAY
 
 # Move daily files EXCEPT week-* files (NOT tasks/, archive/, or week-* files)
 # IMPORTANT: Preserve week-* files - they persist until /week archives them
-for f in /Users/jamesgiroux/Documents/VIP/_today/*.md; do
+for f in _today/*.md; do
     filename=$(basename "$f")
     if [[ ! "$filename" == week-* ]]; then
-        mv "$f" /Users/jamesgiroux/Documents/VIP/_today/archive/$TODAY/ 2>/dev/null
+        mv "$f" _today/archive/$TODAY/ 2>/dev/null
     fi
 done
 
 # Move agenda-needed contents
-if [ -d "/Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed" ] && [ "$(ls -A /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/ 2>/dev/null)" ]; then
-    mkdir -p /Users/jamesgiroux/Documents/VIP/_today/archive/$TODAY/90-agenda-needed
-    mv /Users/jamesgiroux/Documents/VIP/_today/90-agenda-needed/*.md /Users/jamesgiroux/Documents/VIP/_today/archive/$TODAY/90-agenda-needed/ 2>/dev/null
+if [ -d "_today/90-agenda-needed" ] && [ "$(ls -A _today/90-agenda-needed/ 2>/dev/null)" ]; then
+    mkdir -p _today/archive/$TODAY/90-agenda-needed
+    mv _today/90-agenda-needed/*.md _today/archive/$TODAY/90-agenda-needed/ 2>/dev/null
 fi
 ```
 
@@ -825,7 +825,7 @@ fi
 ### Step 8: Check Inbox for New Files
 
 ```bash
-ls -la /Users/jamesgiroux/Documents/VIP/_inbox/
+ls -la _inbox/
 ```
 
 **If files found:**
