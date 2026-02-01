@@ -32,19 +32,18 @@ A productivity framework built on Claude Code for managing your daily work, stra
 git clone https://github.com/jamesgiroux/daily-operating-system.git
 ```
 
-### Step 2: Open Terminal and navigate to the folder
+### Step 2: Launch the setup wizard
 
+**Web-based wizard (recommended for Mac):**
+Double-click `start.command` in the downloaded folder. A browser opens with an interactive setup wizard.
+
+**Terminal wizard:**
 ```bash
 cd ~/Documents/daily-operating-system
-```
-
-### Step 3: Run the setup wizard
-
-```bash
 python3 setup.py
 ```
 
-The wizard walks you through 10 steps:
+Both wizards walk you through 10 steps:
 
 1. **Prerequisites** — Checks Python, Claude Code, Git
 2. **Workspace Location** — Where to create your productivity folder
