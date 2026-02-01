@@ -344,6 +344,17 @@
             to { transform: rotate(360deg); }
         }
 
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .spinner {
             width: 28px;
             height: 28px;
@@ -613,6 +624,18 @@
             color: var(--charcoal);
         }
 
+        .btn-light {
+            background: rgba(245, 242, 239, 0.9);
+            border-color: rgba(245, 242, 239, 0.3);
+            color: var(--charcoal);
+        }
+
+        .btn-light:hover {
+            background: var(--white);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+
         /* Progress Bar */
         .progress-bar {
             position: fixed;
@@ -846,7 +869,7 @@
                                     <polyline points="12 5 19 12 12 19"></polyline>
                                 </svg>
                             </button>
-                            <a href="intro.html" class="btn btn-secondary" style="border-color: rgba(245,242,239,0.3); color: var(--charcoal); background: rgba(245,242,239,0.9);">
+                            <a href="intro.html" class="btn btn-secondary btn-light">
                                 See What It Does
                             </a>
                         </div>
@@ -1278,10 +1301,36 @@
         // ============================================
         // Error Display Helper
         // ============================================
+        function formatError(errorMsg) {
+            // Make technical errors more user-friendly
+            if (!errorMsg) return 'An unexpected error occurred';
+
+            // Common error patterns
+            if (errorMsg.includes('code 1')) {
+                return 'Setup step failed. This usually means a configuration issue.';
+            }
+            if (errorMsg.includes('ENOENT')) {
+                return 'File or directory not found. Check your workspace path.';
+            }
+            if (errorMsg.includes('EACCES') || errorMsg.includes('permission')) {
+                return 'Permission denied. Try a different location or check folder permissions.';
+            }
+            if (errorMsg.includes('Session not found')) {
+                return 'Session expired. Please restart setup.';
+            }
+
+            return errorMsg;
+        }
+
         function showError(statusDiv, errorMsg, retryFn = null) {
+            const friendlyError = formatError(errorMsg);
             statusDiv.innerHTML = `
                 <div class="status-message error">
-                    <span>✗ ${errorMsg}</span>
+                    <span>✗ ${friendlyError}</span>
+                </div>
+                <div class="why-box" style="margin-top: 16px;">
+                    <strong>What to do</strong>
+                    <p>You can try again, go back to change settings, or restart the setup process.</p>
                 </div>
                 <div class="action-buttons" style="margin-top: 16px;">
                     ${retryFn ? `<button class="btn btn-primary" onclick="${retryFn}">Try Again</button>` : ''}
@@ -1289,6 +1338,7 @@
                     <button class="btn btn-skip" onclick="restartSetup()">Restart Setup</button>
                 </div>
             `;
+            console.error('Setup error:', errorMsg);
         }
 
         function restartSetup() {
@@ -1373,21 +1423,76 @@
             const checksDiv = document.getElementById('prereqChecks');
             const actionsDiv = document.getElementById('prereqActions');
 
-            const result = await executeStep('prerequisites');
+            try {
+                const result = await executeStep('prerequisites');
 
-            if (result.success && result.result) {
-                const checks = result.result.checks || [];
-                checksDiv.innerHTML = checks.map(check => `
-                    <div class="setup-step ${check.status === 'ok' ? 'passed' : check.status === 'fail' ? 'failed' : 'warned'}">
-                        <span class="step-number ${check.status}">${check.status === 'ok' ? '✓' : check.status === 'fail' ? '✗' : '!'}</span>
-                        <div class="step-content">
-                            <strong>${check.name}</strong>
-                            <p class="step-detail">${check.message}</p>
-                        </div>
-                    </div>
-                `).join('');
+                if (result.success && result.result) {
+                    const checks = result.result.checks || [];
 
-                actionsDiv.style.display = 'block';
+                    if (checks.length === 0) {
+                        checksDiv.innerHTML = `
+                            <div class="setup-step passed">
+                                <span class="step-number ok">✓</span>
+                                <div class="step-content">
+                                    <strong>All prerequisites met</strong>
+                                    <p class="step-detail">System is ready</p>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Render checks with stagger animation
+                        checksDiv.innerHTML = checks.map((check, i) => `
+                            <div class="setup-step ${check.status === 'ok' ? 'passed' : check.status === 'fail' ? 'failed' : 'warned'}"
+                                 style="animation: fadeInUp 0.3s ease-out ${i * 0.1}s both;">
+                                <span class="step-number ${check.status}">${check.status === 'ok' ? '✓' : check.status === 'fail' ? '✗' : '!'}</span>
+                                <div class="step-content">
+                                    <strong>${check.name}</strong>
+                                    <p class="step-detail">${check.message}</p>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+
+                    // Check for failures
+                    const hasFailures = checks.some(c => c.status === 'fail');
+                    const hasWarnings = checks.some(c => c.status === 'warn');
+
+                    if (hasFailures) {
+                        actionsDiv.innerHTML = `
+                            <div class="why-box" style="margin-bottom: 16px;">
+                                <strong>Required prerequisites missing</strong>
+                                <p>Please install the failed items before continuing.</p>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-secondary" onclick="runPrerequisites()">Check Again</button>
+                            </div>
+                        `;
+                    } else if (hasWarnings) {
+                        actionsDiv.innerHTML = `
+                            <div class="why-box" style="margin-bottom: 16px;">
+                                <strong>Optional tools not found</strong>
+                                <p>Setup can continue, but some features may be limited.</p>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue Anyway</button>
+                                <button class="btn btn-secondary" onclick="runPrerequisites()">Check Again</button>
+                            </div>
+                        `;
+                    } else {
+                        actionsDiv.innerHTML = `
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            </div>
+                        `;
+                    }
+
+                    actionsDiv.style.display = 'block';
+                } else {
+                    // Step returned but failed
+                    showError(checksDiv, result.error || 'Prerequisites check failed', runPrerequisites);
+                }
+            } catch (err) {
+                showError(checksDiv, err.message || 'Failed to check prerequisites', runPrerequisites);
             }
         }
 
@@ -1406,16 +1511,18 @@
 
             const result = await executeStep('workspace');
 
-            if (result.success) {
-                config.workspacePath = result.result.workspacePath;
+            if (result.success && result.result) {
+                const wsPath = result.result.workspacePath || config.workspacePath;
+                config.workspacePath = wsPath;
+                const action = result.result.created ? 'created' : 'ready';
                 statusDiv.innerHTML = `
                     <div class="status-message success">
-                        <span>✓ Workspace ${result.result.created ? 'created' : 'ready'} at ${result.result.workspacePath}</span>
+                        <span>✓ Workspace ${action} at ${wsPath}</span>
                     </div>
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                showError(statusDiv, result.error, 'executeWorkspaceStep()');
+                showError(statusDiv, result.error || 'Failed to create workspace', 'executeWorkspaceStep()');
             }
         }
 
@@ -1457,18 +1564,33 @@
 
             const result = await executeStep('directories');
 
-            if (result.success) {
+            if (result.success && result.result) {
                 const created = result.result.created || [];
+
+                // Different message based on whether we created new directories
+                let message;
+                if (created.length === 0) {
+                    message = 'Directory structure already exists';
+                } else {
+                    message = `Created ${created.length} directories`;
+                }
 
                 statusDiv.innerHTML = `
                     <div class="status-message success">
-                        <span>✓ Created ${created.length} directories</span>
+                        <span>✓ ${message}</span>
                     </div>
                 `;
 
-                // Show key folders
-                const keyFolders = ['_today', '_inbox', 'Projects', 'Areas', 'Resources', 'Archive'];
-                const displayFolders = created.filter(f => keyFolders.some(k => f.includes(k))).slice(0, 6);
+                // Show key folders from what was created (or show standard ones if none created)
+                const keyFolders = ['_today', '_inbox', 'Projects', 'Areas', 'Resources', 'Archive', 'Accounts'];
+                let displayFolders;
+
+                if (created.length > 0) {
+                    displayFolders = created.filter(f => keyFolders.some(k => f.includes(k))).slice(0, 6);
+                } else {
+                    // Show standard PARA folders when structure exists
+                    displayFolders = keyFolders.slice(0, 6);
+                }
 
                 if (displayFolders.length > 0) {
                     previewDiv.innerHTML = displayFolders.map(folder => `
@@ -1482,7 +1604,7 @@
 
                 actionsDiv.style.display = 'block';
             } else {
-                showError(statusDiv, result.error, 'executeDirectoriesStep()');
+                showError(statusDiv, result.error || 'Failed to create directories', 'executeDirectoriesStep()');
             }
         }
 
