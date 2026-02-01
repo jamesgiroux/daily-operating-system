@@ -846,7 +846,7 @@
                                     <polyline points="12 5 19 12 12 19"></polyline>
                                 </svg>
                             </button>
-                            <a href="intro.html" class="btn btn-secondary" style="border-color: rgba(245,242,239,0.3); color: var(--cream);">
+                            <a href="intro.html" class="btn btn-secondary" style="border-color: rgba(245,242,239,0.3); color: var(--charcoal); background: rgba(245,242,239,0.9);">
                                 See What It Does
                             </a>
                         </div>
@@ -925,7 +925,7 @@
                         <div class="role-grid" id="roleGrid">
                             <label class="role-option" data-role="customer_success">
                                 <input type="radio" name="role" value="customer_success">
-                                <span class="role-name">Customer Success / Key Accounts</span>
+                                <span class="role-name">Customer Success</span>
                                 <span class="role-desc">Account portfolios, health tracking, renewals</span>
                             </label>
                             <label class="role-option" data-role="sales">
@@ -1276,6 +1276,36 @@
         }
 
         // ============================================
+        // Error Display Helper
+        // ============================================
+        function showError(statusDiv, errorMsg, retryFn = null) {
+            statusDiv.innerHTML = `
+                <div class="status-message error">
+                    <span>✗ ${errorMsg}</span>
+                </div>
+                <div class="action-buttons" style="margin-top: 16px;">
+                    ${retryFn ? `<button class="btn btn-primary" onclick="${retryFn}">Try Again</button>` : ''}
+                    <button class="btn btn-secondary" onclick="prevSlide()">Go Back</button>
+                    <button class="btn btn-skip" onclick="restartSetup()">Restart Setup</button>
+                </div>
+            `;
+        }
+
+        function restartSetup() {
+            if (confirm('This will restart the setup from the beginning. Continue?')) {
+                sessionId = null;
+                config = {
+                    workspacePath: '~/Documents/productivity',
+                    role: 'general',
+                    googleApiMode: 'full',
+                    claudeMdMode: 'template',
+                    skillsMode: 'core',
+                };
+                goToSlide(0);
+            }
+        }
+
+        // ============================================
         // Slide Navigation
         // ============================================
         function updateSlide(newIndex, direction = 'next') {
@@ -1385,11 +1415,7 @@
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeWorkspaceStep()');
             }
         }
 
@@ -1456,11 +1482,7 @@
 
                 actionsDiv.style.display = 'block';
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeDirectoriesStep()');
             }
         }
 
@@ -1498,11 +1520,7 @@
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeGitStep(false)');
             }
         }
 
@@ -1547,11 +1565,7 @@
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeGoogleStep()');
             }
         }
 
@@ -1585,11 +1599,7 @@
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeClaudeMdStep()');
             }
         }
 
@@ -1631,11 +1641,7 @@
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
-                statusDiv.innerHTML = `
-                    <div class="status-message error">
-                        <span>✗ ${result.error}</span>
-                    </div>
-                `;
+                showError(statusDiv, result.error, 'executeSkillsStep()');
             }
         }
 
