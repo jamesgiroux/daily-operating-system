@@ -575,6 +575,74 @@ class VerificationStep(SetupStep):
         }
 
 
+class UIStep(SetupStep):
+    """Install web dashboard."""
+
+    step_id = "ui"
+    step_name = "Web Dashboard"
+
+    def execute(self) -> Dict[str, Any]:
+        from steps.ui_setup import setup_ui
+        from utils.file_ops import FileOperations
+
+        error = self.validate_config(["workspacePath"])
+        if error:
+            return {"success": False, "error": error}
+
+        skip = self.config.get("skipUI", False)
+        if skip:
+            return {
+                "success": True,
+                "result": {"skipped": True, "message": "Web dashboard skipped"},
+            }
+
+        workspace = self.workspace
+        role = self.config.get("role", "general")
+
+        self.progress("Copying dashboard files...", 20)
+
+        file_ops = FileOperations()
+
+        try:
+            result = setup_ui(
+                workspace=workspace,
+                file_ops=file_ops,
+                role=role,
+                install_deps=True,
+            )
+        except Exception as e:
+            return {"success": False, "error": f"Failed to install dashboard: {e}"}
+
+        if not result["success"]:
+            return {"success": False, "error": result.get("message", "UI setup failed")}
+
+        self.progress("Dashboard installed", 100)
+
+        return {
+            "success": True,
+            "result": {
+                "installed": result["ui_installed"],
+                "configGenerated": result["config_generated"],
+                "depsInstalled": result["deps_installed"],
+                "nodeAvailable": result["node_available"],
+                "startupInstructions": result["startup_instructions"],
+            },
+            "rollbackData": {
+                "workspacePath": str(workspace),
+            },
+        }
+
+    def rollback(self, rollback_data: Dict[str, Any]) -> Dict[str, Any]:
+        workspace = Path(rollback_data.get("workspacePath", ""))
+        ui_dir = workspace / "_ui"
+
+        if ui_dir.exists():
+            shutil.rmtree(ui_dir)
+            return {"success": True, "message": "Removed _ui directory"}
+
+        return {"success": True, "message": "Nothing to rollback"}
+
+
 class CompleteStep(SetupStep):
     """Mark setup as complete."""
 
@@ -618,6 +686,7 @@ STEPS = {
     "google": GoogleApiStep,
     "claudemd": ClaudeMdStep,
     "skills": SkillsStep,
+    "ui": UIStep,
     "verification": VerificationStep,
     "complete": CompleteStep,
 }
