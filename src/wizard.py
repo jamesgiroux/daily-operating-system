@@ -181,9 +181,9 @@ class SetupWizard:
         print()
         print("  1. Try running setup again - many errors are temporary")
         print()
-        print("  2. If it keeps failing, get help:")
-        print("     - Email the error report to: james@giroux.io")
-        print("     - Or open an issue: github.com/jamesgiroux/daily-operating-system/issues")
+        print("  2. If it keeps failing, open an issue:")
+        print("     github.com/jamesgiroux/daily-operating-system/issues")
+        print("     (attach the error report file)")
         print()
 
         # Offer technical details (hidden by default)
