@@ -1,0 +1,21 @@
+{
+  "$schema": "./workspace-schema.json",
+  "workspace": {
+    "name": "",
+    "role": ""
+  },
+  "organization": {
+    "name": "",
+    "internal_domains": []
+  },
+  "features": {
+    "google_api": false,
+    "web_dashboard": false,
+    "python_tools": false
+  },
+  "metadata": {
+    "created_at": "",
+    "setup_version": "1.0.0",
+    "last_updated": ""
+  }
+}

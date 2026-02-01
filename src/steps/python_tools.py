@@ -10,6 +10,7 @@ from typing import List, Dict, Any
 
 # Available Python tools
 AVAILABLE_TOOLS = {
+    # Inbox processing
     'prepare_inbox': {
         'name': 'prepare_inbox.py',
         'description': 'Phase 1 of inbox processing - prepares files and generates agent directives',
@@ -20,6 +21,38 @@ AVAILABLE_TOOLS = {
         'description': 'Phase 3 of inbox processing - delivers processed files to PARA locations',
         'category': 'inbox',
     },
+    # Daily operating system
+    'prepare_today': {
+        'name': 'prepare_today.py',
+        'description': 'Phase 1 of /today - calendar, actions, email preparation',
+        'category': 'daily',
+    },
+    'deliver_today': {
+        'name': 'deliver_today.py',
+        'description': 'Phase 3 of /today - writes overview, actions, and email summary files',
+        'category': 'daily',
+    },
+    'prepare_wrap': {
+        'name': 'prepare_wrap.py',
+        'description': 'Phase 1 of /wrap - completed meetings, transcript status, task reconciliation',
+        'category': 'daily',
+    },
+    'deliver_wrap': {
+        'name': 'deliver_wrap.py',
+        'description': 'Phase 3 of /wrap - archives files, updates tasks, writes wrap summary',
+        'category': 'daily',
+    },
+    'prepare_week': {
+        'name': 'prepare_week.py',
+        'description': 'Phase 1 of /week - week calendar, hygiene checks, time block analysis',
+        'category': 'daily',
+    },
+    'deliver_week': {
+        'name': 'deliver_week.py',
+        'description': 'Phase 3 of /week - writes week-00 through week-04 files, impact template',
+        'category': 'daily',
+    },
+    # Account management
     'generate_dashboard': {
         'name': 'generate_dashboard.py',
         'description': 'Creates account dashboards from data sources',

@@ -6,10 +6,10 @@ A productivity system built on Claude Code for managing your daily work,
 customer relationships, and strategic thinking.
 
 Usage:
-    python3 setup.py              # Run full setup wizard
-    python3 setup.py --google     # Run only Google API setup
-    python3 setup.py --verify     # Verify existing installation
-    python3 setup.py --help       # Show help
+    python3 advanced-start.py              # Run full setup wizard
+    python3 advanced-start.py --google     # Run only Google API setup
+    python3 advanced-start.py --verify     # Verify existing installation
+    python3 advanced-start.py --help       # Show help
 
 For more information, see docs/getting-started.md
 """
@@ -30,10 +30,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python3 setup.py                  # Full setup wizard
-    python3 setup.py --google         # Google API setup only
-    python3 setup.py --verify         # Verify installation
-    python3 setup.py --workspace ~/Work  # Specify workspace location
+    python3 advanced-start.py                  # Full setup wizard
+    python3 advanced-start.py --google         # Google API setup only
+    python3 advanced-start.py --verify         # Verify installation
+    python3 advanced-start.py --workspace ~/Work  # Specify workspace location
         """
     )
 
