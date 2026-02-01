@@ -2,6 +2,14 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
+> **⚠️ Pre-Release Software (v0.8.0)**
+>
+> This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
+>
+> **Current status:** Alpha → working toward 1.0 stable release
+>
+> See [CHANGELOG.md](CHANGELOG.md) for version history.
+
 ## Philosophy
 
 **Consuming, not producing.** You shouldn't have to maintain your productivity tools. They should just be productive.
@@ -308,12 +316,23 @@ python3 -m pytest tests/ -v
 ## Contributing
 
 Contributions welcome! Open an issue or submit a PR:
+- **Bug reports** — Found something broken? [Open an issue](https://github.com/jamesgiroux/daily-operating-system/issues)
 - **New skills or agents** — Share workflows that work for you
-- **Bug fixes** — Found something broken? Let us know
 - **Documentation** — Help make setup clearer for others
 - **Role templates** — Add configurations for new work styles
 
-Fork and customize for your needs.
+### Development Workflow
+
+We use a simple branching model:
+- `main` — Stable releases only (tagged versions)
+- `dev` — Active development (PRs merge here)
+
+To contribute:
+1. Fork the repo
+2. Create a feature branch from `dev`
+3. Submit a PR back to `dev`
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
