@@ -861,18 +861,22 @@
                         <p style="color: rgba(245, 242, 239, 0.7); margin-bottom: 32px;">
                             This wizard will set up your workspace, configure your tools, and get you ready to use /today.
                         </p>
-                        <div class="action-buttons">
+                        <div class="action-buttons" style="flex-direction: column; gap: 12px;">
                             <button class="btn btn-primary" onclick="startSetup()">
-                                Start Setup
+                                Custom Setup
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <line x1="5" y1="12" x2="19" y2="12"></line>
                                     <polyline points="12 5 19 12 12 19"></polyline>
                                 </svg>
                             </button>
-                            <a href="intro.html" class="btn btn-secondary btn-light">
-                                See What It Does
-                            </a>
+                            <button class="btn btn-secondary btn-light" onclick="quickInstall()">
+                                Quick Install
+                                <span style="font-size: 0.75rem; opacity: 0.8;">(defaults, no optional features)</span>
+                            </button>
                         </div>
+                        <p style="color: rgba(245, 242, 239, 0.5); margin-top: 24px; font-size: 0.85rem;">
+                            <a href="intro.html" style="color: var(--gold);">Learn what DailyOS does</a> before you install.
+                        </p>
                     </div>
                 </div>
             </div>
@@ -880,7 +884,7 @@
             <!-- Slide 1: Prerequisites -->
             <div class="slide" data-slide="1" data-step="prerequisites">
                 <div class="slide-content">
-                    <div class="slide-number">Step 1 of 10</div>
+                    <div class="slide-number">Step 1 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">1</span>
                         <span class="step-label">Prerequisites</span>
@@ -909,7 +913,7 @@
             <!-- Slide 2: Workspace Location -->
             <div class="slide" data-slide="2" data-step="workspace">
                 <div class="slide-content">
-                    <div class="slide-number">Step 2 of 10</div>
+                    <div class="slide-number">Step 2 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">2</span>
                         <span class="step-label">Workspace</span>
@@ -937,7 +941,7 @@
             <!-- Slide 3: Choose Role -->
             <div class="slide" data-slide="3" data-step="role">
                 <div class="slide-content">
-                    <div class="slide-number">Step 3 of 10</div>
+                    <div class="slide-number">Step 3 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">3</span>
                         <span class="step-label">Role</span>
@@ -997,7 +1001,7 @@
             <!-- Slide 4: Directory Structure -->
             <div class="slide" data-slide="4" data-step="directories">
                 <div class="slide-content">
-                    <div class="slide-number">Step 4 of 10</div>
+                    <div class="slide-number">Step 4 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">4</span>
                         <span class="step-label">Directories</span>
@@ -1025,7 +1029,7 @@
             <!-- Slide 5: Git Setup -->
             <div class="slide" data-slide="5" data-step="git">
                 <div class="slide-content">
-                    <div class="slide-number">Step 5 of 10</div>
+                    <div class="slide-number">Step 5 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">5</span>
                         <span class="step-label">Git (Optional)</span>
@@ -1053,7 +1057,7 @@
             <!-- Slide 6: Google API -->
             <div class="slide" data-slide="6" data-step="google">
                 <div class="slide-content">
-                    <div class="slide-number">Step 6 of 10</div>
+                    <div class="slide-number">Step 6 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">6</span>
                         <span class="step-label">Google API (Optional)</span>
@@ -1061,26 +1065,127 @@
                     <h1 class="slide-title">Connect <span class="highlight">Google</span> services?</h1>
                     <p class="slide-subtitle">Calendar and Gmail integration powers the /today command.</p>
                     <div class="slide-body">
-                        <div class="option-buttons">
-                            <button class="option-btn selected" data-google="full" onclick="selectGoogleOption('full')">
-                                Full Access
-                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Calendar, Gmail, Sheets)</span>
-                            </button>
-                            <button class="option-btn" data-google="readonly" onclick="selectGoogleOption('readonly')">
-                                Read Only
-                                <span style="font-size: 0.8rem; color: var(--text-muted);">(View only, no changes)</span>
-                            </button>
-                            <button class="option-btn" data-google="skip" onclick="selectGoogleOption('skip')">
-                                Skip
-                            </button>
+                        <!-- Initial choice -->
+                        <div id="googleChoice">
+                            <div class="option-buttons">
+                                <button class="option-btn" data-google="full" onclick="selectGoogleOption('full'); showGoogleGuide();">
+                                    Set Up Google API
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">(~10 min, one-time setup)</span>
+                                </button>
+                                <button class="option-btn" data-google="skip" onclick="selectGoogleOption('skip'); executeGoogleStep();">
+                                    Skip for Now
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">(Can set up later)</span>
+                                </button>
+                            </div>
+                            <div class="why-box" style="margin-top: 16px;">
+                                <strong>What Google API enables</strong>
+                                <p>• See today's meetings in /today dashboard<br>
+                                   • Scan emails for customer correspondence<br>
+                                   • Create calendar events and time blocks</p>
+                            </div>
                         </div>
-                        <div id="googleStatus"></div>
-                        <div class="why-box">
-                            <strong>Privacy Note</strong>
-                            <p>This uses Google's standard APIs with OAuth. Your data stays on your machine—only you have access.</p>
-                        </div>
-                        <div class="action-buttons">
-                            <button class="btn btn-primary" onclick="executeGoogleStep()">Continue</button>
+
+                        <!-- Google OAuth Setup Guide (hidden initially) -->
+                        <div id="googleGuide" style="display: none;">
+                            <div class="setup-steps" id="googleSteps">
+                                <!-- Step 1: Open Google Cloud Console -->
+                                <div class="setup-step" id="googleStep1">
+                                    <span class="step-number">1</span>
+                                    <div class="step-content">
+                                        <strong>Open Google Cloud Console</strong>
+                                        <p class="step-detail">Sign in with the Google account you use for calendar/email.</p>
+                                        <div style="margin-top: 8px;">
+                                            <a href="https://console.cloud.google.com/" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open Console →
+                                            </a>
+                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(1)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Create Project -->
+                                <div class="setup-step" id="googleStep2" style="opacity: 0.5;">
+                                    <span class="step-number">2</span>
+                                    <div class="step-content">
+                                        <strong>Create a New Project</strong>
+                                        <p class="step-detail">Click project dropdown → "New Project" → name it "DailyOS" → Create</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(2)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Enable APIs -->
+                                <div class="setup-step" id="googleStep3" style="opacity: 0.5;">
+                                    <span class="step-number">3</span>
+                                    <div class="step-content">
+                                        <strong>Enable the APIs</strong>
+                                        <p class="step-detail">Go to "APIs & Services" → "Library" → Search and enable:<br>
+                                        • Google Calendar API<br>
+                                        • Gmail API<br>
+                                        • Google Sheets API<br>
+                                        • Google Docs API</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/library" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open API Library →
+                                            </a>
+                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(3)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 4: OAuth Consent Screen -->
+                                <div class="setup-step" id="googleStep4" style="opacity: 0.5;">
+                                    <span class="step-number">4</span>
+                                    <div class="step-content">
+                                        <strong>Configure OAuth Consent Screen</strong>
+                                        <p class="step-detail">"APIs & Services" → "OAuth consent screen" → External → Create<br>
+                                        Fill in app name, your email. Add yourself as test user.</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open OAuth Consent →
+                                            </a>
+                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(4)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 5: Create Credentials -->
+                                <div class="setup-step" id="googleStep5" style="opacity: 0.5;">
+                                    <span class="step-number">5</span>
+                                    <div class="step-content">
+                                        <strong>Create OAuth Credentials</strong>
+                                        <p class="step-detail">"Credentials" → "Create Credentials" → "OAuth client ID"<br>
+                                        Choose "Desktop app" → Create → <strong>Download JSON</strong></p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open Credentials →
+                                            </a>
+                                            <button class="btn btn-skip" style="font-size: 0.85rem;" onclick="completeGoogleStep(5)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 6: Place credentials file -->
+                                <div class="setup-step" id="googleStep6" style="opacity: 0.5;">
+                                    <span class="step-number">6</span>
+                                    <div class="step-content">
+                                        <strong>Save Credentials File</strong>
+                                        <p class="step-detail">Rename downloaded file to <code>credentials.json</code><br>
+                                        Move it to: <code id="credentialsPath">.config/google/credentials.json</code></p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <button class="btn btn-primary" style="font-size: 0.85rem;" onclick="finalizeGoogleSetup()">I've placed the file ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="googleStatus" style="margin-top: 16px;"></div>
+
+                            <div class="action-buttons" style="margin-top: 16px;">
+                                <button class="btn btn-secondary" onclick="hideGoogleGuide()">← Back</button>
+                                <button class="btn btn-skip" onclick="selectGoogleOption('skip'); executeGoogleStep();">Skip Google Setup</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1089,7 +1194,7 @@
             <!-- Slide 7: CLAUDE.md -->
             <div class="slide" data-slide="7" data-step="claudemd">
                 <div class="slide-content">
-                    <div class="slide-number">Step 7 of 10</div>
+                    <div class="slide-number">Step 7 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">7</span>
                         <span class="step-label">CLAUDE.md</span>
@@ -1122,7 +1227,7 @@
             <!-- Slide 8: Skills -->
             <div class="slide" data-slide="8" data-step="skills">
                 <div class="slide-content">
-                    <div class="slide-number">Step 8 of 10</div>
+                    <div class="slide-number">Step 8 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">8</span>
                         <span class="step-label">Skills</span>
@@ -1152,12 +1257,47 @@
                 </div>
             </div>
 
-            <!-- Slide 9: Verification -->
-            <div class="slide" data-slide="9" data-step="verification">
+            <!-- Slide 9: Web Dashboard -->
+            <div class="slide" data-slide="9" data-step="ui">
                 <div class="slide-content">
-                    <div class="slide-number">Step 9 of 10</div>
+                    <div class="slide-number">Step 9 of 12</div>
                     <div class="step-indicator">
                         <span class="step-number">9</span>
+                        <span class="step-label">Web Dashboard (Optional)</span>
+                    </div>
+                    <h1 class="slide-title">Install the <span class="highlight">Dashboard</span>?</h1>
+                    <p class="slide-subtitle">A browser-based UI for navigating your workspace.</p>
+                    <div class="slide-body">
+                        <div class="option-buttons">
+                            <button class="option-btn selected" data-ui="install" onclick="selectUIOption(false)">
+                                Install Dashboard
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Recommended)</span>
+                            </button>
+                            <button class="option-btn" data-ui="skip" onclick="selectUIOption(true)">
+                                Skip
+                            </button>
+                        </div>
+                        <div id="uiStatus"></div>
+                        <div class="why-box">
+                            <strong>What the Dashboard provides</strong>
+                            <p>• Visual sidebar to navigate accounts/projects<br>
+                               • Markdown rendering in browser<br>
+                               • Search across all documents<br>
+                               • Quick access to today's files</p>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeUIStep()">Continue</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 10: Verification -->
+            <div class="slide" data-slide="10" data-step="verification">
+                <div class="slide-content">
+                    <div class="slide-number">Step 10 of 12</div>
+                    <div class="step-indicator">
+                        <span class="step-number">10</span>
                         <span class="step-label">Verification</span>
                     </div>
                     <h1 class="slide-title">Verifying installation...</h1>
@@ -1181,8 +1321,62 @@
                 </div>
             </div>
 
-            <!-- Slide 10: Complete -->
-            <div class="slide closing-slide" data-slide="10" data-step="complete">
+            <!-- Slide 11: IDE Selection -->
+            <div class="slide" data-slide="11" data-step="ide">
+                <div class="slide-content">
+                    <div class="slide-number">Step 11 of 12</div>
+                    <div class="step-indicator">
+                        <span class="step-number">11</span>
+                        <span class="step-label">Choose Your Editor</span>
+                    </div>
+                    <h1 class="slide-title">How will you <span class="highlight">work</span>?</h1>
+                    <p class="slide-subtitle">Pick your preferred way to use Claude Code.</p>
+                    <div class="slide-body">
+                        <div class="role-grid" id="ideGrid" style="grid-template-columns: repeat(2, 1fr);">
+                            <label class="role-option" data-ide="cursor">
+                                <input type="radio" name="ide" value="cursor">
+                                <div class="role-info">
+                                    <span class="role-name">Cursor</span>
+                                    <span class="role-desc">AI-native code editor with Claude built-in</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="vscode">
+                                <input type="radio" name="ide" value="vscode">
+                                <div class="role-info">
+                                    <span class="role-name">VS Code</span>
+                                    <span class="role-desc">Microsoft's popular editor + Claude extension</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="windsurf">
+                                <input type="radio" name="ide" value="windsurf">
+                                <div class="role-info">
+                                    <span class="role-name">Windsurf</span>
+                                    <span class="role-desc">Codeium's AI-powered IDE</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="terminal">
+                                <input type="radio" name="ide" value="terminal">
+                                <div class="role-info">
+                                    <span class="role-name">Terminal Only</span>
+                                    <span class="role-desc">Use Claude Code directly in your terminal</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="ideInstructions" style="display: none; margin-top: 20px;">
+                            <div class="why-box">
+                                <strong id="ideInstructionTitle">Getting Started</strong>
+                                <div id="ideInstructionContent"></div>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 12: Complete -->
+            <div class="slide closing-slide" data-slide="12" data-step="complete">
                 <div class="slide-content">
                     <div class="slide-number">Complete</div>
                     <h1 class="slide-title">You're ready!</h1>
@@ -1403,6 +1597,93 @@
         async function startSetup() {
             await startSession();
             nextSlide();
+        }
+
+        async function quickInstall() {
+            // Set defaults for quick install
+            config = {
+                workspacePath: '~/Documents/productivity',
+                role: 'general',
+                googleApiMode: 'skip',
+                claudeMdMode: 'template',
+                skillsMode: 'core',
+                skipGit: false,
+            };
+
+            // Show quick install progress
+            const slide = document.querySelector('[data-slide="0"]');
+            slide.querySelector('.slide-body').innerHTML = `
+                <div class="setup-steps" id="quickInstallProgress">
+                    <div class="setup-step checking">
+                        <div class="spinner"></div>
+                        <div class="step-content">
+                            <strong>Running Quick Install...</strong>
+                            <p class="step-detail">Setting up with default configuration</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            await startSession();
+
+            const steps = [
+                { id: 'prerequisites', name: 'Checking prerequisites' },
+                { id: 'workspace', name: 'Creating workspace' },
+                { id: 'directories', name: 'Creating directories' },
+                { id: 'git', name: 'Initializing git' },
+                { id: 'claudemd', name: 'Creating CLAUDE.md' },
+                { id: 'skills', name: 'Installing core skills' },
+            ];
+
+            const progressDiv = document.getElementById('quickInstallProgress');
+            let allSuccess = true;
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                progressDiv.innerHTML = `
+                    <div class="setup-step checking">
+                        <div class="spinner"></div>
+                        <div class="step-content">
+                            <strong>${step.name}...</strong>
+                            <p class="step-detail">Step ${i + 1} of ${steps.length}</p>
+                        </div>
+                    </div>
+                `;
+
+                const result = await executeStep(step.id);
+                if (!result.success) {
+                    allSuccess = false;
+                    progressDiv.innerHTML = `
+                        <div class="setup-step failed">
+                            <span class="step-number fail">✗</span>
+                            <div class="step-content">
+                                <strong>Quick Install Failed</strong>
+                                <p class="step-detail">${formatError(result.error)}</p>
+                            </div>
+                        </div>
+                        <div class="action-buttons" style="margin-top: 16px;">
+                            <button class="btn btn-primary" onclick="location.reload()">Start Over</button>
+                            <button class="btn btn-secondary" onclick="startSetup(); goToSlide(1);">Try Custom Setup</button>
+                        </div>
+                    `;
+                    return;
+                }
+            }
+
+            // Success - go to verification
+            progressDiv.innerHTML = `
+                <div class="setup-step passed">
+                    <span class="step-number ok">✓</span>
+                    <div class="step-content">
+                        <strong>Quick Install Complete!</strong>
+                        <p class="step-detail">Your workspace is ready at ~/Documents/productivity</p>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                goToSlide(10); // Go to verification slide
+            }, 1500);
         }
 
         async function onSlideEnter(slideIndex) {
@@ -1653,6 +1934,82 @@
             });
         }
 
+        let googleStepCompleted = 0;
+
+        function showGoogleGuide() {
+            document.getElementById('googleChoice').style.display = 'none';
+            document.getElementById('googleGuide').style.display = 'block';
+            // Update credentials path with actual workspace
+            const credPath = config.workspacePath.replace('~', '') + '/.config/google/credentials.json';
+            document.getElementById('credentialsPath').textContent = credPath;
+        }
+
+        function hideGoogleGuide() {
+            document.getElementById('googleChoice').style.display = 'block';
+            document.getElementById('googleGuide').style.display = 'none';
+            googleStepCompleted = 0;
+            // Reset step visuals
+            for (let i = 1; i <= 6; i++) {
+                const step = document.getElementById(`googleStep${i}`);
+                step.style.opacity = i === 1 ? '1' : '0.5';
+                step.classList.remove('passed');
+                const actions = step.querySelector('.step-actions');
+                if (actions) actions.style.display = i === 1 ? 'block' : 'none';
+            }
+        }
+
+        function completeGoogleStep(stepNum) {
+            const step = document.getElementById(`googleStep${stepNum}`);
+            step.classList.add('passed');
+            step.querySelector('.step-number').textContent = '✓';
+            step.querySelector('.step-number').classList.add('ok');
+
+            googleStepCompleted = stepNum;
+
+            // Activate next step
+            if (stepNum < 6) {
+                const nextStep = document.getElementById(`googleStep${stepNum + 1}`);
+                nextStep.style.opacity = '1';
+                const nextActions = nextStep.querySelector('.step-actions');
+                if (nextActions) nextActions.style.display = 'block';
+            }
+        }
+
+        async function finalizeGoogleSetup() {
+            const statusDiv = document.getElementById('googleStatus');
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Verifying credentials...</span>
+                </div>
+            `;
+
+            const result = await executeStep('google');
+
+            if (result.success) {
+                if (result.result.hasCredentials) {
+                    statusDiv.innerHTML = `
+                        <div class="status-message success">
+                            <span>✓ Google API configured! First use will prompt for authorization.</span>
+                        </div>
+                    `;
+                    setTimeout(() => nextSlide(), 1500);
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="status-message error">
+                            <span>Credentials file not found at the expected location.</span>
+                        </div>
+                        <p style="margin-top: 8px; font-size: 0.85rem;">
+                            Make sure you saved <code>credentials.json</code> to:<br>
+                            <code>${config.workspacePath}/.config/google/credentials.json</code>
+                        </p>
+                    `;
+                }
+            } else {
+                showError(statusDiv, result.error, 'finalizeGoogleSetup()');
+            }
+        }
+
         async function executeGoogleStep() {
             const statusDiv = document.getElementById('googleStatus');
 
@@ -1755,15 +2112,145 @@
             const result = await executeStep('skills');
 
             if (result.success) {
-                const installed = result.result.installed || [];
+                const installed = result.result.installed || {};
+                const count = Object.keys(installed).length;
+                const commands = Object.keys(installed).filter(k => k.startsWith('command:')).length;
+                const skills = Object.keys(installed).filter(k => k.startsWith('skill:')).length;
                 statusDiv.innerHTML = `
                     <div class="status-message success">
-                        <span>✓ Installed ${installed.length} skills</span>
+                        <span>✓ Installed ${commands} commands and ${skills} skills</span>
                     </div>
                 `;
                 setTimeout(() => nextSlide(), 1000);
             } else {
                 showError(statusDiv, result.error, 'executeSkillsStep()');
+            }
+        }
+
+        function selectUIOption(skip) {
+            config.skipUI = skip;
+            document.querySelectorAll('[data-ui]').forEach(btn => {
+                btn.classList.toggle('selected',
+                    (skip && btn.dataset.ui === 'skip') ||
+                    (!skip && btn.dataset.ui === 'install')
+                );
+            });
+        }
+
+        async function executeUIStep() {
+            const statusDiv = document.getElementById('uiStatus');
+
+            if (config.skipUI) {
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>Web dashboard skipped</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 500);
+                return;
+            }
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Installing dashboard...</span>
+                </div>
+            `;
+
+            const result = await executeStep('ui');
+
+            if (result.success) {
+                let msg = 'Dashboard installed';
+                if (result.result.depsInstalled) {
+                    msg += ' with dependencies';
+                } else if (!result.result.nodeAvailable) {
+                    msg += ' (run npm install to complete)';
+                }
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${msg}</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                showError(statusDiv, result.error, 'executeUIStep()');
+            }
+        }
+
+        // IDE instructions content
+        const ideInstructions = {
+            cursor: {
+                title: 'Getting Started with Cursor',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download Cursor from <a href="https://cursor.sh" target="_blank" style="color: var(--gold);">cursor.sh</a></li>
+                        <li>Open Cursor → File → Open Folder → select your workspace</li>
+                        <li>Open terminal in Cursor (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Cursor has Claude built-in via its AI features, plus you can use Claude Code in the terminal for slash commands.</p>
+                `
+            },
+            vscode: {
+                title: 'Getting Started with VS Code',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download VS Code from <a href="https://code.visualstudio.com" target="_blank" style="color: var(--gold);">code.visualstudio.com</a></li>
+                        <li>Open VS Code → File → Open Folder → select your workspace</li>
+                        <li>Open terminal (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Consider installing the Claude extension for VS Code for inline assistance.</p>
+                `
+            },
+            windsurf: {
+                title: 'Getting Started with Windsurf',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download Windsurf from <a href="https://codeium.com/windsurf" target="_blank" style="color: var(--gold);">codeium.com/windsurf</a></li>
+                        <li>Open Windsurf → File → Open Folder → select your workspace</li>
+                        <li>Open terminal (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Windsurf includes Codeium's AI features plus Claude Code in the terminal.</p>
+                `
+            },
+            terminal: {
+                title: 'Getting Started with Terminal',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Open Terminal (Applications → Utilities → Terminal)</li>
+                        <li>Navigate to your workspace: <code>cd ${config.workspacePath || '~/Documents/productivity'}</code></li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Pure terminal experience. Use your favorite text editor for viewing files.</p>
+                `
+            }
+        };
+
+        function setupIDESelection() {
+            const ideOptions = document.querySelectorAll('[data-ide]');
+            ideOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    ideOptions.forEach(o => o.classList.remove('selected'));
+                    option.classList.add('selected');
+                    option.querySelector('input').checked = true;
+                    const ide = option.dataset.ide;
+                    config.preferredIDE = ide;
+                    showIDEInstructions(ide);
+                });
+            });
+        }
+
+        function showIDEInstructions(ide) {
+            const container = document.getElementById('ideInstructions');
+            const title = document.getElementById('ideInstructionTitle');
+            const content = document.getElementById('ideInstructionContent');
+
+            if (ideInstructions[ide]) {
+                title.textContent = ideInstructions[ide].title;
+                content.innerHTML = ideInstructions[ide].content;
+                container.style.display = 'block';
             }
         }
 
@@ -1828,6 +2315,7 @@
         // ============================================
         function init() {
             setupRoleSelection();
+            setupIDESelection();
             updateSlide(0);
 
             // Check if we're running from the server
