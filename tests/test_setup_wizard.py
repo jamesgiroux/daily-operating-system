@@ -454,11 +454,10 @@ class TestErrorHandling:
 
         assert result == 1
 
-    def test_verbose_mode_shows_traceback(self, temp_workspace, mock_validators):
-        """Verbose mode should show full traceback on errors."""
+    def test_error_report_generated(self, temp_workspace, mock_validators):
+        """Errors should generate an error report file and offer to show details."""
         from wizard import SetupWizard
-        import io
-        import sys
+        from pathlib import Path
 
         args = Namespace(
             workspace=str(temp_workspace),
@@ -470,15 +469,24 @@ class TestErrorHandling:
 
         wizard = SetupWizard(args)
 
-        # Capture stderr
+        # Mock confirm to decline showing details and decline rollback
+        confirm_responses = iter([False, False])  # No to "show details", No to "undo"
+
+        def mock_confirm(msg, default=True):
+            return next(confirm_responses)
+
         with patch.object(wizard, '_print_intro', side_effect=Exception("Test error")), \
-             patch('ui.prompts.confirm', return_value=False), \
+             patch('wizard.confirm', side_effect=mock_confirm), \
              patch('traceback.print_exc') as mock_traceback:
 
             result = wizard.run()
 
-        # In verbose mode, traceback should be printed
-        mock_traceback.assert_called_once()
+        # Error report traceback should be called (for the error report file)
+        # It writes to a StringIO, so check it was called with a file argument
+        assert mock_traceback.call_count >= 1
+        # First call should have file= argument (writing to error report)
+        first_call = mock_traceback.call_args_list[0]
+        assert 'file' in first_call.kwargs or len(first_call.args) > 0
 
 
 class TestGoogleAPISetup:
