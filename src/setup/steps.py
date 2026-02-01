@@ -454,6 +454,70 @@ class ClaudeMdStep(SetupStep):
         return {"success": True, "message": "Nothing to rollback"}
 
 
+class ClaudeSetupStep(SetupStep):
+    """Initialize Claude Code in the workspace."""
+
+    step_id = "claude_setup"
+    step_name = "Claude Code Setup"
+
+    def execute(self) -> Dict[str, Any]:
+        import subprocess
+
+        error = self.validate_config(["workspacePath"])
+        if error:
+            return {"success": False, "error": error}
+
+        workspace = self.workspace
+
+        self.progress("Checking Claude Code installation...", 20)
+
+        # Check if claude command exists
+        try:
+            result = subprocess.run(
+                ["claude", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return {
+                    "success": False,
+                    "error": "Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
+                }
+            claude_version = result.stdout.strip()
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "error": "Claude Code CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
+            }
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": "Claude Code check timed out"}
+
+        self.progress("Initializing Claude Code in workspace...", 50)
+
+        # Check if .claude directory already exists
+        claude_dir = workspace / ".claude"
+        already_initialized = claude_dir.exists()
+
+        if not already_initialized:
+            # Create .claude directory structure
+            claude_dir.mkdir(parents=True, exist_ok=True)
+            (claude_dir / "commands").mkdir(exist_ok=True)
+            (claude_dir / "skills").mkdir(exist_ok=True)
+            (claude_dir / "agents").mkdir(exist_ok=True)
+
+        self.progress("Claude Code ready", 100)
+
+        return {
+            "success": True,
+            "result": {
+                "claudeVersion": claude_version,
+                "alreadyInitialized": already_initialized,
+                "claudeDir": str(claude_dir),
+            },
+        }
+
+
 class SkillsStep(SetupStep):
     """Install skills and commands."""
 
@@ -685,6 +749,7 @@ STEPS = {
     "git": GitStep,
     "google": GoogleApiStep,
     "claudemd": ClaudeMdStep,
+    "claude_setup": ClaudeSetupStep,
     "skills": SkillsStep,
     "ui": UIStep,
     "verification": VerificationStep,

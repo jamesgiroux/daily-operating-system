@@ -4,15 +4,32 @@
  * Maintains setup progress in memory with file backup for recovery.
  */
 
-import { writeFile, readFile } from 'fs/promises';
+import { writeFile, readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import os from 'os';
 
 // In-memory session store
 const sessions = new Map();
 
 // State file path (relative to workspace once set)
 const STATE_FILENAME = '.setup-state.json';
+
+/**
+ * Expand ~ to home directory
+ * @param {string} filepath
+ * @returns {string} Expanded path
+ */
+function expandPath(filepath) {
+  if (!filepath) return filepath;
+  if (filepath.startsWith('~/')) {
+    return path.join(os.homedir(), filepath.slice(2));
+  }
+  if (filepath === '~') {
+    return os.homedir();
+  }
+  return filepath;
+}
 
 /**
  * Create a new session
@@ -117,8 +134,11 @@ function getStepIndex(stepId) {
     'git',
     'google',
     'claudemd',
+    'claude_setup',
     'skills',
+    'ui',
     'verification',
+    'ide',
     'complete'
   ];
   return stepOrder.indexOf(stepId);
@@ -153,12 +173,24 @@ export async function persistSession(sessionId) {
     return;
   }
 
-  const stateFile = path.join(session.config.workspacePath, STATE_FILENAME);
+  // Expand ~ and check if workspace directory exists
+  const workspacePath = expandPath(session.config.workspacePath);
+
+  // Only persist if the workspace directory exists
+  if (!existsSync(workspacePath)) {
+    // Silently skip - workspace hasn't been created yet
+    return;
+  }
+
+  const stateFile = path.join(workspacePath, STATE_FILENAME);
 
   try {
     await writeFile(stateFile, JSON.stringify(session, null, 2));
   } catch (err) {
-    console.error(`Failed to persist session state: ${err.message}`);
+    // Only log if it's not an ENOENT error (which we handle above)
+    if (err.code !== 'ENOENT') {
+      console.error(`Failed to persist session state: ${err.message}`);
+    }
   }
 }
 
@@ -168,7 +200,8 @@ export async function persistSession(sessionId) {
  * @returns {Object|null} Loaded session or null
  */
 export async function loadPersistedSession(workspacePath) {
-  const stateFile = path.join(workspacePath, STATE_FILENAME);
+  const expandedPath = expandPath(workspacePath);
+  const stateFile = path.join(expandedPath, STATE_FILENAME);
 
   if (!existsSync(stateFile)) {
     return null;
@@ -205,6 +238,6 @@ export function getProgress(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return 0;
 
-  const totalSteps = 11; // Including welcome and complete
+  const totalSteps = 14; // Including welcome and complete (14 steps total)
   return Math.round((session.completedSteps.length / totalSteps) * 100);
 }
