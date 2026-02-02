@@ -105,14 +105,14 @@
     "directory": "_today",
     "files": {
       "overview": "00-overview.md",
-      "actions": "80-actions-due.md",
+      "actions": "actions.md",
       "focus": "81-suggested-focus.md",
       "email": "83-email-summary.md"
     },
     "weekFiles": {
       "overview": "week-00-overview.md",
       "meetings": "week-01-customer-meetings.md",
-      "actions": "week-02-actions.md",
+      "actions": "actions.md",
       "hygiene": "week-03-hygiene-alerts.md",
       "focus": "week-04-focus.md"
     },
