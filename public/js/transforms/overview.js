@@ -65,6 +65,11 @@ const OverviewTransform = {
       mainCol.appendChild(this.buildCustomerMeetingsSection(sections.customerMeetings));
     }
 
+    // Agenda status section (upcoming meetings needing agendas)
+    if (sections.agenda) {
+      mainCol.appendChild(this.buildAgendaStatusSection(sections.agenda));
+    }
+
     // Build sidebar cards
     if (sections.email) {
       sideCol.appendChild(this.buildEmailSummaryCard(sections.email));
@@ -146,29 +151,38 @@ const OverviewTransform = {
       }
     }
 
-    // Count actions
+    // Count actions - prefer explicit counts in headers, fall back to counting items
     if (sections.actions) {
       const content = SectionUtils.findContent(sections.actions);
-      let actionCount = 0;
+      let headerCount = 0;
+      let itemCount = 0;
+
       content.forEach(el => {
         if (el.tagName === 'H3') {
+          // Extract count from header like "Overdue (10)"
           const match = el.textContent.match(/\((\d+)\)/);
           if (match) {
-            actionCount += parseInt(match[1]);
+            headerCount += parseInt(match[1]);
           }
         }
         if (el.tagName === 'UL') {
+          // Count actual checkbox items
           const checkboxItems = el.querySelectorAll('li input[type="checkbox"]');
           if (checkboxItems.length > 0) {
-            actionCount += checkboxItems.length;
+            itemCount += checkboxItems.length;
+          } else {
+            // Count regular list items if no checkboxes
+            itemCount += el.querySelectorAll(':scope > li').length;
           }
         }
         if (el.tagName === 'TABLE') {
           const rows = SectionUtils.getTableRows(el);
-          actionCount += rows.length;
+          itemCount += rows.length;
         }
       });
-      stats.actionsDue = actionCount;
+
+      // Use header count if available (more accurate), otherwise use item count
+      stats.actionsDue = headerCount > 0 ? headerCount : itemCount;
     }
 
     // Count high priority emails
@@ -270,12 +284,84 @@ const OverviewTransform = {
       const event = cells[1]?.textContent.trim() || '';
       const type = cells[2]?.textContent.trim().toLowerCase() || '';
       const prep = cells[3]?.textContent.trim() || '';
+      const prepCell = cells[3];
 
       const isCustomer = type.includes('customer');
       const isInternal = type.includes('internal');
+      const isProject = type.includes('project');
 
-      const typeClass = isCustomer ? 'customer' : isInternal ? 'internal' : 'personal';
+      const typeClass = isCustomer ? 'customer' : isInternal ? 'internal' : isProject ? 'project' : 'personal';
       const eventClean = event.replace(/\*\*/g, '');
+
+      // Extract prep filename - check <code> element first, then text patterns
+      let prepFileName = null;
+      const codeEl = prepCell?.querySelector('code');
+      if (codeEl && codeEl.textContent.includes('.md')) {
+        prepFileName = codeEl.textContent.trim();
+      } else {
+        // Try backtick pattern in text
+        const backtickMatch = prep.match(/`([^`]+\.md)`/);
+        if (backtickMatch) {
+          prepFileName = backtickMatch[1];
+        } else {
+          // Try to extract .md filename directly from text (with "See" prefix)
+          const seeMatch = prep.match(/See\s+([^\s]+\.md)/i);
+          if (seeMatch) {
+            prepFileName = seeMatch[1];
+          } else {
+            // Try to extract .md filename directly
+            const mdMatch = prep.match(/(\d{2}-\d{4}-[a-z]+-[a-z0-9-]+\.md)/);
+            if (mdMatch) {
+              prepFileName = mdMatch[1];
+            }
+          }
+        }
+      }
+
+      // If no prep file found but we have a meeting type that typically has prep,
+      // try to construct a matching filename pattern
+      if (!prepFileName && (isCustomer || isProject || isInternal)) {
+        // Convert time "4:00 PM" to "1600" format
+        const timeMatch = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1]);
+          const mins = timeMatch[2];
+          const ampm = timeMatch[3].toUpperCase();
+          if (ampm === 'PM' && hours !== 12) hours += 12;
+          if (ampm === 'AM' && hours === 12) hours = 0;
+          const timeCode = String(hours).padStart(2, '0') + mins;
+
+          // Construct likely prep filename pattern
+          const meetingType = isCustomer ? 'customer' : isProject ? 'project' : 'internal';
+          // Pattern: NN-HHMM-type-*.md
+          prepFileName = `*-${timeCode}-${meetingType}-*-prep.md`;
+        }
+      }
+
+      // Has actual prep file if we extracted a filename
+      const hasActualPrepFile = !!prepFileName && !prepFileName.includes('*');
+
+      // Show prep status indicator (without link if no file)
+      const showPrepStatus = prep && prep !== '-';
+
+      // Build a searchable prep file pattern for linking
+      let prepSearchPattern = null;
+      if (!hasActualPrepFile && (isCustomer || isProject || isInternal)) {
+        const timeMatch = time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (timeMatch) {
+          let hours = parseInt(timeMatch[1]);
+          const mins = timeMatch[2];
+          const ampm = timeMatch[3].toUpperCase();
+          if (ampm === 'PM' && hours !== 12) hours += 12;
+          if (ampm === 'AM' && hours === 12) hours = 0;
+          const timeCode = String(hours).padStart(2, '0') + mins;
+          const meetingType = isCustomer ? 'customer' : isProject ? 'project' : 'internal';
+          // Store pattern for potential file lookup
+          prepSearchPattern = `${timeCode}-${meetingType}`;
+        }
+      }
+
+      const hasPrepLink = hasActualPrepFile || prepSearchPattern;
 
       timelineHtml += `
         <div class="timeline-item animate-in-fast" style="animation-delay: ${0.35 + i * 0.05}s">
@@ -286,11 +372,12 @@ const OverviewTransform = {
           <div class="timeline-content ${typeClass}">
             <div class="timeline-title ${typeClass}">${eventClean}</div>
             <div class="timeline-meta">
-              <span class="meeting-tag meeting-tag-${isCustomer ? 'customer' : isInternal ? 'internal' : 'project'}">${type}</span>
+              <span class="meeting-tag meeting-tag-${isCustomer ? 'customer' : isInternal ? 'internal' : isProject ? 'project' : 'personal'}">${type}</span>
+              ${showPrepStatus ? `<span class="prep-status">${prep}</span>` : ''}
             </div>
-            ${prep && prep !== '-' ? `
+            ${hasPrepLink ? `
               <div class="timeline-prep">
-                <a href="#" class="timeline-prep-link" data-prep="${prep}">
+                <a href="#" class="timeline-prep-link" data-prep="${prepFileName || ''}" data-prep-search="${prepSearchPattern || ''}">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
@@ -400,6 +487,105 @@ const OverviewTransform = {
       </div>
       <div class="section-card-body" style="display: flex; flex-direction: column; gap: var(--space-4);">
         ${cardsHtml || '<p class="text-muted">No customer meetings today</p>'}
+      </div>
+    `;
+
+    return card;
+  },
+
+  /**
+   * Build agenda status section card
+   * @param {Element} heading - Agenda status section heading
+   * @returns {HTMLElement} Agenda status card element
+   */
+  buildAgendaStatusSection(heading) {
+    const card = document.createElement('div');
+    card.className = 'section-card animate-in';
+    card.style.animationDelay = '0.45s';
+
+    const table = SectionUtils.findNextTable(heading);
+    let itemsHtml = '';
+
+    if (table) {
+      const rows = SectionUtils.getTableRows(table);
+      rows.forEach((row, i) => {
+        const cells = row.querySelectorAll('td');
+        const meeting = cells[0]?.textContent.trim() || '';
+        const date = cells[1]?.textContent.trim() || '';
+        const status = cells[2]?.textContent.trim() || '';
+        const action = cells[3]?.textContent.trim() || '';
+
+        const needsAgenda = status.includes('Needs agenda') || status.includes('⚠️');
+        const statusClass = needsAgenda ? 'needs-prep' : 'ready';
+        const statusIcon = needsAgenda ? 'warning' : 'ready';
+
+        // Extract draft file reference if present - check for backticks or direct path
+        const actionCell = cells[3];
+        let draftFile = null;
+        const codeEl = actionCell?.querySelector('code');
+        if (codeEl) {
+          draftFile = codeEl.textContent.trim();
+        } else {
+          // Try backtick pattern
+          const backtickMatch = action.match(/`([^`]+\.md)`/);
+          if (backtickMatch) {
+            draftFile = backtickMatch[1];
+          } else {
+            // Try direct path pattern
+            const pathMatch = action.match(/90-agenda-needed\/[^\s]+\.md/);
+            if (pathMatch) {
+              draftFile = pathMatch[0];
+            }
+          }
+        }
+
+        itemsHtml += `
+          <div class="meeting-card" style="animation-delay: ${0.1 + i * 0.05}s">
+            <div class="meeting-card-header">
+              <h4 class="meeting-card-title">${meeting}</h4>
+              <span class="prep-status ${statusClass}">
+                <span class="prep-icon ${statusIcon}"></span>
+                ${status.replace(/[⚠️✅✏️]/g, '').trim()}
+              </span>
+            </div>
+            <div class="meeting-card-stats">
+              <div class="meeting-card-stat">
+                <span class="meeting-card-stat-label">Date</span>
+                <span class="meeting-card-stat-value">${date}</span>
+              </div>
+            </div>
+            <div class="meeting-card-context">${action}</div>
+            ${draftFile ? `
+              <div class="meeting-card-actions">
+                <a href="#" class="btn btn-secondary" data-prep="${draftFile}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  Review Draft
+                </a>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      });
+    }
+
+    card.innerHTML = `
+      <div class="section-card-header">
+        <h3 class="section-card-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          Agenda Status
+        </h3>
+        <span class="section-card-badge">${table ? SectionUtils.getTableRows(table).length : 0} upcoming</span>
+      </div>
+      <div class="section-card-body" style="display: flex; flex-direction: column; gap: var(--space-4);">
+        ${itemsHtml || '<p class="text-muted">No agendas needed</p>'}
       </div>
     `;
 
@@ -640,15 +826,36 @@ const OverviewTransform = {
    * @param {Element} container - Container with prep links
    */
   addPrepDocClickHandlers(container) {
-    const prepLinks = container.querySelectorAll('[data-prep]');
+    const prepLinks = container.querySelectorAll('[data-prep], [data-prep-search]');
     prepLinks.forEach(link => {
       link.style.cursor = 'pointer';
-      link.addEventListener('click', (e) => {
+      link.addEventListener('click', async (e) => {
         e.preventDefault();
+
         const prepFile = link.getAttribute('data-prep');
+        const prepSearch = link.getAttribute('data-prep-search');
+
         if (prepFile && window.Router) {
+          // Direct file reference
           const routePath = prepFile.replace('.md', '');
           Router.navigate(`/today/${routePath}`);
+        } else if (prepSearch && window.Router) {
+          // Pattern-based search: try to find matching file
+          // Pattern format: "1600-project" meaning files like "01-1600-project-*.md"
+          try {
+            // Try to fetch directory listing or use known file patterns
+            const searchPattern = prepSearch; // e.g., "1600-project"
+            // Try common numbering patterns (01, 02, etc.)
+            for (let num = 1; num <= 10; num++) {
+              const prefix = String(num).padStart(2, '0');
+              const testPath = `/today/${prefix}-${searchPattern}`;
+              // Navigate and let the router handle 404 gracefully
+              Router.navigate(testPath);
+              return;
+            }
+          } catch (err) {
+            console.warn('Could not find prep file for pattern:', prepSearch);
+          }
         }
       });
     });
