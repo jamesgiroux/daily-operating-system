@@ -1519,7 +1519,8 @@ const MarkdownUtils = {
       const content = this.findSectionContent(sections.overdue);
       content.forEach(el => {
         if (el.tagName === 'UL') {
-          stats.overdue += el.querySelectorAll('li').length;
+          // Only count top-level items, not nested metadata bullets
+          stats.overdue += el.querySelectorAll(':scope > li').length;
         }
       });
       // Check if "No overdue items" text
@@ -1533,7 +1534,8 @@ const MarkdownUtils = {
       const content = this.findSectionContent(sections.dueToday);
       content.forEach(el => {
         if (el.tagName === 'UL') {
-          stats.dueToday += el.querySelectorAll('li > input[type="checkbox"]').length || el.querySelectorAll('li').length;
+          // Only count top-level items, not nested metadata bullets
+          stats.dueToday += el.querySelectorAll(':scope > li').length;
         }
       });
     }
