@@ -42,7 +42,7 @@ app.use(express.static(path.join(PROJECT_ROOT, 'docs')));
 
 // Serve wizard as main page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(PROJECT_ROOT, 'docs', 'index.html'));
+  res.sendFile(path.join(PROJECT_ROOT, 'docs', 'setup.html'));
 });
 
 // Health check
