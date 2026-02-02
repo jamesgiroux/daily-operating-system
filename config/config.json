@@ -1,0 +1,149 @@
+{
+  "$schema": "./schema.json",
+  "workspace": {
+    "name": "VIP Workspace",
+    "role": "customer-success"
+  },
+  "sections": [
+    {
+      "id": "accounts",
+      "label": "Accounts",
+      "icon": "users",
+      "directory": "Accounts",
+      "indexFile": "00-Index.md",
+      "structure": "multi-bu",
+      "subsections": [
+        { "pattern": "01-Customer-Information", "icon": "user", "label": "Customer Info" },
+        { "pattern": "02-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "03-Call-Transcripts", "icon": "mic", "label": "Transcripts" },
+        { "pattern": "04-Action-Items", "icon": "checkSquare", "label": "Actions" },
+        { "pattern": "05-Projects", "icon": "clipboard", "label": "Projects" },
+        { "pattern": "06-Integrations", "icon": "link", "label": "Integrations" },
+        { "pattern": "07-Reporting", "icon": "barChart", "label": "Reporting" },
+        { "pattern": "08-Health-Reviews", "icon": "activity", "label": "Health Reviews" },
+        { "pattern": "09-Incidents", "icon": "alertTriangle", "label": "Incidents" },
+        { "pattern": "10-Decisions", "icon": "gitBranch", "label": "Decisions" },
+        { "pattern": "11-Commercial", "icon": "dollarSign", "label": "Commercial" },
+        { "pattern": "12-P2s", "icon": "edit", "label": "P2s" },
+        { "pattern": "_attachments", "icon": "paperclip", "label": "Attachments" }
+      ]
+    },
+    {
+      "id": "projects",
+      "label": "Projects",
+      "icon": "folder",
+      "directory": "Projects",
+      "indexFile": "00-Index.md",
+      "structure": "flat",
+      "subsections": [
+        { "pattern": "00-Index", "icon": "clipboard", "label": "Overview" },
+        { "pattern": "01-Project-Information", "icon": "barChart", "label": "Project Info" },
+        { "pattern": "02-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "03-Call-Transcripts", "icon": "mic", "label": "Transcripts" },
+        { "pattern": "04-Action-Items", "icon": "checkSquare", "label": "Actions" },
+        { "pattern": "05-Planning", "icon": "compass", "label": "Planning" },
+        { "pattern": "06-Documentation", "icon": "bookOpen", "label": "Documentation" },
+        { "pattern": "07-P2s", "icon": "edit", "label": "P2s" },
+        { "pattern": "_archive", "icon": "archive", "label": "Archive" }
+      ],
+      "projectIcons": {
+        "Agentforce": "robot",
+        "Bullseye": "crosshair",
+        "Video-Content": "video",
+        "Field-Notes": "bookOpen",
+        "WCEH": "mapPin"
+      }
+    },
+    {
+      "id": "leadership",
+      "label": "Leadership",
+      "icon": "star",
+      "directory": "Leadership",
+      "indexFile": "00-Index.md",
+      "structure": "nested",
+      "subsections": [
+        { "pattern": "00-Index", "icon": "clipboard", "label": "Overview" },
+        { "pattern": "01-People", "icon": "users", "label": "People" },
+        { "pattern": "02-Performance", "icon": "trendingUp", "label": "Performance" },
+        { "pattern": "03-Development", "icon": "rocket", "label": "Development" },
+        { "pattern": "04-Writing", "icon": "edit", "label": "Writing" },
+        { "pattern": "05-Org-Context", "icon": "building", "label": "Org Context" },
+        { "pattern": "06-Political-Intelligence", "icon": "crosshair", "label": "Political Intel" }
+      ],
+      "areaIcons": {
+        "00-Index": "clipboard",
+        "01-People": "users",
+        "02-Performance": "trendingUp",
+        "03-Development": "rocket",
+        "04-Writing": "edit",
+        "05-Org-Context": "building",
+        "06-Political-Intelligence": "crosshair"
+      },
+      "subfolderIcons": {
+        "Manager": "user",
+        "Peers": "users",
+        "Stakeholders": "crosshair",
+        "Weekly-Impact": "calendar",
+        "Monthly-Reports": "barChart",
+        "Quarterly-Reviews": "clipboard",
+        "Semi-Annual-Reviews": "target",
+        "Career-Planning": "compass",
+        "Skills": "zap",
+        "Feedback": "messageCircle",
+        "Learning": "bookOpen",
+        "Published": "checkCircle",
+        "Drafts": "fileText",
+        "Teams": "users",
+        "Cross-Functional": "gitBranch",
+        "Automattic": "globe",
+        "Reference": "bookOpen",
+        "Historical-Actions": "archive"
+      }
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "actions.md",
+      "focus": "81-suggested-focus.md",
+      "email": "83-email-summary.md"
+    },
+    "weekFiles": {
+      "overview": "week-00-overview.md",
+      "meetings": "week-01-customer-meetings.md",
+      "actions": "actions.md",
+      "hygiene": "week-03-hygiene-alerts.md",
+      "focus": "week-04-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target" },
+      { "route": "/today/email", "label": "Email", "icon": "mail" }
+    ],
+    "weekSidebarLinks": [
+      { "route": "/today/week-overview", "label": "Week Overview", "icon": "list" }
+    ]
+  },
+  "features": {
+    "healthStatus": true,
+    "ringBadges": true,
+    "multiBusinessUnit": true,
+    "stageBadges": false,
+    "web_dashboard_autostart": false
+  },
+  "display": {
+    "healthIndicators": {
+      "healthy": ["Healthy"],
+      "attention": ["Attention"],
+      "critical": ["Critical"]
+    },
+    "rings": [
+      { "tag": "summit", "label": "Summit", "color": "#4CAF50" },
+      { "tag": "influence", "label": "Influence", "color": "#2196F3" },
+      { "tag": "evolution", "label": "Evolution", "color": "#FF9800" },
+      { "tag": "foundation", "label": "Foundation", "color": "#9E9E9E" }
+    ]
+  }
+}

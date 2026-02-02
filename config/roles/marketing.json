@@ -1,0 +1,71 @@
+{
+  "$schema": "../schema.json",
+  "workspace": {
+    "name": "Marketing",
+    "role": "marketing"
+  },
+  "sections": [
+    {
+      "id": "campaigns",
+      "label": "Campaigns",
+      "icon": "target",
+      "directory": "Campaigns",
+      "indexFile": "00-Index.md",
+      "structure": "staged",
+      "stages": [
+        { "name": "Active", "label": "Active", "color": "#4CAF50" },
+        { "name": "Planned", "label": "Planned", "color": "#FF9800" },
+        { "name": "Completed", "label": "Completed", "color": "#9E9E9E" }
+      ],
+      "subsections": [
+        { "pattern": "01-Strategy", "icon": "compass", "label": "Strategy" },
+        { "pattern": "02-Assets", "icon": "layers", "label": "Assets" },
+        { "pattern": "03-Analytics", "icon": "barChart", "label": "Analytics" },
+        { "pattern": "04-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "_attachments", "icon": "paperclip", "label": "Attachments" }
+      ]
+    },
+    {
+      "id": "content",
+      "label": "Content",
+      "icon": "edit",
+      "directory": "Content",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    },
+    {
+      "id": "research",
+      "label": "Research",
+      "icon": "search",
+      "directory": "Research",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "01-actions.md",
+      "focus": "02-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "stageBadges": true
+  },
+  "display": {
+    "stages": [
+      { "tag": "active", "label": "Active", "color": "#4CAF50" },
+      { "tag": "planned", "label": "Planned", "color": "#FF9800" },
+      { "tag": "completed", "label": "Completed", "color": "#9E9E9E" }
+    ]
+  }
+}

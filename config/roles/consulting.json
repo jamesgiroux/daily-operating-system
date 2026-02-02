@@ -1,0 +1,62 @@
+{
+  "$schema": "../schema.json",
+  "workspace": {
+    "name": "Consulting",
+    "role": "consulting"
+  },
+  "sections": [
+    {
+      "id": "engagements",
+      "label": "Engagements",
+      "icon": "briefcase",
+      "directory": "Engagements",
+      "indexFile": "00-Index.md",
+      "structure": "staged",
+      "stages": [
+        { "name": "Active", "label": "Active", "color": "#4CAF50" },
+        { "name": "Completed", "label": "Completed", "color": "#9E9E9E" }
+      ],
+      "subsections": [
+        { "pattern": "01-Client-Info", "icon": "user", "label": "Client Info" },
+        { "pattern": "02-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "03-Deliverables", "icon": "clipboard", "label": "Deliverables" },
+        { "pattern": "04-Analysis", "icon": "barChart", "label": "Analysis" },
+        { "pattern": "05-Presentations", "icon": "layers", "label": "Presentations" },
+        { "pattern": "_attachments", "icon": "paperclip", "label": "Attachments" }
+      ]
+    },
+    {
+      "id": "frameworks",
+      "label": "Frameworks",
+      "icon": "grid",
+      "directory": "Frameworks",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "01-actions.md",
+      "focus": "02-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "stageBadges": true
+  },
+  "display": {
+    "stages": [
+      { "tag": "active", "label": "Active", "color": "#4CAF50" },
+      { "tag": "completed", "label": "Completed", "color": "#9E9E9E" }
+    ]
+  }
+}
