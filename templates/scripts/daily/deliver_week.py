@@ -82,18 +82,53 @@ def write_week_overview(directive: Dict, ai_outputs: Dict) -> Path:
         day_meetings = meetings_by_day.get(day_name, [])
 
         for meeting in day_meetings:
-            account = meeting.get('account', meeting.get('title', 'Unknown'))
-            time = meeting.get('start_display', '-')
-            ring = meeting.get('account_data', {}).get('ring', '-') if meeting.get('type') == 'customer' else '-'
+            meeting_type = meeting.get('type', 'unknown')
+
+            # Skip personal events (Home, Daily Prep, Post-Meeting Catch-Up, etc.)
+            if meeting_type == 'personal':
+                continue
+
+            # Build display title
+            account = meeting.get('account', '')
+            title = meeting.get('title', 'Unknown')
+
+            # Escape pipe characters to prevent breaking markdown tables
+            title = title.replace('|', '/')
+
+            # For customer meetings, prefix with account name
+            if meeting_type == 'customer' and account:
+                display_name = f"{account}: {title}"
+            elif account:
+                display_name = f"{account}: {title}" if account != title else title
+            else:
+                display_name = title
+
+            # Parse time - handle missing start_display
+            time_display = meeting.get('start_display', '')
+            if not time_display:
+                # Try to parse from start field
+                start = meeting.get('start', '')
+                if start:
+                    try:
+                        if 'T' in start:
+                            dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+                            time_display = dt.strftime('%I:%M %p').lstrip('0')
+                        else:
+                            time_display = start
+                    except:
+                        time_display = '-'
+                else:
+                    time_display = '-'
+
+            ring = meeting.get('account_data', {}).get('ring', '-') if meeting_type == 'customer' else '-'
             prep_status = meeting.get('prep_status', '-')
-            meeting_type = meeting.get('type', 'Unknown').title()
 
             meeting_rows.append(
-                f"| {day_name[:3]} | {time} | {account} | {ring} | {prep_status} | {meeting_type} |"
+                f"| {day_name[:3]} | {time_display} | {display_name} | {ring} | {prep_status} | {meeting_type.title()} |"
             )
 
-    meetings_table = "| Day | Time | Account/Meeting | Ring | Prep Status | Meeting Type |\n"
-    meetings_table += "|-----|------|-----------------|------|-------------|---------------|\n"
+    meetings_table = "| Day | Time | Meeting | Ring | Prep Status | Type |\n"
+    meetings_table += "|-----|------|---------|------|-------------|------|\n"
     meetings_table += "\n".join(meeting_rows) if meeting_rows else "| - | - | No meetings | - | - | - |"
 
     # Build action summary
