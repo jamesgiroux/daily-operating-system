@@ -112,6 +112,12 @@ const App = {
     Router.on('/today/week-hygiene', () => this.loadWeekDetailPage('week-03-hygiene-alerts', 'Hygiene Alerts'));
     Router.on('/today/week-focus', () => this.loadWeekDetailPage('week-04-focus', 'Focus Areas'));
 
+    // Catch-all for other today files (prep docs, etc.)
+    Router.on('/today/:file', (path) => {
+      const filename = path.split('/').pop();
+      this.loadTodayFile(filename);
+    });
+
     // Dynamic section routes from config
     const sections = Config.getSections();
     for (const section of sections) {
