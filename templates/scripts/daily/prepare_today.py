@@ -18,7 +18,7 @@ Operations performed:
 10. Output structured directive for Claude
 
 Usage:
-    python3 _tools/prepare_today.py [--skip-archive] [--skip-email] [--output FILE]
+    python3 _tools/prepare_today.py [--skip-archive] [--skip-email] [--skip-dashboard] [--output FILE]
 """
 
 import argparse
@@ -51,6 +51,9 @@ from meeting_utils import (
     classify_meeting, load_domain_mapping, load_bu_cache,
     fetch_account_data, build_account_lookup, format_classification_for_directive,
     get_internal_domains
+)
+from dashboard_utils import (
+    is_dashboard_autostart_enabled, start_dashboard_background
 )
 
 
@@ -302,12 +305,19 @@ def main():
     parser = argparse.ArgumentParser(description='Prepare today directive')
     parser.add_argument('--skip-archive', action='store_true', help='Skip archiving yesterday')
     parser.add_argument('--skip-email', action='store_true', help='Skip email fetch')
+    parser.add_argument('--skip-dashboard', action='store_true', help='Skip dashboard auto-start')
     parser.add_argument('--output', type=str, default=str(DIRECTIVE_FILE), help='Output file path')
     args = parser.parse_args()
 
     print("=" * 60)
     print("PHASE 1: TODAY PREPARATION")
     print("=" * 60)
+
+    # Auto-start dashboard (non-blocking, before other steps)
+    if not args.skip_dashboard and is_dashboard_autostart_enabled():
+        success, msg = start_dashboard_background()
+        if success:
+            print(f"  Dashboard: {msg}")
 
     # Initialize directive structure
     now = datetime.now()
