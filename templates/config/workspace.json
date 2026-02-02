@@ -11,6 +11,7 @@
   "features": {
     "google_api": false,
     "web_dashboard": false,
+    "web_dashboard_autostart": false,
     "python_tools": false
   },
   "metadata": {

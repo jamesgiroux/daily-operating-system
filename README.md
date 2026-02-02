@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.3.0)**
+> **⚠️ Pre-Release Software (v0.3.2)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
@@ -336,7 +336,9 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
-GPL-3.0
+This project is licensed under GPL-3.0. See [LICENSE](LICENSE) for details.
+
+Any content not covered by the GPL-3.0 license is Copyright © 2024-2026 [James Giroux](https://jamesgiroux.ca). All rights reserved.
 
 ---
 
