@@ -57,6 +57,30 @@ from dashboard_utils import (
 )
 
 
+def extract_json_from_output(output: str) -> str:
+    """
+    Extract JSON from output that may contain warning messages.
+
+    The Google API script may print Python warnings before the JSON output.
+    This function finds the first JSON array or object and returns it.
+
+    Args:
+        output: Raw stdout that may contain warnings + JSON
+
+    Returns:
+        The JSON portion of the output, or empty string if not found
+    """
+    if not output:
+        return ""
+
+    # Find the first [ or { which starts JSON
+    for i, char in enumerate(output):
+        if char == '[' or char == '{':
+            return output[i:]
+
+    return output
+
+
 # Paths
 VIP_ROOT = Path(__file__).parent.parent
 TODAY_DIR = VIP_ROOT / "_today"
@@ -125,7 +149,12 @@ def fetch_emails(max_results: int = 30) -> List[Dict[str, Any]]:
         if result.stdout.strip() == "No messages found.":
             return []
 
-        return json.loads(result.stdout)
+        # Extract JSON from output (handles warnings printed before JSON)
+        json_str = extract_json_from_output(result.stdout)
+        if not json_str:
+            return []
+
+        return json.loads(json_str)
 
     except Exception as e:
         print(f"Warning: Email fetch failed: {e}", file=sys.stderr)
