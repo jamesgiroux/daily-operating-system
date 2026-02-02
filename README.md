@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.3.3)**
+> **⚠️ Pre-Release Software (v0.4.0)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
@@ -213,8 +213,9 @@ Setup is guided by the wizard. You'll need a Google Cloud project with OAuth cre
 4. Generates prep for customer meetings
 5. Scans email for important items
 6. Surfaces due/overdue actions
-7. Looks ahead 3-4 days for agenda needs
-8. Creates daily overview
+7. Extracts "Waiting On" delegated items
+8. Looks ahead 3-4 days for agenda needs
+9. Creates daily overview
 
 ### End of Day (`/wrap`)
 
