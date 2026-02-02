@@ -1628,9 +1628,15 @@ const MarkdownUtils = {
 
   /**
    * Parse a single action item LI into card HTML
+   *
+   * Expected markdown format:
+   * - [ ] **Title** - Account Name - Due: 2026-01-24 (X days overdue)
+   *   - **Context**: Why this task exists...
+   *   - **Source**: Where this came from...
    */
   parseActionItem(li, index) {
     const text = li.innerHTML;
+    const plainText = li.textContent;
 
     // Skip if this is just a sub-item (detail line)
     if (!text.includes('checkbox') && !text.includes('[ ]') && !li.querySelector('strong')) {
@@ -1640,28 +1646,95 @@ const MarkdownUtils = {
       }
     }
 
-    // Extract components
+    // Extract title from bold text
     const titleMatch = text.match(/<strong>([^<]+)<\/strong>/);
     const title = titleMatch ? titleMatch[1] : li.firstChild?.textContent?.trim() || 'Untitled';
 
-    // Look for sub-items (ul inside li)
-    const subList = li.querySelector('ul');
-    let account = '', due = '', priority = 'P2', context = '', owner = '';
+    // Extract account/project from line text (between title and "Due:")
+    // Format: **Title** - Account Name - Due: ...
+    let account = '';
+    let due = '';
+    let overdue = '';
+    let context = '';
+    let source = '';
+    let owner = '';
+    let priority = '';
 
+    // Parse the main line for account and due date
+    // The format is: **Title** - Account - Due: YYYY-MM-DD (X days overdue)
+    const lineText = plainText.split('\n')[0]; // Get first line only
+
+    // Extract account (text between title and " - Due:")
+    const titleEnd = titleMatch ? lineText.indexOf(titleMatch[1]) + titleMatch[1].length : 0;
+    const dueStart = lineText.indexOf(' - Due:');
+    if (dueStart > titleEnd) {
+      // Account is between title and Due
+      let accountText = lineText.substring(titleEnd, dueStart).trim();
+      // Remove leading " - " if present
+      if (accountText.startsWith(' - ')) accountText = accountText.substring(3);
+      if (accountText.startsWith('- ')) accountText = accountText.substring(2);
+      account = accountText.trim();
+    }
+
+    // Extract due date and overdue status
+    const dueMatch = lineText.match(/Due:\s*(\d{4}-\d{2}-\d{2})/);
+    if (dueMatch) {
+      due = dueMatch[1];
+    }
+    const overdueMatch = lineText.match(/\((\d+)\s*days?\s*overdue\)/i);
+    if (overdueMatch) {
+      overdue = overdueMatch[1] + ' days overdue';
+      priority = 'Overdue';
+    }
+
+    // Look for sub-items (ul inside li) for context/source
+    const subList = li.querySelector('ul');
     if (subList) {
       const subItems = subList.querySelectorAll('li');
       subItems.forEach(sub => {
-        const subText = sub.textContent;
-        if (subText.includes('Account:')) account = subText.split(':')[1]?.trim() || '';
-        if (subText.includes('Due:')) due = subText.split('Due:')[1]?.split('Owner')[0]?.trim() || '';
-        if (subText.includes('Priority:')) priority = subText.split(':')[1]?.trim() || 'P2';
-        if (subText.includes('Context:')) context = subText.split(':')[1]?.trim() || '';
-        if (subText.includes('Owner:')) owner = subText.split(':')[1]?.trim() || '';
+        const subText = sub.textContent.trim();
+        // Check for Context: (with or without bold)
+        if (subText.toLowerCase().startsWith('context:')) {
+          context = subText.replace(/^context:\s*/i, '').trim();
+        } else if (sub.innerHTML.includes('<strong>Context</strong>')) {
+          context = subText.replace(/^Context:\s*/i, '').trim();
+        }
+        // Check for Source:
+        if (subText.toLowerCase().startsWith('source:')) {
+          source = subText.replace(/^source:\s*/i, '').trim();
+        } else if (sub.innerHTML.includes('<strong>Source</strong>')) {
+          source = subText.replace(/^Source:\s*/i, '').trim();
+        }
+        // Check for Owner:
+        if (subText.toLowerCase().includes('owner:')) {
+          const ownerMatch = subText.match(/owner:\s*([^,\n]+)/i);
+          if (ownerMatch) owner = ownerMatch[1].trim();
+        }
+        // Legacy format support
+        if (subText.includes('Account:')) account = subText.split('Account:')[1]?.split('-')[0]?.trim() || account;
+        if (subText.includes('Priority:')) priority = subText.split('Priority:')[1]?.trim() || priority;
       });
     }
 
-    // Determine priority class
-    const priorityClass = priority.toLowerCase().replace(/\s/g, '');
+    // Determine priority class and badge text
+    let priorityClass = 'p2';
+    let priorityText = 'P2';
+    if (overdue) {
+      priorityClass = 'overdue';
+      priorityText = overdue;
+    } else if (priority) {
+      priorityClass = priority.toLowerCase().replace(/\s/g, '');
+      priorityText = priority;
+    }
+
+    // Build description with context and source
+    let description = '';
+    if (context) {
+      description = context;
+    }
+    if (source && !description.includes(source)) {
+      description += description ? ` <span class="action-item-source">(${source})</span>` : source;
+    }
 
     return `
       <div class="action-item animate-in-fast" style="animation-delay: ${0.1 + index * 0.05}s">
@@ -1671,14 +1744,14 @@ const MarkdownUtils = {
         <div class="action-item-content">
           <div class="action-item-header">
             <span class="action-item-title">${title}</span>
-            <span class="priority-badge ${priorityClass}">${priority}</span>
+            ${priorityText ? `<span class="priority-badge ${priorityClass}">${priorityText}</span>` : ''}
           </div>
           <div class="action-item-meta">
             ${account ? `<span class="action-item-account">${account}</span>` : ''}
-            ${due ? `<span class="action-item-due">${due}</span>` : ''}
-            ${owner && owner !== 'James' ? `<span class="action-item-owner">${owner}</span>` : ''}
+            ${due && !overdue ? `<span class="action-item-due">Due: ${due}</span>` : ''}
+            ${owner && owner.toLowerCase() !== 'james' ? `<span class="action-item-owner">Owner: ${owner}</span>` : ''}
           </div>
-          ${context ? `<div class="action-item-context">${context}</div>` : ''}
+          ${description ? `<div class="action-item-context">${description}</div>` : ''}
         </div>
       </div>
     `;

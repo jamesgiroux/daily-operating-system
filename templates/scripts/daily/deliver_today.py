@@ -77,7 +77,7 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
     except ValueError:
         date_display = date
 
-    # Build schedule table
+    # Build schedule table - filter out personal events and solo events
     schedule_rows = []
     events = directive.get('calendar', {}).get('events', [])
 
@@ -90,9 +90,13 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
         for mtype, meetings in directive.get('meetings', {}).items():
             for m in meetings:
                 if m.get('event_id') == event_id:
-                    meeting_type = mtype.title()
+                    meeting_type = mtype
                     prep_status = m.get('prep_status', '-')
                     break
+
+        # Skip personal events (Home, Daily Prep, Post-Meeting Catch-Up, etc.)
+        if meeting_type == 'personal':
+            continue
 
         # Format time
         start = event.get('start', '')
@@ -105,7 +109,10 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
         else:
             time_display = 'All day'
 
-        schedule_rows.append(f"| {time_display} | {event.get('summary', 'No title')} | {meeting_type} | {prep_status} |")
+        # Escape pipe characters in title
+        title = event.get('summary', 'No title').replace('|', '/')
+
+        schedule_rows.append(f"| {time_display} | {title} | {meeting_type.title()} | {prep_status} |")
 
     schedule_table = "| Time | Event | Type | Prep Status |\n|------|-------|------|-------------|\n"
     schedule_table += "\n".join(schedule_rows) if schedule_rows else "| - | No meetings today | - | - |"
@@ -385,12 +392,30 @@ def write_suggested_focus_file(directive: Dict) -> Path:
     agendas = directive.get('agendas_needed', [])
     gaps = directive.get('calendar', {}).get('gaps', [])
 
-    # Build pre-meeting prep items
-    customer_meetings = directive.get('meetings', {}).get('customer', [])
+    # Build pre-meeting prep items - include BOTH today's customer meetings AND upcoming agendas
     prep_items = []
+
+    # Today's customer meetings
+    customer_meetings = directive.get('meetings', {}).get('customer', [])
     for m in customer_meetings:
         if m.get('event_id') not in directive.get('calendar', {}).get('past', []):
             prep_items.append(f"- [ ] Review {m.get('account', 'Unknown')} prep before {m.get('start_display', '')} call")
+
+    # Upcoming meetings that need agendas (look-ahead)
+    for agenda in agendas:
+        prep_items.append(f"- [ ] Prep for {agenda.get('account', 'Unknown')} on {agenda.get('date', '')} (agenda needed)")
+
+    # Also check week overview for upcoming customer meetings
+    week_overview_path = TODAY_DIR / "week-00-overview.md"
+    if week_overview_path.exists() and not prep_items:
+        # Parse week overview to find meetings this week
+        try:
+            week_content = week_overview_path.read_text()
+            # Simple check: look for customer meetings in the table
+            if '📋 Prep needed' in week_content or '📅 Agenda needed' in week_content:
+                prep_items.append(f"- [ ] Review `week-00-overview.md` for this week's customer meetings needing prep")
+        except:
+            pass
 
     # Build overdue items
     overdue_items = []
@@ -407,7 +432,24 @@ def write_suggested_focus_file(directive: Dict) -> Path:
     for gap in gaps[:3]:
         duration = gap.get('duration_minutes', 0)
         if duration >= 30:
-            time_blocks.append(f"- {gap.get('start', '')[:5]} - {gap.get('end', '')[:5]} ({duration} min available)")
+            # Handle both ISO datetime (2026-02-02T09:00:00) and time-only (09:00) formats
+            start_str = gap.get('start', '') or gap.get('start_time', '')
+            end_str = gap.get('end', '') or gap.get('end_time', '')
+            # Extract time portion if it's a full datetime
+            if 'T' in start_str:
+                start_time = start_str.split('T')[1][:5]  # Get HH:MM
+            elif start_str and len(start_str) >= 5:
+                start_time = start_str[:5] if ':' in start_str[:5] else start_str
+            else:
+                start_time = start_str
+            if 'T' in end_str:
+                end_time = end_str.split('T')[1][:5]  # Get HH:MM
+            elif end_str and len(end_str) >= 5:
+                end_time = end_str[:5] if ':' in end_str[:5] else end_str
+            else:
+                end_time = end_str
+            if start_time and end_time:
+                time_blocks.append(f"- {start_time} - {end_time} ({duration} min available)")
 
     content = f"""# Suggested Focus Areas - {date}
 
