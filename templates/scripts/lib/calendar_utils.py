@@ -55,6 +55,30 @@ def check_google_api_available() -> Tuple[bool, str]:
     return _api_available_cache
 
 
+def extract_json_from_output(output: str) -> str:
+    """
+    Extract JSON from output that may contain warning messages.
+
+    The Google API script may print Python warnings before the JSON output.
+    This function finds the first JSON array or object and returns it.
+
+    Args:
+        output: Raw stdout that may contain warnings + JSON
+
+    Returns:
+        The JSON portion of the output, or empty string if not found
+    """
+    if not output:
+        return ""
+
+    # Find the first [ or { which starts JSON
+    for i, char in enumerate(output):
+        if char == '[' or char == '{':
+            return output[i:]
+
+    return output
+
+
 def fetch_calendar_events(days: int = 1) -> List[Dict[str, Any]]:
     """
     Fetch calendar events for the specified number of days.
@@ -77,10 +101,16 @@ def fetch_calendar_events(days: int = 1) -> List[Dict[str, Any]]:
             print(f"Warning: Calendar fetch failed: {result.stderr}", file=sys.stderr)
             return []
 
-        if not result.stdout.strip() or result.stdout.strip() == "No upcoming events found.":
+        output = result.stdout.strip()
+        if not output or output == "No upcoming events found.":
             return []
 
-        return json.loads(result.stdout)
+        # Extract JSON from output (handles warnings printed before JSON)
+        json_str = extract_json_from_output(output)
+        if not json_str:
+            return []
+
+        return json.loads(json_str)
 
     except subprocess.TimeoutExpired:
         print("Warning: Calendar fetch timed out", file=sys.stderr)
@@ -114,7 +144,12 @@ def get_event_details(event_id: str) -> Optional[Dict[str, Any]]:
         if result.returncode != 0:
             return None
 
-        return json.loads(result.stdout)
+        # Extract JSON from output (handles warnings printed before JSON)
+        json_str = extract_json_from_output(result.stdout)
+        if not json_str:
+            return None
+
+        return json.loads(json_str)
 
     except Exception as e:
         print(f"Warning: Failed to get event details: {e}", file=sys.stderr)
@@ -145,7 +180,12 @@ def create_calendar_event(title: str, start: str, end: str, description: str = "
             print(f"Warning: Failed to create event: {result.stderr}", file=sys.stderr)
             return None
 
-        return json.loads(result.stdout)
+        # Extract JSON from output (handles warnings printed before JSON)
+        json_str = extract_json_from_output(result.stdout)
+        if not json_str:
+            return None
+
+        return json.loads(json_str)
 
     except Exception as e:
         print(f"Warning: Event creation error: {e}", file=sys.stderr)

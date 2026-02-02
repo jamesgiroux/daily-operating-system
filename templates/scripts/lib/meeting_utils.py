@@ -133,6 +133,30 @@ def save_bu_cache(cache: Dict[str, Any]) -> None:
         print(f"Warning: Failed to save BU cache: {e}", file=sys.stderr)
 
 
+def extract_json_from_output(output: str) -> str:
+    """
+    Extract JSON from output that may contain warning messages.
+
+    The Google API script may print Python warnings before the JSON output.
+    This function finds the first JSON array or object and returns it.
+
+    Args:
+        output: Raw stdout that may contain warnings + JSON
+
+    Returns:
+        The JSON portion of the output, or empty string if not found
+    """
+    if not output:
+        return ""
+
+    # Find the first [ or { which starts JSON
+    for i, char in enumerate(output):
+        if char == '[' or char == '{':
+            return output[i:]
+
+    return output
+
+
 def fetch_account_data() -> Optional[List[List[str]]]:
     """
     Fetch account data from Google Sheet.
@@ -152,7 +176,12 @@ def fetch_account_data() -> Optional[List[List[str]]]:
             print(f"Warning: Sheet fetch failed: {result.stderr}", file=sys.stderr)
             return None
 
-        data = json.loads(result.stdout)
+        # Extract JSON from output (handles warnings printed before JSON)
+        json_str = extract_json_from_output(result.stdout)
+        if not json_str:
+            return None
+
+        data = json.loads(json_str)
         return data.get('values', [])
 
     except Exception as e:
