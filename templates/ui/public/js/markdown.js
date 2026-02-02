@@ -695,16 +695,26 @@ const MarkdownUtils = {
       if (text.includes('summary')) sections.summary = h2;
     });
 
-    // Count emails
+    // Count emails - check H2 heading text or count H3 subheadings
     let highCount = 0, mediumCount = 0, archivedCount = 0;
-    const highMatch = h1.parentElement.textContent.match(/HIGH Priority[^\d]*\((\d+)\)/i);
-    if (highMatch) highCount = parseInt(highMatch[1]);
 
     if (sections.high) {
-      const table = this.findNextTable(sections.high);
-      if (table) {
-        const rows = table.querySelectorAll('tbody tr');
-        highCount = rows.length > 0 ? rows.length : Array.from(table.querySelectorAll('tr')).slice(1).length;
+      // First try to get count from H2 heading: "HIGH Priority Emails (3)"
+      const headingMatch = sections.high.textContent.match(/\((\d+)\)/);
+      if (headingMatch) {
+        highCount = parseInt(headingMatch[1]);
+      } else {
+        // Fallback: count H3 headings which represent individual emails
+        const content = this.findSectionContent(sections.high);
+        content.forEach(el => {
+          if (el.tagName === 'H3') highCount++;
+        });
+        // Also check for table (backwards compatibility)
+        const table = this.findNextTable(sections.high);
+        if (table && highCount === 0) {
+          const rows = table.querySelectorAll('tbody tr');
+          highCount = rows.length > 0 ? rows.length : Array.from(table.querySelectorAll('tr')).slice(1).length;
+        }
       }
     }
 
@@ -763,30 +773,122 @@ const MarkdownUtils = {
     section.className = `section-card section-card-${type === 'high' ? 'warning' : 'week'} animate-in`;
     section.style.animationDelay = `${delay}s`;
 
-    const content = this.findSectionContent(heading);
+    // Include HR elements (email items are separated by ---)
+    const content = this.findSectionContent(heading, true);
     let itemsHtml = '';
+    let emailIndex = 0;
 
-    // Look for table in section
-    content.forEach(el => {
+    // Parse email items - new format uses H3 headings with metadata in following paragraphs
+    // Format: ### N. Subject Line
+    //         **From**: sender
+    //         **Date**: date
+    //         > snippet
+    //         ---
+    for (let i = 0; i < content.length; i++) {
+      const el = content[i];
+
+      // Skip HR separators between emails (don't stop main loop)
+      if (el.tagName === 'HR') {
+        continue;
+      }
+
+      // New format: H3 heading with "N. Subject" pattern
+      if (el.tagName === 'H3') {
+        const h3Text = el.textContent.trim();
+        const subjectMatch = h3Text.match(/^\d+\.\s*(.+)$/);
+
+        if (subjectMatch) {
+          // This is an email entry
+          const subject = subjectMatch[1];
+          let from = '';
+          let snippet = '';
+          let classification = '';
+
+          // Look ahead for **From**, **Date**, blockquote, etc. - stop at next H3, H2, or HR
+          for (let j = i + 1; j < content.length; j++) {
+            const nextEl = content[j];
+            if (!nextEl || !nextEl.tagName) continue;
+
+            // Stop lookahead at section boundaries
+            if (nextEl.tagName === 'H3' || nextEl.tagName === 'H2' || nextEl.tagName === 'HR') {
+              break;
+            }
+
+            if (nextEl.tagName === 'P') {
+              const text = nextEl.textContent;
+              const html = nextEl.innerHTML;
+
+              // Extract From - could be in same P as Date or separate
+              if (html.includes('<strong>From</strong>') || text.match(/^\*\*From\*\*/)) {
+                // Try to extract just the From part
+                const fromMatch = text.match(/From[:\s]*([^]*?)(?=Date|$)/i);
+                if (fromMatch) {
+                  from = fromMatch[1].trim();
+                  // Clean up any trailing content
+                  from = from.replace(/\*\*/g, '').trim();
+                }
+              }
+
+              // Extract Classification
+              if (text.includes('Classification')) {
+                classification = text.replace(/Classification[:\s]*/i, '').trim();
+              }
+
+              // Handle Snippet label (sometimes it's a paragraph with just "**Snippet**:")
+              if (text.includes('Snippet') && !text.includes('>')) {
+                continue; // Skip the label, snippet is in blockquote
+              }
+            }
+
+            // Extract snippet from blockquote
+            if (nextEl.tagName === 'BLOCKQUOTE') {
+              snippet = nextEl.textContent.trim();
+              if (snippet.length > 150) snippet = snippet.substring(0, 150) + '...';
+            }
+          }
+
+          // Determine type badge based on classification
+          let typeClass = 'info';
+          if (classification.includes('ACTION')) typeClass = 'action';
+          else if (classification.includes('OPPORTUNITY')) typeClass = 'opportunity';
+          else if (classification.includes('RISK')) typeClass = 'risk';
+
+          itemsHtml += `
+            <div class="email-list-item animate-in-fast" style="animation-delay: ${0.1 + emailIndex * 0.05}s">
+              <div class="email-list-badge ${typeClass}"></div>
+              <div class="email-list-content">
+                <div class="email-list-from">${from}</div>
+                <div class="email-list-subject">${subject}</div>
+                ${snippet ? `<div class="email-list-snippet">${snippet}</div>` : ''}
+              </div>
+            </div>
+          `;
+          emailIndex++;
+        } else {
+          // Old format: just a group header
+          itemsHtml += `<div class="email-group-header">${h3Text}</div>`;
+        }
+      }
+
+      // Old format fallback: TABLE with From|Subject|Type|Action columns
       if (el.tagName === 'TABLE') {
         const rows = el.querySelectorAll('tbody tr');
         const allRows = rows.length > 0 ? rows : Array.from(el.querySelectorAll('tr')).slice(1);
 
-        allRows.forEach((row, i) => {
+        allRows.forEach((row, idx) => {
           const cells = row.querySelectorAll('td');
           const from = cells[0]?.textContent.trim() || '';
           const subject = cells[1]?.textContent.trim() || '';
           const emailType = cells[2]?.textContent.trim() || '';
           const action = cells[3]?.textContent.trim() || '';
 
-          // Determine type badge
           let typeClass = 'info';
           const typeLower = emailType.toLowerCase();
           if (typeLower.includes('action')) typeClass = 'action';
           else if (typeLower.includes('opportunity')) typeClass = 'opportunity';
 
           itemsHtml += `
-            <div class="email-list-item animate-in-fast" style="animation-delay: ${0.1 + i * 0.05}s">
+            <div class="email-list-item animate-in-fast" style="animation-delay: ${0.1 + emailIndex * 0.05}s">
               <div class="email-list-badge ${typeClass}"></div>
               <div class="email-list-content">
                 <div class="email-list-from">${from}</div>
@@ -796,15 +898,10 @@ const MarkdownUtils = {
               <div class="email-list-type">${emailType}</div>
             </div>
           `;
+          emailIndex++;
         });
       }
-
-      // Handle h3 subsections
-      if (el.tagName === 'H3') {
-        const subTitle = el.textContent;
-        itemsHtml += `<div class="email-group-header">${subTitle}</div>`;
-      }
-    });
+    }
 
     section.innerHTML = `
       <div class="section-card-header">
@@ -975,11 +1072,13 @@ const MarkdownUtils = {
     const h2s = container.querySelectorAll('h2');
     h2s.forEach(h2 => {
       const text = h2.textContent.toLowerCase();
-      if (text.includes('customer meetings')) sections.meetings = h2;
+      // Match both "Customer Meetings" and "This Week's Meetings"
+      if (text.includes('meetings')) sections.meetings = h2;
       if (text.includes('action items')) sections.actions = h2;
       if (text.includes('hygiene')) sections.hygiene = h2;
       if (text.includes('impact')) sections.impact = h2;
-      if (text.includes('time block')) sections.timeBlocks = h2;
+      // Match both "Time Block" and "Calendar Blocks"
+      if (text.includes('time block') || text.includes('calendar block')) sections.timeBlocks = h2;
       if (text.includes('focus area')) sections.focusAreas = h2;
       if (text.includes('previous week')) sections.previousWeek = h2;
     });
@@ -1083,18 +1182,28 @@ const MarkdownUtils = {
       }
     }
 
-    // Count actions
+    // Count actions - look for H3 headings with (N) pattern
     if (sections.actions) {
       const content = this.findSectionContent(sections.actions);
       content.forEach(el => {
         if (el.tagName === 'H3') {
-          const text = el.textContent.toLowerCase();
-          let nextEl = el.nextElementSibling;
-          while (nextEl && nextEl.tagName === 'UL') {
-            const count = nextEl.querySelectorAll(':scope > li').length;
-            if (text.includes('overdue')) stats.overdue += count;
-            else if (text.includes('due this week')) stats.dueThisWeek += count;
-            nextEl = nextEl.nextElementSibling;
+          const text = el.textContent;
+          const textLower = text.toLowerCase();
+          // Try to extract count from "(N)" pattern in heading
+          const countMatch = text.match(/\((\d+)\)/);
+          if (countMatch) {
+            const count = parseInt(countMatch[1]);
+            if (textLower.includes('overdue')) stats.overdue += count;
+            else if (textLower.includes('due this week')) stats.dueThisWeek += count;
+          } else {
+            // Fallback: count actual list items
+            let nextEl = el.nextElementSibling;
+            while (nextEl && nextEl.tagName === 'UL') {
+              const count = nextEl.querySelectorAll(':scope > li').length;
+              if (textLower.includes('overdue')) stats.overdue += count;
+              else if (textLower.includes('due this week')) stats.dueThisWeek += count;
+              nextEl = nextEl.nextElementSibling;
+            }
           }
         }
       });
@@ -1255,22 +1364,24 @@ const MarkdownUtils = {
 
     const content = this.findSectionContent(heading);
     let itemsHtml = '';
+    let currentLevel = 'info';
 
     content.forEach(el => {
       if (el.tagName === 'H3') {
         const text = el.textContent;
-        let levelClass = 'info';
-        if (text.includes('🔴') || text.toLowerCase().includes('critical')) levelClass = 'critical';
-        else if (text.includes('🟡') || text.toLowerCase().includes('attention')) levelClass = 'warning';
-        else if (text.includes('🟢') || text.toLowerCase().includes('healthy')) levelClass = 'healthy';
+        if (text.includes('🔴') || text.toLowerCase().includes('critical')) currentLevel = 'critical';
+        else if (text.includes('🟡') || text.toLowerCase().includes('attention')) currentLevel = 'warning';
+        else if (text.includes('🟢') || text.toLowerCase().includes('healthy')) currentLevel = 'healthy';
 
-        itemsHtml += `<div class="hygiene-level-header ${levelClass}">${text}</div>`;
+        itemsHtml += `<div class="hygiene-level-header ${currentLevel}">${text}</div>`;
       }
 
-      if (el.tagName === 'P' && el.textContent.includes('None')) {
+      // Handle "✅ No critical alerts" type paragraphs
+      if (el.tagName === 'P' && (el.textContent.includes('None') || el.textContent.includes('✅') || el.textContent.includes('No '))) {
         itemsHtml += `<p class="text-muted text-sm">${el.textContent}</p>`;
       }
 
+      // Handle TABLE format
       if (el.tagName === 'TABLE') {
         const rows = el.querySelectorAll('tbody tr');
         const allRows = rows.length > 0 ? rows : Array.from(el.querySelectorAll('tr')).slice(1);
@@ -1283,7 +1394,7 @@ const MarkdownUtils = {
           const action = cells[4]?.textContent.trim() || cells[3]?.textContent.trim() || '';
 
           itemsHtml += `
-            <div class="hygiene-item">
+            <div class="hygiene-item ${currentLevel}">
               <div class="hygiene-item-account">${account}</div>
               <div class="hygiene-item-issue">${issue}</div>
               <div class="hygiene-item-action">${action}</div>
@@ -1292,10 +1403,27 @@ const MarkdownUtils = {
         });
       }
 
+      // Handle UL format (new markdown structure)
       if (el.tagName === 'UL') {
         const items = el.querySelectorAll('li');
         items.forEach(li => {
-          itemsHtml += `<div class="hygiene-healthy-item">✓ ${li.textContent}</div>`;
+          const text = li.textContent;
+          // Parse "**Account Name** - Issue description" format
+          const boldMatch = li.innerHTML.match(/<strong>([^<]+)<\/strong>\s*-?\s*(.*)/);
+          if (boldMatch) {
+            const account = boldMatch[1].trim();
+            const issue = boldMatch[2].trim();
+            itemsHtml += `
+              <div class="hygiene-item ${currentLevel}">
+                <div class="hygiene-item-account">${account}</div>
+                <div class="hygiene-item-issue">${issue}</div>
+              </div>
+            `;
+          } else {
+            // Simple list item
+            const icon = currentLevel === 'healthy' ? '✓' : (currentLevel === 'warning' ? '⚠' : '•');
+            itemsHtml += `<div class="hygiene-${currentLevel}-item">${icon} ${text}</div>`;
+          }
         });
       }
     });
@@ -1330,6 +1458,28 @@ const MarkdownUtils = {
     let itemsHtml = '';
 
     content.forEach(el => {
+      // Handle table format: | Block | Day | Duration |
+      if (el.tagName === 'TABLE') {
+        const rows = el.querySelectorAll('tbody tr');
+        const allRows = rows.length > 0 ? rows : Array.from(el.querySelectorAll('tr')).slice(1);
+
+        allRows.forEach(row => {
+          const cells = row.querySelectorAll('td');
+          const block = cells[0]?.textContent.trim() || '';
+          const day = cells[1]?.textContent.trim() || '';
+          const duration = cells[2]?.textContent.trim() || '';
+
+          itemsHtml += `
+            <div class="time-block-item">
+              <div class="time-block-day-name">${day}</div>
+              <div class="time-block-task">${block}</div>
+              <div class="time-block-duration">${duration}</div>
+            </div>
+          `;
+        });
+      }
+
+      // Handle old format: paragraphs with <strong>
       if (el.tagName === 'P' && el.querySelector('strong')) {
         const dayName = el.querySelector('strong').textContent;
         const details = el.textContent.replace(dayName, '').trim();
@@ -1358,7 +1508,7 @@ const MarkdownUtils = {
             <line x1="8" y1="2" x2="8" y2="6"></line>
             <line x1="3" y1="10" x2="21" y2="10"></line>
           </svg>
-          Time Blocks
+          Calendar Blocks
         </h3>
       </div>
       <div class="section-card-body">
@@ -1957,11 +2107,26 @@ const MarkdownUtils = {
       }
     }
 
-    // Count actions - look for tables in the section content
+    // Count actions - look for H3 headings with (N) pattern or UL items
     if (sections.actions) {
       const content = this.findSectionContent(sections.actions);
       let actionCount = 0;
       content.forEach(el => {
+        // Check for H3 headings with count in parentheses: "Overdue (10)", "Due Today (0)"
+        if (el.tagName === 'H3') {
+          const match = el.textContent.match(/\((\d+)\)/);
+          if (match) {
+            actionCount += parseInt(match[1]);
+          }
+        }
+        // Fallback: count actual checkbox items in UL
+        if (el.tagName === 'UL') {
+          const checkboxItems = el.querySelectorAll('li input[type="checkbox"]');
+          if (checkboxItems.length > 0) {
+            actionCount += checkboxItems.length;
+          }
+        }
+        // Also check tables for backwards compatibility
         if (el.tagName === 'TABLE') {
           const rows = el.querySelectorAll('tbody tr');
           const allRows = rows.length > 0 ? rows : Array.from(el.querySelectorAll('tr')).slice(1);
@@ -2019,11 +2184,17 @@ const MarkdownUtils = {
 
   /**
    * Find content between heading and next h2
+   * @param {Element} heading - The heading element to start from
+   * @param {boolean} includeHr - If true, include HR elements and continue past them (default: false)
    */
-  findSectionContent(heading) {
+  findSectionContent(heading, includeHr = false) {
     const content = [];
     let sibling = heading.nextElementSibling;
-    while (sibling && !sibling.matches('h2, h1, hr')) {
+    while (sibling && !sibling.matches('h2, h1')) {
+      // Stop at HR unless includeHr is true
+      if (sibling.tagName === 'HR' && !includeHr) {
+        break;
+      }
       content.push(sibling);
       sibling = sibling.nextElementSibling;
     }
@@ -2205,11 +2376,11 @@ const MarkdownUtils = {
   },
 
   /**
-   * Build email summary card
+   * Build email summary card - uses action-card structure for consistency
    */
   buildEmailSummaryCard(heading) {
     const card = document.createElement('div');
-    card.className = 'email-card animate-in';
+    card.className = 'action-card animate-in';
     card.style.animationDelay = '0.35s';
 
     // Extract count from heading or h3 within section
@@ -2218,7 +2389,6 @@ const MarkdownUtils = {
     if (countMatch) {
       count = parseInt(countMatch[1]);
     } else {
-      // Look for h3 with count
       const content = this.findSectionContent(heading);
       for (const el of content) {
         if (el.tagName === 'H3') {
@@ -2231,7 +2401,7 @@ const MarkdownUtils = {
       }
     }
 
-    // Find the table with email items - might be after an h3
+    // Find the table with email items
     const content = this.findSectionContent(heading);
     let table = null;
     for (const el of content) {
@@ -2245,26 +2415,28 @@ const MarkdownUtils = {
     }
     let itemsHtml = '';
 
+    // Helper to escape HTML characters
+    const escapeHtml = (str) => str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
     if (table) {
       const tbodyRows = table.querySelectorAll('tbody tr');
       const rows = tbodyRows.length > 0 ? tbodyRows : Array.from(table.querySelectorAll('tr')).slice(1);
       rows.forEach((row, i) => {
-        if (i >= 4) return; // Show max 4 items
+        if (i >= 4) return;
         const cells = row.querySelectorAll('td');
-        const from = cells[0]?.textContent.trim() || '';
-        const subject = cells[1]?.textContent.trim() || '';
-        const type = cells[2]?.textContent.toLowerCase() || '';
-
-        let typeClass = 'info';
-        if (type.includes('action')) typeClass = 'action';
-        else if (type.includes('opportunity')) typeClass = 'opportunity';
+        const from = escapeHtml(cells[0]?.textContent.trim() || '');
+        const subject = escapeHtml(cells[1]?.textContent.trim() || '');
 
         itemsHtml += `
-          <div class="email-item">
-            <div class="email-type-badge ${typeClass}"></div>
-            <div class="email-item-content">
-              <div class="email-item-from">${from}</div>
-              <div class="email-item-subject">${subject}</div>
+          <div class="action-card-item">
+            <div class="action-priority email">●</div>
+            <div class="action-card-text">
+              <div class="action-card-name">${from}</div>
+              <div class="action-card-meta">${subject}</div>
             </div>
           </div>
         `;
@@ -2272,19 +2444,16 @@ const MarkdownUtils = {
     }
 
     card.innerHTML = `
-      <div class="email-card-header">
-        <h3 class="email-card-title">Emails - Needs Attention</h3>
+      <div class="action-card-header">
+        <h3 class="action-card-title">Emails - Needs Attention</h3>
+        <span class="action-card-count ${count > 0 ? 'warning' : ''}">${count} high priority</span>
       </div>
-      <div class="email-stats">
-        <div class="email-stat">
-          <div class="email-stat-value high">${count}</div>
-          <div class="email-stat-label">High Priority</div>
-        </div>
-      </div>
-      <div class="email-card-body">
+      <div class="action-card-body">
         ${itemsHtml || '<p class="text-muted">No high priority emails</p>'}
       </div>
-      <a href="/today/email" class="section-card-link">View all emails →</a>
+      <div class="section-card-footer">
+        <a href="/today/email" class="section-card-link">View all emails →</a>
+      </div>
     `;
 
     return card;
@@ -2341,7 +2510,9 @@ const MarkdownUtils = {
       <div class="action-card-body">
         ${itemsHtml || '<p class="text-muted">No actions due</p>'}
       </div>
-      <a href="/today/actions" class="section-card-link">View all actions →</a>
+      <div class="section-card-footer">
+        <a href="/today/actions" class="section-card-link">View all actions →</a>
+      </div>
     `;
 
     return card;
@@ -2442,8 +2613,9 @@ const MarkdownUtils = {
         e.preventDefault();
         const prepFile = link.getAttribute('data-prep');
         if (prepFile) {
-          // Navigate to the prep file in _today directory (relative path)
-          Router.navigate(`/file?path=${encodeURIComponent('_today/' + prepFile)}`);
+          // Navigate using /today/ route which has flexible filename matching
+          const routePath = prepFile.replace('.md', '');
+          Router.navigate(`/today/${routePath}`);
         }
       });
     });
