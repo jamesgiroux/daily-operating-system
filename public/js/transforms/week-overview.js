@@ -231,13 +231,21 @@ const WeekOverviewTransform = {
         const status = cells[4]?.textContent.trim() || '';
 
         const ringClass = SectionUtils.classifyRing(ring);
-        const needsPrep = status.includes('Needs prep') || status.includes('\u26A0\uFE0F');
-        const statusClass = needsPrep ? 'needs-prep' : 'ready';
+        // Check for various "needs work" indicators in prep status
+        // Ready indicators: ✅ Prep ready, ✏️ Draft ready, ✅ Done
+        // Needs work: 📋 Prep needed, 📅 Agenda needed, 🔄 Bring updates, 👥 Context needed
+        const isReady = status.includes('✅') || status.includes('✏️') ||
+                        status.toLowerCase().includes('ready') ||
+                        status.toLowerCase().includes('done');
+        const statusClass = isReady ? 'ready' : 'needs-prep';
 
         if (day !== currentDay) {
           currentDay = day;
           itemsHtml += `<div class="week-day-header">${day}</div>`;
         }
+
+        // Clean up status text for display (remove emojis, normalize)
+        const displayStatus = status.replace(/[📋📅🔄👥✅✏️]/g, '').trim() || (isReady ? 'Ready' : 'Needs prep');
 
         itemsHtml += `
           <div class="week-meeting-item animate-in-fast" style="animation-delay: ${0.1 + i * 0.03}s">
@@ -246,7 +254,7 @@ const WeekOverviewTransform = {
               <div class="week-meeting-account">${account}</div>
               <div class="week-meeting-meta">
                 <span class="ring-badge ${ringClass}">${ring}</span>
-                <span class="prep-status ${statusClass}">${needsPrep ? '<span class="prep-icon warning"></span> Needs prep' : '<span class="prep-icon ready"></span> Ready'}</span>
+                <span class="prep-status ${statusClass}"><span class="prep-icon ${isReady ? 'ready' : 'warning'}"></span> ${displayStatus}</span>
               </div>
             </div>
           </div>
