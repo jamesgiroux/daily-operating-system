@@ -11,6 +11,34 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.4.0] - 2026-02-02
+
+### Added
+
+- **Version Management System** (WordPress-inspired auto-update architecture)
+  - Symlink-based installation: workspaces link to `~/.dailyos` core, enabling automatic updates
+  - Daily update check: `/today` checks for updates once per day, prompts with options
+  - Eject/reset pattern: power users can customize skills while tracking changes
+  - `dailyos` CLI tool with commands: `version`, `status`, `update`, `doctor`, `repair`, `eject`, `reset`
+  - Self-healing: `dailyos doctor` detects broken symlinks, missing files; `repair` fixes them
+
+- **Core Initialization**
+  - `easy-start.command` now initializes `~/.dailyos` core before web wizard
+  - Optional CLI installation to `/usr/local/bin/dailyos`
+  - Setup wizard uses symlinks instead of file copies when core exists
+
+- **Version Tracking**
+  - `.dailyos-version` file tracks installed version per workspace
+  - `.dailyos-ejected` file tracks customized components
+  - `.dailyos-last-check` prevents redundant daily update checks
+
+### Changed
+
+- Setup wizard (`wizard.py`, `steps/skills.py`) now uses symlink installation by default
+- Commands, skills, agents link to core rather than being copied
+
+---
+
 ## [0.3.4] - 2026-02-02
 
 ### Added
