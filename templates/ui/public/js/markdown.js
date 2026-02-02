@@ -1885,26 +1885,27 @@ const MarkdownUtils = {
     const sideCol = document.createElement('div');
     sideCol.className = 'dashboard-sidebar';
 
-    // Build main column - Email and Actions (primary focus items)
+    // Transform schedule into timeline
+    if (sections.schedule) {
+      const scheduleCard = this.buildScheduleTimeline(sections.schedule);
+      mainCol.appendChild(scheduleCard);
+    }
+
+    // Transform customer meetings into cards
+    if (sections.customerMeetings) {
+      const meetingsCard = this.buildCustomerMeetingsSection(sections.customerMeetings);
+      mainCol.appendChild(meetingsCard);
+    }
+
+    // Build sidebar cards
     if (sections.email) {
       const emailCard = this.buildEmailSummaryCard(sections.email);
-      mainCol.appendChild(emailCard);
+      sideCol.appendChild(emailCard);
     }
 
     if (sections.actions) {
       const actionsCard = this.buildActionsCard(sections.actions);
-      mainCol.appendChild(actionsCard);
-    }
-
-    // Build sidebar - Schedule and Customer Meetings
-    if (sections.schedule) {
-      const scheduleCard = this.buildScheduleTimeline(sections.schedule);
-      sideCol.appendChild(scheduleCard);
-    }
-
-    if (sections.customerMeetings) {
-      const meetingsCard = this.buildCustomerMeetingsSection(sections.customerMeetings);
-      sideCol.appendChild(meetingsCard);
+      sideCol.appendChild(actionsCard);
     }
 
     if (sections.waiting) {
