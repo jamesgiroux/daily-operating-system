@@ -4,7 +4,7 @@ Interactive prompts for the setup wizard.
 
 import sys
 from typing import Optional, List, Tuple
-from .colors import Colors, success, error, warning, info, dim, highlight
+from .colors import Colors, success, error, warning, info, dim, highlight, bold
 
 
 def print_banner():
@@ -181,3 +181,103 @@ def print_bullet(message: str, indent: int = 2):
     """Print a bullet point."""
     spaces = " " * indent
     print(f"{spaces}• {message}")
+
+
+def show_update_prompt(update_info: dict) -> int:
+    """
+    Show the version update prompt.
+
+    Args:
+        update_info: Dict with 'current', 'available', 'changelog', 'ejected' keys
+
+    Returns:
+        User choice (1=update, 2=remind tomorrow, 3=skip version, 4=show changelog)
+    """
+    print(f"\n{Colors.CYAN}{'=' * 63}{Colors.RESET}")
+    print(f"  {Colors.BOLD}DailyOS Update Available{Colors.RESET}")
+    print(f"{Colors.CYAN}{'=' * 63}{Colors.RESET}\n")
+
+    print(f"  Current: v{update_info['current']} -> Available: v{update_info['available']}\n")
+
+    # Show changelog summary
+    changelog = update_info.get('changelog', [])
+    if changelog:
+        print(f"  {Colors.BOLD}What's New:{Colors.RESET}")
+        for entry in changelog[:5]:  # Max 5 items
+            print(f"    {dim('-')} {entry}")
+        print()
+
+    # Warn about ejected skills
+    ejected = update_info.get('ejected', [])
+    if ejected:
+        print(f"  {warning('Your customized skills will not auto-update:')}")
+        for skill in ejected:
+            print(f"       - {skill}")
+        print()
+
+    # Safety message
+    print(f"  {dim('Your data (Accounts/, Projects/) is never touched.')}\n")
+
+    options = [
+        ("Update now", "Pull latest and sync workspace"),
+        ("Remind me tomorrow", "Continue with current version"),
+        ("Skip this version", "Don't ask again until next release"),
+        ("Show full changelog", "View detailed changes"),
+    ]
+
+    return prompt_choice("What would you like to do?", options, default=1)
+
+
+def show_doctor_results(results: dict) -> None:
+    """Display doctor check results."""
+    print(f"\n{bold('DailyOS Health Check')}")
+    print("=" * 40)
+
+    # Core status
+    print_section("Core (~/.dailyos):")
+    for check in results.get('core', []):
+        status = success('ok') if check['ok'] else error('FAIL')
+        print(f"    {check['name']}: {status}")
+        if not check['ok'] and check.get('message'):
+            print(f"      {dim(check['message'])}")
+
+    # Workspace status
+    print_section(f"Workspace ({results.get('workspace', '.')}):")
+    for check in results.get('workspace_checks', []):
+        status = success('ok') if check['ok'] else error('FAIL')
+        print(f"    {check['name']}: {status}")
+        if not check['ok'] and check.get('message'):
+            print(f"      {dim(check['message'])}")
+
+    # Commands
+    print_section("Commands:")
+    for cmd in results.get('commands', []):
+        if cmd['status'] == 'symlinked':
+            status = success('symlinked')
+        elif cmd['status'] == 'ejected':
+            status = f"{Colors.YELLOW}ejected{Colors.RESET}"
+        elif cmd['status'] == 'missing':
+            status = error('MISSING')
+        else:
+            status = warning(cmd['status'])
+        print(f"    {cmd['name']}: {status}")
+
+    # Skills
+    print_section("Skills:")
+    for skill in results.get('skills', []):
+        if skill['status'] == 'symlinked':
+            status = success('symlinked')
+        elif skill['status'] == 'ejected':
+            status = f"{Colors.YELLOW}ejected{Colors.RESET}"
+        elif skill['status'] == 'missing':
+            status = error('MISSING')
+        else:
+            status = warning(skill['status'])
+        print(f"    {skill['name']}: {status}")
+
+    # Summary
+    problems = results.get('problems', [])
+    if problems:
+        print(f"\n{warning(f'Problems found: {len(problems)}')}")
+    else:
+        print(f"\n{success('Everything looks healthy')}")

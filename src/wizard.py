@@ -9,6 +9,17 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+# Add version management
+try:
+    from version import (
+        initialize_core, get_core_version, set_workspace_version,
+        CORE_PATH
+    )
+    VERSION_AVAILABLE = True
+except ImportError:
+    VERSION_AVAILABLE = False
+    CORE_PATH = Path.home() / '.dailyos'
+
 from ui.colors import Colors, success, error, warning, info, header
 from ui.prompts import (
     print_banner, print_step_header, print_section,
@@ -729,6 +740,19 @@ manual for your AI assistant.
         """Step 7: Install skills and commands."""
         print_step_header(7, "Skills & Commands", self.TOTAL_STEPS)
 
+        # Initialize DailyOS core if version management available
+        if VERSION_AVAILABLE:
+            spinner = Spinner("Initializing DailyOS core...")
+            try:
+                script_dir = Path(__file__).parent.parent
+                success_init, msg = initialize_core(script_dir)
+                if success_init:
+                    spinner.succeed(f"Core initialized at {CORE_PATH}")
+                else:
+                    spinner.warn(f"Core initialization: {msg}")
+            except Exception as e:
+                spinner.warn(f"Could not initialize core: {e}")
+
         print("""
 Skills are specialized workflows that Claude Code can execute.
 Commands are quick-access shortcuts for common operations.
@@ -1260,41 +1284,71 @@ Personal productivity workspace using the PARA organizational system.
         self._install_default_skills()
 
     def _install_default_skills(self):
-        """Install the default set of skills and commands."""
+        """Install the default set of skills and commands using symlinks when possible."""
         workspace = self.config['workspace']
+        use_symlinks = VERSION_AVAILABLE and CORE_PATH.exists()
 
         # Find templates directory (relative to this script)
         script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
         templates_dir = script_dir / 'templates'
 
-        # Copy command files from templates
+        # Install command files
         commands = ['today', 'wrap', 'week', 'month', 'quarter', 'email-scan', 'git-commit', 'setup']
         for cmd in commands:
-            src_path = templates_dir / 'commands' / f'{cmd}.md'
             dst_path = workspace / '.claude' / 'commands' / f'{cmd}.md'
+            dst_path.parent.mkdir(parents=True, exist_ok=True)
 
+            # Remove existing file/symlink
+            if dst_path.exists() or dst_path.is_symlink():
+                dst_path.unlink()
+
+            if use_symlinks:
+                # Create symlink to core
+                core_path = CORE_PATH / 'commands' / f'{cmd}.md'
+                if core_path.exists():
+                    dst_path.symlink_to(core_path)
+                    continue
+
+            # Fallback: copy from templates
+            src_path = templates_dir / 'commands' / f'{cmd}.md'
             if src_path.exists():
                 content = src_path.read_text()
                 self.file_ops.write_file(dst_path, content)
             else:
-                # Fallback to placeholder if template not found
                 self.file_ops.write_file(dst_path, f'# /{cmd}\n\nCommand template not found.\n')
 
-        # Copy skill packages from templates
+        # Install skill packages
         skills_src = templates_dir / 'skills'
         skills_dst = workspace / '.claude' / 'skills'
         if skills_src.exists():
             for skill_dir in skills_src.iterdir():
                 if skill_dir.is_dir():
                     skill_name = skill_dir.name
-                    # Copy all files in the skill directory
+                    skill_dst_path = skills_dst / skill_name
+                    skill_dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Remove existing directory/symlink
+                    if skill_dst_path.is_symlink():
+                        skill_dst_path.unlink()
+                    elif skill_dst_path.exists():
+                        import shutil
+                        shutil.rmtree(skill_dst_path)
+
+                    if use_symlinks:
+                        # Create symlink to core skill directory
+                        core_skill_path = CORE_PATH / 'skills' / skill_name
+                        if core_skill_path.exists():
+                            skill_dst_path.symlink_to(core_skill_path)
+                            continue
+
+                    # Fallback: copy files
                     for skill_file in skill_dir.iterdir():
                         if skill_file.is_file():
-                            dst_path = skills_dst / skill_name / skill_file.name
+                            dst_path = skill_dst_path / skill_file.name
                             content = skill_file.read_text()
                             self.file_ops.write_file(dst_path, content)
 
-        # Copy agent definitions from templates
+        # Install agent definitions
         agents_src = templates_dir / 'agents'
         agents_dst = workspace / '.claude' / 'agents'
         if agents_src.exists():
@@ -1304,16 +1358,63 @@ Personal productivity workspace using the PARA organizational system.
                     for agent_file in agent_category.iterdir():
                         if agent_file.is_file():
                             dst_path = agents_dst / category_name / agent_file.name
+                            dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+                            # Remove existing file/symlink
+                            if dst_path.exists() or dst_path.is_symlink():
+                                dst_path.unlink()
+
+                            if use_symlinks:
+                                # Create symlink to core
+                                core_agent_path = CORE_PATH / 'agents' / category_name / agent_file.name
+                                if core_agent_path.exists():
+                                    dst_path.symlink_to(core_agent_path)
+                                    continue
+
+                            # Fallback: copy
                             content = agent_file.read_text()
                             self.file_ops.write_file(dst_path, content)
 
+        # Write version marker to workspace
+        if VERSION_AVAILABLE:
+            try:
+                version = get_core_version()
+                set_workspace_version(workspace, version)
+            except Exception:
+                pass  # Non-fatal
+
     def _install_python_tools(self):
-        """Install Python automation tools."""
+        """Install Python automation tools using symlinks when possible."""
         workspace = self.config['workspace']
         tools_dir = workspace / '_tools'
+        use_symlinks = VERSION_AVAILABLE and CORE_PATH.exists()
 
-        # Find templates directory (relative to this script)
-        script_dir = Path(__file__).parent.parent  # Go up from src/ to project root
+        # Try to create _tools as symlink to core
+        if use_symlinks:
+            core_tools = CORE_PATH / '_tools'
+            if core_tools.exists():
+                # Remove existing _tools if present
+                if tools_dir.is_symlink():
+                    tools_dir.unlink()
+                elif tools_dir.exists():
+                    import shutil
+                    shutil.rmtree(tools_dir)
+
+                # Create symlink
+                tools_dir.symlink_to(core_tools)
+
+                # Also symlink google_api.py
+                google_dst = workspace / '.config' / 'google' / 'google_api.py'
+                google_dst.parent.mkdir(parents=True, exist_ok=True)
+                core_google = CORE_PATH / '.config' / 'google' / 'google_api.py'
+                if core_google.exists():
+                    if google_dst.exists() or google_dst.is_symlink():
+                        google_dst.unlink()
+                    google_dst.symlink_to(core_google)
+                return  # Done via symlinks
+
+        # Fallback: copy files directly
+        script_dir = Path(__file__).parent.parent
         templates_dir = script_dir / 'templates' / 'scripts'
 
         # Tool mappings: (source_subdir, source_file, dest_file)

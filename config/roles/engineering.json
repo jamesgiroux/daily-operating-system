@@ -1,0 +1,77 @@
+{
+  "workspace": {
+    "name": "Engineering Workspace",
+    "role": "engineering"
+  },
+  "sections": [
+    {
+      "id": "projects",
+      "label": "Projects",
+      "icon": "folder",
+      "directory": "Projects",
+      "indexFile": "README.md",
+      "structure": "staged",
+      "stages": [
+        { "folder": "Active", "label": "Active", "color": "#2e7d32" },
+        { "folder": "Backlog", "label": "Backlog", "color": "#1565c0" },
+        { "folder": "Completed", "label": "Completed", "color": "#8a929d" }
+      ],
+      "subsections": [
+        { "pattern": "docs", "icon": "bookOpen", "label": "Documentation" },
+        { "pattern": "src", "icon": "code", "label": "Source" },
+        { "pattern": "tests", "icon": "checkSquare", "label": "Tests" },
+        { "pattern": "issues", "icon": "alertCircle", "label": "Issues" }
+      ]
+    },
+    {
+      "id": "documentation",
+      "label": "Documentation",
+      "icon": "bookOpen",
+      "directory": "Documentation",
+      "indexFile": "README.md",
+      "structure": "flat",
+      "subsections": [
+        { "pattern": "ADRs", "icon": "gitBranch", "label": "ADRs" },
+        { "pattern": "Runbooks", "icon": "clipboard", "label": "Runbooks" },
+        { "pattern": "APIs", "icon": "link", "label": "APIs" }
+      ]
+    },
+    {
+      "id": "areas",
+      "label": "Areas",
+      "icon": "layers",
+      "directory": "Areas",
+      "indexFile": "README.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "80-actions-due.md",
+      "focus": "81-suggested-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar", "file": "overview" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare", "file": "actions" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target", "file": "focus" }
+    ],
+    "weekSidebarLinks": [
+      { "route": "/today/week-overview", "label": "Week Overview", "icon": "list" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "weeklySection": true,
+    "techStackTags": true
+  },
+  "pagePatterns": {
+    "overview": "Today:",
+    "actions": "Action Items",
+    "focus": "Suggested Focus|Focus Areas",
+    "weekOverview": "Week Overview"
+  }
+}

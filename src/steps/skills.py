@@ -2,11 +2,22 @@
 Step 7: Skills and Commands Installation.
 
 Installs Claude Code skills, commands, and agents into the workspace.
+Supports symlink-based installation for automatic updates.
 """
 
 import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+# Try to import version management
+try:
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from version import CORE_PATH, get_core_version
+    VERSION_AVAILABLE = True
+except ImportError:
+    VERSION_AVAILABLE = False
+    CORE_PATH = Path.home() / '.dailyos'
 
 
 def get_project_root() -> Path:
@@ -155,14 +166,13 @@ def get_skill_list(category: Optional[str] = None) -> List[Dict[str, Any]]:
     return skills
 
 
-def install_command(workspace: Path, command_key: str, file_ops) -> bool:
+def install_command_symlink(workspace: Path, command_key: str) -> bool:
     """
-    Install a single command by copying from templates.
+    Install a command as a symlink to core.
 
     Args:
         workspace: Root workspace path
         command_key: Command identifier
-        file_ops: FileOperations instance
 
     Returns:
         True if installed successfully
@@ -170,11 +180,54 @@ def install_command(workspace: Path, command_key: str, file_ops) -> bool:
     if command_key not in AVAILABLE_COMMANDS:
         return False
 
+    core_path = CORE_PATH / 'commands' / f'{command_key}.md'
+    workspace_path = workspace / '.claude' / 'commands' / f'{command_key}.md'
+
+    if not core_path.exists():
+        return False
+
+    workspace_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing file/symlink
+    if workspace_path.exists() or workspace_path.is_symlink():
+        workspace_path.unlink()
+
+    # Create symlink
+    workspace_path.symlink_to(core_path)
+    return True
+
+
+def install_command(workspace: Path, command_key: str, file_ops, use_symlinks: bool = True) -> bool:
+    """
+    Install a single command, preferring symlinks when available.
+
+    Args:
+        workspace: Root workspace path
+        command_key: Command identifier
+        file_ops: FileOperations instance
+        use_symlinks: Whether to use symlinks (default True)
+
+    Returns:
+        True if installed successfully
+    """
+    if command_key not in AVAILABLE_COMMANDS:
+        return False
+
+    # Try symlink first if enabled and core exists
+    if use_symlinks and VERSION_AVAILABLE and CORE_PATH.exists():
+        if install_command_symlink(workspace, command_key):
+            return True
+
+    # Fallback to copy
     cmd = AVAILABLE_COMMANDS[command_key]
     cmd_path = workspace / '.claude' / 'commands' / f'{command_key}.md'
 
     # Ensure commands directory exists
     cmd_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing if present
+    if cmd_path.exists() or cmd_path.is_symlink():
+        cmd_path.unlink()
 
     # Try to copy from templates first
     template_path = get_templates_dir() / 'commands' / f'{command_key}.md'
@@ -206,14 +259,49 @@ def install_command(workspace: Path, command_key: str, file_ops) -> bool:
     return True
 
 
-def install_skill(workspace: Path, skill_key: str, file_ops) -> bool:
+def install_skill_symlink(workspace: Path, skill_key: str) -> bool:
     """
-    Install a single skill by copying from templates.
+    Install a skill directory as a symlink to core.
+
+    Args:
+        workspace: Root workspace path
+        skill_key: Skill identifier
+
+    Returns:
+        True if installed successfully
+    """
+    if skill_key not in AVAILABLE_SKILLS:
+        return False
+
+    template_name = SKILL_TEMPLATE_MAP.get(skill_key, skill_key)
+    core_path = CORE_PATH / 'skills' / template_name
+    workspace_path = workspace / '.claude' / 'skills' / skill_key
+
+    if not core_path.exists():
+        return False
+
+    workspace_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing directory/symlink
+    if workspace_path.is_symlink():
+        workspace_path.unlink()
+    elif workspace_path.exists():
+        shutil.rmtree(workspace_path)
+
+    # Create symlink
+    workspace_path.symlink_to(core_path)
+    return True
+
+
+def install_skill(workspace: Path, skill_key: str, file_ops, use_symlinks: bool = True) -> bool:
+    """
+    Install a single skill, preferring symlinks when available.
 
     Args:
         workspace: Root workspace path
         skill_key: Skill identifier
         file_ops: FileOperations instance
+        use_symlinks: Whether to use symlinks (default True)
 
     Returns:
         True if installed successfully
@@ -222,7 +310,23 @@ def install_skill(workspace: Path, skill_key: str, file_ops) -> bool:
         return False
 
     skill = AVAILABLE_SKILLS[skill_key]
+
+    # Try symlink first if enabled and core exists
+    if use_symlinks and VERSION_AVAILABLE and CORE_PATH.exists():
+        if install_skill_symlink(workspace, skill_key):
+            # Also install agents as symlinks
+            for agent in skill['agents']:
+                install_agent(workspace, agent, skill_key, file_ops, use_symlinks=True)
+            return True
+
+    # Fallback to copy
     skill_dir = workspace / '.claude' / 'skills' / skill_key
+
+    # Remove existing if present
+    if skill_dir.is_symlink():
+        skill_dir.unlink()
+    elif skill_dir.exists():
+        shutil.rmtree(skill_dir)
 
     # Create skill directory
     file_ops.create_directory(skill_dir)
@@ -272,28 +376,76 @@ This skill includes the following agents:
 
     # Install agents for this skill (from templates or placeholders)
     for agent in skill['agents']:
-        install_agent(workspace, agent, skill_key, file_ops)
+        install_agent(workspace, agent, skill_key, file_ops, use_symlinks=False)
 
     return True
 
 
-def install_agent(workspace: Path, agent_key: str, skill_key: str, file_ops) -> bool:
+def install_agent_symlink(workspace: Path, agent_key: str) -> bool:
     """
-    Install a single agent by copying from templates.
+    Install an agent as a symlink to core.
+
+    Args:
+        workspace: Root workspace path
+        agent_key: Agent identifier
+
+    Returns:
+        True if installed successfully
+    """
+    agent_dir = workspace / '.claude' / 'agents'
+    agent_path = agent_dir / f'{agent_key}.md'
+
+    # Search for agent in core
+    core_agents_dir = CORE_PATH / 'agents'
+    core_agent_path = None
+
+    if core_agents_dir.exists():
+        for found_file in core_agents_dir.glob(f'**/{agent_key}.md'):
+            core_agent_path = found_file
+            break
+
+    if not core_agent_path or not core_agent_path.exists():
+        return False
+
+    agent_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing file/symlink
+    if agent_path.exists() or agent_path.is_symlink():
+        agent_path.unlink()
+
+    # Create symlink
+    agent_path.symlink_to(core_agent_path)
+    return True
+
+
+def install_agent(workspace: Path, agent_key: str, skill_key: str, file_ops, use_symlinks: bool = True) -> bool:
+    """
+    Install a single agent, preferring symlinks when available.
 
     Args:
         workspace: Root workspace path
         agent_key: Agent identifier
         skill_key: Parent skill identifier
         file_ops: FileOperations instance
+        use_symlinks: Whether to use symlinks (default True)
 
     Returns:
         True if installed successfully
     """
+    # Try symlink first if enabled and core exists
+    if use_symlinks and VERSION_AVAILABLE and CORE_PATH.exists():
+        if install_agent_symlink(workspace, agent_key):
+            return True
+
+    # Fallback to copy
     agent_dir = workspace / '.claude' / 'agents'
     file_ops.create_directory(agent_dir)
 
     agent_path = agent_dir / f'{agent_key}.md'
+
+    # Remove existing if present
+    if agent_path.exists() or agent_path.is_symlink():
+        agent_path.unlink()
 
     # Search for agent template in all subdirectories
     templates_agents_dir = get_templates_dir() / 'agents'
