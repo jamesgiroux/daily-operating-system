@@ -39,7 +39,8 @@ from calendar_utils import (
 )
 from task_utils import (
     load_master_task_list, get_tasks_due_on, get_overdue_tasks,
-    get_tasks_for_accounts, filter_tasks_by_owner, format_task_for_directive
+    get_tasks_for_accounts, filter_tasks_by_owner, format_task_for_directive,
+    extract_waiting_on
 )
 from file_utils import (
     ensure_today_structure, archive_daily_files, check_yesterday_archive,
@@ -391,6 +392,7 @@ def main():
             'due_today': [],
             'due_this_week': [],
             'related_to_meetings': [],
+            'waiting_on': [],
         },
         'emails': {
             'high_priority': [],
@@ -532,9 +534,14 @@ def main():
     related = get_tasks_for_accounts(incomplete_tasks, meeting_accounts)
     directive['actions']['related_to_meetings'] = [format_task_for_directive(t) for t in related]
 
+    # Get Waiting On (Delegated) items
+    waiting_on = extract_waiting_on()
+    directive['actions']['waiting_on'] = waiting_on
+
     print(f"  Overdue: {len(overdue)}")
     print(f"  Due today: {len(due_today)}")
     print(f"  Related to meetings: {len(related)}")
+    print(f"  Waiting on: {len(waiting_on)}")
 
     # Step 7: Fetch emails
     if not args.skip_email and api_available:

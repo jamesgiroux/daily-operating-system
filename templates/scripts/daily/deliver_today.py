@@ -159,6 +159,7 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
     actions = directive.get('actions', {})
     overdue = actions.get('overdue', [])
     due_today = actions.get('due_today', [])
+    waiting_on = actions.get('waiting_on', [])
 
     overdue_items = []
     for task in overdue[:5]:
@@ -167,6 +168,13 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
     due_today_items = []
     for task in due_today[:5]:
         due_today_items.append(f"- [ ] {task.get('title', 'Unknown')} - {task.get('account', '')}")
+
+    # Build Waiting On table for overview
+    waiting_on_table = ""
+    if waiting_on:
+        waiting_on_table = "| Who | What | Days |\n|-----|------|------|\n"
+        for item in waiting_on[:5]:
+            waiting_on_table += f"| {item.get('who', '')} | {item.get('what', '')} | {item.get('days', '')} |\n"
 
     # Build agenda status section
     agendas = directive.get('agendas_needed', [])
@@ -219,6 +227,10 @@ def write_overview_file(directive: Dict, ai_outputs: Dict) -> Path:
 ### Due Today ({len(due_today)})
 
 {chr(10).join(due_today_items) if due_today_items else "✅ No items due today"}
+
+## Waiting On ({len(waiting_on)})
+
+{waiting_on_table if waiting_on_table else "✅ Nothing pending"}
 
 ## Agenda Status (Next 3-4 Business Days)
 
@@ -281,6 +293,28 @@ def write_actions_file(directive: Dict) -> Path:
 
 """
 
+    # Build Waiting On section for actions file
+    waiting_on = actions.get('waiting_on', [])
+    if waiting_on:
+        waiting_table = "| Who | What | Asked | Days | Context |\n|-----|------|-------|------|---------|"
+        for item in waiting_on:
+            waiting_table += f"\n| {item.get('who', '')} | {item.get('what', '')} | {item.get('asked', '')} | {item.get('days', '')} | {item.get('context', '')} |"
+        waiting_section = f"""## Waiting On (Delegated)
+
+*Outbound asks where others owe you a response*
+
+{waiting_table}
+
+**Tip:** If stale (>7 days), consider follow-up or escalation.
+"""
+    else:
+        waiting_section = """## Waiting On (Delegated)
+
+*Outbound asks where others owe you a response*
+
+✅ No pending delegated items
+"""
+
     content = f"""# Action Items - {date}
 
 ## Overdue
@@ -295,6 +329,7 @@ def write_actions_file(directive: Dict) -> Path:
 
 {related_section if related_section else "No related action items for today's meetings."}
 
+{waiting_section}
 ## Due This Week
 
 *See master task list for full weekly view: `_today/tasks/master-task-list.md`*
