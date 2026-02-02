@@ -142,6 +142,118 @@ def update_master_task_list(task_updates: List[Dict]) -> int:
     return updates_made
 
 
+def sync_completions_to_source_files() -> Dict[str, int]:
+    """
+    Sync completed tasks from master task list back to their source account files.
+
+    Finds tasks marked [x] in master list that have a Source: field pointing
+    to an account action file, then marks the matching item complete in that file.
+
+    Returns:
+        Dict with 'synced' count and 'files_updated' count
+    """
+    import re
+
+    master_list = TODAY_DIR / "tasks/master-task-list.md"
+
+    if not master_list.exists():
+        return {'synced': 0, 'files_updated': 0}
+
+    content = master_list.read_text()
+
+    # Parse completed tasks with their metadata
+    # Pattern matches: - [x] **Title** followed by metadata lines
+    completed_tasks = []
+    lines = content.split('\n')
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        # Check for completed task
+        match = re.match(r'^-\s*\[x\]\s*\*\*(.+?)\*\*', line)
+        if match:
+            title = match.group(1)
+            task_data = {'title': title, 'source': None, 'account': None, 'task_id': None}
+
+            # Extract task ID if present (e.g., `2026-01-20-002`)
+            id_match = re.search(r'`(\d{4}-\d{2}-\d{2}-\d+)`', line)
+            if id_match:
+                task_data['task_id'] = id_match.group(1)
+
+            # Look at following lines for metadata
+            j = i + 1
+            while j < len(lines) and lines[j].startswith('  '):
+                meta_line = lines[j].strip()
+
+                # Extract Source field
+                if meta_line.startswith('- Source:') or meta_line.startswith('Source:'):
+                    source_match = re.search(r'Source:\s*`?([^`\n]+)`?', meta_line)
+                    if source_match:
+                        task_data['source'] = source_match.group(1).strip()
+
+                # Extract Account field
+                if meta_line.startswith('- Account:') or meta_line.startswith('Account:'):
+                    account_match = re.search(r'Account:\s*(.+)', meta_line)
+                    if account_match:
+                        task_data['account'] = account_match.group(1).strip()
+
+                j += 1
+
+            if task_data['source']:
+                completed_tasks.append(task_data)
+
+            i = j
+        else:
+            i += 1
+
+    # Now sync each completed task to its source file
+    synced = 0
+    files_updated = set()
+
+    for task in completed_tasks:
+        source_path = VIP_ROOT / task['source']
+
+        if not source_path.exists():
+            continue
+
+        try:
+            source_content = source_path.read_text()
+            original_content = source_content
+
+            # Try to find and mark the matching task
+            # Strategy 1: Match by task ID if available
+            if task['task_id']:
+                pattern = rf'^(\s*-\s*)\[ \](.+?{re.escape(task["task_id"])}.*)$'
+                source_content, count = re.subn(pattern, r'\1[x]\2', source_content, flags=re.MULTILINE)
+                if count > 0:
+                    synced += count
+                    files_updated.add(str(source_path))
+
+            # Strategy 2: Match by title (fuzzy match)
+            if source_content == original_content:  # No match by ID
+                # Escape special regex chars in title but allow some flexibility
+                title_words = task['title'].split()[:4]  # First 4 words
+                if title_words:
+                    # Build pattern that matches these words in sequence
+                    title_pattern = r'.*?'.join(re.escape(w) for w in title_words)
+                    pattern = rf'^(\s*-\s*)\[ \](\s*\*?\*?{title_pattern}.*)$'
+                    source_content, count = re.subn(pattern, r'\1[x]\2', source_content, count=1, flags=re.MULTILINE | re.IGNORECASE)
+                    if count > 0:
+                        synced += count
+                        files_updated.add(str(source_path))
+
+            # Write back if changed
+            if source_content != original_content:
+                source_path.write_text(source_content)
+
+        except Exception as e:
+            print(f"  ⚠️  Error syncing to {task['source']}: {e}")
+            continue
+
+    return {'synced': synced, 'files_updated': len(files_updated)}
+
+
 def write_wrap_summary(directive: Dict, ai_outputs: Dict, archive_path: Path) -> Path:
     """
     Write the wrap summary file.
@@ -358,6 +470,14 @@ def main():
     task_updates = directive.get('tasks_due_today', [])
     updated_count = update_master_task_list(task_updates)
     print(f"  ✅ Updated {updated_count} tasks")
+
+    # Step 2B: Sync completions back to source account files
+    print("\nStep 2B: Syncing completions to source files...")
+    sync_results = sync_completions_to_source_files()
+    if sync_results['synced'] > 0:
+        print(f"  ✅ Synced {sync_results['synced']} items to {sync_results['files_updated']} source files")
+    else:
+        print("  ℹ️  No completed items with source files to sync")
 
     # Step 3: Archive today's files
     archive_path = ARCHIVE_DIR / date_str

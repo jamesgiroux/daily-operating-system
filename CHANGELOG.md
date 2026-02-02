@@ -11,6 +11,18 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.3.4] - 2026-02-02
+
+### Added
+
+- **Bidirectional task sync in /wrap**
+  - When tasks are marked complete in master task list, completion syncs back to source account files
+  - Matches by task ID (e.g., `2026-01-20-002`) or by title (first 4 words)
+  - Keeps account action files clean - no more zombie unchecked items
+  - Especially useful for accounts with monthly cadence where items could otherwise accumulate
+
+---
+
 ## [0.3.3] - 2026-02-02
 
 ### Fixed
