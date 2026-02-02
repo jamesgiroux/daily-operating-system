@@ -69,6 +69,11 @@
           "type": "boolean",
           "description": "Whether Python automation tools are installed",
           "default": false
+        },
+        "web_dashboard_autostart": {
+          "type": "boolean",
+          "description": "Auto-start web dashboard when /today runs",
+          "default": false
         }
       }
     },
