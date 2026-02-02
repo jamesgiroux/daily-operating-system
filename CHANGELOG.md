@@ -11,6 +11,18 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.3.3] - 2026-02-02
+
+### Fixed
+
+- **JSON parsing resilience for Google API output**
+  - Google API scripts can print Python warnings (NotOpenSSLWarning, FutureWarning, etc.) to stdout before JSON data
+  - This caused `json.loads()` to fail with "Expecting value: line 1 column 1" errors
+  - Added `extract_json_from_output()` helper that strips warning text before parsing
+  - Fixed in `calendar_utils.py`, `meeting_utils.py`, and `prepare_today.py`
+
+---
+
 ## [0.3.2] - 2026-02-01
 
 ### Added
@@ -177,7 +189,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.2.1...v0.3.0
