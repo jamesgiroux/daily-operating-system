@@ -66,6 +66,101 @@ fi
 
 echo -e "${GREEN}✓${NC} npm $(npm -v) found"
 
+# Check for Python (required for core initialization)
+if command -v python3 &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Python $(python3 --version | cut -d' ' -f2) found"
+    PYTHON_CMD="python3"
+elif command -v python &> /dev/null; then
+    echo -e "${GREEN}✓${NC} Python $(python --version 2>&1 | cut -d' ' -f2) found"
+    PYTHON_CMD="python"
+else
+    echo -e "${YELLOW}!${NC} Python not found (optional - some features may be limited)"
+    PYTHON_CMD=""
+fi
+
+# Initialize DailyOS core (~/.dailyos)
+CORE_DIR="$HOME/.dailyos"
+if [ ! -d "$CORE_DIR" ] || [ ! -f "$CORE_DIR/VERSION" ]; then
+    echo ""
+    echo -e "${BLUE}Initializing DailyOS core...${NC}"
+
+    if [ -n "$PYTHON_CMD" ]; then
+        # Use Python to initialize core
+        $PYTHON_CMD -c "
+import sys
+sys.path.insert(0, '$SCRIPT_DIR/src')
+from version import initialize_core
+from pathlib import Path
+success, msg = initialize_core(Path('$SCRIPT_DIR'))
+print(msg)
+sys.exit(0 if success else 1)
+" 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✓${NC} Core initialized at $CORE_DIR"
+        else
+            echo -e "${YELLOW}!${NC} Could not initialize core via Python, using fallback..."
+            # Fallback: manual copy
+            mkdir -p "$CORE_DIR"
+            cp "$SCRIPT_DIR/VERSION" "$CORE_DIR/"
+            cp "$SCRIPT_DIR/CHANGELOG.md" "$CORE_DIR/" 2>/dev/null || true
+            cp -r "$SCRIPT_DIR/commands" "$CORE_DIR/" 2>/dev/null || true
+            cp -r "$SCRIPT_DIR/skills" "$CORE_DIR/" 2>/dev/null || true
+            cp -r "$SCRIPT_DIR/src" "$CORE_DIR/" 2>/dev/null || true
+            cp "$SCRIPT_DIR/dailyos" "$CORE_DIR/" 2>/dev/null || true
+            chmod +x "$CORE_DIR/dailyos" 2>/dev/null || true
+            echo -e "${GREEN}✓${NC} Core initialized at $CORE_DIR (fallback method)"
+        fi
+    else
+        # No Python - use bash fallback
+        mkdir -p "$CORE_DIR"
+        cp "$SCRIPT_DIR/VERSION" "$CORE_DIR/"
+        cp "$SCRIPT_DIR/CHANGELOG.md" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/commands" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/skills" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/src" "$CORE_DIR/" 2>/dev/null || true
+        cp "$SCRIPT_DIR/dailyos" "$CORE_DIR/" 2>/dev/null || true
+        chmod +x "$CORE_DIR/dailyos" 2>/dev/null || true
+        echo -e "${GREEN}✓${NC} Core initialized at $CORE_DIR"
+    fi
+else
+    # Check if we need to update core
+    REPO_VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "0.0.0")
+    CORE_VERSION=$(cat "$CORE_DIR/VERSION" 2>/dev/null || echo "0.0.0")
+
+    if [ "$REPO_VERSION" != "$CORE_VERSION" ]; then
+        echo ""
+        echo -e "${BLUE}Updating DailyOS core ($CORE_VERSION → $REPO_VERSION)...${NC}"
+        cp "$SCRIPT_DIR/VERSION" "$CORE_DIR/"
+        cp "$SCRIPT_DIR/CHANGELOG.md" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/commands" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/skills" "$CORE_DIR/" 2>/dev/null || true
+        cp -r "$SCRIPT_DIR/src" "$CORE_DIR/" 2>/dev/null || true
+        cp "$SCRIPT_DIR/dailyos" "$CORE_DIR/" 2>/dev/null || true
+        chmod +x "$CORE_DIR/dailyos" 2>/dev/null || true
+        echo -e "${GREEN}✓${NC} Core updated to v$REPO_VERSION"
+    else
+        echo -e "${GREEN}✓${NC} Core up to date (v$CORE_VERSION)"
+    fi
+fi
+
+# Create dailyos CLI symlink if not exists
+if [ ! -f "/usr/local/bin/dailyos" ] && [ -f "$CORE_DIR/dailyos" ]; then
+    echo ""
+    echo -e "${BLUE}Would you like to install the 'dailyos' command? (y/n)${NC}"
+    echo "This allows running 'dailyos version', 'dailyos doctor', etc."
+    read -r install_cli
+    if [[ "$install_cli" =~ ^[Yy]$ ]]; then
+        if sudo ln -sf "$CORE_DIR/dailyos" /usr/local/bin/dailyos 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} Installed 'dailyos' command"
+        else
+            echo -e "${YELLOW}!${NC} Could not install to /usr/local/bin (need admin rights)"
+            echo "    You can add this to your shell profile instead:"
+            echo "    export PATH=\"\$HOME/.dailyos:\$PATH\""
+        fi
+    fi
+fi
+
 # Navigate to server directory
 cd "$SERVER_DIR"
 
