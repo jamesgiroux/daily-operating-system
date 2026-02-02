@@ -1,0 +1,8 @@
+#!/bin/bash
+# DailyOS CLI wrapper
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Run the Python CLI
+exec python3 "$SCRIPT_DIR/src/cli.py" "$@"
