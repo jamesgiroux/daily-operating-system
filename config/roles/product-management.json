@@ -1,0 +1,71 @@
+{
+  "$schema": "../schema.json",
+  "workspace": {
+    "name": "Product Management",
+    "role": "product-management"
+  },
+  "sections": [
+    {
+      "id": "features",
+      "label": "Features",
+      "icon": "zap",
+      "directory": "Features",
+      "indexFile": "00-Index.md",
+      "structure": "staged",
+      "stages": [
+        { "name": "Discovery", "label": "Discovery", "color": "#9C27B0" },
+        { "name": "In-Progress", "label": "In Progress", "color": "#2196F3" },
+        { "name": "Shipped", "label": "Shipped", "color": "#4CAF50" }
+      ],
+      "subsections": [
+        { "pattern": "01-Research", "icon": "search", "label": "Research" },
+        { "pattern": "02-Specs", "icon": "fileText", "label": "Specs" },
+        { "pattern": "03-Designs", "icon": "layers", "label": "Designs" },
+        { "pattern": "04-Meetings", "icon": "calendar", "label": "Meetings" },
+        { "pattern": "_attachments", "icon": "paperclip", "label": "Attachments" }
+      ]
+    },
+    {
+      "id": "research",
+      "label": "Research",
+      "icon": "search",
+      "directory": "Research",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    },
+    {
+      "id": "roadmap",
+      "label": "Roadmap",
+      "icon": "compass",
+      "directory": "Roadmap",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "01-actions.md",
+      "focus": "02-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "stageBadges": true
+  },
+  "display": {
+    "stages": [
+      { "tag": "discovery", "label": "Discovery", "color": "#9C27B0" },
+      { "tag": "in-progress", "label": "In Progress", "color": "#2196F3" },
+      { "tag": "shipped", "label": "Shipped", "color": "#4CAF50" }
+    ]
+  }
+}
