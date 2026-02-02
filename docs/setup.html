@@ -1,0 +1,2574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Operating System — Setup Wizard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cream: #f5f2ef;
+            --cream-dark: #ebe5e0;
+            --charcoal: #1a1f24;
+            --charcoal-light: #2d343c;
+            --gold: #c9a227;
+            --gold-muted: #d4b85c;
+            --peach: #e8967a;
+            --sage: #7fb685;
+            --text-primary: #1a1f24;
+            --text-secondary: #5a6370;
+            --text-muted: #8a929d;
+            --white: #ffffff;
+            --border: rgba(26, 31, 36, 0.1);
+            --red: #e57373;
+            --green: #81c784;
+
+            --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--cream);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Slide Container */
+        .presentation {
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slides-wrapper {
+            height: 100%;
+            width: 100%;
+            position: relative;
+        }
+
+        /* Individual Slide */
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 80px 120px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(40px);
+            transition: all 0.7s var(--ease-out-expo);
+            overflow-y: auto;
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        .slide.prev {
+            transform: translateX(-40px);
+        }
+
+        /* Slide Content */
+        .slide-content {
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        .slide-number {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.5s var(--ease-out-quart) 0.2s;
+        }
+
+        .slide.active .slide-number {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-problem {
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--gold);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.5s var(--ease-out-quart) 0.15s;
+        }
+
+        .slide.active .slide-problem {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-title {
+            font-size: clamp(2rem, 4vw, 3.25rem);
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.02em;
+            margin-bottom: 24px;
+            color: var(--charcoal);
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.1s;
+        }
+
+        .slide.active .slide-title {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-subtitle {
+            font-size: 1.25rem;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            max-width: 650px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.2s;
+        }
+
+        .slide.active .slide-subtitle {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .slide-body {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.6s var(--ease-out-quart) 0.3s;
+        }
+
+        .slide.active .slide-body {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Typography */
+        .highlight {
+            color: var(--gold);
+        }
+
+        .highlight-sage {
+            color: var(--sage);
+        }
+
+        /* Terminal Window */
+        .terminal {
+            background: var(--charcoal);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            max-width: 700px;
+        }
+
+        .terminal-header {
+            background: #3d444d;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .terminal-dot.red { background: #ff5f56; }
+        .terminal-dot.yellow { background: #ffbd2e; }
+        .terminal-dot.green { background: #27ca40; }
+
+        .terminal-title {
+            flex: 1;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .terminal-body {
+            padding: 24px;
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            line-height: 1.8;
+            color: var(--cream);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .terminal-body .prompt { color: var(--sage); }
+        .terminal-body .command { color: var(--cream); }
+        .terminal-body .comment { color: var(--text-muted); }
+        .terminal-body .output { color: rgba(245, 242, 239, 0.7); }
+        .terminal-body .success { color: var(--sage); }
+        .terminal-body .error { color: var(--peach); }
+
+        /* Step Indicator */
+        .step-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--white);
+            padding: 8px 16px 8px 8px;
+            border-radius: 100px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            margin-bottom: 24px;
+        }
+
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: var(--charcoal);
+            color: var(--cream);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .step-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--charcoal);
+        }
+
+        /* Setup Steps / Check List */
+        .setup-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        /* Scrollbar styling for verification list */
+        .setup-steps::-webkit-scrollbar {
+            width: 6px;
+        }
+        .setup-steps::-webkit-scrollbar-track {
+            background: var(--cream-dark);
+            border-radius: 3px;
+        }
+        .setup-steps::-webkit-scrollbar-thumb {
+            background: var(--text-muted);
+            border-radius: 3px;
+        }
+        .setup-steps::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
+        .setup-step {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+            background: var(--white);
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: all 0.3s ease;
+        }
+
+        .setup-step.checking {
+            border-left: 4px solid var(--gold);
+        }
+
+        .setup-step.passed {
+            border-left: 4px solid var(--sage);
+        }
+
+        .setup-step.failed {
+            border-left: 4px solid var(--peach);
+        }
+
+        .setup-step.warned {
+            border-left: 4px solid var(--gold-muted);
+        }
+
+        .setup-step .step-number {
+            flex-shrink: 0;
+            width: 28px;
+            height: 28px;
+            font-size: 0.85rem;
+        }
+
+        .setup-step .step-number.ok {
+            background: var(--sage);
+        }
+
+        .setup-step .step-number.warn {
+            background: var(--gold-muted);
+        }
+
+        .setup-step .step-number.fail {
+            background: var(--peach);
+        }
+
+        .setup-step .step-content { flex: 1; }
+        .setup-step .step-content strong {
+            color: var(--charcoal);
+            font-size: 1rem;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .setup-step .step-detail {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        /* Spinner */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .spinner {
+            width: 28px;
+            height: 28px;
+            border: 3px solid var(--cream-dark);
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* Why Box */
+        .why-box {
+            background: linear-gradient(135deg, rgba(201, 162, 39, 0.1) 0%, rgba(201, 162, 39, 0.05) 100%);
+            border-left: 4px solid var(--gold);
+            padding: 20px 24px;
+            border-radius: 0 12px 12px 0;
+            margin: 24px 0;
+            max-width: 600px;
+        }
+
+        .why-box strong {
+            color: var(--gold);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .why-box p {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            margin: 0;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 500;
+            color: var(--charcoal);
+            margin-bottom: 8px;
+        }
+
+        .form-input {
+            width: 100%;
+            max-width: 500px;
+            padding: 14px 18px;
+            font-size: 1rem;
+            font-family: var(--font-mono);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            background: var(--white);
+            color: var(--charcoal);
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.1);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-hint {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* Role Selection Grid */
+        .role-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            max-width: 700px;
+            margin: 24px 0;
+        }
+
+        .role-option {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background: var(--white);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .role-option:hover {
+            border-color: var(--gold-muted);
+            transform: translateY(-2px);
+        }
+
+        .role-option.selected {
+            border-color: var(--gold);
+            background: rgba(201, 162, 39, 0.05);
+        }
+
+        .role-option input {
+            display: none;
+        }
+
+        .role-name {
+            font-weight: 600;
+            color: var(--charcoal);
+            margin-bottom: 4px;
+        }
+
+        .role-desc {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        /* Option Buttons (for optional steps) */
+        .option-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 24px 0;
+        }
+
+        .option-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 24px;
+            background: var(--white);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--charcoal);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .option-btn:hover {
+            border-color: var(--gold-muted);
+        }
+
+        .option-btn.selected {
+            border-color: var(--gold);
+            background: rgba(201, 162, 39, 0.05);
+        }
+
+        .option-btn.primary {
+            background: var(--gold);
+            border-color: var(--gold);
+            color: var(--charcoal);
+        }
+
+        .option-btn.primary:hover {
+            background: var(--gold-muted);
+        }
+
+        /* Folder Grid */
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+            max-width: 700px;
+        }
+
+        .folder-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding: 16px 20px;
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .folder-item:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+        }
+
+        .folder-item.highlight-folder {
+            background: var(--charcoal);
+            border-color: var(--charcoal);
+        }
+
+        .folder-item.highlight-folder .folder-name { color: var(--cream); }
+        .folder-item.highlight-folder .folder-desc { color: rgba(245, 242, 239, 0.7); }
+
+        .folder-icon {
+            font-size: 1.25rem;
+            margin-bottom: 2px;
+        }
+
+        .folder-name {
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--charcoal);
+        }
+
+        .folder-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 16px;
+            margin-top: 32px;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            font-family: var(--font-sans);
+        }
+
+        .btn-primary {
+            background: var(--gold);
+            color: var(--charcoal);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(201, 162, 39, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--white);
+            color: var(--charcoal);
+            border: 2px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--charcoal);
+        }
+
+        .btn-skip {
+            background: transparent;
+            color: var(--text-muted);
+            padding: 14px 16px;
+        }
+
+        .btn-skip:hover {
+            color: var(--charcoal);
+        }
+
+        .btn-light {
+            background: rgba(245, 242, 239, 0.9);
+            border-color: rgba(245, 242, 239, 0.3);
+            color: var(--charcoal);
+        }
+
+        .btn-light:hover {
+            background: var(--white);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Progress Bar */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: var(--gold);
+            transition: width 0.4s var(--ease-out-quart);
+            z-index: 100;
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 40px;
+            right: 40px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 100;
+            background: var(--white);
+            padding: 12px 20px;
+            border-radius: 100px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+        }
+
+        .nav-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: transparent;
+            color: var(--charcoal);
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .nav-btn:hover { background: var(--cream); }
+        .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .nav-btn svg { width: 20px; height: 20px; }
+
+        .nav-progress {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            min-width: 60px;
+            text-align: center;
+        }
+
+        /* Special Slides */
+        .slide.title-slide {
+            background: var(--charcoal);
+            color: var(--cream);
+        }
+
+        .slide.title-slide .slide-title {
+            color: var(--cream);
+            font-size: clamp(2.5rem, 5vw, 4rem);
+        }
+
+        .slide.title-slide .slide-subtitle {
+            color: rgba(245, 242, 239, 0.7);
+        }
+
+        .slide.title-slide .slide-number {
+            color: rgba(245, 242, 239, 0.4);
+        }
+
+        .slide.title-slide .slide-problem {
+            color: var(--gold);
+        }
+
+        .slide.closing-slide {
+            background: linear-gradient(135deg, var(--charcoal) 0%, var(--charcoal-light) 100%);
+            color: var(--cream);
+        }
+
+        .slide.closing-slide .slide-title { color: var(--cream); }
+
+        .start-grid {
+            display: grid;
+            gap: 20px;
+            margin: 24px 0;
+        }
+
+        .start-item {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .start-number {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--gold);
+            background: rgba(201, 162, 39, 0.15);
+            padding: 8px 14px;
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .start-text strong {
+            color: inherit;
+            display: block;
+            margin-bottom: 4px;
+            font-size: 1.05rem;
+        }
+
+        .start-text span {
+            color: inherit;
+            opacity: 0.8;
+            font-size: 0.95rem;
+        }
+
+        .closing-slide .start-text strong,
+        .closing-slide .start-text span {
+            color: var(--cream);
+        }
+
+        /* Status Messages */
+        .status-message {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin: 16px 0;
+            max-width: 600px;
+        }
+
+        .status-message.loading {
+            background: rgba(201, 162, 39, 0.1);
+            color: var(--charcoal);
+        }
+
+        .status-message.success {
+            background: rgba(127, 182, 133, 0.15);
+            color: var(--charcoal);
+        }
+
+        .status-message.error {
+            background: rgba(232, 150, 122, 0.15);
+            color: var(--charcoal);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            html, body {
+                overflow: auto;
+                height: auto;
+            }
+
+            .presentation {
+                height: auto;
+                min-height: 100vh;
+                overflow: visible;
+            }
+
+            .slides-wrapper {
+                height: auto;
+            }
+
+            .slide {
+                position: relative;
+                height: auto;
+                min-height: 100vh;
+                padding: 60px 24px 100px 24px;
+                overflow-y: auto;
+                display: none;
+            }
+
+            .slide.active {
+                display: flex;
+            }
+
+            .slide-content {
+                max-width: 100%;
+            }
+
+            .slide-title {
+                font-size: 1.75rem;
+            }
+
+            .slide-subtitle {
+                font-size: 1rem;
+            }
+
+            .nav {
+                bottom: 24px;
+                right: 24px;
+                left: 24px;
+                padding: 8px 16px;
+                position: fixed;
+                background: var(--white);
+                box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+            }
+
+            .folder-grid { grid-template-columns: 1fr; }
+            .role-grid { grid-template-columns: 1fr; }
+            .action-buttons { flex-direction: column; }
+            .option-buttons { flex-direction: column; }
+            .btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div class="presentation">
+        <div class="slides-wrapper">
+
+            <!-- Slide 0: Welcome -->
+            <div class="slide title-slide active" data-slide="0" data-step="welcome">
+                <div class="slide-content">
+                    <div class="slide-number">Welcome</div>
+                    <h1 class="slide-title">Daily Operating System</h1>
+                    <p class="slide-subtitle">A productivity system built on Claude Code. Type a command, get your day prepared.</p>
+                    <div class="slide-body">
+                        <p style="color: rgba(245, 242, 239, 0.7); margin-bottom: 32px;">
+                            This wizard will set up your workspace, configure your tools, and get you ready to use /today.
+                        </p>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="startSetup()">
+                                Custom Setup
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    <polyline points="12 5 19 12 12 19"></polyline>
+                                </svg>
+                            </button>
+                            <button class="btn btn-secondary btn-light" onclick="quickInstall()">
+                                Quick Install
+                                <span style="font-size: 0.75rem; opacity: 0.8;">(defaults, no optional features)</span>
+                            </button>
+                        </div>
+                        <p style="color: rgba(245, 242, 239, 0.5); margin-top: 24px; font-size: 0.85rem;">
+                            <a href="intro.html" style="color: var(--gold);">Learn what DailyOS does</a> before you install.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 1: Prerequisites -->
+            <div class="slide" data-slide="1" data-step="prerequisites">
+                <div class="slide-content">
+                    <div class="slide-number">Step 1 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">1</span>
+                        <span class="step-label">Prerequisites</span>
+                    </div>
+                    <h1 class="slide-title">Checking your system...</h1>
+                    <p class="slide-subtitle">We're verifying you have everything needed.</p>
+                    <div class="slide-body">
+                        <div class="setup-steps" id="prereqChecks">
+                            <div class="setup-step checking">
+                                <div class="spinner"></div>
+                                <div class="step-content">
+                                    <strong>Checking prerequisites...</strong>
+                                    <p class="step-detail">This will just take a moment</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="prereqActions" style="display: none;">
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 2: Workspace Location -->
+            <div class="slide" data-slide="2" data-step="workspace">
+                <div class="slide-content">
+                    <div class="slide-number">Step 2 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">2</span>
+                        <span class="step-label">Workspace</span>
+                    </div>
+                    <h1 class="slide-title">Where should we set up?</h1>
+                    <p class="slide-subtitle">Configure your workspace location and identity.</p>
+                    <div class="slide-body">
+                        <div class="form-group">
+                            <label class="form-label" for="workspacePath">Workspace Path</label>
+                            <input type="text" class="form-input" id="workspacePath"
+                                   placeholder="~/Documents/productivity"
+                                   value="~/Documents/productivity">
+                            <p class="form-hint">This folder will contain all your notes, templates, and daily files.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="workspaceName">Workspace Name</label>
+                            <input type="text" class="form-input" id="workspaceName"
+                                   placeholder="My Productivity">
+                            <p class="form-hint">A friendly name for your workspace.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="organizationName">Organization Name</label>
+                            <input type="text" class="form-input" id="organizationName"
+                                   placeholder="Acme Corp (optional)">
+                            <p class="form-hint">Your company or organization name (helps with meeting classification).</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="internalDomains">Internal Email Domains</label>
+                            <input type="text" class="form-input" id="internalDomains"
+                                   placeholder="company.com, subsidiary.com">
+                            <p class="form-hint">Comma-separated list of your organization's email domains (for meeting classification).</p>
+                        </div>
+                        <div id="workspaceStatus"></div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeWorkspaceStep()">
+                                Create Workspace
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 3: Choose Role -->
+            <div class="slide" data-slide="3" data-step="role">
+                <div class="slide-content">
+                    <div class="slide-number">Step 3 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">3</span>
+                        <span class="step-label">Role</span>
+                    </div>
+                    <h1 class="slide-title">What kind of work do you do?</h1>
+                    <p class="slide-subtitle">This customizes your folder structure and templates.</p>
+                    <div class="slide-body">
+                        <div class="role-grid" id="roleGrid">
+                            <label class="role-option" data-role="customer_success">
+                                <input type="radio" name="role" value="customer_success">
+                                <span class="role-name">Customer Success</span>
+                                <span class="role-desc">Account portfolios, health tracking, renewals</span>
+                            </label>
+                            <label class="role-option" data-role="sales">
+                                <input type="radio" name="role" value="sales">
+                                <span class="role-name">Sales</span>
+                                <span class="role-desc">Pipeline tracking, deal stages, forecasting</span>
+                            </label>
+                            <label class="role-option" data-role="project_management">
+                                <input type="radio" name="role" value="project_management">
+                                <span class="role-name">Project Management</span>
+                                <span class="role-desc">Projects with milestones and stakeholders</span>
+                            </label>
+                            <label class="role-option" data-role="product_management">
+                                <input type="radio" name="role" value="product_management">
+                                <span class="role-name">Product Management</span>
+                                <span class="role-desc">Features from discovery to ship</span>
+                            </label>
+                            <label class="role-option" data-role="marketing">
+                                <input type="radio" name="role" value="marketing">
+                                <span class="role-name">Marketing</span>
+                                <span class="role-desc">Campaigns with assets and metrics</span>
+                            </label>
+                            <label class="role-option" data-role="engineering">
+                                <input type="radio" name="role" value="engineering">
+                                <span class="role-name">Engineering</span>
+                                <span class="role-desc">Projects with ADRs and documentation</span>
+                            </label>
+                            <label class="role-option" data-role="consulting">
+                                <input type="radio" name="role" value="consulting">
+                                <span class="role-name">Consulting</span>
+                                <span class="role-desc">Engagements with deliverables</span>
+                            </label>
+                            <label class="role-option selected" data-role="general">
+                                <input type="radio" name="role" value="general" checked>
+                                <span class="role-name">General</span>
+                                <span class="role-desc">Flexible PARA for any knowledge work</span>
+                            </label>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeRoleStep()">Continue</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 4: Directory Structure -->
+            <div class="slide" data-slide="4" data-step="directories">
+                <div class="slide-content">
+                    <div class="slide-number">Step 4 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">4</span>
+                        <span class="step-label">Directories</span>
+                    </div>
+                    <h1 class="slide-title">Creating your structure...</h1>
+                    <p class="slide-subtitle">Setting up folders based on your role.</p>
+                    <div class="slide-body">
+                        <div id="dirStatus">
+                            <div class="status-message loading">
+                                <div class="spinner"></div>
+                                <span>Creating directories...</span>
+                            </div>
+                        </div>
+                        <div class="folder-grid" id="folderPreview" style="grid-template-columns: repeat(2, 1fr); display: none;">
+                        </div>
+                        <div id="dirActions" style="display: none;">
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 5: Git Setup -->
+            <div class="slide" data-slide="5" data-step="git">
+                <div class="slide-content">
+                    <div class="slide-number">Step 5 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">5</span>
+                        <span class="step-label">Git (Optional)</span>
+                    </div>
+                    <h1 class="slide-title">Version control with <span class="highlight">Git</span>?</h1>
+                    <p class="slide-subtitle">Track changes and back up your workspace. Recommended but optional.</p>
+                    <div class="slide-body">
+                        <div class="why-box">
+                            <strong>Why Git?</strong>
+                            <p>Version history lets you see what changed and when. Connect to GitHub for cloud backup.</p>
+                        </div>
+                        <div id="gitStatus"></div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeGitStep(false)">
+                                Initialize Git
+                            </button>
+                            <button class="btn btn-skip" onclick="executeGitStep(true)">
+                                Skip for now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 6: Google API -->
+            <div class="slide" data-slide="6" data-step="google">
+                <div class="slide-content">
+                    <div class="slide-number">Step 6 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">6</span>
+                        <span class="step-label">Google API (Optional)</span>
+                    </div>
+                    <h1 class="slide-title">Connect <span class="highlight">Google</span> services?</h1>
+                    <p class="slide-subtitle">Calendar and Gmail integration powers the /today command.</p>
+                    <div class="slide-body">
+                        <!-- Initial choice -->
+                        <div id="googleChoice">
+                            <div class="option-buttons">
+                                <button class="option-btn" data-google="full" onclick="selectGoogleOption('full'); showGoogleGuide();">
+                                    Set Up Google API
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">(~10 min, one-time setup)</span>
+                                </button>
+                                <button class="option-btn" data-google="skip" onclick="selectGoogleOption('skip'); executeGoogleStep();">
+                                    Skip for Now
+                                    <span style="font-size: 0.8rem; color: var(--text-muted);">(Can set up later)</span>
+                                </button>
+                            </div>
+                            <div class="why-box" style="margin-top: 16px;">
+                                <strong>What Google API enables</strong>
+                                <p>• See today's meetings in /today dashboard<br>
+                                   • Scan emails for customer correspondence<br>
+                                   • Create calendar events and time blocks</p>
+                            </div>
+                        </div>
+
+                        <!-- Google OAuth Setup Guide (hidden initially) -->
+                        <div id="googleGuide" style="display: none;">
+                            <div class="setup-steps" id="googleSteps">
+                                <!-- Step 1: Open Google Cloud Console -->
+                                <div class="setup-step" id="googleStep1">
+                                    <span class="step-number">1</span>
+                                    <div class="step-content">
+                                        <strong>Open Google Cloud Console</strong>
+                                        <p class="step-detail">Sign in with the Google account you use for calendar/email.</p>
+                                        <div style="margin-top: 8px;">
+                                            <a href="https://console.cloud.google.com/" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open Console →
+                                            </a>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(1)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 2: Create Project -->
+                                <div class="setup-step" id="googleStep2" style="opacity: 0.5;">
+                                    <span class="step-number">2</span>
+                                    <div class="step-content">
+                                        <strong>Create a New Project</strong>
+                                        <p class="step-detail">Click project dropdown → "New Project" → name it "DailyOS" → Create</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(2)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 3: Enable APIs -->
+                                <div class="setup-step" id="googleStep3" style="opacity: 0.5;">
+                                    <span class="step-number">3</span>
+                                    <div class="step-content">
+                                        <strong>Enable the APIs</strong>
+                                        <p class="step-detail">Go to "APIs & Services" → "Library" → Search and enable:<br>
+                                        • Google Calendar API<br>
+                                        • Gmail API<br>
+                                        • Google Sheets API<br>
+                                        • Google Docs API</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/library" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open API Library →
+                                            </a>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(3)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 4: OAuth Consent Screen -->
+                                <div class="setup-step" id="googleStep4" style="opacity: 0.5;">
+                                    <span class="step-number">4</span>
+                                    <div class="step-content">
+                                        <strong>Configure OAuth Consent Screen</strong>
+                                        <p class="step-detail">"APIs & Services" → "OAuth consent screen" → External → Create<br>
+                                        Fill in app name, your email. Add yourself as test user.</p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open OAuth Consent →
+                                            </a>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(4)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 5: Create Credentials -->
+                                <div class="setup-step" id="googleStep5" style="opacity: 0.5;">
+                                    <span class="step-number">5</span>
+                                    <div class="step-content">
+                                        <strong>Create OAuth Credentials</strong>
+                                        <p class="step-detail">"Credentials" → "Create Credentials" → "OAuth client ID"<br>
+                                        Choose "Desktop app" → Create → <strong>Download JSON</strong></p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="btn btn-secondary btn-light" style="font-size: 0.85rem;">
+                                                Open Credentials →
+                                            </a>
+                                            <button class="btn btn-secondary" style="font-size: 0.85rem;" onclick="completeGoogleStep(5)">Done ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Step 6: Place credentials file -->
+                                <div class="setup-step" id="googleStep6" style="opacity: 0.5;">
+                                    <span class="step-number">6</span>
+                                    <div class="step-content">
+                                        <strong>Save Credentials File</strong>
+                                        <p class="step-detail">Rename downloaded file to <code>credentials.json</code><br>
+                                        Move it to: <code id="credentialsPath">.config/google/credentials.json</code></p>
+                                        <div style="margin-top: 8px; display: none;" class="step-actions">
+                                            <button class="btn btn-primary" style="font-size: 0.85rem;" onclick="finalizeGoogleSetup()">I've placed the file ✓</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="googleStatus" style="margin-top: 16px;"></div>
+
+                            <div class="action-buttons" style="margin-top: 16px;">
+                                <button class="btn btn-secondary" onclick="hideGoogleGuide()">← Back</button>
+                                <button class="btn btn-skip" onclick="selectGoogleOption('skip'); executeGoogleStep();">Skip Google Setup</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 7: CLAUDE.md -->
+            <div class="slide" data-slide="7" data-step="claudemd">
+                <div class="slide-content">
+                    <div class="slide-number">Step 7 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">7</span>
+                        <span class="step-label">CLAUDE.md</span>
+                    </div>
+                    <h1 class="slide-title">Configure <span class="highlight">CLAUDE.md</span></h1>
+                    <p class="slide-subtitle">This file tells Claude Code about you and your workspace.</p>
+                    <div class="slide-body">
+                        <div class="option-buttons">
+                            <button class="option-btn selected" data-claudemd="template" onclick="selectClaudeMdOption('template')">
+                                Use Template
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Quick start)</span>
+                            </button>
+                            <button class="option-btn" data-claudemd="questionnaire" onclick="selectClaudeMdOption('questionnaire')">
+                                Answer Questions
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Personalized)</span>
+                            </button>
+                        </div>
+                        <div id="claudeMdStatus"></div>
+                        <div class="why-box">
+                            <strong>What is CLAUDE.md?</strong>
+                            <p>Claude Code reads this file to understand your work context, preferences, and how to help you best.</p>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeClaudeMdStep()">Create CLAUDE.md</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 8: Claude Setup -->
+            <div class="slide" data-slide="8" data-step="claude_setup">
+                <div class="slide-content">
+                    <div class="slide-number">Step 8 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">8</span>
+                        <span class="step-label">Claude Code</span>
+                    </div>
+                    <h1 class="slide-title">Initialize <span class="highlight">Claude Code</span></h1>
+                    <p class="slide-subtitle">Setting up Claude Code in your workspace.</p>
+                    <div class="slide-body">
+                        <div id="claudeSetupStatus">
+                            <div class="setup-step checking">
+                                <div class="spinner"></div>
+                                <div class="step-content">
+                                    <strong>Initializing Claude Code...</strong>
+                                    <p class="step-detail">Creating .claude directory structure</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="why-box" style="margin-top: 16px;">
+                            <strong>What this does</strong>
+                            <p>Creates the .claude directory with folders for commands, skills, and agents that power your /today, /week, and other slash commands.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 9: Skills -->
+            <div class="slide" data-slide="9" data-step="skills">
+                <div class="slide-content">
+                    <div class="slide-number">Step 9 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">9</span>
+                        <span class="step-label">Skills</span>
+                    </div>
+                    <h1 class="slide-title">Install <span class="highlight">skills</span> and commands?</h1>
+                    <p class="slide-subtitle">Skills add slash commands like /today, /week, and /month.</p>
+                    <div class="slide-body">
+                        <div class="option-buttons">
+                            <button class="option-btn selected" data-skills="core" onclick="selectSkillsOption('core')">
+                                Core Package
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(/today, /week, /month)</span>
+                            </button>
+                            <button class="option-btn" data-skills="all" onclick="selectSkillsOption('all')">
+                                All Skills
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Full productivity suite)</span>
+                            </button>
+                            <button class="option-btn" data-skills="none" onclick="selectSkillsOption('none')">
+                                None
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Manual install later)</span>
+                            </button>
+                        </div>
+                        <div id="skillsStatus"></div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeSkillsStep()">Install Skills</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 10: Web Dashboard -->
+            <div class="slide" data-slide="10" data-step="ui">
+                <div class="slide-content">
+                    <div class="slide-number">Step 10 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">10</span>
+                        <span class="step-label">Web Dashboard (Optional)</span>
+                    </div>
+                    <h1 class="slide-title">Install the <span class="highlight">Dashboard</span>?</h1>
+                    <p class="slide-subtitle">A browser-based UI for navigating your workspace.</p>
+                    <div class="slide-body">
+                        <div class="option-buttons">
+                            <button class="option-btn selected" data-ui="install" onclick="selectUIOption(false)">
+                                Install Dashboard
+                                <span style="font-size: 0.8rem; color: var(--text-muted);">(Recommended)</span>
+                            </button>
+                            <button class="option-btn" data-ui="skip" onclick="selectUIOption(true)">
+                                Skip
+                            </button>
+                        </div>
+                        <div id="uiStatus"></div>
+                        <div class="why-box">
+                            <strong>What the Dashboard provides</strong>
+                            <p>• Visual sidebar to navigate accounts/projects<br>
+                               • Markdown rendering in browser<br>
+                               • Search across all documents<br>
+                               • Quick access to today's files</p>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="executeUIStep()">Continue</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 11: Verification -->
+            <div class="slide" data-slide="11" data-step="verification">
+                <div class="slide-content">
+                    <div class="slide-number">Step 11 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">11</span>
+                        <span class="step-label">Verification</span>
+                    </div>
+                    <h1 class="slide-title" id="verifyTitle">Verifying installation...</h1>
+                    <p class="slide-subtitle" id="verifySummary">Checking that everything is set up correctly.</p>
+                    <div class="slide-body">
+                        <div class="setup-steps" id="verifyChecks" style="max-height: 320px; overflow-y: auto; padding-right: 8px;">
+                            <div class="setup-step checking">
+                                <div class="spinner"></div>
+                                <div class="step-content">
+                                    <strong>Running verification...</strong>
+                                    <p class="step-detail">Checking all components</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="verifyActions" style="display: none;">
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="completeSetup()">Complete Setup</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 12: IDE Selection -->
+            <div class="slide" data-slide="12" data-step="ide">
+                <div class="slide-content">
+                    <div class="slide-number">Step 12 of 13</div>
+                    <div class="step-indicator">
+                        <span class="step-number">12</span>
+                        <span class="step-label">Choose Your Editor</span>
+                    </div>
+                    <h1 class="slide-title">How will you <span class="highlight">work</span>?</h1>
+                    <p class="slide-subtitle">Pick your preferred way to use Claude Code.</p>
+                    <div class="slide-body">
+                        <div class="role-grid" id="ideGrid" style="grid-template-columns: repeat(2, 1fr);">
+                            <label class="role-option" data-ide="antigravity">
+                                <input type="radio" name="ide" value="antigravity">
+                                <div class="role-info">
+                                    <span class="role-name">Antigravity</span>
+                                    <span class="role-desc">Google's AI-powered collaborative IDE</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="vscode">
+                                <input type="radio" name="ide" value="vscode">
+                                <div class="role-info">
+                                    <span class="role-name">VS Code</span>
+                                    <span class="role-desc">Microsoft's popular editor + Claude extension</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="cursor">
+                                <input type="radio" name="ide" value="cursor">
+                                <div class="role-info">
+                                    <span class="role-name">Cursor</span>
+                                    <span class="role-desc">AI-native code editor with Claude built-in</span>
+                                </div>
+                            </label>
+                            <label class="role-option" data-ide="terminal">
+                                <input type="radio" name="ide" value="terminal">
+                                <div class="role-info">
+                                    <span class="role-name">Terminal Only</span>
+                                    <span class="role-desc">Use Claude Code directly in your terminal</span>
+                                </div>
+                            </label>
+                        </div>
+                        <div id="ideInstructions" style="display: none; margin-top: 20px;">
+                            <div class="why-box">
+                                <strong id="ideInstructionTitle">Getting Started</strong>
+                                <div id="ideInstructionContent"></div>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            <button class="btn btn-secondary" onclick="skipIDESelection()">I'll decide later</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide 13: Complete -->
+            <div class="slide closing-slide" data-slide="13" data-step="complete">
+                <div class="slide-content">
+                    <div class="slide-number">Complete</div>
+                    <h1 class="slide-title">You're ready!</h1>
+                    <div class="slide-body">
+                        <div class="start-grid">
+                            <div class="start-item">
+                                <span class="start-number">01</span>
+                                <div class="start-text">
+                                    <strong>Open your workspace</strong>
+                                    <span id="workspacePathDisplay">~/Documents/productivity</span>
+                                </div>
+                            </div>
+                            <div class="start-item">
+                                <span class="start-number">02</span>
+                                <div class="start-text">
+                                    <strong>Start Claude Code</strong>
+                                    <span>Run 'claude' in terminal from your workspace</span>
+                                </div>
+                            </div>
+                            <div class="start-item">
+                                <span class="start-number">03</span>
+                                <div class="start-text">
+                                    <strong>Try /today tomorrow morning</strong>
+                                    <span>See your day, prepared automatically</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="action-buttons" style="margin-top: 40px;">
+                            <button class="btn btn-primary" onclick="openWorkspace()">
+                                Open Workspace
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                    <polyline points="15 3 21 3 21 9"></polyline>
+                                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="nav">
+        <button class="nav-btn" id="prevBtn" title="Previous" onclick="prevSlide()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"></polyline>
+            </svg>
+        </button>
+        <span class="nav-progress" id="navProgress">0 / 10</span>
+        <button class="nav-btn" id="nextBtn" title="Next" onclick="nextSlide()" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+        </button>
+    </nav>
+
+    <script>
+        // ============================================
+        // State Management
+        // ============================================
+        let sessionId = null;
+        let currentSlide = 0;
+        let config = {
+            workspacePath: '~/Documents/productivity',
+            role: 'general',
+            googleApiMode: 'full',
+            claudeMdMode: 'template',
+            skillsMode: 'core',
+        };
+
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        const progressBar = document.getElementById('progressBar');
+        const navProgress = document.getElementById('navProgress');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        // API base URL
+        const API_BASE = '/api/setup';
+
+        // ============================================
+        // API Functions
+        // ============================================
+        async function apiCall(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+            };
+            if (body) {
+                options.body = JSON.stringify(body);
+            }
+
+            const response = await fetch(`${API_BASE}${endpoint}`, options);
+            return response.json();
+        }
+
+        async function startSession() {
+            const result = await apiCall('/start', 'POST');
+            if (result.success) {
+                sessionId = result.session.id;
+                console.log('Session started:', sessionId);
+            }
+            return result;
+        }
+
+        async function executeStep(stepId) {
+            return apiCall(`/step/${stepId}`, 'POST', {
+                sessionId,
+                config,
+            });
+        }
+
+        // ============================================
+        // Error Display Helper
+        // ============================================
+        function formatError(errorMsg) {
+            // Make technical errors more user-friendly
+            if (!errorMsg) return 'An unexpected error occurred';
+
+            // Common error patterns
+            if (errorMsg.includes('code 1')) {
+                return 'Setup step failed. This usually means a configuration issue.';
+            }
+            if (errorMsg.includes('ENOENT')) {
+                return 'File or directory not found. Check your workspace path.';
+            }
+            if (errorMsg.includes('EACCES') || errorMsg.includes('permission')) {
+                return 'Permission denied. Try a different location or check folder permissions.';
+            }
+            if (errorMsg.includes('Session not found')) {
+                return 'Session expired. Please restart setup.';
+            }
+
+            return errorMsg;
+        }
+
+        function showError(statusDiv, errorMsg, retryFn = null) {
+            const friendlyError = formatError(errorMsg);
+            statusDiv.innerHTML = `
+                <div class="status-message error">
+                    <span>✗ ${friendlyError}</span>
+                </div>
+                <div class="why-box" style="margin-top: 16px;">
+                    <strong>What to do</strong>
+                    <p>You can try again, go back to change settings, or restart the setup process.</p>
+                </div>
+                <div class="action-buttons" style="margin-top: 16px;">
+                    ${retryFn ? `<button class="btn btn-primary" onclick="${retryFn}">Try Again</button>` : ''}
+                    <button class="btn btn-secondary" onclick="prevSlide()">Go Back</button>
+                    <button class="btn btn-skip" onclick="restartSetup()">Restart Setup</button>
+                </div>
+            `;
+            console.error('Setup error:', errorMsg);
+        }
+
+        function restartSetup() {
+            if (confirm('This will restart the setup from the beginning. Continue?')) {
+                sessionId = null;
+                config = {
+                    workspacePath: '~/Documents/productivity',
+                    role: 'general',
+                    googleApiMode: 'full',
+                    claudeMdMode: 'template',
+                    skillsMode: 'core',
+                };
+                goToSlide(0);
+            }
+        }
+
+        // ============================================
+        // Slide Navigation
+        // ============================================
+        function updateSlide(newIndex, direction = 'next') {
+            if (newIndex < 0 || newIndex >= totalSlides) return;
+
+            slides[currentSlide].classList.remove('active');
+            if (direction === 'next') {
+                slides[currentSlide].classList.add('prev');
+            }
+
+            currentSlide = newIndex;
+
+            slides.forEach(slide => slide.classList.remove('prev'));
+            slides[currentSlide].classList.add('active');
+
+            const progress = (currentSlide / (totalSlides - 1)) * 100;
+            progressBar.style.width = `${progress}%`;
+            navProgress.textContent = `${currentSlide} / ${totalSlides - 1}`;
+
+            prevBtn.disabled = currentSlide === 0;
+            // nextBtn is enabled by step completion, not navigation
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                updateSlide(currentSlide + 1, 'next');
+                onSlideEnter(currentSlide);
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                updateSlide(currentSlide - 1, 'prev');
+            }
+        }
+
+        function goToSlide(index) {
+            updateSlide(index, index > currentSlide ? 'next' : 'prev');
+            onSlideEnter(index);
+        }
+
+        // ============================================
+        // Step Handlers
+        // ============================================
+        async function startSetup() {
+            await startSession();
+            nextSlide();
+        }
+
+        async function quickInstall() {
+            // Set defaults for quick install
+            config = {
+                workspacePath: '~/Documents/productivity',
+                role: 'general',
+                googleApiMode: 'skip',
+                claudeMdMode: 'template',
+                skillsMode: 'core',
+                skipGit: false,
+            };
+
+            // Show quick install progress
+            const slide = document.querySelector('[data-slide="0"]');
+            slide.querySelector('.slide-body').innerHTML = `
+                <div class="setup-steps" id="quickInstallProgress">
+                    <div class="setup-step checking">
+                        <div class="spinner"></div>
+                        <div class="step-content">
+                            <strong>Running Quick Install...</strong>
+                            <p class="step-detail">Setting up with default configuration</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            await startSession();
+
+            const steps = [
+                { id: 'prerequisites', name: 'Checking prerequisites' },
+                { id: 'workspace', name: 'Creating workspace' },
+                { id: 'directories', name: 'Creating directories' },
+                { id: 'git', name: 'Initializing git' },
+                { id: 'claudemd', name: 'Creating CLAUDE.md' },
+                { id: 'claude_setup', name: 'Initializing Claude Code' },
+                { id: 'skills', name: 'Installing core skills' },
+            ];
+
+            const progressDiv = document.getElementById('quickInstallProgress');
+            let allSuccess = true;
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                progressDiv.innerHTML = `
+                    <div class="setup-step checking">
+                        <div class="spinner"></div>
+                        <div class="step-content">
+                            <strong>${step.name}...</strong>
+                            <p class="step-detail">Step ${i + 1} of ${steps.length}</p>
+                        </div>
+                    </div>
+                `;
+
+                const result = await executeStep(step.id);
+                if (!result.success) {
+                    allSuccess = false;
+                    progressDiv.innerHTML = `
+                        <div class="setup-step failed">
+                            <span class="step-number fail">✗</span>
+                            <div class="step-content">
+                                <strong>Quick Install Failed</strong>
+                                <p class="step-detail">${formatError(result.error)}</p>
+                            </div>
+                        </div>
+                        <div class="action-buttons" style="margin-top: 16px;">
+                            <button class="btn btn-primary" onclick="location.reload()">Start Over</button>
+                            <button class="btn btn-secondary" onclick="startSetup(); goToSlide(1);">Try Custom Setup</button>
+                        </div>
+                    `;
+                    return;
+                }
+            }
+
+            // Success - go to verification
+            progressDiv.innerHTML = `
+                <div class="setup-step passed">
+                    <span class="step-number ok">✓</span>
+                    <div class="step-content">
+                        <strong>Quick Install Complete!</strong>
+                        <p class="step-detail">Your workspace is ready at ~/Documents/productivity</p>
+                    </div>
+                </div>
+            `;
+
+            setTimeout(() => {
+                goToSlide(11); // Go to verification slide
+            }, 1500);
+        }
+
+        async function onSlideEnter(slideIndex) {
+            const slide = slides[slideIndex];
+            const step = slide.dataset.step;
+
+            // Auto-execute certain steps on entry
+            if (step === 'prerequisites') {
+                await runPrerequisites();
+            } else if (step === 'directories') {
+                await executeDirectoriesStep();
+            } else if (step === 'claude_setup') {
+                await executeClaudeSetupStep();
+            } else if (step === 'verification') {
+                await runVerification();
+            }
+        }
+
+        async function executeClaudeSetupStep() {
+            const statusDiv = document.getElementById('claudeSetupStatus');
+
+            const result = await executeStep('claude_setup');
+
+            if (result.success) {
+                const msg = result.result.alreadyInitialized
+                    ? 'Claude Code already initialized'
+                    : 'Claude Code initialized';
+                statusDiv.innerHTML = `
+                    <div class="setup-step passed">
+                        <span class="step-number ok">✓</span>
+                        <div class="step-content">
+                            <strong>${msg}</strong>
+                            <p class="step-detail">Version: ${result.result.claudeVersion || 'installed'}</p>
+                        </div>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                statusDiv.innerHTML = `
+                    <div class="setup-step failed">
+                        <span class="step-number fail">✗</span>
+                        <div class="step-content">
+                            <strong>Claude Code not found</strong>
+                            <p class="step-detail">${result.error}</p>
+                        </div>
+                    </div>
+                    <div class="why-box" style="margin-top: 16px;">
+                        <strong>How to install Claude Code</strong>
+                        <p>Run this command in your terminal:<br>
+                        <code>npm install -g @anthropic-ai/claude-code</code></p>
+                    </div>
+                    <div class="action-buttons" style="margin-top: 16px;">
+                        <button class="btn btn-primary" onclick="executeClaudeSetupStep()">Try Again</button>
+                        <button class="btn btn-secondary" onclick="nextSlide()">Skip</button>
+                    </div>
+                `;
+            }
+        }
+
+        async function runPrerequisites() {
+            const checksDiv = document.getElementById('prereqChecks');
+            const actionsDiv = document.getElementById('prereqActions');
+
+            try {
+                const result = await executeStep('prerequisites');
+
+                if (result.success && result.result) {
+                    const checks = result.result.checks || [];
+
+                    if (checks.length === 0) {
+                        checksDiv.innerHTML = `
+                            <div class="setup-step passed">
+                                <span class="step-number ok">✓</span>
+                                <div class="step-content">
+                                    <strong>All prerequisites met</strong>
+                                    <p class="step-detail">System is ready</p>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Render checks with stagger animation
+                        checksDiv.innerHTML = checks.map((check, i) => `
+                            <div class="setup-step ${check.status === 'ok' ? 'passed' : check.status === 'fail' ? 'failed' : 'warned'}"
+                                 style="animation: fadeInUp 0.3s ease-out ${i * 0.1}s both;">
+                                <span class="step-number ${check.status}">${check.status === 'ok' ? '✓' : check.status === 'fail' ? '✗' : '!'}</span>
+                                <div class="step-content">
+                                    <strong>${check.name}</strong>
+                                    <p class="step-detail">${check.message}</p>
+                                </div>
+                            </div>
+                        `).join('');
+                    }
+
+                    // Check for failures
+                    const hasFailures = checks.some(c => c.status === 'fail');
+                    const hasWarnings = checks.some(c => c.status === 'warn');
+
+                    if (hasFailures) {
+                        actionsDiv.innerHTML = `
+                            <div class="why-box" style="margin-bottom: 16px;">
+                                <strong>Required prerequisites missing</strong>
+                                <p>Please install the failed items before continuing.</p>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-secondary" onclick="runPrerequisites()">Check Again</button>
+                            </div>
+                        `;
+                    } else if (hasWarnings) {
+                        actionsDiv.innerHTML = `
+                            <div class="why-box" style="margin-bottom: 16px;">
+                                <strong>Optional tools not found</strong>
+                                <p>Setup can continue, but some features may be limited.</p>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue Anyway</button>
+                                <button class="btn btn-secondary" onclick="runPrerequisites()">Check Again</button>
+                            </div>
+                        `;
+                    } else {
+                        actionsDiv.innerHTML = `
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="nextSlide()">Continue</button>
+                            </div>
+                        `;
+                    }
+
+                    actionsDiv.style.display = 'block';
+                } else {
+                    // Step returned but failed
+                    showError(checksDiv, result.error || 'Prerequisites check failed', runPrerequisites);
+                }
+            } catch (err) {
+                showError(checksDiv, err.message || 'Failed to check prerequisites', runPrerequisites);
+            }
+        }
+
+        async function executeWorkspaceStep() {
+            const pathInput = document.getElementById('workspacePath');
+            const nameInput = document.getElementById('workspaceName');
+            const orgInput = document.getElementById('organizationName');
+            const domainsInput = document.getElementById('internalDomains');
+            const statusDiv = document.getElementById('workspaceStatus');
+
+            config.workspacePath = pathInput.value;
+            config.workspaceName = nameInput.value.trim() || pathInput.value.split('/').pop().replace(/[-_]/g, ' ');
+            config.organizationName = orgInput.value.trim();
+            // Parse comma-separated domains into array
+            config.internalDomains = domainsInput.value
+                .split(',')
+                .map(d => d.trim().toLowerCase())
+                .filter(d => d.length > 0);
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Creating workspace...</span>
+                </div>
+            `;
+
+            const result = await executeStep('workspace');
+
+            if (result.success && result.result) {
+                const wsPath = result.result.workspacePath || config.workspacePath;
+                config.workspacePath = wsPath;
+                const action = result.result.created ? 'created' : 'ready';
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ Workspace ${action} at ${wsPath}</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                showError(statusDiv, result.error || 'Failed to create workspace', 'executeWorkspaceStep()');
+            }
+        }
+
+        function setupRoleSelection() {
+            const roleOptions = document.querySelectorAll('.role-option');
+            roleOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    roleOptions.forEach(o => o.classList.remove('selected'));
+                    option.classList.add('selected');
+                    option.querySelector('input').checked = true;
+                    config.role = option.dataset.role;
+                });
+            });
+        }
+
+        async function executeRoleStep() {
+            const selected = document.querySelector('.role-option.selected');
+            if (selected) {
+                config.role = selected.dataset.role;
+            }
+
+            const result = await executeStep('role');
+            if (result.success) {
+                nextSlide();
+            }
+        }
+
+        async function executeDirectoriesStep() {
+            const statusDiv = document.getElementById('dirStatus');
+            const previewDiv = document.getElementById('folderPreview');
+            const actionsDiv = document.getElementById('dirActions');
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Creating directories for ${config.role} role...</span>
+                </div>
+            `;
+
+            const result = await executeStep('directories');
+
+            if (result.success && result.result) {
+                const created = result.result.created || [];
+
+                // Different message based on whether we created new directories
+                let message;
+                if (created.length === 0) {
+                    message = 'Directory structure already exists';
+                } else {
+                    message = `Created ${created.length} directories`;
+                }
+
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${message}</span>
+                    </div>
+                `;
+
+                // Show key folders from what was created (or show standard ones if none created)
+                const keyFolders = ['_today', '_inbox', 'Projects', 'Areas', 'Resources', 'Archive', 'Accounts'];
+                let displayFolders;
+
+                if (created.length > 0) {
+                    displayFolders = created.filter(f => keyFolders.some(k => f.includes(k))).slice(0, 6);
+                } else {
+                    // Show standard PARA folders when structure exists
+                    displayFolders = keyFolders.slice(0, 6);
+                }
+
+                if (displayFolders.length > 0) {
+                    previewDiv.innerHTML = displayFolders.map(folder => `
+                        <div class="folder-item">
+                            <span class="folder-icon">📁</span>
+                            <span class="folder-name">${folder}/</span>
+                        </div>
+                    `).join('');
+                    previewDiv.style.display = 'grid';
+                }
+
+                actionsDiv.style.display = 'block';
+            } else {
+                showError(statusDiv, result.error || 'Failed to create directories', 'executeDirectoriesStep()');
+            }
+        }
+
+        async function executeGitStep(skip = false) {
+            const statusDiv = document.getElementById('gitStatus');
+            config.skipGit = skip;
+
+            if (skip) {
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>Git setup skipped</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 500);
+                return;
+            }
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Initializing git repository...</span>
+                </div>
+            `;
+
+            const result = await executeStep('git');
+
+            if (result.success) {
+                const msg = result.result.alreadyRepo
+                    ? 'Already a git repository'
+                    : 'Git repository initialized';
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${msg}</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                showError(statusDiv, result.error, 'executeGitStep(false)');
+            }
+        }
+
+        function selectGoogleOption(mode) {
+            config.googleApiMode = mode;
+            document.querySelectorAll('[data-google]').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.google === mode);
+            });
+        }
+
+        let googleStepCompleted = 0;
+
+        function showGoogleGuide() {
+            document.getElementById('googleChoice').style.display = 'none';
+            document.getElementById('googleGuide').style.display = 'block';
+            // Update credentials path with actual workspace
+            const credPath = config.workspacePath.replace('~', '') + '/.config/google/credentials.json';
+            document.getElementById('credentialsPath').textContent = credPath;
+        }
+
+        function hideGoogleGuide() {
+            document.getElementById('googleChoice').style.display = 'block';
+            document.getElementById('googleGuide').style.display = 'none';
+            googleStepCompleted = 0;
+            // Reset step visuals
+            for (let i = 1; i <= 6; i++) {
+                const step = document.getElementById(`googleStep${i}`);
+                step.style.opacity = i === 1 ? '1' : '0.5';
+                step.classList.remove('passed');
+                const actions = step.querySelector('.step-actions');
+                if (actions) actions.style.display = i === 1 ? 'block' : 'none';
+            }
+        }
+
+        function completeGoogleStep(stepNum) {
+            const step = document.getElementById(`googleStep${stepNum}`);
+            step.classList.add('passed');
+            step.querySelector('.step-number').textContent = '✓';
+            step.querySelector('.step-number').classList.add('ok');
+
+            googleStepCompleted = stepNum;
+
+            // Activate next step
+            if (stepNum < 6) {
+                const nextStep = document.getElementById(`googleStep${stepNum + 1}`);
+                nextStep.style.opacity = '1';
+                const nextActions = nextStep.querySelector('.step-actions');
+                if (nextActions) nextActions.style.display = 'block';
+            }
+        }
+
+        async function finalizeGoogleSetup() {
+            const statusDiv = document.getElementById('googleStatus');
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Verifying credentials...</span>
+                </div>
+            `;
+
+            const result = await executeStep('google');
+
+            if (result.success) {
+                if (result.result.hasCredentials) {
+                    statusDiv.innerHTML = `
+                        <div class="status-message success">
+                            <span>✓ Google API configured! First use will prompt for authorization.</span>
+                        </div>
+                    `;
+                    setTimeout(() => nextSlide(), 1500);
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="status-message error">
+                            <span>Credentials file not found at the expected location.</span>
+                        </div>
+                        <p style="margin-top: 8px; font-size: 0.85rem;">
+                            Make sure you saved <code>credentials.json</code> to:<br>
+                            <code>${config.workspacePath}/.config/google/credentials.json</code>
+                        </p>
+                    `;
+                }
+            } else {
+                showError(statusDiv, result.error, 'finalizeGoogleSetup()');
+            }
+        }
+
+        async function executeGoogleStep() {
+            const statusDiv = document.getElementById('googleStatus');
+
+            if (config.googleApiMode === 'skip') {
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>Google API setup skipped</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 500);
+                return;
+            }
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Setting up Google API...</span>
+                </div>
+            `;
+
+            const result = await executeStep('google');
+
+            if (result.success) {
+                let msg = `Google API configured (${config.googleApiMode})`;
+                if (result.result.needsAuth) {
+                    msg += ' - OAuth setup needed';
+                }
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${msg}</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                showError(statusDiv, result.error, 'executeGoogleStep()');
+            }
+        }
+
+        function selectClaudeMdOption(mode) {
+            config.claudeMdMode = mode;
+            document.querySelectorAll('[data-claudemd]').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.claudemd === mode);
+            });
+        }
+
+        async function executeClaudeMdStep() {
+            const statusDiv = document.getElementById('claudeMdStatus');
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Creating CLAUDE.md...</span>
+                </div>
+            `;
+
+            const result = await executeStep('claudemd');
+
+            if (result.success) {
+                const msg = result.result.alreadyExists
+                    ? 'CLAUDE.md already exists'
+                    : 'CLAUDE.md created';
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${msg}</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 1000);
+            } else {
+                showError(statusDiv, result.error, 'executeClaudeMdStep()');
+            }
+        }
+
+        function selectSkillsOption(mode) {
+            config.skillsMode = mode;
+            document.querySelectorAll('[data-skills]').forEach(btn => {
+                btn.classList.toggle('selected', btn.dataset.skills === mode);
+            });
+        }
+
+        async function executeSkillsStep() {
+            const statusDiv = document.getElementById('skillsStatus');
+
+            if (config.skillsMode === 'none') {
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>Skills installation skipped</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 500);
+                return;
+            }
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Installing ${config.skillsMode} skills...</span>
+                </div>
+            `;
+
+            const result = await executeStep('skills');
+            console.log('Skills step result:', JSON.stringify(result, null, 2));
+
+            if (result.success) {
+                // Handle both possible response structures
+                const resultData = result.result || {};
+                const installed = resultData.installed || {};
+                console.log('Installed data:', installed);
+
+                const installedKeys = Object.keys(installed);
+                const commands = installedKeys.filter(k => k.startsWith('command:')).length;
+                const skills = installedKeys.filter(k => k.startsWith('skill:')).length;
+
+                // Build list of what was installed
+                const commandNames = installedKeys
+                    .filter(k => k.startsWith('command:'))
+                    .map(k => '/' + k.replace('command:', ''))
+                    .join(', ');
+                const skillNames = installedKeys
+                    .filter(k => k.startsWith('skill:'))
+                    .map(k => k.replace('skill:', ''))
+                    .join(', ');
+
+                let detailsHtml = '';
+                if (commandNames) {
+                    detailsHtml += `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">Commands: ${commandNames}</div>`;
+                }
+                if (skillNames) {
+                    detailsHtml += `<div style="font-size: 0.85rem; color: var(--text-secondary);">Skills: ${skillNames}</div>`;
+                }
+
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ Installed ${commands} commands and ${skills} skills</span>
+                    </div>
+                    ${detailsHtml}
+                `;
+                setTimeout(() => nextSlide(), 1500);
+            } else {
+                showError(statusDiv, result.error, 'executeSkillsStep()');
+            }
+        }
+
+        function selectUIOption(skip) {
+            config.skipUI = skip;
+            document.querySelectorAll('[data-ui]').forEach(btn => {
+                btn.classList.toggle('selected',
+                    (skip && btn.dataset.ui === 'skip') ||
+                    (!skip && btn.dataset.ui === 'install')
+                );
+            });
+        }
+
+        async function executeUIStep() {
+            const statusDiv = document.getElementById('uiStatus');
+
+            if (config.skipUI) {
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>Web dashboard skipped</span>
+                    </div>
+                `;
+                setTimeout(() => nextSlide(), 500);
+                return;
+            }
+
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Installing dashboard...</span>
+                </div>
+            `;
+
+            const result = await executeStep('ui');
+            console.log('UI step result:', JSON.stringify(result, null, 2));
+
+            if (result.success) {
+                const resultData = result.result || {};
+                let msg = 'Dashboard installed';
+                let details = '';
+
+                if (resultData.depsInstalled) {
+                    msg = 'Dashboard installed and ready';
+                    details = 'Dependencies installed successfully.';
+                } else if (!resultData.nodeAvailable) {
+                    msg = 'Dashboard files installed';
+                    details = 'Node.js not found. Install Node.js, then run <code>cd _ui && npm install && npm start</code>';
+                } else {
+                    msg = 'Dashboard files installed';
+                    details = 'Run <code>cd _ui && npm install && npm start</code> to launch the dashboard.';
+                }
+
+                statusDiv.innerHTML = `
+                    <div class="status-message success">
+                        <span>✓ ${msg}</span>
+                    </div>
+                    ${details ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 8px;">${details}</div>` : ''}
+                `;
+                setTimeout(() => nextSlide(), 1500);
+            } else {
+                showError(statusDiv, result.error, 'executeUIStep()');
+            }
+        }
+
+        // IDE instructions content
+        const ideInstructions = {
+            antigravity: {
+                title: 'Getting Started with Antigravity',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download Antigravity from <a href="https://antigravity.google" target="_blank" style="color: var(--gold);">antigravity.google</a></li>
+                        <li>Open Antigravity → File → Open Folder → select your workspace</li>
+                        <li>Open terminal (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Antigravity offers AI-powered collaboration features plus Claude Code in the integrated terminal.</p>
+                `
+            },
+            vscode: {
+                title: 'Getting Started with VS Code',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download VS Code from <a href="https://code.visualstudio.com" target="_blank" style="color: var(--gold);">code.visualstudio.com</a></li>
+                        <li>Open VS Code → File → Open Folder → select your workspace</li>
+                        <li>Open terminal (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Consider installing the Claude extension for VS Code for inline assistance.</p>
+                `
+            },
+            cursor: {
+                title: 'Getting Started with Cursor',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Download Cursor from <a href="https://cursor.sh" target="_blank" style="color: var(--gold);">cursor.sh</a></li>
+                        <li>Open Cursor → File → Open Folder → select your workspace</li>
+                        <li>Open terminal in Cursor (View → Terminal)</li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Cursor has Claude built-in via its AI features, plus you can use Claude Code in the terminal for slash commands.</p>
+                `
+            },
+            terminal: {
+                title: 'Getting Started with Terminal',
+                content: `
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Open Terminal (Applications → Utilities → Terminal)</li>
+                        <li>Navigate to your workspace: <code>cd ${config.workspacePath || '~/Documents/productivity'}</code></li>
+                        <li>Type <code>claude</code> and press Enter</li>
+                    </ol>
+                    <p style="margin-top: 10px; font-size: 0.85rem;">Pure terminal experience. Use your favorite text editor for viewing files.</p>
+                `
+            }
+        };
+
+        function setupIDESelection() {
+            const ideOptions = document.querySelectorAll('[data-ide]');
+            ideOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    ideOptions.forEach(o => o.classList.remove('selected'));
+                    option.classList.add('selected');
+                    option.querySelector('input').checked = true;
+                    const ide = option.dataset.ide;
+                    config.preferredIDE = ide;
+                    showIDEInstructions(ide);
+                });
+            });
+        }
+
+        function showIDEInstructions(ide) {
+            const container = document.getElementById('ideInstructions');
+            const title = document.getElementById('ideInstructionTitle');
+            const content = document.getElementById('ideInstructionContent');
+
+            if (ideInstructions[ide]) {
+                title.textContent = ideInstructions[ide].title;
+                content.innerHTML = ideInstructions[ide].content;
+                container.style.display = 'block';
+            }
+        }
+
+        function skipIDESelection() {
+            // Clear any selection
+            const ideOptions = document.querySelectorAll('[data-ide]');
+            ideOptions.forEach(o => o.classList.remove('selected'));
+            document.querySelectorAll('input[name="ide"]').forEach(i => i.checked = false);
+
+            // Hide instructions
+            document.getElementById('ideInstructions').style.display = 'none';
+
+            // Clear preference and continue
+            config.preferredIDE = null;
+            nextSlide();
+        }
+
+        async function runVerification() {
+            const checksDiv = document.getElementById('verifyChecks');
+            const actionsDiv = document.getElementById('verifyActions');
+            const titleEl = document.getElementById('verifyTitle');
+            const summaryEl = document.getElementById('verifySummary');
+
+            const result = await executeStep('verification');
+            console.log('Verification result:', JSON.stringify(result, null, 2));
+
+            if (result.success && result.result) {
+                const stats = result.result.stats || {};
+                const checks = result.result.checks || [];
+
+                // Update title based on results
+                const allPassed = result.result.allPassed;
+                titleEl.textContent = allPassed ? 'All systems go!' : 'Installation Summary';
+                summaryEl.textContent = `${stats.passed || 0} passed, ${stats.failed || 0} issues${stats.optional_missing ? `, ${stats.optional_missing} optional skipped` : ''}`;
+
+                // Group checks by section from backend
+                const sectionLabels = {
+                    'directories': 'Directory Structure',
+                    'configuration': 'Configuration Files',
+                    'commands': 'Commands',
+                    'skills': 'Skills',
+                    'git': 'Git Repository',
+                    'python_tools': 'Python Tools'
+                };
+
+                const groups = {};
+                const skippedSections = [];
+
+                checks.forEach(check => {
+                    const section = check.section || 'other';
+                    const name = check.name || '';
+                    const isOptional = check.optional || false;
+
+                    // Skip Google-related checks if user skipped Google setup
+                    if (config.googleApiMode === 'skip' && (name.includes('google') || name.includes('.config/google'))) {
+                        if (!skippedSections.includes('Google API')) skippedSections.push('Google API');
+                        return;
+                    }
+
+                    // Skip python_tools section (not installed by web wizard)
+                    if (section === 'python_tools') {
+                        return;
+                    }
+
+                    const groupName = sectionLabels[section] || section;
+                    if (!groups[groupName]) {
+                        groups[groupName] = [];
+                    }
+                    groups[groupName].push({ ...check, isOptional });
+                });
+
+                // Build display HTML
+                let html = '';
+
+                for (const [groupName, items] of Object.entries(groups)) {
+                    if (items.length === 0) continue;
+
+                    const passedCount = items.filter(i => i.passed).length;
+                    const failedItems = items.filter(i => !i.passed && !i.isOptional);
+                    const allGroupPassed = failedItems.length === 0;
+
+                    html += `<div style="margin-bottom: 16px;">`;
+                    html += `<div class="setup-step ${allGroupPassed ? 'passed' : 'failed'}" style="margin-bottom: 4px;">`;
+                    html += `<span class="step-number ${allGroupPassed ? 'ok' : 'fail'}">${allGroupPassed ? '✓' : '!'}</span>`;
+                    html += `<div class="step-content">`;
+                    html += `<strong>${groupName}</strong>`;
+                    html += `<p class="step-detail">${passedCount}/${items.length} items ready</p>`;
+                    html += `</div></div>`;
+
+                    // Only show details for failed required items
+                    if (failedItems.length > 0) {
+                        html += `<div style="margin-left: 40px; font-size: 0.85rem; color: var(--text-secondary);">`;
+                        failedItems.forEach(item => {
+                            html += `<div style="margin: 4px 0;">• ${item.name}: ${item.message || 'missing'}</div>`;
+                        });
+                        html += `</div>`;
+                    }
+
+                    html += `</div>`;
+                }
+
+                // Add note about skipped items if applicable
+                if (skippedSections.length > 0) {
+                    html += `<div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 12px; padding: 8px; background: var(--cream-dark); border-radius: 6px;">
+                        <em>Skipped by choice: ${skippedSections.join(', ')}</em>
+                    </div>`;
+                }
+
+                checksDiv.innerHTML = html;
+                checksDiv.scrollTop = 0; // Scroll to top
+                actionsDiv.style.display = 'block';
+            }
+        }
+
+        async function completeSetup() {
+            const result = await executeStep('complete');
+
+            if (result.success) {
+                document.getElementById('workspacePathDisplay').textContent = config.workspacePath;
+                nextSlide();
+            }
+        }
+
+        function openWorkspace() {
+            // This would ideally open the folder, but browsers can't do that directly
+            // Instead, copy path to clipboard and show instructions
+            navigator.clipboard.writeText(config.workspacePath).then(() => {
+                alert(`Path copied to clipboard!\n\nOpen Terminal and run:\ncd ${config.workspacePath}\nclaude`);
+            }).catch(() => {
+                alert(`Open this folder in your file manager:\n${config.workspacePath}\n\nThen run 'claude' in Terminal.`);
+            });
+        }
+
+        // ============================================
+        // Keyboard Navigation
+        // ============================================
+        document.addEventListener('keydown', (e) => {
+            // Disable keyboard nav during setup (forms need input)
+            if (document.activeElement.tagName === 'INPUT') return;
+
+            if (e.key === 'ArrowRight' && !nextBtn.disabled) {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft' && !prevBtn.disabled) {
+                prevSlide();
+            }
+        });
+
+        // ============================================
+        // Initialize
+        // ============================================
+        function init() {
+            setupRoleSelection();
+            setupIDESelection();
+            updateSlide(0);
+
+            // Check if we're running from the server
+            const isServerMode = window.location.port === '5050' || window.location.pathname.includes('api');
+
+            if (!isServerMode) {
+                // Static file mode - show info message
+                console.log('Running in static mode. For full functionality, run: npm start in the server/ directory');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
