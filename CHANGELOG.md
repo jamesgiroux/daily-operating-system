@@ -21,6 +21,18 @@ Changes in development that will be included in the next release.
   - Added `extract_json_from_output()` helper that strips warning text before parsing
   - Fixed in `calendar_utils.py`, `meeting_utils.py`, and `prepare_today.py`
 
+- **Web dashboard action item count showing inflated numbers**
+  - `querySelectorAll('li')` was counting ALL list items including nested metadata bullets
+  - Changed to `querySelectorAll(':scope > li')` to count only top-level action items
+  - Fixed in `templates/ui/public/js/markdown.js`
+
+- **Week overview showing personal events and broken table formatting**
+  - Personal events (Home, Daily Prep, Post-Meeting Catch-Up) now filtered out
+  - Meeting titles now display properly with account context
+  - Fixed time parsing when `start_display` is missing
+  - Pipe characters in meeting titles now escaped to prevent markdown table breaks
+  - Fixed in `templates/scripts/daily/deliver_week.py`
+
 ---
 
 ## [0.3.2] - 2026-02-01
