@@ -385,3 +385,60 @@ def format_task_for_directive(task: Dict) -> Dict[str, Any]:
         formatted['days_overdue'] = None
 
     return formatted
+
+
+def extract_waiting_on() -> List[Dict[str, Any]]:
+    """
+    Extract Waiting On (Delegated) items from master task list.
+
+    Parses the table in the "Waiting On (Delegated)" section with columns:
+    | Who | What | Asked | Days | Context |
+
+    Returns:
+        List of waiting-on item dictionaries
+    """
+    if not MASTER_TASK_LIST.exists():
+        return []
+
+    content = MASTER_TASK_LIST.read_text()
+    waiting_on = []
+    in_waiting_section = False
+
+    for line in content.split('\n'):
+        # Detect section start
+        if '## Waiting On (Delegated)' in line:
+            in_waiting_section = True
+            continue
+
+        # Detect section end (next H2)
+        if in_waiting_section and line.startswith('## '):
+            break
+
+        # Parse table rows (skip header and separator)
+        if in_waiting_section and '|' in line:
+            # Skip header row and separator row
+            if line.startswith('|--') or '| Who |' in line or '|-----|' in line:
+                continue
+
+            parts = [p.strip() for p in line.split('|')]
+            # Remove empty first/last elements from split
+            parts = [p for p in parts if p]
+
+            if len(parts) >= 4:
+                who = parts[0]
+                what = parts[1]
+                asked = parts[2]
+                days = parts[3]
+                context = parts[4] if len(parts) >= 5 else ''
+
+                # Skip if 'Who' column is empty or header-like
+                if who and who not in ['Who', '-', '']:
+                    waiting_on.append({
+                        'who': who,
+                        'what': what,
+                        'asked': asked,
+                        'days': days,
+                        'context': context
+                    })
+
+    return waiting_on
