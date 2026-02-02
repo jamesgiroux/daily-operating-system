@@ -11,6 +11,24 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.3.1] - 2026-02-01
+
+### Fixed
+
+- **Restored docs landing page structure**
+  - `index.html` is now the 14-slide Setup Guide (was accidentally replaced by wizard)
+  - `intro.html` remains the 41-slide Overview presentation
+  - Web wizard moved to `setup.html` (accessible but not the landing page)
+
+- **Wizard server updated** to serve `setup.html` instead of `index.html`
+
+### Changed
+
+- Removed auto-open browser behavior from CLI wizard (`advanced-start.py`)
+  - `easy-start.command` is now the preferred entry point for visual setup
+
+---
+
 ## [0.3.0] - 2026-02-01
 
 ### Added
@@ -141,7 +159,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.1.0...v0.2.0
