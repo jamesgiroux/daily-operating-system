@@ -37,13 +37,13 @@ app.use((req, res, next) => {
 // API routes
 app.use('/api/setup', setupRoutes);
 
-// Serve static files from docs directory
-app.use(express.static(path.join(PROJECT_ROOT, 'docs')));
-
-// Serve wizard as main page
+// Serve wizard as main page (BEFORE static middleware to override index.html)
 app.get('/', (req, res) => {
   res.sendFile(path.join(PROJECT_ROOT, 'docs', 'setup.html'));
 });
+
+// Serve static files from docs directory
+app.use(express.static(path.join(PROJECT_ROOT, 'docs')));
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -11,6 +11,14 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.4.1] - 2026-02-02
+
+### Fixed
+
+- **Setup wizard opening wrong page** — `easy-start.command` was opening `docs/index.html` instead of `docs/setup.html` because Express static middleware runs before explicit routes. Fixed by moving the root route handler before the static middleware.
+
+---
+
 ## [0.4.0] - 2026-02-02
 
 ### Added
