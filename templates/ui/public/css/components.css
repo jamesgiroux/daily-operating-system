@@ -1865,6 +1865,19 @@
   color: var(--sage);
 }
 
+.priority-badge.overdue {
+  background: rgba(220, 38, 38, 0.15);
+  color: var(--status-error);
+  font-weight: var(--font-semibold);
+}
+
+/* Source annotation in action items */
+.action-item-source {
+  color: var(--text-muted);
+  font-style: italic;
+  opacity: 0.9;
+}
+
 /* Stat card variants */
 .stat-card-warning {
   border-color: var(--status-error);
