@@ -84,3 +84,27 @@ def dim(text: str) -> str:
 def highlight(text: str) -> str:
     """Highlighted text (bold cyan)."""
     return f"{Colors.BOLD}{Colors.CYAN}{text}{Colors.RESET}"
+
+
+def bold(text: str) -> str:
+    """Bold text."""
+    return colorize(text, Colors.BOLD)
+
+
+def box(title: str, content: str, width: int = 63) -> str:
+    """Create a boxed section."""
+    border = Colors.CYAN + '-' * width + Colors.RESET
+    top = f"+{border}+"
+    bottom = f"+{border}+"
+
+    lines = [top]
+    lines.append(f"|  {Colors.BOLD}{title}{Colors.RESET}" + ' ' * (width - len(title) - 1) + '|')
+    lines.append(f"|{' ' * (width + 2)}|")
+
+    for line in content.split('\n'):
+        # Pad line to width (approximate - doesn't account for ANSI codes)
+        padding = max(0, width - len(line))
+        lines.append(f"|  {line}{' ' * padding}|")
+
+    lines.append(bottom)
+    return '\n'.join(lines)
