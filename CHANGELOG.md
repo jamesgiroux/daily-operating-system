@@ -15,6 +15,13 @@ Changes in development that will be included in the next release.
 
 ### Added
 
+- **Waiting On (Delegated) Tracking**
+  - New `extract_waiting_on()` function parses "Waiting On (Delegated)" table from master task list
+  - `/today` now extracts delegated items (Who, What, Asked, Days, Context)
+  - Overview shows Waiting On count in stats bar and sidebar card
+  - Actions file includes full Waiting On table with follow-up tip
+  - Web UI already supports display via existing `buildWaitingCard()` transform
+
 - **Version Management System** (WordPress-inspired auto-update architecture)
   - Symlink-based installation: workspaces link to `~/.dailyos` core, enabling automatic updates
   - Daily update check: `/today` checks for updates once per day, prompts with options

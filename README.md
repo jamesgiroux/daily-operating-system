@@ -213,8 +213,9 @@ Setup is guided by the wizard. You'll need a Google Cloud project with OAuth cre
 4. Generates prep for customer meetings
 5. Scans email for important items
 6. Surfaces due/overdue actions
-7. Looks ahead 3-4 days for agenda needs
-8. Creates daily overview
+7. Extracts "Waiting On" delegated items
+8. Looks ahead 3-4 days for agenda needs
+9. Creates daily overview
 
 ### End of Day (`/wrap`)
 
