@@ -5,6 +5,21 @@
  * @module transforms/email
  */
 
+/**
+ * Escape HTML special characters to prevent XSS and broken markup
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string safe for HTML insertion
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 const EmailTransform = {
   /**
    * Transform name for registry identification
@@ -87,6 +102,7 @@ const EmailTransform = {
   countEmails(sections) {
     let highCount = 0, mediumCount = 0, archivedCount = 0;
 
+    // Extract high priority count
     if (sections.high) {
       const headingMatch = sections.high.textContent.match(/\((\d+)\)/);
       if (headingMatch) {
@@ -100,6 +116,27 @@ const EmailTransform = {
         if (table && highCount === 0) {
           highCount = SectionUtils.getTableRows(table).length;
         }
+      }
+    }
+
+    // Extract medium priority count
+    if (sections.medium) {
+      const headingMatch = sections.medium.textContent.match(/\((\d+)\)/);
+      if (headingMatch) {
+        mediumCount = parseInt(headingMatch[1]);
+      } else {
+        const table = SectionUtils.findNextTable(sections.medium);
+        if (table) {
+          mediumCount = SectionUtils.getTableRows(table).length;
+        }
+      }
+    }
+
+    // Extract archived count if present
+    if (sections.archived) {
+      const headingMatch = sections.archived.textContent.match(/\((\d+)\)/);
+      if (headingMatch) {
+        archivedCount = parseInt(headingMatch[1]);
       }
     }
 
@@ -219,15 +256,15 @@ const EmailTransform = {
             <div class="email-list-item animate-in-fast" style="animation-delay: ${0.1 + emailIndex * 0.05}s">
               <div class="email-list-badge ${typeClass}"></div>
               <div class="email-list-content">
-                <div class="email-list-from">${from}</div>
-                <div class="email-list-subject">${subject}</div>
-                ${snippet ? `<div class="email-list-snippet">${snippet}</div>` : ''}
+                <div class="email-list-from">${escapeHtml(from)}</div>
+                <div class="email-list-subject">${escapeHtml(subject)}</div>
+                ${snippet ? `<div class="email-list-snippet">${escapeHtml(snippet)}</div>` : ''}
               </div>
             </div>
           `;
           emailIndex++;
         } else {
-          itemsHtml += `<div class="email-group-header">${h3Text}</div>`;
+          itemsHtml += `<div class="email-group-header">${escapeHtml(h3Text)}</div>`;
         }
       }
 
@@ -249,11 +286,11 @@ const EmailTransform = {
             <div class="email-list-item animate-in-fast" style="animation-delay: ${0.1 + emailIndex * 0.05}s">
               <div class="email-list-badge ${typeClass}"></div>
               <div class="email-list-content">
-                <div class="email-list-from">${from}</div>
-                <div class="email-list-subject">${subject}</div>
-                ${action ? `<div class="email-list-action">${action}</div>` : ''}
+                <div class="email-list-from">${escapeHtml(from)}</div>
+                <div class="email-list-subject">${escapeHtml(subject)}</div>
+                ${action ? `<div class="email-list-action">${escapeHtml(action)}</div>` : ''}
               </div>
-              <div class="email-list-type">${emailType}</div>
+              <div class="email-list-type">${escapeHtml(emailType)}</div>
             </div>
           `;
           emailIndex++;

@@ -252,6 +252,14 @@ const ActionsTransform = {
 
   /**
    * Parse a single action item LI into card HTML
+   *
+   * Expects canonical format from markdown_primitives.py:
+   * - [ ] **Title** - Account - Due: YYYY-MM-DD (X days overdue)
+   *   - **Context**: Why this task exists
+   *   - **Source**: Where it came from
+   *   - **Owner**: Who is responsible
+   *   - **Priority**: P1/P2/P3
+   *
    * @param {HTMLLIElement} li - List item element
    * @param {number} index - Item index for animation
    * @returns {string|null} HTML string or null if not an action item
@@ -260,12 +268,14 @@ const ActionsTransform = {
     const text = li.innerHTML;
     const plainText = li.textContent;
 
+    // Skip if not an action item (no checkbox or bold title)
     if (!text.includes('checkbox') && !text.includes('[ ]') && !li.querySelector('strong')) {
       if (li.parentElement.parentElement.tagName === 'LI') {
         return null;
       }
     }
 
+    // Extract title from **bold** text
     const titleMatch = text.match(/<strong>([^<]+)<\/strong>/);
     const title = titleMatch ? titleMatch[1] : li.firstChild?.textContent?.trim() || 'Untitled';
 
@@ -277,50 +287,54 @@ const ActionsTransform = {
     let owner = '';
     let priority = '';
 
-    const lineText = plainText.split('\n')[0];
-    const titleEnd = titleMatch ? lineText.indexOf(titleMatch[1]) + titleMatch[1].length : 0;
-    const dueStart = lineText.indexOf(' - Due:');
+    // Parse main line: **Title** - Account - Due: YYYY-MM-DD (X days overdue)
+    const mainLine = plainText.split('\n')[0];
+    const titleEnd = titleMatch ? mainLine.indexOf(titleMatch[1]) + titleMatch[1].length : 0;
+    const dueStart = mainLine.indexOf(' - Due:');
+
+    // Extract account (text between title and Due:)
     if (dueStart > titleEnd) {
-      let accountText = lineText.substring(titleEnd, dueStart).trim();
+      let accountText = mainLine.substring(titleEnd, dueStart).trim();
       if (accountText.startsWith(' - ')) accountText = accountText.substring(3);
       if (accountText.startsWith('- ')) accountText = accountText.substring(2);
       account = accountText.trim();
     }
 
-    const dueMatch = lineText.match(/Due:\s*(\d{4}-\d{2}-\d{2})/);
+    // Extract due date
+    const dueMatch = mainLine.match(/Due:\s*(\d{4}-\d{2}-\d{2})/);
     if (dueMatch) {
       due = dueMatch[1];
     }
-    const overdueMatch = lineText.match(/\((\d+)\s*days?\s*overdue\)/i);
+
+    // Extract overdue indicator
+    const overdueMatch = mainLine.match(/\((\d+)\s*days?\s*overdue\)/i);
     if (overdueMatch) {
       overdue = overdueMatch[1] + ' days overdue';
       priority = 'Overdue';
     }
 
+    // Parse sub-bullets with canonical **Label**: Value format
     const subList = li.querySelector('ul');
     if (subList) {
-      const subItems = subList.querySelectorAll('li');
-      subItems.forEach(sub => {
-        const subText = sub.textContent.trim();
-        if (subText.toLowerCase().startsWith('context:')) {
-          context = subText.replace(/^context:\s*/i, '').trim();
-        } else if (sub.innerHTML.includes('<strong>Context</strong>')) {
-          context = subText.replace(/^Context:\s*/i, '').trim();
+      subList.querySelectorAll('li').forEach(sub => {
+        // Match canonical format: <strong>Label</strong>: Value
+        const labelMatch = sub.innerHTML.match(/<strong>(\w+)<\/strong>:\s*(.+)/);
+        if (labelMatch) {
+          const label = labelMatch[1].toLowerCase();
+          const value = labelMatch[2].replace(/<[^>]+>/g, '').trim(); // Strip HTML tags
+
+          switch (label) {
+            case 'context': context = value; break;
+            case 'source': source = value; break;
+            case 'owner': owner = value; break;
+            case 'priority': priority = value; break;
+            case 'account': account = account || value; break;
+          }
         }
-        if (subText.toLowerCase().startsWith('source:')) {
-          source = subText.replace(/^source:\s*/i, '').trim();
-        } else if (sub.innerHTML.includes('<strong>Source</strong>')) {
-          source = subText.replace(/^Source:\s*/i, '').trim();
-        }
-        if (subText.toLowerCase().includes('owner:')) {
-          const ownerMatch = subText.match(/owner:\s*([^,\n]+)/i);
-          if (ownerMatch) owner = ownerMatch[1].trim();
-        }
-        if (subText.includes('Account:')) account = subText.split('Account:')[1]?.split('-')[0]?.trim() || account;
-        if (subText.includes('Priority:')) priority = subText.split('Priority:')[1]?.trim() || priority;
       });
     }
 
+    // Determine priority display
     let priorityClass = 'p2';
     let priorityText = 'P2';
     if (overdue) {
@@ -331,6 +345,7 @@ const ActionsTransform = {
       priorityText = priority;
     }
 
+    // Build description from context and source
     let description = '';
     if (context) {
       description = context;
