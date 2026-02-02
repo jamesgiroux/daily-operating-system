@@ -11,6 +11,24 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.3.2] - 2026-02-01
+
+### Added
+
+- **Dashboard auto-start**: Web dashboard can now auto-start when `/today` runs
+  - New `dashboard_utils.py` module in `templates/scripts/lib/`
+  - Feature flag `web_dashboard_autostart` in workspace config
+  - `--skip-dashboard` CLI flag for `prepare_today.py`
+  - Idempotent behavior - detects if dashboard already running on port 5050
+  - Silent, non-blocking startup before other preparation steps
+
+### Changed
+
+- Updated `prepare_today.py` to integrate dashboard auto-start
+- Updated `workspace-schema.json` with `web_dashboard_autostart` property
+
+---
+
 ## [0.3.1] - 2026-02-01
 
 ### Fixed
@@ -159,7 +177,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.2.0...v0.2.1
