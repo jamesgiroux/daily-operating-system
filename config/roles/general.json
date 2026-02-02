@@ -1,0 +1,60 @@
+{
+  "workspace": {
+    "name": "Personal Workspace",
+    "role": "general"
+  },
+  "sections": [
+    {
+      "id": "projects",
+      "label": "Projects",
+      "icon": "folder",
+      "directory": "Projects",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    },
+    {
+      "id": "areas",
+      "label": "Areas",
+      "icon": "layers",
+      "directory": "Areas",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    },
+    {
+      "id": "resources",
+      "label": "Resources",
+      "icon": "bookOpen",
+      "directory": "Resources",
+      "indexFile": "00-Index.md",
+      "structure": "flat"
+    }
+  ],
+  "today": {
+    "directory": "_today",
+    "files": {
+      "overview": "00-overview.md",
+      "actions": "80-actions-due.md",
+      "focus": "81-suggested-focus.md"
+    },
+    "sidebarLinks": [
+      { "route": "/", "label": "Overview", "icon": "calendar", "file": "overview" },
+      { "route": "/today/actions", "label": "Actions", "icon": "checkSquare", "file": "actions" },
+      { "route": "/today/focus", "label": "Focus", "icon": "target", "file": "focus" }
+    ],
+    "weekSidebarLinks": [
+      { "route": "/today/week-overview", "label": "Week Overview", "icon": "list" }
+    ]
+  },
+  "features": {
+    "healthStatus": false,
+    "ringBadges": false,
+    "multiBusinessUnit": false,
+    "weeklySection": true
+  },
+  "pagePatterns": {
+    "overview": "Today:",
+    "actions": "Action Items",
+    "focus": "Suggested Focus|Focus Areas",
+    "weekOverview": "Week Overview"
+  }
+}
