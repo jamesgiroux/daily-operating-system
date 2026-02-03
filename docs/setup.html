@@ -534,6 +534,59 @@
             background: var(--gold-muted);
         }
 
+        /* Dropzone for file uploads */
+        .dropzone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--white);
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--gold);
+            background: rgba(201, 162, 39, 0.05);
+        }
+
+        .dropzone.success {
+            border-color: var(--sage);
+            background: rgba(127, 182, 133, 0.1);
+        }
+
+        .dropzone.error {
+            border-color: var(--red);
+            background: rgba(229, 115, 115, 0.1);
+        }
+
+        .dropzone-content {
+            pointer-events: none;
+        }
+
+        .dropzone-content p {
+            margin: 8px 0 0 0;
+            font-size: 0.9rem;
+        }
+
+        .validation-message {
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        .validation-message.success {
+            background: rgba(127, 182, 133, 0.15);
+            color: var(--sage);
+            border: 1px solid var(--sage);
+        }
+
+        .validation-message.error {
+            background: rgba(229, 115, 115, 0.15);
+            color: var(--red);
+            border: 1px solid var(--red);
+        }
+
         /* Folder Grid */
         .folder-grid {
             display: grid;
@@ -1154,21 +1207,52 @@
                                     </div>
                                 </div>
 
-                                <!-- Step 6: Place credentials file -->
+                                <!-- Step 6: Upload credentials file -->
                                 <div class="setup-step" id="googleStep6" style="opacity: 0.5;">
                                     <span class="step-number">6</span>
                                     <div class="step-content">
-                                        <strong>Save Credentials File</strong>
-                                        <p class="step-detail">Rename downloaded file to <code>credentials.json</code><br>
-                                        Move it to: <code id="credentialsPath">.config/google/credentials.json</code></p>
-                                        <div style="margin-top: 8px; display: none;" class="step-actions">
-                                            <button class="btn btn-primary" style="font-size: 0.85rem;" onclick="finalizeGoogleSetup()">I've placed the file ✓</button>
+                                        <strong>Upload Credentials File</strong>
+                                        <p class="step-detail">Upload or paste your downloaded credentials.json file.</p>
+                                        <div style="margin-top: 12px; display: none;" class="step-actions">
+                                            <!-- File upload dropzone -->
+                                            <div id="credentialsDropzone" class="dropzone" ondrop="handleCredentialsDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                                                <div class="dropzone-content">
+                                                    <span style="font-size: 1.5rem;">📄</span>
+                                                    <p>Drop credentials.json here<br><span style="color: var(--text-muted); font-size: 0.85rem;">or click to browse</span></p>
+                                                    <input type="file" id="credentialsFile" accept=".json" onchange="handleCredentialsFile(event)" style="display: none;">
+                                                </div>
+                                            </div>
+                                            <div style="text-align: center; margin: 8px 0; color: var(--text-muted); font-size: 0.85rem;">or</div>
+                                            <!-- Paste option -->
+                                            <button class="btn btn-secondary btn-light" style="font-size: 0.85rem; width: 100%;" onclick="showCredentialsPaste()">
+                                                Paste JSON content
+                                            </button>
+                                            <div id="credentialsPasteArea" style="display: none; margin-top: 12px;">
+                                                <textarea id="credentialsPasteInput" placeholder="Paste the contents of your credentials.json file here..." style="width: 100%; height: 120px; font-family: var(--font-mono); font-size: 0.8rem; padding: 8px; border: 1px solid var(--border); border-radius: 6px; resize: vertical;"></textarea>
+                                                <button class="btn btn-primary" style="font-size: 0.85rem; margin-top: 8px;" onclick="uploadPastedCredentials()">
+                                                    Validate & Save
+                                                </button>
+                                            </div>
+                                            <!-- Validation status -->
+                                            <div id="credentialsValidation" style="margin-top: 12px;"></div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div id="googleStatus" style="margin-top: 16px;"></div>
+
+                            <!-- Test connection button (shown after credentials uploaded) -->
+                            <div id="googleTestSection" style="display: none; margin-top: 16px; padding: 16px; background: var(--cream-dark); border-radius: 8px;">
+                                <strong>Credentials uploaded!</strong>
+                                <p style="margin: 8px 0; color: var(--text-secondary);">Your credentials are saved securely at <code>~/.dailyos/google/</code></p>
+                                <button class="btn btn-primary" onclick="testGoogleConnection()">
+                                    Test Connection
+                                </button>
+                                <button class="btn btn-secondary" onclick="skipGoogleTest()">
+                                    Skip Test (authorize later)
+                                </button>
+                            </div>
 
                             <div class="action-buttons" style="margin-top: 16px;">
                                 <button class="btn btn-secondary" onclick="hideGoogleGuide()">← Back</button>
@@ -2010,9 +2094,8 @@
         function showGoogleGuide() {
             document.getElementById('googleChoice').style.display = 'none';
             document.getElementById('googleGuide').style.display = 'block';
-            // Update credentials path with actual workspace
-            const credPath = config.workspacePath.replace('~', '') + '/.config/google/credentials.json';
-            document.getElementById('credentialsPath').textContent = credPath;
+            // Reset test section visibility
+            document.getElementById('googleTestSection').style.display = 'none';
         }
 
         function hideGoogleGuide() {
@@ -2117,6 +2200,194 @@
             } else {
                 showError(statusDiv, result.error, 'executeGoogleStep()');
             }
+        }
+
+        // Credentials file upload handlers
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.add('dragover');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('dragover');
+        }
+
+        function handleCredentialsDrop(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.classList.remove('dragover');
+
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                processCredentialsFile(files[0]);
+            }
+        }
+
+        function handleCredentialsFile(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                processCredentialsFile(files[0]);
+            }
+        }
+
+        // Make dropzone clickable
+        document.addEventListener('DOMContentLoaded', () => {
+            const dropzone = document.getElementById('credentialsDropzone');
+            if (dropzone) {
+                dropzone.addEventListener('click', () => {
+                    document.getElementById('credentialsFile').click();
+                });
+            }
+        });
+
+        async function processCredentialsFile(file) {
+            const validationDiv = document.getElementById('credentialsValidation');
+            const dropzone = document.getElementById('credentialsDropzone');
+
+            if (!file.name.endsWith('.json')) {
+                showCredentialsError('Please select a JSON file');
+                return;
+            }
+
+            validationDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Validating credentials...</span>
+                </div>
+            `;
+
+            try {
+                const content = await file.text();
+                await uploadCredentials(content);
+            } catch (err) {
+                showCredentialsError('Failed to read file: ' + err.message);
+            }
+        }
+
+        function showCredentialsPaste() {
+            document.getElementById('credentialsPasteArea').style.display = 'block';
+        }
+
+        async function uploadPastedCredentials() {
+            const content = document.getElementById('credentialsPasteInput').value.trim();
+            if (!content) {
+                showCredentialsError('Please paste your credentials.json content');
+                return;
+            }
+
+            const validationDiv = document.getElementById('credentialsValidation');
+            validationDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Validating credentials...</span>
+                </div>
+            `;
+
+            await uploadCredentials(content);
+        }
+
+        async function uploadCredentials(content) {
+            const validationDiv = document.getElementById('credentialsValidation');
+            const dropzone = document.getElementById('credentialsDropzone');
+
+            try {
+                const response = await fetch('/api/setup/google/upload-credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    dropzone.classList.remove('error');
+                    dropzone.classList.add('success');
+                    validationDiv.innerHTML = `
+                        <div class="validation-message success">
+                            ✓ Valid credentials! Saved securely to ~/.dailyos/google/
+                        </div>
+                    `;
+
+                    // Show test connection section
+                    document.getElementById('googleTestSection').style.display = 'block';
+
+                    // Mark step 6 as complete
+                    completeGoogleStep(6);
+                } else {
+                    showCredentialsError(result.error || 'Invalid credentials');
+                }
+            } catch (err) {
+                showCredentialsError('Upload failed: ' + err.message);
+            }
+        }
+
+        function showCredentialsError(message) {
+            const validationDiv = document.getElementById('credentialsValidation');
+            const dropzone = document.getElementById('credentialsDropzone');
+
+            dropzone.classList.remove('success');
+            dropzone.classList.add('error');
+            validationDiv.innerHTML = `
+                <div class="validation-message error">
+                    ✗ ${message}
+                </div>
+            `;
+        }
+
+        async function testGoogleConnection() {
+            const statusDiv = document.getElementById('googleStatus');
+            statusDiv.innerHTML = `
+                <div class="status-message loading">
+                    <div class="spinner"></div>
+                    <span>Testing connection (this will open a browser window)...</span>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/setup/google/test-auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    statusDiv.innerHTML = `
+                        <div class="status-message success">
+                            <span>✓ Authentication successful! Google API is ready.</span>
+                        </div>
+                    `;
+                    setTimeout(() => nextSlide(), 1500);
+                } else {
+                    statusDiv.innerHTML = `
+                        <div class="status-message error">
+                            <span>Authentication failed: ${result.error}</span>
+                        </div>
+                        <p style="margin-top: 8px; font-size: 0.85rem;">
+                            You can skip this and authenticate later when you first use a Google command.
+                        </p>
+                    `;
+                }
+            } catch (err) {
+                statusDiv.innerHTML = `
+                    <div class="status-message error">
+                        <span>Connection test failed: ${err.message}</span>
+                    </div>
+                `;
+            }
+        }
+
+        function skipGoogleTest() {
+            const statusDiv = document.getElementById('googleStatus');
+            statusDiv.innerHTML = `
+                <div class="status-message success">
+                    <span>✓ Credentials saved. You'll authorize on first use.</span>
+                </div>
+            `;
+            setTimeout(() => nextSlide(), 1000);
         }
 
         function selectClaudeMdOption(mode) {
