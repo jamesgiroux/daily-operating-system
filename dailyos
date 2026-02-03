@@ -1,8 +1,16 @@
 #!/bin/bash
 # DailyOS CLI wrapper
 
-# Get the directory where this script is located
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Resolve symlinks to find actual script location
+# This handles the case where dailyos is symlinked from /usr/local/bin
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+    SOURCE="$(readlink "$SOURCE")"
+    # If $SOURCE is a relative symlink, resolve it relative to the symlink's directory
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
 
 # Run the Python CLI
 exec python3 "$SCRIPT_DIR/src/cli.py" "$@"
