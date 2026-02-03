@@ -175,7 +175,7 @@ Generate project-focused prep:
 For high-priority emails:
 - Fetch full thread if applicable
 - Classify: OPPORTUNITY / INFO / RISK / ACTION NEEDED
-- Extract specific asks for James
+- Extract specific asks for [Your Name]
 - Recommend action and owner
 
 #### Agenda Drafts (`generate_agenda_draft`)
@@ -267,7 +267,7 @@ _today/
 └── archive/                    # Rolling archive (cleared by /week)
     ├── 2026-01-07/
     │   ├── 00-overview.md
-    │   ├── 01-customer-nielsen-prep.md
+    │   ├── 01-customer-acme-corp-prep.md
     │   └── 90-agenda-needed/
     ├── 2026-01-06/
     └── 2026-01-05/
@@ -304,14 +304,14 @@ for row in sheet_data[1:]:  # Skip header
     if email_domain:
         domain_map[email_domain] = account_name
 
-# Multi-BU domains (same domain, multiple accounts)
-multi_bu_domains = ['salesforce.com', 'hilton.com', 'coxautoinc.com']
+# Multi-BU domains (same domain, multiple accounts) - configured in workspace.json
+# Example: multi_bu_domains = ['parent-company.com']
 ```
 
 **Multi-BU Accounts** (require title-matching or user prompt):
-- `salesforce.com` → 8 BUs (Digital Experience, AppExchange, Engineering, etc.)
-- `hilton.com` → 5 BUs (Domestic, Careers, Corporate, B2B Engagement, Newsroom)
-- `coxautoinc.com` → 4 BUs (Consumer Brands, Corporate Services B2B, Diversification, Enterprises)
+Configure in `_config/workspace.json` under `accounts.multiBuParents`:
+- Each parent company can have multiple business units with the same email domain
+- The system prompts user to select which BU when needed
 
 ### Step 3: Fetch Today's Calendar
 
@@ -371,13 +371,13 @@ For each HIGH priority email:
 | OPPORTUNITY | Expansion, new work, positive signal | 🟢 |
 | INFORMATIONAL | FYI, status update, no action needed | 🟡 |
 | RISK | Concern, complaint, churn signal, blocker | 🔴 |
-| ACTION NEEDED | Explicit ask for James | 🔵 |
+| ACTION NEEDED | Explicit ask for [Your Name] | 🔵 |
 
 4. **For each HIGH priority email, answer:**
    - What's the conversation arc? (Who initiated, what's discussed, current status)
-   - Is there a specific ask for James? (Yes/No, what and by when)
-   - Who is the owner? (James, or someone else - e.g., "Renan handling, monitor only")
-   - What action (if any) should James take?
+   - Is there a specific ask for [Your Name]? (Yes/No, what and by when)
+   - Who is the owner? ([Your Name], or someone else - e.g., "[Manager] handling, monitor only")
+   - What action (if any) should [Your Name] take?
 
 **Email Summary for Overview:**
 ```python
@@ -399,7 +399,7 @@ If a HIGH priority email is from an account with a meeting today:
 - Conversation arc (not just snippet)
 - Classification type with reasoning
 - Specific ask identification
-- "For James" section with recommended action and owner
+- "For [Your Name]" section with recommended action and owner
 
 ### Step 4: Classify Each Meeting
 
@@ -408,8 +408,8 @@ For each event, check attendee domains:
 ```
 STEP 1: Check for known PROJECTS first (before customer classification)
 
-Known projects with external partners:
-- "Agentforce" → Projects/Agentforce/ (partners: @salesforce.com, @rtcamp.com)
+Known projects with external partners (configurable in meeting_utils.py KNOWN_PROJECTS):
+- Example: "Project Alpha" → Projects/Project-Alpha/ (partners: @partner.com)
 - [Add other projects as needed]
 
 IF meeting title contains known project name:
@@ -435,7 +435,7 @@ ELSE (external attendees present):
         type = "customer"
         account = matched account name
 
-    ELSE IF multiple accounts matched (e.g., @salesforce.com with 8 BUs):
+    ELSE IF multiple accounts matched (e.g., parent company with multiple BUs):
         type = "customer"
         Use AskUserQuestion: "Which BU is this meeting for? [list options]"
         account = user's answer
@@ -450,7 +450,7 @@ ELSE (external attendees present):
 
 | Project | Title Keywords | Partner Domains | Location |
 |---------|---------------|-----------------|----------|
-| Agentforce | "Agentforce", "VIP <> Salesforce" | @salesforce.com, @rtcamp.com | Projects/Agentforce/ |
+| [Project Name] | [Keywords in title] | @partner.com | Projects/[Project]/ |
 | [Add others as identified] | | | |
 
 ### Step 5: Generate Meeting Files (Numbered by Time)
@@ -510,8 +510,6 @@ else:  # upcoming
 
 **IMPORTANT**: The **Account Dashboard** is the PRIMARY source of truth for customer prep.
 
-Reference: `.claude/skills/daily-csm/MEETING-PREP.md`
-
 **Step-by-step:**
 
 1. **Load Account Dashboard** (PRIMARY SOURCE):
@@ -519,7 +517,7 @@ Reference: `.claude/skills/daily-csm/MEETING-PREP.md`
    # Find account folder (handle multi-BU structure)
    ls Accounts/ | grep -i "[Account]"
    # OR for multi-BU:
-   ls Accounts/Salesforce/ | grep -i "[BU-Name]"
+   ls Accounts/[Parent-Company]/ | grep -i "[BU-Name]"
    ```
    ```
    Read: Accounts/[Account]/01-Customer-Information/[account]-account-dashboard.md
@@ -529,7 +527,7 @@ Reference: `.claude/skills/daily-csm/MEETING-PREP.md`
    | Section | Use For |
    |---------|---------|
    | Executive Summary | Quick context, current state |
-   | Quick View | ARR, Ring, Health, Renewal date, Last Contact |
+   | Quick View | ARR, Tier, Health, Renewal date, Last Contact |
    | ⚠️ Current Risks | What to address/monitor |
    | ✅ Recent Wins | What to acknowledge/build on |
    | 🎯 Next Actions | Open commitments |
@@ -650,10 +648,10 @@ Reference: `.claude/skills/daily-csm/MEETING-PREP.md`
   - **Related to**: [Project/initiative]
 
 Example:
-- [ ] **Review Gustavo's Node.js/log analysis support ticket** - Owner: James - Due: Dec 18
+- [ ] **Review Jane's Node.js/log analysis support ticket** - Owner: [Your Name] - Due: Dec 18
   - **Context**: Customer has 40GB of logs over 4 days, needs analysis tooling to diagnose performance issues
-  - **Requested by**: Renan (on behalf of Gustavo at Nielsen)
-  - **Source**: `Accounts/Nielsen/02-Meetings/2025-12-15-summary-nielsen-vip-sync.md`
+  - **Requested by**: [Manager] (on behalf of Jane at Acme Corp)
+  - **Source**: `Accounts/Acme Corp/02-Meetings/2025-12-15-summary-acme-corp-monthly.md`
   - **Related to**: Node.js migration support
 
 **⚠️ Action file last updated: [date]** (if >30 days, show warning)
@@ -754,7 +752,7 @@ Internal meetings still deserve prep, just with a different focus. Generate rela
 
        contact = mcp__clay__searchContacts(
            query=name,
-           company_name=['Automattic', 'WordPress VIP'],
+           company_name=['Your Company Name'],  # Configure for your organization
            limit=1
        )
 
@@ -769,12 +767,12 @@ Internal meetings still deserve prep, just with a different focus. Generate rela
 
 2. **Find Shared Accounts** (if applicable):
    ```python
-   # Check if this colleague shares any accounts with James
+   # Check if this colleague shares any accounts with [Your Name]
    # Look in Google Sheet for accounts where they're listed as co-owner
    # Or check account files for their name in stakeholder/owner fields
 
    shared_accounts = find_shared_accounts(attendee_email, account_data)
-   # Returns: [{'account': 'Salesforce DMT', 'ring': 'Summit', 'your_actions': [...], 'their_actions': [...]}]
+   # Returns: [{'account': 'Account Name', 'tier': 'Tier 1', 'your_actions': [...], 'their_actions': [...]}]
    ```
 
 3. **Check Political Intelligence** (if exists):
@@ -977,16 +975,16 @@ Parse each action for:
 
 **CRITICAL: Filter by Owner**
 
-Only include items in the main sections where **Owner = James**. Items owned by others should NOT appear in the daily actions file - those are their responsibilities, not yours.
+Only include items in the main sections where **Owner = [Your Name]**. Items owned by others should NOT appear in the daily actions file - those are their responsibilities, not yours.
 
 ```python
 def should_include_action(action):
     """
-    Only include actions where James is the owner.
+    Only include actions where [Your Name] is the owner.
     """
     owner = action.get('owner', '').lower()
 
-    # Include if James owns it
+    # Include if [Your Name] owns it
     if 'james' in owner:
         return True
 
@@ -999,11 +997,11 @@ def should_include_action(action):
 ```
 
 **Owner patterns to exclude:**
-- "Owner: Rachel" → Rachel's responsibility
+- "Owner: Kim" → Kim's responsibility
 - "Owner: Shilpa/Hayley" → Their responsibility
-- "Owner: Amy" → Amy's responsibility
+- "Owner: Alex" → Alex's responsibility
 - "Owner: Abdul" → Abdul's responsibility
-- Any name that isn't James
+- Any name that isn't [Your Name]
 
 Create `80-actions-due.md`:
 
@@ -1055,7 +1053,7 @@ Create `80-actions-due.md`:
   - Outcome: [Brief result]
 ```
 
-**Note:** The "Waiting On" section tracks items James delegated to others - these are outbound asks where James is blocked until they respond. This is different from items others own independently.
+**Note:** The "Waiting On" section tracks items [Your Name] delegated to others - these are outbound asks where [Your Name] is blocked until they respond. This is different from items others own independently.
 
 **Parsing Action Context:**
 When reading action files, look for these patterns to extract context:
@@ -1126,9 +1124,9 @@ Output to: _today/90-agenda-needed/[account-lowercase]-[date].md
 **Agenda File Format:**
 ```
 _today/90-agenda-needed/
-├── nielsen-2026-01-12.md
-├── blackstone-2026-01-15.md
-└── salesforce-digital-experience-2026-01-16.md
+├── acme-corp-2026-01-12.md
+├── global-inc-2026-01-15.md
+└── enterprise-co-2026-01-16.md
 ```
 
 ### Step 8: Generate Suggested Focus
@@ -1182,7 +1180,7 @@ Create `00-overview.md`:
 |------|-------|------|-------------|
 | 9:00 AM | Daily Prep | Personal | - |
 | 11:00 AM | Agentforce Sync | Internal | - |
-| 12:00 PM | **Nielsen Monthly** | **Customer** | See 04-1200-customer-nielsen-prep.md |
+| 12:00 PM | **Acme Corp Monthly** | **Customer** | See 04-1200-customer-acme-corp-prep.md |
 
 ## Customer Meetings Today
 
@@ -1202,7 +1200,7 @@ Create `00-overview.md`:
 
 **See `83-email-summary.md` for full thread summaries including:**
 - Conversation arc (who initiated, what's discussed, current status)
-- Specific asks for James (if any)
+- Specific asks for [Your Name] (if any)
 - Owner and recommended action
 
 ### Summary
@@ -1232,78 +1230,6 @@ Create `00-overview.md`:
 2. [Second priority]
 ```
 
-### Step 9B: Coaching Tracker (Integrated)
-
-Add coaching opportunities to the daily overview by matching active coaching commitments to today's meetings.
-
-**Source file:** `Leadership/03-Development/active-coaching-commitments.md`
-
-**Process:**
-
-```python
-def generate_coaching_tracker(calendar_events, commitments_file):
-    """
-    Match coaching commitments to today's meetings
-    Returns tracker section for daily overview
-    """
-    commitments = read_coaching_commitments(commitments_file)
-    opportunities = []
-
-    for event in calendar_events:
-        attendees = get_attendee_names(event)
-        title = event.get('summary', '')
-
-        for commitment in commitments:
-            if matches_trigger(commitment, attendees, title):
-                opportunities.append({
-                    'commitment': commitment['name'],
-                    'meeting': event['summary'],
-                    'time': event['start'],
-                    'practice': commitment['practice'],
-                    'applies_to': commitment.get('applies_to', [])
-                })
-
-    return opportunities
-```
-
-**Output section in daily overview:**
-
-```markdown
-## Coaching Opportunities Today
-
-| Commitment | Meeting | Practice |
-|------------|---------|----------|
-| Driver/Passenger | Amy/James: Blackstone (11am) | Ask "what do you need from me?" first |
-| Surface Unknowns | Nielsen docs prep | Lead with "what we don't know" |
-
-**Active Commitments This Quarter:**
-1. Driver/Passenger Dynamic (with Amy, Rachel)
-2. Surface Unknowns Explicitly (in strategy docs)
-3. Watchtower Pattern (check with Josiah before bold moves)
-
-*Source: `Leadership/03-Development/active-coaching-commitments.md`*
-```
-
-**Per-meeting coaching notes:**
-
-For each meeting where a coaching commitment applies, add a brief note to the prep file:
-
-```markdown
-## Coaching Note
-
-**Commitment**: Driver/Passenger Dynamic
-**Practice**: Let Amy drive the narrative. Open by asking what she needs from you.
-**Source**: `Leadership/03-Development/active-coaching-commitments.md`
-```
-
-**Matching logic:**
-
-| Commitment | Triggers |
-|------------|----------|
-| Driver/Passenger | Attendee in `applies_to` list (Amy, Rachel) |
-| Surface Unknowns | Meeting involves strategy doc or conservative stakeholder |
-| Watchtower | Meeting involves bold initiative or could surprise leadership |
-
 ## Output Structure
 
 After running `/today`:
@@ -1314,13 +1240,13 @@ _today/
 ├── 01-0900-personal-daily-prep.md      # First meeting
 ├── 02-1100-internal-agentforce.md      # Second meeting
 ├── 03-1130-internal-donut.md           # Third meeting
-├── 04-1200-customer-nielsen-prep.md    # Customer meeting (FULL PREP)
+├── 04-1200-customer-acme-corp-prep.md    # Customer meeting (FULL PREP)
 ├── 05-1245-personal-catchup.md         # Post-meeting block
 ├── 80-actions-due.md                   # Action items
 ├── 81-suggested-focus.md               # Focus suggestions
 ├── 83-email-summary.md                 # Email triage results
 ├── 90-agenda-needed/                   # Draft agendas
-│   └── blackstone-jan-12.md            # Agenda to review and send
+│   └── enterprise-co-jan-12.md            # Agenda to review and send
 ├── tasks/                              # Persistent task tracking
 │   └── master-task-list.md             # Global task list (survives archive)
 └── archive/                            # Previous days (processed by /week)
@@ -1337,8 +1263,8 @@ _today/
 - Gmail (read, draft, labels)
 
 **Skills/Workflows:**
-- daily-csm/MEETING-PREP.md - Customer prep generation
-- inbox-processing/MEETING-TYPE-DETECTION.md - Classification patterns
+- Meeting prep patterns defined in Step 4
+- inbox/MEETING-TYPE-DETECTION.md - Classification patterns
 
 **Agents:**
 - agenda-generator - Draft agendas for look-ahead meetings
@@ -1406,10 +1332,10 @@ for agenda in agendas_needed:
 ```
 "I've identified [X] calendar blocks to create:
 
-1. Catch-up: Nielsen notes (12:30 PM - 12:45 PM)
+1. Catch-up: Acme Corp notes (12:30 PM - 12:45 PM)
    Purpose: Document meeting outcomes, update action items
 
-2. Agenda: Blackstone (Jan 9, 9:00 AM)
+2. Agenda: Enterprise Co (Jan 9, 9:00 AM)
    Purpose: Review and send meeting agenda
 
 Which blocks would you like me to create?"
@@ -1445,19 +1371,17 @@ After completing all tactical steps, optionally invoke `/cos` to add executive-l
 - User explicitly requests `/cos`
 - User runs `/today --cos` or `/today --full`
 
-**What /cos adds (decision support, not coaching):**
+**What /cos adds:**
 - **DECIDE**: Decisions needed with options + recommendation
 - **WAITING ON**: Delegated items awaiting response
 - **PORTFOLIO ALERTS**: Accounts/projects needing attention
 - **CANCEL/PROTECT**: Meetings safe to skip with draft decline
 - **SKIP TODAY**: Items that don't need attention
 
-**Note:** Coaching is already integrated into the daily overview via Step 9B. /cos focuses on executive decision support, delegation tracking, and time protection.
-
 **Integration flow:**
 ```
-1. /today completes Steps 0-10 (including 9B coaching tracker)
-2. /today creates *-daily-overview.md with coaching integrated
+1. /today completes Steps 0-10
+2. /today creates *-daily-overview.md
 3. If /cos requested:
    a. Parse master task list for decisions due + delegations stale
    b. Pull portfolio data from Google Sheets
@@ -1485,26 +1409,24 @@ When user answers a multi-BU prompt, store the mapping for future automatic clas
   "version": 1,
   "mappings": [
     {
-      "domain": "salesforce.com",
-      "attendee_pattern": "sarah.chen@salesforce.com",
-      "bu": "Digital-Experience",
+      "domain": "example-corp.com",
+      "attendee_pattern": "john.doe@example-corp.com",
+      "bu": "Enterprise-Division",
       "confidence": "user_confirmed",
       "created": "2026-01-08",
       "source": "/today classification"
     },
     {
-      "domain": "hilton.com",
-      "title_pattern": "Newsroom",
-      "bu": "Newsroom",
+      "domain": "global-inc.com",
+      "title_pattern": "Marketing",
+      "bu": "Marketing-Team",
       "confidence": "title_match",
       "created": "2026-01-08"
     }
   ],
   "default_bus": {
-    "salesforce.com": "Digital-Experience",
-    "hilton.com": "Domestic",
-    "coxautoinc.com": "Corporate-Services-B2B",
-    "intuit.com": "Credit-Karma"
+    "example-corp.com": "Enterprise-Division",
+    "global-inc.com": "Corporate"
   }
 }
 ```
@@ -1561,8 +1483,9 @@ When classifying multi-BU meetings, add this check before prompting:
 bu_cache_path = '_reference/bu-classification-cache.json'
 bu_cache = load_json(bu_cache_path) if file_exists(bu_cache_path) else {'mappings': [], 'default_bus': {}}
 
-# For multi-BU domains
-if domain in ['salesforce.com', 'hilton.com', 'coxautoinc.com', 'intuit.com']:
+# For multi-BU domains (configured in workspace.json)
+multi_bu_domains = load_multi_bu_config()
+if domain in multi_bu_domains:
     bu = classify_multi_bu_meeting(domain, attendees, title, bu_cache)
     account = f"{parent_company}/{bu}"
 ```

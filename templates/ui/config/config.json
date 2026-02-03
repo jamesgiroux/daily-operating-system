@@ -46,13 +46,7 @@
         { "pattern": "07-P2s", "icon": "edit", "label": "P2s" },
         { "pattern": "_archive", "icon": "archive", "label": "Archive" }
       ],
-      "projectIcons": {
-        "Agentforce": "robot",
-        "Bullseye": "crosshair",
-        "Video-Content": "video",
-        "Field-Notes": "bookOpen",
-        "WCEH": "mapPin"
-      }
+      "projectIcons": {}
     },
     {
       "id": "leadership",
@@ -95,7 +89,7 @@
         "Drafts": "fileText",
         "Teams": "users",
         "Cross-Functional": "gitBranch",
-        "Automattic": "globe",
+        "Company": "globe",
         "Reference": "bookOpen",
         "Historical-Actions": "archive"
       }
@@ -128,7 +122,7 @@
   },
   "features": {
     "healthStatus": true,
-    "ringBadges": true,
+    "tierBadges": true,
     "multiBusinessUnit": true,
     "stageBadges": false,
     "weeklySection": true
@@ -139,11 +133,11 @@
       "attention": ["Attention"],
       "critical": ["Critical"]
     },
-    "rings": [
-      { "tag": "summit", "label": "Summit", "color": "#4CAF50" },
-      { "tag": "influence", "label": "Influence", "color": "#2196F3" },
-      { "tag": "evolution", "label": "Evolution", "color": "#FF9800" },
-      { "tag": "foundation", "label": "Foundation", "color": "#9E9E9E" }
+    "tiers": [
+      { "id": "tier-1", "label": "Tier 1", "color": "#4CAF50" },
+      { "id": "tier-2", "label": "Tier 2", "color": "#2196F3" },
+      { "id": "tier-3", "label": "Tier 3", "color": "#FF9800" },
+      { "id": "tier-4", "label": "Tier 4", "color": "#9E9E9E" }
     ]
   }
 }

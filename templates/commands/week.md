@@ -73,7 +73,7 @@ This command uses a three-phase approach for efficiency:
 │  Phase 2: AI ENRICHMENT (Claude)                                │
 │  • Prompt for weekly priorities                                 │
 │  • Generate meeting overview tables                             │
-│  • Create agenda tasks for Foundation accounts                  │
+│  • Create agenda tasks for lower-tier accounts                  │
 │  • Summarize critical hygiene alerts                            │
 │  • Propose time block schedule                                  │
 │                                                                 │
@@ -324,7 +324,7 @@ Parse columns for account lookup:
 | Column | Field | Usage |
 |--------|-------|-------|
 | A | Account | Display name |
-| D | Lifecycle Ring | Hygiene thresholds, context |
+| D | Account Tier | Hygiene thresholds, context |
 | F | Last Engagement Date | Contact gap alerts |
 | I | 2025 ARR | Display |
 | P | Next Renewal Date | Renewal countdown alerts |
@@ -347,7 +347,7 @@ For each event in the week:
 2. For ALL meetings, note:
    - Date/time
    - Account/Meeting name
-   - Ring or meeting category
+   - Tier or meeting category
    - Meeting type (extracted from calendar event title)
    - Prep status (determined by classification logic below)
    - Agenda owner (for customer meetings)
@@ -366,19 +366,19 @@ def determine_prep_status(meeting, account_data, colleague_accounts):
     title = meeting.get('summary', '').lower()
     attendees = meeting.get('attendees', [])
 
-    # Check for strategic meeting signals (override ring-based logic)
+    # Check for strategic meeting signals (override tier-based logic)
     agenda_signals = ['renewal', 'ebr', 'qbr', 'strategic review', 'quarterly']
     is_strategic = any(signal in title for signal in agenda_signals)
 
     if meeting_type == 'customer':
-        ring = account_data.get('ring', 'Foundation')
+        tier = account_data.get('tier', 'Tier 4')
 
-        # Foundation or strategic meetings = you own agenda
-        if ring == 'Foundation' or is_strategic:
-            return '📅 Agenda needed', 'you', {'ring': ring}
+        # Lower-tier or strategic meetings = you own agenda
+        if tier in ['Tier 3', 'Tier 4'] or is_strategic:
+            return '📅 Agenda needed', 'you', {'tier': tier}
         else:
-            # Evolution, Influence, Summit - customer typically drives
-            return '📋 Prep needed', 'customer', {'ring': ring}
+            # Higher tiers (Tier 1, Tier 2) - customer typically drives
+            return '📋 Prep needed', 'customer', {'tier': tier}
 
     elif meeting_type == 'project':
         return '🔄 Bring updates', 'shared', {}
@@ -398,12 +398,12 @@ def determine_prep_status(meeting, account_data, colleague_accounts):
 
 **Prep Status Types:**
 
-| Meeting Type | Ring/Category | Prep Status | Agenda Owner | What Prep Includes |
+| Meeting Type | Tier/Category | Prep Status | Agenda Owner | What Prep Includes |
 |--------------|---------------|-------------|--------------|-------------------|
-| Customer | Foundation | `📅 Agenda needed` | You | Full prep + agenda draft for you to send |
-| Customer | Evolution, Influence, Summit | `📋 Prep needed` | Customer | Dashboard, history, actions, attendee intel |
-| Customer | Any ring + strategic signals | `📅 Agenda needed` | You | Full prep + agenda draft (EBR, QBR, renewal) |
-| Project | (Agentforce, etc.) | `🔄 Bring updates` | Shared | Project status, partner updates, blockers |
+| Customer | Tier 3-4 (lower priority) | `📅 Agenda needed` | You | Full prep + agenda draft for you to send |
+| Customer | Tier 1-2 (higher priority) | `📋 Prep needed` | Customer | Dashboard, history, actions, attendee intel |
+| Customer | Any tier + strategic signals | `📅 Agenda needed` | You | Full prep + agenda draft (EBR, QBR, renewal) |
+| Project | Cross-functional | `🔄 Bring updates` | Shared | Project status, partner updates, blockers |
 | Internal | 1:1s, team syncs | `👥 Context needed` | N/A | Clay intel, shared accounts, political context |
 
 **Override Signals (upgrade to "📅 Agenda needed"):**
@@ -429,7 +429,7 @@ for meeting in customer_meetings:
 - [ ] **Send agenda: [Account] [meeting type]** `[date]-agenda-001`
   - Account: [Account]
   - Due: [1 day before meeting]
-  - Owner: James
+  - Owner: [Your Name]
   - Source: /week W[NN] planning
   - Meeting: [date time]
   - Draft: _today/90-agenda-needed/[account-lowercase]-[date].md
@@ -452,9 +452,7 @@ Categorize by:
 
 ### Step 7: Check Account Hygiene
 
-**Reference**: `.claude/skills/daily-csm/PORTFOLIO-HEALTH.md`
-**Reference**: `.claude/skills/daily-csm/HEALTH-SIGNALS.md` (ring thresholds)
-**Reference**: `.claude/skills/daily-csm/RENEWAL-COUNTDOWN.md` (renewal phases)
+**Reference**: Health signal thresholds and renewal phases defined below
 
 Follow the PORTFOLIO-HEALTH "Weekly Triage Routine":
 
@@ -467,7 +465,7 @@ Glob: Accounts/*/01-Customer-Information/*-dashboard.md
 | Check | Source | Threshold | Alert Level |
 |-------|--------|-----------|-------------|
 | **Stale Dashboard** | Dashboard "Last Updated" | >60 days | Medium |
-| **No Recent Contact** | Sheet Column F | Varies by ring* | High |
+| **No Recent Contact** | Sheet Column F | Varies by tier* | High |
 | **Upcoming Renewal** | Sheet Column P | <4 months | Critical |
 | **Overdue Actions** | 04-Action-Items/*.md | Any overdue | High |
 | **Open Risks** | Dashboard "Risks" section | Unchecked | High |
@@ -477,16 +475,16 @@ Glob: Accounts/*/01-Customer-Information/*-dashboard.md
 | Check | Source | Condition | Alert Level |
 |-------|--------|-----------|-------------|
 | **Meeting Cadence Gap** | Column X + Calendar | Expected cadence not met | Medium |
-| **Success Plan Missing** | Column Y | Ring ≥ Evolution + No plan | High |
+| **Success Plan Missing** | Column Y | Tier 1-2 + No plan | High |
 | **Success Plan Stale** | Column Z | Exists but >90 days old | Medium |
 
-*Ring-based contact thresholds (from HEALTH-SIGNALS.md):
-| Ring | Contact Threshold | Dashboard Refresh |
+*Tier-based contact thresholds (configurable in workspace.json):
+| Tier | Contact Threshold | Dashboard Refresh |
 |------|-------------------|-------------------|
-| Foundation | 90+ days | Quarterly |
-| Evolution | 45+ days | Monthly |
-| Influence | 30+ days | Monthly |
-| Summit | 14+ days | Bi-weekly |
+| Tier 4 | 90+ days | Quarterly |
+| Tier 3 | 45+ days | Monthly |
+| Tier 2 | 30+ days | Monthly |
+| Tier 1 | 14+ days | Bi-weekly |
 
 **Renewal phase alerts** (from RENEWAL-COUNTDOWN.md):
 
@@ -519,8 +517,7 @@ ls Leadership/06-Professional-Development/01-Weekly-Impact/ | grep -E "$(date -v
 
 ### Step 9: Pre-Populate Weekly Impact Template
 
-**Reference**: `.claude/skills/daily-csm/IMPACT-REPORTING.md` (category definitions)
-**Reference**: `_templates/weekly-impact-template.md` (format)
+**Reference**: `_templates/weekly-impact-template.md` (format and category definitions)
 
 Create `Leadership/06-Professional-Development/01-Weekly-Impact/[YYYY]-W[NN]-impact-capture.md`:
 
@@ -636,7 +633,7 @@ Match tasks to slots based on complexity:
 
 | Task Type | Preferred Time | Reason |
 |-----------|----------------|--------|
-| Strategic thinking, writing | Morning (9-12) | Best focus, James's preference |
+| Strategic thinking, writing | Morning (9-12) | Best focus, [Your Name]'s preference |
 | Customer prep, analysis | Morning | Complex, needs focus |
 | Email catch-up, Slack | Afternoon | Straightforward execution |
 | Dashboard updates | Afternoon | Routine, low cognitive load |
@@ -652,7 +649,7 @@ Create a proposed time-blocked schedule:
 ### Monday
 | Time | Duration | Task | Priority | Type |
 |------|----------|------|----------|------|
-| 9:30-10:30 | 60m | Nielsen docs (overdue) | P2 | Large - Morning |
+| 9:30-10:30 | 60m | Acme Corp docs (overdue) | P2 | Large - Morning |
 | 14:00-14:30 | 30m | Email Joanna re: Compliance | P2 | Medium - Afternoon |
 | 14:30-15:00 | 30m | Dashboard refresh: Crowley | P3 | Medium - Afternoon |
 
@@ -687,9 +684,9 @@ For approved blocks, create calendar events:
 ```bash
 # Event naming convention: [Task Type] [Brief Description]
 # Examples:
-# "Focus: Nielsen Documentation"
+# "Focus: Customer Documentation"
 # "Admin: Dashboard Updates"
-# "Prep: Cox Parse.ly Demo"
+# "Prep: Customer Demo"
 
 python3 .config/google/google_api.py calendar create \
   "[Task Type]: [Description]" \
@@ -713,14 +710,14 @@ Create `_today/week-00-overview.md`:
 
 ## This Week's Meetings
 
-| Day | Time | Account/Meeting | Ring | Prep Status | Meeting Type |
+| Day | Time | Account/Meeting | Tier | Prep Status | Meeting Type |
 |-----|------|-----------------|------|-------------|--------------|
-| Tue | 10:30 AM | Heroku | Influence | 📋 Prep needed | Monthly sync |
-| Tue | 11:30 AM | Hilton | Foundation | 📅 Agenda needed | Contract renewal |
-| Tue | 1:00 PM | Renan 1:1 | Internal | 👥 Context needed | 1:1 |
-| Wed | 10:00 AM | Agentforce | Project | 🔄 Bring updates | Weekly sync |
-| Wed | 12:00 PM | Airbnb | Foundation | 📅 Agenda needed | Strategic check-in |
-| Thu | 9:00 AM | Salesforce DMT | Summit | 📋 Prep needed | Technical call |
+| Tue | 10:30 AM | Acme Corp | Tier 2 | 📋 Prep needed | Monthly sync |
+| Tue | 11:30 AM | Global Inc | Tier 4 | 📅 Agenda needed | Contract renewal |
+| Tue | 1:00 PM | Manager 1:1 | Internal | 👥 Context needed | 1:1 |
+| Wed | 10:00 AM | Project Alpha | Project | 🔄 Bring updates | Weekly sync |
+| Wed | 12:00 PM | Tech Systems | Tier 4 | 📅 Agenda needed | Strategic check-in |
+| Thu | 9:00 AM | Enterprise Co | Tier 1 | 📋 Prep needed | Technical call |
 
 **Prep Status Guide:**
 
@@ -852,14 +849,14 @@ Create additional files in `_today/`:
 
 ### [Account]
 - **Issue**: No contact in [X] days
-- **Ring**: [Ring] (threshold: [X] days)
+- **Tier**: [Tier] (threshold: [X] days)
 - **Action**: Schedule touchpoint this week
 
 ## Healthy Accounts
 
-| Account | Ring | Last Contact | Dashboard Updated |
+| Account | Tier | Last Contact | Dashboard Updated |
 |---------|------|--------------|-------------------|
-| [Account] | Foundation | [Date] | [Date] |
+| [Account] | Tier 4 | [Date] | [Date] |
 ```
 
 **`week-04-focus.md`**:
@@ -924,7 +921,7 @@ fi
 - Overview files → Can be discarded (ephemeral)
 
 **Inbox processing determines canonical location based on:**
-- File naming convention (e.g., `customer-nielsen-prep.md` → Nielsen account)
+- File naming convention (e.g., `customer-acme-corp-prep.md` → Acme Corp account)
 - Frontmatter if present
 - Content analysis
 
@@ -934,7 +931,7 @@ fi
 /today archives → _today/archive/YYYY-MM-DD/
 /week references → archive for context
 /week moves → _inbox/daily-archive-YYYY-MM-DD/
-inbox-processing → canonical locations in Accounts/, Projects/
+inbox → canonical locations in Accounts/, Projects/
 ```
 
 ### Step 14: Monday Coordination
@@ -981,8 +978,8 @@ Leadership/06-Professional-Development/01-Weekly-Impact/
 - Google Sheets (read)
 
 **Skills/Workflows:**
-- daily-csm/PORTFOLIO-HEALTH.md - Hygiene checking
-- daily-csm/IMPACT-REPORTING.md - Impact template
+- Hygiene checking logic defined in Step 7
+- Impact template format defined in Step 9
 
 **Templates:**
 - _templates/weekly-impact-template.md

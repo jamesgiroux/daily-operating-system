@@ -80,7 +80,7 @@
   },
   "features": {
     "healthStatus": true,
-    "ringBadges": true,
+    "tierBadges": true,
     "multiBusinessUnit": true,
     "weeklySection": true
   },
@@ -90,11 +90,11 @@
       "attention": ["Attention"],
       "critical": ["Critical"]
     },
-    "rings": [
-      { "tag": "summit", "label": "Summit", "color": "#4CAF50" },
-      { "tag": "influence", "label": "Influence", "color": "#2196F3" },
-      { "tag": "evolution", "label": "Evolution", "color": "#FF9800" },
-      { "tag": "foundation", "label": "Foundation", "color": "#9E9E9E" }
+    "tiers": [
+      { "id": "tier-1", "label": "Tier 1", "color": "#4CAF50" },
+      { "id": "tier-2", "label": "Tier 2", "color": "#2196F3" },
+      { "id": "tier-3", "label": "Tier 3", "color": "#FF9800" },
+      { "id": "tier-4", "label": "Tier 4", "color": "#9E9E9E" }
     ]
   }
 }

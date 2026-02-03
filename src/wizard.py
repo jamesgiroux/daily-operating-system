@@ -758,7 +758,7 @@ Skills are specialized workflows that Claude Code can execute.
 Commands are quick-access shortcuts for common operations.
 
 Available skills:
-  - inbox-processing: Three-phase document flow
+  - inbox: Three-phase document flow
   - strategy-consulting: McKinsey-style analysis
   - editorial: Writing review standards
 
