@@ -10,6 +10,9 @@ Usage:
     dailyos repair           Repair broken installation
     dailyos eject <name>     Eject skill/command for customization
     dailyos reset <name>     Reset ejected skill to symlink
+    dailyos start            Start the web UI server
+    dailyos stop             Stop the web UI server
+    dailyos ui               Show web UI status
 """
 
 import argparse
@@ -493,6 +496,83 @@ def cmd_reset(args) -> int:
     return 0
 
 
+def cmd_start(args) -> int:
+    """Start the DailyOS web interface."""
+    import server
+
+    port = args.port
+    open_browser = not args.no_browser
+    workspace = Path(args.workspace).resolve() if args.workspace != '.' else None
+
+    print(f"\n{bold('DailyOS Web UI')}\n")
+
+    # Find _ui directory
+    ui_dir = server.find_ui_directory(workspace)
+
+    if not ui_dir:
+        print(f"  {error('No _ui directory found.')}")
+        print(f"  Run from a DailyOS workspace or use --workspace flag.")
+        return 1
+
+    print(f"  UI directory: {dim(str(ui_dir))}")
+
+    # Start the server
+    ok, msg = server.start_server(ui_dir, port=port, open_browser=open_browser)
+
+    if ok:
+        print(f"  {success(msg)}")
+        return 0
+    else:
+        print(f"  {error(msg)}")
+        return 1
+
+
+def cmd_stop(args) -> int:
+    """Stop the DailyOS web interface."""
+    import server
+
+    port = args.port
+
+    print(f"\n{bold('DailyOS Web UI')}\n")
+
+    ok, msg = server.stop_server(port=port)
+
+    if ok:
+        print(f"  {success(msg)}")
+        return 0
+    else:
+        print(f"  {error(msg)}")
+        return 1
+
+
+def cmd_ui(args) -> int:
+    """Show web UI status."""
+    import server
+
+    port = args.port
+
+    print(f"\n{bold('DailyOS Web UI Status')}\n")
+
+    status = server.get_server_status(port=port)
+
+    if status['responding']:
+        print(f"  Status:  {success('Running')}")
+        print(f"  URL:     {info(status['url'])}")
+        print(f"  PID:     {status['pid']}")
+    elif status['running']:
+        print(f"  Status:  {warning('Port in use but not responding')}")
+        print(f"  Port:    {port}")
+        print(f"  PID:     {status['pid']}")
+        print(f"\n  Try: dailyos stop && dailyos start")
+    else:
+        print(f"  Status:  {dim('Not running')}")
+        print(f"  Port:    {port}")
+        print(f"\n  Run: dailyos start")
+
+    print()
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='DailyOS workspace management',
@@ -507,6 +587,11 @@ Examples:
     dailyos repair               Fix broken symlinks
     dailyos eject today          Customize the /today command
     dailyos reset today          Restore /today to core version
+    dailyos start                Start web UI (auto-detects workspace)
+    dailyos start -p 8080        Start on a different port
+    dailyos start --no-browser   Start without opening browser
+    dailyos stop                 Stop the web UI server
+    dailyos ui                   Show web UI status
         """
     )
     parser.add_argument(
@@ -541,6 +626,23 @@ Examples:
     reset_parser = subparsers.add_parser('reset', help='Reset ejected skill to symlink')
     reset_parser.add_argument('name', help='Skill or command name to reset')
 
+    # Start command
+    start_parser = subparsers.add_parser('start', help='Start the web UI server')
+    start_parser.add_argument('-p', '--port', type=int, default=5050,
+                              help='Port to run on (default: 5050)')
+    start_parser.add_argument('--no-browser', action='store_true',
+                              help="Don't open browser automatically")
+
+    # Stop command
+    stop_parser = subparsers.add_parser('stop', help='Stop the web UI server')
+    stop_parser.add_argument('-p', '--port', type=int, default=5050,
+                             help='Port to stop (default: 5050)')
+
+    # UI status command
+    ui_parser = subparsers.add_parser('ui', help='Show web UI status')
+    ui_parser.add_argument('-p', '--port', type=int, default=5050,
+                           help='Port to check (default: 5050)')
+
     args = parser.parse_args()
 
     commands = {
@@ -551,6 +653,9 @@ Examples:
         'repair': cmd_repair,
         'eject': cmd_eject,
         'reset': cmd_reset,
+        'start': cmd_start,
+        'stop': cmd_stop,
+        'ui': cmd_ui,
     }
 
     if args.command in commands:
