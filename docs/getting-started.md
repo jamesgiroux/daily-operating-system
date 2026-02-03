@@ -528,7 +528,7 @@ Want to understand the architecture and internals? Check out the [technical guid
 - [Daily Workflow](guides/daily-workflow.md) — Deep dive on /today, /wrap, /email-scan
 - [Weekly Workflow](guides/weekly-workflow.md) — /week command and impact capture
 - [Monthly/Quarterly](guides/monthly-quarterly-workflow.md) — Reports and review preparation
-- [Inbox Processing](guides/inbox-processing.md) — Document processing workflow (/inbox command)
+- [Inbox Processing](guides/inbox.md) — Document processing workflow (/inbox command)
 - [Tools Reference](guides/tools-reference.md) — All Python automation tools
 
 ---

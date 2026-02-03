@@ -379,7 +379,7 @@ Running a command twice should be safe:
 
 - [Index](index.md) - Overview of all systems
 - [Daily Workflow](daily-workflow.md) - /today, /wrap, /email-scan
-- [Inbox Processing](inbox-processing.md) - Three-phase document workflow
+- [Inbox Processing](inbox.md) - Three-phase document workflow
 - [Tools Reference](tools-reference.md) - All Python tools
 
 ---

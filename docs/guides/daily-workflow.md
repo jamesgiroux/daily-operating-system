@@ -474,7 +474,7 @@ python3 _tools/deliver_wrap.py [options]
 
 - [Index](index.md) - All systems overview
 - [Weekly Workflow](weekly-workflow.md) - /week command
-- [Inbox Processing](inbox-processing.md) - Document workflow
+- [Inbox Processing](inbox.md) - Document workflow
 - [Three-Phase Pattern](three-phase-pattern.md) - How it all fits together
 
 ---
