@@ -406,6 +406,25 @@ def write_email_summary_file(directive: Dict) -> Path:
 """
 
     output_path = TODAY_DIR / "83-email-summary.md"
+
+    # Check if file already exists with AI-enriched content (from Phase 2)
+    # If it was modified after the directive was created, preserve it
+    if output_path.exists():
+        directive_path = TODAY_DIR / ".today-directive.json"
+        if directive_path.exists():
+            directive_mtime = directive_path.stat().st_mtime
+            file_mtime = output_path.stat().st_mtime
+            if file_mtime > directive_mtime:
+                # File was modified after directive was created (AI enriched it)
+                # Don't overwrite
+                return output_path
+
+        # Also check for markers indicating AI enrichment
+        existing_content = output_path.read_text()
+        if "[AI to classify" not in existing_content and "[AI to extract" not in existing_content:
+            # File has actual classifications, not placeholders - preserve it
+            return output_path
+
     output_path.write_text(content)
 
     return output_path
