@@ -20,9 +20,10 @@ export PATH="$HOME/.dailyos:$PATH"
 
 | Command | Purpose |
 |---------|---------|
-| `dailyos start` | Start the web UI server |
+| `dailyos start` | Start the web UI server (auto-detects workspace) |
 | `dailyos stop` | Stop the web UI server |
 | `dailyos ui` | Show web UI status |
+| `dailyos config` | Show/manage configuration |
 | `dailyos version` | Show version info |
 | `dailyos status` | Check for updates |
 | `dailyos update` | Update to latest version |
@@ -43,18 +44,31 @@ Start the web UI dashboard server.
 dailyos start                    # Auto-detects workspace, opens browser
 dailyos start --no-browser       # Start without opening browser
 dailyos start -p 8080            # Use a different port
+dailyos start --set-default      # Start and save as default workspace
 dailyos -w ~/Work start          # Specify workspace explicitly
 ```
 
 **Options:**
 - `-p, --port PORT` — Port to run on (default: 5050)
 - `--no-browser` — Don't open browser automatically
+- `--set-default` — Save the workspace as your default
+
+**Smart Workspace Detection:**
+
+The CLI finds your workspace using this priority:
+1. **Explicit flag**: `-w ~/path/to/workspace`
+2. **Current directory**: If it has `.dailyos-version`
+3. **Saved default**: From `~/.dailyos/config.json`
+4. **Auto-scan**: Searches `~/Documents`, `~/workspace`, `~/projects`, `~/dev`
+
+When auto-detected, you'll be prompted to save as default.
 
 **Behavior:**
-- Auto-detects workspace from current directory or uses `~/.dailyos/_ui`
+- Works from any directory (no need to `cd` first)
 - Auto-installs npm dependencies if `node_modules/` is missing
 - If server is already running, opens browser to existing instance
 - Kills zombie Node processes if port is stuck
+- Interactive picker if multiple workspaces found
 
 ### `dailyos stop`
 
@@ -189,7 +203,7 @@ dailyos eject inbox   # Customize the inbox skill
 
 **To see what can be ejected:**
 - Commands: `today`, `week`, `wrap`, `month`, `quarter`, `email-scan`
-- Skills: `inbox`, `daily-csm`, `vip-editorial`, `strategy-consulting`
+- Skills: `inbox`, `daily-csm`, `editorial`, `strategy-consulting`
 
 ### `dailyos reset <name>`
 
@@ -200,6 +214,68 @@ dailyos reset today              # Restore /today to core version
 ```
 
 **Warning:** This deletes your customizations! A backup is created with `.backup` extension.
+
+---
+
+## Configuration
+
+### `dailyos config`
+
+Show current configuration.
+
+```bash
+dailyos config
+```
+
+**Output:**
+```
+DailyOS Configuration
+
+  Default workspace: ~/Documents/VIP
+
+  Scan locations:
+    - ~/Documents
+
+  Scan depth: 2
+
+  Known workspaces:
+    - ~/Documents/VIP (today)
+
+  Preferences:
+    Auto-save default: yes
+    Prompt on multiple: yes
+```
+
+### `dailyos config workspace [path]`
+
+Get or set the default workspace.
+
+```bash
+dailyos config workspace                # Show current default
+dailyos config workspace ~/Documents/VIP  # Set new default
+```
+
+When set, `dailyos start` will use this workspace automatically from any directory.
+
+### `dailyos config scan`
+
+Rescan for workspaces in configured locations.
+
+```bash
+dailyos config scan
+```
+
+Searches `~/Documents`, `~/workspace`, `~/projects`, and `~/dev` for directories containing `.dailyos-version`.
+
+### `dailyos config reset`
+
+Reset configuration to defaults.
+
+```bash
+dailyos config reset
+```
+
+**Warning:** This clears your default workspace and known workspaces list.
 
 ---
 
@@ -276,10 +352,21 @@ The CLI expects:
 - **Node.js 18+** — For the web UI server (optional)
 - **Core installation** — `~/.dailyos/` must exist
 
+### Workspace Detection Priority
+
 The CLI automatically finds your workspace by:
 1. Using `-w/--workspace` if specified
-2. Using current working directory
-3. Falling back to core installation
+2. Checking current working directory for `.dailyos-version`
+3. Using saved default from `~/.dailyos/config.json`
+4. Auto-scanning `~/Documents`, `~/workspace`, `~/projects`, `~/dev`
+
+### Configuration File
+
+User preferences are stored in `~/.dailyos/config.json`:
+- Default workspace path
+- Known workspaces with last-used timestamps
+- Scan locations and depth
+- Auto-save and prompt preferences
 
 ---
 
