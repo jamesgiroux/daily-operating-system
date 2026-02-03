@@ -316,26 +316,58 @@ productivity/
 
 ## After Setup: First Steps
 
-### 1. Try `/today`
+### 1. Start the Dashboard (Optional)
+If you installed the `dailyos` CLI:
+```bash
+dailyos start                    # Opens web dashboard in browser
+```
+
+Or manually:
+```bash
+cd ~/Documents/productivity/_ui
+npm start
+# Then open http://localhost:5050
+```
+
+### 2. Try `/today`
 ```
 cd ~/Documents/productivity  # or wherever you set up
 claude
 /today
 ```
 
-### 2. Add a Test Transcript
+### 3. Add a Test Transcript
 Save a meeting transcript to `_inbox/`:
 ```
 _inbox/2026-01-15-test-meeting-transcript.md
 ```
 
-### 3. Process It
+### 4. Process It
 ```
 /inbox-processing
 ```
 
-### 4. See the Results
+### 5. See the Results
 Check the organized output in your folders!
+
+---
+
+## The DailyOS CLI
+
+If you installed the `dailyos` command during setup, you have access to these utilities:
+
+| Command | What It Does |
+|---------|--------------|
+| `dailyos start` | Start the web dashboard |
+| `dailyos stop` | Stop the web dashboard |
+| `dailyos ui` | Check if dashboard is running |
+| `dailyos version` | Show version info |
+| `dailyos status` | Check for updates |
+| `dailyos update` | Update to latest version |
+| `dailyos doctor` | Check workspace health |
+| `dailyos repair` | Fix broken installation |
+
+See [cli-reference.md](cli-reference.md) for full documentation.
 
 ---
 

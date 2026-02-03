@@ -11,6 +11,30 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.5.0] - 2026-02-02
+
+### Added
+
+- **Server management commands** for the `dailyos` CLI
+  - `dailyos start` — Start the web UI server (auto-detects workspace, auto-installs dependencies)
+  - `dailyos stop` — Stop the web UI server
+  - `dailyos ui` — Show web UI status (running/stopped, URL, PID)
+  - Options: `--port/-p` for custom port, `--no-browser` to skip browser open
+  - Graceful handling: "already running" detection, zombie process cleanup
+  - Works from any directory via workspace auto-detection
+
+- **CLI documentation** (`docs/cli-reference.md`)
+  - Complete reference for all `dailyos` commands
+  - Examples for common workflows
+
+### Fixed
+
+- **Symlink resolution in `dailyos` bash wrapper**
+  - Fixed bug where SCRIPT_DIR resolved to `/usr/local/bin/` when invoked via symlink
+  - Now correctly resolves to actual script location
+
+---
+
 ## [0.4.1] - 2026-02-02
 
 ### Fixed
@@ -256,7 +280,10 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.0...v0.3.1
