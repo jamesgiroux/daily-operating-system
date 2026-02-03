@@ -139,7 +139,6 @@ The setup wizard can install a browser-based dashboard for visual navigation of 
 - **Markdown rendering** — View your documents formatted in the browser
 - **Search** — Find content across all your documents
 - **Health indicators** — See account status at a glance (Customer Success roles)
-- **Tier badges** — Visual account lifecycle positioning (configurable tier names and colors)
 
 ### Requirements
 
@@ -169,28 +168,10 @@ The dashboard reads from `_ui/config/config.json`, which is auto-generated based
 
 - **Sections** — Which folders appear in the sidebar
 - **Subsections** — Folder icons and labels
-- **Features** — Enable/disable health status, tier badges, etc.
+- **Features** — Enable/disable specific dashboard features
 - **Today links** — Quick access to daily files
 
 Role-specific templates are in `_ui/config/roles/`.
-
-### Customizing Account Tiers
-
-For Customer Success roles, customize lifecycle tiers in `_config/workspace.json`:
-
-```json
-{
-  "lifecycle": {
-    "enabled": true,
-    "tiers": [
-      { "id": "strategic", "label": "Strategic", "color": "#4CAF50", "contactThresholdDays": 14 },
-      { "id": "growth", "label": "Growth", "color": "#2196F3", "contactThresholdDays": 30 },
-      { "id": "maintain", "label": "Maintain", "color": "#FF9800", "contactThresholdDays": 45 },
-      { "id": "standard", "label": "Standard", "color": "#9E9E9E", "contactThresholdDays": 90 }
-    ]
-  }
-}
-```
 
 ## DailyOS CLI
 
