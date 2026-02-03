@@ -1,0 +1,120 @@
+/**
+ * DailyOS Docs - Shared Styles
+ * Navigation and common components used across all pages
+ */
+
+/* ===========================================
+   Navigation Component
+   =========================================== */
+
+.nav {
+    position: fixed;
+    bottom: 40px;
+    right: 40px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 100;
+    background: var(--white);
+    padding: 12px 20px;
+    border-radius: 100px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+}
+
+.nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: none;
+    background: transparent;
+    color: var(--charcoal);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.nav-btn:hover {
+    background: var(--cream);
+}
+
+.nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.nav-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.nav-progress {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    min-width: 60px;
+    text-align: center;
+}
+
+/* ===========================================
+   Mobile Navigation - Dynamic Island Style
+   =========================================== */
+
+@media (max-width: 768px) {
+    .nav {
+        /* Center horizontally, auto-width based on content */
+        bottom: 24px;
+        right: auto;
+        left: 50%;
+        transform: translateX(-50%);
+
+        /* Pill styling */
+        padding: 8px 16px;
+        gap: 12px;
+        background: var(--white);
+        box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+        border-radius: 100px;
+
+        /* Prevent full-width stretch */
+        width: auto;
+        max-width: calc(100% - 48px);
+    }
+
+    .nav-btn {
+        width: 40px;
+        height: 40px;
+        color: var(--charcoal);
+    }
+
+    .nav-progress {
+        color: var(--text-secondary);
+        min-width: 50px;
+        font-size: 0.8rem;
+    }
+}
+
+/* Dark theme nav variant (for intro.html dark slides) */
+.nav.nav-dark,
+.slide.title-slide ~ .nav {
+    /* Override handled by page-specific styles if needed */
+}
+
+@media (max-width: 768px) {
+    .nav.nav-dark {
+        background: rgba(26, 31, 36, 0.95);
+        color: var(--cream);
+    }
+
+    .nav.nav-dark .nav-btn {
+        color: var(--cream);
+    }
+
+    .nav.nav-dark .nav-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .nav.nav-dark .nav-progress {
+        color: rgba(245, 242, 239, 0.7);
+    }
+}
