@@ -187,26 +187,78 @@ cleanup() {
 
 trap cleanup SIGINT SIGTERM
 
+# Find an available port starting from 5050
+find_available_port() {
+    local port=$1
+    local max_port=$((port + 10))
+
+    while [ $port -lt $max_port ]; do
+        # Check if port is in use
+        if ! lsof -i :$port >/dev/null 2>&1; then
+            echo $port
+            return 0
+        fi
+
+        # Port is in use - check if it's a DailyOS server
+        if curl -s "http://localhost:$port/api/config" >/dev/null 2>&1; then
+            # It's our server, suggest using dailyos commands
+            if [ $port -eq 5050 ]; then
+                echo ""
+                echo -e "${YELLOW}DailyOS is already running on port $port${NC}"
+                echo ""
+                echo "Options:"
+                echo "  1. Use the existing server: open http://localhost:$port"
+                echo "  2. Stop it first: dailyos stop"
+                echo "  3. Continue setup on a different port"
+                echo ""
+                echo -n "Continue on a different port? (y/n): "
+                read -r continue_choice
+                if [[ ! "$continue_choice" =~ ^[Yy]$ ]]; then
+                    echo ""
+                    echo "Opening existing server..."
+                    if command -v open &> /dev/null; then
+                        open "http://localhost:$port"
+                    elif command -v xdg-open &> /dev/null; then
+                        xdg-open "http://localhost:$port"
+                    fi
+                    exit 0
+                fi
+            fi
+        fi
+
+        port=$((port + 1))
+    done
+
+    echo ""
+    echo -e "${RED}Could not find an available port (tried 5050-$max_port)${NC}"
+    exit 1
+}
+
+# Find available port
+PORT=$(find_available_port 5050)
+echo ""
+echo -e "${GREEN}✓${NC} Using port $PORT"
+
 # Open browser after a short delay (in background)
 (
     sleep 2
     if command -v open &> /dev/null; then
-        open "http://localhost:5050"
+        open "http://localhost:$PORT"
     elif command -v xdg-open &> /dev/null; then
-        xdg-open "http://localhost:5050"
+        xdg-open "http://localhost:$PORT"
     fi
 ) &
 
 echo ""
 echo -e "${BLUE}Starting setup wizard...${NC}"
 echo ""
-echo "The wizard will open in your browser at: http://localhost:5050"
+echo "The wizard will open in your browser at: http://localhost:$PORT"
 echo ""
 echo -e "${YELLOW}Press Ctrl+C to stop the server when done.${NC}"
 echo ""
 
-# Start the server
-npm start &
+# Start the server on the available port
+PORT=$PORT npm start &
 SERVER_PID=$!
 
 # Wait for server process
