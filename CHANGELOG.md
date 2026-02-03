@@ -11,6 +11,26 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.6.1] - 2026-02-03
+
+### Added
+
+- **Technical documentation guides** (`docs/guides/`)
+  - `index.md` — Navigation hub for all technical documentation
+  - `skill-agent-tool-layers.md` — Three-layer architecture explanation with Mermaid diagrams
+  - `three-phase-pattern.md` — Prepare → enrich → deliver pattern documentation
+  - `daily-workflow.md` — Deep dive on /today, /wrap, /email-scan commands
+  - `weekly-workflow.md` — /week command and impact capture workflow
+  - `monthly-quarterly-workflow.md` — /month and /quarter reporting workflows
+  - `inbox.md` — Document processing system (/inbox command)
+  - `tools-reference.md` — Python automation tools reference
+
+- **Cross-references in existing docs**
+  - `getting-started.md` — Added "Deep Dive: How It Works" section linking to guides
+  - `cli-reference.md` — Added "Related Documentation" section
+
+---
+
 ## [0.6.0] - 2026-02-03
 
 ### Added
@@ -387,7 +407,9 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.3...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.3...v0.6.0
 [0.5.3]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...v0.5.1

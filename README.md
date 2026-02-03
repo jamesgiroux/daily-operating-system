@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.6.0)**
+> **⚠️ Pre-Release Software (v0.6.1)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
@@ -230,6 +230,20 @@ dailyos config reset                    # Reset to defaults
 ```
 
 See [docs/cli-reference.md](docs/cli-reference.md) for full documentation.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [Getting Started](docs/getting-started.md) | Setup guide and first steps |
+| [CLI Reference](docs/cli-reference.md) | `dailyos` command documentation |
+| **Technical Guides** | |
+| [How It Works](docs/guides/index.md) | Architecture overview and navigation |
+| [Daily Workflow](docs/guides/daily-workflow.md) | /today, /wrap, /email-scan deep dive |
+| [Weekly Workflow](docs/guides/weekly-workflow.md) | /week and impact capture |
+| [Inbox Processing](docs/guides/inbox.md) | Document processing system |
+| [Three-Phase Pattern](docs/guides/three-phase-pattern.md) | Core architectural pattern |
+| [Tools Reference](docs/guides/tools-reference.md) | Python automation tools |
 
 ## Directory Structure
 
