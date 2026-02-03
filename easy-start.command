@@ -217,6 +217,10 @@ if lsof -i :$PORT >/dev/null 2>&1; then
             read -n 1
             exit 0
         fi
+    else
+        # Port is in use by something other than DailyOS
+        echo ""
+        echo -e "${YELLOW}Port $PORT is in use by another application${NC}"
     fi
 
     # Find an available port
