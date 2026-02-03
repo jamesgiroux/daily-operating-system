@@ -148,7 +148,11 @@ fi
 if [ ! -f "/usr/local/bin/dailyos" ] && [ -f "$CORE_DIR/dailyos" ]; then
     echo ""
     echo -e "${BLUE}Would you like to install the 'dailyos' command? (y/n)${NC}"
-    echo "This allows running 'dailyos version', 'dailyos doctor', etc."
+    echo "This allows running commands like:"
+    echo "  dailyos start    - Start the web dashboard"
+    echo "  dailyos stop     - Stop the web dashboard"
+    echo "  dailyos doctor   - Check workspace health"
+    echo "  dailyos update   - Update to latest version"
     read -r install_cli
     if [[ "$install_cli" =~ ^[Yy]$ ]]; then
         if sudo ln -sf "$CORE_DIR/dailyos" /usr/local/bin/dailyos 2>/dev/null; then
