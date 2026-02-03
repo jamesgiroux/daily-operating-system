@@ -4,10 +4,12 @@ The `dailyos` command-line tool provides workspace management, server control, a
 
 ## Installation
 
-The CLI is installed automatically when you run `easy-start.command` or can be installed manually:
+**Automatic (recommended):** The CLI is installed automatically when you run `easy-start.command`. No extra steps needed.
+
+**Manual installation** (if you used `advanced-start.py` or skipped the prompt):
 
 ```bash
-# If ~/.dailyos exists
+# Create symlink to /usr/local/bin
 sudo ln -sf ~/.dailyos/dailyos /usr/local/bin/dailyos
 
 # Or add to PATH in your shell profile
@@ -177,7 +179,7 @@ Eject a skill or command for customization.
 
 ```bash
 dailyos eject today              # Customize the /today command
-dailyos eject inbox-processing   # Customize the inbox skill
+dailyos eject inbox   # Customize the inbox skill
 ```
 
 **What happens:**
@@ -187,7 +189,7 @@ dailyos eject inbox-processing   # Customize the inbox skill
 
 **To see what can be ejected:**
 - Commands: `today`, `week`, `wrap`, `month`, `quarter`, `email-scan`
-- Skills: `inbox-processing`, `daily-csm`, `vip-editorial`, `strategy-consulting`
+- Skills: `inbox`, `daily-csm`, `vip-editorial`, `strategy-consulting`
 
 ### `dailyos reset <name>`
 
