@@ -20,7 +20,7 @@ flowchart TB
     subgraph Skills["Skills Layer"]
         direction TB
         SKILL1[daily-ops]
-        SKILL2[inbox-processing]
+        SKILL2[inbox]
         SKILL3[strategy-consulting]
         SKILL4[editorial]
     end
@@ -96,7 +96,7 @@ Skills are expertise modules that Claude follows directly. Each skill contains:
 | Skill | Purpose | Key Components |
 |-------|---------|----------------|
 | **daily-ops** | Day-to-day operations | MEETING-PREP, ACTION-TRACKING, IMPACT-REPORTING |
-| **inbox-processing** | Document processing workflow | PHASE1-PREPARATION, PHASE2-ENRICHMENT, PHASE3-DELIVERY |
+| **inbox** | Document processing workflow | PHASE1-PREPARATION, PHASE2-ENRICHMENT, PHASE3-DELIVERY |
 | **strategy-consulting** | McKinsey-style analysis | FRAMEWORKS (SCQA, MECE), WORKFLOW, QUALITY-GATES |
 | **editorial** | Writing standards | VOICE-TONE, GRAMMAR-MECHANICS, TERMINOLOGY |
 
@@ -118,7 +118,7 @@ Follows workflow: Load context -> Check activity -> Generate prep
 Skills are invoked:
 - **Automatically**: When user request matches skill triggers
 - **Explicitly**: Via slash commands (e.g., `/editorial:full-review`)
-- **By other skills**: Cross-referencing (e.g., inbox-processing references daily-ops)
+- **By other skills**: Cross-referencing (e.g., inbox references daily-ops)
 
 ---
 
@@ -281,7 +281,7 @@ flowchart LR
 |-------|-------------|------|
 | daily-ops | agenda-generator | Look-ahead agenda creation |
 | strategy-consulting | engagement-manager, framework-strategist, red-team, executive-storyteller | Full analysis workflow |
-| inbox-processing | (none directly - uses skill instructions) | Document enrichment |
+| inbox | (none directly - uses skill instructions) | Document enrichment |
 
 ### Data Flow
 
