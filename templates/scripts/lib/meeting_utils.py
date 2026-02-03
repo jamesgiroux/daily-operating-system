@@ -17,8 +17,17 @@ BU_CACHE_FILE = VIP_ROOT / "_reference/bu-classification-cache.json"
 GOOGLE_API_PATH = VIP_ROOT / ".config/google/google_api.py"
 WORKSPACE_CONFIG_PATH = VIP_ROOT / "_config/workspace.json"
 
-# Sheet ID for account data
-ACCOUNT_SHEET_ID = "1edLlG0rkPj9QRT5mWQmCh_L-qy4We9fBLJ4haMZ_14g"
+# Sheet ID for account data (loaded from config)
+def get_account_sheet_id() -> Optional[str]:
+    """Get account sheet ID from workspace config."""
+    if WORKSPACE_CONFIG_PATH.exists():
+        try:
+            with open(WORKSPACE_CONFIG_PATH) as f:
+                config = json.load(f)
+            return config.get("accounts", {}).get("sheetId")
+        except (json.JSONDecodeError, IOError):
+            pass
+    return None
 
 
 def get_internal_domains() -> set:
@@ -49,38 +58,44 @@ def _get_internal_domains() -> set:
     return _internal_domains_cache
 
 # Known project configurations
+# Add your cross-company projects here with their identifying keywords and partner domains
 KNOWN_PROJECTS = {
-    'agentforce': {
-        'title_keywords': ['agentforce', 'vip <> salesforce', 'salesforce connector'],
-        'partner_domains': {'salesforce.com', 'rtcamp.com'},
-        'location': 'Projects/Agentforce'
-    }
+    # Example:
+    # 'project-name': {
+    #     'title_keywords': ['project name', 'related keyword'],
+    #     'partner_domains': {'partner.com'},
+    #     'location': 'Projects/Project-Name'
+    # }
 }
 
-# Multi-BU parent companies
-MULTI_BU_DOMAINS = {
-    'salesforce.com': {
-        'parent': 'Salesforce',
-        'bus': ['Digital-Marketing-Technology', 'AppExchange', 'Availability-Infrastructure-Engineering',
-                'Engineering', 'Office-of-Accessibility', 'Q-Branch-Team', 'Talent-Experience', 'Ventures'],
-        'default': 'Digital-Marketing-Technology'
-    },
-    'hilton.com': {
-        'parent': 'Hilton',
-        'bus': ['Domestic', 'B2B-Engagement', 'Careers', 'Corporate', 'Newsroom'],
-        'default': 'Domestic'
-    },
-    'coxautoinc.com': {
-        'parent': 'Cox',
-        'bus': ['Corporate-Services-B2B', 'Consumer-Brands', 'Diversification', 'Enterprises'],
-        'default': 'Corporate-Services-B2B'
-    },
-    'intuit.com': {
-        'parent': 'Intuit',
-        'bus': ['Credit-Karma', 'Intuit'],
-        'default': 'Credit-Karma'
-    }
-}
+# Multi-BU parent companies (loaded from config)
+def load_multi_bu_config() -> Dict[str, Any]:
+    """Load multi-BU configuration from workspace config."""
+    if WORKSPACE_CONFIG_PATH.exists():
+        try:
+            with open(WORKSPACE_CONFIG_PATH) as f:
+                config = json.load(f)
+            parents = config.get("accounts", {}).get("multiBuParents", [])
+            return {p['domain']: p for p in parents if 'domain' in p}
+        except (json.JSONDecodeError, IOError, KeyError):
+            pass
+    return {}
+
+
+# Lazy-loaded multi-BU domains cache
+_multi_bu_domains_cache = None
+
+
+def _get_multi_bu_domains() -> Dict[str, Any]:
+    """Get multi-BU domains, caching the result."""
+    global _multi_bu_domains_cache
+    if _multi_bu_domains_cache is None:
+        _multi_bu_domains_cache = load_multi_bu_config()
+    return _multi_bu_domains_cache
+
+
+# For backward compatibility - now calls the function
+MULTI_BU_DOMAINS = property(lambda self: _get_multi_bu_domains())
 
 
 def load_domain_mapping() -> Dict[str, str]:
@@ -164,9 +179,14 @@ def fetch_account_data() -> Optional[List[List[str]]]:
     Returns:
         Sheet data as list of rows, or None if failed
     """
+    sheet_id = get_account_sheet_id()
+    if not sheet_id:
+        print("Warning: No account sheet ID configured in workspace.json", file=sys.stderr)
+        return None
+
     try:
         result = subprocess.run(
-            ["python3", str(GOOGLE_API_PATH), "sheets", "get", ACCOUNT_SHEET_ID, "A1:AB50"],
+            ["python3", str(GOOGLE_API_PATH), "sheets", "get", sheet_id, "A1:AB50"],
             capture_output=True,
             text=True,
             timeout=30
@@ -205,10 +225,10 @@ def build_account_lookup(sheet_data: List[List[str]]) -> Dict[str, Dict[str, Any
     lookup = {}
     headers = sheet_data[0] if sheet_data else []
 
-    # Column mappings (0-indexed)
+    # Column mappings (0-indexed) - can be overridden by workspace config
     col_map = {
         'account': 0,      # A
-        'ring': 3,         # D
+        'tier': 3,         # D (formerly 'ring')
         'last_engagement': 5,  # F
         'arr': 8,          # I
         'renewal': 15,     # P
@@ -217,6 +237,16 @@ def build_account_lookup(sheet_data: List[List[str]]) -> Dict[str, Dict[str, Any
         'success_plan_updated': 25,  # Z
         'email_domain': 27,  # AB
     }
+
+    # Allow workspace config to override column mappings
+    if WORKSPACE_CONFIG_PATH.exists():
+        try:
+            with open(WORKSPACE_CONFIG_PATH) as f:
+                config = json.load(f)
+            custom_cols = config.get("accounts", {}).get("columnMappings", {})
+            col_map.update(custom_cols)
+        except (json.JSONDecodeError, IOError):
+            pass
 
     for row in sheet_data[1:]:
         if not row:
@@ -228,7 +258,7 @@ def build_account_lookup(sheet_data: List[List[str]]) -> Dict[str, Dict[str, Any
 
         lookup[account] = {
             'account': account,
-            'ring': row[col_map['ring']] if len(row) > col_map['ring'] else None,
+            'tier': row[col_map['tier']] if len(row) > col_map['tier'] else None,
             'last_engagement': row[col_map['last_engagement']] if len(row) > col_map['last_engagement'] else None,
             'arr': row[col_map['arr']] if len(row) > col_map['arr'] else None,
             'renewal': row[col_map['renewal']] if len(row) > col_map['renewal'] else None,
@@ -370,8 +400,9 @@ def classify_meeting(event: Dict[str, Any], domain_mapping: Dict[str, str] = Non
 
     for domain in external_domains:
         # Check multi-BU domains first
-        if domain in MULTI_BU_DOMAINS:
-            multi_bu = MULTI_BU_DOMAINS[domain]
+        multi_bu_domains = _get_multi_bu_domains()
+        if domain in multi_bu_domains:
+            multi_bu = multi_bu_domains[domain]
 
             # Try to resolve from cache
             resolved_bu = resolve_multi_bu(domain, attendees, title, bu_cache)
@@ -470,8 +501,8 @@ def determine_prep_status(title: str, account: str = None) -> Tuple[str, Optiona
     if any(signal in title_lower for signal in strategic_signals):
         return '📅 Agenda needed', 'you'
 
-    # Default: assume customer drives unless Foundation ring
-    # (Ring lookup would require account data - simplified here)
+    # Default: assume customer drives unless high-tier account
+    # (Tier lookup would require account data - simplified here)
     return '📋 Prep needed', 'customer'
 
 

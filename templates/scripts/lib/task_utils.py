@@ -127,7 +127,7 @@ def parse_task_metadata(task: Dict, line: str) -> None:
 
     Args:
         task: Task dictionary to update
-        line: Metadata line (e.g., "Account: Nielsen")
+        line: Metadata line (e.g., "Account: Acme Corp")
     """
     if ':' not in line:
         return

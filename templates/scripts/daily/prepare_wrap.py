@@ -250,9 +250,9 @@ def get_tasks_needing_update(today: datetime) -> List[Dict]:
     task_data = load_master_task_list()
     all_tasks = task_data.get('tasks', [])
 
-    # Filter to James's incomplete tasks
-    james_tasks = filter_tasks_by_owner(all_tasks, 'james')
-    incomplete_tasks = [t for t in james_tasks if not t.get('completed')]
+    # Filter to user's incomplete tasks (owner defaults to 'me')
+    user_tasks = filter_tasks_by_owner(all_tasks, 'me')
+    incomplete_tasks = [t for t in user_tasks if not t.get('completed')]
 
     # Get due today and overdue
     due_today = get_tasks_due_on(incomplete_tasks, today)

@@ -139,7 +139,7 @@ project: [Project name]
 area: [Area name]
 
 # Processing metadata
-source: inbox-processing
+source: inbox
 processed_date: YYYY-MM-DD
 original_file: [original filename if renamed]
 ---
@@ -225,7 +225,7 @@ Projects/[ProjectName]/README.md
 
 ## Integration
 
-This agent works within the inbox-processing skill, after Phase 1 preparation and before Phase 3 delivery.
+This agent works within the inbox skill, after Phase 1 preparation and before Phase 3 delivery.
 
 ## Anti-Patterns
 

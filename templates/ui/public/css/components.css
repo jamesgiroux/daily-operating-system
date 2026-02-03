@@ -1219,7 +1219,7 @@
   border-top: 1px solid var(--border);
 }
 
-/* Ring badges */
+/* Tier badges - generic lifecycle classification */
 .ring-badge {
   display: inline-flex;
   align-items: center;
@@ -1230,24 +1230,25 @@
   border-radius: var(--radius-full);
 }
 
-.ring-badge.summit {
-  background: rgba(201, 162, 39, 0.15);
-  color: var(--gold);
+/* Generic tier styles - can be customized via CSS variables */
+.ring-badge.tier-1 {
+  background: var(--tier-1-bg, rgba(76, 175, 80, 0.15));
+  color: var(--tier-1-color, #4CAF50);
 }
 
-.ring-badge.influence {
-  background: rgba(127, 182, 133, 0.15);
-  color: var(--sage);
+.ring-badge.tier-2 {
+  background: var(--tier-2-bg, rgba(33, 150, 243, 0.15));
+  color: var(--tier-2-color, #2196F3);
 }
 
-.ring-badge.evolution {
-  background: var(--status-info-bg);
-  color: var(--status-info);
+.ring-badge.tier-3 {
+  background: var(--tier-3-bg, rgba(255, 152, 0, 0.15));
+  color: var(--tier-3-color, #FF9800);
 }
 
-.ring-badge.foundation {
-  background: var(--cream-dark);
-  color: var(--text-secondary);
+.ring-badge.tier-4 {
+  background: var(--tier-4-bg, rgba(158, 158, 158, 0.15));
+  color: var(--tier-4-color, #9E9E9E);
 }
 
 /* ==========================================================================
@@ -3025,7 +3026,7 @@
   border-top: 1px solid var(--border);
 }
 
-/* Ring badge variants */
+/* Tier badge variants - alternate styling context */
 .ring-badge {
   display: inline-block;
   padding: 2px 8px;
@@ -3035,29 +3036,30 @@
   text-transform: capitalize;
 }
 
-.ring-badge.summit {
-  background: rgba(201, 162, 39, 0.15);
-  color: var(--gold);
+/* Tier-specific colors using CSS custom properties for easy theming */
+.ring-badge.tier-1 {
+  background: var(--tier-1-bg, rgba(76, 175, 80, 0.15));
+  color: var(--tier-1-color, #4CAF50);
 }
 
-.ring-badge.influence {
-  background: rgba(127, 182, 133, 0.15);
-  color: var(--sage);
+.ring-badge.tier-2 {
+  background: var(--tier-2-bg, rgba(33, 150, 243, 0.15));
+  color: var(--tier-2-color, #2196F3);
 }
 
-.ring-badge.evolution {
-  background: rgba(232, 150, 122, 0.15);
-  color: var(--peach);
+.ring-badge.tier-3 {
+  background: var(--tier-3-bg, rgba(255, 152, 0, 0.15));
+  color: var(--tier-3-color, #FF9800);
 }
 
-.ring-badge.foundation {
-  background: var(--cream);
-  color: var(--text-muted);
+.ring-badge.tier-4 {
+  background: var(--tier-4-bg, rgba(158, 158, 158, 0.15));
+  color: var(--tier-4-color, #9E9E9E);
 }
 
 .ring-badge.project {
-  background: rgba(26, 31, 36, 0.1);
-  color: var(--charcoal);
+  background: var(--project-bg, rgba(26, 31, 36, 0.1));
+  color: var(--project-color, var(--charcoal, #333));
 }
 
 /* ==========================================================================

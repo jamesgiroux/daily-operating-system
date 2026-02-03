@@ -1247,13 +1247,13 @@ const MarkdownUtils = {
         const ring = cells[3]?.textContent.trim() || '';
         const status = cells[4]?.textContent.trim() || '';
 
-        // Determine ring class
-        let ringClass = 'foundation';
-        const ringLower = ring.toLowerCase();
-        if (ringLower.includes('summit')) ringClass = 'summit';
-        else if (ringLower.includes('influence')) ringClass = 'influence';
-        else if (ringLower.includes('evolution')) ringClass = 'evolution';
-        else if (ringLower.includes('project')) ringClass = 'project';
+        // Determine tier class (generic tier-1 through tier-4 system)
+        let tierClass = 'tier-4';
+        const tierLower = ring.toLowerCase();
+        if (tierLower.includes('tier-1') || tierLower.includes('tier 1')) tierClass = 'tier-1';
+        else if (tierLower.includes('tier-2') || tierLower.includes('tier 2')) tierClass = 'tier-2';
+        else if (tierLower.includes('tier-3') || tierLower.includes('tier 3')) tierClass = 'tier-3';
+        else if (tierLower.includes('project')) tierClass = 'project';
 
         // Status indicator
         const needsPrep = status.includes('Needs prep') || status.includes('⚠️');
@@ -1271,7 +1271,7 @@ const MarkdownUtils = {
             <div class="week-meeting-content">
               <div class="week-meeting-account">${account}</div>
               <div class="week-meeting-meta">
-                <span class="ring-badge ${ringClass}">${ring}</span>
+                <span class="ring-badge ${tierClass}">${ring}</span>
                 <span class="prep-status ${statusClass}">${needsPrep ? '<span class="prep-icon warning"></span> Needs prep' : '<span class="prep-icon ready"></span> Ready'}</span>
               </div>
             </div>
@@ -2318,18 +2318,18 @@ const MarkdownUtils = {
           sibling = sibling.nextElementSibling;
         }
 
-        // Determine ring class
-        let ringClass = 'foundation';
-        const ringLower = (details.ring || '').toLowerCase();
-        if (ringLower.includes('summit')) ringClass = 'summit';
-        else if (ringLower.includes('influence')) ringClass = 'influence';
-        else if (ringLower.includes('evolution')) ringClass = 'evolution';
+        // Determine tier class (generic tier-1 through tier-4 system)
+        let tierClass = 'tier-4';
+        const tierLower = (details.ring || '').toLowerCase();
+        if (tierLower.includes('tier-1') || tierLower.includes('tier 1')) tierClass = 'tier-1';
+        else if (tierLower.includes('tier-2') || tierLower.includes('tier 2')) tierClass = 'tier-2';
+        else if (tierLower.includes('tier-3') || tierLower.includes('tier 3')) tierClass = 'tier-3';
 
         cardsHtml += `
           <div class="meeting-card">
             <div class="meeting-card-header">
               <h4 class="meeting-card-title">${meetingName}</h4>
-              <span class="ring-badge ${ringClass}">${details.ring || 'Unknown'}</span>
+              <span class="ring-badge ${tierClass}">${details.ring || 'Unknown'}</span>
             </div>
             <div class="meeting-card-stats">
               ${details.arr ? `

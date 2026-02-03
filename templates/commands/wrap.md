@@ -160,7 +160,7 @@ Options:
 - Skip (will be flagged tomorrow)"
 ```
 
-If "Process" selected, invoke `/inbox-processing`.
+If "Process" selected, invoke `/inbox`.
 
 #### Agenda Sent Confirmation (`prompt_agenda_sent`)
 
@@ -193,7 +193,7 @@ This script:
 **Tip:** To pass AI outputs to delivery, save them to a JSON file:
 ```json
 {
-  "customer_outcomes": "Nielsen now has visibility into...",
+  "customer_outcomes": "Acme Corp now has visibility into...",
   "personal_impact": "Delivered AI roadmap presentation...",
   "task_updates": [{"title": "Task 1", "new_status": "Completed"}]
 }
@@ -217,11 +217,11 @@ Build list:
 ```python
 todays_completed_meetings = [
     {
-        'account': 'Nielsen',
+        'account': 'Acme Corp',
         'time': '10:00 AM',
         'type': 'customer',
         'recording_expected': True,  # Check calendar event for Zoom/Meet link
-        'prep_file': '_today/03-1000-customer-nielsen-prep.md'
+        'prep_file': '_today/03-1000-customer-acme-corp-prep.md'
     },
     # ...
 ]
@@ -262,9 +262,9 @@ def check_transcript_status(meeting, today_date):
 
 | Meeting | Time | Status | Action |
 |---------|------|--------|--------|
-| Nielsen | 10:00 AM | ✅ Processed | None |
-| Heroku | 2:00 PM | ⚠️ In inbox | Process with /inbox-processing |
-| Blackstone | 4:00 PM | ❌ Missing | Check recording, upload transcript |
+| Acme Corp | 10:00 AM | ✅ Processed | None |
+| Global Inc | 2:00 PM | ⚠️ In inbox | Process with /inbox |
+| Enterprise Co | 4:00 PM | ❌ Missing | Check recording, upload transcript |
 ```
 
 **If transcripts in inbox:**
@@ -425,13 +425,13 @@ def reconcile_actions(today_date):
 ```
 "Action items due today:
 
-1. [ ] Send updated connector documentation to Heroku
-   Account: Heroku | Due: Today | Source: Dec 15 meeting
+1. [ ] Send updated connector documentation to Global Inc
+   Account: Global Inc | Due: Today | Source: Dec 15 meeting
 
    Status? [Completed / In Progress / Blocked / Deferred]
 
-2. [ ] Schedule follow-up with Nielsen DevOps team
-   Account: Nielsen | Due: Today | Source: Dec 18 call
+2. [ ] Schedule follow-up with Acme Corp DevOps team
+   Account: Acme Corp | Due: Today | Source: Dec 18 call
 
    Status? [Completed / In Progress / Blocked / Deferred]
 "
@@ -441,11 +441,11 @@ def reconcile_actions(today_date):
 ```
 "New action items from today's meetings:
 
-From Nielsen call (10:00 AM):
+From Acme Corp call (10:00 AM):
 1. [ ] Review Q1 roadmap proposal - Due: [suggest date]
 2. [ ] Send case study examples - Due: [suggest date]
 
-From Heroku call (2:00 PM):
+From Global Inc call (2:00 PM):
 1. [ ] Coordinate with Engineering on connector - Due: [suggest date]
 
 Add these to master task list? [Yes / Edit first / Skip]"
@@ -502,16 +502,16 @@ Impact has two dimensions that should be captured separately:
 "CUSTOMER OUTCOMES - What value did your customers receive today?
 
 Customer meetings completed: 3
-- Nielsen (10:00 AM)
-- Heroku (2:00 PM)
-- Blackstone (4:00 PM)
+- Acme Corp (10:00 AM)
+- Global Inc (2:00 PM)
+- Enterprise Co (4:00 PM)
 
 What did customers gain, achieve, or avoid because of your work?
 
 Examples:
-- 'Nielsen now has visibility into Parse.ly for media vertical'
-- 'Heroku avoided connector delay through proactive coordination'
-- 'Blackstone reduced risk through upgrade planning session'
+- 'Acme Corp now has visibility into Parse.ly for media vertical'
+- 'Global Inc avoided connector delay through proactive coordination'
+- 'Enterprise Co reduced risk through upgrade planning session'
 
 [Enter customer outcomes or 'skip']"
 ```
@@ -523,7 +523,7 @@ Examples:
 What did you personally accomplish, deliver, or influence?
 
 Examples:
-- 'Delivered AI roadmap presentation to Nielsen'
+- 'Delivered AI roadmap presentation to Acme Corp'
 - 'Facilitated cross-functional alignment on Agentforce'
 - 'Completed 3 account dashboard refreshes'
 - 'Influenced pricing strategy through customer feedback'
@@ -563,82 +563,7 @@ def capture_daily_impact(customer_outcomes, personal_impact, today_date):
 | Feeds EBRs, renewals, value stories | Feeds performance reviews, career narrative |
 | Observable by customer | Observable by you/manager |
 
-### Step 5B: Coaching Reflection
-
-For meetings where coaching commitments were flagged (from /today's Step 9B), prompt for reflection.
-
-**Source:** `Leadership/03-Development/active-coaching-commitments.md`
-**Today's coaching opportunities:** From daily overview "Coaching Opportunities Today" section
-
-**Reflection prompts:**
-
-```python
-def generate_coaching_reflection(daily_overview, commitments_file):
-    """
-    Generate reflection prompts for today's coaching opportunities
-    """
-    opportunities = extract_coaching_opportunities(daily_overview)
-
-    if not opportunities:
-        return None  # No coaching flagged today
-
-    prompts = []
-    for opp in opportunities:
-        prompts.append({
-            'commitment': opp['commitment'],
-            'meeting': opp['meeting'],
-            'questions': [
-                f"Did you practice '{opp['practice']}'?",
-                "How did it go? (Natural / Forced / Forgot)",
-                "What would you do differently?",
-                "Any insight about the commitment itself?"
-            ]
-        })
-
-    return prompts
-```
-
-**Interactive prompt:**
-
-```
-"Coaching Reflection:
-
-Today you had 1 coaching opportunity flagged:
-
-1. Driver/Passenger Dynamic - Amy/James: Blackstone (11am)
-   Practice: Ask 'what do you need from me?' first
-
-   How did it go?
-   - [ ] Practiced naturally
-   - [ ] Practiced but felt forced
-   - [ ] Forgot to practice
-   - [ ] N/A (meeting canceled/rescheduled)
-
-   Brief reflection (optional): [text input]
-"
-```
-
-**If reflection provided:**
-- Append to weekly impact capture under "Coaching Progress"
-- If significant insight, offer to update working agreement or commitment file
-
-**Output in wrap summary:**
-
-```markdown
-## Coaching Reflection
-
-| Commitment | Meeting | Result | Notes |
-|------------|---------|--------|-------|
-| Driver/Passenger | Amy (11am) | Practiced naturally | Asked what she needed first - felt more collaborative |
-
-*Reflection captured in weekly impact file.*
-```
-
-**Skip if:**
-- No coaching opportunities were flagged today
-- User declines reflection prompt
-
-### Step 5C: Update Clay Relationship Notes
+### Step 5B: Update Clay Relationship Notes
 
 For each customer meeting completed today, offer to update Clay with relationship context.
 
@@ -708,19 +633,19 @@ Follow-up: {meeting.get('next_steps', 'N/A')}"""
 
 Today's customer meetings:
 
-1. Nielsen Monthly Sync (10:00 AM)
+1. Acme Corp Monthly Sync (10:00 AM)
    Known contacts:
-   - Gustavo Rodrigues (contact #12345)
+   - Jane Smith (contact #12345)
      → Add note about today's discussion?
 
    Unknown contacts:
-   - new.person@nielsen.com
+   - new.person@acme-corp.com
      → Create in Clay?
 
-2. Cox Automotive Parse.ly Demo (11:00 AM)
+2. Global Inc Demo (11:00 AM)
    Known contacts:
-   - Tomasz Nowakowski (contact #215633714)
-     → Add note about Parse.ly demo feedback?
+   - John Smith (contact #215633714)
+     → Add note about demo feedback?
 
 What would you like to do?
 - [Add notes to all known contacts]
@@ -759,10 +684,10 @@ mcp__clay__createContact(
 
 | Contact | Action | Meeting |
 |---------|--------|---------|
-| Tomasz Nowakowski | ✅ Note added | Cox Parse.ly Demo |
-| Gustavo Rodrigues | ✅ Note added | Nielsen Monthly |
-| new.person@nielsen.com | ➕ Created | Nielsen Monthly |
-| jane.doe@salesforce.com | ⏭️ Skipped | Salesforce DX Sync |
+| John Smith | ✅ Note added | Global Inc Demo |
+| Maria Garcia | ✅ Note added | Acme Corp Monthly |
+| new.person@acme-corp.com | ➕ Created | Acme Corp Monthly |
+| jane.doe@example.com | ⏭️ Skipped | Enterprise Sync |
 ```
 
 **Skip if:**
@@ -777,13 +702,13 @@ If significant events occurred, prompt for dashboard updates:
 ```
 "Significant events detected:
 
-1. Nielsen: New risk identified (migration timeline concern)
+1. Acme Corp: New risk identified (migration timeline concern)
    → Update dashboard risks section?
 
-2. Heroku: Win - connector demo successful
+2. Global Inc: Win - connector demo successful
    → Add to Recent Wins?
 
-3. Blackstone: Executive access - met with CTO
+3. Enterprise Co: Executive access - met with CTO
    → Update stakeholder map?
 
 Update dashboards now? [Yes for all / Select individually / Skip]"
@@ -832,7 +757,7 @@ ls -la _inbox/
 ```
 "New files detected in _inbox/:
 
-1. 2026-01-08-salesforce-transcript.md (transcript)
+1. 2026-01-08-customer-transcript.md (transcript)
 2. 2026-01-08-strategy-doc.pdf (document)
 
 Process now or defer to tomorrow's /today?
@@ -850,26 +775,26 @@ Create `_today/archive/[TODAY]/wrap-summary.md`:
 ## Meetings Completed
 | Account | Time | Transcript | Summary | Actions |
 |---------|------|------------|---------|---------|
-| Nielsen | 10:00 AM | ✅ | ✅ | 2 new |
-| Heroku | 2:00 PM | ✅ | ✅ | 1 new |
-| Blackstone | 4:00 PM | ⚠️ Missing | ❌ | - |
+| Acme Corp | 10:00 AM | ✅ | ✅ | 2 new |
+| Global Inc | 2:00 PM | ✅ | ✅ | 1 new |
+| Enterprise Co | 4:00 PM | ⚠️ Missing | ❌ | - |
 
 ## Action Items Reconciled
 
 ### Completed Today
-- [x] Send connector docs to Heroku *(was due today)*
-- [x] Follow up with Nielsen on timeline *(was overdue)*
+- [x] Send connector docs to Global Inc *(was due today)*
+- [x] Follow up with Acme Corp on timeline *(was overdue)*
 
 ### New Items Added
-- [ ] Review Q1 roadmap proposal - Nielsen - Due: Jan 15
-- [ ] Coordinate Engineering on connector - Heroku - Due: Jan 12
+- [ ] Review Q1 roadmap proposal - Acme Corp - Due: Jan 15
+- [ ] Coordinate Engineering on connector - Global Inc - Due: Jan 12
 
 ### Still Open (Carried Forward)
-- [ ] Schedule DevOps follow-up - Nielsen - Due: Jan 10
+- [ ] Schedule DevOps follow-up - Acme Corp - Due: Jan 10
 
 ## Impacts Captured
-- **Value Delivered**: Heroku connector demo successful
-- **Risk Identified**: Nielsen migration timeline may slip
+- **Value Delivered**: Global Inc connector demo successful
+- **Risk Identified**: Acme Corp migration timeline may slip
 
 ## Inbox Status
 - Processed: 0
@@ -878,12 +803,12 @@ Create `_today/archive/[TODAY]/wrap-summary.md`:
 ## Clay Updates
 | Contact | Action | Meeting |
 |---------|--------|---------|
-| Tomasz Nowakowski | ✅ Note added | Cox Parse.ly Demo |
-| new.person@nielsen.com | ➕ Created | Nielsen Monthly |
+| John Smith | ✅ Note added | Global Inc Demo |
+| new.person@acme-corp.com | ➕ Created | Acme Corp Monthly |
 
 ## Dashboard Updates
-- Nielsen: Updated risks section
-- Heroku: Added recent win
+- Acme Corp: Updated risks section
+- Global Inc: Added recent win
 
 ---
 *Wrapped at: [timestamp]*
@@ -901,12 +826,12 @@ DAY WRAP COMPLETE - [Date]
 ✅ Actions: 2 completed, 3 new added, 1 carried forward
 ✅ Impact: 2 highlights captured
 ✅ Clay: 2 notes added, 1 contact created
-⚠️ Attention: 1 transcript missing (Blackstone)
+⚠️ Attention: 1 transcript missing (Enterprise Co)
 ✅ Archived: Today's files moved to archive/2026-01-08/
 ✅ Ready: _today/ prepared for tomorrow
 
 Outstanding items for tomorrow:
-- Process Blackstone transcript when available
+- Process Enterprise Co transcript when available
 - 2 files in _inbox/ to process
 
 Good night! 🌙
@@ -924,7 +849,7 @@ _today/
 └── archive/
     └── 2026-01-08/                     # Today's archived files
         ├── 00-overview.md
-        ├── 03-1000-customer-nielsen-prep.md
+        ├── 03-1000-customer-acme-corp-prep.md
         ├── 80-actions-due.md
         ├── 83-email-summary.md
         ├── 90-agenda-needed/
@@ -952,8 +877,8 @@ _today/
 - `_inbox/` - unprocessed files
 
 **Skills/Workflows:**
-- inbox-processing - if processing transcripts
-- daily-csm/ACTION-TRACKING - action item patterns
+- inbox - if processing transcripts
+- Action tracking patterns defined in Step 2
 
 ## Error Handling
 
