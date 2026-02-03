@@ -337,6 +337,233 @@ async function executeStep(stepId, session, sseResponse) {
 }
 
 /**
+ * POST /api/setup/google/upload-credentials
+ * Upload and validate Google OAuth credentials
+ */
+router.post('/google/upload-credentials', async (req, res) => {
+  const { content } = req.body;
+
+  if (!content) {
+    return res.status(400).json({
+      success: false,
+      error: 'No credentials content provided',
+    });
+  }
+
+  try {
+    // Validate and save via Python
+    const result = await validateAndSaveGoogleCredentials(content);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * POST /api/setup/google/test-auth
+ * Test Google API authentication
+ */
+router.post('/google/test-auth', async (req, res) => {
+  try {
+    const result = await testGoogleAuth();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * GET /api/setup/google/status
+ * Get current Google API setup status
+ */
+router.get('/google/status', async (req, res) => {
+  try {
+    const result = await getGoogleSetupStatus();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * Validate and save Google credentials via Python
+ */
+async function validateAndSaveGoogleCredentials(content) {
+  return new Promise((resolve, reject) => {
+    const pythonCode = `
+import sys
+import json
+sys.path.insert(0, '${PROJECT_ROOT}/src')
+from steps.google_api import validate_credentials_json, save_credentials_secure
+
+content = '''${content.replace(/'/g, "\\'")}'''
+is_valid, error = validate_credentials_json(content)
+
+if not is_valid:
+    print(json.dumps({"success": False, "error": error}))
+else:
+    success, save_error = save_credentials_secure(content)
+    if success:
+        print(json.dumps({"success": True, "message": "Credentials saved to ~/.dailyos/google/"}))
+    else:
+        print(json.dumps({"success": False, "error": save_error}))
+`;
+
+    const python = spawn('python3', ['-c', pythonCode], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: path.join(PROJECT_ROOT, 'src'),
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code !== 0) {
+        resolve({
+          success: false,
+          error: stderr || `Validation failed with code ${code}`,
+        });
+        return;
+      }
+
+      try {
+        const result = JSON.parse(stdout.trim());
+        resolve(result);
+      } catch (e) {
+        resolve({
+          success: false,
+          error: 'Failed to parse validation result',
+        });
+      }
+    });
+
+    python.on('error', reject);
+  });
+}
+
+/**
+ * Test Google authentication via Python
+ */
+async function testGoogleAuth() {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.join(PROJECT_ROOT, 'templates', 'scripts', 'google', 'google_api.py');
+
+    const python = spawn('python3', [scriptPath, 'auth'], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: path.join(PROJECT_ROOT, 'src'),
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code === 0) {
+        resolve({
+          success: true,
+          message: 'Authentication successful',
+        });
+      } else {
+        resolve({
+          success: false,
+          error: stderr || 'Authentication failed',
+        });
+      }
+    });
+
+    python.on('error', reject);
+  });
+}
+
+/**
+ * Get Google setup status via Python
+ */
+async function getGoogleSetupStatus() {
+  return new Promise((resolve, reject) => {
+    const pythonCode = `
+import sys
+import json
+sys.path.insert(0, '${PROJECT_ROOT}/src')
+from steps.google_api import verify_google_setup
+
+status = verify_google_setup()
+print(json.dumps({"success": True, "status": status}))
+`;
+
+    const python = spawn('python3', ['-c', pythonCode], {
+      cwd: PROJECT_ROOT,
+      env: {
+        ...process.env,
+        PYTHONPATH: path.join(PROJECT_ROOT, 'src'),
+      },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    python.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    python.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    python.on('close', (code) => {
+      if (code !== 0) {
+        resolve({
+          success: false,
+          error: stderr || 'Failed to get status',
+        });
+        return;
+      }
+
+      try {
+        const result = JSON.parse(stdout.trim());
+        resolve(result);
+      } catch (e) {
+        resolve({
+          success: false,
+          error: 'Failed to parse status result',
+        });
+      }
+    });
+
+    python.on('error', reject);
+  });
+}
+
+/**
  * Execute a rollback operation
  */
 async function executeRollback(stepId, rollbackData) {
