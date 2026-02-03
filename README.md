@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.5.1)**
+> **⚠️ Pre-Release Software (v0.5.2)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
@@ -139,7 +139,7 @@ The setup wizard can install a browser-based dashboard for visual navigation of 
 - **Markdown rendering** — View your documents formatted in the browser
 - **Search** — Find content across all your documents
 - **Health indicators** — See account status at a glance (Customer Success roles)
-- **Ring badges** — Visual lifecycle positioning (Summit, Influence, Evolution, Foundation)
+- **Tier badges** — Visual account lifecycle positioning (configurable tier names and colors)
 
 ### Requirements
 
@@ -169,10 +169,28 @@ The dashboard reads from `_ui/config/config.json`, which is auto-generated based
 
 - **Sections** — Which folders appear in the sidebar
 - **Subsections** — Folder icons and labels
-- **Features** — Enable/disable health status, ring badges, etc.
+- **Features** — Enable/disable health status, tier badges, etc.
 - **Today links** — Quick access to daily files
 
 Role-specific templates are in `_ui/config/roles/`.
+
+### Customizing Account Tiers
+
+For Customer Success roles, customize lifecycle tiers in `_config/workspace.json`:
+
+```json
+{
+  "lifecycle": {
+    "enabled": true,
+    "tiers": [
+      { "id": "strategic", "label": "Strategic", "color": "#4CAF50", "contactThresholdDays": 14 },
+      { "id": "growth", "label": "Growth", "color": "#2196F3", "contactThresholdDays": 30 },
+      { "id": "maintain", "label": "Maintain", "color": "#FF9800", "contactThresholdDays": 45 },
+      { "id": "standard", "label": "Standard", "color": "#9E9E9E", "contactThresholdDays": 90 }
+    ]
+  }
+}
+```
 
 ## DailyOS CLI
 
@@ -180,9 +198,10 @@ The `dailyos` command-line tool provides workspace management capabilities:
 
 | Command | Purpose |
 |---------|---------|
-| `dailyos start` | Start the web UI server |
+| `dailyos start` | Start the web UI server (auto-detects workspace) |
 | `dailyos stop` | Stop the web UI server |
 | `dailyos ui` | Show web UI status |
+| `dailyos config` | Show/manage configuration |
 | `dailyos version` | Show version info |
 | `dailyos status` | Check for updates |
 | `dailyos update` | Update to latest version |
@@ -190,6 +209,25 @@ The `dailyos` command-line tool provides workspace management capabilities:
 | `dailyos repair` | Fix broken installation |
 | `dailyos eject <name>` | Customize a skill/command |
 | `dailyos reset <name>` | Restore to core version |
+
+### Smart Workspace Detection
+
+The CLI automatically finds your workspace when you run `dailyos start` from any directory:
+
+1. **Explicit flag**: `dailyos start -w ~/Documents/MyWorkspace`
+2. **Current directory**: If you're in a workspace (has `.dailyos-version`)
+3. **Saved default**: From `~/.dailyos/config.json`
+4. **Auto-scan**: Searches `~/Documents`, `~/workspace`, `~/projects`, `~/dev`
+
+### Configuration Commands
+
+```bash
+dailyos config                          # Show current configuration
+dailyos config workspace                # Show default workspace
+dailyos config workspace ~/path         # Set default workspace
+dailyos config scan                     # Rescan for workspaces
+dailyos config reset                    # Reset to defaults
+```
 
 See [docs/cli-reference.md](docs/cli-reference.md) for full documentation.
 
