@@ -519,12 +519,26 @@ and archive its action items. When I reactivate, move it back."
 
 ---
 
+## Deep Dive: How It Works
+
+Want to understand the architecture and internals? Check out the [technical guides](guides/index.md):
+
+- [Skill-Agent-Tool Layers](guides/skill-agent-tool-layers.md) — How the three layers work together
+- [Three-Phase Pattern](guides/three-phase-pattern.md) — The prepare → enrich → deliver architecture
+- [Daily Workflow](guides/daily-workflow.md) — Deep dive on /today, /wrap, /email-scan
+- [Weekly Workflow](guides/weekly-workflow.md) — /week command and impact capture
+- [Monthly/Quarterly](guides/monthly-quarterly-workflow.md) — Reports and review preparation
+- [Inbox Processing](guides/inbox-processing.md) — Document processing workflow
+- [Tools Reference](guides/tools-reference.md) — All Python automation tools
+
+---
+
 ## Next Steps
 
 1. Run the setup wizard: `python3 advanced-start.py` (or double-click `easy-start.command`)
 2. Follow the prompts
 3. Try `/today` tomorrow morning
 4. Process your first transcript
-5. Enjoy your new productivity system!
+5. Explore the [technical guides](guides/index.md) to understand how it all works
 
 Welcome aboard!
