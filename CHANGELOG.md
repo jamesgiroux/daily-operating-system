@@ -11,6 +11,43 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.5.2] - 2026-02-03
+
+### Added
+
+- **Smart workspace detection** for `dailyos start`
+  - Works from any directory without `-w` flag
+  - Priority cascade: explicit flag → current directory → stored default → auto-scan
+  - Scans ~/Documents, ~/workspace, ~/projects, ~/dev for `.dailyos-version` marker
+  - Interactive workspace picker when multiple workspaces found
+  - Offers to save auto-detected workspace as default
+
+- **Configuration management** (`dailyos config`)
+  - `dailyos config` — Show current configuration
+  - `dailyos config workspace` — Show default workspace
+  - `dailyos config workspace ~/path` — Set default workspace
+  - `dailyos config scan` — Rescan for workspaces
+  - `dailyos config reset` — Reset to defaults
+
+- **New config file** (`~/.dailyos/config.json`)
+  - Stores default workspace path
+  - Tracks known workspaces with last-used timestamps
+  - Configurable scan locations and depth
+  - User preferences (auto-save, prompt behavior)
+
+- **New module** (`src/workspace.py`)
+  - `WorkspaceConfig` class for config management
+  - `WorkspaceScanner` class for workspace discovery
+  - `WorkspaceResolver` class for smart resolution
+
+### Changed
+
+- `dailyos start` now auto-detects workspace when run from any directory
+- `dailyos start --set-default` flag to save workspace as default
+- Improved error messages with setup instructions when no workspace found
+
+---
+
 ## [0.5.1] - 2026-02-02
 
 ### Changed
@@ -296,7 +333,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.0...v0.4.1
