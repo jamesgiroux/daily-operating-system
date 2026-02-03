@@ -11,6 +11,48 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.6.0] - 2026-02-03
+
+### Added
+
+- **Secure credential storage** (`~/.dailyos/google/`)
+  - Credentials now stored in user home directory with restricted permissions (0o600)
+  - Keeps credentials out of workspaces for safer sharing and git operations
+  - Automatic migration from legacy workspace location
+
+- **Guided Google API setup** (`dailyos google-setup`)
+  - Interactive 6-step CLI wizard walks through Google Cloud Console setup
+  - `--verify` flag to check current Google API status
+  - `--reset` flag to clear credentials and start over
+  - Opens browser automatically for each setup step
+
+- **Web wizard improvements** (`docs/setup.html`)
+  - File upload dropzone with drag-and-drop support for credentials.json
+  - Paste option for JSON content
+  - Real-time validation feedback
+  - Test connection button before completing setup
+
+- **API endpoints for Google setup** (`server/routes/setup.js`)
+  - `POST /api/setup/google/upload-credentials` - Upload and validate credentials
+  - `POST /api/setup/google/test-auth` - Test authentication
+  - `GET /api/setup/google/status` - Get current setup status
+
+- **Enhanced error handling** (`templates/scripts/google/google_api.py`)
+  - Error classification with actionable remediation messages
+  - Persistent error logging to `~/.dailyos/google/error.log`
+  - Automatic retry with exponential backoff for transient errors (429, 500, 503)
+
+- **New test suite** (`tests/test_google_api_setup.py`)
+  - 52 new tests covering all Google API setup functionality
+  - Tests for credential validation, secure storage, error handling, retry logic
+
+### Changed
+
+- Google credentials path changed from `workspace/.config/google/` to `~/.dailyos/google/`
+- Improved setup instructions to reference new `dailyos google-setup` command
+
+---
+
 ## [0.5.3] - 2026-02-03
 
 ### Fixed
