@@ -397,11 +397,11 @@ See [cli-reference.md](cli-reference.md) for full documentation.
 
 ## Customizing for Your Role
 
-The default setup assumes you **own accounts** over time. But if you rotate through accounts or work differently, here are alternative structures:
+The default setup assumes you **own accounts or projects** over time. Here are structures for different roles:
 
-### For Account Owners (TAMs with Dedicated Portfolios)
+### Customer Success Managers (CSMs)
 
-The default structure works perfectly:
+Own a portfolio of accounts long-term:
 ```
 Accounts/
 ├── ClientA/
@@ -409,75 +409,97 @@ Accounts/
 └── ClientC/
 ```
 
-### For BDRs (Business Development Reps)
+### Account Executives (AEs)
 
-You may work with many prospects briefly. Consider:
+Track deals through pipeline stages:
+```
+Accounts/
+├── Discovery/        # Early conversations
+├── Qualified/        # Active opportunities
+├── Negotiating/      # Close to signing
+├── Closed-Won/       # Customers (hand off to CS)
+└── Closed-Lost/      # Lost deals (for learnings)
+```
+
+**To change after setup**, ask Claude Code:
+```
+"Reorganize my Accounts folder into sales pipeline stages:
+Discovery, Qualified, Negotiating, Closed-Won, Closed-Lost"
+```
+
+### Sales Development Reps (SDRs/BDRs)
+
+Work with many prospects briefly:
 ```
 Accounts/
 ├── Active/           # Currently pursuing
-│   ├── Prospect1/
-│   └── Prospect2/
-├── Qualified/        # Handed off to sales
+├── Qualified/        # Handed off to AE
 ├── Disqualified/     # Not a fit
-└── Future/           # Nurture pipeline
+└── Nurture/          # Future pipeline
 ```
 
 **To change after setup**, ask Claude Code:
 ```
-"Reorganize my Accounts folder to have Active, Qualified, Disqualified,
-and Future subdirectories for BDR workflow"
+"Reorganize my Accounts folder for SDR workflow with Active,
+Qualified, Disqualified, and Nurture subdirectories"
 ```
 
-### For Relationship Managers (RMs)
+### Project Managers
 
-You may rotate through accounts based on renewals or projects:
+Organize by project lifecycle:
 ```
-Accounts/
-├── Active/           # Currently engaged
-│   ├── ClientA/
-│   └── ClientB/
-├── Inactive/         # Between engagements
-│   └── ClientC/
-└── Handoff/          # Transitioning to another RM
+Projects/
+├── Active/           # In progress
+├── Planning/         # Upcoming
+├── On-Hold/          # Paused
+└── Completed/        # Archived
 ```
 
 **To change after setup**, ask Claude Code:
 ```
-"Create an Active/Inactive account structure since I rotate
-through accounts based on renewal cycles"
+"Set up project lifecycle folders: Active, Planning, On-Hold, Completed"
 ```
 
-### For TAMs on Rotation
+### Consultants
 
-If you don't own accounts but handle them on-demand:
+Handle engagements with defined start/end:
 ```
-Accounts/
-├── Current/          # This quarter's assignments
-├── Previous/         # Past assignments (for reference)
-└── Pool/            # Accounts you may be assigned
+Engagements/
+├── Current/          # Active projects
+├── Pipeline/         # Upcoming work
+└── Completed/        # Past engagements
 ```
 
 **To change after setup**, ask Claude Code:
 ```
-"Set up a rotation-based account structure with Current,
-Previous, and Pool folders since I don't own accounts permanently"
+"Create an engagement structure with Current, Pipeline, and Completed folders"
+```
+
+### Marketers
+
+Organize by campaign status:
+```
+Campaigns/
+├── Active/           # Running now
+├── Planned/          # In development
+├── Completed/        # Finished (with results)
+└── Templates/        # Reusable frameworks
 ```
 
 ### Prompt Examples for Customization
 
-After running the setup wizard, you can paste these into Claude Code to customize:
+After setup, ask Claude Code to customize further:
 
-**Add engagement tracking:**
+**Add last-contact tracking:**
 ```
-"Add a Last-Engagement-Date field to each account's frontmatter
-and create a view that shows accounts by recency of contact"
+"Add a Last-Contact-Date field to each account's frontmatter
+and create a view that shows accounts by recency of engagement"
 ```
 
-**Create a rotation schedule:**
+**Create a handoff tracker:**
 ```
-"Create a rotation-tracker.md file that helps me manage
-account handoffs with columns for Account, Previous Owner,
-New Owner, Handoff Date, and Status"
+"Create a handoff-tracker.md file with columns for Account,
+From, To, Date, and Status"
 ```
 
 **Set up active/inactive workflow:**
