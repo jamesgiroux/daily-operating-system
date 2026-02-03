@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.5.3)**
+> **⚠️ Pre-Release Software (v0.6.0)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
@@ -265,7 +265,18 @@ The system works best with Google API access for:
 - **Sheets**: Read account data, update tracking
 - **Docs**: Create and edit shared documents
 
-Setup is guided by the wizard. You'll need a Google Cloud project with OAuth credentials.
+### Setup Options
+
+**CLI wizard (recommended):**
+```bash
+dailyos google-setup          # Interactive guided setup
+dailyos google-setup --verify # Check current status
+dailyos google-setup --reset  # Clear and start over
+```
+
+**Web wizard:** The setup wizard includes a guided Google API step with file upload.
+
+Credentials are stored securely at `~/.dailyos/google/` with restricted permissions, keeping them out of your workspace.
 
 ## Daily Workflow
 
