@@ -51,7 +51,7 @@ flowchart LR
 
 ## When to Use
 
-**Standalone**: "Process the inbox" or `/inbox-processing`
+**Standalone**: "Process the inbox" or `/inbox`
 - When you have documents waiting in `_inbox/`
 - After dropping transcripts or files for processing
 
@@ -417,7 +417,7 @@ The full skill has detailed component docs:
 | `SENSITIVITY-SCANNING.md` | Privacy classification |
 | `PARA-MAPPING.md` | Destination logic |
 
-Location: `.claude/skills/inbox-processing/`
+Location: `.claude/skills/inbox/`
 
 ---
 

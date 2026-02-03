@@ -39,7 +39,7 @@ flowchart TB
     end
 
     subgraph Supporting["Supporting Systems"]
-        INBOX["/inbox-processing<br/>Document triage"]
+        INBOX["/inbox<br/>Document triage"]
     end
 
     TODAY --> WRAP

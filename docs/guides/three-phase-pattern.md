@@ -339,7 +339,7 @@ prepare_week.py → Claude → deliver_week.py
 | 2 | Generate overview, hygiene alerts |
 | 3 | Create impact template, calendar blocks |
 
-### /inbox-processing
+### /inbox
 
 ```
 prepare_inbox.py → Claude → deliver_inbox.py

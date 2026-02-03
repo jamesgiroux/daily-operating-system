@@ -19,8 +19,8 @@ Quick reference for all automation tools in `_tools/`.
 
 | Tool | Purpose | Used By |
 |------|---------|---------|
-| `prepare_inbox.py` | Orchestrate Phase 1 pipeline | /inbox-processing, /today |
-| `deliver_inbox.py` | Phase 3: Move to PARA locations | /inbox-processing |
+| `prepare_inbox.py` | Orchestrate Phase 1 pipeline | /inbox, /today |
+| `deliver_inbox.py` | Phase 3: Move to PARA locations | /inbox |
 | `validate_naming.py` | Check file naming conventions | prepare_inbox.py |
 | `standardize_frontmatter.py` | Apply frontmatter templates | prepare_inbox.py |
 | `detect_context.py` | Detect project/area context | prepare_inbox.py |
