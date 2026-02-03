@@ -11,6 +11,22 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.5.1] - 2026-02-02
+
+### Changed
+
+- **Automatic CLI installation** in `easy-start.command`
+  - `dailyos` CLI now installs automatically without prompting
+  - Advanced users via `advanced-start.py` still get the optional prompt
+
+- **Smart port detection** in `easy-start.command`
+  - Detects if port 5050 is already in use
+  - If DailyOS is running: offers to use existing server, stop it, or use different port
+  - If other app is running: notifies user and finds alternative port (5051-5060)
+  - Graceful error if all ports are in use
+
+---
+
 ## [0.5.0] - 2026-02-02
 
 ### Added
@@ -280,7 +296,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.3.3...v0.4.0
