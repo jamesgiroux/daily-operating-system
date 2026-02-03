@@ -145,10 +145,17 @@ The setup wizard can install a browser-based dashboard for visual navigation of 
 
 - Node.js (for running the local server)
 
-### Manual Start
+### Starting the Dashboard
 
-If you installed the dashboard during setup:
+**Recommended: Use the `dailyos` CLI**
+```bash
+dailyos start                    # Auto-detects workspace, opens browser
+dailyos start --no-browser       # Start without opening browser
+dailyos stop                     # Stop the server
+dailyos ui                       # Check if running
+```
 
+**Manual start (if CLI not installed):**
 ```bash
 cd ~/Documents/productivity/_ui
 npm start
@@ -166,6 +173,25 @@ The dashboard reads from `_ui/config/config.json`, which is auto-generated based
 - **Today links** — Quick access to daily files
 
 Role-specific templates are in `_ui/config/roles/`.
+
+## DailyOS CLI
+
+The `dailyos` command-line tool provides workspace management capabilities:
+
+| Command | Purpose |
+|---------|---------|
+| `dailyos start` | Start the web UI server |
+| `dailyos stop` | Stop the web UI server |
+| `dailyos ui` | Show web UI status |
+| `dailyos version` | Show version info |
+| `dailyos status` | Check for updates |
+| `dailyos update` | Update to latest version |
+| `dailyos doctor` | Check workspace health |
+| `dailyos repair` | Fix broken installation |
+| `dailyos eject <name>` | Customize a skill/command |
+| `dailyos reset <name>` | Restore to core version |
+
+See [docs/cli-reference.md](docs/cli-reference.md) for full documentation.
 
 ## Directory Structure
 
