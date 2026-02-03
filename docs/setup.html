@@ -2263,13 +2263,13 @@
 
                 if (resultData.depsInstalled) {
                     msg = 'Dashboard installed and ready';
-                    details = 'Dependencies installed successfully.';
+                    details = 'Run <code>dailyos start</code> to launch the dashboard.';
                 } else if (!resultData.nodeAvailable) {
                     msg = 'Dashboard files installed';
-                    details = 'Node.js not found. Install Node.js, then run <code>cd _ui && npm install && npm start</code>';
+                    details = 'Node.js not found. Install Node.js, then run <code>dailyos start</code> (or <code>cd _ui && npm start</code>)';
                 } else {
                     msg = 'Dashboard files installed';
-                    details = 'Run <code>cd _ui && npm install && npm start</code> to launch the dashboard.';
+                    details = 'Run <code>dailyos start</code> to launch the dashboard.';
                 }
 
                 statusDiv.innerHTML = `
