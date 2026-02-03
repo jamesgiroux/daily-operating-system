@@ -280,7 +280,7 @@ avoid:
 | Skill | Integration |
 |-------|-------------|
 | strategy-consulting | Editorial review of strategy outputs |
-| inbox-processing | Review summaries before filing |
+| inbox | Review summaries before filing |
 
 ## Best Practices
 

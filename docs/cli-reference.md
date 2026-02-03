@@ -203,7 +203,7 @@ dailyos eject inbox   # Customize the inbox skill
 
 **To see what can be ejected:**
 - Commands: `today`, `week`, `wrap`, `month`, `quarter`, `email-scan`
-- Skills: `inbox`, `daily-csm`, `editorial`, `strategy-consulting`
+- Skills: `inbox`, `editorial`, `strategy-consulting`
 
 ### `dailyos reset <name>`
 
