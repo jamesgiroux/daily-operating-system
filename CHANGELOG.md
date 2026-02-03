@@ -11,6 +11,18 @@ Changes in development that will be included in the next release.
 
 ---
 
+## [0.5.3] - 2026-02-03
+
+### Fixed
+
+- **Email summary overwritten by delivery script**
+  - `deliver_today.py` was unconditionally overwriting `83-email-summary.md` during Phase 3
+  - This destroyed AI-enriched content created during Phase 2 (classifications, conversation arcs, recommendations)
+  - Now checks if file was modified after directive creation (timestamp) or has actual classifications (content markers)
+  - Only writes template if file doesn't exist or still contains placeholder text
+
+---
+
 ## [0.5.2] - 2026-02-03
 
 ### Added
@@ -333,7 +345,8 @@ During pre-release (0.x.y):
 - Minor version bumps (0.**x**.0) for new features
 - Patch version bumps (0.0.**y**) for bug fixes
 
-[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.3...HEAD
+[0.5.3]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/jamesgiroux/daily-operating-system/compare/v0.4.1...v0.5.0

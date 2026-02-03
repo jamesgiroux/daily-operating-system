@@ -2,7 +2,7 @@
 
 A productivity framework built on Claude Code for managing your daily work, strategic thinking, and professional development.
 
-> **⚠️ Pre-Release Software (v0.5.2)**
+> **⚠️ Pre-Release Software (v0.5.3)**
 >
 > This project is under active development heading toward a stable 1.0 release. While functional, you may encounter bugs, breaking changes, or incomplete features. We appreciate early adopters and welcome [bug reports and feedback](https://github.com/jamesgiroux/daily-operating-system/issues).
 >
