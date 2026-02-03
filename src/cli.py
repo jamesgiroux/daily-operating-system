@@ -31,9 +31,14 @@ from version import (
     check_for_updates, skip_version, git_pull_core, compare_versions,
     is_symlink_intact, get_workspace_status
 )
+from workspace import (
+    WorkspaceConfig, WorkspaceResolver, get_scan_summary
+)
 from ui.prompts import (
     confirm, prompt_choice, print_section, show_update_prompt,
-    show_doctor_results
+    show_doctor_results, prompt_workspace_selection, show_no_workspace_error,
+    show_invalid_workspace_error, confirm_save_default, show_workspace_found,
+    show_config_info
 )
 from ui.colors import Colors, success, error, warning, info, dim, bold
 
@@ -216,7 +221,7 @@ def cmd_doctor(args) -> int:
 
     # Check skills
     skills_dir = workspace / '.claude' / 'skills'
-    for skill in ['inbox', 'daily-csm', 'vip-editorial', 'strategy-consulting']:
+    for skill in ['inbox-processing', 'daily-csm', 'vip-editorial', 'strategy-consulting']:
         skill_path = skills_dir / skill
 
         if skill_path.is_symlink() and skill_path.resolve().exists():
@@ -373,7 +378,7 @@ def cmd_eject(args) -> int:
     if not workspace_path:
         print(f"  {error(f'Not found: {name}')}")
         print(f"  Available commands: today, week, wrap, month, quarter, email-scan")
-        print(f"  Available skills: inbox, daily-csm, vip-editorial, strategy-consulting")
+        print(f"  Available skills: inbox-processing, daily-csm, vip-editorial")
         return 1
 
     if not workspace_path.is_symlink():
@@ -502,16 +507,66 @@ def cmd_start(args) -> int:
 
     port = args.port
     open_browser = not args.no_browser
-    workspace = Path(args.workspace).resolve() if args.workspace != '.' else None
+    set_default = getattr(args, 'set_default', False)
+
+    # Resolve workspace using smart detection
+    explicit = Path(args.workspace) if args.workspace != '.' else None
+    config = WorkspaceConfig()
+    resolver = WorkspaceResolver(config)
 
     print(f"\n{bold('DailyOS Web UI')}\n")
+
+    # Try to resolve workspace
+    workspace, method = resolver.resolve(explicit=explicit)
+
+    # Handle different resolution outcomes
+    if method == WorkspaceResolver.METHOD_NONE:
+        # No workspace found anywhere
+        show_no_workspace_error(get_scan_summary())
+        return 1
+
+    if method == WorkspaceResolver.METHOD_EXPLICIT and explicit:
+        # Explicit path given - validate it
+        is_valid, status_msg = resolver.validate_workspace(explicit)
+        if not is_valid:
+            show_invalid_workspace_error(explicit, status_msg)
+            return 1
+        workspace = explicit
+
+    if method == WorkspaceResolver.METHOD_AUTO_SELECTED:
+        # Multiple workspaces found - prompt for selection
+        workspaces = resolver.get_available_workspaces()
+        if len(workspaces) > 1:
+            selection = prompt_workspace_selection(workspaces)
+            if selection is None:
+                print("  Cancelled.")
+                return 0
+            workspace = workspaces[selection]['path']
+
+    # Show which workspace we're using
+    show_workspace_found(workspace, method)
+
+    # Offer to save as default if auto-detected (and not already default)
+    should_prompt_save = (
+        method in [WorkspaceResolver.METHOD_AUTO_SINGLE, WorkspaceResolver.METHOD_AUTO_SELECTED]
+        and config.get_default_workspace() != workspace
+        and config.load().get('preferences', {}).get('auto_save_default', True)
+    )
+
+    if should_prompt_save or set_default:
+        if set_default or confirm_save_default(workspace):
+            config.set_default_workspace(workspace)
+            print(f"  {success('Saved to ~/.dailyos/config.json')}")
+
+    # Update last used timestamp
+    config.update_last_used(workspace)
 
     # Find _ui directory
     ui_dir = server.find_ui_directory(workspace)
 
     if not ui_dir:
         print(f"  {error('No _ui directory found.')}")
-        print(f"  Run from a DailyOS workspace or use --workspace flag.")
+        print(f"  Run 'dailyos repair' to fix symlinks.")
         return 1
 
     print(f"  UI directory: {dim(str(ui_dir))}")
@@ -573,6 +628,123 @@ def cmd_ui(args) -> int:
     return 0
 
 
+def cmd_config(args) -> int:
+    """Manage DailyOS configuration."""
+    config = WorkspaceConfig()
+    resolver = WorkspaceResolver(config)
+
+    subcommand = getattr(args, 'config_command', None)
+
+    if subcommand == 'workspace':
+        # Get or set default workspace
+        new_path = getattr(args, 'path', None)
+
+        if new_path:
+            # Set default workspace
+            path = Path(new_path).expanduser().resolve()
+            is_valid, msg = resolver.validate_workspace(path)
+
+            if not is_valid:
+                print(f"\n  {error('Invalid workspace:')} {path}")
+                print(f"  {msg}")
+                return 1
+
+            config.set_default_workspace(path)
+            print(f"\n  {success('Default workspace set:')}")
+
+            try:
+                display_path = f"~/{path.relative_to(Path.home())}"
+            except ValueError:
+                display_path = str(path)
+
+            print(f"  {info(display_path)}\n")
+            return 0
+
+        else:
+            # Show current default
+            default = config.get_default_workspace()
+
+            print(f"\n{bold('Default Workspace')}\n")
+
+            if default:
+                try:
+                    display_path = f"~/{default.relative_to(Path.home())}"
+                except ValueError:
+                    display_path = str(default)
+
+                print(f"  {info(display_path)}")
+
+                is_valid, msg = resolver.validate_workspace(default)
+                if is_valid:
+                    print(f"  Status: {success('valid')}")
+                else:
+                    print(f"  Status: {error('invalid')} - {msg}")
+            else:
+                print(f"  {dim('(not set)')}")
+                print(f"\n  Set with: {info('dailyos config workspace ~/path/to/workspace')}")
+
+            print()
+            return 0
+
+    elif subcommand == 'scan':
+        # Rescan for workspaces
+        print(f"\n{bold('Scanning for Workspaces')}\n")
+
+        scanner = resolver.scanner
+        workspaces = scanner.scan_all()
+
+        if not workspaces:
+            print(f"  {warning('No workspaces found.')}")
+            print()
+            print("  Scanned locations:")
+            for loc in config.get_scan_locations():
+                print(f"    - {loc}")
+            print()
+            return 0
+
+        print(f"  Found {len(workspaces)} workspace(s):\n")
+
+        for ws in workspaces:
+            is_valid, version = scanner.is_valid_workspace(ws)
+
+            try:
+                display_path = f"~/{ws.relative_to(Path.home())}"
+            except ValueError:
+                display_path = str(ws)
+
+            print(f"  - {display_path} (v{version})")
+
+            # Add to known workspaces
+            config.add_known_workspace(ws)
+
+        print()
+        print(f"  {success('Updated known workspaces list.')}")
+        print()
+        return 0
+
+    elif subcommand == 'reset':
+        # Reset configuration
+        print(f"\n{bold('Reset Configuration')}\n")
+
+        if not confirm("Reset all DailyOS configuration?", default=False):
+            print("  Cancelled.")
+            return 0
+
+        from workspace import DEFAULT_CONFIG, CONFIG_PATH
+
+        if CONFIG_PATH.exists():
+            CONFIG_PATH.unlink()
+
+        print(f"  {success('Configuration reset to defaults.')}")
+        print()
+        return 0
+
+    else:
+        # Show current config
+        show_config_info(config.load())
+        return 0
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='DailyOS workspace management',
@@ -590,8 +762,14 @@ Examples:
     dailyos start                Start web UI (auto-detects workspace)
     dailyos start -p 8080        Start on a different port
     dailyos start --no-browser   Start without opening browser
+    dailyos start --set-default  Start and save workspace as default
     dailyos stop                 Stop the web UI server
     dailyos ui                   Show web UI status
+    dailyos config               Show current configuration
+    dailyos config workspace     Show default workspace
+    dailyos config workspace ~/Documents/VIP  Set default workspace
+    dailyos config scan          Rescan for workspaces
+    dailyos config reset         Reset to default configuration
         """
     )
     parser.add_argument(
@@ -632,6 +810,8 @@ Examples:
                               help='Port to run on (default: 5050)')
     start_parser.add_argument('--no-browser', action='store_true',
                               help="Don't open browser automatically")
+    start_parser.add_argument('--set-default', action='store_true',
+                              help='Save workspace as default after starting')
 
     # Stop command
     stop_parser = subparsers.add_parser('stop', help='Stop the web UI server')
@@ -642,6 +822,22 @@ Examples:
     ui_parser = subparsers.add_parser('ui', help='Show web UI status')
     ui_parser.add_argument('-p', '--port', type=int, default=5050,
                            help='Port to check (default: 5050)')
+
+    # Config command with subcommands
+    config_parser = subparsers.add_parser('config', help='Manage configuration')
+    config_subparsers = config_parser.add_subparsers(dest='config_command')
+
+    # config workspace [path]
+    config_ws_parser = config_subparsers.add_parser('workspace',
+                                                     help='Get or set default workspace')
+    config_ws_parser.add_argument('path', nargs='?',
+                                   help='Workspace path to set as default')
+
+    # config scan
+    config_subparsers.add_parser('scan', help='Rescan for workspaces')
+
+    # config reset
+    config_subparsers.add_parser('reset', help='Reset configuration to defaults')
 
     args = parser.parse_args()
 
@@ -656,6 +852,7 @@ Examples:
         'start': cmd_start,
         'stop': cmd_stop,
         'ui': cmd_ui,
+        'config': cmd_config,
     }
 
     if args.command in commands:
