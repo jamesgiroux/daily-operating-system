@@ -1,9 +1,10 @@
 """
-Interactive prompts for the setup wizard.
+Interactive prompts for the setup wizard and workspace management.
 """
 
 import sys
-from typing import Optional, List, Tuple
+from pathlib import Path
+from typing import Optional, List, Tuple, Dict
 from .colors import Colors, success, error, warning, info, dim, highlight, bold
 
 
@@ -281,3 +282,207 @@ def show_doctor_results(results: dict) -> None:
         print(f"\n{warning(f'Problems found: {len(problems)}')}")
     else:
         print(f"\n{success('Everything looks healthy')}")
+
+
+# ============================================================================
+# Workspace Detection Prompts
+# ============================================================================
+
+def prompt_workspace_selection(workspaces: List[Dict]) -> Optional[int]:
+    """
+    Prompt user to select from multiple workspaces.
+
+    Args:
+        workspaces: List of workspace dicts with:
+            - path: Path object
+            - name: Display name
+            - version: Version string
+            - last_used: Optional ISO timestamp
+
+    Returns:
+        Selected index (0-indexed), or None if cancelled
+    """
+    from workspace import format_relative_time
+
+    print(f"\n  Found {len(workspaces)} workspace{'s' if len(workspaces) > 1 else ''}:\n")
+
+    for i, ws in enumerate(workspaces, 1):
+        path = ws.get('path')
+        name = ws.get('name', path.name if isinstance(path, Path) else 'Unknown')
+        last_used = format_relative_time(ws.get('last_used'))
+
+        # Format path for display (use ~ for home)
+        try:
+            display_path = f"~/{path.relative_to(Path.home())}"
+        except (ValueError, AttributeError):
+            display_path = str(path)
+
+        print(f"    {Colors.BOLD}{i}.{Colors.RESET} {display_path}")
+        if last_used != "never":
+            print(f"       {dim(f'Last used: {last_used}')}")
+        print()
+
+    while True:
+        try:
+            response = input(f"  Select workspace [1]: ").strip()
+
+            if not response:
+                return 0  # Default to first
+
+            choice = int(response)
+            if 1 <= choice <= len(workspaces):
+                return choice - 1
+
+            print(f"  {error('Invalid choice.')} Enter a number between 1 and {len(workspaces)}.")
+
+        except ValueError:
+            print(f"  {error('Invalid input.')} Enter a number.")
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return None
+
+
+def show_no_workspace_error(scan_summary: List[str]) -> None:
+    """
+    Display helpful error when no workspace is found.
+
+    Args:
+        scan_summary: List of location descriptions that were checked
+    """
+    print(f"\n  {error('No workspace found.')}\n")
+
+    print("  We looked in:")
+    for location in scan_summary:
+        print(f"    - {location}")
+
+    print()
+    print("  To create a workspace, run the setup wizard:")
+    print(f"    {info('./easy-start.command')}")
+    print()
+    print("  Or specify a workspace directly:")
+    print(f"    {info('dailyos start -w /path/to/workspace')}")
+    print()
+
+
+def show_invalid_workspace_error(path: Path, reason: str) -> None:
+    """
+    Display error when specified workspace is invalid.
+
+    Args:
+        path: The invalid path
+        reason: Why it's invalid
+    """
+    print(f"\n  {error('Invalid workspace:')} {path}\n")
+    print(f"  {reason}")
+    print()
+    print("  To create a new workspace, run the setup wizard:")
+    print(f"    {info('./easy-start.command')}")
+    print()
+
+
+def confirm_save_default(workspace: Path) -> bool:
+    """
+    Ask user if they want to save workspace as default.
+
+    Args:
+        workspace: The workspace to save
+
+    Returns:
+        True if user wants to save, False otherwise
+    """
+    # Format path for display
+    try:
+        display_path = f"~/{workspace.relative_to(Path.home())}"
+    except ValueError:
+        display_path = str(workspace)
+
+    return confirm(f"Save {display_path} as default?", default=True)
+
+
+def show_workspace_found(workspace: Path, method: str) -> None:
+    """
+    Display message about which workspace was found and how.
+
+    Args:
+        workspace: The resolved workspace
+        method: How it was found (from WorkspaceResolver.METHOD_*)
+    """
+    # Format path for display
+    try:
+        display_path = f"~/{workspace.relative_to(Path.home())}"
+    except ValueError:
+        display_path = str(workspace)
+
+    method_descriptions = {
+        'explicit': 'specified',
+        'cwd': 'current directory',
+        'config': 'default',
+        'auto-single': 'auto-detected',
+        'auto-selected': 'selected',
+    }
+
+    method_desc = method_descriptions.get(method, method)
+
+    if method == 'config':
+        print(f"  Using: {info(display_path)}")
+    else:
+        print(f"  Found workspace: {info(display_path)}")
+
+
+def show_config_info(config: Dict) -> None:
+    """
+    Display current configuration information.
+
+    Args:
+        config: The configuration dictionary
+    """
+    print(f"\n{bold('DailyOS Configuration')}\n")
+
+    # Default workspace
+    default = config.get('default_workspace')
+    if default:
+        try:
+            display_path = f"~/{Path(default).relative_to(Path.home())}"
+        except ValueError:
+            display_path = default
+        print(f"  Default workspace: {info(display_path)}")
+    else:
+        print(f"  Default workspace: {dim('(not set)')}")
+
+    # Scan locations
+    print(f"\n  Scan locations:")
+    for loc in config.get('scan_locations', []):
+        try:
+            display_path = f"~/{Path(loc).relative_to(Path.home())}"
+        except ValueError:
+            display_path = loc
+
+        if Path(loc).exists():
+            print(f"    - {display_path}")
+        else:
+            print(f"    - {display_path} {dim('(not found)')}")
+
+    print(f"\n  Scan depth: {config.get('scan_depth', 2)}")
+
+    # Known workspaces
+    known = config.get('known_workspaces', [])
+    if known:
+        print(f"\n  Known workspaces:")
+        from workspace import format_relative_time
+        for ws in known[:5]:  # Show max 5
+            try:
+                display_path = f"~/{Path(ws['path']).relative_to(Path.home())}"
+            except ValueError:
+                display_path = ws['path']
+            last_used = format_relative_time(ws.get('last_used'))
+            print(f"    - {display_path} ({last_used})")
+        if len(known) > 5:
+            print(f"    ... and {len(known) - 5} more")
+
+    # Preferences
+    prefs = config.get('preferences', {})
+    print(f"\n  Preferences:")
+    print(f"    Auto-save default: {success('yes') if prefs.get('auto_save_default') else dim('no')}")
+    print(f"    Prompt on multiple: {success('yes') if prefs.get('prompt_on_multiple') else dim('no')}")
+
+    print()
