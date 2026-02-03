@@ -95,7 +95,7 @@ flowchart BT
 | [Daily Workflow](daily-workflow.md) | /today, /wrap, /email-scan workflows | Three-phase execution, meeting prep, action reconciliation |
 | [Weekly Workflow](weekly-workflow.md) | /week command and impact capture | Monday planning, hygiene alerts, time blocking |
 | [Monthly/Quarterly](monthly-quarterly-workflow.md) | /month and /quarter workflows | Report aggregation, evidence mapping |
-| [Inbox Processing](inbox-processing.md) | Three-phase document workflow | Preparation, enrichment, delivery |
+| [Inbox Processing](inbox.md) | Three-phase document workflow | Preparation, enrichment, delivery |
 
 ### Architecture
 
