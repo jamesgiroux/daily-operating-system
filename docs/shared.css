@@ -94,27 +94,3 @@
     }
 }
 
-/* Dark theme nav variant (for intro.html dark slides) */
-.nav.nav-dark,
-.slide.title-slide ~ .nav {
-    /* Override handled by page-specific styles if needed */
-}
-
-@media (max-width: 768px) {
-    .nav.nav-dark {
-        background: rgba(26, 31, 36, 0.95);
-        color: var(--cream);
-    }
-
-    .nav.nav-dark .nav-btn {
-        color: var(--cream);
-    }
-
-    .nav.nav-dark .nav-btn:hover {
-        background: rgba(255, 255, 255, 0.1);
-    }
-
-    .nav.nav-dark .nav-progress {
-        color: rgba(245, 242, 239, 0.7);
-    }
-}
