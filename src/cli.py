@@ -13,12 +13,15 @@ Usage:
     dailyos start            Start the web UI server
     dailyos stop             Stop the web UI server
     dailyos ui               Show web UI status
+    dailyos google-setup     Guided Google API setup
 """
 
 import argparse
 import json
+import os
 import shutil
 import sys
+import webbrowser
 from pathlib import Path
 
 # Add src to path for imports
@@ -628,6 +631,272 @@ def cmd_ui(args) -> int:
     return 0
 
 
+def cmd_google_setup(args) -> int:
+    """Guided Google API setup."""
+    from steps.google_api import (
+        GOOGLE_CREDENTIALS_DIR, CREDENTIALS_FILE, TOKEN_FILE,
+        verify_google_setup, validate_credentials_json, save_credentials_secure
+    )
+
+    print(f"\n{bold('Google API Setup')}\n")
+
+    # Handle --verify flag
+    if args.verify:
+        status = verify_google_setup()
+        print(f"  Credentials directory: {dim(str(GOOGLE_CREDENTIALS_DIR))}")
+        print()
+
+        if status['credentials_exist']:
+            print(f"  credentials.json: {success('found')}")
+        else:
+            print(f"  credentials.json: {warning('not found')}")
+
+        if status['token_exist']:
+            print(f"  token.json:       {success('found (authorized)')}")
+        else:
+            print(f"  token.json:       {dim('not found')}")
+
+        if status.get('legacy_credentials_exist'):
+            print()
+            print(f"  {warning('Legacy credentials found in workspace.')}")
+            print(f"  These will be migrated on first use.")
+
+        print()
+        return 0 if status['credentials_exist'] else 1
+
+    # Handle --reset flag
+    if args.reset:
+        print("  This will delete your Google credentials and token.")
+        print("  You will need to set up Google API access again.")
+        print()
+
+        if not confirm("Delete credentials and start over?", default=False):
+            print("  Cancelled.")
+            return 0
+
+        deleted = []
+        if CREDENTIALS_FILE.exists():
+            CREDENTIALS_FILE.unlink()
+            deleted.append('credentials.json')
+        if TOKEN_FILE.exists():
+            TOKEN_FILE.unlink()
+            deleted.append('token.json')
+
+        if deleted:
+            deleted_str = ', '.join(deleted)
+            print(f"\n  {success(f'Deleted: {deleted_str}')}")
+        else:
+            print(f"\n  {dim('No credentials found to delete.')}")
+
+        print()
+        return 0
+
+    # Main guided setup flow
+    print("  This wizard will guide you through connecting Google services.")
+    print("  Your credentials will be stored securely at:")
+    print(f"  {info(str(GOOGLE_CREDENTIALS_DIR))}")
+    print()
+
+    # Check if already set up
+    status = verify_google_setup()
+    if status['credentials_exist']:
+        print(f"  {success('Google credentials already configured!')}")
+        if status['token_exist']:
+            print(f"  {success('Already authorized.')}")
+        else:
+            print(f"  {info('Run authentication to complete setup.')}")
+        print()
+        if not confirm("Would you like to reconfigure?", default=False):
+            return 0
+        print()
+
+    # Step-by-step guided flow
+    steps = [
+        {
+            'title': 'Open Google Cloud Console',
+            'desc': 'Sign in with the Google account you use for calendar/email.',
+            'url': 'https://console.cloud.google.com/',
+            'tips': [
+                "It's free - Google doesn't charge for personal API use",
+                "If you see 'Activate' for free trial, you can skip it",
+            ]
+        },
+        {
+            'title': 'Create a New Project',
+            'desc': '''In Google Cloud Console:
+   1. Click the project dropdown at the top
+   2. Click "New Project"
+   3. Name it "Productivity System" (or any name)
+   4. Click "Create" and wait for it to finish''',
+            'url': None,
+            'tips': [
+                'The project name is just for you - pick anything memorable',
+            ]
+        },
+        {
+            'title': 'Enable the APIs',
+            'desc': '''Enable each of these APIs (search and click Enable):
+   • Google Calendar API
+   • Gmail API
+   • Google Sheets API
+   • Google Docs API
+   • Google Drive API''',
+            'url': 'https://console.cloud.google.com/apis/library',
+            'tips': [
+                "If it says 'Manage' instead of 'Enable', it's already enabled",
+            ]
+        },
+        {
+            'title': 'Configure OAuth Consent Screen',
+            'desc': '''Set up the consent screen:
+   1. Go to "OAuth consent screen"
+   2. Select "External", click "Create"
+   3. Fill in: App name, User support email, Developer email
+   4. Click "Save and Continue" through remaining steps
+   5. On "Test Users", add YOUR email address''',
+            'url': 'https://console.cloud.google.com/apis/credentials/consent',
+            'tips': [
+                'External is fine - only you will use it',
+                'Adding yourself as test user is required',
+            ]
+        },
+        {
+            'title': 'Create OAuth Credentials',
+            'desc': '''Create the credentials file:
+   1. Go to "Credentials"
+   2. Click "Create Credentials" → "OAuth client ID"
+   3. Select "Desktop app" as application type
+   4. Name it "Desktop Client"
+   5. Click "Create"''',
+            'url': 'https://console.cloud.google.com/apis/credentials',
+            'tips': [
+                'Choose "Desktop app" not "Web application"',
+            ]
+        },
+        {
+            'title': 'Download Credentials',
+            'desc': '''Download the JSON file:
+   1. In the popup, click "Download JSON"
+   2. Or click the download icon in the credentials list
+   3. The file will have a long name - that's fine''',
+            'url': None,
+            'tips': [
+                'Keep this file - you\'ll paste its contents next',
+            ]
+        },
+    ]
+
+    for i, step in enumerate(steps, 1):
+        step_title = step['title']
+        print(f"\n{bold(f'Step {i}/{len(steps)}: {step_title}')}")
+        print("-" * 50)
+        step_desc = step['desc']
+        print(f"  {step_desc}")
+
+        if step.get('tips'):
+            print()
+            for tip in step['tips']:
+                print(f"  {dim(f'• {tip}')}")
+
+        if step.get('url'):
+            print()
+            step_url = step['url']
+            print(f"  {info('→ ' + step_url)}")
+            if confirm("Open in browser?", default=True):
+                webbrowser.open(step['url'])
+
+        print()
+        input("  Press Enter when done...")
+
+    # Final step: Get credentials content
+    print(f"\n{bold('Final Step: Import Credentials')}")
+    print("-" * 50)
+    print()
+    print("  You can either:")
+    print("  1. Paste the contents of your credentials.json file")
+    print("  2. Or copy credentials.json to:")
+    print(f"     {CREDENTIALS_FILE}")
+    print()
+
+    # Ensure directory exists
+    GOOGLE_CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(GOOGLE_CREDENTIALS_DIR, 0o700)
+
+    # Check if file already exists (user might have copied it)
+    if CREDENTIALS_FILE.exists():
+        print(f"  {success('Found credentials.json at the expected location!')}")
+    else:
+        print("  Paste your credentials.json content below (press Enter twice when done):")
+        print()
+
+        lines = []
+        while True:
+            try:
+                line = input()
+                if line == "" and lines and lines[-1] == "":
+                    break
+                lines.append(line)
+            except EOFError:
+                break
+
+        content = "\n".join(lines).strip()
+
+        if not content:
+            print(f"\n  {warning('No content provided.')}")
+            print(f"  You can manually copy credentials.json to:")
+            print(f"  {CREDENTIALS_FILE}")
+            print()
+            return 1
+
+        # Validate and save
+        success_save, error_msg = save_credentials_secure(content)
+        if not success_save:
+            print(f"\n  {error(f'Invalid credentials: {error_msg}')}")
+            print()
+            return 1
+
+        print(f"\n  {success('Credentials saved!')}")
+
+    # Verify and set permissions
+    os.chmod(CREDENTIALS_FILE, 0o600)
+
+    # Offer to test authentication
+    print()
+    print(f"  {success('Google API setup complete!')}")
+    print()
+    print("  Next steps:")
+    print("  • First use of a Google command will open a browser for authorization")
+    print("  • Run 'dailyos google-setup --verify' to check status")
+    print()
+
+    if confirm("Test authentication now? (opens browser)", default=True):
+        print()
+        print("  Opening browser for authorization...")
+
+        # Try to run the Google API script to trigger auth
+        import subprocess
+        script_path = CORE_PATH / 'templates' / 'scripts' / 'google' / 'google_api.py'
+
+        if script_path.exists():
+            result = subprocess.run(
+                ['python3', str(script_path), 'auth'],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                print(f"\n  {success('Authentication successful!')}")
+            else:
+                print(f"\n  {warning('Authentication may have failed.')}")
+                if result.stderr:
+                    print(f"  {dim(result.stderr[:200])}")
+        else:
+            print(f"  {warning('Could not find google_api.py script.')}")
+            print("  Authentication will happen on first use.")
+
+    print()
+    return 0
+
+
 def cmd_config(args) -> int:
     """Manage DailyOS configuration."""
     config = WorkspaceConfig()
@@ -765,6 +1034,9 @@ Examples:
     dailyos start --set-default  Start and save workspace as default
     dailyos stop                 Stop the web UI server
     dailyos ui                   Show web UI status
+    dailyos google-setup         Guided Google API setup
+    dailyos google-setup --verify  Check Google API status
+    dailyos google-setup --reset   Clear credentials and start over
     dailyos config               Show current configuration
     dailyos config workspace     Show default workspace
     dailyos config workspace ~/Documents/VIP  Set default workspace
@@ -823,6 +1095,13 @@ Examples:
     ui_parser.add_argument('-p', '--port', type=int, default=5050,
                            help='Port to check (default: 5050)')
 
+    # Google setup command
+    google_parser = subparsers.add_parser('google-setup', help='Guided Google API setup')
+    google_parser.add_argument('--verify', action='store_true',
+                               help='Check current Google API status')
+    google_parser.add_argument('--reset', action='store_true',
+                               help='Delete credentials and start over')
+
     # Config command with subcommands
     config_parser = subparsers.add_parser('config', help='Manage configuration')
     config_subparsers = config_parser.add_subparsers(dest='config_command')
@@ -852,6 +1131,7 @@ Examples:
         'start': cmd_start,
         'stop': cmd_stop,
         'ui': cmd_ui,
+        'google-setup': cmd_google_setup,
         'config': cmd_config,
     }
 
