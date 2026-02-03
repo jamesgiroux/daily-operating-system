@@ -433,7 +433,7 @@ _today/
 | Skill | Used By | For |
 |-------|---------|-----|
 | daily-ops | /today | MEETING-PREP workflow |
-| inbox-processing | /today | Auto-processing inbox |
+| inbox | /today | Auto-processing inbox |
 
 ### Python Tools
 
