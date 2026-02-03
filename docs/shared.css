@@ -53,8 +53,8 @@
     font-family: var(--font-mono);
     font-size: 0.85rem;
     color: var(--text-muted);
-    min-width: 60px;
     text-align: center;
+    white-space: nowrap;
 }
 
 /* ===========================================
@@ -89,7 +89,6 @@
 
     .nav-progress {
         color: var(--text-secondary);
-        min-width: 50px;
         font-size: 0.8rem;
     }
 }
