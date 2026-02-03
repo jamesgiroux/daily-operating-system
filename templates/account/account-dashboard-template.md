@@ -89,7 +89,7 @@ report_type: "account-dashboard"
 ### Success Metrics
 <!-- What does success look like for this customer? How do you measure value? -->
 
-| Metric | Current | Target | VIP Contribution |
+| Metric | Current | Target | Your Contribution |
 |--------|---------|--------|------------------|
 | | | | |
 

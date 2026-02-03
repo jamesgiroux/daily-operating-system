@@ -186,7 +186,7 @@ project: [Project name if project-related]
 area: [Area if area-related]
 
 # Processing metadata
-source: inbox-processing
+source: inbox
 processed_date: YYYY-MM-DD
 original_file: [original filename]
 ---
@@ -279,7 +279,7 @@ _inbox/
 Accounts/ClientName/meetings/
 └── 2026-01-15-summary-clientname-sync.md    # Delivered
 
-_archive/inbox-processing/
+_archive/inbox/
 └── 2026-01-15-batch/         # Archived processing records
     ├── processing-state.json
     └── [original file backups]

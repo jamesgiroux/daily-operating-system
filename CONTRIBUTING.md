@@ -15,7 +15,7 @@ Thank you for your interest in contributing to the Daily Operating System! This 
 
 1. **Clone or access the workspace**
    ```bash
-   cd /Users/[username]/Documents/VIP
+   cd /path/to/your/workspace
    ```
 
 2. **Install Python dependencies** (if any)

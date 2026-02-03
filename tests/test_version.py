@@ -299,19 +299,18 @@ class TestSymlinkOperations:
 
             from steps.skills import install_skill_symlink
 
-            # Add inbox-processing to available skills temporarily
-            skills_module.AVAILABLE_SKILLS['inbox-processing'] = {
-                'name': 'Inbox Processing',
+            # Add inbox to available skills temporarily
+            skills_module.AVAILABLE_SKILLS['inbox'] = {
+                'name': 'Inbox',
                 'description': 'Test',
                 'category': 'core',
                 'agents': [],
             }
-            skills_module.SKILL_TEMPLATE_MAP['inbox-processing'] = 'inbox'
 
-            result = install_skill_symlink(temp_workspace, "inbox-processing")
+            result = install_skill_symlink(temp_workspace, "inbox")
 
             assert result is True
-            skill_path = temp_workspace / ".claude" / "skills" / "inbox-processing"
+            skill_path = temp_workspace / ".claude" / "skills" / "inbox"
             assert skill_path.is_symlink()
 
     def test_is_symlink_intact(self, temp_core, temp_workspace):

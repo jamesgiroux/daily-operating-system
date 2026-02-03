@@ -114,7 +114,7 @@ def run_resilience_checks(yesterday: datetime) -> List[Dict[str, str]]:
         warnings.append({
             'level': 'warning',
             'message': f"{len(unprocessed)} transcripts from yesterday not processed",
-            'action': 'Process with /inbox-processing'
+            'action': 'Process with /inbox'
         })
 
     # 3. Check master task list exists
@@ -517,9 +517,9 @@ def main():
     task_data = load_master_task_list()
     all_tasks = task_data.get('tasks', [])
 
-    # Filter to James's tasks only
-    james_tasks = filter_tasks_by_owner(all_tasks, 'james')
-    incomplete_tasks = [t for t in james_tasks if not t.get('completed')]
+    # Filter to user's tasks only (owner configured in workspace.json or defaults to 'me')
+    user_tasks = filter_tasks_by_owner(all_tasks, 'me')
+    incomplete_tasks = [t for t in user_tasks if not t.get('completed')]
 
     # Get overdue
     overdue = get_overdue_tasks(incomplete_tasks, now)

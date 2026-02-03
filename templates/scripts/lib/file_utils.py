@@ -331,7 +331,7 @@ def check_yesterday_transcripts(yesterday: datetime) -> List[Path]:
 
 def format_path_for_display(path: Path) -> str:
     """
-    Format a path for display relative to VIP root.
+    Format a path for display relative to workspace root.
 
     Args:
         path: Full path
