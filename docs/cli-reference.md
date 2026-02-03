@@ -377,3 +377,12 @@ User preferences are stored in `~/.dailyos/config.json`:
 | 0 | Success |
 | 1 | Error (see output for details) |
 | 130 | Interrupted by user (Ctrl+C) |
+
+---
+
+## Related Documentation
+
+- [Getting Started](getting-started.md) — Setup and installation
+- [How It Works](guides/index.md) — Technical architecture guides
+- [Daily Workflow](guides/daily-workflow.md) — /today, /wrap, /email-scan commands
+- [Tools Reference](guides/tools-reference.md) — Python automation tools
