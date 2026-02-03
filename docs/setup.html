@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="shared.css">
     <style>
         :root {
             --cream: #f5f2ef;
@@ -663,46 +664,7 @@
             z-index: 100;
         }
 
-        /* Navigation */
-        .nav {
-            position: fixed;
-            bottom: 40px;
-            right: 40px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            z-index: 100;
-            background: var(--white);
-            padding: 12px 20px;
-            border-radius: 100px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.12);
-        }
-
-        .nav-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 44px;
-            height: 44px;
-            border: none;
-            background: transparent;
-            color: var(--charcoal);
-            cursor: pointer;
-            border-radius: 50%;
-            transition: all 0.2s ease;
-        }
-
-        .nav-btn:hover { background: var(--cream); }
-        .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .nav-btn svg { width: 20px; height: 20px; }
-
-        .nav-progress {
-            font-family: var(--font-mono);
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            min-width: 60px;
-            text-align: center;
-        }
+        /* Navigation - see shared.css */
 
         /* Special Slides */
         .slide.title-slide {
@@ -843,15 +805,7 @@
                 font-size: 1rem;
             }
 
-            .nav {
-                bottom: 24px;
-                right: 24px;
-                left: 24px;
-                padding: 8px 16px;
-                position: fixed;
-                background: var(--white);
-                box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-            }
+            /* Nav styles in shared.css */
 
             .folder-grid { grid-template-columns: 1fr; }
             .role-grid { grid-template-columns: 1fr; }
