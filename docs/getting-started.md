@@ -344,7 +344,7 @@ _inbox/2026-01-15-test-meeting-transcript.md
 
 ### 4. Process It
 ```
-/inbox-processing
+/inbox
 ```
 
 ### 5. See the Results
