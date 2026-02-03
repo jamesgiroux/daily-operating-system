@@ -131,7 +131,7 @@ def verify_skills(workspace: Path) -> Tuple[bool, List[Dict[str, Any]]]:
         Tuple of (any_installed, results)
     """
     skills = [
-        ('inbox-processing', 'Document flow workflow'),
+        ('inbox', 'Document flow workflow'),
         ('strategy-consulting', 'Strategic analysis'),
         ('editorial', 'Writing review standards'),
     ]

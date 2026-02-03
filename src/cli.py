@@ -221,7 +221,7 @@ def cmd_doctor(args) -> int:
 
     # Check skills
     skills_dir = workspace / '.claude' / 'skills'
-    for skill in ['inbox-processing', 'daily-csm', 'vip-editorial', 'strategy-consulting']:
+    for skill in ['inbox', 'editorial', 'strategy-consulting']:
         skill_path = skills_dir / skill
 
         if skill_path.is_symlink() and skill_path.resolve().exists():
@@ -378,7 +378,7 @@ def cmd_eject(args) -> int:
     if not workspace_path:
         print(f"  {error(f'Not found: {name}')}")
         print(f"  Available commands: today, week, wrap, month, quarter, email-scan")
-        print(f"  Available skills: inbox-processing, daily-csm, vip-editorial")
+        print(f"  Available skills: inbox, editorial, strategy-consulting")
         return 1
 
     if not workspace_path.is_symlink():

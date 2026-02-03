@@ -371,10 +371,10 @@ def write_email_summary_file(directive: Dict) -> Path:
 
 **Classification**: [AI to classify: 🟢 OPPORTUNITY / 🟡 INFO / 🔴 RISK / 🔵 ACTION NEEDED]
 
-**For James**:
+**For You**:
 - [ ] Specific ask: [AI to extract]
 - [ ] Recommended action: [AI to suggest]
-- [ ] Owner: [James / Other]
+- [ ] Owner: [You / Other]
 
 ---
 

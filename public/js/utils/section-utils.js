@@ -5,7 +5,7 @@
  * Provides utilities for:
  * - Finding content between headings
  * - Table row extraction
- * - Ring and meeting type classification
+ * - Tier and meeting type classification
  * - Section keyword matching
  *
  * @module utils/section-utils
@@ -61,18 +61,33 @@ const SectionUtils = {
   },
 
   /**
-   * Classify text into lifecycle ring
+   * Classify text into lifecycle tier
    * @param {string} text - Text to classify
-   * @returns {string} Ring classification
+   * @returns {string} Tier classification
    */
-  classifyRing(text) {
+  classifyTier(text) {
     const lower = (text || '').toLowerCase();
-    if (lower.includes('summit')) return Constants.RINGS.SUMMIT;
-    if (lower.includes('influence')) return Constants.RINGS.INFLUENCE;
-    if (lower.includes('evolution')) return Constants.RINGS.EVOLUTION;
-    if (lower.includes('project')) return Constants.RINGS.PROJECT;
-    return Constants.RINGS.FOUNDATION;
+
+    // Load tiers from config if available
+    const tiers = window.DailyOSConfig?.lifecycle?.tiers || [
+      { id: 'tier-1', label: 'Tier 1' },
+      { id: 'tier-2', label: 'Tier 2' },
+      { id: 'tier-3', label: 'Tier 3' },
+      { id: 'tier-4', label: 'Tier 4' }
+    ];
+
+    for (const tier of tiers) {
+      if (lower.includes(tier.label.toLowerCase()) || lower.includes(tier.id)) {
+        return tier.id;
+      }
+    }
+
+    if (lower.includes('project')) return 'project';
+    return tiers.length > 0 ? tiers[tiers.length - 1].id : 'tier-4';
   },
+
+  // Backwards compatibility
+  classifyRing(text) { return this.classifyTier(text); },
 
   /**
    * Classify meeting type from text
