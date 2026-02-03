@@ -211,3 +211,48 @@ def read_file_if_exists(path: Path) -> Optional[str]:
         return None
     with open(path, 'r') as f:
         return f.read()
+
+
+def write_secure_file(path: Path, content: str) -> None:
+    """
+    Write file with owner-only permissions (0o600).
+
+    Used for sensitive files like Google API credentials.
+
+    Args:
+        path: File path to write
+        content: Content to write
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Set directory to owner-only access
+    os.chmod(path.parent, 0o700)
+
+    with open(path, 'w') as f:
+        f.write(content)
+
+    # Set file to owner-only read/write
+    os.chmod(path, 0o600)
+
+
+def get_google_credentials_dir() -> Path:
+    """
+    Get the secure Google credentials directory.
+
+    Returns:
+        Path to ~/.dailyos/google/
+    """
+    return Path.home() / '.dailyos' / 'google'
+
+
+def ensure_google_credentials_dir() -> Path:
+    """
+    Ensure the Google credentials directory exists with secure permissions.
+
+    Returns:
+        Path to ~/.dailyos/google/
+    """
+    creds_dir = get_google_credentials_dir()
+    if not creds_dir.exists():
+        creds_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(creds_dir, 0o700)
+    return creds_dir
