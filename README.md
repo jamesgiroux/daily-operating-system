@@ -71,7 +71,7 @@ The wizard asks how you manage your work and configures the folder structure acc
 
 | Role | Description | Primary Folders |
 |------|-------------|-----------------|
-| **Customer Success** | TAMs, RMs, CSMs, AOs with dedicated portfolios | Accounts/ (12 subfolders each) |
+| **Customer Success** | CSMs, Account Managers with dedicated portfolios | Accounts/ (12 subfolders each) |
 | **Sales** | AEs, BDRs, SEs with pipeline stages | Accounts/Active, Qualified, Future |
 | **Project Management** | PMs, Program Managers | Projects/Active, Planning, Completed |
 | **Product Management** | Product Managers | Features/Discovery, In-Progress, Shipped |
