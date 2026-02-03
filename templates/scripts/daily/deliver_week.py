@@ -464,7 +464,7 @@ def write_focus_file(directive: Dict) -> Path:
 
 ## Could Do This Week
 
-7. [ ] Review success plan progress for Evolution+ accounts
+7. [ ] Review success plan progress for high-tier accounts
 8. [ ] Clean up master task list
 9. [ ] Process inbox files ({directive.get('files', {}).get('inbox_pending', 0)} pending)
 

@@ -323,16 +323,13 @@ if skills_dir.exists():
 ```
 Available Skills:
 
-✓ inbox-processing
+✓ inbox
   Process documents through _inbox with AI enrichment
-
-✓ daily-csm
-  Customer Success daily operations (meeting prep, dashboards)
 
 ✓ strategy-consulting
   McKinsey-style strategic analysis and frameworks
 
-○ editorial (not configured)
+✓ editorial
   Writing review and editorial workflows
 
 Commands to configure:

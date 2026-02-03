@@ -19,7 +19,7 @@
           "type": "string",
           "description": "Human-readable workspace name",
           "minLength": 1,
-          "examples": ["My Productivity", "VIP Workspace", "Sales Hub"]
+          "examples": ["My Productivity", "Customer Success Hub", "Sales Hub"]
         },
         "role": {
           "type": "string",
@@ -37,7 +37,7 @@
         "name": {
           "type": "string",
           "description": "Organization or company name",
-          "examples": ["Acme Corp", "WordPress VIP"]
+          "examples": ["Acme Corp", "My Company"]
         },
         "internal_domains": {
           "type": "array",
@@ -74,6 +74,98 @@
           "type": "boolean",
           "description": "Auto-start web dashboard when /today runs",
           "default": false
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "description": "Account lifecycle tier configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether lifecycle tier tracking is enabled",
+          "default": false
+        },
+        "tiers": {
+          "type": "array",
+          "description": "Configurable account tiers (e.g., strategic, growth, standard)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique identifier for the tier"
+              },
+              "label": {
+                "type": "string",
+                "description": "Display label for the tier"
+              },
+              "color": {
+                "type": "string",
+                "description": "Hex color code for visual display"
+              },
+              "contactThresholdDays": {
+                "type": "integer",
+                "description": "Days without contact before tier-specific alerts trigger"
+              },
+              "dashboardRefreshDays": {
+                "type": "integer",
+                "description": "Recommended dashboard review frequency in days"
+              }
+            },
+            "required": ["id", "label"]
+          }
+        }
+      }
+    },
+    "accounts": {
+      "type": "object",
+      "description": "Account data source configuration",
+      "properties": {
+        "sheetId": {
+          "type": "string",
+          "description": "Google Sheets ID for account data (optional)"
+        },
+        "columns": {
+          "type": "object",
+          "description": "Column index mapping for spreadsheet data",
+          "properties": {
+            "account": {
+              "type": "integer",
+              "description": "Column index for account name"
+            },
+            "tier": {
+              "type": "integer",
+              "description": "Column index for account tier"
+            },
+            "lastEngagement": {
+              "type": "integer",
+              "description": "Column index for last engagement date"
+            },
+            "contractValue": {
+              "type": "integer",
+              "description": "Column index for contract value"
+            },
+            "renewal": {
+              "type": "integer",
+              "description": "Column index for renewal date"
+            },
+            "cadence": {
+              "type": "integer",
+              "description": "Column index for meeting cadence"
+            },
+            "emailDomain": {
+              "type": "integer",
+              "description": "Column index for email domain"
+            }
+          }
+        },
+        "multiBuParents": {
+          "type": "array",
+          "description": "Parent companies with multiple business units",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },

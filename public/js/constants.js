@@ -6,7 +6,7 @@
  * and configuration values used throughout the DailyOS application.
  *
  * Categories:
- * - RINGS: Lifecycle ring classifications
+ * - TIERS: Lifecycle tier classifications (generic naming)
  * - ANIMATION: Timing values for animations
  * - PRIORITY: Task priority levels
  * - ICONS: SVG icon strings
@@ -16,13 +16,16 @@
  */
 
 const Constants = {
-  RINGS: {
-    SUMMIT: 'summit',
-    INFLUENCE: 'influence',
-    EVOLUTION: 'evolution',
-    FOUNDATION: 'foundation',
+  TIERS: {
+    TIER_1: 'tier-1',
+    TIER_2: 'tier-2',
+    TIER_3: 'tier-3',
+    TIER_4: 'tier-4',
     PROJECT: 'project'
   },
+
+  // Backwards compatibility alias
+  get RINGS() { return this.TIERS; },
 
   ANIMATION: {
     BASE_DELAY: 0.1,

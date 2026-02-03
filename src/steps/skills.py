@@ -84,8 +84,8 @@ AVAILABLE_COMMANDS = {
 
 # Available skills with descriptions
 AVAILABLE_SKILLS = {
-    'inbox-processing': {
-        'name': 'Inbox Processing',
+    'inbox': {
+        'name': 'Inbox',
         'description': 'Three-phase document flow (preparation, enrichment, delivery) to PARA structure',
         'category': 'core',
         'agents': ['file-organizer', 'integration-linker'],
@@ -121,11 +121,11 @@ AVAILABLE_SKILLS = {
 
 # Core vs extended packages
 CORE_COMMANDS = ['today', 'wrap', 'week']
-CORE_SKILLS = ['inbox-processing']
+CORE_SKILLS = ['inbox']
 
 # Mapping from skill key to template directory name (if different)
 SKILL_TEMPLATE_MAP = {
-    'inbox-processing': 'inbox',
+    # inbox matches directly now
     # These match directly:
     # 'strategy-consulting': 'strategy-consulting',
     # 'editorial': 'editorial',

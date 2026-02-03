@@ -112,7 +112,7 @@ def templates_dir(tmp_path):
     # Skills
     skills = templates / "skills"
     skills.mkdir()
-    for skill in ['inbox-processing', 'strategy-consulting', 'editorial']:
+    for skill in ['inbox', 'strategy-consulting', 'editorial']:
         skill_dir = skills / skill
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(f"# {skill}\n\nMock skill content.\n")

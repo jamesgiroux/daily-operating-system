@@ -52,6 +52,34 @@ from meeting_utils import (
 # Paths
 DIRECTIVE_FILE = TODAY_DIR / ".week-directive.json"
 IMPACT_DIR = LEADERSHIP_DIR / "02-Performance/Weekly-Impact"
+WORKSPACE_CONFIG_PATH = VIP_ROOT / "_config/workspace.json"
+
+
+def load_contact_thresholds() -> Dict[str, int]:
+    """
+    Load contact thresholds from lifecycle config.
+
+    Returns:
+        Dictionary mapping tier IDs/labels to threshold days
+    """
+    defaults = {'default': 90}
+    if WORKSPACE_CONFIG_PATH.exists():
+        try:
+            with open(WORKSPACE_CONFIG_PATH) as f:
+                config = json.load(f)
+            tiers = config.get("lifecycle", {}).get("tiers", [])
+            for tier in tiers:
+                tier_id = tier.get('id', '')
+                threshold = tier.get('contactThresholdDays')
+                if tier_id and threshold:
+                    defaults[tier_id] = threshold
+                    # Also add by label for flexible matching
+                    label = tier.get('label', tier_id)
+                    if label:
+                        defaults[label] = threshold
+        except (json.JSONDecodeError, IOError):
+            pass
+    return defaults
 
 
 def check_previous_week_impact(week_number: int, year: int) -> Dict[str, Any]:
@@ -127,17 +155,12 @@ def check_account_hygiene(account_lookup: Dict, domain_mapping: Dict) -> List[Di
     alerts = []
     today = datetime.now().date()
 
-    # Ring-based thresholds (days)
-    contact_thresholds = {
-        'Foundation': 90,
-        'Evolution': 45,
-        'Influence': 30,
-        'Summit': 14,
-    }
+    # Load tier-based contact thresholds from config
+    contact_thresholds = load_contact_thresholds()
 
     for account_name, data in account_lookup.items():
         account_alerts = []
-        ring = data.get('ring', 'Foundation')
+        tier = data.get('tier', 'default')
 
         # Check last engagement
         last_engagement = data.get('last_engagement')
@@ -145,13 +168,13 @@ def check_account_hygiene(account_lookup: Dict, domain_mapping: Dict) -> List[Di
             try:
                 last_date = datetime.strptime(last_engagement, '%Y-%m-%d').date()
                 days_since = (today - last_date).days
-                threshold = contact_thresholds.get(ring, 90)
+                threshold = contact_thresholds.get(tier, contact_thresholds.get('default', 90))
 
                 if days_since > threshold:
                     account_alerts.append({
                         'type': 'stale_contact',
                         'level': 'high' if days_since > threshold * 1.5 else 'medium',
-                        'message': f"No contact in {days_since} days (threshold: {threshold} for {ring})",
+                        'message': f"No contact in {days_since} days (threshold: {threshold} for {tier})",
                         'days': days_since,
                     })
             except ValueError:
@@ -206,16 +229,30 @@ def check_account_hygiene(account_lookup: Dict, domain_mapping: Dict) -> List[Di
                 'message': "No account dashboard found",
             })
 
-        # Check success plan
+        # Check success plan - load tiers that require success plans from config
         success_plan = data.get('success_plan')
         success_plan_updated = data.get('success_plan_updated')
 
-        if ring in ['Evolution', 'Influence', 'Summit']:
+        # Determine if this tier requires a success plan
+        requires_success_plan = False
+        if WORKSPACE_CONFIG_PATH.exists():
+            try:
+                with open(WORKSPACE_CONFIG_PATH) as f:
+                    config = json.load(f)
+                tiers = config.get("lifecycle", {}).get("tiers", [])
+                for t in tiers:
+                    if t.get('id') == tier or t.get('label') == tier:
+                        requires_success_plan = t.get('requiresSuccessPlan', False)
+                        break
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        if requires_success_plan:
             if not success_plan or success_plan.lower() == 'no':
                 account_alerts.append({
                     'type': 'missing_success_plan',
                     'level': 'high',
-                    'message': f"No success plan for {ring} account",
+                    'message': f"No success plan for {tier} account",
                 })
             elif success_plan_updated:
                 try:
@@ -234,7 +271,7 @@ def check_account_hygiene(account_lookup: Dict, domain_mapping: Dict) -> List[Di
         if account_alerts:
             alerts.append({
                 'account': account_name,
-                'ring': ring,
+                'tier': tier,
                 'arr': data.get('arr'),
                 'alerts': account_alerts,
             })
@@ -547,9 +584,9 @@ def main():
     account_tasks = scan_account_action_files()
     all_tasks.extend(account_tasks)
 
-    # Filter to James's tasks
-    james_tasks = filter_tasks_by_owner(all_tasks, 'james')
-    incomplete_tasks = [t for t in james_tasks if not t.get('completed')]
+    # Filter to user's tasks (owner defaults to 'me')
+    user_tasks = filter_tasks_by_owner(all_tasks, 'me')
+    incomplete_tasks = [t for t in user_tasks if not t.get('completed')]
 
     # Get overdue
     overdue = get_overdue_tasks(incomplete_tasks, now)
@@ -622,7 +659,7 @@ def main():
             'priority': 'medium',
         })
 
-    # Create agenda tasks for Foundation accounts
+    # Create agenda tasks for lower-tier accounts (where customer drives prep)
     for meeting in directive['meetings']['customer']:
         if meeting.get('prep_status') == '📅 Agenda needed':
             directive['ai_tasks'].append({
