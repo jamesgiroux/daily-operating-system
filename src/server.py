@@ -17,6 +17,7 @@ def find_ui_directory(workspace: Optional[Path] = None) -> Optional[Path]:
 
     Search order:
     1. Explicit workspace parameter (if provided)
+       - Checks both direct path and symlinked path
     2. Current working directory
     3. Core installation (~/.dailyos/_ui)
 
@@ -30,20 +31,36 @@ def find_ui_directory(workspace: Optional[Path] = None) -> Optional[Path]:
 
     # Check explicit workspace first
     if workspace:
-        workspace_ui = Path(workspace) / '_ui'
+        workspace = Path(workspace)
+        workspace_ui = workspace / '_ui'
         candidates.append(workspace_ui)
+
+        # If _ui is a symlink, also add the resolved path
+        if workspace_ui.is_symlink():
+            try:
+                candidates.append(workspace_ui.resolve())
+            except OSError:
+                pass
 
     # Check current directory
     cwd_ui = Path.cwd() / '_ui'
-    candidates.append(cwd_ui)
+    if cwd_ui not in candidates:
+        candidates.append(cwd_ui)
 
     # Fall back to core
     core_ui = CORE_PATH / '_ui'
-    candidates.append(core_ui)
+    if core_ui not in candidates:
+        candidates.append(core_ui)
 
     for ui_dir in candidates:
-        if (ui_dir / 'server.js').exists():
-            return ui_dir.resolve()
+        try:
+            # Resolve symlinks for the actual check
+            resolved = ui_dir.resolve() if ui_dir.exists() else ui_dir
+            if (resolved / 'server.js').exists():
+                # Return the original path (may be symlink) for proper workspace detection
+                return ui_dir.resolve()
+        except OSError:
+            continue
 
     return None
 
