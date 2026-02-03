@@ -58,10 +58,123 @@ except ImportError:
     print("Install them with: pip install google-auth-oauthlib google-api-python-client")
     sys.exit(1)
 
-# Configuration - paths relative to this script's location
-CONFIG_DIR = Path(__file__).parent
-CREDENTIALS_FILE = CONFIG_DIR / "credentials.json"
-TOKEN_FILE = CONFIG_DIR / "token.json"
+# Configuration - credentials stored securely in user home directory
+# This keeps credentials out of workspaces (safer for sharing/git)
+GOOGLE_DIR = Path.home() / '.dailyos' / 'google'
+CREDENTIALS_FILE = GOOGLE_DIR / "credentials.json"
+TOKEN_FILE = GOOGLE_DIR / "token.json"
+ERROR_LOG_FILE = GOOGLE_DIR / "error.log"
+
+# Legacy paths for migration (workspace-relative)
+LEGACY_CONFIG_DIR = Path(__file__).parent
+LEGACY_CREDENTIALS_FILE = LEGACY_CONFIG_DIR / "credentials.json"
+LEGACY_TOKEN_FILE = LEGACY_CONFIG_DIR / "token.json"
+
+# Error classification for actionable messages
+GOOGLE_API_ERRORS = {
+    400: ('Bad Request', 'Check your request parameters'),
+    401: ('Unauthorized', 'Delete ~/.dailyos/google/token.json and re-authenticate with: dailyos google-setup'),
+    403: ('Forbidden', 'Enable the required API in Google Cloud Console or check permissions'),
+    404: ('Not Found', 'The requested resource does not exist'),
+    429: ('Rate Limited', 'Too many requests. Wait a few minutes and retry'),
+    500: ('Server Error', 'Google server issue. Retry in a few minutes'),
+    503: ('Service Unavailable', 'Google service temporarily unavailable. Retry shortly'),
+}
+
+# Transient errors that should trigger retry
+TRANSIENT_ERRORS = {429, 500, 502, 503, 504}
+
+
+def log_error(operation: str, status_code: int, details: str, fix_suggestion: str = None):
+    """
+    Log error to persistent error log file.
+
+    Args:
+        operation: What operation was being attempted (e.g., "Calendar API - listing events")
+        status_code: HTTP status code
+        details: Error details from the API
+        fix_suggestion: Optional suggestion for how to fix
+    """
+    ensure_secure_directory()
+
+    error_name, default_fix = GOOGLE_API_ERRORS.get(status_code, ('Unknown Error', 'Check the error details'))
+    fix = fix_suggestion or default_fix
+
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_entry = f"""[{timestamp}] {operation} - {status_code} {error_name}
+  Operation: {operation}
+  Fix: {fix}
+  Details: {details}
+
+"""
+
+    try:
+        with open(ERROR_LOG_FILE, 'a') as f:
+            f.write(log_entry)
+    except Exception:
+        pass  # Don't fail if we can't write to log
+
+    # Also print to stderr for immediate feedback
+    print(f"Error: {error_name} ({status_code})", file=sys.stderr)
+    print(f"  {fix}", file=sys.stderr)
+
+
+def handle_http_error(error: HttpError, operation: str) -> None:
+    """
+    Handle an HttpError with proper logging and user-friendly message.
+
+    Args:
+        error: The HttpError from Google API
+        operation: Description of what operation was attempted
+    """
+    status_code = error.resp.status
+    details = str(error)
+
+    # Extract more specific error info if available
+    try:
+        error_content = json.loads(error.content.decode('utf-8'))
+        if 'error' in error_content:
+            err = error_content['error']
+            details = err.get('message', details)
+    except (json.JSONDecodeError, KeyError, AttributeError):
+        pass
+
+    log_error(operation, status_code, details)
+
+
+def retry_on_transient_error(max_retries: int = 3, base_delay: float = 1.0):
+    """
+    Decorator to retry API calls on transient errors with exponential backoff.
+
+    Args:
+        max_retries: Maximum number of retry attempts
+        base_delay: Base delay in seconds (doubles each retry)
+    """
+    import time
+    import functools
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_error = None
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except HttpError as e:
+                    last_error = e
+                    status_code = e.resp.status
+
+                    if status_code not in TRANSIENT_ERRORS or attempt == max_retries:
+                        raise
+
+                    delay = base_delay * (2 ** attempt)
+                    print(f"Transient error ({status_code}), retrying in {delay:.1f}s... (attempt {attempt + 1}/{max_retries})", file=sys.stderr)
+                    time.sleep(delay)
+
+            raise last_error
+        return wrapper
+    return decorator
+
 
 # Scopes for all services - can be customized during setup
 # Full access scopes (default)
@@ -86,7 +199,7 @@ SCOPES_READONLY = [
 # Load scope preference from config or default to full
 def get_scopes():
     """Load scopes from config file or default to full access."""
-    config_file = CONFIG_DIR / "config.json"
+    config_file = GOOGLE_DIR / "config.json"
     if config_file.exists():
         try:
             with open(config_file, 'r') as f:
@@ -98,10 +211,48 @@ def get_scopes():
     return SCOPES_FULL
 
 
+def ensure_secure_directory():
+    """Ensure the credentials directory exists with secure permissions."""
+    if not GOOGLE_DIR.exists():
+        GOOGLE_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(GOOGLE_DIR, 0o700)
+
+
+def migrate_legacy_credentials():
+    """
+    Migrate credentials from legacy workspace location to secure home directory.
+
+    Returns True if migration occurred.
+    """
+    ensure_secure_directory()
+    migrated = False
+
+    # Migrate credentials.json
+    if LEGACY_CREDENTIALS_FILE.exists() and not CREDENTIALS_FILE.exists():
+        import shutil
+        shutil.copy2(LEGACY_CREDENTIALS_FILE, CREDENTIALS_FILE)
+        os.chmod(CREDENTIALS_FILE, 0o600)
+        print(f"Migrated credentials.json to {CREDENTIALS_FILE}", file=sys.stderr)
+        migrated = True
+
+    # Migrate token.json
+    if LEGACY_TOKEN_FILE.exists() and not TOKEN_FILE.exists():
+        import shutil
+        shutil.copy2(LEGACY_TOKEN_FILE, TOKEN_FILE)
+        os.chmod(TOKEN_FILE, 0o600)
+        print(f"Migrated token.json to {TOKEN_FILE}", file=sys.stderr)
+        migrated = True
+
+    return migrated
+
+
 def get_credentials():
     """Get valid credentials, refreshing or re-authenticating as needed."""
     creds = None
     scopes = get_scopes()
+
+    # Try migration from legacy location first
+    migrate_legacy_credentials()
 
     if TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), scopes)
@@ -111,26 +262,31 @@ def get_credentials():
             try:
                 creds.refresh(Request())
             except Exception as e:
+                log_error("Token refresh", 401, str(e), "Delete token.json and re-authenticate")
                 print(f"Token refresh failed: {e}", file=sys.stderr)
                 creds = None
 
         if not creds:
             if not CREDENTIALS_FILE.exists():
                 print(f"Error: credentials.json not found at {CREDENTIALS_FILE}", file=sys.stderr)
-                print("\nTo set up Google API access:")
+                print("\nTo set up Google API access, run:")
+                print("  dailyos google-setup")
+                print("\nOr manually:")
                 print("1. Go to https://console.cloud.google.com")
                 print("2. Create a project or select existing one")
                 print("3. Enable Calendar, Gmail, Sheets, Docs, and Drive APIs")
                 print("4. Create OAuth 2.0 credentials (Desktop app)")
-                print("5. Download credentials.json and place it here")
+                print("5. Download credentials.json to ~/.dailyos/google/")
                 sys.exit(1)
 
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), scopes)
             creds = flow.run_local_server(port=0)
 
-        # Save the credentials for future runs
+        # Save the credentials with secure permissions
+        ensure_secure_directory()
         with open(TOKEN_FILE, 'w') as token:
             token.write(creds.to_json())
+        os.chmod(TOKEN_FILE, 0o600)
 
     return creds
 
@@ -143,6 +299,7 @@ def cmd_auth():
     return True
 
 
+@retry_on_transient_error(max_retries=3)
 def cmd_calendar_list(days=7):
     """List upcoming calendar events."""
     creds = get_credentials()
@@ -181,7 +338,7 @@ def cmd_calendar_list(days=7):
         print(json.dumps(output, indent=2))
 
     except HttpError as e:
-        print(f"Calendar API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Calendar API")
         sys.exit(1)
 
 
@@ -194,7 +351,7 @@ def cmd_calendar_get(event_id):
         event = service.events().get(calendarId='primary', eventId=event_id).execute()
         print(json.dumps(event, indent=2))
     except HttpError as e:
-        print(f"Calendar API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Calendar API")
         sys.exit(1)
 
 
@@ -255,7 +412,7 @@ def cmd_calendar_create(summary, start_time, end_time, description=''):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Calendar API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Calendar API")
         sys.exit(1)
 
 
@@ -271,7 +428,7 @@ def cmd_calendar_delete(event_id):
             'id': event_id
         }, indent=2))
     except HttpError as e:
-        print(f"Calendar API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Calendar API")
         sys.exit(1)
 
 
@@ -315,7 +472,7 @@ def cmd_gmail_list(max_results=20):
         print(json.dumps(output, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -359,7 +516,7 @@ def cmd_gmail_get(message_id):
         print(json.dumps(output, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -388,7 +545,7 @@ def cmd_gmail_draft(to, subject, body):
         }))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -432,7 +589,7 @@ def cmd_gmail_search(query, max_results=20):
         print(json.dumps(output, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -447,7 +604,7 @@ def cmd_gmail_labels_list():
         print(json.dumps(labels, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -471,7 +628,7 @@ def cmd_gmail_labels_add(message_id, label_ids_json):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -495,7 +652,7 @@ def cmd_gmail_labels_remove(message_id, label_ids_json):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Gmail API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Gmail API")
         sys.exit(1)
 
 
@@ -513,7 +670,7 @@ def cmd_sheets_get(spreadsheet_id, range_name):
         print(json.dumps(result, indent=2))
 
     except HttpError as e:
-        print(f"Sheets API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Sheets API")
         sys.exit(1)
 
 
@@ -539,7 +696,7 @@ def cmd_sheets_update(spreadsheet_id, range_name, values_json):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Sheets API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Sheets API")
         sys.exit(1)
 
 
@@ -560,7 +717,7 @@ def cmd_sheets_create(title):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Sheets API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Sheets API")
         sys.exit(1)
 
 
@@ -589,7 +746,7 @@ def cmd_docs_get(document_id):
         print(json.dumps(output, indent=2))
 
     except HttpError as e:
-        print(f"Docs API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Docs API")
         sys.exit(1)
 
 
@@ -615,7 +772,7 @@ def cmd_docs_create(title, content=''):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Docs API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Docs API")
         sys.exit(1)
 
 
@@ -639,7 +796,7 @@ def cmd_docs_append(document_id, content):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Docs API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Docs API")
         sys.exit(1)
 
 
@@ -678,7 +835,7 @@ def cmd_drive_copy(file_id, new_name):
         }, indent=2))
 
     except HttpError as e:
-        print(f"Drive API error: {e}", file=sys.stderr)
+        handle_http_error(e, "Drive API")
         sys.exit(1)
 
 
