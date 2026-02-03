@@ -2,10 +2,20 @@
 Step 5: Google API Setup.
 
 Handles Google API OAuth configuration for Calendar, Gmail, Sheets, and Docs.
+
+Credentials are stored securely at ~/.dailyos/google/ with restricted permissions.
 """
 
+import os
+import json
 from pathlib import Path
 from typing import Tuple, Optional, List, Dict
+
+
+# Secure credential storage location
+GOOGLE_CREDENTIALS_DIR = Path.home() / '.dailyos' / 'google'
+CREDENTIALS_FILE = GOOGLE_CREDENTIALS_DIR / 'credentials.json'
+TOKEN_FILE = GOOGLE_CREDENTIALS_DIR / 'token.json'
 
 
 # Google API scopes by access level
@@ -34,9 +44,13 @@ def get_google_setup_instructions() -> str:
     Returns:
         Formatted instruction string
     """
-    return """
+    return f"""
 Google API Setup Instructions
 =============================
+
+Quick setup: Run 'dailyos google-setup' for guided setup.
+
+Manual setup:
 
 1. Go to Google Cloud Console:
    https://console.cloud.google.com/
@@ -72,11 +86,13 @@ Google API Setup Instructions
 
 6. Save the credentials:
    Save the downloaded file as:
-   .config/google/credentials.json
+   {CREDENTIALS_FILE}
+
+   (This secure location keeps credentials out of your workspace)
 
 7. Authorize the application:
-   Run the Google API script - it will open a browser
-   for you to authorize access to your Google account.
+   Run 'dailyos google-setup --verify' or use the Google API
+   script - it will open a browser for authorization.
 """
 
 
@@ -203,20 +219,21 @@ A popup will appear with your credentials!''',
         {
             'number': 6,
             'title': 'Download the Credentials File',
-            'instruction': '''Download and save the credentials:
+            'instruction': f'''Download and save the credentials:
 
 1. In the popup (or click the download icon in the credentials list)
 2. Click "Download JSON"
 3. Save the file as exactly: credentials.json
+4. Move it to: {CREDENTIALS_FILE}
 
-You'll place this file in your workspace shortly.''',
+This secure location keeps credentials out of your workspace.''',
             'action_url': None,
             'action_text': None,
             'check_message': 'Did you download the credentials.json file?',
             'tips': [
                 'The file will have a long name - rename it to "credentials.json"',
                 'Keep this file private - it gives access to your Google data',
-                'Don\'t commit this file to git',
+                f'Store at {GOOGLE_CREDENTIALS_DIR} (secure, not in workspace)',
             ]
         },
     ]
@@ -303,21 +320,28 @@ def run_interactive_google_setup(workspace: Path) -> dict:
     print("="*60)
     print()
 
-    creds_path = workspace / '.config' / 'google' / 'credentials.json'
     print(f"Copy your downloaded credentials.json to:")
-    print(f"  {creds_path}")
+    print(f"  {CREDENTIALS_FILE}")
     print()
+    print("(This secure location keeps credentials out of your workspace)")
+    print()
+
+    # Ensure directory exists
+    GOOGLE_CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(GOOGLE_CREDENTIALS_DIR, 0o700)
 
     # Wait for file or skip
     while True:
-        if creds_path.exists():
+        if CREDENTIALS_FILE.exists():
             print("✅ Found credentials.json!")
+            # Ensure secure permissions
+            os.chmod(CREDENTIALS_FILE, 0o600)
             break
 
         response = input("Press Enter after copying the file (or 'skip' to continue without Google): ").strip().lower()
         if response == 'skip':
             print("Skipping Google setup. You can set this up later by running:")
-            print("  python3 .config/google/google_api.py auth")
+            print("  dailyos google-setup")
             return {
                 'completed': False,
                 'steps_done': completed_steps,
@@ -336,35 +360,118 @@ def run_interactive_google_setup(workspace: Path) -> dict:
         'completed': True,
         'steps_done': completed_steps,
         'credentials_found': True,
+        'credentials_path': str(CREDENTIALS_FILE),
     }
 
 
-def check_credentials_exist(workspace: Path) -> Tuple[bool, Optional[Path]]:
+def check_credentials_exist(workspace: Path = None) -> Tuple[bool, Optional[Path]]:
     """
-    Check if Google credentials file exists.
+    Check if Google credentials file exists in the secure location.
 
     Args:
-        workspace: Root workspace path
+        workspace: Deprecated - kept for API compatibility, not used
 
     Returns:
         Tuple of (exists, path)
     """
-    creds_path = workspace / '.config' / 'google' / 'credentials.json'
-    return creds_path.exists(), creds_path
+    return CREDENTIALS_FILE.exists(), CREDENTIALS_FILE
 
 
-def check_token_exists(workspace: Path) -> Tuple[bool, Optional[Path]]:
+def check_token_exists(workspace: Path = None) -> Tuple[bool, Optional[Path]]:
     """
     Check if Google token file exists (indicates successful auth).
 
     Args:
+        workspace: Deprecated - kept for API compatibility, not used
+
+    Returns:
+        Tuple of (exists, path)
+    """
+    return TOKEN_FILE.exists(), TOKEN_FILE
+
+
+def check_legacy_credentials(workspace: Path) -> Tuple[bool, Optional[Path]]:
+    """
+    Check if Google credentials exist in the legacy workspace location.
+
+    Args:
         workspace: Root workspace path
 
     Returns:
         Tuple of (exists, path)
     """
-    token_path = workspace / '.config' / 'google' / 'token.json'
-    return token_path.exists(), token_path
+    legacy_path = workspace / '.config' / 'google' / 'credentials.json'
+    return legacy_path.exists(), legacy_path
+
+
+def validate_credentials_json(content: str) -> Tuple[bool, Optional[str]]:
+    """
+    Validate that content is a valid Google OAuth credentials file.
+
+    Args:
+        content: JSON string content
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    try:
+        data = json.loads(content)
+
+        # Handle null/None JSON values
+        if data is None:
+            return False, "Invalid credentials format: null value"
+
+        # Handle non-dict types (arrays, strings, numbers)
+        if not isinstance(data, dict):
+            return False, "Invalid credentials format: expected JSON object"
+
+        # Check for required fields (Desktop app credentials)
+        if 'installed' in data:
+            installed = data['installed']
+            required = ['client_id', 'client_secret', 'auth_uri', 'token_uri']
+            missing = [f for f in required if f not in installed]
+            if missing:
+                return False, f"Missing required fields: {', '.join(missing)}"
+            return True, None
+
+        # Check for web app credentials format
+        if 'web' in data:
+            return False, "This appears to be a Web Application credential. Please use Desktop App type instead."
+
+        return False, "Invalid credentials format. Expected 'installed' key for Desktop App credentials."
+
+    except json.JSONDecodeError as e:
+        return False, f"Invalid JSON: {e}"
+
+
+def save_credentials_secure(content: str) -> Tuple[bool, Optional[str]]:
+    """
+    Save credentials to the secure location with proper permissions.
+
+    Args:
+        content: JSON string content of credentials
+
+    Returns:
+        Tuple of (success, error_message)
+    """
+    # Validate first
+    is_valid, error = validate_credentials_json(content)
+    if not is_valid:
+        return False, error
+
+    try:
+        # Ensure directory exists with secure permissions
+        GOOGLE_CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
+        os.chmod(GOOGLE_CREDENTIALS_DIR, 0o700)
+
+        # Write credentials with secure permissions
+        with open(CREDENTIALS_FILE, 'w') as f:
+            f.write(content)
+        os.chmod(CREDENTIALS_FILE, 0o600)
+
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 
 def get_api_features() -> List[dict]:
@@ -473,24 +580,36 @@ def install_google_api_script(workspace: Path, file_ops) -> bool:
     return True
 
 
-def verify_google_setup(workspace: Path) -> dict:
+def verify_google_setup(workspace: Path = None) -> dict:
     """
     Verify Google API setup status.
 
     Args:
-        workspace: Root workspace path
+        workspace: Optional workspace path (for legacy script check)
 
     Returns:
         Dictionary with verification results
     """
-    creds_exist, creds_path = check_credentials_exist(workspace)
-    token_exist, token_path = check_token_exists(workspace)
+    creds_exist, creds_path = check_credentials_exist()
+    token_exist, token_path = check_token_exists()
 
-    return {
+    # Check for legacy credentials that could be migrated
+    legacy_creds_exist = False
+    if workspace:
+        legacy_creds_exist, _ = check_legacy_credentials(workspace)
+
+    result = {
         'credentials_exist': creds_exist,
         'credentials_path': str(creds_path) if creds_path else None,
         'token_exist': token_exist,
         'token_path': str(token_path) if token_path else None,
-        'script_exist': (workspace / '.config' / 'google' / 'google_api.py').exists(),
         'authorized': token_exist,  # Token exists means auth was successful
+        'legacy_credentials_exist': legacy_creds_exist,
+        'secure_location': str(GOOGLE_CREDENTIALS_DIR),
     }
+
+    # Check script existence if workspace provided
+    if workspace:
+        result['script_exist'] = (workspace / '.config' / 'google' / 'google_api.py').exists()
+
+    return result
