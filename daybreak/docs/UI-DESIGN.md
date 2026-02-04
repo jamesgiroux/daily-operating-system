@@ -1,6 +1,12 @@
-# Daybreak Design Document
+# UI Design: Daybreak
 
-## Design Principles
+> **Status:** Exploratory. This document captures early thinking about interface design. It will be revisited and refined after architectural decisions are made.
+
+See [PHILOSOPHY.md](PHILOSOPHY.md), [PRINCIPLES.md](PRINCIPLES.md), and [VISION.md](VISION.md) for foundational decisions that inform this design.
+
+---
+
+## UI Design Principles
 
 ### 1. Consumption First
 The primary interaction is reading, not writing. Every screen should be optimized for scanning and comprehension.
