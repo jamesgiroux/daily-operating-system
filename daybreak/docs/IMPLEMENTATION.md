@@ -51,10 +51,10 @@ daybreak/
 
 ### Done When
 - [x] `pnpm tauri dev` launches successfully
-- [ ] System tray icon visible
-- [ ] Click tray opens window
+- [x] System tray icon visible
+- [x] Click tray opens window
 - [x] Window styled with DailyOS colors
-- [ ] Closing window hides (doesn't quit)
+- [x] Closing window hides (doesn't quit)
 - [x] Theme toggle works
 
 ---
@@ -139,11 +139,11 @@ src-tauri/src/
 ```
 
 ### Done When
-- [ ] Dashboard reads from configured workspace
-- [ ] Config loaded from `~/.daybreak/config.json`
-- [ ] Content populated from `_today/` files
-- [ ] Empty state if `_today/` missing
-- [ ] Error state if workspace not configured
+- [x] Dashboard reads from configured workspace
+- [x] Config loaded from `~/.daybreak/config.json`
+- [x] Content populated from `_today/` files
+- [x] Empty state if `_today/` missing
+- [x] Error state if workspace not configured
 
 ---
 
