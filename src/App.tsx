@@ -4,7 +4,25 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
 import { Dashboard } from "@/components/dashboard/Dashboard";
-import { mockDashboardData } from "@/lib/mock-data";
+import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
+import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
+import { DashboardError } from "@/components/dashboard/DashboardError";
+import { useDashboardData } from "@/hooks/useDashboardData";
+
+function DashboardContent() {
+  const { state, refresh } = useDashboardData();
+
+  switch (state.status) {
+    case "loading":
+      return <DashboardSkeleton />;
+    case "empty":
+      return <DashboardEmpty message={state.message} />;
+    case "error":
+      return <DashboardError message={state.message} onRetry={refresh} />;
+    case "success":
+      return <Dashboard data={state.data} />;
+  }
+}
 
 function App() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
@@ -15,7 +33,7 @@ function App() {
         <AppSidebar />
         <SidebarInset>
           <Header onCommandMenuOpen={() => setCommandOpen(true)} />
-          <Dashboard data={mockDashboardData} />
+          <DashboardContent />
         </SidebarInset>
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </SidebarProvider>
