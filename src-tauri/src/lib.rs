@@ -1,3 +1,9 @@
+mod commands;
+mod parser;
+mod state;
+mod types;
+
+use state::AppState;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -8,6 +14,12 @@ use tauri::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(AppState::new())
+        .invoke_handler(tauri::generate_handler![
+            commands::get_config,
+            commands::reload_configuration,
+            commands::get_dashboard_data,
+        ])
         .setup(|app| {
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
