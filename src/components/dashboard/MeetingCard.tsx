@@ -45,7 +45,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
       )}
     >
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="flex items-start justify-between p-4">
+        <div className="flex items-start justify-between p-5">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="font-mono text-sm text-muted-foreground">
@@ -92,7 +92,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
 
         {hasPrep && (
           <CollapsibleContent>
-            <div className="border-t bg-muted/30 p-4 pt-3">
+            <div className="border-t bg-muted/30 p-5">
               <MeetingPrepContent prep={meeting.prep!} />
             </div>
           </CollapsibleContent>

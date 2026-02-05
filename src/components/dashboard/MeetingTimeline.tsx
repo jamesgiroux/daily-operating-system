@@ -24,7 +24,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-lg font-semibold">
           <CalendarDays className="size-5" />
@@ -39,7 +39,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
         {/* Timeline line */}
         <div className="absolute left-[7px] top-6 bottom-6 w-px bg-border" />
 
-        <div className="space-y-4">
+        <div className="space-y-6">
           {meetings.map((meeting, index) => (
             <div
               key={meeting.id}
