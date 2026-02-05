@@ -26,6 +26,7 @@ export const mockDashboardData: DashboardData = {
       endTime: "9:30 AM",
       title: "Team Standup",
       type: "internal",
+      hasPrep: false,
     },
     {
       id: "2",
@@ -35,6 +36,8 @@ export const mockDashboardData: DashboardData = {
       type: "customer",
       account: "TechStart Inc",
       isCurrent: true,
+      hasPrep: true,
+      prepFile: "02-1030-customer-techstart-prep.md",
       prep: {
         context:
           "First meeting with TechStart. They reached out after the webinar on AI productivity.",
@@ -65,6 +68,8 @@ export const mockDashboardData: DashboardData = {
       title: "Quarterly Business Review",
       type: "customer",
       account: "Acme Corp",
+      hasPrep: true,
+      prepFile: "03-1400-customer-acme-prep.md",
       prep: {
         context:
           "Q4 QBR with our largest enterprise customer. Renewal coming up in March.",
@@ -95,6 +100,7 @@ export const mockDashboardData: DashboardData = {
       endTime: "6:00 PM",
       title: "Gym - Personal Training",
       type: "personal",
+      hasPrep: false,
     },
   ],
   actions: [
