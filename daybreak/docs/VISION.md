@@ -1,12 +1,12 @@
-# Product Vision: Daybreak
+# Product Vision: DailyOS
 
 > Open the app. Your day is ready.
 
 ---
 
-## What Daybreak Is
+## What DailyOS Is
 
-Daybreak is a native desktop application that gives knowledge workers an AI-powered executive assistant—without requiring them to understand AI, write prompts, or touch a terminal.
+DailyOS is a native desktop application that gives knowledge workers an AI-powered executive assistant—without requiring them to understand AI, write prompts, or touch a terminal.
 
 **The experience:**
 1. You open the app
@@ -18,26 +18,26 @@ That's it. No configuration. No commands. No maintenance. The system operated wh
 
 ---
 
-## What Daybreak Is Not
+## What DailyOS Is Not
 
 **Not a note-taking app.**
-We're not competing with Notion or Obsidian on general-purpose note capture. Daybreak is opinionated about productivity workflows, not a blank canvas.
+We're not competing with Notion or Obsidian on general-purpose note capture. DailyOS is opinionated about productivity workflows, not a blank canvas.
 
 **Not a task manager.**
-We're not building a better Todoist. Tasks are a byproduct of work, not the center of it. Daybreak surfaces what's relevant; it doesn't demand you manage a backlog.
+We're not building a better Todoist. Tasks are a byproduct of work, not the center of it. DailyOS surfaces what's relevant; it doesn't demand you manage a backlog.
 
 **Not a calendar app.**
 We integrate with your calendar; we don't replace it. Google Calendar stays. We make what's on it actionable.
 
 **Not a collaboration tool.**
-Daybreak is for the alone part of work—individual execution, preparation, synthesis. Collaboration happens in Slack, Docs, meetings. We prepare you for those.
+DailyOS is for the alone part of work—individual execution, preparation, synthesis. Collaboration happens in Slack, Docs, meetings. We prepare you for those.
 
 **Not a Claude Code replacement.**
-Power users who want full control can still use Claude Code directly. Daybreak is the consumption layer on top of the same primitives.
+Power users who want full control can still use Claude Code directly. DailyOS is the consumption layer on top of the same primitives.
 
 ---
 
-## Who Daybreak Is For
+## Who DailyOS Is For
 
 ### The Primary User
 
@@ -89,7 +89,7 @@ They appreciate:
 - Summarizes relevant emails
 - Compiles into a daily overview
 
-**8:00 AM — You open Daybreak**
+**8:00 AM — You open DailyOS**
 - Today's overview is ready
 - Meeting prep cards are populated
 - Actions needing attention are surfaced
@@ -116,7 +116,7 @@ They appreciate:
 
 **Ad-hoc lookup**
 - "What did we discuss with BigCo last quarter?"
-- Daybreak finds it
+- DailyOS finds it
 - Context without searching
 
 ### Evening
@@ -138,7 +138,7 @@ They appreciate:
 
 ## What You Never Do
 
-In Daybreak, you never:
+In DailyOS, you never:
 
 - Open a terminal
 - Type a command
@@ -157,7 +157,7 @@ The system handles the infrastructure. You handle the decisions.
 
 ### For the User
 
-| Before Daybreak | After Daybreak |
+| Before DailyOS | After DailyOS |
 |-----------------|----------------|
 | 30 min prepping for meetings | Already prepared |
 | Actions fall through cracks | Actions surface when relevant |
@@ -193,39 +193,38 @@ The first experience is "here's something useful" not "let's configure your work
 Early in the experience, show that skipping a day doesn't break anything. "Welcome back. Here's today." Not "You missed 3 days. Here's your backlog."
 
 **3. Low switching cost**
-Your data is markdown files. Don't like Daybreak? Take your files and go. No lock-in. No hostage data. This reduces the risk of trying it.
+Your data is markdown files. Don't like DailyOS? Take your files and go. No lock-in. No hostage data. This reduces the risk of trying it.
 
 **4. Visible results**
-When you walk into a meeting prepared and someone asks "how did you know that?"—that's the moment Daybreak sells itself. Word of mouth from visible results.
+When you walk into a meeting prepared and someone asks "how did you know that?"—that's the moment DailyOS sells itself. Word of mouth from visible results.
 
 ---
 
-## Relationship to DailyOS
+## Evolution
 
-**DailyOS** is the proof of concept. Built on Claude Code. CLI-native. Where we test approaches to productivity, experiment with skills and agents, identify gaps.
+DailyOS started as a CLI proof-of-concept built on Claude Code—where we tested approaches to productivity, experimented with skills and agents, and identified gaps.
 
-**Daybreak** is the destination. Same primitives underneath (skills, agents, markdown, Python). But wrapped in an interface that doesn't require technical knowledge.
+DailyOS is now becoming a native desktop application. Same primitives underneath (skills, agents, markdown, Python). But wrapped in an interface that doesn't require technical knowledge.
 
 **The evolution:**
 
 ```mermaid
 flowchart TB
-    DailyOS["DailyOS<br/>(CLI, proof of concept)"]
-    Daybreak["Daybreak<br/>(native app, product)"]
-    Future["Future: Only Daybreak exists<br/>• Regular users get the app<br/>• Power users access primitives via Claude Code<br/>• Same files, same skills, same agents<br/>• Different interface for different needs"]
-
-    DailyOS --> Daybreak --> Future
+    CLI["DailyOS CLI<br/>(proof of concept)"]
+    App["DailyOS App<br/>(native desktop)"]
+    Future["Future: App-first<br/>• Regular users get the app<br/>• Power users access primitives via Claude Code<br/>• Same files, same skills, same agents<br/>• Different interface for different needs"]
+    CLI --> App --> Future
 ```
 
-Under the hood, they're the same system. Daybreak is DailyOS that runs itself.
+Under the hood, it's the same system. The native app is DailyOS that runs itself.
 
 ---
 
 ## The Boundary
 
-Daybreak is for the alone part of knowledge work. The boundary is where individual preparation meets group collaboration.
+DailyOS is for the alone part of knowledge work. The boundary is where individual preparation meets group collaboration.
 
-**Daybreak's job:**
+**DailyOS's job:**
 - Prepare you for meetings (your prep, your context)
 - Process your transcripts (your summaries, your actions)
 - Track your actions (your commitments, your follow-ups)
@@ -246,7 +245,7 @@ Daybreak is for the alone part of knowledge work. The boundary is where individu
 
 ## Extensibility Vision
 
-Out of the box, Daybreak is opinionated. It makes decisions so you don't have to.
+Out of the box, DailyOS is opinionated. It makes decisions so you don't have to.
 
 But knowledge work varies. Automattic's quarterly review cycle isn't everyone's. Customer Success workflows aren't engineering workflows.
 
@@ -259,7 +258,7 @@ Adjust timing, working hours, what surfaces and what doesn't. No code required.
 Install community-built extensions for specific workflows, integrations, or industries. Like Obsidian plugins or WordPress themes.
 
 **Level 3: Custom Skills**
-Power users can write their own skills and agents. Drop into Claude Code, create what you need, have it work in Daybreak.
+Power users can write their own skills and agents. Drop into Claude Code, create what you need, have it work in DailyOS.
 
 **Level 4: Fork and Own**
 It's open source. Take the whole thing and make it yours.
@@ -270,7 +269,7 @@ The goal: 80% of users never leave Level 1. The other 20% have full control.
 
 ## Success Criteria
 
-Daybreak succeeds when:
+DailyOS succeeds when:
 
 1. **Users open it daily** — not because they have to, but because it's useful
 2. **Users feel prepared** — walking into meetings with confidence
@@ -278,7 +277,7 @@ Daybreak succeeds when:
 4. **Guilt is gone** — the system adapts to them, not vice versa
 5. **They recommend it** — "you need to try this" word of mouth
 
-Daybreak fails if:
+DailyOS fails if:
 
 1. **It becomes another maintenance burden** — we've recreated the problem
 2. **Users feel behind** — guilt loop reappears
@@ -290,11 +289,11 @@ Daybreak fails if:
 
 ## The Name
 
-**Daybreak** — the moment the day begins.
+**DailyOS** — an operating system for your day.
 
-It's when the sun comes up and everything is new. It's the fresh start before the chaos. It's preparation meeting opportunity.
+It's the layer that manages your daily work. It prepares, processes, and presents—so you can focus on the work that matters.
 
-You open Daybreak. Your day breaks open. You're ready.
+You open DailyOS. Your day is ready. You're prepared.
 
 ---
 
