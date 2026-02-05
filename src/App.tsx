@@ -29,7 +29,7 @@ function App() {
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-      <SidebarProvider>
+      <SidebarProvider defaultOpen={false}>
         <AppSidebar />
         <SidebarInset>
           <Header onCommandMenuOpen={() => setCommandOpen(true)} />
