@@ -30,8 +30,7 @@ internal_attendees = [a for a in attendees if is_internal(a)]
 | 2 | 1:1 | 1:1, Customer Call |
 | 3-10 | Team | Sync, Customer Call, Training |
 | 11-50 | Group | Department meeting |
-| 51-500 | Division | Large org meeting |
-| 500+ | Company | All Hands |
+| 50+ | Large org / Company | All Hands |
 
 ### Step 3: Cross-Reference Attendees
 
@@ -383,7 +382,7 @@ def classify_meeting(meeting, user_domain):
 
 | Attribute | Value |
 |-----------|-------|
-| Classification | Large attendee count (20+), "All Hands", "Town Hall" in title |
+| Classification | Large attendee count (50+), "All Hands", "Town Hall" in title |
 | Prep depth | None |
 | History lookback | None |
 
@@ -417,7 +416,7 @@ No prep needed - this is a company-wide broadcast.
 
 When multiple rules match, use this priority:
 
-1. **Attendee count** (All Hands if 20+)
+1. **Attendee count** (All Hands if 50+)
 2. **Title keywords** (QBR, Training override)
 3. **Attendee matching** (Account contacts → Customer)
 4. **Domain analysis** (External vs internal)
