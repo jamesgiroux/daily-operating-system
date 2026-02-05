@@ -128,7 +128,7 @@ See `ACTIONS-SCHEMA.md` for full schema.
 |--------|------------------|-------------|
 | **Google Calendar** | Meetings, times, attendees | API (prepare phase) |
 | **Gmail** | Emails, threads, labels | API (prepare phase) |
-| **Account Tracker** | ARR, ring, health, programs | CSV in `3-resources/accounts/` |
+| **Account Tracker** | ARR, ring, health, programs | CSV in `2-areas/accounts/_tracker.csv` |
 | **Project Tracker** | Sprint status, blockers | Markdown in `1-projects/` |
 | **Meeting Notes** | Historical context, actions | Archive markdown |
 | **Manual Input** | Priorities, custom context | Config / inline |
