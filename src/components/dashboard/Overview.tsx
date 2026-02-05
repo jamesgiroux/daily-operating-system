@@ -7,16 +7,28 @@ interface OverviewProps {
   stats: DashboardData["stats"];
 }
 
+/**
+ * Returns a time-appropriate greeting based on the current hour
+ */
+function getTimeBasedGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export function Overview({ overview, stats }: OverviewProps) {
+  const greeting = getTimeBasedGreeting();
+
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div className="flex items-baseline gap-2">
-          <h2 className="text-2xl font-bold">{overview.greeting}</h2>
-          <span className="text-muted-foreground">—</span>
-          <span className="text-muted-foreground">{overview.date}</span>
+      <div className="space-y-3">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-3xl font-light italic">{overview.date}</h1>
         </div>
-        <p className="text-muted-foreground">{overview.summary}</p>
+        <p className="text-lg font-light text-muted-foreground">
+          {greeting} — {overview.summary}
+        </p>
         {overview.focus && (
           <div className="flex items-center gap-2 text-sm">
             <Target className="size-4 text-primary" />
