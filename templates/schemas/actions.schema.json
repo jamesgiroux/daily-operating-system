@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dailyos.dev/schemas/actions.json",
+  "title": "DailyOS Actions",
+  "description": "Action items with context",
+  "type": "object",
+  "required": ["date", "actions"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "overdue": { "type": "integer", "minimum": 0 },
+        "due_today": { "type": "integer", "minimum": 0 },
+        "due_this_week": { "type": "integer", "minimum": 0 },
+        "waiting_on": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "required": ["id", "title", "priority", "status"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "account": {
+          "type": "string",
+          "description": "Associated account if any"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["P1", "P2", "P3"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "completed", "waiting"]
+        },
+        "due_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "is_overdue": {
+          "type": "boolean",
+          "default": false
+        },
+        "days_overdue": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "context": {
+          "type": "string",
+          "description": "Additional context about the action"
+        },
+        "source": {
+          "type": "string",
+          "description": "Where this action came from (meeting, email, etc.)"
+        }
+      }
+    }
+  }
+}
