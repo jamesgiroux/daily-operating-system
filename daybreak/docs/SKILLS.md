@@ -2,7 +2,7 @@
 
 ## Overview
 
-DailyOS provides a collection of commands and skills that form the core of the "personal chief of staff" system. This document catalogs all available commands and skills, their purposes, and how they integrate with Daybreak automation.
+DailyOS provides a collection of commands and skills that form the core of the "personal chief of staff" system. This document catalogs all available commands and skills, their purposes, and how they integrate with DailyOS automation.
 
 ---
 
@@ -10,19 +10,19 @@ DailyOS provides a collection of commands and skills that form the core of the "
 
 ### Execution Model
 
-| Category | Description | Daybreak Role |
-|----------|-------------|---------------|
-| **Automated** | Runs on schedule without user intervention | Daybreak schedules and executes |
-| **Semi-Automated** | Schedulable but benefits from user input | Daybreak triggers, may prompt user |
+| Category | Description | DailyOS Role |
+|----------|-------------|--------------|
+| **Automated** | Runs on schedule without user intervention | DailyOS schedules and executes |
+| **Semi-Automated** | Schedulable but benefits from user input | DailyOS triggers, may prompt user |
 | **On-Demand** | User invokes when needed | Claude Code only |
 
 ### Invocation Methods
 
 | Method | Description |
 |--------|-------------|
-| **Daybreak** | Automatically scheduled by Daybreak app |
+| **DailyOS** | Automatically scheduled by DailyOS app |
 | **Claude Code** | User types `/command` in Claude Code terminal |
-| **Either** | Can be invoked via Daybreak or Claude Code |
+| **Either** | Can be invoked via DailyOS or Claude Code |
 
 ---
 
@@ -37,8 +37,8 @@ Commands are slash-invoked workflows that produce output in the workspace.
 | Attribute | Value |
 |-----------|-------|
 | Execution Model | Automated |
-| Invocation | Daybreak (scheduled) or Claude Code |
-| Schedule | Morning (default 8:00 AM) |
+| Invocation | DailyOS (scheduled) or Claude Code |
+| Schedule | Morning (default 6:00 AM) |
 | Duration | 2-5 minutes |
 | Phases | 3 (Prepare, Enrich, Deliver) |
 
@@ -54,51 +54,37 @@ Commands are slash-invoked workflows that produce output in the workspace.
 **Output Files**:
 ```
 _today/
-├── 00-overview.md              # Day dashboard
-├── 01-HHMM-type-name.md        # Meeting prep files
+├── data/                       # Machine-readable (JSON)
+│   ├── manifest.json
+│   ├── schedule.json
+│   ├── actions.json
+│   ├── emails.json
+│   └── preps/
+│       └── HHMM-meeting-id.json
+├── 00-overview.md              # Human-readable
+├── 01-HHMM-type-name-prep.md   # Meeting prep files
 ├── 80-actions-due.md           # Action items
-├── 81-suggested-focus.md       # Priorities
-├── 83-email-summary.md         # Email triage
-└── 90-agenda-needed/           # Draft agendas
+└── 83-email-summary.md         # Email triage
 ```
 
 **Dependencies**:
 - Google Calendar API (optional - degrades gracefully)
 - Google Gmail API (optional)
 - Google Sheets API (optional)
-- Account dashboards in `Accounts/*/01-Customer-Information/`
+- Account dashboards in `2-areas/accounts/*/dashboard.md` (CSM profile)
 
 ---
 
-### `/wrap` - End of Day Closure
+### `/wrap` - End of Day Closure (Replaced)
 
-**Purpose**: Close out the day with proper reconciliation and cleanup.
-
-| Attribute | Value |
-|-----------|-------|
-| Execution Model | Automated |
-| Invocation | Daybreak (scheduled) or Claude Code |
-| Schedule | End of day (default 5:30 PM) |
-| Duration | 2-5 minutes |
-| Phases | 3 (Prepare, Enrich, Deliver) |
-
-**What It Does**:
-- Verifies meeting transcripts were processed
-- Reconciles action items (completed, new, updated)
-- Captures daily impact (customer outcomes + personal)
-- Updates master task list
-- Archives today's files
-- Optionally updates Clay relationship notes
-
-**Interactive Elements**:
-- Prompts for task status updates
-- Prompts for impact capture (two-sided: customer + personal)
-- Offers transcript processing if inbox has files
-
-**Output**:
-- Updated `_today/tasks/master-task-list.md`
-- Updated week overview with completion status
-- `archive/YYYY-MM-DD/wrap-summary.md`
+> **Status:** Replaced in native app. See DEC23 in `RAIDD.md`.
+>
+> Batch end-of-day closure is unnatural. Most `/wrap` functions are now handled by:
+> - **Background Archive (F3)** — Nightly file archival (automated, no AI)
+> - **Post-Meeting Capture (F2, Phase 3)** — Event-driven prompts after meetings
+> - **SQLite action tracking** — Continuous reconciliation, not batch
+>
+> `/wrap` remains available as a Claude Code command for manual use.
 
 ---
 
@@ -109,7 +95,7 @@ _today/
 | Attribute | Value |
 |-----------|-------|
 | Execution Model | Automated (two-tier) |
-| Invocation | Daybreak (file watcher + scheduled) or Claude Code |
+| Invocation | DailyOS (file watcher + scheduled) or Claude Code |
 | Quick Processing | Immediate on file arrival |
 | Full Processing | Batched every 2 hours |
 | Phases | 3 (Prepare, Enrich, Deliver) |
@@ -145,7 +131,7 @@ _today/
 | Attribute | Value |
 |-----------|-------|
 | Execution Model | Semi-Automated |
-| Invocation | Daybreak (Monday) or Claude Code |
+| Invocation | DailyOS (Monday) or Claude Code |
 | Schedule | Monday morning (default 8:00 AM) |
 | Duration | 3-7 minutes |
 | Phases | 3 (Prepare, Enrich, Deliver) |
@@ -250,7 +236,7 @@ Skills are multi-step workflows with specialized processing logic. They are invo
 |-----------|-------|
 | Type | Processing Skill |
 | Used By | `/inbox` command, `/today`, `/wrap` |
-| Automation | Daybreak active inbox |
+| Automation | DailyOS active inbox |
 
 **Capabilities**:
 - File type detection
@@ -403,12 +389,12 @@ Users can create custom skills packages:
 
 ## Integration Matrix
 
-### Daybreak Automation Support
+### DailyOS Automation Support
 
-| Command/Skill | Daybreak Automated | Quick Processing | Full Processing | Schedule |
+| Command/Skill | DailyOS Automated | Quick Processing | Full Processing | Schedule |
 |---------------|-------------------|------------------|-----------------|----------|
-| `/today` | Yes | N/A | Yes | Morning |
-| `/wrap` | Yes | N/A | Yes | Evening |
+| `/today` | Yes | N/A | Yes | Morning (6:00 AM) |
+| `/wrap` | **Replaced** | N/A | N/A | See F2, F3 |
 | `/inbox` | Yes | Yes (file watch) | Yes (batched) | On-demand + periodic |
 | `/week` | Semi | N/A | Yes | Monday |
 | `/month` | No | N/A | N/A | User-invoked |
@@ -421,14 +407,14 @@ Users can create custom skills packages:
 ```mermaid
 flowchart TB
     subgraph Daily["Daily Cycle"]
-        Today["/today<br/>Creates:<br/>• Meeting prep<br/>• Action items<br/>• Email summary"]
-        TodayFiles["_today/*.md"]
-        Wrap["/wrap<br/>Processes:<br/>• Reconciles actions<br/>• Captures impact<br/>• Archives files"]
-        Archive["archive/"]
+        Today["/today<br/>Creates:<br/>• Meeting prep (JSON + MD)<br/>• Action items<br/>• Email summary"]
+        TodayFiles["_today/data/*.json<br/>_today/*.md"]
+        ArchiveJob["Background Archive<br/>(midnight, pure Rust)"]
+        Archive["archive/YYYY-MM-DD/"]
 
         Today --> TodayFiles
-        TodayFiles --> Wrap
-        Wrap --> Archive
+        TodayFiles --> ArchiveJob
+        ArchiveJob --> Archive
     end
 
     subgraph Weekly["Weekly Cycle"]
@@ -457,10 +443,12 @@ flowchart TB
 
 | Time | Action | Command |
 |------|--------|---------|
-| Morning | Review briefing | `/today` (auto) |
+| 6:00 AM | Briefing generated | `/today` (auto) |
+| Morning | Open app, day is ready | Dashboard |
 | During day | Check prep files | Dashboard |
-| Files arrive | Auto-process | `/inbox` (auto) |
-| End of day | Close out | `/wrap` (auto) |
+| After meetings | Quick capture (Phase 3) | Post-meeting prompt |
+| Files arrive | Auto-process | `/inbox` (auto, Phase 2) |
+| Midnight | Archive today's files | Background archive (auto) |
 
 ### Weekly Workflow
 
@@ -486,5 +474,5 @@ flowchart TB
 
 ---
 
-*Document Version: 1.0*
-*Last Updated: 2026-02-04*
+*Document Version: 1.1*
+*Last Updated: 2026-02-05 — Updated for native app: /wrap replaced, JSON output, 6:00 AM default*

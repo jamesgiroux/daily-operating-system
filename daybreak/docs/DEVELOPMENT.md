@@ -1,6 +1,6 @@
 # Development Guide
 
-> How to build and run Daybreak locally.
+> How to build and run DailyOS locally.
 
 ---
 
@@ -79,7 +79,7 @@ Create `~/.daybreak/config.json`:
   "schedules": {
     "today": {
       "enabled": true,
-      "cron": "0 8 * * 1-5",
+      "cron": "0 6 * * 1-5",
       "timezone": "America/New_York"
     }
   },
@@ -131,78 +131,56 @@ cargo test
 
 ```
 daybreak/
-├── docs/                    # Documentation
-│   ├── PHILOSOPHY.md
-│   ├── PRINCIPLES.md
-│   ├── VISION.md
-│   ├── JTBD.md
-│   ├── PRD.md
-│   ├── ARCHITECTURE.md
-│   ├── SKILLS.md
-│   ├── MVP.md
-│   ├── ROADMAP.md
-│   └── DEVELOPMENT.md       # (this file)
+├── docs/                        # See CLAUDE.md for doc index
 │
-├── src/                     # Frontend (React + TypeScript)
-│   ├── App.tsx              # Root component
-│   ├── main.tsx             # Entry point
-│   ├── components/          # UI components
-│   │   ├── Dashboard.tsx
-│   │   ├── MeetingCard.tsx
-│   │   ├── ActionList.tsx
-│   │   └── TrayMenu.tsx
-│   ├── hooks/               # Custom hooks
-│   │   ├── useTauri.ts      # IPC bridge
-│   │   └── useWorkflow.ts   # Workflow status
-│   ├── lib/                 # Utilities
-│   └── styles/              # CSS/Tailwind
+├── src/                         # Frontend (React + TypeScript)
+│   ├── App.tsx                  # Root component
+│   ├── main.tsx                 # Entry point
+│   ├── router.tsx               # TanStack Router ✅
+│   ├── components/
+│   │   ├── dashboard/           # Dashboard views ✅
+│   │   │   ├── Header.tsx
+│   │   │   ├── MeetingCard.tsx
+│   │   │   ├── RunNowButton.tsx
+│   │   │   └── StatusIndicator.tsx
+│   │   ├── layout/              # AppSidebar, CommandMenu ✅
+│   │   └── ui/                  # shadcn/ui components
+│   ├── hooks/
+│   │   ├── useDashboardData.ts  # ✅
+│   │   └── useWorkflow.ts       # ✅
+│   ├── pages/                   # Route pages ✅
+│   ├── lib/                     # Utilities, types
+│   └── types/
+│       └── index.ts             # TypeScript interfaces ✅
 │
-├── src-tauri/               # Backend (Rust)
+├── src-tauri/                   # Backend (Rust)
 │   ├── src/
-│   │   ├── main.rs          # Entry point
-│   │   ├── commands.rs      # Tauri IPC commands
-│   │   ├── scheduler.rs     # Job scheduling
-│   │   ├── executor.rs      # Workflow execution
-│   │   ├── pty.rs           # PTY management
-│   │   ├── state.rs         # State persistence
-│   │   └── workflow/        # Workflow implementations
-│   │       ├── mod.rs
-│   │       └── today.rs
+│   │   ├── main.rs              # Entry point ✅
+│   │   ├── lib.rs               # Library root, Tauri setup ✅
+│   │   ├── commands.rs          # Tauri IPC commands ✅
+│   │   ├── json_loader.rs       # JSON data loading ✅
+│   │   ├── scheduler.rs         # Cron-like scheduling ✅
+│   │   ├── pty.rs               # PTY/Claude Code ✅
+│   │   ├── state.rs             # Config & status ✅
+│   │   ├── notification.rs      # Native notifications ✅
+│   │   ├── error.rs             # Error types ✅
+│   │   ├── types.rs             # Shared types ✅
+│   │   ├── parser.rs            # Markdown parsing ✅
+│   │   └── workflow/
+│   │       ├── mod.rs           # ✅
+│   │       ├── today.rs         # ✅
+│   │       ├── archive.rs       # ✅
+│   │       ├── inbox.rs         # (Phase 2)
+│   │       └── week.rs          # (Phase 3)
 │   ├── Cargo.toml
-│   ├── tauri.conf.json      # Tauri configuration
-│   └── icons/               # App icons
+│   └── tauri.conf.json
 │
 ├── package.json
-├── pnpm-lock.yaml
-├── tsconfig.json
 ├── vite.config.ts
-└── README.md
+└── tailwind.config.js
 ```
 
----
-
-## Key Files to Create (Phase 1)
-
-### Frontend
-
-| File | Purpose |
-|------|---------|
-| `src/App.tsx` | Root component, routing |
-| `src/components/Dashboard.tsx` | Main dashboard layout |
-| `src/components/MeetingCard.tsx` | Meeting prep card component |
-| `src/components/ActionList.tsx` | Action items panel |
-| `src/hooks/useTauri.ts` | IPC command wrappers |
-
-### Backend
-
-| File | Purpose |
-|------|---------|
-| `src-tauri/src/main.rs` | App entry, window/tray setup |
-| `src-tauri/src/commands.rs` | IPC command handlers |
-| `src-tauri/src/scheduler.rs` | Cron-like job scheduling |
-| `src-tauri/src/executor.rs` | Three-phase workflow runner |
-| `src-tauri/src/pty.rs` | Claude Code subprocess |
-| `src-tauri/src/state.rs` | Config and status persistence |
+✅ = Implemented | (Phase N) = Planned
 
 ---
 
@@ -214,8 +192,8 @@ Commands the frontend can call:
 // src/hooks/useTauri.ts
 import { invoke } from '@tauri-apps/api/core';
 
-// Get today's overview
-const overview = await invoke<TodayOverview>('get_today_overview');
+// Get dashboard data (loads _today/data/*.json)
+const data = await invoke<DashboardResult>('get_dashboard_data');
 
 // Get workflow status
 const status = await invoke<WorkflowStatus>('get_workflow_status', { workflow: 'today' });
@@ -233,9 +211,9 @@ const history = await invoke<ExecutionRecord[]>('get_execution_history', { limit
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DAYBREAK_CONFIG` | Config file path | `~/.daybreak/config.json` |
-| `DAYBREAK_LOG_LEVEL` | Log verbosity | `info` |
-| `DAYBREAK_DEV` | Development mode flag | `false` |
+| `DAILYOS_CONFIG` | Config file path | `~/.daybreak/config.json` |
+| `DAILYOS_LOG_LEVEL` | Log verbosity | `info` |
+| `DAILYOS_DEV` | Development mode flag | `false` |
 
 ---
 
@@ -343,16 +321,10 @@ docs(readme): update setup instructions
 
 ---
 
-## Next Steps
+## Current Status
 
-1. **Scaffold Tauri project** — Run `pnpm create tauri-app`
-2. **Create basic window** — Verify Tauri runs
-3. **Add system tray** — Basic tray icon and menu
-4. **Implement scheduler** — Time-based job execution
-5. **Build dashboard shell** — Empty dashboard that renders
-
-See [ROADMAP.md](ROADMAP.md) for full milestone breakdown.
+Phase 1 (MVP) is functionally complete. See `IMPLEMENTATION.md` for phase details and `ROADMAP.md` for milestones.
 
 ---
 
-*This guide will evolve as the project develops. Update when setup changes.*
+*Last updated: 2026-02-05*

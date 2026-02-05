@@ -1,4 +1,4 @@
-# Daybreak Roadmap
+# DailyOS Roadmap
 
 > From proof-of-concept to product in three phases.
 
@@ -91,7 +91,7 @@ flowchart TB
 |-----------|-------------|-------------------|
 | **1.1 App Shell** | Tauri app with system tray | App launches, shows in tray, opens window |
 | **1.2 Scheduler** | Time-based job execution | Jobs run at configured times, survive restart |
-| **1.3 Executor** | Three-phase workflow orchestration | `/today` runs via Daybreak, produces `_today/` files |
+| **1.3 Executor** | Three-phase workflow orchestration | `/today` runs via DailyOS, produces `_today/` files |
 | **1.4 Dashboard** | UI renders briefing content | Overview, meeting cards, action list display correctly |
 | **1.5 Integration** | End-to-end happy path | Briefing runs at 8am, notification appears, dashboard shows content |
 | **1.6 Archive** | Background cleanup | Nightly archive runs, old files moved |
@@ -240,14 +240,7 @@ flowchart TB
 
 ## Decision Log
 
-| Decision | Date | Rationale |
-|----------|------|-----------|
-| MVP = F1 + F7 + F6 + F3 | 2026-02-04 | Prove core value prop first |
-| Defer inbox processing to Phase 2 | 2026-02-04 | Two-tier processing adds complexity |
-| Defer post-meeting to Phase 3 | 2026-02-04 | Requires calendar integration working first |
-| Pure Rust archive (no three-phase) | 2026-02-05 | Archive doesn't need AI; simpler, faster |
-| SQLite for system state in Phase 2 | 2026-02-05 | JSON fine for MVP; SQLite needed for queue state, indexes |
-| Hybrid storage: Markdown + SQLite | 2026-02-05 | User content stays markdown (portable); system state in SQLite |
+See `RAIDD.md` for the canonical decision log (DEC1-DEC23).
 
 ---
 
