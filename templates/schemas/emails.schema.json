@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dailyos.dev/schemas/emails.json",
+  "title": "DailyOS Email Summary",
+  "description": "Prioritized email summary",
+  "type": "object",
+  "required": ["date", "emails"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "high_priority": { "type": "integer", "minimum": 0 },
+        "normal_priority": { "type": "integer", "minimum": 0 },
+        "needs_action": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "emails": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/email" }
+    }
+  },
+  "$defs": {
+    "email": {
+      "type": "object",
+      "required": ["id", "sender", "subject", "priority"],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sender": {
+          "type": "string",
+          "description": "Display name"
+        },
+        "sender_email": {
+          "type": "string",
+          "format": "email"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "snippet": {
+          "type": "string",
+          "description": "Preview text"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["high", "normal"]
+        },
+        "received": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "email_type": {
+          "type": "string",
+          "description": "Classification (customer_response, internal, etc.)"
+        },
+        "conversation_arc": {
+          "type": "string",
+          "description": "Where this fits in the conversation"
+        },
+        "recommended_action": {
+          "type": "string",
+          "description": "What to do with this email"
+        },
+        "action_owner": {
+          "type": "string",
+          "description": "Who should act on this"
+        }
+      }
+    }
+  }
+}

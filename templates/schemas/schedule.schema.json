@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dailyos.dev/schemas/schedule.json",
+  "title": "DailyOS Schedule",
+  "description": "Daily schedule with meetings and overview",
+  "type": "object",
+  "required": ["date", "meetings"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "greeting": {
+      "type": "string",
+      "description": "Time-appropriate greeting (Good morning, etc.)"
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-line summary of the day"
+    },
+    "focus": {
+      "type": "string",
+      "description": "Suggested focus area for the day"
+    },
+    "meetings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/meeting" }
+    }
+  },
+  "$defs": {
+    "meeting": {
+      "type": "object",
+      "required": ["id", "time", "title", "type", "has_prep"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier (e.g., 0900-acme-sync)"
+        },
+        "time": {
+          "type": "string",
+          "description": "Start time (e.g., 9:00 AM)"
+        },
+        "end_time": {
+          "type": "string",
+          "description": "End time (e.g., 9:45 AM)"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["customer", "internal", "personal"]
+        },
+        "account": {
+          "type": "string",
+          "description": "Account name for customer meetings"
+        },
+        "is_current": {
+          "type": "boolean",
+          "default": false,
+          "description": "True if this meeting is happening now"
+        },
+        "has_prep": {
+          "type": "boolean",
+          "description": "Whether a prep file exists for this meeting"
+        },
+        "prep_file": {
+          "type": "string",
+          "description": "Path to prep JSON file (relative to data/)"
+        },
+        "prep_summary": {
+          "$ref": "#/$defs/prepSummary"
+        }
+      }
+    },
+    "prepSummary": {
+      "type": "object",
+      "description": "Condensed prep for dashboard dropdown",
+      "properties": {
+        "at_a_glance": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 4,
+          "description": "Key metrics or context points"
+        },
+        "discuss": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 4,
+          "description": "Talking points, actions, or questions"
+        },
+        "watch": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 3,
+          "description": "Risks or blockers to monitor"
+        },
+        "wins": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 3,
+          "description": "Recent wins to acknowledge"
+        }
+      }
+    }
+  }
+}
