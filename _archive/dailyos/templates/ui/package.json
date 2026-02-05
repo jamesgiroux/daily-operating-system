@@ -1,0 +1,19 @@
+{
+  "name": "dailyos-ui",
+  "version": "1.0.0",
+  "description": "Lightweight web UI for DailyOS _today/ dashboard and PARA structure",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "stop": "lsof -ti:5050 | xargs kill -9 2>/dev/null || echo 'Server not running'"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "gray-matter": "^4.0.3",
+    "marked": "^11.0.0"
+  },
+  "keywords": ["dailyos", "dashboard", "markdown", "para"],
+  "author": "James Giroux",
+  "license": "MIT"
+}
