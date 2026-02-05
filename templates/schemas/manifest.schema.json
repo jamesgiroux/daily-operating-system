@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dailyos.dev/schemas/manifest.json",
+  "title": "DailyOS Manifest",
+  "description": "Index of files for a given day",
+  "type": "object",
+  "required": ["date", "generated_at", "schema_version"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "The date this manifest represents (YYYY-MM-DD)"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this manifest was generated"
+    },
+    "partial": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if generation was incomplete"
+    },
+    "files": {
+      "type": "object",
+      "properties": {
+        "schedule": { "type": "string" },
+        "actions": { "type": "string" },
+        "emails": { "type": "string" },
+        "preps": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "total_meetings": { "type": "integer", "minimum": 0 },
+        "customer_meetings": { "type": "integer", "minimum": 0 },
+        "internal_meetings": { "type": "integer", "minimum": 0 },
+        "personal_meetings": { "type": "integer", "minimum": 0 },
+        "actions_due": { "type": "integer", "minimum": 0 },
+        "actions_overdue": { "type": "integer", "minimum": 0 },
+        "emails_flagged": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
