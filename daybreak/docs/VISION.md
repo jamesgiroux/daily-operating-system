@@ -207,16 +207,14 @@ When you walk into a meeting prepared and someone asks "how did you know that?"�
 **Daybreak** is the destination. Same primitives underneath (skills, agents, markdown, Python). But wrapped in an interface that doesn't require technical knowledge.
 
 **The evolution:**
-```
-DailyOS (CLI, proof of concept)
-    ↓
-Daybreak (native app, product)
-    ↓
-Future: Only Daybreak exists
-    - Regular users get the app
-    - Power users can still access primitives via Claude Code
-    - Same files, same skills, same agents
-    - Different interface for different needs
+
+```mermaid
+flowchart TB
+    DailyOS["DailyOS<br/>(CLI, proof of concept)"]
+    Daybreak["Daybreak<br/>(native app, product)"]
+    Future["Future: Only Daybreak exists<br/>• Regular users get the app<br/>• Power users access primitives via Claude Code<br/>• Same files, same skills, same agents<br/>• Different interface for different needs"]
+
+    DailyOS --> Daybreak --> Future
 ```
 
 Under the hood, they're the same system. Daybreak is DailyOS that runs itself.

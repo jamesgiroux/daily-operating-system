@@ -242,8 +242,10 @@ src-tauri/src/workflow/
 - [x] Notification appears when complete
 - [x] Dashboard shows day ready (meetings, actions, overview)
 - [x] Archive runs at midnight
-- [ ] No terminal required for daily workflow
-- [ ] 7 crash-free days
+- [x] No terminal required for daily workflow
+- [ ] 7 crash-free days ← In validation period
+
+**Status (2026-02-05):** MVP is functionally complete. Running 7-day stability validation.
 
 ---
 
@@ -460,10 +462,20 @@ Phases 2 and 3 can run in parallel after MVP.
 
 ## Open Decisions
 
-1. **Onboarding:** Add minimal setup in Phase 1C, or document manual config?
-2. **Error UX:** Modal vs banner vs tray notification?
-3. **Config UI:** Edit JSON acceptable through MVP?
+1. ~~**Onboarding:** Add minimal setup in Phase 1C, or document manual config?~~ → Manual config for MVP
+2. **Error UX:** Modal vs banner vs tray notification? → Currently using tray notifications
+3. ~~**Config UI:** Edit JSON acceptable through MVP?~~ → Yes, JSON editing is acceptable
+
+## Decisions Made
+
+| Decision | Rationale |
+|----------|-----------|
+| Pure Rust archive | No AI needed; simpler, faster than three-phase |
+| Sidebar collapsed by default | Better first impression, more breathing room |
+| Window 1180px default | Comfortable layout without immediate resize |
+| SQLite in Phase 2 | JSON fine for MVP; need SQLite for queue state |
 
 ---
 
-*Document Version: 1.0*
+*Document Version: 1.1*
+*Last Updated: 2026-02-05*
