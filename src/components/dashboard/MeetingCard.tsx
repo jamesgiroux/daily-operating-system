@@ -1,11 +1,13 @@
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ChevronDown, FileText } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { Meeting, MeetingType } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +35,8 @@ const badgeLabels: Record<MeetingType, string> = {
 
 export function MeetingCard({ meeting }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
-  const hasPrep = meeting.prep && Object.keys(meeting.prep).length > 0;
+  const hasInlinePrep = meeting.prep && Object.keys(meeting.prep).length > 0;
+  const hasPrepFile = meeting.hasPrep && meeting.prepFile;
 
   return (
     <div
@@ -70,7 +73,34 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
             <Badge className={badgeStyles[meeting.type]} variant="secondary">
               {badgeLabels[meeting.type]}
             </Badge>
-            {hasPrep && (
+
+            {/* View Prep button for meetings with prep files */}
+            {hasPrepFile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary hover:text-primary"
+                asChild
+              >
+                <Link
+                  to="/meeting/$prepFile"
+                  params={{ prepFile: meeting.prepFile! }}
+                >
+                  <FileText className="mr-1 size-3.5" />
+                  View Prep
+                </Link>
+              </Button>
+            )}
+
+            {/* No prep badge for customer meetings without prep */}
+            {!meeting.hasPrep && meeting.type === "customer" && (
+              <Badge variant="outline" className="text-muted-foreground">
+                No prep
+              </Badge>
+            )}
+
+            {/* Expand button for inline prep */}
+            {hasInlinePrep && (
               <CollapsibleTrigger asChild>
                 <button
                   className={cn(
@@ -90,7 +120,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
           </div>
         </div>
 
-        {hasPrep && (
+        {hasInlinePrep && (
           <CollapsibleContent>
             <div className="border-t bg-muted/30 p-5">
               <MeetingPrepContent prep={meeting.prep!} />
@@ -103,24 +133,69 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
 }
 
 function MeetingPrepContent({ prep }: { prep: NonNullable<Meeting["prep"]> }) {
+  // Build unified sections that work for any meeting type
+  // "At a Glance" - metrics for customer, key context for internal
+  const atAGlance = prep.metrics?.slice(0, 4) ?? [];
+
+  // "Discuss" - talking points, actions, or questions (whatever's available)
+  const discuss = prep.actions ?? prep.questions ?? [];
+
+  // "Watch" - risks or blockers
+  const watch = prep.risks ?? [];
+
+  const hasContent = prep.context || atAGlance.length > 0 || discuss.length > 0 || watch.length > 0;
+
+  if (!hasContent) {
+    return (
+      <p className="text-sm text-muted-foreground italic">
+        No prep summary available
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-4 text-sm">
+      {/* Context - always first if available */}
       {prep.context && (
         <p className="text-muted-foreground">{prep.context}</p>
       )}
 
+      {/* Universal grid with consistent sections */}
       <div className="grid gap-4 md:grid-cols-2">
-        {prep.metrics && prep.metrics.length > 0 && (
-          <PrepSection title="Metrics" items={prep.metrics} color="text-foreground" />
+        {/* At a Glance - key metrics or context points */}
+        {atAGlance.length > 0 && (
+          <PrepSection
+            title="At a Glance"
+            items={atAGlance}
+            color="text-foreground"
+          />
         )}
-        {prep.risks && prep.risks.length > 0 && (
-          <PrepSection title="Risks" items={prep.risks} color="text-destructive" />
+
+        {/* Discuss - talking points, actions, or questions */}
+        {discuss.length > 0 && (
+          <PrepSection
+            title="Discuss"
+            items={discuss.slice(0, 4)}
+            color="text-primary"
+          />
         )}
+
+        {/* Watch - risks or blockers */}
+        {watch.length > 0 && (
+          <PrepSection
+            title="Watch"
+            items={watch.slice(0, 3)}
+            color="text-destructive"
+          />
+        )}
+
+        {/* Wins - only show if available (typically customer) */}
         {prep.wins && prep.wins.length > 0 && (
-          <PrepSection title="Wins" items={prep.wins} color="text-success" />
-        )}
-        {prep.actions && prep.actions.length > 0 && (
-          <PrepSection title="Actions" items={prep.actions} color="text-primary" />
+          <PrepSection
+            title="Wins"
+            items={prep.wins.slice(0, 3)}
+            color="text-success"
+          />
         )}
       </div>
     </div>
