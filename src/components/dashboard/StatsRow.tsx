@@ -45,7 +45,7 @@ const statConfig = [
 
 export function StatsRow({ stats }: StatsRowProps) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {statConfig.map((stat, index) => (
         <Card
           key={stat.key}
@@ -55,7 +55,7 @@ export function StatsRow({ stats }: StatsRowProps) {
             `animate-delay-${index + 1}`
           )}
         >
-          <CardContent className="flex items-center gap-3 p-4">
+          <CardContent className="flex items-center gap-4 p-5">
             <div className={cn("rounded-md p-2", stat.bgColor)}>
               <stat.icon className={cn("size-4", stat.color)} />
             </div>
