@@ -1,3 +1,4 @@
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Sidebar,
   SidebarContent,
@@ -14,41 +15,51 @@ import {
 import {
   CalendarDays,
   CheckSquare,
-  Inbox,
   LayoutDashboard,
+  Mail,
   Settings,
+  Target,
   Zap,
 } from "lucide-react";
 
 const navItems = {
   today: [
     {
-      title: "Overview",
+      title: "Dashboard",
       icon: LayoutDashboard,
-      isActive: true,
+      href: "/",
+    },
+    {
+      title: "Focus",
+      icon: Target,
+      href: "/focus",
     },
   ],
   view: [
     {
-      title: "Inbox",
-      icon: Inbox,
-      badge: 7,
+      title: "Week",
+      icon: CalendarDays,
+      href: "/week",
     },
     {
-      title: "Calendar",
-      icon: CalendarDays,
+      title: "Emails",
+      icon: Mail,
+      href: "/emails",
     },
   ],
   actions: [
     {
       title: "Actions",
       icon: CheckSquare,
-      badge: 3,
+      href: "/actions",
     },
   ],
 };
 
 export function AppSidebar() {
+  const routerState = useRouterState();
+  const currentPath = routerState.location.pathname;
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -58,16 +69,19 @@ export function AppSidebar() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
               tooltip="DailyOS"
+              asChild
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:rounded-sm">
-                <Zap className="size-4 group-data-[collapsible=icon]:size-3" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">DailyOS</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  Your day, ready
-                </span>
-              </div>
+              <Link to="/">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground group-data-[collapsible=icon]:size-4 group-data-[collapsible=icon]:rounded-sm">
+                  <Zap className="size-4 group-data-[collapsible=icon]:size-3" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-semibold">DailyOS</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    Your day, ready
+                  </span>
+                </div>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -80,9 +94,15 @@ export function AppSidebar() {
             <SidebarMenu>
               {navItems.today.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton isActive={item.isActive} tooltip={item.title}>
-                    <item.icon />
-                    <span>{item.title}</span>
+                  <SidebarMenuButton
+                    isActive={currentPath === item.href}
+                    tooltip={item.title}
+                    asChild
+                  >
+                    <Link to={item.href}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -96,14 +116,15 @@ export function AppSidebar() {
             <SidebarMenu>
               {navItems.view.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton tooltip={item.title}>
-                    <item.icon />
-                    <span>{item.title}</span>
-                    {item.badge && (
-                      <span className="ml-auto text-xs text-muted-foreground">
-                        {item.badge}
-                      </span>
-                    )}
+                  <SidebarMenuButton
+                    isActive={currentPath === item.href}
+                    tooltip={item.title}
+                    asChild
+                  >
+                    <Link to={item.href}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -117,14 +138,15 @@ export function AppSidebar() {
             <SidebarMenu>
               {navItems.actions.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton tooltip={item.title}>
-                    <item.icon />
-                    <span>{item.title}</span>
-                    {item.badge && (
-                      <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-primary/15 text-xs font-medium text-primary">
-                        {item.badge}
-                      </span>
-                    )}
+                  <SidebarMenuButton
+                    isActive={currentPath === item.href}
+                    tooltip={item.title}
+                    asChild
+                  >
+                    <Link to={item.href}>
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -136,9 +158,15 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Settings">
-              <Settings />
-              <span>Settings</span>
+            <SidebarMenuButton
+              isActive={currentPath === "/settings"}
+              tooltip="Settings"
+              asChild
+            >
+              <Link to="/settings">
+                <Settings />
+                <span>Settings</span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
