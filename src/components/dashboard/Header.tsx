@@ -3,21 +3,30 @@ import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { ModeToggle } from "@/components/mode-toggle";
+import { StatusIndicator } from "./StatusIndicator";
+import { RunNowIconButton } from "./RunNowButton";
+import { useWorkflow } from "@/hooks/useWorkflow";
 
 interface HeaderProps {
   onCommandMenuOpen: () => void;
 }
 
 export function Header({ onCommandMenuOpen }: HeaderProps) {
+  const { status, nextRunTime, runNow, isRunning } = useWorkflow();
+
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-4" />
 
       <div className="flex flex-1 items-center justify-between">
-        <h1 className="text-lg font-semibold">Overview</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold">Overview</h1>
+          <StatusIndicator status={status} nextRunTime={nextRunTime} />
+        </div>
 
         <div className="flex items-center gap-2">
+          <RunNowIconButton onClick={runNow} isRunning={isRunning} />
           <Button
             variant="outline"
             size="sm"
