@@ -19,7 +19,7 @@ export function ActionItem({ action }: ActionItemProps) {
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-lg border p-3 transition-all duration-150",
+        "flex items-start gap-3 rounded-lg border p-4 transition-all duration-150",
         "hover:bg-muted/30",
         isCompleted && "bg-muted/20 opacity-60"
       )}
