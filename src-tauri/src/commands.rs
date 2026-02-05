@@ -1,10 +1,14 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use tauri::State;
 
-use crate::parser::{calculate_stats, count_inbox, parse_actions, parse_meetings, parse_overview};
+use crate::executor::request_workflow_execution;
+use crate::parser::{calculate_stats, count_inbox, parse_actions, parse_emails, parse_meetings, parse_overview};
+use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
-use crate::types::{Config, DashboardData};
+use crate::types::{Config, DashboardData, ExecutionRecord, WorkflowId, WorkflowStatus};
+use crate::SchedulerSender;
 
 /// Result type for dashboard data loading
 #[derive(Debug, serde::Serialize)]
@@ -17,7 +21,7 @@ pub enum DashboardResult {
 
 /// Get current configuration
 #[tauri::command]
-pub fn get_config(state: State<AppState>) -> Result<Config, String> {
+pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
     let guard = state.config.lock().map_err(|_| "Lock poisoned")?;
     guard.clone().ok_or_else(|| {
         "No configuration loaded. Create ~/.daybreak/config.json".to_string()
@@ -26,13 +30,13 @@ pub fn get_config(state: State<AppState>) -> Result<Config, String> {
 
 /// Reload configuration from disk
 #[tauri::command]
-pub fn reload_configuration(state: State<AppState>) -> Result<Config, String> {
+pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, String> {
     reload_config(&state)
 }
 
 /// Get dashboard data from workspace _today/ files
 #[tauri::command]
-pub fn get_dashboard_data(state: State<AppState>) -> DashboardResult {
+pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     // Get config
     let config = match state.config.lock() {
         Ok(guard) => match guard.clone() {
@@ -93,6 +97,15 @@ pub fn get_dashboard_data(state: State<AppState>) -> DashboardResult {
         Vec::new()
     };
 
+    // Parse emails (optional)
+    let emails_path = today_dir.join("emails.md");
+    let emails = if emails_path.exists() {
+        let parsed = parse_emails(&emails_path).unwrap_or_default();
+        if parsed.is_empty() { None } else { Some(parsed) }
+    } else {
+        None
+    };
+
     // Count inbox
     let inbox_count = count_inbox(workspace);
 
@@ -105,6 +118,70 @@ pub fn get_dashboard_data(state: State<AppState>) -> DashboardResult {
             stats,
             meetings,
             actions,
+            emails,
         },
     }
+}
+
+/// Trigger a workflow execution
+#[tauri::command]
+pub fn run_workflow(
+    workflow: String,
+    sender: State<SchedulerSender>,
+) -> Result<String, String> {
+    let workflow_id: WorkflowId = workflow
+        .parse()
+        .map_err(|e: String| e)?;
+
+    request_workflow_execution(&sender.0, workflow_id)?;
+
+    Ok(format!("Workflow '{}' queued for execution", workflow))
+}
+
+/// Get the current status of a workflow
+#[tauri::command]
+pub fn get_workflow_status(
+    workflow: String,
+    state: State<Arc<AppState>>,
+) -> Result<WorkflowStatus, String> {
+    let workflow_id: WorkflowId = workflow.parse()?;
+    Ok(state.get_workflow_status(workflow_id))
+}
+
+/// Get execution history
+#[tauri::command]
+pub fn get_execution_history(
+    limit: Option<usize>,
+    state: State<Arc<AppState>>,
+) -> Vec<ExecutionRecord> {
+    state.get_execution_history(limit.unwrap_or(10))
+}
+
+/// Get the next scheduled run time for a workflow
+#[tauri::command]
+pub fn get_next_run_time(
+    workflow: String,
+    state: State<Arc<AppState>>,
+) -> Result<Option<String>, String> {
+    let workflow_id: WorkflowId = workflow.parse()?;
+
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let entry = match workflow_id {
+        WorkflowId::Today => &config.schedules.today,
+        WorkflowId::Archive => &config.schedules.archive,
+    };
+
+    if !entry.enabled {
+        return Ok(None);
+    }
+
+    scheduler_get_next_run_time(entry)
+        .map(|dt| Some(dt.to_rfc3339()))
+        .map_err(|e| e.to_string())
 }

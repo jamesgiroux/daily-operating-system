@@ -2,7 +2,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::types::{
-    Action, ActionStatus, DayOverview, DayStats, Meeting, MeetingPrep, MeetingType, Priority,
+    Action, ActionStatus, DayOverview, DayStats, Email, EmailPriority, Meeting, MeetingPrep,
+    MeetingType, Priority,
 };
 
 /// Parse the overview.md file into a DayOverview struct
@@ -444,5 +445,118 @@ pub fn calculate_stats(meetings: &[Meeting], actions: &[Action], inbox_count: us
         customer_meetings,
         actions_due,
         inbox_count,
+    }
+}
+
+/// Parse the emails.md file into a list of Email structs
+/// Format:
+/// ## Emails Needing Attention
+/// - **Sender Name** <email@example.com> [high]
+///   Subject line here
+pub fn parse_emails(path: &Path) -> Result<Vec<Email>, String> {
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read emails: {}", e))?;
+
+    let mut emails = Vec::new();
+    let mut id_counter = 1;
+    let mut current_email: Option<EmailBuilder> = None;
+
+    for line in content.lines() {
+        let line_trimmed = line.trim();
+
+        // Email header: - **Sender Name** <email@example.com> [priority]
+        // or: - Sender Name <email@example.com>
+        if line_trimmed.starts_with("- ") {
+            // Save previous email
+            if let Some(builder) = current_email.take() {
+                if let Some(email) = builder.build() {
+                    emails.push(email);
+                }
+            }
+
+            if let Some(email) = parse_email_line(line_trimmed, id_counter) {
+                current_email = Some(email);
+                id_counter += 1;
+            }
+            continue;
+        }
+
+        // Subject line (indented continuation)
+        if let Some(ref mut builder) = current_email {
+            if !line_trimmed.is_empty() && !line_trimmed.starts_with('#') {
+                builder.subject = line_trimmed.to_string();
+            }
+        }
+    }
+
+    // Don't forget the last email
+    if let Some(builder) = current_email {
+        if let Some(email) = builder.build() {
+            emails.push(email);
+        }
+    }
+
+    Ok(emails)
+}
+
+/// Parse a single email line: - **Sender** <email> [priority]
+fn parse_email_line(line: &str, id: usize) -> Option<EmailBuilder> {
+    let rest = line.strip_prefix("- ")?.trim();
+
+    // Extract sender name (may be in **bold**)
+    let (sender, rest) = if rest.starts_with("**") {
+        let end = rest[2..].find("**")?;
+        let name = rest[2..2 + end].to_string();
+        (name, rest[4 + end..].trim())
+    } else {
+        // No bold, sender ends at <
+        let end = rest.find('<')?;
+        (rest[..end].trim().to_string(), &rest[end..])
+    };
+
+    // Extract email: <email@example.com>
+    let email_start = rest.find('<')?;
+    let email_end = rest.find('>')?;
+    let sender_email = rest[email_start + 1..email_end].to_string();
+
+    // Check for priority tag: [high] or [normal]
+    let after_email = &rest[email_end + 1..];
+    let priority = if after_email.contains("[high]") {
+        EmailPriority::High
+    } else {
+        EmailPriority::Normal
+    };
+
+    Some(EmailBuilder {
+        id: format!("e{}", id),
+        sender,
+        sender_email,
+        subject: String::new(),
+        priority,
+    })
+}
+
+struct EmailBuilder {
+    id: String,
+    sender: String,
+    sender_email: String,
+    subject: String,
+    priority: EmailPriority,
+}
+
+impl EmailBuilder {
+    fn build(self) -> Option<Email> {
+        if self.sender.is_empty() || self.sender_email.is_empty() {
+            return None;
+        }
+        Some(Email {
+            id: self.id,
+            sender: self.sender,
+            sender_email: self.sender_email,
+            subject: self.subject,
+            snippet: None,
+            priority: self.priority,
+            avatar_url: None,
+        })
     }
 }
