@@ -181,7 +181,7 @@ All flow into the same SQLite DB. The `source_type` and `source_id` track origin
 
 ### Completion flow
 
-User marks action complete in Daybreak UI:
+User marks action complete in DailyOS UI:
 1. Update SQLite: `status = 'completed'`, `completed_at = now()`
 2. If source was a meeting, optionally update the archived meeting notes
 
