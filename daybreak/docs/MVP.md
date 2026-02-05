@@ -28,7 +28,7 @@ That's it. Four features that prove the value proposition:
 
 ### MVP User Story
 
-> As a knowledge worker, I want to open Daybreak in the morning and see my day already prepared, so I can review my meetings and actions without running commands or reading markdown files.
+> As a knowledge worker, I want to open DailyOS in the morning and see my day already prepared, so I can review my meetings and actions without running commands or reading markdown files.
 
 ### MVP Happy Path
 

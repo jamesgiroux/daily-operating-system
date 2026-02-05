@@ -1,4 +1,4 @@
-# Philosophy: The Daybreak Manifesto
+# Philosophy: The DailyOS Manifesto
 
 > Your brain shouldn't have a landlord.
 
@@ -110,7 +110,7 @@ AI changes the equation.
 
 The account manager deserves an EA. The project lead deserves an EA. The individual contributor deserves an EA. Everyone doing knowledge work deserves someone (or something) handling the cognitive overhead so they can focus on what they're actually good at.
 
-**Daybreak is an EA for everyone.**
+**DailyOS is an EA for everyone.**
 
 ---
 
@@ -158,7 +158,7 @@ You've heard of "second brain" philosophy. Notion users love this term. They're 
 
 But Notion's second brain is a tenant relationship. You're renting space in their system. Your notes live in their database. Your connections are theirs to query and monetize.
 
-**Daybreak is ownership.**
+**DailyOS is ownership.**
 
 - **Markdown files.** Not proprietary formats.
 - **Local-first.** Not cloud-dependent.
@@ -181,7 +181,7 @@ Let's separate them:
 
 The productive work happens alone. Then you bring it to the group.
 
-**Daybreak is for the alone part.**
+**DailyOS is for the alone part.**
 
 The handoff to collaboration is simple: rendered outputs you can paste, share, or present. Documents ready for Google Docs. Summaries ready for Slack. Prep ready for meetings. The format of where your content goes is up to you—we give you something ready to use.
 
@@ -193,7 +193,7 @@ This is the shift that matters most.
 
 With every other system, you are the maintainer. You do the care and feeding. You water the plant or it dies. Miss a weekly review, fall behind. Forget to process your inbox, lose track. The system demands tribute.
 
-**With Daybreak, you are the leverager.**
+**With DailyOS, you are the leverager.**
 
 The system maintains itself. You show up and use what it's prepared. The AI worked while you slept so your morning starts with outputs, not inputs.
 
@@ -219,7 +219,7 @@ You walk into the meeting cold. You spend the first five minutes figuring out wh
 
 Now imagine this instead:
 
-You open Daybreak. Your day is already there. For that mystery meeting, you have:
+You open DailyOS. Your day is already there. For that mystery meeting, you have:
 - Background on the person and your relationship history
 - Context from past conversations across email, Slack, docs
 - Their recent projects and priorities
@@ -258,7 +258,7 @@ That somebody is always you.
 
 **What if it wasn't you anymore?**
 
-That's Daybreak.
+That's DailyOS.
 
 ---
 
