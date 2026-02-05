@@ -45,6 +45,18 @@ export interface DayStats {
   inboxCount: number;
 }
 
+export type EmailPriority = "high" | "normal";
+
+export interface Email {
+  id: string;
+  sender: string;
+  senderEmail: string;
+  subject: string;
+  snippet?: string;
+  priority: EmailPriority;
+  avatarUrl?: string;
+}
+
 export interface DashboardData {
   overview: {
     greeting: string;
@@ -55,4 +67,5 @@ export interface DashboardData {
   stats: DayStats;
   meetings: Meeting[];
   actions: Action[];
+  emails?: Email[];
 }
