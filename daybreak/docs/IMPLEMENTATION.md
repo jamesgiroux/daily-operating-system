@@ -115,10 +115,9 @@ src/
 ### Backend (Rust)
 - State module (config persistence)
 - `get_config` command
-- `get_today_overview` command
-- `get_meetings` command
-- `get_actions` command
-- Markdown parser (frontmatter + content)
+- `get_dashboard_data` command (JSON-only, DEC4)
+- JSON loader (`json_loader.rs`) for `_today/data/*.json`
+- Type definitions for dashboard, meetings, actions, emails
 
 ### Files
 ```
@@ -246,6 +245,80 @@ src-tauri/src/workflow/
 - [ ] 7 crash-free days ← In validation period
 
 **Status (2026-02-05):** MVP is functionally complete. Running 7-day stability validation.
+
+---
+
+## Phase 2 Pre-work: Data Architecture
+
+**Goal:** Establish the data infrastructure decisions need before Phase 2 features.
+
+### 2.0a: JSON-Primary Migration
+
+Phase 1B implemented JSON loading. Phase 2 completes the migration:
+
+1. Update Phase 3 Python (`deliver_today.py`) to generate JSON as source of truth
+2. Generate markdown FROM JSON (optional human-readable view)
+3. Remove markdown fallback from Rust parser
+
+### 2.0b: SQLite Setup
+
+Introduce `~/.dailyos/actions.db` as disposable cache (DEC18):
+
+- `actions` table — Cross-day action tracking
+- `meetings_history` table — Historical meeting lookup
+- `accounts` table (CSM profile only)
+- Rebuilt from workspace markdown files if corrupted
+
+See `ACTIONS-SCHEMA.md` for full schema.
+
+### 2.0c: Profile Selection
+
+Implement profile system (DEC20):
+
+- Profile selection during first-run setup
+- CSM profile: Account-focused PARA, meeting classification with account cross-reference
+- General profile: Standard PARA, no accounts concept
+- Non-destructive switching (DEC9)
+
+See `PROFILES.md` for full specification.
+
+### 2.0d: Meeting Type Templates
+
+Create Claude templates per meeting type (DEC21):
+
+- Customer Call, QBR, Training, Internal Sync, 1:1, Partnership, All Hands
+- Each template defines what Claude generates for that meeting type
+- Profile-aware: CSM gets account context, General gets attendee context
+
+See `MEETING-TYPES.md` for type definitions.
+
+### 2.0e: Reference Approach for Directives
+
+Update directive JSON to use file references instead of embedded content (DEC19):
+
+- Directive contains file paths, not copied data
+- Claude loads referenced files selectively during Phase 2
+- Key metrics inline (ARR, ring, health), detail by reference
+
+See `PREPARE-PHASE.md` for directive schema.
+
+### 2.0f: Unknown Meeting Research
+
+Implement proactive research for unknown external meetings (DEC22):
+
+- Phase 1: Local search (grep archive for attendee/company mentions)
+- Phase 2: Claude performs web research (company website, LinkedIn profiles)
+- Output: Research brief even when no prior history exists
+
+See `UNKNOWN-MEETING-RESEARCH.md` for research hierarchy.
+
+### Done When
+- [ ] Phase 3 generates JSON as source of truth
+- [ ] SQLite actions.db created and populated
+- [ ] Profile selection UI in setup wizard
+- [ ] Type-specific Claude templates for all meeting types
+- [ ] Directive uses reference approach
+- [ ] Unknown meeting research pipeline working
 
 ---
 
@@ -468,12 +541,7 @@ Phases 2 and 3 can run in parallel after MVP.
 
 ## Decisions Made
 
-| Decision | Rationale |
-|----------|-----------|
-| Pure Rust archive | No AI needed; simpler, faster than three-phase |
-| Sidebar collapsed by default | Better first impression, more breathing room |
-| Window 1180px default | Comfortable layout without immediate resize |
-| SQLite in Phase 2 | JSON fine for MVP; need SQLite for queue state |
+See `RAIDD.md` for the canonical decision log (DEC1-DEC23).
 
 ---
 
