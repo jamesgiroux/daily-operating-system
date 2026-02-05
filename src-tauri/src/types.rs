@@ -189,6 +189,28 @@ pub enum MeetingType {
     Personal,
 }
 
+/// Stakeholder information for meeting prep
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Stakeholder {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus: Option<String>,
+}
+
+/// Source reference for actions and context
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceReference {
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_updated: Option<String>,
+}
+
 /// Meeting prep details
 #[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -203,6 +225,16 @@ pub struct MeetingPrep {
     pub actions: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stakeholders: Option<Vec<Stakeholder>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_items: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub historical_context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_references: Option<Vec<SourceReference>>,
 }
 
 /// A single meeting
@@ -222,6 +254,11 @@ pub struct Meeting {
     pub prep: Option<MeetingPrep>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_current: Option<bool>,
+    /// Path to the prep file (e.g., "01-1630-customer-acme-prep.md")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_file: Option<String>,
+    /// Whether this meeting has a dedicated prep file
+    pub has_prep: bool,
 }
 
 /// Action priority level
@@ -254,6 +291,15 @@ pub struct Action {
     pub status: ActionStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_overdue: Option<bool>,
+    /// Additional context for the action
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// Source of the action (e.g., meeting, email)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Days overdue (if applicable)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub days_overdue: Option<i32>,
 }
 
 /// Daily statistics
@@ -299,4 +345,241 @@ pub struct DashboardData {
     pub actions: Vec<Action>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emails: Option<Vec<Email>>,
+}
+
+// =============================================================================
+// Week Overview Types
+// =============================================================================
+
+/// Week overview parsed from week-00-overview.md
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekOverview {
+    pub week_number: String,
+    pub date_range: String,
+    pub days: Vec<WeekDay>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_summary: Option<WeekActionSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hygiene_alerts: Option<Vec<HygieneAlert>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus_areas: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_time_blocks: Option<Vec<TimeBlock>>,
+}
+
+/// A single day in the week overview
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekDay {
+    pub date: String,
+    pub day_name: String,
+    pub meetings: Vec<WeekMeeting>,
+}
+
+/// Simplified meeting info for week view
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekMeeting {
+    pub time: String,
+    pub title: String,
+    pub account: Option<String>,
+    #[serde(rename = "type")]
+    pub meeting_type: MeetingType,
+    pub prep_status: PrepStatus,
+}
+
+/// Prep status for week view
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrepStatus {
+    PrepNeeded,
+    AgendaNeeded,
+    BringUpdates,
+    ContextNeeded,
+    PrepReady,
+    DraftReady,
+    Done,
+}
+
+/// Weekly action summary
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekActionSummary {
+    pub overdue_count: usize,
+    pub due_this_week: usize,
+    pub critical_items: Vec<String>,
+}
+
+/// Account hygiene alert
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneAlert {
+    pub account: String,
+    pub ring: Option<String>,
+    pub arr: Option<String>,
+    pub issue: String,
+    pub severity: AlertSeverity,
+}
+
+/// Alert severity level
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AlertSeverity {
+    Critical,
+    Warning,
+    Info,
+}
+
+/// Available time block
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeBlock {
+    pub day: String,
+    pub start: String,
+    pub end: String,
+    pub duration_minutes: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_use: Option<String>,
+}
+
+// =============================================================================
+// Focus Data Types
+// =============================================================================
+
+/// Focus suggestions parsed from 81-suggested-focus.md
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusData {
+    pub priorities: Vec<FocusPriority>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_blocks: Option<Vec<TimeBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quick_wins: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_notes: Option<EnergyNotes>,
+}
+
+/// Priority tier for focus
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusPriority {
+    pub level: String,
+    pub label: String,
+    pub items: Vec<String>,
+}
+
+/// Energy-aware scheduling notes
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnergyNotes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub morning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub afternoon: Option<String>,
+}
+
+// =============================================================================
+// Extended Email Types
+// =============================================================================
+
+/// Extended email with conversation context
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailDetail {
+    pub id: String,
+    pub sender: String,
+    pub sender_email: String,
+    pub subject: String,
+    pub received: Option<String>,
+    pub priority: EmailPriority,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_arc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_priority: Option<String>,
+}
+
+/// Email summary from 83-email-summary.md
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailSummaryData {
+    pub high_priority: Vec<EmailDetail>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub medium_priority: Option<Vec<EmailDetail>>,
+    pub stats: EmailStats,
+}
+
+/// Email statistics
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailStats {
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub needs_action: Option<usize>,
+}
+
+// =============================================================================
+// Full Meeting Prep (from individual prep files)
+// =============================================================================
+
+/// Complete meeting prep from individual prep file
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FullMeetingPrep {
+    pub file_path: String,
+    pub title: String,
+    pub time_range: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_context: Option<String>,
+    /// Quick Context metrics (key-value pairs like Ring, ARR, Health)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quick_context: Option<Vec<(String, String)>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attendees: Option<Vec<Stakeholder>>,
+    /// Since Last Meeting section items
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since_last: Option<Vec<String>>,
+    /// Current Strategic Programs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strategic_programs: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_state: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_items: Option<Vec<ActionWithContext>>,
+    /// Current Risks to Monitor
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risks: Option<Vec<String>>,
+    /// Suggested Talking Points
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub talking_points: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_principles: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub references: Option<Vec<SourceReference>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_markdown: Option<String>,
+}
+
+/// Action item with context (for prep files)
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionWithContext {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    pub is_overdue: bool,
 }
