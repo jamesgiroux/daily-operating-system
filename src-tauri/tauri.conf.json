@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "DailyOS",
-        "width": 1024,
+        "width": 1180,
         "height": 768,
         "center": true,
         "resizable": true,

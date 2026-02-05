@@ -180,14 +180,23 @@ src-tauri/src/
 ```
 
 ### Done When
-- [ ] Scheduler runs jobs at configured times
-- [ ] `/today` workflow executes via Claude Code
-- [ ] Notification: "Your day is ready"
-- [ ] Dashboard auto-refreshes after workflow
-- [ ] "Run Now" triggers immediate execution
-- [ ] Status indicator works
-- [ ] Schedule survives restart
-- [ ] Missed jobs run on wake
+- [x] Scheduler runs jobs at configured times
+- [x] `/today` workflow executes via Claude Code
+- [x] Notification: "Your day is ready"
+- [x] Dashboard auto-refreshes after workflow
+- [x] "Run Now" triggers immediate execution
+- [x] Status indicator works
+- [x] Schedule survives restart
+- [x] Missed jobs run on wake
+
+### Implementation Notes (Phase 1C)
+- Rust modules: `scheduler.rs`, `executor.rs`, `pty.rs`, `notification.rs`, `error.rs`, `workflow/`
+- Frontend: `useWorkflow.ts` hook, `StatusIndicator.tsx`, `RunNowButton.tsx`
+- Config extended with `schedules.today` and `schedules.archive` entries
+- Execution history persisted to `~/.daybreak/execution_history.json`
+- PTY-based Claude Code invocation via `portable-pty` crate
+- Cron parsing via `cron` crate with timezone support (`chrono-tz`)
+- Sleep/wake detection via time-jump polling (>5 min gap triggers missed job check)
 
 ---
 
@@ -210,20 +219,29 @@ src-tauri/src/workflow/
 ```
 
 ### Done When
-- [ ] Archive runs at midnight
-- [ ] Files moved to `archive/YYYY-MM-DD/`
-- [ ] Silent operation (no notification)
-- [ ] No error if nothing to archive
+- [x] Archive runs at midnight
+- [x] Files moved to `archive/YYYY-MM-DD/`
+- [x] Silent operation (no notification)
+- [x] No error if nothing to archive
+
+### Implementation Notes (Phase 1D)
+- Pure Rust archive implementation (no Python scripts, no Claude Code)
+- Separate execution path in `executor.rs` — skips three-phase pattern entirely
+- Preserves `week-*.md` files (weekly view needs them)
+- Archive schedule defaults to `0 0 * * *` (midnight daily)
+- Graceful handling: empty `_today/`, missing `_today/`, already-archived day
+- No `workflow-completed` event emitted (no dashboard refresh needed)
+- No notification sent (truly silent operation)
 
 ---
 
 ## MVP Complete
 
 **Success Criteria:**
-- [ ] Briefing runs automatically without user intervention
-- [ ] Notification appears when complete
-- [ ] Dashboard shows day ready (meetings, actions, overview)
-- [ ] Archive runs at midnight
+- [x] Briefing runs automatically without user intervention
+- [x] Notification appears when complete
+- [x] Dashboard shows day ready (meetings, actions, overview)
+- [x] Archive runs at midnight
 - [ ] No terminal required for daily workflow
 - [ ] 7 crash-free days
 
