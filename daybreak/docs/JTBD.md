@@ -1,4 +1,4 @@
-# Jobs To Be Done: Daybreak
+# Jobs To Be Done: DailyOS
 
 > Formal JTBD framework distilled from [PHILOSOPHY.md](PHILOSOPHY.md) and [VISION.md](VISION.md).
 >
@@ -26,13 +26,13 @@ They know how to ask a question and get output. That's the extent of their AI li
 - Struggling to keep up with transcripts, emails, Slack, and docs
 - Feeling guilty about systems they set up and abandoned
 
-**The shift Daybreak represents:**
+**The shift DailyOS represents:**
 
 > A human EA costs $60-150k per year. You have to be senior enough to justify that spend. So the cognitive burden reduction that transforms how leaders work has been locked away from everyone else.
 >
 > AI changes the equation.
 >
-> **Daybreak is an EA for everyone.**
+> **DailyOS is an EA for everyone.**
 
 The account manager deserves an EA. The project lead deserves an EA. The IC deserves an EA. Everyone doing knowledge work deserves something handling the cognitive overhead so they can focus on what they're actually good at.
 
@@ -175,28 +175,28 @@ Calendar shows → Calendar knows → You manage Calendar
 - Copies action items from transcript to task manager
 - Mentally correlates across systems
 
-**Daybreak's position:** We're not another silo. We're the **orchestration layer above all of them**.
+**DailyOS's position:** We're not another silo. We're the **orchestration layer above all of them**.
 
 ```mermaid
 flowchart TB
-    Daybreak["DAYBREAK<br/>(Orchestration)"]
+    DailyOS["DAILYOS<br/>(Orchestration)"]
     Otter["Otter<br/>(Record)"]
     Fathom["Fathom<br/>(Record)"]
     Notion["Notion<br/>(Store)"]
 
-    Daybreak --> Otter
-    Daybreak --> Fathom
-    Daybreak --> Notion
+    DailyOS -->Otter
+    DailyOS -->Fathom
+    DailyOS -->Notion
 ```
 
-**What Daybreak does differently:**
+**What DailyOS does differently:**
 
 | Tool | What It Does | What It Knows | Integration |
 |------|--------------|---------------|-------------|
 | Otter/Fathom | Records meetings | That meeting | None—ends there |
 | Notion/Obsidian | Stores notes | Those notes | Manual linking |
 | Gmail | Holds email | Those threads | Manual checking |
-| **Daybreak** | Orchestrates all | **Everything** | **Automatic** |
+| **DailyOS** | Orchestrates all | **Everything** | **Automatic** |
 
 **The value proposition:**
 
@@ -211,13 +211,13 @@ flowchart TB
 
 **The single funnel:**
 
-Daybreak is the **one place** where outputs from all your tools converge and become actionable context. You don't manage Otter AND Fathom AND Notion—you manage `_inbox/`, and Daybreak handles the rest.
+DailyOS is the **one place** where outputs from all your tools converge and become actionable context. You don't manage Otter AND Fathom AND Notion—you manage `_inbox/`, and DailyOS handles the rest.
 
 ---
 
 ## Hiring Criteria
 
-What makes someone "hire" Daybreak:
+What makes someone "hire" DailyOS:
 
 1. **Zero friction** — Runs automatically, no commands to remember
 2. **Zero maintenance** — Updates itself, no configuration required
@@ -230,14 +230,14 @@ What makes someone "hire" Daybreak:
 
 ## Jobs NOT Being Done
 
-Daybreak is **not** hired to:
+DailyOS is **not** hired to:
 
-- **Record meetings** — That's Otter, Fathom, Fireflies. Daybreak consumes their output.
+- **Record meetings** — That's Otter, Fathom, Fireflies. DailyOS consumes their output.
 - **Replace calendar apps** — Reads from them, doesn't manage them
 - **Replace task managers** — Surfaces tasks, doesn't provide task management UI
 - **Replace note-taking apps** — Consumes notes, doesn't create them
 - **Be a chat interface** — Produces; user consumes
-- **Be the AI** — That's Claude. Daybreak orchestrates.
+- **Be the AI** — That's Claude. DailyOS orchestrates.
 - **Work offline** — Requires Claude for AI features
 - **Manage teams** — Single-user only
 - **Sync across devices** — Local-first means one machine

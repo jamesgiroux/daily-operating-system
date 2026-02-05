@@ -1,4 +1,4 @@
-# Daybreak Product Requirements Document (PRD)
+# DailyOS Product Requirements Document (PRD)
 
 ## Version 1.1
 
@@ -6,9 +6,9 @@
 
 ## Executive Summary
 
-Daybreak is a native desktop application that wraps the DailyOS productivity framework, transforming it from a CLI-invoked system into an automated personal chief of staff. Daybreak schedules, executes, and orchestrates DailyOS workflows without requiring manual intervention, while preserving the ability to invoke Claude Code for interactive or on-demand tasks.
+DailyOS is evolving from a CLI framework into a native desktop application that automates its workflows, transforming the system from CLI-invoked commands into an automated personal chief of staff. The native app schedules, executes, and orchestrates DailyOS workflows without requiring manual intervention, while preserving the ability to invoke Claude Code for interactive or on-demand tasks.
 
-**Core Value Proposition**: AI produces, users consume. Daybreak inverts the traditional productivity tool paradigm by having AI gather context, process information, and surface insights automatically - rather than requiring users to remember to run commands.
+**Core Value Proposition**: AI produces, users consume. DailyOS inverts the traditional productivity tool paradigm by having AI gather context, process information, and surface insights automatically - rather than requiring users to remember to run commands.
 
 **Design Philosophy**: The dashboard IS the interface. Files become the backing store, not the primary experience. Users open the app and their day is ready—rendered as UI components, not markdown files to read.
 
@@ -28,9 +28,9 @@ This creates friction that prevents consistent adoption of the "chief of staff" 
 
 ---
 
-## Solution: Daybreak
+## Solution: DailyOS Native App
 
-Daybreak is a native Tauri desktop application that:
+The DailyOS native app is a Tauri desktop application that:
 
 1. **Renders your day as a dashboard** - Not files to read, but a polished UI to scan
 2. **Automates background execution** - Morning briefing runs before you wake up
@@ -42,7 +42,7 @@ Daybreak is a native Tauri desktop application that:
 
 ## Existing Foundation (What's Already Built)
 
-Daybreak wraps **DailyOS**, a proven productivity framework with working infrastructure:
+The native app wraps the **DailyOS CLI framework**, a proven productivity system with working infrastructure:
 
 ### Already Implemented in DailyOS
 
@@ -56,9 +56,9 @@ Daybreak wraps **DailyOS**, a proven productivity framework with working infrast
 | **Google API Integration** | ✅ Working | Calendar, Gmail, Sheets, Drive |
 | **Role Templates** | ✅ Complete | 8 roles with customized folder structures |
 
-### What Daybreak Adds
+### What the Native App Adds
 
-| Capability | DailyOS Today | With Daybreak |
+| Capability | DailyOS CLI | DailyOS App |
 |------------|---------------|---------------|
 | **Invocation** | Manual (`/today` in terminal) | Automatic (scheduled) |
 | **Inbox Processing** | Manual (`/inbox` command) | File watcher + automatic |
@@ -69,24 +69,24 @@ Daybreak wraps **DailyOS**, a proven productivity framework with working infrast
 
 ### Architecture Implication
 
-Daybreak is a **native shell** around proven infrastructure, not a greenfield build:
+The DailyOS native app is a **shell** around proven infrastructure, not a greenfield build:
 
 ```mermaid
 flowchart TB
-    subgraph Daybreak["DAYBREAK"]
+    subgraph App["DAILYOS APP"]
         D_Desc["Tauri native app: scheduling, file watching, UI"]
     end
-    subgraph DailyOS["DAILYOS"]
+    subgraph DailyOS["DAILYOS CLI"]
         DOS_Desc["Working scripts, commands, three-phase pattern"]
     end
     subgraph Claude["CLAUDE CODE"]
         C_Desc["AI enrichment engine"]
     end
 
-    Daybreak --> DailyOS --> Claude
+    App --> DailyOS --> Claude
 ```
 
-The Python scripts, directive JSON schemas, and phase orchestration are **already defined and working**. Daybreak's job is to:
+The Python scripts, directive JSON schemas, and phase orchestration are **already defined and working**. The native app's job is to:
 1. Schedule their execution
 2. Watch for triggers (file changes, time)
 3. Render their output in a native UI
@@ -119,7 +119,7 @@ These appear at natural moments, not scheduled times.
 
 ### Tier 3: Interactive Experiences (User-Initiated)
 
-These require user engagement but Daybreak facilitates.
+These require user engagement but DailyOS facilitates.
 
 | Feature | Trigger | What Happens |
 |---------|---------|--------------|
@@ -128,7 +128,7 @@ These require user engagement but Daybreak facilitates.
 
 ### Tier 4: On-Demand Only (Claude Code)
 
-These are NOT automated by Daybreak. Users invoke them through Claude Code when needed.
+These are NOT automated. Users invoke them through Claude Code when needed.
 
 | Workflow | When to Use | Why Not Automated |
 |----------|-------------|-------------------|
@@ -183,7 +183,7 @@ These are NOT automated by Daybreak. Users invoke them through Claude Code when 
 **Design Rationale**: The original `/wrap` command attempted batch capture at 5:30 PM. This is unnatural—users don't remember 4 meetings worth of outcomes. Instead, prompt immediately after each meeting.
 
 **How It Works**:
-1. **Calendar awareness**: Daybreak knows when meetings end
+1. **Calendar awareness**: DailyOS knows when meetings end
 2. **Smart prompting**: 5 minutes after meeting end time, optional prompt appears
 3. **Quick capture**: 2-3 taps, not text entry
 4. **Dismissible**: "Skip" is always an option with no guilt
@@ -374,7 +374,7 @@ Step 3: Focus Blocks (Toggle)
 
 ### F6: System Tray Presence
 
-**User Story**: As a user, I want Daybreak always available but not intrusive so I can access it when needed.
+**User Story**: As a user, I want DailyOS always available but not intrusive so I can access it when needed.
 
 **Acceptance Criteria**:
 - [ ] App runs in system tray (menubar on macOS)
@@ -408,7 +408,7 @@ Step 3: Focus Blocks (Toggle)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Daybreak                              Wed, Feb 4     [⚙️]  │
+│  DailyOS                               Wed, Feb 4     [⚙️]  │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  Today's Schedule                                           │
@@ -534,7 +534,7 @@ Step 3: Focus Blocks (Toggle)
 
 1. **Reliability**: 95%+ successful automated runs over 2-week test period
 2. **Performance**: Briefing completes within 3 minutes
-3. **Adoption**: User opens Daybreak daily for 1 week without CLI fallback
+3. **Adoption**: User opens DailyOS daily for 1 week without CLI fallback
 4. **Stability**: No crashes requiring force-quit over 1 week
 
 ### User Experience Goals
@@ -570,7 +570,7 @@ Step 3: Focus Blocks (Toggle)
 
 ### External API Dependencies (Google Workspace)
 
-Google API configuration is **optional but recommended**. Without it, Daybreak still functions but with reduced capability.
+Google API configuration is **optional but recommended**. Without it, DailyOS still functions but with reduced capability.
 
 | API | What It Enables | Without It |
 |-----|-----------------|------------|
@@ -586,9 +586,9 @@ Google API configuration is **optional but recommended**. Without it, Daybreak s
 - Calendar-dependent features (meeting cards, post-meeting prompts) disabled
 
 **Configuration:**
-- Requires OAuth setup via `dailyos google-setup` or Daybreak onboarding
+- Requires OAuth setup via `dailyos google-setup` or DailyOS onboarding
 - Tokens stored in workspace: `.config/google/token.json`
-- Daybreak does not store credentials—workspace owns them
+- DailyOS does not store credentials—workspace owns them
 
 **Scopes Required:**
 - `calendar.readonly` — Read calendar events
@@ -619,7 +619,7 @@ The original DailyOS `/wrap` command was designed for end-of-day batch processin
 - Archive files
 - Update Clay CRM
 
-**Why it's not in Daybreak v1:**
+**Why it's not in v1:**
 
 1. **Batch capture is unnatural** - Users don't remember 4 meetings at 5:30 PM
 2. **Most functions are redundant** - Actions update live, archive happens automatically
@@ -636,7 +636,7 @@ The original DailyOS `/wrap` command was designed for end-of-day batch processin
 
 ## Appendix B: Role-Specific Features (Future)
 
-The following features from DailyOS are CSM/TAM-specific and will be offered as optional skill packages rather than core Daybreak functionality:
+The following features from DailyOS are CSM/TAM-specific and will be offered as optional skill packages rather than core DailyOS functionality:
 
 | Feature | Why Role-Specific |
 |---------|-------------------|
@@ -646,7 +646,7 @@ The following features from DailyOS are CSM/TAM-specific and will be offered as 
 | Two-sided impact capture | Customer vs personal outcomes |
 | Renewal countdown | Account lifecycle management |
 
-These may be implemented as "Daybreak for Customer Success" package post-v1.
+These may be implemented as "DailyOS for Customer Success" package post-v1.
 
 ---
 
