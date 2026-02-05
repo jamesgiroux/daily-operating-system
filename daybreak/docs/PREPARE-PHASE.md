@@ -144,122 +144,17 @@ Assemble all data into the directive JSON structure.
 
 ---
 
-## Meeting Classification Algorithm
+## Meeting Classification
 
-### Multi-Signal Classification
+The classifier uses multi-signal logic to determine meeting type, prep template, and prep depth.
 
-The classifier uses multiple signals in priority order:
+**Full algorithm and implementation:** See `MEETING-TYPES.md` (canonical source).
 
-```
-Priority 1: Attendee Count (Scale)
-    └─ 50+ attendees → all_hands
-
-Priority 2: Title Keywords (Override)
-    ├─ "QBR", "Business Review" → qbr
-    ├─ "Training", "Enablement" → training
-    └─ "All Hands", "Town Hall" → all_hands
-
-Priority 3: Attendee Matching (Entity Resolution)
-    ├─ External matches account contact → customer
-    ├─ External matches partner domain → partnership
-    └─ External, unmatched → external
-
-Priority 4: Internal Classification
-    ├─ 2 attendees → one_on_one
-    ├─ "standup", "sync" in title → team_sync
-    └─ Default → internal
-```
-
-### Implementation
-
-```python
-def classify_meeting(
-    event: dict,
-    user_domain: str,
-    accounts: Optional[AccountLookup] = None,  # CSM profile
-    partners: Optional[PartnerLookup] = None,
-) -> MeetingClassification:
-    """
-    Classify a meeting using multi-signal logic.
-
-    Returns:
-        MeetingClassification with type, entity_id, confidence
-    """
-    title = event.get('summary', '').lower()
-    attendees = event.get('attendees', [])
-    count = len(attendees)
-
-    # Separate internal vs external
-    external = [a for a in attendees if not a.endswith(f"@{user_domain}")]
-    internal = [a for a in attendees if a.endswith(f"@{user_domain}")]
-    has_external = len(external) > 0
-
-    # Priority 1: Scale-based override
-    if count >= 50:
-        return MeetingClassification(type='all_hands', confidence='high')
-
-    # Priority 2: Title-based override
-    if title_matches(title, QBR_KEYWORDS):
-        return MeetingClassification(type='qbr', confidence='high')
-    if title_matches(title, TRAINING_KEYWORDS):
-        return MeetingClassification(type='training', confidence='high')
-    if title_matches(title, ALL_HANDS_KEYWORDS):
-        return MeetingClassification(type='all_hands', confidence='high')
-
-    # Priority 3: External attendee classification
-    if has_external:
-        # Try account matching (CSM profile)
-        if accounts:
-            for ext_email in external:
-                account = accounts.find_by_contact(ext_email)
-                if account:
-                    return MeetingClassification(
-                        type='customer',
-                        entity_id=account.id,
-                        confidence='high'
-                    )
-
-                # Try domain matching
-                domain = extract_domain(ext_email)
-                account = accounts.find_by_domain(domain)
-                if account:
-                    return MeetingClassification(
-                        type='customer',
-                        entity_id=account.id,
-                        confidence='medium'  # Domain match, not contact
-                    )
-
-        # Try partner matching
-        if partners:
-            for ext_email in external:
-                domain = extract_domain(ext_email)
-                partner = partners.find_by_domain(domain)
-                if partner:
-                    return MeetingClassification(
-                        type='partnership',
-                        entity_id=partner.id,
-                        confidence='high'
-                    )
-
-        # Unknown external
-        return MeetingClassification(type='external', confidence='medium')
-
-    # Priority 4: Internal classification
-    if count == 2:
-        return MeetingClassification(type='one_on_one', confidence='high')
-
-    if title_matches(title, SYNC_KEYWORDS):
-        return MeetingClassification(type='team_sync', confidence='high')
-
-    return MeetingClassification(type='internal', confidence='medium')
-
-
-# Keyword sets
-QBR_KEYWORDS = ['qbr', 'business review', 'quarterly review']
-TRAINING_KEYWORDS = ['training', 'enablement', 'workshop', 'onboarding']
-ALL_HANDS_KEYWORDS = ['all hands', 'town hall', 'company meeting']
-SYNC_KEYWORDS = ['standup', 'sync', 'scrum', 'daily', 'weekly']
-```
+**Summary of classification priority:**
+1. Attendee count (50+ → All Hands)
+2. Title keywords (QBR, Training, All Hands overrides)
+3. External attendee cross-reference (accounts, partners, unknown)
+4. Internal heuristics (1:1, team sync, default internal)
 
 ---
 
