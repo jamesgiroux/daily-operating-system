@@ -1,8 +1,10 @@
-# Daybreak Technical Architecture
+# DailyOS Technical Architecture
 
 ## Overview
 
-Daybreak is a native desktop application built with Tauri that orchestrates DailyOS workflows. This document details the system architecture, data flow patterns, and key technical decisions.
+DailyOS is a native desktop application built with Tauri that orchestrates AI-native productivity workflows. This document details the system architecture, data flow patterns, and key technical decisions.
+
+> **Note:** "Daybreak" is the internal codename for the native app rewrite (this branch). The product is DailyOS.
 
 ---
 
@@ -15,17 +17,17 @@ Daybreak is a native desktop application built with Tauri that orchestrates Dail
 | Aspect | Implication |
 |--------|-------------|
 | **Token budget** | Bounded by user's Claude subscription, not per-request API billing |
-| **Authentication** | User authenticates Claude Code once via CLI; Daybreak inherits |
+| **Authentication** | User authenticates Claude Code once via CLI; DailyOS inherits |
 | **Distribution** | Requires Claude Code installed (acceptable trade-off for cost control) |
 | **Invocation** | Spawn as subprocess, not HTTP calls |
-| **User visibility** | CLI hidden from users; Daybreak orchestrates silently |
+| **User visibility** | CLI hidden from users; DailyOS orchestrates silently |
 
 **Why this matters:** API billing creates unlimited token liability. Subscription model caps costs and shifts authentication burden to the user's existing Claude account.
 
 **Ecosystem compatibility:**
 - Claude Desktop app can access same workspace files
 - Claude Code in IDE can work in same workspace
-- Daybreak orchestrates in background
+- DailyOS orchestrates in background
 
 No conflicts—all three coexist on the same file system.
 
@@ -60,7 +62,7 @@ The original three-phase pattern (Prepare → Enrich → Deliver) was designed f
 
 ```mermaid
 flowchart TB
-    subgraph APP["DAYBREAK APPLICATION"]
+    subgraph APP["DAILYOS APPLICATION"]
         subgraph UI["User Interface Layer"]
             Tray["System Tray<br/>(Menu Bar)"]
             Dashboard["Dashboard<br/>(Web View)"]
@@ -121,6 +123,22 @@ flowchart TB
     Phase1 --> Phase2 --> Phase3
 ```
 
+### Hybrid JSON + Markdown Architecture (DEC4)
+
+**JSON for machines, markdown for humans.** Phase 3 generates both:
+- `_today/data/*.json` — Structured data for dashboard rendering (schema-validated)
+- `_today/*.md` — Human-readable files for direct consumption
+
+**Why Phase 3 generates JSON (not Claude):**
+1. **Determinism boundary** — JSON generation is deterministic, testable
+2. **Schema validation** — Python validates against JSON Schema before writing
+3. **Error recovery** — If Claude outputs malformed markdown, Python handles gracefully
+4. **Extensibility** — Adding fields doesn't require changing Claude's prompts
+
+Archives remain markdown-only (DEC5). JSON is generated at runtime for active `_today/` only.
+
+See `DATA-MODEL.md` for entity definitions and file structure. See `templates/schemas/` for JSON schemas.
+
 ### Phase Implementation Details
 
 > **Note:** The examples below show Python scripts from the original DailyOS CLI. These may be ported to Rust or called as subprocesses—implementation TBD based on complexity of each script.
@@ -134,7 +152,7 @@ python3 _tools/prepare_today.py
 - No AI, deterministic
 - Fast execution (< 30 seconds typically)
 - Same input produces same output
-- Daybreak spawns as subprocess, captures exit code
+- DailyOS spawns as subprocess, captures exit code
 
 **Phase 2 (Enrichment)**:
 ```bash
@@ -144,7 +162,7 @@ claude --workspace /path/to/workspace --command "Read _today/.today-directive.js
 - Claude Code via PTY subprocess
 - Variable execution time (1-5 minutes)
 - May require user interaction (prompts)
-- Daybreak streams output, monitors for completion
+- DailyOS streams output, monitors for completion
 
 **Phase 3 (Delivery)**:
 ```bash
@@ -155,7 +173,7 @@ python3 _tools/deliver_today.py --ai-outputs outputs.json
 - Pure Python, no AI
 - Fast execution (< 30 seconds)
 - Writes final files to canonical locations
-- Daybreak verifies output files exist
+- DailyOS verifies output files exist
 
 ---
 
@@ -182,9 +200,9 @@ struct ScheduledJob {
 
 enum Workflow {
     Today,
-    Wrap,
     Week,
     InboxFull,
+    Archive,
 }
 ```
 
@@ -325,7 +343,7 @@ struct Config {
 
 struct WorkflowState {
     today: WorkflowStatus,
-    wrap: WorkflowStatus,
+    archive: WorkflowStatus,
     inbox: InboxStatus,
     week: WorkflowStatus,
 }
@@ -433,7 +451,6 @@ daybreak/
 │   │       ├── mod.rs           # ✅
 │   │       ├── today.rs         # ✅
 │   │       ├── archive.rs       # ✅
-│   │       ├── wrap.rs          # (Phase 2+)
 │   │       ├── inbox.rs         # (Phase 2)
 │   │       └── week.rs          # (Phase 3)
 │   ├── Cargo.toml
@@ -474,8 +491,8 @@ async fn get_workflow_status(workflow: Workflow) -> Result<WorkflowStatus, Strin
 }
 
 #[tauri::command]
-async fn get_today_overview() -> Result<TodayOverview, String> {
-    // Parse _today/00-overview.md and return structured data
+async fn get_dashboard_data() -> Result<DashboardResult, String> {
+    // Load _today/data/*.json and return structured data (DEC4)
 }
 
 #[tauri::command]
@@ -502,7 +519,7 @@ async fn get_execution_history(limit: usize) -> Result<Vec<ExecutionRecord>, Str
 
 ```mermaid
 flowchart TB
-    Scheduler["Scheduler (8:00 AM)"]
+    Scheduler["Scheduler (6:00 AM)"]
 
     subgraph Phase1["Phase 1: Preparation (Python)"]
         Fetch["Fetch APIs:<br/>Calendar, Gmail, Sheets"]
@@ -662,12 +679,7 @@ flowchart TB
   "schedules": {
     "today": {
       "enabled": true,
-      "cron": "0 8 * * 1-5",
-      "timezone": "America/New_York"
-    },
-    "wrap": {
-      "enabled": true,
-      "cron": "30 17 * * 1-5",
+      "cron": "0 6 * * 1-5",
       "timezone": "America/New_York"
     },
     "week": {
@@ -706,16 +718,16 @@ flowchart TB
 
 ### File System Access
 
-- Daybreak only accesses configured workspace directory
+- DailyOS only accesses configured workspace directory
 - No network access except through DailyOS scripts
 - Credentials remain in workspace `.config/` directory
 
 ### Claude Code Authentication
 
-- Daybreak does not store Claude credentials
+- DailyOS does not store Claude credentials
 - User authenticates via Claude Code CLI directly
-- Authentication state managed by Claude Code, not Daybreak
-- Daybreak verifies auth status but never handles tokens
+- Authentication state managed by Claude Code, not DailyOS
+- DailyOS verifies auth status but never handles tokens
 
 ### PTY Isolation
 
@@ -727,7 +739,7 @@ flowchart TB
 
 - Config file has user-only permissions (600)
 - Sensitive paths validated before use
-- No secrets stored in Daybreak config (Google token stays in workspace)
+- No secrets stored in DailyOS config (Google token stays in workspace)
 
 ---
 
