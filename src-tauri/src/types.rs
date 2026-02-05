@@ -13,13 +13,22 @@ pub struct Config {
 }
 
 /// Schedule configuration for workflows
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schedules {
-    #[serde(default)]
+    #[serde(default = "ScheduleEntry::default_today")]
     pub today: ScheduleEntry,
-    #[serde(default)]
+    #[serde(default = "ScheduleEntry::default_archive")]
     pub archive: ScheduleEntry,
+}
+
+impl Default for Schedules {
+    fn default() -> Self {
+        Self {
+            today: ScheduleEntry::default_today(),
+            archive: ScheduleEntry::default_archive(),
+        }
+    }
 }
 
 /// A single schedule entry
@@ -31,13 +40,29 @@ pub struct ScheduleEntry {
     pub timezone: String,
 }
 
-impl Default for ScheduleEntry {
-    fn default() -> Self {
+impl ScheduleEntry {
+    /// Default schedule for the "today" workflow: 8 AM weekdays
+    pub fn default_today() -> Self {
         Self {
             enabled: true,
             cron: "0 8 * * 1-5".to_string(), // 8 AM weekdays
             timezone: "America/New_York".to_string(),
         }
+    }
+
+    /// Default schedule for the "archive" workflow: midnight daily
+    pub fn default_archive() -> Self {
+        Self {
+            enabled: true,
+            cron: "0 0 * * *".to_string(), // Midnight daily
+            timezone: "America/New_York".to_string(),
+        }
+    }
+}
+
+impl Default for ScheduleEntry {
+    fn default() -> Self {
+        Self::default_today()
     }
 }
 
