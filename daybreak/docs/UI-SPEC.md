@@ -416,11 +416,81 @@ Replace header search input with shadcn `CommandDialog`:
 </CommandDialog>
 ```
 
-### Navigation (Simplified)
+### Navigation Architecture (DEC7-DEC13)
 
-**Remove:** Breadcrumbs (web pattern, not native)
+**Principle:** The Dashboard is the product. Everything else is a drill-down or supporting view.
 
-**Add:** Back button in header when drilling into content
+**Sidebar structure is profile-aware.** CS adds Accounts; GA omits it. No other structural differences.
+
+#### CS Profile Sidebar
+
+```
+┌─────────────────────┐
+│ ⚡ DailyOS           │
+│ Customer Success     │  ← Profile indicator (clickable Phase 2)
+├─────────────────────┤
+│ Today               │
+│   ◻ Dashboard       │  ← Primary. 80% of time.
+│                     │
+│ Workspace           │
+│   ☑ Actions         │  ← Full action list, filterable by account
+│   📥 Inbox          │  ← Incoming items to triage
+│   🏢 Accounts       │  ← Portfolio health dashboard (CS only)
+├─────────────────────┤
+│   ⚙ Settings        │
+└─────────────────────┘
+```
+
+#### GA Profile Sidebar
+
+```
+┌─────────────────────┐
+│ ⚡ DailyOS           │
+├─────────────────────┤
+│ Today               │
+│   ◻ Dashboard       │
+│                     │
+│ Workspace           │
+│   ☑ Actions         │  ← Filterable by project
+│   📥 Inbox          │
+│   📁 Projects       │  ← GA equivalent of Accounts
+├─────────────────────┤
+│   ⚙ Settings        │
+└─────────────────────┘
+```
+
+#### Profile Entity Pattern
+
+The third sidebar item under Workspace is profile-dependent but structurally identical:
+
+| Profile | Nav Item | Entity | Source Directory | Key Metrics |
+|---------|----------|--------|-----------------|-------------|
+| CS | Accounts | Account | `2-areas/accounts/` | ARR, Ring, Health, Renewal |
+| GA | Projects | Project | `1-projects/` | Status, Deadline, Progress |
+
+Both render as a portfolio page with entity cards. Same component, different data shape.
+
+#### What Was Removed and Why
+
+| Removed | Reason | Where It Lives Instead |
+|---------|--------|----------------------|
+| Focus | Dashboard section, not a page | Priority list on dashboard overview |
+| Week | Post-MVP (Phase 2) | Add to sidebar when built |
+| Emails | Already on dashboard | Email section on dashboard; full view post-MVP |
+
+#### Navigation Flows
+
+```
+Dashboard ──click meeting card──→ Meeting Detail ──back──→ Dashboard
+Dashboard ──click "see all"────→ Actions Page ──back──→ Dashboard
+Dashboard ──click entity name──→ Account/Project Detail ──back──→ Dashboard
+Sidebar ───click Inbox─────────→ Inbox Page
+Sidebar ───click Accounts/Projects──→ Portfolio List
+```
+
+#### Drill-Down Header
+
+When navigating to a detail page, the header shows a back button and contextual title:
 
 ```
 ┌──────────────────────────────────────────────────┐
@@ -432,9 +502,37 @@ Replace header search input with shadcn `CommandDialog`:
 └──────────────────────────────────────────────────┘
 ```
 
+#### Profile-Aware Content Differences
+
+The dashboard shell is identical across profiles. Content and metadata within components change:
+
+| Component | CS Profile | GA Profile |
+|-----------|-----------|------------|
+| Meeting cards | Gold border for customer, show account + ARR/ring/health | No account concept, external meetings show attendee names |
+| Prep depth | Full for customer (talking points, risks, wins, stakeholders) | Light for external (attendee context, last meeting) |
+| Actions panel | Grouped by account, show account health color | Flat list, no account grouping |
+| Email section | Linked to accounts ("Acme Corp" next to sender) | Just sender name |
+| Stats row | "3 customer meetings" | "2 external meetings" |
+| Meeting detail | Quick Context (Ring, ARR, Health), stakeholder influence, strategic programs | Attendee names only, no account metadata |
+
+#### Profile Switcher (Phase 2)
+
+Location: Sidebar header, below app name. Shows current profile as text label. Clickable to switch.
+
+**Non-destructive.** Switching profiles changes:
+- Meeting classification rules
+- Sidebar nav items (Accounts appears/disappears)
+- Card metadata rendering
+- Prepare phase data collection
+
+Switching does NOT:
+- Delete or move files
+- Restructure PARA directories
+- Lose any data
+
 ### Content Panels (Not Pages)
 
-Native apps favor panels over full page navigation. Consider:
+Native apps favor panels over full page navigation. Consider for post-MVP:
 
 ```
 ┌────┬───────────────────┬─────────────────────────┐
@@ -466,20 +564,105 @@ Collapses to single column on smaller windows.
 
 ### 1. Dashboard (Today Overview)
 
-**Purpose:** Morning briefing consumption
+**Purpose:** Morning briefing consumption. This is the product.
 
 **States:**
 - **Loading:** Skeleton cards
-- **Success:** Overview card, meeting timeline, actions panel
-- **Empty:** "Run /today to generate" prompt
+- **Success:** Overview card, meeting timeline, actions panel, email section
+- **Empty:** "Briefing not yet generated" (checks for `_today/data/manifest.json`)
 - **Error:** "Failed to load" with retry
+- **Stale:** Show last-generated timestamp if data is >24h old
 
 **Key Components:**
-- Stats row (meetings count, actions due)
-- Meeting timeline with type indicators
-- Action items panel with priority badges
+- Greeting + summary + focus area
+- Stats row (meetings count, actions due, emails flagged)
+- Meeting timeline with type-specific indicators and inline prep summaries
+- Action items panel (today + overdue only, "see all" links to Actions page)
+- Email section (high priority, linked to accounts for CS)
 
-### 2. System Tray Menu
+**Profile differences:** See Navigation Architecture section.
+
+### 2. Meeting Detail (Drill-Down)
+
+**Purpose:** Full meeting prep before a call
+
+**Access:** Click meeting card on Dashboard. Back button returns to Dashboard.
+
+**States:**
+- **Loading:** Skeleton
+- **Success:** Full prep rendered from `_today/data/preps/{meeting-id}.json`
+- **Empty:** "No prep available for this meeting"
+
+**Key Components (CS):**
+- Quick Context badges (Ring, ARR, Health, Renewal)
+- Attendees with roles and influence
+- Since Last Meeting
+- Strategic Programs
+- Risks to Monitor
+- Talking Points
+- Open Items with due dates
+- Questions
+- Key Principles
+- Source References (linkable)
+
+**Key Components (GA):**
+- Attendees (names only)
+- Last meeting notes summary
+- Open items
+- Talking points
+
+### 3. Actions Page
+
+**Purpose:** Full action list with filtering and status management
+
+**States:**
+- **Loading:** Skeleton list
+- **Success:** Filterable action list from SQLite
+- **Empty:** "No actions tracked yet"
+
+**Key Components:**
+- Filter bar: status (pending/completed/waiting), priority (P1/P2/P3)
+- Account filter (CS only)
+- Action cards with complete/waiting toggles
+- Overdue indicator
+- Source attribution ("from: Acme Sync, Feb 3")
+
+### 4. Inbox Page
+
+**Purpose:** View and triage incoming items from `_inbox/` directory
+
+**States:**
+- **Loading:** Skeleton
+- **Success:** File list with previews
+- **Empty:** "Inbox is clear" (positive, not "nothing here")
+
+**Key Components:**
+- File list from `_inbox/`
+- Preview panel (or inline preview)
+- Processing status if file watcher is active (Phase 2A)
+
+### 5. Portfolio Page (Accounts or Projects)
+
+**Purpose:** Entity health dashboard. Accounts for CS, Projects for GA. Same layout, different data.
+
+**States:**
+- **Loading:** Skeleton cards
+- **Success:** Entity cards with health metrics
+- **Empty:** "No [accounts/projects] configured" with setup guidance
+
+**CS (Accounts) Components:**
+- Account cards: name, ring, ARR, health indicator, renewal date
+- Sort by: health (red first), ARR, alphabetical
+- Click to Account Detail (drill-down)
+- At-a-glance: total ARR, accounts at risk, upcoming renewals
+
+**GA (Projects) Components:**
+- Project cards: name, status, deadline, progress
+- Sort by: status (at risk first), deadline, alphabetical
+- Click to Project Detail (drill-down)
+- At-a-glance: active projects, at risk, upcoming deadlines
+
+### 6. System Tray Menu
 
 **Purpose:** Quick access, status at a glance
 
@@ -492,7 +675,7 @@ Collapses to single column on smaller windows.
 - "Preferences..."
 - "Quit DailyOS"
 
-### 3. Notifications
+### 7. Notifications
 
 **Types:**
 - Briefing complete → "Your day is ready"
@@ -774,26 +957,37 @@ module.exports = {
 
 ## Implementation Priority
 
-### Phase 1 (MVP)
-1. Tailwind + shadcn setup with DailyOS theme
-2. Sidebar (collapsible icon mode)
-3. Dashboard layout with Card components
-4. Command palette (Cmd+K search)
-5. Theme toggle (light/dark/system)
-6. Basic skeleton loading states
+### Phase 1 (MVP) ✅ Mostly Complete
+1. ✅ Tailwind + shadcn setup with DailyOS theme
+2. ✅ Sidebar (collapsible icon mode, defaults collapsed)
+3. ✅ Dashboard layout with Card components
+4. ✅ Command palette (Cmd+K search)
+5. ✅ Theme toggle (light/dark/system)
+6. ✅ Basic skeleton loading states
+7. ✅ Meeting detail drill-down page
+8. ✅ System tray with status indicator
+
+### Phase 1.5 (Nav Refactor — Current)
+1. Simplify sidebar to Dashboard / Actions / Inbox / [Entity] / Settings
+2. Remove Focus, Week, Emails from sidebar
+3. Add profile-aware nav (Accounts for CS, Projects for GA)
+4. Actions page backed by SQLite (interactive status updates)
+5. Inbox page (list files from `_inbox/`)
 
 ### Phase 2
-1. Timeline component for schedule
-2. Custom Badge variants
-3. Alert/Callout components
-4. Empty states with animations
+1. Profile switcher in sidebar header
+2. Portfolio page component (renders Accounts or Projects based on profile)
+3. Entity detail drill-down (Account Detail / Project Detail)
+4. Master-detail panel layout
+5. Advanced animations (stagger)
+6. Keyboard navigation polish
 
 ### Phase 3
-1. Master-detail panel layout
-2. Advanced animations (stagger)
-3. Keyboard navigation polish
+1. Week view page (re-add to sidebar)
+2. Full email page (if needed)
+3. Focus mode (dashboard toggle, not separate page)
 
 ---
 
-*Document Version: 1.1*
-*Last Updated: 2026-02-04*
+*Document Version: 1.2*
+*Last Updated: 2026-02-05 — Nav architecture, profile-aware screens, screen inventory expansion*
