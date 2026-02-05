@@ -138,7 +138,7 @@ workspace/
 During setup:
 
 ```
-Welcome to Daybreak!
+Welcome to DailyOS!
 
 What best describes your role?
 
@@ -193,22 +193,81 @@ Stored in `~/.daybreak/config.json`:
 
 ---
 
+## UI Implications (DEC8, DEC9, DEC12)
+
+Profiles shape the UI in three ways: navigation, component content, and data sources.
+
+### Navigation Differences
+
+| Sidebar Item | CS | GA | Notes |
+|-------------|----|----|-------|
+| Dashboard | Yes | Yes | Content differs, shell identical |
+| Actions | Yes | Yes | CS: account filter. GA: project filter |
+| Inbox | Yes | Yes | Identical |
+| Accounts | **Yes** | No | CS portfolio: ARR, ring, health, renewal |
+| Projects | No | **Yes** | GA portfolio: status, deadline, progress |
+| Settings | Yes | Yes | Identical |
+
+The third "Workspace" nav item is the profile's primary entity: Accounts for CS, Projects for GA. Same component layout, different data source and metrics.
+
+### Component Content Differences
+
+| Component | CS Profile | GA Profile |
+|-----------|-----------|------------|
+| Meeting card border | Gold for customer meetings | No account-based coloring |
+| Meeting card metadata | Account name, ARR, ring, health badge | Attendee names only |
+| Prep summary | Full: risks, wins, strategic programs, stakeholder influence | Light: attendee context, last meeting |
+| Actions panel | Grouped by account | Flat list |
+| Email section | Linked to accounts | Sender name only |
+| Stats row | "3 customer meetings" | "2 external meetings" |
+
+### Profile Switching (DEC9)
+
+**Non-destructive.** Switching profiles:
+
+Changes:
+- Meeting classification rules
+- Sidebar navigation items
+- Card metadata and rendering
+- Prepare phase data collection
+
+Does NOT change:
+- File system structure
+- PARA directories
+- Existing data or notes
+- Archive history
+
+### Profile Indicator
+
+Current profile shown in sidebar header below app name. Phase 2: clickable dropdown to switch.
+
+```
+┌─────────────────────┐
+│ ⚡ DailyOS           │
+│ Customer Success  ▾  │
+└─────────────────────┘
+```
+
+---
+
 ## Implementation Notes
 
 ### Phase 1 (MVP)
 - Customer Success profile (your workflow)
 - General profile (fallback)
 - Manual profile selection during setup
+- Profile stored in `~/.daybreak/config.json`
 
 ### Phase 2
+- Profile indicator in sidebar header
+- Clickable profile switcher (non-destructive)
 - Profile detection from existing workspace
-- Profile switching
-- Custom profile creation
 
 ### Phase 3
+- Custom profile creation
 - Profile marketplace (community templates)
 - Profile inheritance (base + customizations)
 
 ---
 
-*Draft: 2026-02-05*
+*Updated: 2026-02-05*
