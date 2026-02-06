@@ -97,6 +97,55 @@ def write_json(path: Path, data: Any) -> None:
     )
 
 
+def extract_focus_from_markdown(today_dir: Path) -> Optional[str]:
+    """Extract the primary focus from ``81-suggested-focus.md``.
+
+    Reads the first priority item's bold text as a one-line focus
+    summary.  This serves as a fallback when Phase 2 doesn't write
+    focus back to the directive's context block.
+
+    Args:
+        today_dir: Path to the ``_today`` directory.
+
+    Returns:
+        A short focus string, or None if the file doesn't exist or
+        no priority item is found.
+    """
+    focus_path = today_dir / "81-suggested-focus.md"
+    if not focus_path.exists():
+        return None
+    try:
+        content = focus_path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- [ ] **"):
+                match = re.search(r"\*\*(.+?)\*\*", stripped)
+                if match:
+                    return match.group(1)
+        return None
+    except OSError:
+        return None
+
+
+def _parse_sender(from_raw: str) -> Tuple[str, str]:
+    """Parse a raw email From header into (display_name, email_address).
+
+    Handles formats like ``"Name <email@example.com>"``,
+    ``"email@example.com"``, and ``"<email@example.com>"``.
+
+    Args:
+        from_raw: Raw From header value.
+
+    Returns:
+        Tuple of (sender_name, sender_email).
+    """
+    if "<" in from_raw and ">" in from_raw:
+        name = from_raw.split("<")[0].strip().strip('"').strip("'")
+        email = from_raw.split("<")[1].split(">")[0].strip()
+        return (name or email, email)
+    return (from_raw.strip(), from_raw.strip())
+
+
 # ---------------------------------------------------------------------------
 # Normalisation helpers
 # ---------------------------------------------------------------------------
@@ -558,6 +607,12 @@ def build_emails(
 
     Conforms to ``JsonEmails`` in ``json_loader.rs``.
 
+    Supports two directive formats:
+        - **New**: ``emails.classified`` contains all emails with a
+          ``priority`` field (``"high"``, ``"medium"``, ``"low"``).
+        - **Legacy**: ``emails.high_priority`` contains only high-priority
+          email objects; medium/low are stored as counts only.
+
     Args:
         directive: The full directive dictionary.
         now: Current datetime (used for date field fallback).
@@ -569,32 +624,58 @@ def build_emails(
     date = context.get("date", now.strftime("%Y-%m-%d"))
     raw_emails = directive.get("emails", {})
 
-    high_priority = raw_emails.get("high_priority", [])
-    medium_count = raw_emails.get("medium_count", 0)
-    low_count = raw_emails.get("low_count", 0)
+    # Prefer 'classified' (all emails with priority), fall back to 'high_priority'
+    classified = raw_emails.get("classified", [])
+    high_priority_only = raw_emails.get("high_priority", [])
+
+    source = classified if classified else high_priority_only
 
     emails_list: List[Dict[str, Any]] = []
-    for i, email in enumerate(high_priority):
+    for i, email in enumerate(source):
         eid = email.get("id", f"email-{i:03d}")
+        from_raw = email.get("from", "")
+
+        # Parse sender name and email from raw From header
+        from_email = email.get("from_email", "")
+        sender = email.get("from", "Unknown")
+        if from_raw:
+            parsed_name, parsed_email = _parse_sender(from_raw)
+            sender = parsed_name
+            if not from_email:
+                from_email = parsed_email
+
+        # Normalise priority: high stays high, everything else → normal
+        raw_priority = email.get("priority", "high" if not classified else "normal")
+        priority = "high" if raw_priority == "high" else "normal"
+
         emails_list.append({
             "id": eid,
-            "sender": email.get("from", "Unknown"),
-            "senderEmail": email.get("from_email", ""),
+            "sender": sender,
+            "senderEmail": from_email,
             "subject": email.get("subject", "No subject"),
             "snippet": email.get("snippet"),
-            "priority": "high",
+            "priority": priority,
         })
 
+    # Compute stats
+    high_count = sum(1 for e in emails_list if e["priority"] == "high")
+
+    if classified:
+        normal_count = len(emails_list) - high_count
+    else:
+        normal_count = raw_emails.get("medium_count", 0) + raw_emails.get("low_count", 0)
+
     needs_action = sum(
-        1 for e in high_priority
-        if e.get("action_owner", "").lower() in ("you", "me", "")
+        1 for e in source
+        if e.get("priority") == "high"
+        and e.get("action_owner", "").lower() in ("you", "me", "")
     )
 
     return {
         "date": date,
         "stats": {
-            "highPriority": len(high_priority),
-            "normalPriority": medium_count + low_count,
+            "highPriority": high_count,
+            "normalPriority": normal_count,
             "needsAction": needs_action,
         },
         "emails": emails_list,
@@ -919,11 +1000,23 @@ def main() -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
     preps_dir.mkdir(parents=True, exist_ok=True)
 
+    # Clear stale prep files before writing fresh ones
+    for old_prep in preps_dir.glob("*.json"):
+        old_prep.unlink()
+        print(f"deliver_today: removed stale prep {old_prep.name}", file=sys.stderr)
+
     now = datetime.now(timezone.utc)
     context = directive.get("context", {})
     date = context.get("date", now.strftime("%Y-%m-%d"))
     profile = context.get("profile")
     events = directive.get("calendar", {}).get("events", [])
+
+    # Inject focus from Phase 2 markdown if not already in directive
+    if not context.get("focus"):
+        focus = extract_focus_from_markdown(today_dir)
+        if focus:
+            context["focus"] = focus
+            print(f"deliver_today: extracted focus from markdown: {focus}", file=sys.stderr)
 
     # ------------------------------------------------------------------
     # 3. Build schedule.json

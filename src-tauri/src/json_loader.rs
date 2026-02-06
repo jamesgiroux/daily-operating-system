@@ -50,6 +50,38 @@ pub struct ManifestStats {
     pub emails_flagged: Option<u32>,
 }
 
+/// Whether the data in _today/data/ is from today or stale
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(tag = "freshness", rename_all = "camelCase")]
+pub enum DataFreshness {
+    Fresh { generated_at: String },
+    Stale {
+        data_date: String,
+        generated_at: String,
+    },
+    Unknown,
+}
+
+/// Check if the data in _today/data/ is from today
+pub fn check_data_freshness(today_dir: &Path) -> DataFreshness {
+    match load_manifest(today_dir) {
+        Ok(manifest) => {
+            let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+            if manifest.date == today {
+                DataFreshness::Fresh {
+                    generated_at: manifest.generated_at,
+                }
+            } else {
+                DataFreshness::Stale {
+                    data_date: manifest.date,
+                    generated_at: manifest.generated_at,
+                }
+            }
+        }
+        Err(_) => DataFreshness::Unknown,
+    }
+}
+
 /// Load manifest from data directory
 pub fn load_manifest(today_dir: &Path) -> Result<Manifest, String> {
     let manifest_path = today_dir.join("data").join("manifest.json");

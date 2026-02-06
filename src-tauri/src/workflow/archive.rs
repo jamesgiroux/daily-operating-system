@@ -82,6 +82,12 @@ pub async fn run_archive(workspace: &Path) -> Result<ArchiveResult, String> {
         }
     }
 
+    // Clean ephemeral data directory (JSON is regenerated each briefing)
+    let data_cleaned = clean_data_directory(&today_dir).await;
+    if data_cleaned > 0 {
+        log::info!("Archive: cleaned {} data files", data_cleaned);
+    }
+
     log::info!(
         "Archive complete: {} files moved to {}",
         archived,
@@ -136,6 +142,40 @@ async fn collect_archivable_files(
     }
 
     Ok(files)
+}
+
+/// Clean ephemeral data directory after archiving.
+///
+/// Removes all JSON files in `_today/data/` and the `preps/` subdirectory.
+/// These are generated output — the next briefing writes fresh JSON.
+async fn clean_data_directory(today_dir: &Path) -> usize {
+    let data_dir = today_dir.join("data");
+    if !data_dir.exists() {
+        return 0;
+    }
+
+    let mut cleaned = 0;
+
+    // Remove all JSON files in data/
+    if let Ok(mut entries) = fs::read_dir(&data_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.is_file() && path.extension().map(|e| e == "json").unwrap_or(false) {
+                if fs::remove_file(&path).await.is_ok() {
+                    cleaned += 1;
+                }
+            }
+        }
+    }
+
+    // Remove preps/ directory
+    let preps_dir = data_dir.join("preps");
+    if preps_dir.exists() {
+        let _ = fs::remove_dir_all(&preps_dir).await;
+        cleaned += 1;
+    }
+
+    cleaned
 }
 
 #[cfg(test)]
@@ -263,5 +303,38 @@ mod tests {
         // Subdirectory should remain
         assert!(subdir.exists());
         assert!(subdir.join("prep.md").exists());
+    }
+
+    #[tokio::test]
+    async fn test_archive_cleans_data_directory() {
+        let temp = TempDir::new().unwrap();
+        let today_dir = temp.path().join("_today");
+        let data_dir = today_dir.join("data");
+        let preps_dir = data_dir.join("preps");
+
+        fs::create_dir_all(&preps_dir).await.unwrap();
+
+        // Create markdown file to trigger archiving
+        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
+
+        // Create data files that should be cleaned
+        fs::write(data_dir.join("schedule.json"), "{}").await.unwrap();
+        fs::write(data_dir.join("actions.json"), "{}").await.unwrap();
+        fs::write(data_dir.join("manifest.json"), "{}").await.unwrap();
+        fs::write(preps_dir.join("0900-customer-acme.json"), "{}").await.unwrap();
+
+        let result = run_archive(temp.path()).await;
+        assert!(result.is_ok());
+
+        // Data JSON files should be removed
+        assert!(!data_dir.join("schedule.json").exists());
+        assert!(!data_dir.join("actions.json").exists());
+        assert!(!data_dir.join("manifest.json").exists());
+
+        // Preps directory should be removed
+        assert!(!preps_dir.exists());
+
+        // data/ directory itself should still exist (only contents cleaned)
+        assert!(data_dir.exists());
     }
 }
