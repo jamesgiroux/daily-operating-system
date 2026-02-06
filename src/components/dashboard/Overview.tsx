@@ -2,11 +2,12 @@ import { Target, ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatsRow } from "./StatsRow";
-import type { DashboardData } from "@/types";
+import type { DashboardData, DataFreshness } from "@/types";
 
 interface OverviewProps {
   overview: DashboardData["overview"];
   stats: DashboardData["stats"];
+  freshness: DataFreshness;
 }
 
 function getTimeBasedGreeting(): string {
@@ -25,7 +26,22 @@ function getFormattedDate(): string {
   });
 }
 
-export function Overview({ overview, stats }: OverviewProps) {
+function formatRelativeDate(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    if (isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("en-US", {
+      weekday: "long",
+    }) + " at " + date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+export function Overview({ overview, stats, freshness }: OverviewProps) {
   const greeting = getTimeBasedGreeting();
   const formattedDate = getFormattedDate();
 
@@ -36,6 +52,11 @@ export function Overview({ overview, stats }: OverviewProps) {
           <h1 className="text-3xl font-semibold tracking-tight">
             {formattedDate}
           </h1>
+          {freshness.freshness === "stale" && (
+            <p className="text-xs text-muted-foreground">
+              Last updated {formatRelativeDate(freshness.generatedAt)}
+            </p>
+          )}
           <p className="text-lg font-light text-muted-foreground">{greeting}</p>
           {overview.focus && (
             <Link

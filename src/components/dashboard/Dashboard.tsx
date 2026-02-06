@@ -3,13 +3,14 @@ import { Overview } from "./Overview";
 import { MeetingTimeline } from "./MeetingTimeline";
 import { ActionList } from "./ActionList";
 import { EmailList } from "./EmailList";
-import type { DashboardData } from "@/types";
+import type { DashboardData, DataFreshness } from "@/types";
 
 interface DashboardProps {
   data: DashboardData;
+  freshness: DataFreshness;
 }
 
-export function Dashboard({ data }: DashboardProps) {
+export function Dashboard({ data, freshness }: DashboardProps) {
   const emails = data.emails ?? [];
 
   return (
@@ -17,7 +18,7 @@ export function Dashboard({ data }: DashboardProps) {
       <div className="p-8">
         <div className="mx-auto max-w-6xl space-y-8">
           {/* Overview section */}
-          <Overview overview={data.overview} stats={data.stats} />
+          <Overview overview={data.overview} stats={data.stats} freshness={freshness} />
 
           {/* Main content grid */}
           <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">

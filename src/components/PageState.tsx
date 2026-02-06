@@ -8,6 +8,7 @@ interface PageEmptyProps {
   title: string;
   message?: string;
   footnote?: string;
+  action?: React.ReactNode;
 }
 
 interface PageErrorProps {
@@ -24,6 +25,7 @@ export function PageEmpty({
   title,
   message,
   footnote,
+  action,
 }: PageEmptyProps) {
   return (
     <ScrollArea className="flex-1">
@@ -40,6 +42,7 @@ export function PageEmpty({
               </p>
             )}
           </div>
+          {action && <div className="pt-2">{action}</div>}
           {footnote && (
             <p className="pt-2 text-sm text-muted-foreground">{footnote}</p>
           )}
