@@ -124,12 +124,22 @@ export interface Email {
   avatarUrl?: string;
 }
 
+export type InboxFileType =
+  | "markdown"
+  | "image"
+  | "spreadsheet"
+  | "document"
+  | "data"
+  | "text"
+  | "other";
+
 export interface InboxFile {
   filename: string;
   path: string;
   sizeBytes: number;
   modified: string;
   preview?: string;
+  fileType: InboxFileType;
 }
 
 export interface DashboardData {
