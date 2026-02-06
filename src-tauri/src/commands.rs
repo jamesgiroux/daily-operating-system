@@ -5,7 +5,8 @@ use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
 use crate::json_loader::{
-    load_actions_json, load_emails_json, load_prep_json, load_schedule_json,
+    check_data_freshness, load_actions_json, load_emails_json, load_prep_json,
+    load_schedule_json, DataFreshness,
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
@@ -21,7 +22,10 @@ use crate::SchedulerSender;
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum DashboardResult {
-    Success { data: DashboardData },
+    Success {
+        data: DashboardData,
+        freshness: DataFreshness,
+    },
     Empty { message: String },
     Error { message: String },
 }
@@ -67,7 +71,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     // Check if _today directory exists
     if !today_dir.exists() {
         return DashboardResult::Empty {
-            message: "No briefing yet. Run /today to generate your daily overview.".to_string(),
+            message: "Your daily briefing will appear here once generated.".to_string(),
         };
     }
 
@@ -75,7 +79,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     let data_dir = today_dir.join("data");
     if !data_dir.exists() {
         return DashboardResult::Empty {
-            message: "No data found. Run /today to generate your daily briefing.".to_string(),
+            message: "Your daily briefing will appear here once generated.".to_string(),
         };
     }
 
@@ -104,6 +108,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         inbox_count,
     };
 
+    let freshness = check_data_freshness(&today_dir);
+
     DashboardResult::Success {
         data: DashboardData {
             overview,
@@ -112,6 +118,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             actions,
             emails,
         },
+        freshness,
     }
 }
 

@@ -89,6 +89,32 @@ LOW_PRIORITY_SIGNALS = (
 )
 
 
+def _build_account_domain_hints(workspace: Path) -> set[str]:
+    """Scan Accounts/ directory for customer name slugs.
+
+    Used to enhance email classification by matching sender domains
+    against known customer account names.  For example, the account
+    directory ``Bring-a-Trailer`` yields the slug ``bringatrailer``,
+    which matches the domain base of ``bringatrailer.com``.
+
+    Returns a set of lowercased slugs with non-alphanumeric chars removed.
+    """
+    accounts_dir = workspace / "Accounts"
+    if not accounts_dir.is_dir():
+        return set()
+
+    hints: set[str] = set()
+    try:
+        for d in accounts_dir.iterdir():
+            if d.is_dir() and not d.name.startswith((".", "_")):
+                slug = re.sub(r"[^a-z0-9]", "", d.name.lower())
+                if len(slug) >= 3:
+                    hints.add(slug)
+    except OSError:
+        pass
+    return hints
+
+
 # ---------------------------------------------------------------------------
 # Helpers: JSON I/O
 # ---------------------------------------------------------------------------
@@ -635,10 +661,12 @@ def classify_email_priority(
     email: dict[str, Any],
     customer_domains: set[str],
     user_domain: str,
+    account_hints: set[str] | None = None,
 ) -> str:
     """Classify email priority: 'high', 'medium', or 'low'.
 
-    High: from customer domains, or subject contains urgency keywords.
+    High: from customer domains, from known account domains, or subject
+          contains urgency keywords.
     Medium: from internal colleagues, or meeting-related.
     Low: newsletters, automated, GitHub notifications.
     """
@@ -647,9 +675,16 @@ def classify_email_priority(
     domain = _extract_domain(from_addr)
     subject_lower = email.get("subject", "").lower()
 
-    # HIGH: Customer domains
+    # HIGH: Customer domains (from today's meeting attendees)
     if domain in customer_domains:
         return "high"
+
+    # HIGH: Sender domain matches a known customer account
+    if account_hints and domain:
+        domain_base = domain.split(".")[0]
+        for hint in account_hints:
+            if hint == domain_base or (len(hint) >= 4 and hint in domain_base):
+                return "high"
 
     # HIGH: Urgency keywords in subject
     if any(kw in subject_lower for kw in HIGH_PRIORITY_SUBJECT_KEYWORDS):
@@ -1238,21 +1273,33 @@ def main() -> int:
         for domain in ev.get("external_domains", []):
             customer_domains.add(domain)
 
+    # Enhance with known account domain hints from Accounts/ directory
+    account_hints = _build_account_domain_hints(workspace)
+    _info(f"  Account domain hints: {len(account_hints)}")
+
+    all_classified_emails: list[dict[str, Any]] = []
     emails_high: list[dict[str, Any]] = []
     emails_medium_count = 0
     emails_low_count = 0
 
     for email in raw_emails:
-        priority = classify_email_priority(email, customer_domains, user_domain)
+        priority = classify_email_priority(
+            email, customer_domains, user_domain, account_hints,
+        )
+        from_raw = email.get("from", "")
+        email_obj: dict[str, Any] = {
+            "id": email.get("id"),
+            "thread_id": email.get("thread_id"),
+            "from": from_raw,
+            "from_email": _extract_email_address(from_raw),
+            "subject": email.get("subject"),
+            "snippet": email.get("snippet"),
+            "date": email.get("date"),
+            "priority": priority,
+        }
+        all_classified_emails.append(email_obj)
         if priority == "high":
-            emails_high.append({
-                "id": email.get("id"),
-                "thread_id": email.get("thread_id"),
-                "from": email.get("from"),
-                "subject": email.get("subject"),
-                "snippet": email.get("snippet"),
-                "date": email.get("date"),
-            })
+            emails_high.append(email_obj)
         elif priority == "medium":
             emails_medium_count += 1
         else:
@@ -1335,6 +1382,7 @@ def main() -> int:
         "actions": actions,
         "emails": {
             "high_priority": emails_high,
+            "classified": all_classified_emails,
             "medium_count": emails_medium_count,
             "low_count": emails_low_count,
         },
