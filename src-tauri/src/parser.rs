@@ -951,9 +951,9 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                 let priority = if notes.contains("🔴") || notes.to_lowercase().contains("customer") {
                     EmailPriority::High
                 } else if notes.contains("🟡") || notes.to_lowercase().contains("review") {
-                    EmailPriority::Normal
+                    EmailPriority::Medium
                 } else {
-                    EmailPriority::Normal
+                    EmailPriority::Medium
                 };
 
                 emails.push(Email {
@@ -964,6 +964,10 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                     snippet: Some(notes),
                     priority,
                     avatar_url: None,
+                    summary: None,
+                    recommended_action: None,
+                    conversation_arc: None,
+                    email_type: None,
                 });
                 id_counter += 1;
             }
@@ -1049,7 +1053,7 @@ fn parse_email_line(line: &str, id: usize) -> Option<EmailBuilder> {
     let priority = if after_email.contains("[high]") {
         EmailPriority::High
     } else {
-        EmailPriority::Normal
+        EmailPriority::Medium
     };
 
     Some(EmailBuilder {
@@ -1082,6 +1086,10 @@ impl EmailBuilder {
             snippet: None,
             priority: self.priority,
             avatar_url: None,
+            summary: None,
+            recommended_action: None,
+            conversation_arc: None,
+            email_type: None,
         })
     }
 }
@@ -1498,7 +1506,7 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
                 sender_email: String::new(),
                 subject: String::new(),
                 received: None,
-                priority: if in_high { EmailPriority::High } else { EmailPriority::Normal },
+                priority: if in_high { EmailPriority::High } else { EmailPriority::Medium },
                 email_type: None,
                 summary: None,
                 conversation_arc: None,

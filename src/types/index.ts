@@ -112,7 +112,7 @@ export interface DayStats {
   inboxCount: number;
 }
 
-export type EmailPriority = "high" | "normal";
+export type EmailPriority = "high" | "medium" | "low";
 
 export interface Email {
   id: string;
@@ -122,6 +122,14 @@ export interface Email {
   snippet?: string;
   priority: EmailPriority;
   avatarUrl?: string;
+  /** AI-generated one-line summary of the email */
+  summary?: string;
+  /** Suggested next action (e.g. "Reply with counter-proposal") */
+  recommendedAction?: string;
+  /** Thread history arc (e.g. "Initial outreach → follow-up → this response") */
+  conversationArc?: string;
+  /** Email category from AI classification */
+  emailType?: string;
 }
 
 export type InboxFileType =

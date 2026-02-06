@@ -153,6 +153,154 @@ def extract_focus_from_markdown(today_dir: Path) -> Optional[str]:
         return None
 
 
+def _normalise_email_subject(subject: str) -> str:
+    """Normalise an email subject for fuzzy matching.
+
+    Strips Re:/Fwd: prefixes, collapses whitespace, lowercases.
+    """
+    s = subject.strip().lower()
+    s = re.sub(r"^(re|fwd?|fw)\s*:\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"^(re|fwd?|fw)\s*:\s*", "", s, flags=re.IGNORECASE)  # double strip
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def parse_email_enrichment(today_dir: Path) -> Dict[str, Dict[str, str]]:
+    """Best-effort parse of Phase 2 email enrichment from ``83-email-summary.md``.
+
+    Returns a dict mapping normalised subject strings to enrichment dicts.
+    Each enrichment dict may contain keys: ``summary``, ``recommendedAction``,
+    ``conversationArc``, ``emailType``, ``actionOwner``, ``actionPriority``.
+
+    Gracefully returns an empty dict if the file is missing or unparseable.
+    """
+    enrichment_path = today_dir / "83-email-summary.md"
+    if not enrichment_path.exists():
+        return {}
+
+    try:
+        content = enrichment_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+
+    # Field patterns to extract (field_name, list of possible label variants)
+    _FIELD_PATTERNS: List[Tuple[str, List[str]]] = [
+        ("summary", ["summary", "overview", "context", "tldr", "tl;dr"]),
+        ("recommendedAction", [
+            "recommended action", "action", "next step",
+            "suggested action", "recommendation", "what to do",
+        ]),
+        ("conversationArc", [
+            "conversation arc", "thread", "conversation history",
+            "arc", "thread history",
+        ]),
+        ("actionOwner", ["action owner", "owner", "responsible"]),
+        ("actionPriority", ["priority", "urgency"]),
+        ("emailType", ["type", "category", "email type"]),
+    ]
+
+    result: Dict[str, Dict[str, str]] = {}
+
+    # Split into per-email blocks by ## or ### headers
+    blocks = re.split(r"\n(?=#{2,3}\s)", content)
+
+    for block in blocks:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+
+        # Extract subject from header line
+        header = lines[0].strip()
+        subject = re.sub(r"^#{2,3}\s*", "", header).strip()
+        # Strip common prefixes like "Email:", "Subject:", "[1]"
+        subject = re.sub(
+            r"^(?:Email|Subject|Message)\s*[:：]\s*",
+            "", subject, flags=re.IGNORECASE,
+        ).strip()
+        subject = re.sub(r"^\[?\d+\]?\s*\.?\s*", "", subject).strip()
+        # Strip surrounding quotes or bold markers
+        subject = subject.strip("*_\"'`")
+
+        if not subject or len(subject) < 3:
+            continue
+
+        enrichment: Dict[str, str] = {}
+        body_lines: List[str] = []
+
+        for line in lines[1:]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("---"):
+                continue
+
+            # Try to match key: value patterns
+            matched_field = False
+            for field_name, keys in _FIELD_PATTERNS:
+                if field_name in enrichment:
+                    continue
+                for key in keys:
+                    # Match **Key:** value, *Key:* value, Key: value
+                    pattern = (
+                        rf"^[\*_]*{re.escape(key)}[\*_]*"
+                        rf"\s*[:：]\s*(.+)$"
+                    )
+                    match = re.match(pattern, stripped, re.IGNORECASE)
+                    if match:
+                        val = match.group(1).strip().strip("*_")
+                        if val:
+                            enrichment[field_name] = val
+                            matched_field = True
+                        break
+
+            # Collect non-field lines for fallback summary
+            if not matched_field:
+                body_lines.append(stripped)
+
+        # Fallback: use first non-empty body line as summary
+        if "summary" not in enrichment and body_lines:
+            # Skip lines that look like bullet lists or metadata
+            for bl in body_lines:
+                if not bl.startswith("-") and not bl.startswith("*") and len(bl) > 10:
+                    enrichment["summary"] = bl
+                    break
+
+        if enrichment:
+            normalised = _normalise_email_subject(subject)
+            result[normalised] = enrichment
+
+    if result:
+        print(
+            f"deliver_today: parsed enrichment for {len(result)} emails "
+            f"from 83-email-summary.md",
+            file=sys.stderr,
+        )
+
+    return result
+
+
+def _match_enrichment(
+    subject: str,
+    enrichment_map: Dict[str, Dict[str, str]],
+) -> Optional[Dict[str, str]]:
+    """Find enrichment data for an email by fuzzy subject matching.
+
+    Tries exact normalised match first, then substring containment.
+    """
+    norm = _normalise_email_subject(subject)
+    if not norm:
+        return None
+
+    # Exact match
+    if norm in enrichment_map:
+        return enrichment_map[norm]
+
+    # Substring match (enrichment subject contains email subject or vice versa)
+    for enrich_subj, data in enrichment_map.items():
+        if norm in enrich_subj or enrich_subj in norm:
+            return data
+
+    return None
+
+
 def _parse_sender(from_raw: str) -> Tuple[str, str]:
     """Parse a raw email From header into (display_name, email_address).
 
@@ -628,6 +776,7 @@ def build_actions(
 def build_emails(
     directive: Dict[str, Any],
     now: datetime,
+    today_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Build the ``emails.json`` payload from directive data.
 
@@ -639,9 +788,14 @@ def build_emails(
         - **Legacy**: ``emails.high_priority`` contains only high-priority
           email objects; medium/low are stored as counts only.
 
+    When *today_dir* is provided, also parses Phase 2 enrichment from
+    ``83-email-summary.md`` and merges AI-generated context (summary,
+    recommended action, conversation arc) into each email.
+
     Args:
         directive: The full directive dictionary.
         now: Current datetime (used for date field fallback).
+        today_dir: Path to ``_today/`` for reading Phase 2 enrichment.
 
     Returns:
         Dictionary ready to serialize as ``emails.json``.
@@ -649,6 +803,11 @@ def build_emails(
     context = directive.get("context", {})
     date = context.get("date", now.strftime("%Y-%m-%d"))
     raw_emails = directive.get("emails", {})
+
+    # Parse Phase 2 enrichment (best-effort)
+    enrichment_map: Dict[str, Dict[str, str]] = {}
+    if today_dir is not None:
+        enrichment_map = parse_email_enrichment(today_dir)
 
     # Prefer 'classified' (all emails with priority), fall back to 'high_priority'
     classified = raw_emails.get("classified", [])
@@ -670,38 +829,62 @@ def build_emails(
             if not from_email:
                 from_email = parsed_email
 
-        # Normalise priority: high stays high, everything else → normal
-        raw_priority = email.get("priority", "high" if not classified else "normal")
-        priority = "high" if raw_priority == "high" else "normal"
+        # Three-tier priority: high / medium / low
+        raw_priority = email.get("priority", "high" if not classified else "medium")
+        if raw_priority == "high":
+            priority = "high"
+        elif raw_priority == "medium":
+            priority = "medium"
+        else:
+            priority = "low"
 
-        emails_list.append({
+        subject = email.get("subject", "No subject")
+
+        email_obj: Dict[str, Any] = {
             "id": eid,
             "sender": sender,
             "senderEmail": from_email,
-            "subject": email.get("subject", "No subject"),
+            "subject": subject,
             "snippet": email.get("snippet"),
             "priority": priority,
-        })
+        }
+
+        # Merge Phase 2 enrichment by subject matching
+        enrichment = _match_enrichment(subject, enrichment_map)
+        if enrichment:
+            for field in (
+                "summary", "recommendedAction", "conversationArc",
+                "emailType", "actionOwner", "actionPriority",
+            ):
+                val = enrichment.get(field)
+                if val:
+                    email_obj[field] = val
+
+        emails_list.append(email_obj)
 
     # Compute stats
     high_count = sum(1 for e in emails_list if e["priority"] == "high")
+    medium_count = sum(1 for e in emails_list if e["priority"] == "medium")
+    low_count = sum(1 for e in emails_list if e["priority"] == "low")
 
-    if classified:
-        normal_count = len(emails_list) - high_count
-    else:
-        normal_count = raw_emails.get("medium_count", 0) + raw_emails.get("low_count", 0)
+    if not classified:
+        # Legacy format: medium/low counts come from directive metadata
+        medium_count = max(medium_count, raw_emails.get("medium_count", 0))
+        low_count = max(low_count, raw_emails.get("low_count", 0))
 
     needs_action = sum(
-        1 for e in source
-        if e.get("priority") == "high"
-        and e.get("action_owner", "").lower() in ("you", "me", "")
+        1 for e in emails_list
+        if e["priority"] == "high"
+        and e.get("actionOwner", e.get("action_owner", "")).lower()
+        in ("you", "me", "")
     )
 
     return {
         "date": date,
         "stats": {
             "highPriority": high_count,
-            "normalPriority": normal_count,
+            "mediumPriority": medium_count,
+            "lowPriority": low_count,
             "needsAction": needs_action,
         },
         "emails": emails_list,
@@ -1062,7 +1245,7 @@ def main() -> int:
     # 5. Build emails.json
     # ------------------------------------------------------------------
     print("deliver_today: building emails.json", file=sys.stderr)
-    emails_data = build_emails(directive, now)
+    emails_data = build_emails(directive, now, today_dir=today_dir)
     write_json(data_dir / "emails.json", emails_data)
 
     # ------------------------------------------------------------------
