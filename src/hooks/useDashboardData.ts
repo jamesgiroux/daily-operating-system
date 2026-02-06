@@ -24,7 +24,9 @@ type DashboardResult =
  * Hook to load dashboard data from the Tauri backend
  *
  * Features:
- * - Initial load on mount
+ * - Loads fresh data on mount
+ * - Re-fetches when window regains focus (catches workflows that
+ *   completed while user was on another page or app)
  * - Manual refresh via `refresh()` function
  * - Auto-refresh when `workflow-completed` event is received
  */
@@ -67,26 +69,36 @@ export function useDashboardData(): {
     }
   }, []);
 
-  // Initial load
+  // Load on mount
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Auto-refresh on workflow completion
+  // Re-fetch when the window regains focus — catches data that changed
+  // while user was on Settings, another page, or another app entirely.
+  useEffect(() => {
+    const onFocus = () => loadData(false);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadData]);
+
+  // Auto-refresh on workflow completion (works when Dashboard is mounted)
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
 
-    const setupListener = async () => {
-      // Listen for workflow-completed events
-      unlisten = await listen("workflow-completed", () => {
-        // Refresh without showing loading state (smoother UX)
-        loadData(false);
-      });
-    };
-
-    setupListener();
+    listen("workflow-completed", () => {
+      loadData(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn(); // Component already unmounted — immediately unlisten
+      } else {
+        unlisten = fn;
+      }
+    });
 
     return () => {
+      cancelled = true;
       unlisten?.();
     };
   }, [loadData]);

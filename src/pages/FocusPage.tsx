@@ -42,7 +42,7 @@ export default function FocusPage() {
         if (result.status === "success" && result.data) {
           setData(result.data);
         } else if (result.status === "not_found") {
-          setError(result.message || "No focus data found");
+          // not_found is normal — no briefing run yet. Show empty state (data stays null).
         } else if (result.status === "error") {
           setError(result.message || "Failed to load focus data");
         }

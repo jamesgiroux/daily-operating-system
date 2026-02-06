@@ -203,9 +203,14 @@ pub fn enrich_file(
 
 /// Build the prompt for Claude Code enrichment.
 fn build_enrichment_prompt(filename: &str, content: &str) -> String {
-    // Truncate very long content to fit in a reasonable prompt
+    // Truncate very long content to fit in a reasonable prompt.
+    // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
     let truncated = if content.len() > 8000 {
-        &content[..8000]
+        let mut end = 8000;
+        while end > 0 && !content.is_char_boundary(end) {
+            end -= 1;
+        }
+        &content[..end]
     } else {
         content
     };
@@ -279,6 +284,11 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             }
             actions_buf.push_str(line);
         }
+    }
+
+    // If Claude emitted ACTIONS: but never END_ACTIONS, capture buffered actions
+    if in_actions && !actions_buf.is_empty() && actions_text.is_none() {
+        actions_text = Some(actions_buf);
     }
 
     ParsedEnrichment {
