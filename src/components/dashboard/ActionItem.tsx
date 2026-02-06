@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 
 interface ActionItemProps {
   action: Action;
+  isLocallyCompleted?: boolean;
+  onComplete?: (id: string) => void;
 }
 
 const priorityStyles: Record<Priority, string> = {
@@ -13,8 +15,8 @@ const priorityStyles: Record<Priority, string> = {
   P3: "bg-muted text-muted-foreground",
 };
 
-export function ActionItem({ action }: ActionItemProps) {
-  const isCompleted = action.status === "completed";
+export function ActionItem({ action, isLocallyCompleted, onComplete }: ActionItemProps) {
+  const isCompleted = action.status === "completed" || isLocallyCompleted;
 
   return (
     <div
@@ -25,11 +27,19 @@ export function ActionItem({ action }: ActionItemProps) {
       )}
     >
       <button
+        onClick={() => {
+          if (!isCompleted && onComplete) {
+            onComplete(action.id);
+          }
+        }}
+        disabled={isCompleted}
         className={cn(
           "mt-0.5 shrink-0 transition-colors",
-          isCompleted ? "text-success" : "text-muted-foreground hover:text-foreground"
+          isCompleted
+            ? "text-success"
+            : "text-muted-foreground hover:text-foreground cursor-pointer"
         )}
-        aria-label={isCompleted ? "Mark as incomplete" : "Mark as complete"}
+        aria-label={isCompleted ? "Completed" : "Mark as complete"}
       >
         {isCompleted ? (
           <CheckCircle2 className="size-5" />

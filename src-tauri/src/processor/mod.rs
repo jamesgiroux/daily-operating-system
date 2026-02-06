@@ -163,9 +163,14 @@ pub fn process_all(
     for entry in entries.flatten() {
         let path = entry.path();
 
-        // Only process .md files
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        // Skip directories and hidden files
+        if !path.is_file() {
             continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.') {
+                continue;
+            }
         }
 
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
