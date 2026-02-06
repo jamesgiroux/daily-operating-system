@@ -114,7 +114,14 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
     let meetings: Vec<Meeting> = schedule.meetings.into_iter().map(|m| {
         let meeting_type = match m.meeting_type.as_str() {
             "customer" => crate::types::MeetingType::Customer,
+            "qbr" => crate::types::MeetingType::Qbr,
+            "training" => crate::types::MeetingType::Training,
             "internal" => crate::types::MeetingType::Internal,
+            "team_sync" => crate::types::MeetingType::TeamSync,
+            "one_on_one" => crate::types::MeetingType::OneOnOne,
+            "partnership" => crate::types::MeetingType::Partnership,
+            "all_hands" => crate::types::MeetingType::AllHands,
+            "external" => crate::types::MeetingType::External,
             "personal" => crate::types::MeetingType::Personal,
             _ => crate::types::MeetingType::Internal,
         };
