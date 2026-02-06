@@ -248,9 +248,143 @@ src-tauri/src/workflow/
 
 ---
 
+## Phase 1.5: Nav & UI Refactor
+
+**Goal:** Align the UI with the nav architecture decisions (DEC7-DEC13) before building Phase 2 features. Current sidebar has dead pages and missing pages.
+
+This phase runs in parallel with Phase 2 Pre-work (data architecture). UI refactor is frontend; data architecture is backend. No dependency between them.
+
+### 1.5a: Sidebar Simplification (DEC10, DEC11)
+
+Remove pages that don't belong as standalone routes:
+
+**Remove from sidebar:**
+- Focus (becomes dashboard section)
+- Week (post-MVP, add back when built)
+- Emails (already on dashboard)
+
+**Keep:**
+- Dashboard
+- Actions
+- Settings
+
+**Add:**
+- Inbox
+- Accounts (CS) / Projects (GA)
+
+**Sidebar groups:** "Today" (Dashboard) + "Workspace" (Actions, Inbox, Accounts/Projects)
+
+### Files Changed
+```
+src/components/layout/AppSidebar.tsx  ← Rewrite nav items, add profile-aware rendering
+src/router.tsx                        ← Remove focus/week/emails routes
+src/pages/FocusPage.tsx              ← Delete
+src/pages/WeekPage.tsx               ← Delete (re-add in Phase 3C)
+src/pages/EmailsPage.tsx             ← Delete
+```
+
+### Done When
+- [ ] Sidebar shows: Dashboard, Actions, Inbox, [Accounts/Projects], Settings
+- [ ] Focus, Week, Emails routes removed
+- [ ] Sidebar group labels: "Today" and "Workspace"
+- [ ] No dead routes (clicking removed nav items doesn't 404)
+
+---
+
+### 1.5b: Inbox Page
+
+**Goal:** Basic page for viewing `_inbox/` contents. Prerequisite for Phase 2A (File Watcher).
+
+### Frontend
+- `InboxPage.tsx` — List files from `_inbox/` directory
+- File list with name, size, modified date
+- Empty state: "Inbox is clear" (positive framing)
+- Manual refresh button
+
+### Backend (Rust)
+- `InboxFile` type in `types.rs`
+- `list_inbox_files()` in `commands.rs` — Read `_inbox/` directory
+- Return file metadata (name, size, modified timestamp)
+
+### Files
+```
+src/pages/InboxPage.tsx              ← New
+src/router.tsx                       ← Add /inbox route
+src-tauri/src/types.rs               ← Add InboxFile type
+src-tauri/src/commands.rs            ← Add get_inbox_files command
+```
+
+### Done When
+- [ ] `/inbox` route renders InboxPage
+- [ ] Lists all files in `_inbox/` from workspace
+- [ ] Empty state when no files
+- [ ] Sidebar Inbox item navigates correctly
+
+---
+
+### 1.5c: Profile-Aware Sidebar (DEC8)
+
+**Goal:** Sidebar adapts to active profile. CS shows Accounts; GA shows Projects.
+
+### Frontend
+- Read profile from config (already loaded via `get_config`)
+- Conditionally render third Workspace nav item based on profile
+- Profile indicator text below app name in sidebar header
+
+### Backend
+- No changes (profile already in config)
+
+### Files
+```
+src/components/layout/AppSidebar.tsx  ← Conditional nav item rendering
+src/types/index.ts                    ← Add Profile type
+```
+
+### Done When
+- [ ] CS profile: sidebar shows "Accounts" nav item
+- [ ] GA profile: sidebar shows "Projects" nav item
+- [ ] Profile name displayed in sidebar header
+- [ ] Switching profile in config.json changes sidebar on next load
+
+---
+
+### 1.5d: Actions Page Refactor
+
+**Goal:** Actions page backed by SQLite for interactive status updates. Depends on 2.0b (SQLite Setup).
+
+### Frontend
+- Filter bar: status (pending/completed/waiting), priority (P1/P2/P3)
+- Account/project filter (profile-dependent)
+- Mark complete / mark waiting toggles
+- Source attribution on each action
+
+### Backend (Rust)
+- `get_actions` command (query SQLite)
+- `update_action_status` command (mark complete/waiting)
+- Filter params: status, priority, account_id/project_id
+
+### Files
+```
+src/pages/ActionsPage.tsx            ← Rewrite with filters and interactive updates
+src/hooks/useActions.ts              ← New hook for SQLite-backed actions
+src-tauri/src/commands.rs            ← Add get_actions, update_action_status
+src-tauri/src/db.rs                  ← SQLite connection (from 2.0b)
+```
+
+### Done When
+- [ ] Actions list loads from SQLite
+- [ ] Filter by status, priority, account/project
+- [ ] Mark action complete updates SQLite
+- [ ] Overdue items highlighted
+- [ ] Source attribution shown
+
+**Dependency:** Requires 2.0b (SQLite Setup) to be complete first.
+
+---
+
 ## Phase 2 Pre-work: Data Architecture
 
-**Goal:** Establish the data infrastructure decisions need before Phase 2 features.
+**Goal:** Establish the data infrastructure needed before Phase 2 features. Runs in parallel with Phase 1.5 (UI refactor).
 
 ### 2.0a: JSON-Primary Migration
 
@@ -267,6 +401,7 @@ Introduce `~/.dailyos/actions.db` as disposable cache (DEC18):
 - `actions` table — Cross-day action tracking
 - `meetings_history` table — Historical meeting lookup
 - `accounts` table (CSM profile only)
+- `projects` table (GA profile only)
 - Rebuilt from workspace markdown files if corrupted
 
 See `ACTIONS-SCHEMA.md` for full schema.
@@ -277,7 +412,7 @@ Implement profile system (DEC20):
 
 - Profile selection during first-run setup
 - CSM profile: Account-focused PARA, meeting classification with account cross-reference
-- General profile: Standard PARA, no accounts concept
+- General profile: Project-focused PARA, no accounts concept
 - Non-destructive switching (DEC9)
 
 See `PROFILES.md` for full specification.
@@ -313,12 +448,12 @@ Implement proactive research for unknown external meetings (DEC22):
 See `UNKNOWN-MEETING-RESEARCH.md` for research hierarchy.
 
 ### Done When
-- [ ] Phase 3 generates JSON as source of truth
-- [ ] SQLite actions.db created and populated
-- [ ] Profile selection UI in setup wizard
-- [ ] Type-specific Claude templates for all meeting types
-- [ ] Directive uses reference approach
-- [ ] Unknown meeting research pipeline working
+- [x] Phase 3 generates JSON as source of truth (2.0a)
+- [x] SQLite actions.db created and populated (2.0b)
+- [x] Profile selection UI in first-run dialog (2.0c)
+- [x] Type-specific Claude templates for all meeting types (2.0d)
+- [x] Directive uses reference approach (2.0e)
+- [x] Unknown meeting research pipeline working (2.0f)
 
 ---
 
@@ -326,15 +461,18 @@ See `UNKNOWN-MEETING-RESEARCH.md` for research hierarchy.
 
 **Goal:** Detect new files in `_inbox/` automatically.
 
+**Prerequisite:** Phase 1.5b (Inbox Page must exist to display watched files).
+
 ### Frontend
-- Inbox indicator (pending count badge)
+- Inbox badge (pending count) on sidebar nav item
 - Tray icon badge
+- Real-time file list updates on InboxPage
 
 ### Backend (Rust)
 - Watcher module (monitor `_inbox/`)
 - Debouncing (500ms)
 - Filter to `.md` files
-- Emit events to frontend
+- Emit events to frontend (`inbox-updated`)
 
 ### Files
 ```
@@ -342,13 +480,16 @@ src-tauri/src/
 └── watcher.rs
 
 src/hooks/
-└── useInbox.ts
+└── useInbox.ts              ← Add event listener for real-time updates
+src/components/layout/
+└── AppSidebar.tsx           ← Add badge count to Inbox nav item
 ```
 
 ### Done When
 - [ ] New `.md` files detected within 30 seconds
 - [ ] Events debounced
 - [ ] Badge updates in real-time
+- [ ] InboxPage refreshes on new files
 
 ---
 
@@ -509,16 +650,36 @@ Phase 0 (Foundation)
                     └── Phase 1C (Scheduler + Executor)
                             └── Phase 1D (Archive)
                                     │
-                                    ├── Phase 2A (File Watcher)
-                                    │       └── Phase 2B (Quick Processing)
-                                    │               └── Phase 2C (Full Processing)
+                              ══════╪═══════ MVP COMPLETE ══════════
                                     │
-                                    └── Phase 3A (Calendar Polling)
-                                            ├── Phase 3B (Post-Meeting Capture)
-                                            └── Phase 3C (Weekly Planning)
+                    ┌───────────────┼───────────────┐
+                    │ (parallel)    │               │
+                    ▼               ▼               │
+           Phase 1.5         Phase 2 Pre-work       │
+           (Nav Refactor)    (Data Architecture)    │
+              │                    │                │
+              ├── 1.5a Sidebar     ├── 2.0a JSON    │
+              ├── 1.5b Inbox Page  ├── 2.0b SQLite ─┤
+              ├── 1.5c Profile Nav ├── 2.0c Profile │
+              └── 1.5d Actions ────┘  2.0d Templates│
+                    │                 2.0e Refs      │
+                    │                 2.0f Research   │
+                    ▼                                │
+              Phase 2A (File Watcher)               │
+                    │    (needs 1.5b Inbox Page)     │
+                    └── Phase 2B (Quick Processing)  │
+                            └── Phase 2C (Full)      │
+                                                     │
+                              Phase 3A (Calendar Polling)
+                                    ├── Phase 3B (Post-Meeting Capture)
+                                    └── Phase 3C (Weekly Planning + Week Page)
 ```
 
-Phases 2 and 3 can run in parallel after MVP.
+**Key dependencies:**
+- 1.5a-c are independent and can be done in any order
+- 1.5d (Actions refactor) depends on 2.0b (SQLite)
+- 2A (File Watcher) depends on 1.5b (Inbox Page)
+- Phase 1.5 and Phase 2 Pre-work run in parallel
 
 ---
 
@@ -545,5 +706,5 @@ See `RAIDD.md` for the canonical decision log (DEC1-DEC23).
 
 ---
 
-*Document Version: 1.1*
-*Last Updated: 2026-02-05*
+*Document Version: 1.2*
+*Last Updated: 2026-02-05 — Added Phase 1.5 (Nav Refactor), updated dependency graph, fixed Phase 2A prerequisites*

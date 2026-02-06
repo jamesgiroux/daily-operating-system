@@ -31,6 +31,8 @@
 |----|-------|----------|-------|--------|
 | I1 | Config directory named `.daybreak` should be `.dailyos` for brand consistency | Low | — | Open |
 | I2 | Compact `meetings.md` format for dashboard dropdowns | Low | — | Explore |
+| I3 | Browser extension for web page capture to `_inbox/` | Low | — | Explore |
+| I4 | Motivational quotes as personality layer | Low | — | Explore |
 
 ### I2 Notes
 The archive from 2026-02-04 contains a compact `meetings.md` format with structured prep summaries:
@@ -52,6 +54,37 @@ This format could be useful for:
 - Generating consolidated daily meeting summary
 
 Consider adding as a Claude Code template output for `/today` command post-MVP.
+
+### I3 Notes
+Chromium-based browser extension that captures a page's text content and drops it as a markdown file into `_inbox/`. This turns the browser into another input source for the inbox processing pipeline (F4).
+
+**Why it fits:**
+- Aligns with "system does the work" — user clicks one button, DailyOS processes and routes
+- `_inbox/` already handles document classification, routing, and enrichment
+- No new processing pipeline needed — just a new input channel
+
+**Considerations:**
+- Chromium extension API for page content extraction (text, not full HTML)
+- File naming convention: `clip-YYYY-MM-DD-HHMMSS-page-title.md`
+- Frontmatter with source URL, capture timestamp, page title
+- Could include selection-only capture (highlight text → clip to inbox)
+- Manifest V3 compatibility
+- Explore post-Phase 2 when inbox processing (F4) is stable
+
+### I4 Notes
+Cheesy motivational quotes (Chris Farley "van down by the river" energy) as a personality layer. Adds humor and delight without friction.
+
+**Rejected approach:** Welcome interstitial screen before dashboard. Adds a required daily click, conflicts with "Open the app. Your day is ready." and Principle 2 (Prepared, Not Empty).
+
+**Viable placements (explore post-MVP):**
+- **Overview greeting** — daily rotating quote replaces "Good morning" in the left column. First thing you see, zero extra clicks. "Let's go" energy.
+- **Empty states** — no meetings, no actions, inbox clear. Flips "nothing here" into "you crushed it" energy. Rewards being caught up instead of showing a dead end.
+- These are complementary, not mutually exclusive — different quote pools, different tones.
+
+**Open questions:**
+- Quote source: curated list vs generated? Curated is safer for tone.
+- How many quotes before repeats? 365 would cover a year.
+- Should quotes be deterministic per date (same quote every Feb 5) or random?
 
 ---
 
