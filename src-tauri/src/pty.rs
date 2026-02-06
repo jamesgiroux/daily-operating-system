@@ -199,7 +199,13 @@ pub fn run_python_script(
 
     if !output.status.success() {
         let code = output.status.code().unwrap_or(-1);
-        return Err(ExecutionError::ScriptFailed { code, stderr });
+        // Include stdout in the error if stderr alone is unhelpful (e.g. only warnings)
+        let detail = if stderr.trim().is_empty() || (!stdout.trim().is_empty() && stderr.len() < 200) {
+            format!("{}\n{}", stderr, stdout).trim().to_string()
+        } else {
+            stderr
+        };
+        return Err(ExecutionError::ScriptFailed { code, stderr: detail });
     }
 
     Ok(ScriptOutput {

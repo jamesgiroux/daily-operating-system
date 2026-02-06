@@ -5,7 +5,10 @@ use std::sync::Mutex;
 
 use chrono::{DateTime, Utc};
 
-use crate::types::{Config, ExecutionRecord, ExecutionTrigger, WorkflowId, WorkflowStatus};
+use crate::types::{
+    CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, WeekPlanningState,
+    WorkflowId, WorkflowStatus,
+};
 
 /// Maximum number of execution records to keep in memory
 const MAX_HISTORY_SIZE: usize = 100;
@@ -17,6 +20,12 @@ pub struct AppState {
     pub execution_history: Mutex<Vec<ExecutionRecord>>,
     pub last_scheduled_run: Mutex<HashMap<WorkflowId, DateTime<Utc>>>,
     pub db: Mutex<Option<crate::db::ActionDb>>,
+    // Phase 3: Google + Calendar + Capture + Week Planning
+    pub google_auth: Mutex<GoogleAuthStatus>,
+    pub calendar_events: Mutex<Vec<CalendarEvent>>,
+    pub capture_dismissed: Mutex<std::collections::HashSet<String>>,
+    pub capture_captured: Mutex<std::collections::HashSet<String>>,
+    pub week_planning_state: Mutex<WeekPlanningState>,
 }
 
 impl AppState {
@@ -32,12 +41,20 @@ impl AppState {
             }
         };
 
+        // Detect existing Google token on startup
+        let google_auth = detect_google_auth();
+
         Self {
             config: Mutex::new(config),
             workflow_status: Mutex::new(HashMap::new()),
             execution_history: Mutex::new(history),
             last_scheduled_run: Mutex::new(HashMap::new()),
             db: Mutex::new(db),
+            google_auth: Mutex::new(google_auth),
+            calendar_events: Mutex::new(Vec::new()),
+            capture_dismissed: Mutex::new(std::collections::HashSet::new()),
+            capture_captured: Mutex::new(std::collections::HashSet::new()),
+            week_planning_state: Mutex::new(WeekPlanningState::default()),
         }
     }
 
@@ -130,10 +147,10 @@ impl Default for AppState {
     }
 }
 
-/// Get the state directory (~/.daybreak)
+/// Get the state directory (~/.dailyos)
 fn get_state_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let state_dir = home.join(".daybreak");
+    let state_dir = home.join(".dailyos");
 
     if !state_dir.exists() {
         fs::create_dir_all(&state_dir).map_err(|e| format!("Failed to create state dir: {}", e))?;
@@ -142,10 +159,10 @@ fn get_state_dir() -> Result<PathBuf, String> {
     Ok(state_dir)
 }
 
-/// Load configuration from ~/.daybreak/config.json
+/// Load configuration from ~/.dailyos/config.json
 pub fn load_config() -> Result<Config, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".daybreak").join("config.json");
+    let config_path = home.join(".dailyos").join("config.json");
 
     if !config_path.exists() {
         return Err(format!(
@@ -192,6 +209,38 @@ pub fn reload_config(state: &AppState) -> Result<Config, String> {
     let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
     *guard = Some(config.clone());
     Ok(config)
+}
+
+/// Get the default Google token path
+pub fn google_token_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_default();
+    home.join(".dailyos").join("google").join("token.json")
+}
+
+/// Detect existing Google authentication on startup
+fn detect_google_auth() -> GoogleAuthStatus {
+    let token_path = google_token_path();
+    if !token_path.exists() {
+        return GoogleAuthStatus::NotConfigured;
+    }
+
+    // Try to read the token file and extract email
+    match fs::read_to_string(&token_path) {
+        Ok(content) => {
+            if let Ok(token) = serde_json::from_str::<serde_json::Value>(&content) {
+                let email = token
+                    .get("email")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("connected")
+                    .to_string();
+                GoogleAuthStatus::Authenticated { email }
+            } else {
+                // Token file exists but is invalid
+                GoogleAuthStatus::TokenExpired
+            }
+        }
+        Err(_) => GoogleAuthStatus::NotConfigured,
+    }
 }
 
 /// Create a new execution record

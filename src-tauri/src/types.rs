@@ -3,10 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::WorkflowError;
 
-/// Configuration stored in ~/.daybreak/config.json
+/// Configuration stored in ~/.dailyos/config.json
+///
+/// Accepts both Daybreak format (`workspacePath`) and DailyOS CLI format
+/// (`default_workspace`) for backwards compatibility.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    #[serde(alias = "default_workspace")]
     pub workspace_path: String,
     #[serde(default)]
     pub schedules: Schedules,
@@ -14,6 +18,10 @@ pub struct Config {
     pub profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_config: Option<ProfileConfig>,
+    #[serde(default)]
+    pub google: GoogleConfig,
+    #[serde(default)]
+    pub post_meeting_capture: PostMeetingCaptureConfig,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -51,6 +59,10 @@ pub struct Schedules {
     pub today: ScheduleEntry,
     #[serde(default = "ScheduleEntry::default_archive")]
     pub archive: ScheduleEntry,
+    #[serde(default = "ScheduleEntry::default_inbox_batch")]
+    pub inbox_batch: ScheduleEntry,
+    #[serde(default = "ScheduleEntry::default_week")]
+    pub week: ScheduleEntry,
 }
 
 impl Default for Schedules {
@@ -58,6 +70,8 @@ impl Default for Schedules {
         Self {
             today: ScheduleEntry::default_today(),
             archive: ScheduleEntry::default_archive(),
+            inbox_batch: ScheduleEntry::default_inbox_batch(),
+            week: ScheduleEntry::default_week(),
         }
     }
 }
@@ -89,6 +103,24 @@ impl ScheduleEntry {
             timezone: "America/New_York".to_string(),
         }
     }
+
+    /// Default schedule for inbox batch processing: every 2 hours on weekdays
+    pub fn default_inbox_batch() -> Self {
+        Self {
+            enabled: true,
+            cron: "0 */2 * * 1-5".to_string(), // Every 2 hours, weekdays
+            timezone: "America/New_York".to_string(),
+        }
+    }
+
+    /// Default schedule for the "week" workflow: Monday 5 AM
+    pub fn default_week() -> Self {
+        Self {
+            enabled: true,
+            cron: "0 5 * * 1".to_string(), // Monday 5 AM
+            timezone: "America/New_York".to_string(),
+        }
+    }
 }
 
 impl Default for ScheduleEntry {
@@ -103,6 +135,8 @@ impl Default for ScheduleEntry {
 pub enum WorkflowId {
     Today,
     Archive,
+    InboxBatch,
+    Week,
 }
 
 impl std::fmt::Display for WorkflowId {
@@ -110,6 +144,8 @@ impl std::fmt::Display for WorkflowId {
         match self {
             WorkflowId::Today => write!(f, "today"),
             WorkflowId::Archive => write!(f, "archive"),
+            WorkflowId::InboxBatch => write!(f, "inbox_batch"),
+            WorkflowId::Week => write!(f, "week"),
         }
     }
 }
@@ -121,6 +157,8 @@ impl std::str::FromStr for WorkflowId {
         match s.to_lowercase().as_str() {
             "today" => Ok(WorkflowId::Today),
             "archive" => Ok(WorkflowId::Archive),
+            "inbox_batch" | "inboxbatch" => Ok(WorkflowId::InboxBatch),
+            "week" => Ok(WorkflowId::Week),
             _ => Err(format!("Unknown workflow: {}", s)),
         }
     }
@@ -415,7 +453,7 @@ pub struct DashboardData {
 // =============================================================================
 
 /// Week overview parsed from week-00-overview.md
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekOverview {
     pub week_number: String,
@@ -432,7 +470,7 @@ pub struct WeekOverview {
 }
 
 /// A single day in the week overview
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekDay {
     pub date: String,
@@ -441,7 +479,7 @@ pub struct WeekDay {
 }
 
 /// Simplified meeting info for week view
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekMeeting {
     pub time: String,
@@ -466,7 +504,7 @@ pub enum PrepStatus {
 }
 
 /// Weekly action summary
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekActionSummary {
     pub overdue_count: usize,
@@ -475,7 +513,7 @@ pub struct WeekActionSummary {
 }
 
 /// Account hygiene alert
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HygieneAlert {
     pub account: String,
@@ -495,7 +533,7 @@ pub enum AlertSeverity {
 }
 
 /// Available time block
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeBlock {
     pub day: String,
@@ -645,4 +683,177 @@ pub struct ActionWithContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
     pub is_overdue: bool,
+}
+
+// =============================================================================
+// Google Configuration & Calendar Types (Phase 3.0 / 3A)
+// =============================================================================
+
+/// Google integration configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_path: Option<String>,
+    #[serde(default = "default_poll_interval")]
+    pub calendar_poll_interval_minutes: u32,
+    #[serde(default = "default_work_hours_start")]
+    pub work_hours_start: u8,
+    #[serde(default = "default_work_hours_end")]
+    pub work_hours_end: u8,
+}
+
+fn default_poll_interval() -> u32 {
+    5
+}
+fn default_work_hours_start() -> u8 {
+    8
+}
+fn default_work_hours_end() -> u8 {
+    18
+}
+
+impl Default for GoogleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token_path: None,
+            calendar_poll_interval_minutes: default_poll_interval(),
+            work_hours_start: default_work_hours_start(),
+            work_hours_end: default_work_hours_end(),
+        }
+    }
+}
+
+/// Google authentication status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum GoogleAuthStatus {
+    NotConfigured,
+    Authenticated { email: String },
+    TokenExpired,
+}
+
+impl Default for GoogleAuthStatus {
+    fn default() -> Self {
+        GoogleAuthStatus::NotConfigured
+    }
+}
+
+/// A calendar event from Google Calendar
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarEvent {
+    pub id: String,
+    pub title: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    #[serde(rename = "type")]
+    pub meeting_type: MeetingType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub attendees: Vec<String>,
+    #[serde(default)]
+    pub is_all_day: bool,
+}
+
+// =============================================================================
+// Post-Meeting Capture Types (Phase 3B)
+// =============================================================================
+
+/// Post-meeting capture configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PostMeetingCaptureConfig {
+    #[serde(default = "default_capture_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_delay_minutes")]
+    pub delay_minutes: u32,
+    #[serde(default = "default_auto_dismiss_secs")]
+    pub auto_dismiss_secs: u32,
+}
+
+fn default_capture_enabled() -> bool {
+    true
+}
+fn default_delay_minutes() -> u32 {
+    5
+}
+fn default_auto_dismiss_secs() -> u32 {
+    60
+}
+
+impl Default for PostMeetingCaptureConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_capture_enabled(),
+            delay_minutes: default_delay_minutes(),
+            auto_dismiss_secs: default_auto_dismiss_secs(),
+        }
+    }
+}
+
+/// Captured outcome from a post-meeting prompt
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapturedOutcome {
+    pub meeting_id: String,
+    pub meeting_title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub captured_at: DateTime<Utc>,
+    #[serde(default)]
+    pub wins: Vec<String>,
+    #[serde(default)]
+    pub risks: Vec<String>,
+    #[serde(default)]
+    pub actions: Vec<CapturedAction>,
+}
+
+/// A single captured action
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapturedAction {
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+}
+
+// =============================================================================
+// Weekly Planning Types (Phase 3C)
+// =============================================================================
+
+/// State of the weekly planning wizard
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeekPlanningState {
+    NotReady,
+    DataReady,
+    InProgress,
+    Completed,
+    DefaultsApplied,
+}
+
+impl Default for WeekPlanningState {
+    fn default() -> Self {
+        WeekPlanningState::NotReady
+    }
+}
+
+/// A focus block suggestion from the weekly planner
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusBlock {
+    pub day: String,
+    pub start: String,
+    pub end: String,
+    pub duration_minutes: u32,
+    pub suggested_activity: String,
+    #[serde(default)]
+    pub selected: bool,
 }
