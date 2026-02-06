@@ -33,6 +33,8 @@
 | I2 | Compact `meetings.md` format for dashboard dropdowns | Low | — | Explore |
 | I3 | Browser extension for web page capture to `_inbox/` | Low | — | Explore |
 | I4 | Motivational quotes as personality layer | Low | — | Explore |
+| I5 | Orphaned pages need role definition (Focus, Week, Emails) | Medium | — | Open |
+| I6 | Processing history page — "where did my file go?" | Low | — | Explore |
 
 ### I2 Notes
 The archive from 2026-02-04 contains a compact `meetings.md` format with structured prep summaries:
@@ -86,6 +88,35 @@ Cheesy motivational quotes (Chris Farley "van down by the river" energy) as a pe
 - How many quotes before repeats? 365 would cover a year.
 - Should quotes be deterministic per date (same quote every Feb 5) or random?
 
+### I5 Notes
+Three pages exist in `src/pages/` but are unrouted after DEC10 sidebar simplification:
+
+- **FocusPage.tsx** — Was a standalone Focus view. DEC10 says Focus becomes a dashboard section, but the page may have value as a drill-down from the Overview focus indicator.
+- **WeekPage.tsx** — Weekly planning view. Needed for Phase 3C. Keep for re-integration.
+- **EmailsPage.tsx** — Standalone email view. Dashboard shows emails inline, but a full-page drill-down may be needed as email volume grows.
+
+**Action:** Review each page's role when its parent phase arrives. Don't delete — assess whether they become drill-downs, standalone views, or get absorbed into existing pages.
+
+### I6 Notes
+A `processing_log` table already exists in SQLite (`schema.sql`) and records every file processed through the inbox pipeline: filename, classification, destination path, status, timestamps, and error messages. `db.rs` has `get_processing_log(limit)` to query it.
+
+**What's missing:**
+- No Tauri command exposes the log to the frontend
+- No UI renders the history
+- Users have no way to trace where a file ended up after processing
+
+**Proposed feature:**
+- Wire `get_processing_log` as a Tauri command
+- Build a History view accessible from the Inbox page (or as a tab/section)
+- Each entry shows: filename, classification type, destination path, timestamp, status
+- Clicking a destination path could open the file in Finder
+- Supports Principle 9 (Show the Work, Hide the Plumbing) — the system routed your file, now you can trace it
+
+**Why it matters:**
+Discovered while dogfooding: after processing a call transcript, there's no feedback about where it went. The file disappears from the inbox, but the destination is invisible. Trust requires traceability.
+
+**Infrastructure ready:** Table, queries, and logging already exist. This is primarily a frontend feature + one Tauri command.
+
 ---
 
 ## Dependencies
@@ -125,6 +156,7 @@ Cheesy motivational quotes (Chris Farley "van down by the river" energy) as a pe
 | DEC21 | Multi-signal meeting classification | 2026-02 | Attendee count → title keywords → attendee cross-reference → internal heuristics. Uses OAuth domain for internal/external detection. | Title-only (unreliable), manual classification (user burden) |
 | DEC22 | Proactive research for unknown meetings | 2026-02 | System searches local archive + web for context on unknown external meetings. Per PRINCIPLES.md: "The system operates. You leverage." | Ask user to fill in gaps (violates zero-guilt), skip unknown meetings (missed value) |
 | DEC23 | `/wrap` replaced by post-meeting capture | 2026-02 | Batch end-of-day closure is unnatural. Most wrap functions (archive, reconciliation) happen automatically. Post-meeting capture (F2) is more natural. See PRD.md Appendix A. | Keep /wrap (artificial ritual) |
+| DEC24 | Email = AI triage, not email client | 2026-02 | App shows AI-curated summaries and suggested actions, not raw emails. Morning briefing auto-archives low-priority with a reviewable manifest. On-demand `/email-scan` refreshes throughout the day. CLI can draft replies and archive — app surfaces intelligence, CLI does actions. | Build email client (scope creep), Show all emails (information overload), No auto-archive (manual triage burden) |
 
 ---
 
