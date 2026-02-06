@@ -6,8 +6,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useActions } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import { cn } from "@/lib/utils";
+import { PageError } from "@/components/PageState";
 import {
-  AlertCircle,
   Check,
   CheckCircle2,
   Circle,
@@ -78,15 +78,8 @@ export default function ActionsPage() {
 
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <main className="flex-1 overflow-hidden">
+        <PageError message={error} onRetry={refresh} />
       </main>
     );
   }

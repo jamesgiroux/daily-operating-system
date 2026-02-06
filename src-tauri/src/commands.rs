@@ -443,12 +443,13 @@ pub async fn process_inbox_file(
 
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
+    let profile = config.profile.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::process_file(workspace, &filename, db_ref)
+        crate::processor::process_file(workspace, &filename, db_ref, &profile)
     })
     .await
     .map_err(|e| format!("Processing task failed: {}", e))
@@ -470,12 +471,13 @@ pub async fn process_all_inbox(
 
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
+    let profile = config.profile.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::process_all(workspace, db_ref)
+        crate::processor::process_all(workspace, db_ref, &profile)
     })
     .await
     .map_err(|e| format!("Batch processing failed: {}", e))
@@ -499,12 +501,13 @@ pub async fn enrich_inbox_file(
 
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
+    let profile = config.profile.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::enrich::enrich_file(workspace, &filename, db_ref)
+        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile)
     })
     .await
     .map_err(|e| format!("AI processing task failed: {}", e))
@@ -1072,6 +1075,36 @@ pub fn set_capture_enabled(
         .ok_or("No configuration loaded")?;
 
     config.post_meeting_capture.enabled = enabled;
+
+    // Write back to disk
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let config_path = home.join(".dailyos").join("config.json");
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    std::fs::write(&config_path, content)
+        .map_err(|e| format!("Failed to write config: {}", e))?;
+
+    // Update in-memory state
+    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+    *guard = Some(config);
+
+    Ok(())
+}
+
+/// Set post-meeting capture delay (minutes before prompt appears)
+#[tauri::command]
+pub fn set_capture_delay(
+    delay_minutes: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let mut config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    config.post_meeting_capture.delay_minutes = delay_minutes;
 
     // Write back to disk
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
