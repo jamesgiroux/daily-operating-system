@@ -15,7 +15,13 @@ import {
   Clock,
   Settings,
   CheckCircle,
+  Mail,
+  MessageSquare,
+  LogOut,
+  Loader2,
 } from "lucide-react";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import type { PostMeetingCaptureConfig } from "@/types";
 
 interface Config {
   workspacePath: string;
@@ -107,7 +113,7 @@ export default function SettingsPage() {
               <p>{error}</p>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              Create a config file at <code className="rounded bg-muted px-1">~/.daybreak/config.json</code> with your workspace path.
+              Create a config file at <code className="rounded bg-muted px-1">~/.dailyos/config.json</code> with your workspace path.
             </p>
             <Button
               variant="outline"
@@ -136,6 +142,12 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-6">
+            {/* Google Account */}
+            <GoogleAccountCard />
+
+            {/* Post-Meeting Capture */}
+            <CaptureSettingsCard />
+
             {/* Workspace */}
             <Card>
               <CardHeader>
@@ -157,7 +169,7 @@ export default function SettingsPage() {
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Edit <code className="rounded bg-muted px-1">~/.daybreak/config.json</code> to change
+                  Edit <code className="rounded bg-muted px-1">~/.dailyos/config.json</code> to change
                 </p>
               </CardContent>
             </Card>
@@ -268,6 +280,137 @@ export default function SettingsPage() {
         </div>
       </ScrollArea>
     </main>
+  );
+}
+
+function GoogleAccountCard() {
+  const { status, email, loading, connect, disconnect } = useGoogleAuth();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Mail className="size-4" />
+          Google Account
+        </CardTitle>
+        <CardDescription>
+          {status.status === "authenticated"
+            ? "Calendar and meeting features active"
+            : "Connect Google for calendar awareness and meeting features"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {status.status === "authenticated" ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="relative flex size-2">
+                <span className="absolute inline-flex size-full rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-success" />
+              </span>
+              <span className="text-sm">{email}</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={disconnect}
+              disabled={loading}
+            >
+              {loading ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <LogOut className="mr-1.5 size-3.5" />
+              )}
+              Disconnect
+            </Button>
+          </div>
+        ) : status.status === "tokenexpired" ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex size-2 rounded-full bg-destructive" />
+              <span className="text-sm text-muted-foreground">
+                Session expired
+              </span>
+            </div>
+            <Button size="sm" onClick={connect} disabled={loading}>
+              {loading ? (
+                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 size-3.5" />
+              )}
+              Reconnect
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Not connected
+            </span>
+            <Button size="sm" onClick={connect} disabled={loading}>
+              {loading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+              Connect
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CaptureSettingsCard() {
+  const [captureConfig, setCaptureConfig] = useState<PostMeetingCaptureConfig | null>(null);
+
+  useEffect(() => {
+    invoke<PostMeetingCaptureConfig>("get_capture_settings")
+      .then(setCaptureConfig)
+      .catch(() => {});
+  }, []);
+
+  async function toggleCapture() {
+    if (!captureConfig) return;
+    const newEnabled = !captureConfig.enabled;
+    try {
+      await invoke("set_capture_enabled", { enabled: newEnabled });
+      setCaptureConfig({ ...captureConfig, enabled: newEnabled });
+    } catch (err) {
+      console.error("Failed to toggle capture:", err);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquare className="size-4" />
+          Post-Meeting Capture
+        </CardTitle>
+        <CardDescription>
+          Prompt for quick outcomes after customer meetings
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm">
+              {captureConfig?.enabled ? "Enabled" : "Disabled"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {captureConfig
+                ? `${captureConfig.delayMinutes} min delay, ${captureConfig.autoDismissSecs}s auto-dismiss`
+                : "Loading..."}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleCapture}
+            disabled={!captureConfig}
+          >
+            {captureConfig?.enabled ? "Disable" : "Enable"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
