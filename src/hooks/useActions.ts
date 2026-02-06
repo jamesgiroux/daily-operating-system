@@ -1,0 +1,150 @@
+import { useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { DbAction } from "@/types";
+
+type StatusFilter = "all" | "pending" | "completed" | "waiting";
+type PriorityFilter = "all" | "P1" | "P2" | "P3";
+
+interface UseActionsReturn {
+  actions: DbAction[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  completeAction: (id: string) => Promise<void>;
+  statusFilter: StatusFilter;
+  setStatusFilter: (f: StatusFilter) => void;
+  priorityFilter: PriorityFilter;
+  setPriorityFilter: (f: PriorityFilter) => void;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+}
+
+/**
+ * Hook for SQLite-backed actions with filters and interactive completion.
+ *
+ * Replaces the old JSON-based `get_all_actions` approach with persistent
+ * cross-day action tracking.
+ */
+export function useActions(): UseActionsReturn {
+  const [allActions, setAllActions] = useState<DbAction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const loadActions = useCallback(async () => {
+    try {
+      // Load a wide window (90 days) to get all relevant actions
+      const result = await invoke<DbAction[]>("get_actions_from_db", {
+        daysAhead: 90,
+      });
+      setAllActions(result);
+      setError(null);
+    } catch (err) {
+      // Fallback: try the JSON-based loader if DB isn't populated yet
+      try {
+        const jsonResult = await invoke<{
+          status: string;
+          data?: Array<{
+            id: string;
+            title: string;
+            priority: string;
+            status: string;
+            account?: string;
+            dueDate?: string;
+            context?: string;
+            source?: string;
+          }>;
+        }>("get_all_actions");
+
+        if (jsonResult.status === "success" && jsonResult.data) {
+          // Map JSON actions to DbAction shape
+          const mapped: DbAction[] = jsonResult.data.map((a) => ({
+            id: a.id,
+            title: a.title,
+            priority: a.priority,
+            status: a.status,
+            createdAt: new Date().toISOString(),
+            dueDate: a.dueDate,
+            accountId: a.account,
+            sourceLabel: a.source,
+            context: a.context,
+            updatedAt: new Date().toISOString(),
+          }));
+          setAllActions(mapped);
+          setError(null);
+        } else {
+          setAllActions([]);
+        }
+      } catch {
+        setError(err instanceof Error ? err.message : "Failed to load actions");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadActions();
+  }, [loadActions]);
+
+  const completeAction = useCallback(
+    async (id: string) => {
+      try {
+        await invoke("complete_action", { id });
+        // Optimistic update: mark as completed in local state
+        setAllActions((prev) =>
+          prev.map((a) =>
+            a.id === id
+              ? { ...a, status: "completed", completedAt: new Date().toISOString() }
+              : a
+          )
+        );
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to complete action");
+      }
+    },
+    []
+  );
+
+  // Apply filters
+  const actions = allActions.filter((action) => {
+    // Status filter
+    if (statusFilter !== "all" && action.status !== statusFilter) {
+      return false;
+    }
+
+    // Priority filter
+    if (priorityFilter !== "all" && action.priority !== priorityFilter) {
+      return false;
+    }
+
+    // Search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesTitle = action.title.toLowerCase().includes(q);
+      const matchesAccount = action.accountId?.toLowerCase().includes(q);
+      const matchesContext = action.context?.toLowerCase().includes(q);
+      if (!matchesTitle && !matchesAccount && !matchesContext) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return {
+    actions,
+    loading,
+    error,
+    refresh: loadActions,
+    completeAction,
+    statusFilter,
+    setStatusFilter,
+    priorityFilter,
+    setPriorityFilter,
+    searchQuery,
+    setSearchQuery,
+  };
+}
