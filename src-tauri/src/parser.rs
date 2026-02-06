@@ -4,9 +4,9 @@ use std::path::Path;
 use crate::types::{
     Action, ActionStatus, ActionWithContext, AlertSeverity, DayOverview, DayStats, Email,
     EmailDetail, EmailPriority, EmailStats, EmailSummaryData, EnergyNotes, FocusData,
-    FocusPriority, FullMeetingPrep, HygieneAlert, InboxFile, Meeting, MeetingPrep, MeetingType,
-    PrepStatus, Priority, SourceReference, Stakeholder, TimeBlock, WeekActionSummary, WeekDay,
-    WeekMeeting, WeekOverview,
+    FocusPriority, FullMeetingPrep, HygieneAlert, InboxFile, InboxFileType, Meeting, MeetingPrep,
+    MeetingType, PrepStatus, Priority, SourceReference, Stakeholder, TimeBlock, WeekActionSummary,
+    WeekDay, WeekMeeting, WeekOverview,
 };
 
 /// Parse the overview.md file into a DayOverview struct
@@ -677,6 +677,119 @@ pub fn count_inbox(workspace: &Path) -> usize {
 }
 
 /// List files in the _inbox/ directory with metadata and preview
+/// Determine the high-level file type from an extension.
+fn classify_file_type(ext: &str) -> InboxFileType {
+    match ext.to_lowercase().as_str() {
+        "md" | "markdown" => InboxFileType::Markdown,
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" | "ico" | "heic" => {
+            InboxFileType::Image
+        }
+        "xlsx" | "xls" | "numbers" | "ods" => InboxFileType::Spreadsheet,
+        "docx" | "doc" | "pages" | "odt" | "rtf" | "pdf" => InboxFileType::Document,
+        "csv" | "tsv" | "json" | "yaml" | "yml" | "xml" | "toml" => InboxFileType::Data,
+        "txt" | "log" | "text" => InboxFileType::Text,
+        _ => InboxFileType::Other,
+    }
+}
+
+/// Return true if the file type supports text preview (readable with `read_to_string`).
+fn is_text_previewable(file_type: &InboxFileType) -> bool {
+    matches!(
+        file_type,
+        InboxFileType::Markdown
+            | InboxFileType::Data
+            | InboxFileType::Text
+    )
+}
+
+/// Generate a preview for a text-based file (markdown, data, plain text).
+fn text_preview(path: &Path, file_type: &InboxFileType) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+
+    let mut text = String::new();
+
+    match file_type {
+        InboxFileType::Markdown => {
+            // Skip frontmatter and blank lines, take first 200 chars of content
+            let mut in_frontmatter = false;
+            for line in content.lines() {
+                if line.trim() == "---" {
+                    in_frontmatter = !in_frontmatter;
+                    continue;
+                }
+                if in_frontmatter {
+                    continue;
+                }
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(trimmed);
+                if text.len() >= 200 {
+                    break;
+                }
+            }
+        }
+        InboxFileType::Data => {
+            // For CSV/JSON/YAML: show first few lines verbatim
+            for line in content.lines().take(6) {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(line);
+                if text.len() >= 200 {
+                    break;
+                }
+            }
+        }
+        _ => {
+            // Plain text: first 200 chars
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if !text.is_empty() {
+                    text.push(' ');
+                }
+                text.push_str(trimmed);
+                if text.len() >= 200 {
+                    break;
+                }
+            }
+        }
+    }
+
+    if text.len() > 200 {
+        text.truncate(200);
+        text.push_str("...");
+    }
+    if text.is_empty() { None } else { Some(text) }
+}
+
+/// Generate a descriptive preview for binary/non-text files.
+fn binary_preview(file_type: &InboxFileType, size_bytes: u64) -> Option<String> {
+    let size_label = if size_bytes < 1024 {
+        format!("{} B", size_bytes)
+    } else if size_bytes < 1024 * 1024 {
+        format!("{:.1} KB", size_bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", size_bytes as f64 / (1024.0 * 1024.0))
+    };
+
+    let desc = match file_type {
+        InboxFileType::Image => format!("Image file — {}", size_label),
+        InboxFileType::Spreadsheet => format!("Spreadsheet — {}", size_label),
+        InboxFileType::Document => format!("Document — {}", size_label),
+        InboxFileType::Other => format!("File — {}", size_label),
+        _ => return None, // text types handled by text_preview
+    };
+    Some(desc)
+}
+
 pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
     let inbox_path = workspace.join(INBOX_DIR);
     if !inbox_path.exists() {
@@ -688,16 +801,25 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
         .flatten()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().is_file()
-                && e.path()
-                    .extension()
-                    .map(|ext| ext == "md")
-                    .unwrap_or(false)
+            let path = e.path();
+            // Include all files, skip hidden files and directories
+            path.is_file()
+                && !e
+                    .file_name()
+                    .to_str()
+                    .map(|n| n.starts_with('.'))
+                    .unwrap_or(true)
         })
         .filter_map(|entry| {
             let path = entry.path();
             let metadata = entry.metadata().ok()?;
             let filename = entry.file_name().to_str()?.to_string();
+
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let file_type = classify_file_type(ext);
 
             let modified = metadata
                 .modified()
@@ -709,39 +831,11 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
                 })
                 .unwrap_or_default();
 
-            let preview = fs::read_to_string(&path)
-                .ok()
-                .map(|content| {
-                    // Skip frontmatter and blank lines, take first 200 chars of content
-                    let mut in_frontmatter = false;
-                    let mut text = String::new();
-                    for line in content.lines() {
-                        if line.trim() == "---" {
-                            in_frontmatter = !in_frontmatter;
-                            continue;
-                        }
-                        if in_frontmatter {
-                            continue;
-                        }
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() || trimmed.starts_with('#') {
-                            continue;
-                        }
-                        if !text.is_empty() {
-                            text.push(' ');
-                        }
-                        text.push_str(trimmed);
-                        if text.len() >= 200 {
-                            break;
-                        }
-                    }
-                    if text.len() > 200 {
-                        text.truncate(200);
-                        text.push_str("...");
-                    }
-                    text
-                })
-                .filter(|s| !s.is_empty());
+            let preview = if is_text_previewable(&file_type) {
+                text_preview(&path, &file_type)
+            } else {
+                binary_preview(&file_type, metadata.len())
+            };
 
             Some(InboxFile {
                 filename,
@@ -749,6 +843,7 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
                 size_bytes: metadata.len(),
                 modified,
                 preview,
+                file_type,
             })
         })
         .collect();
