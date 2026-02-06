@@ -15,21 +15,32 @@ interface MeetingCardProps {
   meeting: Meeting;
 }
 
-const borderStyles: Record<MeetingType, string> = {
+const borderStyles: Partial<Record<MeetingType, string>> = {
   customer: "border-l-4 border-l-primary",
-  internal: "border-l-4 border-l-muted-foreground/50",
+  qbr: "border-l-4 border-l-primary",
+  partnership: "border-l-4 border-l-primary",
+  external: "border-l-4 border-l-primary",
   personal: "border-l-4 border-l-success",
 };
 
-const badgeStyles: Record<MeetingType, string> = {
+const badgeStyles: Partial<Record<MeetingType, string>> = {
   customer: "bg-primary/15 text-primary hover:bg-primary/20",
-  internal: "bg-muted text-muted-foreground hover:bg-muted",
+  qbr: "bg-primary/15 text-primary hover:bg-primary/20",
+  partnership: "bg-primary/15 text-primary hover:bg-primary/20",
+  external: "bg-primary/15 text-primary hover:bg-primary/20",
   personal: "bg-success/15 text-success hover:bg-success/20",
 };
 
-const badgeLabels: Record<MeetingType, string> = {
+const badgeLabels: Partial<Record<MeetingType, string>> = {
   customer: "Customer",
+  qbr: "QBR",
+  partnership: "Partnership",
+  external: "External",
   internal: "Internal",
+  team_sync: "Team Sync",
+  one_on_one: "1:1",
+  all_hands: "All Hands",
+  training: "Training",
   personal: "Personal",
 };
 
