@@ -149,7 +149,6 @@ daybreak/docs/
 ├── UI-SPEC.md             # Design system, colors, components
 ├── DEVELOPMENT.md         # Build and run instructions
 ├── MEETING-TYPES.md       # Classification algorithm reference
-├── PREPARE-PHASE.md       # Prepare phase architecture reference
 ├── PROFILES.md            # Profile system reference
 ├── decisions/             # Architecture Decision Records (append-only)
 │   ├── README.md          # Index + template
