@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   Building2,
+  Calendar,
   CheckSquare,
   FolderKanban,
   Inbox,
@@ -35,7 +36,8 @@ interface NavItem {
 }
 
 const todayItems: NavItem[] = [
-  { title: "Dashboard", icon: LayoutDashboard, href: "/" },
+  { title: "Today", icon: LayoutDashboard, href: "/" },
+  { title: "This Week", icon: Calendar, href: "/week" },
 ];
 
 const workspaceItems: NavItem[] = [
