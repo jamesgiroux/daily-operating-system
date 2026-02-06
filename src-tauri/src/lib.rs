@@ -1,13 +1,16 @@
 mod commands;
+mod db;
 mod error;
 mod executor;
 mod json_loader;
 mod notification;
 mod parser;
+mod processor;
 mod pty;
 mod scheduler;
 mod state;
 mod types;
+mod watcher;
 mod workflow;
 
 use std::sync::Arc;
@@ -57,6 +60,9 @@ pub fn run() {
                 executor.run(scheduler_rx).await;
             });
 
+            // Start inbox file watcher
+            watcher::start_watcher(state.clone(), app.handle().clone());
+
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
             let run_now_item =
@@ -64,9 +70,13 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &run_now_item, &quit_item])?;
 
-            // Build tray icon
+            // Build tray icon with macOS template image
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!(
+                "../icons/tray-iconTemplate@2x.png"
+            ))?;
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
+                .icon_as_template(true)
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -127,11 +137,19 @@ pub fn run() {
             commands::get_execution_history,
             commands::get_next_run_time,
             commands::get_meeting_prep,
-            commands::get_week_data,
-            commands::get_focus_data,
             commands::get_all_actions,
             commands::get_all_emails,
+            commands::get_inbox_files,
+            commands::get_inbox_file_content,
+            commands::process_inbox_file,
+            commands::process_all_inbox,
+            commands::enrich_inbox_file,
+            commands::copy_to_inbox,
             commands::list_meeting_preps,
+            commands::set_profile,
+            commands::get_actions_from_db,
+            commands::complete_action,
+            commands::get_meeting_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
