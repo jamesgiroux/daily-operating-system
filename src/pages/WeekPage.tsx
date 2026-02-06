@@ -473,8 +473,10 @@ function DayColumn({
   );
 }
 
+const defaultPrepStatus = { label: "Unknown", icon: Clock, color: "text-muted-foreground" } as const;
+
 function WeekMeetingCard({ meeting }: { meeting: WeekMeeting }) {
-  const config = prepStatusConfig[meeting.prepStatus];
+  const config = prepStatusConfig[meeting.prepStatus] ?? defaultPrepStatus;
   const Icon = config.icon;
 
   return (
