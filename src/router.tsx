@@ -1,14 +1,17 @@
+import { useState, useEffect } from "react";
 import {
   createRouter,
   createRootRoute,
   createRoute,
   Outlet,
 } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
+import { ProfileSelector } from "@/components/ProfileSelector";
 
 // Lazy load pages for code splitting
 import { Dashboard } from "@/components/dashboard/Dashboard";
@@ -17,17 +20,41 @@ import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
 import { DashboardError } from "@/components/dashboard/DashboardError";
 import { useDashboardData } from "@/hooks/useDashboardData";
 
-// Page components (to be created)
+// Page components
+import AccountsPage from "@/pages/AccountsPage";
 import ActionsPage from "@/pages/ActionsPage";
-import EmailsPage from "@/pages/EmailsPage";
-import WeekPage from "@/pages/WeekPage";
-import FocusPage from "@/pages/FocusPage";
+import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
+import ProjectsPage from "@/pages/ProjectsPage";
 import SettingsPage from "@/pages/SettingsPage";
+
+import type { ProfileType } from "@/types";
 
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
+  const [needsProfile, setNeedsProfile] = useState(false);
+
+  useEffect(() => {
+    async function checkProfile() {
+      try {
+        const config = await invoke<{ profile?: string }>("get_config");
+        // Show selector if profile is missing, empty, or not set
+        if (!config.profile) {
+          setNeedsProfile(true);
+        }
+      } catch {
+        // Config not loaded — don't show selector (bigger problem)
+      }
+    }
+    checkProfile();
+  }, []);
+
+  function handleProfileSet(_profile: ProfileType) {
+    setNeedsProfile(false);
+    // Reload page to pick up new profile across all components
+    window.location.reload();
+  }
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
@@ -39,6 +66,7 @@ function RootLayout() {
         </SidebarInset>
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </SidebarProvider>
+      <ProfileSelector open={needsProfile} onProfileSet={handleProfileSet} />
     </ThemeProvider>
   );
 }
@@ -77,28 +105,28 @@ const actionsRoute = createRoute({
   component: ActionsPage,
 });
 
-const emailsRoute = createRoute({
+const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/emails",
-  component: EmailsPage,
+  path: "/accounts",
+  component: AccountsPage,
 });
 
-const weekRoute = createRoute({
+const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/week",
-  component: WeekPage,
-});
-
-const focusRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/focus",
-  component: FocusPage,
+  path: "/inbox",
+  component: InboxPage,
 });
 
 const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/$prepFile",
   component: MeetingDetailPage,
+});
+
+const projectsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects",
+  component: ProjectsPage,
 });
 
 const settingsRoute = createRoute({
@@ -110,11 +138,11 @@ const settingsRoute = createRoute({
 // Create route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  accountsRoute,
   actionsRoute,
-  emailsRoute,
-  weekRoute,
-  focusRoute,
+  inboxRoute,
   meetingDetailRoute,
+  projectsRoute,
   settingsRoute,
 ]);
 
