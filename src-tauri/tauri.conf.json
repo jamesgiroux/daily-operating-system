@@ -13,6 +13,8 @@
     "windows": [
       {
         "title": "DailyOS",
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true,
         "width": 1180,
         "height": 768,
         "center": true,
@@ -24,7 +26,7 @@
       "csp": null
     },
     "trayIcon": {
-      "iconPath": "icons/icon.png",
+      "iconPath": "icons/tray-iconTemplate@2x.png",
       "iconAsTemplate": true
     }
   },
