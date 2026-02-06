@@ -234,6 +234,84 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Get a single action by its ID.
+    pub fn get_action_by_id(&self, id: &str) -> Result<Option<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE id = ?1",
+        )?;
+
+        let mut rows = stmt.query_map(params![id], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get actions recently marked as completed (within the last N hours)
+    /// that have a source_label set (so we know which file to update).
+    pub fn get_recently_completed(&self, since_hours: u32) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE status = 'completed'
+               AND completed_at >= datetime('now', ?1)
+               AND source_label IS NOT NULL
+             ORDER BY completed_at DESC",
+        )?;
+
+        let hours_param = format!("-{} hours", since_hours);
+        let rows = stmt.query_map(params![hours_param], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
     /// Insert or update an action, but never overwrite a user-set `completed` status.
     ///
     /// If the action already exists and is `completed`, skip the update entirely.

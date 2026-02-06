@@ -234,12 +234,21 @@ impl Executor {
     ) -> Result<(), ExecutionError> {
         log::info!("Running inbox batch workflow");
 
+        // Get profile from config
+        let profile = self
+            .state
+            .config
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.profile.clone()))
+            .unwrap_or_else(|| "general".to_string());
+
         // Get DB reference
         let db_guard = self.state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
 
         // Step 1: Quick-classify all inbox files
-        let results = crate::processor::process_all(workspace, db_ref);
+        let results = crate::processor::process_all(workspace, db_ref, &profile);
 
         let routed_count = results
             .iter()
@@ -264,7 +273,7 @@ impl Executor {
 
         for filename in to_enrich {
             log::info!("AI enriching '{}'", filename);
-            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref);
+            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile);
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
                     log::info!("Enriched '{}' → routed as {}", filename, classification);
@@ -506,15 +515,12 @@ impl Executor {
     }
 }
 
-/// Get the path to a script, checking workspace override first
+/// Get the path to a script.
+///
+/// Priority: app-bundled scripts first (DEC25: app-native governance),
+/// then workspace _tools/ as fallback for scripts the app doesn't ship.
 fn get_script_path(workspace: &Path, script_name: &str) -> PathBuf {
-    // First check for workspace override
-    let workspace_script = workspace.join("_tools").join(script_name);
-    if workspace_script.exists() {
-        return workspace_script;
-    }
-
-    // Check repo-relative scripts/ directory (dev mode)
+    // App-bundled scripts take priority (repo scripts/ in dev mode)
     let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or(std::path::Path::new("."));
@@ -523,8 +529,14 @@ fn get_script_path(workspace: &Path, script_name: &str) -> PathBuf {
         return repo_script;
     }
 
-    // Fall back to workspace _tools (may not exist yet)
-    workspace_script
+    // Fall back to workspace _tools/ (CLI-era scripts)
+    let workspace_script = workspace.join("_tools").join(script_name);
+    if workspace_script.exists() {
+        return workspace_script;
+    }
+
+    // Not found — return repo path for a clear error message
+    repo_script
 }
 
 /// Request a manual workflow execution

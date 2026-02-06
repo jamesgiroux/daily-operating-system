@@ -7,6 +7,7 @@
 
 pub mod classifier;
 pub mod enrich;
+pub mod hooks;
 pub mod router;
 
 use std::path::Path;
@@ -42,6 +43,7 @@ pub fn process_file(
     workspace: &Path,
     filename: &str,
     db: Option<&ActionDb>,
+    profile: &str,
 ) -> ProcessingResult {
     let inbox_dir = workspace.join("_inbox");
     let file_path = inbox_dir.join(filename);
@@ -86,6 +88,36 @@ pub fn process_file(
                     if matches!(classification, Classification::ActionItems { .. }) {
                         if let Some(db) = db {
                             extract_and_sync_actions(&content, filename, db);
+                        }
+                    }
+
+                    // Run post-enrichment hooks
+                    if let Some(db) = db {
+                        let ctx = hooks::EnrichmentContext {
+                            workspace: workspace.to_path_buf(),
+                            filename: filename.to_string(),
+                            classification: class_label.clone(),
+                            account: match &classification {
+                                Classification::MeetingNotes { account } => account.clone(),
+                                Classification::AccountUpdate { account } => {
+                                    Some(account.clone())
+                                }
+                                Classification::ActionItems { account } => account.clone(),
+                                _ => None,
+                            },
+                            summary: String::new(),
+                            actions: Vec::new(), // actions already extracted above
+                            destination_path: Some(dest.display().to_string()),
+                            profile: profile.to_string(),
+                        };
+                        let hook_results = hooks::run_post_enrichment_hooks(&ctx, db);
+                        for hr in &hook_results {
+                            log::info!(
+                                "Post-enrichment hook '{}': {} — {}",
+                                hr.hook_name,
+                                if hr.success { "OK" } else { "FAILED" },
+                                hr.message.as_deref().unwrap_or("")
+                            );
                         }
                     }
 
@@ -143,6 +175,7 @@ pub fn process_file(
 pub fn process_all(
     workspace: &Path,
     db: Option<&ActionDb>,
+    profile: &str,
 ) -> Vec<(String, ProcessingResult)> {
     let inbox_dir = workspace.join("_inbox");
 
@@ -174,7 +207,7 @@ pub fn process_all(
         }
 
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            let result = process_file(workspace, filename, db);
+            let result = process_file(workspace, filename, db, profile);
             results.push((filename.to_string(), result));
         }
     }
