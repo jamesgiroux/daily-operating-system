@@ -40,7 +40,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0017](0017-pure-rust-archive.md) | Pure Rust archive, no three-phase | Accepted |
 | [0018](0018-hybrid-storage-markdown-sqlite.md) | Hybrid storage: Markdown + SQLite | Accepted |
 | [0019](0019-reference-approach-for-directives.md) | Reference approach for directives | Accepted |
-| [0020](0020-profile-dependent-accounts.md) | Profile-dependent accounts (CSM plugin) | Accepted |
+| [0020](0020-profile-dependent-accounts.md) | Profile system — role-based configuration | Accepted |
 | [0021](0021-multi-signal-meeting-classification.md) | Multi-signal meeting classification | Accepted |
 | [0022](0022-proactive-research-unknown-meetings.md) | Proactive research for unknown meetings | Accepted |
 | [0023](0023-post-meeting-capture-replaces-wrap.md) | /wrap replaced by post-meeting capture | Accepted |
