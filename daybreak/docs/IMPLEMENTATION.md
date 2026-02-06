@@ -284,10 +284,10 @@ src/pages/EmailsPage.tsx             ← Delete
 ```
 
 ### Done When
-- [ ] Sidebar shows: Dashboard, Actions, Inbox, [Accounts/Projects], Settings
-- [ ] Focus, Week, Emails routes removed
-- [ ] Sidebar group labels: "Today" and "Workspace"
-- [ ] No dead routes (clicking removed nav items doesn't 404)
+- [x] Sidebar shows: Dashboard, Actions, Inbox, [Accounts/Projects], Settings
+- [x] Focus, Week, Emails routes removed
+- [x] Sidebar group labels: "Today" and "Workspace"
+- [x] No dead routes (clicking removed nav items doesn't 404)
 
 ---
 
@@ -315,10 +315,10 @@ src-tauri/src/commands.rs            ← Add get_inbox_files command
 ```
 
 ### Done When
-- [ ] `/inbox` route renders InboxPage
-- [ ] Lists all files in `_inbox/` from workspace
-- [ ] Empty state when no files
-- [ ] Sidebar Inbox item navigates correctly
+- [x] `/inbox` route renders InboxPage
+- [x] Lists all files in `_inbox/` from workspace
+- [x] Empty state when no files
+- [x] Sidebar Inbox item navigates correctly
 
 ---
 
@@ -341,10 +341,10 @@ src/types/index.ts                    ← Add Profile type
 ```
 
 ### Done When
-- [ ] CS profile: sidebar shows "Accounts" nav item
-- [ ] GA profile: sidebar shows "Projects" nav item
-- [ ] Profile name displayed in sidebar header
-- [ ] Switching profile in config.json changes sidebar on next load
+- [x] CS profile: sidebar shows "Accounts" nav item
+- [x] GA profile: sidebar shows "Projects" nav item
+- [x] Profile name displayed in sidebar header
+- [x] Switching profile in config.json changes sidebar on next load
 
 ---
 
@@ -372,11 +372,11 @@ src-tauri/src/db.rs                  ← SQLite connection (from 2.0b)
 ```
 
 ### Done When
-- [ ] Actions list loads from SQLite
-- [ ] Filter by status, priority, account/project
-- [ ] Mark action complete updates SQLite
-- [ ] Overdue items highlighted
-- [ ] Source attribution shown
+- [x] Actions list loads from SQLite
+- [x] Filter by status, priority, account/project
+- [x] Mark action complete updates SQLite
+- [x] Overdue items highlighted
+- [x] Source attribution shown
 
 **Dependency:** Requires 2.0b (SQLite Setup) to be complete first.
 
@@ -486,10 +486,10 @@ src/components/layout/
 ```
 
 ### Done When
-- [ ] New `.md` files detected within 30 seconds
-- [ ] Events debounced
-- [ ] Badge updates in real-time
-- [ ] InboxPage refreshes on new files
+- [x] New `.md` files detected within 30 seconds
+- [x] Events debounced
+- [x] Badge updates in real-time
+- [x] InboxPage refreshes on new files
 
 ---
 
@@ -518,9 +518,9 @@ src/components/
 ```
 
 ### Done When
-- [ ] Simple files route within 5 seconds
-- [ ] Queue shows real-time status
-- [ ] Files tagged `.needs-enrichment` if AI required
+- [x] Simple files route within 5 seconds
+- [x] Queue shows real-time status
+- [x] Files tagged `.needs-enrichment` if AI required
 
 ---
 
@@ -547,10 +547,21 @@ src/components/
 ```
 
 ### Done When
-- [ ] Queued files batch-process on schedule
-- [ ] AI generates summaries, extracts actions
-- [ ] Files route to PARA locations
-- [ ] Review flow handles ambiguous cases
+- [x] Queued files batch-process on schedule
+- [x] AI generates summaries, extracts actions
+- [x] Files route to PARA locations
+- [x] Review flow handles ambiguous cases
+
+### Implementation Notes (Phase 2C)
+- `InboxBatch` added as third workflow in scheduler alongside Today and Archive
+- Default schedule: `0 */2 * * 1-5` (every 2 hours, weekdays)
+- Execution path: direct `processor::process_all()` → `enrich::enrich_file()` for unknowns
+- NOT a three-phase workflow — calls processor module directly from Rust
+- Cap of 5 enrichments per batch (2 min AI timeout each = 10 min max per batch)
+- Remaining files deferred to next batch run
+- Emits `inbox-updated` Tauri event so frontend refreshes automatically
+- Review handled inline on InboxPage (auto-escalates Unknown → AI enrich)
+- Config: `schedules.inboxBatch` in `~/.daybreak/config.json`
 
 ---
 
