@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -14,7 +13,6 @@ import {
   ChevronRight,
   CheckCircle2,
   Mail,
-  RefreshCw,
 } from "lucide-react";
 import type { Email } from "@/types";
 
@@ -28,7 +26,6 @@ export default function EmailsPage() {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
 
   const loadEmails = useCallback(async () => {
@@ -52,21 +49,9 @@ export default function EmailsPage() {
     loadEmails();
   }, [loadEmails]);
 
-  const handleScanEmails = useCallback(async () => {
-    setScanning(true);
-    try {
-      await invoke("run_workflow", { workflow: "email_scan" });
-      // Refresh after scan completes
-      await loadEmails();
-    } catch {
-      // Workflow may not be registered yet
-    } finally {
-      setTimeout(() => setScanning(false), 3000);
-    }
-  }, [loadEmails]);
-
   const highPriority = emails.filter((e) => e.priority === "high");
-  const normalPriority = emails.filter((e) => e.priority !== "high");
+  const mediumPriority = emails.filter((e) => e.priority === "medium");
+  const lowPriority = emails.filter((e) => e.priority === "low");
 
   if (loading) {
     return (
@@ -96,32 +81,19 @@ export default function EmailsPage() {
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
         <div className="p-6">
-          <PageHeader
-            scanning={scanning}
-            onScan={handleScanEmails}
-          />
+          <PageHeader />
 
           {emails.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Mail className="mb-4 size-12 text-muted-foreground/30" />
-                <p className="text-lg font-medium">No emails scanned yet</p>
+                <p className="text-lg font-medium">No email data yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Run an email scan to pull, review, and prioritize your inbox.
+                  Emails are triaged as part of your morning briefing.
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4 gap-1.5"
-                  onClick={handleScanEmails}
-                  disabled={scanning}
-                >
-                  <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
-                  {scanning ? "Scanning..." : "Run email scan"}
-                </Button>
               </CardContent>
             </Card>
-          ) : highPriority.length === 0 && normalPriority.length === 0 ? (
+          ) : highPriority.length === 0 && mediumPriority.length === 0 && lowPriority.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <CheckCircle2 className="mb-4 size-12 text-sage" />
@@ -133,7 +105,7 @@ export default function EmailsPage() {
             </Card>
           ) : (
             <div className="space-y-6">
-              {/* High priority section */}
+              {/* High priority — Needs Attention */}
               {highPriority.length > 0 && (
                 <section>
                   <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -147,15 +119,29 @@ export default function EmailsPage() {
                 </section>
               )}
 
-              {/* Archived / lower priority manifest */}
-              {normalPriority.length > 0 && (
+              {/* Medium priority — Worth a Look */}
+              {mediumPriority.length > 0 && (
+                <section>
+                  <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                    Worth a Look ({mediumPriority.length})
+                  </h2>
+                  <div className="space-y-1">
+                    {mediumPriority.map((email) => (
+                      <EmailRow key={email.id} email={email} variant="medium" />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Low priority — FYI */}
+              {lowPriority.length > 0 && (
                 <section>
                   <button
                     onClick={() => setArchivedExpanded(!archivedExpanded)}
                     className="mb-3 flex w-full items-center gap-2 text-sm font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
                   >
                     <Archive className="size-3.5" />
-                    Lower Priority ({normalPriority.length})
+                    FYI ({lowPriority.length})
                     {archivedExpanded ? (
                       <ChevronDown className="size-3.5" />
                     ) : (
@@ -165,15 +151,15 @@ export default function EmailsPage() {
 
                   {!archivedExpanded && (
                     <p className="text-sm text-muted-foreground">
-                      {normalPriority.length} emails reviewed and deprioritized.
+                      {lowPriority.length} emails reviewed and deprioritized.
                       Click to expand.
                     </p>
                   )}
 
                   {archivedExpanded && (
                     <div className="space-y-1">
-                      {normalPriority.map((email) => (
-                        <EmailRow key={email.id} email={email} variant="normal" />
+                      {lowPriority.map((email) => (
+                        <EmailRow key={email.id} email={email} variant="low" />
                       ))}
                     </div>
                   )}
@@ -187,39 +173,21 @@ export default function EmailsPage() {
   );
 }
 
-function PageHeader({
-  scanning,
-  onScan,
-}: {
-  scanning: boolean;
-  onScan: () => void;
-}) {
+function PageHeader() {
   return (
-    <div className="mb-6 flex items-start justify-between">
-      <div>
-        <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className="text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="size-5" />
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Emails</h1>
-        </div>
-        <p className="mt-1 ml-8 text-sm text-muted-foreground">
-          AI-triaged email intelligence
-        </p>
+    <div className="mb-6">
+      <div className="flex items-center gap-3">
+        <Link
+          to="/"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-5" />
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight">Emails</h1>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-1.5"
-        onClick={onScan}
-        disabled={scanning}
-      >
-        <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
-        {scanning ? "Scanning..." : "Scan emails"}
-      </Button>
+      <p className="mt-1 ml-8 text-sm text-muted-foreground">
+        AI-triaged email intelligence
+      </p>
     </div>
   );
 }
@@ -229,7 +197,7 @@ function EmailRow({
   variant,
 }: {
   email: Email;
-  variant: "high" | "normal";
+  variant: "high" | "medium" | "low";
 }) {
   return (
     <div
@@ -237,14 +205,20 @@ function EmailRow({
         "flex items-start gap-3 rounded-lg px-4 py-3 transition-colors",
         variant === "high"
           ? "bg-card border hover:shadow-sm"
-          : "hover:bg-muted/50"
+          : variant === "medium"
+            ? "bg-card/50 border border-border/50 hover:shadow-sm"
+            : "hover:bg-muted/50"
       )}
     >
       <div className="mt-1.5 shrink-0">
         <div
           className={cn(
             "size-2 rounded-full",
-            variant === "high" ? "bg-primary" : "bg-muted-foreground/30"
+            variant === "high"
+              ? "bg-primary"
+              : variant === "medium"
+                ? "bg-primary/40"
+                : "bg-muted-foreground/30"
           )}
         />
       </div>
@@ -254,7 +228,7 @@ function EmailRow({
           <span className={cn("truncate", variant === "high" ? "font-medium" : "text-sm")}>
             {email.sender}
           </span>
-          {email.senderEmail && variant === "high" && (
+          {email.senderEmail && variant !== "low" && (
             <span className="shrink-0 text-xs text-muted-foreground">
               {email.senderEmail}
             </span>
@@ -264,15 +238,34 @@ function EmailRow({
           <p
             className={cn(
               "mt-0.5 truncate",
-              variant === "high"
-                ? "text-sm text-muted-foreground"
-                : "text-xs text-muted-foreground/70"
+              variant === "low"
+                ? "text-xs text-muted-foreground/70"
+                : "text-sm text-muted-foreground"
             )}
           >
             {email.subject}
           </p>
         )}
-        {email.snippet && variant === "high" && (
+
+        {/* AI enrichment context — shown for high and medium */}
+        {email.summary && variant !== "low" && (
+          <p className="mt-1 text-xs text-muted-foreground/80 line-clamp-2">
+            {email.summary}
+          </p>
+        )}
+        {email.recommendedAction && variant === "high" && (
+          <p className="mt-1 text-xs font-medium text-primary/80">
+            → {email.recommendedAction}
+          </p>
+        )}
+        {email.conversationArc && variant === "high" && (
+          <p className="mt-0.5 text-xs text-muted-foreground/50 italic">
+            {email.conversationArc}
+          </p>
+        )}
+
+        {/* Fallback to snippet when no enrichment */}
+        {!email.summary && email.snippet && variant !== "low" && (
           <p className="mt-0.5 text-xs text-muted-foreground/60 line-clamp-2">
             {email.snippet}
           </p>
