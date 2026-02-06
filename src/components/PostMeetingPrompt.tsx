@@ -32,10 +32,11 @@ export function PostMeetingPrompt() {
   const [inputValue, setInputValue] = useState("");
   const [items, setItems] = useState<CaptureItem[]>([]);
   const [autoDismissProgress, setAutoDismissProgress] = useState(100);
+  const [interacted, setInteracted] = useState(false);
 
   // Auto-dismiss after 60 seconds if no interaction
   useEffect(() => {
-    if (!visible || phase !== "prompt") return;
+    if (!visible || phase !== "prompt" || interacted) return;
 
     const start = Date.now();
     const duration = 60_000;
@@ -49,7 +50,7 @@ export function PostMeetingPrompt() {
     }, 200);
 
     return () => clearInterval(interval);
-  }, [visible, phase, dismiss]);
+  }, [visible, phase, interacted, dismiss]);
 
   // Reset state when a new meeting prompt appears
   useEffect(() => {
@@ -58,6 +59,7 @@ export function PostMeetingPrompt() {
       setItems([]);
       setInputValue("");
       setAutoDismissProgress(100);
+      setInteracted(false);
     }
   }, [visible, meeting?.id]);
 
@@ -65,6 +67,7 @@ export function PostMeetingPrompt() {
     setActiveType(type);
     setPhase("input");
     setInputValue("");
+    setInteracted(true);
   }, []);
 
   const handleAddItem = useCallback(() => {
@@ -152,7 +155,10 @@ export function PostMeetingPrompt() {
               className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
               placeholder="Quick note..."
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                if (!interacted) setInteracted(true);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && inputValue.trim()) handleFallbackSave();
                 if (e.key === "Escape") skip();
