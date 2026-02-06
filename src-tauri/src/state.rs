@@ -16,6 +16,7 @@ pub struct AppState {
     pub workflow_status: Mutex<HashMap<WorkflowId, WorkflowStatus>>,
     pub execution_history: Mutex<Vec<ExecutionRecord>>,
     pub last_scheduled_run: Mutex<HashMap<WorkflowId, DateTime<Utc>>>,
+    pub db: Mutex<Option<crate::db::ActionDb>>,
 }
 
 impl AppState {
@@ -23,11 +24,20 @@ impl AppState {
         let config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
+        let db = match crate::db::ActionDb::open() {
+            Ok(db) => Some(db),
+            Err(e) => {
+                log::warn!("Failed to open actions database: {e}. DB features disabled.");
+                None
+            }
+        };
+
         Self {
             config: Mutex::new(config),
             workflow_status: Mutex::new(HashMap::new()),
             execution_history: Mutex::new(history),
             last_scheduled_run: Mutex::new(HashMap::new()),
+            db: Mutex::new(db),
         }
     }
 

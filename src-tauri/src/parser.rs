@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::types::{
     Action, ActionStatus, ActionWithContext, AlertSeverity, DayOverview, DayStats, Email,
     EmailDetail, EmailPriority, EmailStats, EmailSummaryData, EnergyNotes, FocusData,
-    FocusPriority, FullMeetingPrep, HygieneAlert, Meeting, MeetingPrep, MeetingType,
+    FocusPriority, FullMeetingPrep, HygieneAlert, InboxFile, Meeting, MeetingPrep, MeetingType,
     PrepStatus, Priority, SourceReference, Stakeholder, TimeBlock, WeekActionSummary, WeekDay,
     WeekMeeting, WeekOverview,
 };
@@ -318,7 +318,14 @@ fn parse_meeting_header(line: &str) -> Option<(String, String)> {
 fn parse_meeting_type(s: &str) -> MeetingType {
     match s.to_lowercase().as_str() {
         "customer" => MeetingType::Customer,
+        "qbr" => MeetingType::Qbr,
+        "training" => MeetingType::Training,
         "internal" => MeetingType::Internal,
+        "team_sync" | "team-sync" => MeetingType::TeamSync,
+        "one_on_one" | "one-on-one" | "1:1" => MeetingType::OneOnOne,
+        "partnership" => MeetingType::Partnership,
+        "all_hands" | "all-hands" => MeetingType::AllHands,
+        "external" => MeetingType::External,
         "personal" => MeetingType::Personal,
         _ => MeetingType::Internal,
     }
@@ -643,9 +650,12 @@ fn format_due_date(date_str: &str) -> String {
     }
 }
 
+/// Inbox directory name
+const INBOX_DIR: &str = "_inbox";
+
 /// Count files in the inbox directory
 pub fn count_inbox(workspace: &Path) -> usize {
-    let inbox_path = workspace.join("00-Inbox");
+    let inbox_path = workspace.join(INBOX_DIR);
     if !inbox_path.exists() {
         return 0;
     }
@@ -666,12 +676,95 @@ pub fn count_inbox(workspace: &Path) -> usize {
         .unwrap_or(0)
 }
 
+/// List files in the _inbox/ directory with metadata and preview
+pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
+    let inbox_path = workspace.join(INBOX_DIR);
+    if !inbox_path.exists() {
+        return Vec::new();
+    }
+
+    let mut files: Vec<InboxFile> = fs::read_dir(&inbox_path)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().is_file()
+                && e.path()
+                    .extension()
+                    .map(|ext| ext == "md")
+                    .unwrap_or(false)
+        })
+        .filter_map(|entry| {
+            let path = entry.path();
+            let metadata = entry.metadata().ok()?;
+            let filename = entry.file_name().to_str()?.to_string();
+
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|t| {
+                    let duration = t.duration_since(std::time::UNIX_EPOCH).ok()?;
+                    let dt = chrono::DateTime::from_timestamp(duration.as_secs() as i64, 0)?;
+                    Some(dt.to_rfc3339())
+                })
+                .unwrap_or_default();
+
+            let preview = fs::read_to_string(&path)
+                .ok()
+                .map(|content| {
+                    // Skip frontmatter and blank lines, take first 200 chars of content
+                    let mut in_frontmatter = false;
+                    let mut text = String::new();
+                    for line in content.lines() {
+                        if line.trim() == "---" {
+                            in_frontmatter = !in_frontmatter;
+                            continue;
+                        }
+                        if in_frontmatter {
+                            continue;
+                        }
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() || trimmed.starts_with('#') {
+                            continue;
+                        }
+                        if !text.is_empty() {
+                            text.push(' ');
+                        }
+                        text.push_str(trimmed);
+                        if text.len() >= 200 {
+                            break;
+                        }
+                    }
+                    if text.len() > 200 {
+                        text.truncate(200);
+                        text.push_str("...");
+                    }
+                    text
+                })
+                .filter(|s| !s.is_empty());
+
+            Some(InboxFile {
+                filename,
+                path: path.to_string_lossy().to_string(),
+                size_bytes: metadata.len(),
+                modified,
+                preview,
+            })
+        })
+        .collect();
+
+    // Sort by modified date, newest first
+    files.sort_by(|a, b| b.modified.cmp(&a.modified));
+
+    files
+}
+
 /// Calculate day stats from parsed data
 pub fn calculate_stats(meetings: &[Meeting], actions: &[Action], inbox_count: usize) -> DayStats {
     let total_meetings = meetings.len();
     let customer_meetings = meetings
         .iter()
-        .filter(|m| matches!(m.meeting_type, MeetingType::Customer))
+        .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
         .count();
     let actions_due = actions
         .iter()
@@ -1749,9 +1842,15 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
     let meeting_type = if let Some(ref t) = ring_or_type {
         match t.to_lowercase().as_str() {
             "customer" | "summit" | "foundation" | "evolution" | "influence" => MeetingType::Customer,
+            "qbr" => MeetingType::Qbr,
+            "training" => MeetingType::Training,
             "internal" => MeetingType::Internal,
+            "team_sync" | "team-sync" => MeetingType::TeamSync,
+            "one_on_one" | "one-on-one" | "1:1" => MeetingType::OneOnOne,
+            "partnership" => MeetingType::Partnership,
+            "all_hands" | "all-hands" => MeetingType::AllHands,
+            "external" | "project" => MeetingType::External,
             "personal" => MeetingType::Personal,
-            "external" | "project" => MeetingType::Internal, // External syncs are typically internal team meetings
             _ => MeetingType::Internal,
         }
     } else {
@@ -1898,12 +1997,7 @@ pub fn parse_meetings_from_overview(
                 }
 
                 // Determine meeting type
-                let meeting_type = match meeting_type_str.to_lowercase().as_str() {
-                    "customer" => MeetingType::Customer,
-                    "external" => MeetingType::Internal, // External syncs treated as internal
-                    "personal" => MeetingType::Personal,
-                    _ => MeetingType::Internal,
-                };
+                let meeting_type = parse_meeting_type(&meeting_type_str);
 
                 // Try to find matching prep file by time
                 let (prep_file, has_prep, prep_summary) = prep_files
