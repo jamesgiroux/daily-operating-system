@@ -236,7 +236,7 @@ def build_action_summary(directive: Dict[str, Any]) -> Dict[str, Any]:
     """Build the ``WeekActionSummary`` from directive actions data."""
     actions = directive.get("actions", {})
     overdue = actions.get("overdue", [])
-    this_week = actions.get("this_week", [])
+    this_week = actions.get("thisWeek", actions.get("this_week", []))
 
     critical_items: List[str] = []
     for task in overdue:
@@ -286,13 +286,16 @@ def build_time_blocks(directive: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Build the ``Vec<TimeBlock>`` from directive gap/suggestion data."""
     blocks: List[Dict[str, Any]] = []
 
+    # Support both camelCase and snake_case directive formats
+    time_blocks_raw = directive.get("timeBlocks", directive.get("time_blocks", {}))
+
     # Prefer explicit suggestions from prepare_week
-    suggestions = directive.get("time_blocks", {}).get("suggestions", [])
+    suggestions = time_blocks_raw.get("suggestions", [])
     for s in suggestions:
         day = s.get("day", "")
         start = s.get("start", "")
         end = s.get("end", "")
-        duration = s.get("duration", 30)
+        duration = s.get("duration_minutes", s.get("duration", 30))
 
         # Extract HH:MM from ISO datetime if needed
         if "T" in start:
@@ -300,7 +303,7 @@ def build_time_blocks(directive: Dict[str, Any]) -> List[Dict[str, Any]]:
         if "T" in end:
             end = end.split("T")[1][:5]
 
-        suggested_use = s.get("block_type", "Focus")
+        suggested_use = s.get("suggested_use", s.get("block_type", "Focus"))
         task = s.get("task", "")
         if task:
             suggested_use = f"{suggested_use}: {task}"
@@ -316,7 +319,7 @@ def build_time_blocks(directive: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     # If no suggestions, try to surface raw gaps as "Deep work" blocks
     if not blocks:
-        gaps_by_day = directive.get("time_blocks", {}).get("gaps_by_day", {})
+        gaps_by_day = time_blocks_raw.get("gapsByDay", time_blocks_raw.get("gaps_by_day", {}))
         for day_name in _WEEKDAY_NAMES:
             for gap in gaps_by_day.get(day_name, []):
                 duration = gap.get("duration_minutes", 0)
@@ -344,15 +347,23 @@ def build_focus_areas(directive: Dict[str, Any]) -> List[str]:
     """Derive focus area labels from the directive contents."""
     areas: List[str] = []
 
-    customer_meetings = directive.get("meetings", {}).get("customer", [])
-    if customer_meetings:
-        areas.append(f"Customer meetings ({len(customer_meetings)})")
+    # Count customer meetings across all days
+    meetings_by_day = directive.get("meetingsByDay",
+                        directive.get("meetings", {}).get("by_day", {}))
+    customer_count = sum(
+        1 for day_meetings in meetings_by_day.values()
+        for m in day_meetings
+        if m.get("type") == "customer"
+    )
+    if customer_count:
+        areas.append(f"Customer meetings ({customer_count})")
 
-    overdue = directive.get("actions", {}).get("overdue", [])
+    actions = directive.get("actions", {})
+    overdue = actions.get("overdue", [])
     if overdue:
         areas.append(f"Overdue items ({len(overdue)})")
 
-    hygiene = directive.get("hygiene_alerts", [])
+    hygiene = directive.get("hygiene_alerts", directive.get("hygieneAlerts", []))
     critical_count = sum(
         1 for a in hygiene
         if any(
@@ -363,7 +374,7 @@ def build_focus_areas(directive: Dict[str, Any]) -> List[str]:
     if critical_count:
         areas.append(f"Hygiene alerts ({critical_count} critical)")
 
-    this_week = directive.get("actions", {}).get("this_week", [])
+    this_week = actions.get("thisWeek", actions.get("this_week", []))
     if this_week:
         areas.append(f"Due this week ({len(this_week)})")
 
@@ -389,16 +400,20 @@ def build_week_overview(directive: Dict[str, Any]) -> Dict[str, Any]:
     """
     context = directive.get("context", {})
 
-    week_number_int = context.get("week_number", 0)
-    week_number = f"W{week_number_int:02d}"
+    # Support both camelCase (new prepare_week.py) and snake_case (legacy)
+    week_number_raw = context.get("weekNumber", context.get("week_number", 0))
+    if isinstance(week_number_raw, str) and week_number_raw.startswith("W"):
+        week_number = week_number_raw
+    else:
+        week_number = f"W{int(week_number_raw):02d}"
 
-    date_range = context.get("date_range_display", "")
+    date_range = context.get("dateRange", context.get("date_range_display", ""))
     monday_str = context.get("monday", "")
-    friday_str = context.get("friday", "")
 
-    # Build days array
+    # Build days array — support both key formats
     days: List[Dict[str, Any]] = []
-    meetings_by_day = directive.get("meetings", {}).get("by_day", {})
+    meetings_by_day = directive.get("meetingsByDay",
+                        directive.get("meetings", {}).get("by_day", {}))
 
     for i, day_name in enumerate(_WEEKDAY_NAMES):
         if monday_str:
