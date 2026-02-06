@@ -37,6 +37,10 @@
 | I6 | Processing history page — "where did my file go?" | Low | — | Explore |
 | I7 | Settings page can't change workspace path — only refresh it | Medium | — | Open |
 | I8 | No app update/distribution mechanism decided | Medium | — | Open |
+| I9 | Focus page and Week priorities are disconnected stubs | Medium | — | Open |
+| I10 | No shared glossary of app terms and workflow names | Low | — | Open |
+| I11 | Phase 2 email enrichment not fed back to JSON pipeline | High | — | Open |
+| I12 | Email page missing AI context (summary, arc, recommended action) | High | — | Open |
 
 ### I2 Notes
 The archive from 2026-02-04 contains a compact `meetings.md` format with structured prep summaries:
@@ -146,6 +150,72 @@ DEC25 references "standard app distribution (DMG, auto-update)" but no mechanism
 
 **Not blocking MVP** — the app can ship as a manual DMG install. But this needs a decision before any public distribution.
 
+### I9 Notes
+Focus page shows daily priorities and time blocks. Week page shows weekly priorities (`focusAreas`). These are conceptually related but currently disconnected:
+
+- **Focus** data comes from `focus.json` (currently a stub — `get_focus_data` returns "not yet implemented")
+- **Week priorities** come from `week-overview.json` → `focusAreas` array (populated by Phase 2 enrichment of the week directive)
+
+**The relationship should be:** `/week` sets weekly priorities. `/today` derives daily focus from weekly priorities + today's specific meetings. Focus page is a drill-down of the dashboard focus indicator — it should show today's recommended focus areas with time blocks, drawing from both weekly priorities and today's schedule gaps.
+
+**What needs to happen:**
+1. `deliver_today.py` should generate `focus.json` from the directive (extracting focus from `81-suggested-focus.md` or the directive's context)
+2. Weekly priorities should flow into daily focus as a "this week's themes" section
+3. The Focus page and Week priorities card should share the same underlying data, viewed at different time horizons
+4. "Plan This Week" should be the user-facing action that triggers `/week` — the questionnaire answers become Phase 1 input for AI enrichment
+
+### I10 Notes
+Multiple features use overlapping terms without shared definitions:
+
+| Term | Used Where | Current Meaning |
+|------|-----------|----------------|
+| **Briefing** | Dashboard, Settings | The morning `/today` output (Phase 1→2→3) |
+| **Generate Briefing** | Dashboard empty state | Triggers the `/today` workflow |
+| **Plan This Week** | Week page | Triggers the `/week` workflow |
+| **Run /week** | Week page button | Same as above — inconsistent label |
+| **Focus** | Dashboard card, Focus page | Daily priority areas (stub) |
+| **Weekly Priorities** | Week page card | Weekly focus areas from `/week` |
+| **Inbox** | Sidebar, Inbox page | Document processing queue (`_inbox/`) |
+| **Email Scan** | Email page button | On-demand email refresh workflow |
+| **Capture** | Post-meeting prompt | Win/Risk/Action quick entry after meetings |
+
+**What needs to happen:** A shared glossary (could live in `DEVELOPMENT.md` or a new `GLOSSARY.md`) defining each term, its user-facing label, and which workflow/data source backs it. Button labels and page titles should be consistent.
+
+### I11 Notes
+Phase 2 AI enrichment generates rich email analysis in `83-email-summary.md`: conversation arcs, recommended actions, action owners, and strategic context. But `deliver_today.py` only reads the Phase 1 directive data when building `emails.json`. The Phase 2 output is thrown away.
+
+**The `EmailDetail` TypeScript type already has the fields:**
+```typescript
+interface EmailDetail {
+  summary?: string;
+  conversationArc?: string;
+  recommendedAction?: string;
+  actionOwner?: string;
+  actionPriority?: string;
+}
+```
+
+**What needs to happen:**
+1. `deliver_today.py` should parse `83-email-summary.md` after Phase 2 completes (or Phase 2 should write a structured `email-enrichment.json` alongside the markdown)
+2. Merge enrichment data into `emails.json` — matching by email ID or subject
+3. Frontend uses the rich fields to show *why* an email is high priority, not just *that* it is
+4. Per DEC6: Python does the parsing/merging (deterministic), Claude does the analysis (non-deterministic). This maintains the determinism boundary.
+
+**Blocked by:** DEC29 (email tier decision). The enrichment output format and which emails get enriched depends on the tier strategy.
+
+### I12 Notes
+The email page currently shows: sender, subject, snippet, priority badge. The markdown output (`83-email-summary.md`) shows: badges (ACTION/RISK/INFO), one-line summaries, conversation arc, recommended response, and strategic context.
+
+**What the user wants to see on each high-priority email:**
+- **Why it matters** — "Customer requesting timeline update ahead of renewal" (conversation arc)
+- **What to do** — "Draft response with updated Q2 timeline" (recommended action)
+- **Who owns it** — "You" or "Delegated to [person]" (action owner)
+- **Risk level** — ACTION (you must respond), RISK (potential problem), INFO (awareness only)
+
+This is the difference between "here's an email" and "here's why you should care about this email." Without the *why*, the lazy response is to ignore it — exactly the anti-pattern the user described.
+
+**Depends on:** I11 (enrichment data in JSON pipeline). Once the data is available, the frontend work is styling the additional fields.
+
 ---
 
 ## Dependencies
@@ -190,6 +260,9 @@ DEC25 references "standard app distribution (DMG, auto-update)" but no mechanism
 | DEC26 | Extension architecture with profile-activated modules | 2026-02 | Domain-specific features (Customer Success, Professional Development) are extensions, not core. Profiles activate default extension sets. Internal module boundaries designed now; public SDK/community plugins are a future concern. Extensions can add post-enrichment steps, dashboard sections, sidebar items, data schemas, and workflow hooks. | Monolithic app (every feature for every user), Plugin marketplace day-one (premature), Separate apps per role (fragmented) |
 | DEC27 | MCP integration: dual-mode server + client | 2026-02 | The app is both an MCP server (exposes workspace tools/resources to external AI like Claude Desktop) and an MCP client (consumes external services like Clay). Positions DailyOS as an AI-native integration hub. App, CLI, and MCP share the same registries (DEC25). | API-only (no standard protocol), MCP server only (can't consume), Custom integration per service (doesn't scale) |
 | DEC28 | Structured document schemas (JSON-first templates) | 2026-02 | Account dashboards, success plans, and other structured documents get JSON schemas. Rust can mechanically update specific sections (Last Contact, Recent Wins, etc.) without AI. Markdown generated from JSON for human readability. Extends DEC4 pattern to all structured workspace documents. | Markdown-only with regex updates (fragile), AI-only updates (expensive, non-deterministic), Separate database (violates local-first) |
+| DEC29 | Three-tier email priority with AI-enriched context | 2026-02 | **PENDING.** Keep three tiers (high/medium/low) throughout the pipeline instead of collapsing to two. High = customer/urgent (show with full AI context: summary, conversation arc, recommended action). Medium = internal/meeting-related (show in collapsible section, not silently archived). Low = automated/newsletters (archived with reviewable manifest per DEC24). Phase 2 enrichment writes structured data back to JSON, not just markdown. User-configurable rules are Phase 4+ (extension point). | Two tiers high/normal (loses medium nuance), User classifies manually (violates zero-guilt), All emails shown equally (information overload) |
+| DEC30 | Weekly prep generation with daily refresh | 2026-02 | **PENDING.** `/week` (running Sunday) generates prep documents for all eligible meetings in the coming week. `/today` then refreshes rather than creating from scratch — updating with latest data, new emails, recent actions. Preps live in `_today/data/preps/` (ephemeral, regenerated). Week-generated preps cached in `_today/data/week-cache/` with staleness tracking. Trade-off: faster daily briefings vs. potential staleness by Thursday. Requires freshness check (manifest date comparison). | Daily-only preps (slower briefings, no look-ahead), Week preps with no daily refresh (stale by midweek), Persistent prep store (complexity, storage) |
+| DEC31 | Actions: SQLite as working store, markdown as historical record | 2026-02 | **PENDING.** Actions live in SQLite for speed and queryability. Daily `actions.json` is a snapshot for the dashboard. No single `master-task-list.md` — actions are scoped to their source (meeting, email, manual). Completion in the app updates SQLite; post-enrichment hooks can write back to source markdown if a `source_label` points to a specific file. The Actions page is the canonical view; markdown files in `_today/` and `_archive/` are historical records. Bidirectional sync (markdown → SQLite) happens during inbox processing and briefing generation. | Single markdown file (slow, merge conflicts), SQLite only (not portable, not human-readable), Separate task app (fragmented) |
 
 ### DEC25 Notes
 
@@ -355,6 +428,104 @@ Accounts/Heroku/
 
 **Migration path:**
 Existing markdown dashboards can be parsed into JSON using a one-time migration script (Python, since it's a batch operation). New accounts get JSON from day one. The CS extension's post-enrichment hook reads and writes `dashboard.json`; a watcher or post-write hook regenerates `dashboard.md`.
+
+### DEC29 Notes (PENDING)
+
+**Problem statement:** `prepare_today.py` classifies emails into 3 tiers (high/medium/low), but `deliver_today.py` collapses to 2 (high/normal). Medium-priority emails (internal colleagues, meeting-related) are counted but not individually visible. Users can't review which emails got classified as medium — they're silently buried.
+
+**Current classification rules:**
+
+| Tier | Rule | Examples |
+|------|------|---------|
+| **High** | Customer domain, account domain hint match, urgency keywords (`urgent`, `asap`, `critical`, `deadline`, `escalation`) | Email from customer@acme.com, subject "URGENT: deployment blocked" |
+| **Medium** | Internal domain, meeting-related keywords (`meeting`, `calendar`, `invite`) | Colleague's meeting follow-up, calendar invite |
+| **Low** | Newsletter signals (`newsletter`, `digest`, `noreply`, `unsubscribe`), GitHub notifications | GitHub PR notification, marketing digest |
+
+**Proposed three-tier model:**
+- **High:** Full card with AI-enriched context (summary, conversation arc, recommended action, action owner). These are the emails that need a response today.
+- **Medium:** Compact row in a visible section. Not demanding attention, but reviewable. "Glance at these when you have time."
+- **Low:** Archived with a one-line manifest entry. "These were auto-archived. Tap to review the list."
+
+**User-configurable rules (Phase 4+):**
+The classification rules are currently hardcoded keyword lists. A future Settings section could expose:
+- Custom high-priority domains (beyond auto-detected customer domains)
+- Additional urgency keywords
+- Allowlist/blocklist for specific senders
+- Per-sender priority overrides ("always high-priority from this person")
+
+This aligns with the extension architecture (DEC26) — the CS extension could add customer-specific email rules.
+
+**Decision needed:** Confirm three tiers in JSON pipeline + AI enrichment for high-priority. Then I11 and I12 can proceed.
+
+### DEC30 Notes (PENDING)
+
+**Current state:**
+- `/today` generates prep docs for today's eligible meetings (customer, QBR, partnership) during Phase 2.
+- `/week` shows a calendar grid with meeting types and prep status, but doesn't generate any prep content.
+- Every meeting on the Week page shows "Prep needed" because no prep exists until `/today` runs for that day.
+
+**Proposed model:**
+
+```
+Sunday evening:
+  /week runs → Phase 1 gathers all meetings for Mon-Fri
+             → Phase 2 generates lightweight prep for each eligible meeting
+             → Phase 3 writes week-cache/preps/*.json
+
+Each morning:
+  /today runs → Phase 1 checks week-cache for existing preps
+             → Phase 2 refreshes preps with latest data (new emails, actions, etc.)
+             → Phase 3 writes _today/data/preps/*.json (final, up-to-date)
+             → Week page prep status updates to "prep_ready"
+```
+
+**Key design questions:**
+1. **Where does week-cached prep live?** Proposal: `_today/data/week-cache/preps/` — cleared weekly, not daily
+2. **How does /today know to refresh vs. create?** Check `week-cache/preps/{meeting_id}.json` exists; if so, pass it as context to Phase 2 for update
+3. **Staleness threshold:** If a cached prep is >48h old and the meeting is tomorrow, force a full regeneration
+4. **Phase 2 time budget:** Week preps are "lightweight" (context + talking points). Day-of preps are "full" (metrics, stakeholder details, open items). This keeps Sunday's /week run reasonable.
+
+**Trade-offs:**
+- **Pro:** User sees "Prep ready" on Wednesday meetings from Monday morning. Reduces daily briefing time by ~30%.
+- **Pro:** Running on Sunday = invisible to user (Principle 9: Hide the Plumbing)
+- **Con:** Wednesday prep generated Sunday may miss Monday's email thread. The daily refresh mitigates this.
+- **Con:** More complex data flow. Two sources of prep truth that need merging.
+
+**Decision needed:** Confirm the week-cache + daily-refresh model. Then define the lightweight vs. full prep schema difference.
+
+### DEC31 Notes (PENDING)
+
+**Problem statement:** Where do actions canonically live? The CLI era had `master-task-list.md`. The current app has SQLite (`actions` table) and daily JSON snapshots (`actions.json`). Neither is clearly the source of truth.
+
+**Current data flow:**
+```
+prepare_today.py → reads workspace markdown for action mentions
+                 → queries SQLite for existing actions
+                 → writes actions to directive JSON
+
+deliver_today.py → reads directive
+                 → writes _today/data/actions.json (daily snapshot)
+
+App frontend    → reads actions.json for dashboard
+                → reads SQLite for Actions page (90-day window)
+                → writes completions to SQLite only
+```
+
+**The gap:** When a user completes an action in the app, SQLite is updated but the source markdown isn't. When `/today` runs next, it may re-extract the same action from markdown. Deduplication relies on title matching (fragile).
+
+**Proposed model (confirm/adjust):**
+
+| Store | Role | Lifetime |
+|-------|------|----------|
+| **SQLite** | Working store. App reads/writes here. Fast queries, filtering, completion tracking. | Disposable (DEC18) but persistent across days until rebuilt. |
+| **actions.json** | Daily snapshot for dashboard. Generated by deliver_today.py. Read-only for frontend. | Ephemeral — regenerated each briefing. |
+| **Markdown files** | Historical record. Source of new action extraction. Post-enrichment hooks write completion markers (`[x]`) back to source files. | Persistent — user-owned files. |
+
+**Key principle:** SQLite is the working view. Markdown is the archive. There is no single `master-task-list.md` — actions are scoped to their source context (meeting prep, email summary, manual entry). The Actions page aggregates across sources.
+
+**What "disposable" means for SQLite (DEC18):** If the SQLite database is deleted, actions can be rebuilt by re-running `/today` and `/week`. In-progress/completed status would be lost — this is the trade-off of disposable cache. A periodic markdown writeback (post-enrichment hooks) mitigates this by recording completions in the durable store.
+
+**Decision needed:** Confirm this model. Then: (1) implement the post-enrichment writeback for action completions, (2) add deduplication logic to prepare_today.py that checks SQLite before extracting from markdown, (3) decide whether manual action creation (from the app UI) writes to SQLite only or also creates a markdown file.
 
 ---
 
