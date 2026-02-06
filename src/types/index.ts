@@ -142,6 +142,11 @@ export interface InboxFile {
   fileType: InboxFileType;
 }
 
+export type DataFreshness =
+  | { freshness: "fresh"; generatedAt: string }
+  | { freshness: "stale"; dataDate: string; generatedAt: string }
+  | { freshness: "unknown" };
+
 export interface DashboardData {
   overview: {
     greeting: string;
