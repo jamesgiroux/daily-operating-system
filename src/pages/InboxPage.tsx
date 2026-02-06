@@ -508,7 +508,7 @@ export default function InboxPage() {
           <div className="mb-8">
             <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Files dropped here get picked up by DailyOS
+              Drop documents here — DailyOS classifies and routes them
             </p>
           </div>
 

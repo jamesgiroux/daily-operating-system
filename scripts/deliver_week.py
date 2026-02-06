@@ -232,11 +232,32 @@ def build_week_day(
     }
 
 
-def build_action_summary(directive: Dict[str, Any]) -> Dict[str, Any]:
-    """Build the ``WeekActionSummary`` from directive actions data."""
+def build_action_summary(
+    directive: Dict[str, Any],
+    data_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Build the ``WeekActionSummary`` from directive actions data.
+
+    Falls back to today's ``actions.json`` if the directive has no
+    action data (e.g. SQLite was empty when prepare_week ran).
+    """
     actions = directive.get("actions", {})
     overdue = actions.get("overdue", [])
     this_week = actions.get("thisWeek", actions.get("this_week", []))
+
+    # Fallback: read from today's actions.json if directive has nothing
+    if not overdue and not this_week and data_dir is not None:
+        actions_path = data_dir / "actions.json"
+        if actions_path.exists():
+            try:
+                with open(actions_path, encoding="utf-8") as f:
+                    today_actions = json.load(f)
+                summary = today_actions.get("summary", {})
+                all_actions = today_actions.get("actions", [])
+                overdue = [a for a in all_actions if a.get("isOverdue")]
+                this_week = [a for a in all_actions if not a.get("isOverdue")]
+            except (json.JSONDecodeError, OSError):
+                pass
 
     critical_items: List[str] = []
     for task in overdue:
@@ -389,11 +410,15 @@ def build_focus_areas(directive: Dict[str, Any]) -> List[str]:
 # Main builder
 # ---------------------------------------------------------------------------
 
-def build_week_overview(directive: Dict[str, Any]) -> Dict[str, Any]:
+def build_week_overview(
+    directive: Dict[str, Any],
+    data_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
     """Build the complete ``WeekOverview`` JSON document.
 
     Args:
         directive: The raw week-directive.json contents.
+        data_dir: Path to ``_today/data/`` for fallback reads.
 
     Returns:
         A dict matching the Rust ``WeekOverview`` struct (camelCase keys).
@@ -433,7 +458,7 @@ def build_week_overview(directive: Dict[str, Any]) -> Dict[str, Any]:
         "weekNumber": week_number,
         "dateRange": date_range,
         "days": days,
-        "actionSummary": build_action_summary(directive),
+        "actionSummary": build_action_summary(directive, data_dir=data_dir),
         "hygieneAlerts": build_hygiene_alerts(directive),
         "focusAreas": build_focus_areas(directive),
         "availableTimeBlocks": build_time_blocks(directive),
@@ -472,7 +497,7 @@ def main() -> int:
         return 1
 
     # Build the output
-    overview = build_week_overview(directive)
+    overview = build_week_overview(directive, data_dir=data_dir)
 
     # Write the output
     output_path = data_dir / "week-overview.json"

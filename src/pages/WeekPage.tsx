@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 import type { WeekOverview, WeekDay, WeekMeeting, TimeBlock, PrepStatus, AlertSeverity } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, stripMarkdown } from "@/lib/utils";
 import {
   Calendar,
   CheckCircle,
@@ -346,7 +346,7 @@ export default function WeekPage() {
                       <ul className="space-y-1">
                         {data.actionSummary.criticalItems.map((item, i) => (
                           <li key={i} className="text-sm text-muted-foreground">
-                            • {item}
+                            • {stripMarkdown(item)}
                           </li>
                         ))}
                       </ul>
