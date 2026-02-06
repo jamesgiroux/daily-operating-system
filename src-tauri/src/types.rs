@@ -10,6 +10,37 @@ pub struct Config {
     pub workspace_path: String,
     #[serde(default)]
     pub schedules: Schedules,
+    #[serde(default = "default_profile")]
+    pub profile: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_config: Option<ProfileConfig>,
+}
+
+/// Profile-specific configuration (CSM users)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileConfig {
+    /// Relative path to account tracker CSV within workspace
+    #[serde(default)]
+    pub account_tracker_path: Option<String>,
+    /// How many days back to look for meeting history
+    #[serde(default = "default_history_lookback")]
+    pub history_lookback_days: u32,
+    /// How many past meetings to include per account
+    #[serde(default = "default_history_count")]
+    pub history_meeting_count: u32,
+}
+
+fn default_history_lookback() -> u32 {
+    30
+}
+
+fn default_history_count() -> u32 {
+    3
+}
+
+fn default_profile() -> String {
+    "general".to_string()
 }
 
 /// Schedule configuration for workflows
@@ -170,6 +201,17 @@ pub enum ExecutionTrigger {
     Missed,
 }
 
+/// A file in the _inbox/ directory
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxFile {
+    pub filename: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified: String,
+    pub preview: Option<String>,
+}
+
 /// Day overview parsed from _today/overview.md
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -182,10 +224,17 @@ pub struct DayOverview {
 
 /// Meeting type classification
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum MeetingType {
     Customer,
+    Qbr,
+    Training,
     Internal,
+    TeamSync,
+    OneOnOne,
+    Partnership,
+    AllHands,
+    External,
     Personal,
 }
 
