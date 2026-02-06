@@ -5,17 +5,29 @@ Handles post-AI delivery operations for /today command.
 
 After Claude has executed AI tasks (Phase 2), this script:
 1. Reads enriched directive with AI outputs
-2. Writes files to _today/ directory
-3. Updates week overview with prep status
-4. Optionally creates calendar events for time blocks
-5. Generates summary output
+2. Writes markdown files to _today/ directory
+3. Writes JSON data files to _today/data/ (for Tauri frontend)
+4. Updates week overview with prep status
+5. Optionally creates calendar events for time blocks
+6. Generates summary output
+
+JSON files generated (in _today/data/):
+    - schedule.json   -- meetings with classifications
+    - actions.json    -- all action items (flat list with priorities)
+    - emails.json     -- email summaries with stats
+    - preps/*.json    -- one per meeting with full context
+    - manifest.json   -- generation metadata, file index, statistics
 
 Usage:
     python3 _tools/deliver_today.py [--directive FILE] [--skip-calendar]
+    python3 _tools/deliver_today.py --json-only     # JSON only, no markdown
+    python3 _tools/deliver_today.py --no-json        # Markdown only, no JSON
 """
 
 import argparse
+import hashlib
 import json
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -31,6 +43,14 @@ from calendar_utils import create_calendar_event
 # Paths
 DIRECTIVE_FILE = TODAY_DIR / ".today-directive.json"
 GOOGLE_API_PATH = VIP_ROOT / ".config/google/google_api.py"
+DATA_DIR = TODAY_DIR / "data"
+PREPS_DIR = DATA_DIR / "preps"
+
+# Valid meeting types (used for classification normalization)
+VALID_MEETING_TYPES = {
+    "customer", "qbr", "training", "internal", "team_sync",
+    "one_on_one", "partnership", "all_hands", "external", "personal",
+}
 
 
 def load_directive(path: Path) -> Optional[Dict[str, Any]]:
@@ -544,6 +564,680 @@ def write_suggested_focus_file(directive: Dict) -> Path:
     return output_path
 
 
+def _make_meeting_id(event: Dict, meeting_type: str) -> str:
+    """
+    Generate a stable meeting ID from an event.
+
+    Format: HHMM-type-slug (e.g., "0900-customer-acme-sync").
+    Falls back to a hash-based ID if time parsing fails.
+
+    Args:
+        event: Calendar event dictionary
+        meeting_type: Classified meeting type string
+
+    Returns:
+        Stable meeting ID string
+    """
+    title = event.get('summary', 'untitled')
+    slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:40]
+
+    start = event.get('start', '')
+    time_prefix = ''
+    if 'T' in start:
+        try:
+            dt = datetime.fromisoformat(start.replace('Z', '+00:00'))
+            time_prefix = dt.strftime('%H%M')
+        except ValueError:
+            pass
+
+    if not time_prefix:
+        # Fall back to hash for all-day or unparseable events
+        raw = f"{start}-{title}"
+        time_prefix = hashlib.md5(raw.encode()).hexdigest()[:6]
+
+    return f"{time_prefix}-{meeting_type}-{slug}"
+
+
+def _format_time_display(iso_string: str) -> str:
+    """
+    Convert an ISO datetime string to a human-readable time.
+
+    Args:
+        iso_string: ISO 8601 datetime string
+
+    Returns:
+        Formatted time string (e.g., "9:00 AM") or "All day"
+    """
+    if 'T' not in iso_string:
+        return 'All day'
+    try:
+        dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+        return dt.strftime('%-I:%M %p')
+    except ValueError:
+        return iso_string[:5] if len(iso_string) >= 5 else iso_string
+
+
+def _normalize_meeting_type(raw_type: str) -> str:
+    """
+    Normalize a meeting type string to a valid enum value.
+
+    Args:
+        raw_type: Raw meeting type from the directive
+
+    Returns:
+        Normalized meeting type string
+    """
+    normalized = raw_type.lower().replace(' ', '_').replace('-', '_')
+    if normalized in VALID_MEETING_TYPES:
+        return normalized
+    return "internal"
+
+
+def _classify_event(event: Dict, meetings: Dict) -> str:
+    """
+    Look up the meeting type for a calendar event by matching its event_id
+    against the classified meetings dict from the directive.
+
+    Args:
+        event: Calendar event with an 'id' field
+        meetings: The directive's 'meetings' dict keyed by type
+
+    Returns:
+        Meeting type string
+    """
+    event_id = event.get('id')
+    for mtype, meeting_list in meetings.items():
+        for m in meeting_list:
+            if m.get('event_id') == event_id:
+                return _normalize_meeting_type(mtype)
+    return "internal"
+
+
+def _find_meeting_context(
+    account: str,
+    meeting_contexts: List[Dict],
+) -> Optional[Dict]:
+    """
+    Find the meeting context block for a given account.
+
+    Args:
+        account: Account name to match
+        meeting_contexts: List of context dicts from directive
+
+    Returns:
+        Matching context dict or None
+    """
+    for ctx in meeting_contexts:
+        if ctx.get('account') == account:
+            return ctx
+    return None
+
+
+def _build_prep_summary(meeting: Dict, meeting_context: Optional[Dict]) -> Optional[Dict]:
+    """
+    Build a condensed prep summary for embedding in schedule.json.
+
+    Args:
+        meeting: Meeting dict from directive's meetings section
+        meeting_context: Optional context block for the meeting
+
+    Returns:
+        Prep summary dict with atAGlance, discuss, watch, wins keys,
+        or None if no meaningful data
+    """
+    if not meeting_context:
+        return None
+
+    account_data = meeting_context.get('account_data', {})
+    at_a_glance = []
+
+    if account_data.get('ring'):
+        at_a_glance.append(f"Ring: {account_data['ring']}")
+    if account_data.get('arr'):
+        at_a_glance.append(f"ARR: {account_data['arr']}")
+    if account_data.get('renewal'):
+        at_a_glance.append(f"Renewal: {account_data['renewal']}")
+    if account_data.get('health'):
+        at_a_glance.append(f"Health: {account_data['health']}")
+
+    # If there's nothing to show, skip the prep summary
+    if not at_a_glance:
+        return None
+
+    return {
+        "atAGlance": at_a_glance[:4],
+        "discuss": [],
+        "watch": [],
+        "wins": [],
+    }
+
+
+def _build_schedule_json(directive: Dict) -> Dict[str, Any]:
+    """
+    Build the schedule.json payload from directive data.
+
+    Conforms to templates/schemas/schedule.schema.json.
+    Uses camelCase keys to match the Rust json_loader.rs consumer.
+
+    Args:
+        directive: The full directive dictionary
+
+    Returns:
+        Dictionary ready to serialize as schedule.json
+    """
+    context = directive.get('context', {})
+    date = context.get('date', datetime.now().strftime('%Y-%m-%d'))
+    events = directive.get('calendar', {}).get('events', [])
+    meetings_by_type = directive.get('meetings', {})
+    meeting_contexts = directive.get('meeting_contexts', [])
+
+    meetings_json: List[Dict[str, Any]] = []
+
+    for event in events:
+        meeting_type = _classify_event(event, meetings_by_type)
+
+        # Skip personal events — the markdown overview does the same
+        if meeting_type == 'personal':
+            continue
+
+        meeting_id = _make_meeting_id(event, meeting_type)
+        start = event.get('start', '')
+        end = event.get('end', '')
+
+        # Look up the meeting entry to get account info
+        account: Optional[str] = None
+        meeting_entry: Optional[Dict] = None
+        for mtype, mlist in meetings_by_type.items():
+            for m in mlist:
+                if m.get('event_id') == event.get('id'):
+                    account = m.get('account')
+                    meeting_entry = m
+                    break
+
+        # Build prep summary for customer meetings
+        prep_summary = None
+        has_prep = False
+        prep_file = None
+
+        if meeting_entry and account:
+            mc = _find_meeting_context(account, meeting_contexts)
+            prep_summary = _build_prep_summary(meeting_entry, mc)
+            if mc:
+                has_prep = True
+                prep_file = f"preps/{meeting_id}.json"
+
+        meeting_obj: Dict[str, Any] = {
+            "id": meeting_id,
+            "time": _format_time_display(start),
+            "title": event.get('summary', 'No title'),
+            "type": meeting_type,
+            "hasPrep": has_prep,
+            "isCurrent": False,
+        }
+
+        if end:
+            meeting_obj["endTime"] = _format_time_display(end)
+        if account:
+            meeting_obj["account"] = account
+        if prep_file:
+            meeting_obj["prepFile"] = prep_file
+        if prep_summary:
+            meeting_obj["prepSummary"] = prep_summary
+
+        meetings_json.append(meeting_obj)
+
+    schedule: Dict[str, Any] = {
+        "date": date,
+        "meetings": meetings_json,
+    }
+
+    # Add optional overview fields if available from AI enrichment
+    if context.get('greeting'):
+        schedule["greeting"] = context['greeting']
+    if context.get('summary'):
+        schedule["summary"] = context['summary']
+    if context.get('focus'):
+        schedule["focus"] = context['focus']
+
+    return schedule
+
+
+def _build_actions_json(directive: Dict) -> Dict[str, Any]:
+    """
+    Build the actions.json payload from directive data.
+
+    Flattens the overdue / due_today / due_this_week / waiting_on
+    groups into a single actions array with status and priority fields
+    matching the actions.schema.json contract.
+
+    Args:
+        directive: The full directive dictionary
+
+    Returns:
+        Dictionary ready to serialize as actions.json
+    """
+    context = directive.get('context', {})
+    date = context.get('date', datetime.now().strftime('%Y-%m-%d'))
+    raw_actions = directive.get('actions', {})
+
+    overdue = raw_actions.get('overdue', [])
+    due_today = raw_actions.get('due_today', [])
+    due_this_week = raw_actions.get('due_this_week', [])
+    waiting_on = raw_actions.get('waiting_on', [])
+
+    actions_list: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+
+    def _make_action_id(prefix: str, index: int, title: str) -> str:
+        slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:30]
+        return f"{prefix}-{index:03d}-{slug}"
+
+    # Overdue items -> P1, pending, is_overdue=True
+    for i, task in enumerate(overdue):
+        aid = _make_action_id("overdue", i, task.get('title', ''))
+        if aid in seen_ids:
+            aid = f"{aid}-dup{i}"
+        seen_ids.add(aid)
+
+        actions_list.append({
+            "id": aid,
+            "title": task.get('title', 'Unknown'),
+            "account": task.get('account'),
+            "priority": "P1",
+            "status": "pending",
+            "dueDate": task.get('due'),
+            "isOverdue": True,
+            "daysOverdue": task.get('days_overdue', 0),
+            "context": task.get('context'),
+            "source": task.get('source'),
+        })
+
+    # Due today -> P1, pending
+    for i, task in enumerate(due_today):
+        aid = _make_action_id("today", i, task.get('title', ''))
+        if aid in seen_ids:
+            aid = f"{aid}-dup{i}"
+        seen_ids.add(aid)
+
+        actions_list.append({
+            "id": aid,
+            "title": task.get('title', 'Unknown'),
+            "account": task.get('account'),
+            "priority": "P1",
+            "status": "pending",
+            "dueDate": task.get('due'),
+            "isOverdue": False,
+            "context": task.get('context'),
+            "source": task.get('source'),
+        })
+
+    # Due this week -> P2, pending
+    for i, task in enumerate(due_this_week):
+        aid = _make_action_id("week", i, task.get('title', ''))
+        if aid in seen_ids:
+            aid = f"{aid}-dup{i}"
+        seen_ids.add(aid)
+
+        actions_list.append({
+            "id": aid,
+            "title": task.get('title', 'Unknown'),
+            "account": task.get('account'),
+            "priority": "P2",
+            "status": "pending",
+            "dueDate": task.get('due'),
+            "isOverdue": False,
+            "context": task.get('context'),
+            "source": task.get('source'),
+        })
+
+    # Waiting on -> P2, waiting
+    for i, item in enumerate(waiting_on):
+        aid = _make_action_id("waiting", i, item.get('what', ''))
+        if aid in seen_ids:
+            aid = f"{aid}-dup{i}"
+        seen_ids.add(aid)
+
+        actions_list.append({
+            "id": aid,
+            "title": f"Waiting: {item.get('what', 'Unknown')}",
+            "account": item.get('who'),
+            "priority": "P2",
+            "status": "waiting",
+            "context": item.get('context'),
+        })
+
+    return {
+        "date": date,
+        "summary": {
+            "overdue": len(overdue),
+            "dueToday": len(due_today),
+            "dueThisWeek": len(due_this_week),
+            "waitingOn": len(waiting_on),
+        },
+        "actions": actions_list,
+    }
+
+
+def _build_emails_json(directive: Dict) -> Dict[str, Any]:
+    """
+    Build the emails.json payload from directive data.
+
+    Conforms to templates/schemas/emails.schema.json.
+
+    Args:
+        directive: The full directive dictionary
+
+    Returns:
+        Dictionary ready to serialize as emails.json
+    """
+    context = directive.get('context', {})
+    date = context.get('date', datetime.now().strftime('%Y-%m-%d'))
+    raw_emails = directive.get('emails', {})
+
+    high_priority = raw_emails.get('high_priority', [])
+    medium_count = raw_emails.get('medium_count', 0)
+    low_count = raw_emails.get('low_count', 0)
+
+    emails_list: List[Dict[str, Any]] = []
+
+    for i, email in enumerate(high_priority):
+        eid = email.get('id', f"email-{i:03d}")
+        emails_list.append({
+            "id": eid,
+            "sender": email.get('from', 'Unknown'),
+            "senderEmail": email.get('from_email', ''),
+            "subject": email.get('subject', 'No subject'),
+            "snippet": email.get('snippet'),
+            "priority": "high",
+            "received": email.get('date'),
+            "emailType": email.get('type'),
+            "recommendedAction": email.get('recommended_action'),
+            "actionOwner": email.get('action_owner'),
+        })
+
+    return {
+        "date": date,
+        "stats": {
+            "highPriority": len(high_priority),
+            "normalPriority": medium_count + low_count,
+            "needsAction": len([
+                e for e in high_priority
+                if e.get('action_owner', '').lower() in ('you', 'me', '')
+            ]),
+        },
+        "emails": emails_list,
+    }
+
+
+def _build_prep_json(
+    meeting: Dict,
+    meeting_type: str,
+    meeting_id: str,
+    meeting_context: Optional[Dict],
+) -> Dict[str, Any]:
+    """
+    Build an individual meeting prep JSON document.
+
+    Conforms to templates/schemas/prep.schema.json.
+
+    Args:
+        meeting: Meeting dict from directive's meetings section
+        meeting_type: Normalized meeting type string
+        meeting_id: The stable meeting ID
+        meeting_context: Optional context block from directive
+
+    Returns:
+        Dictionary ready to serialize as preps/{meeting_id}.json
+    """
+    account = meeting.get('account')
+    account_data = {}
+    attendees_raw: List[Dict] = []
+
+    if meeting_context:
+        account_data = meeting_context.get('account_data', {})
+        attendees_raw = meeting_context.get('attendees', [])
+
+    # Quick context from account data
+    quick_context: Dict[str, str] = {}
+    for key in ('ring', 'arr', 'renewal', 'health', 'tier', 'csm', 'stage'):
+        val = account_data.get(key)
+        if val:
+            quick_context[key.title()] = str(val)
+
+    # Attendees
+    attendees = []
+    for att in attendees_raw:
+        attendees.append({
+            "name": att.get('name', att.get('email', 'Unknown')),
+            "role": att.get('role'),
+            "focus": att.get('focus'),
+        })
+
+    # Build start/end time display
+    start_display = meeting.get('start_display', '')
+    end_display = meeting.get('end_display', '')
+    time_range = f"{start_display} - {end_display}" if start_display and end_display else start_display
+
+    prep: Dict[str, Any] = {
+        "meetingId": meeting_id,
+        "title": meeting.get('title', meeting.get('summary', 'Meeting')),
+        "type": meeting_type,
+    }
+
+    if time_range:
+        prep["timeRange"] = time_range
+    if account:
+        prep["account"] = account
+    if meeting_context and meeting_context.get('narrative'):
+        prep["meetingContext"] = meeting_context['narrative']
+    if quick_context:
+        prep["quickContext"] = quick_context
+    if attendees:
+        prep["attendees"] = attendees
+
+    # Merge in any extra context fields if the directive provides them
+    if meeting_context:
+        for field in ('since_last', 'current_state', 'risks',
+                      'talking_points', 'questions', 'key_principles'):
+            camel = re.sub(r'_([a-z])', lambda m: m.group(1).upper(), field)
+            val = meeting_context.get(field)
+            if val:
+                prep[camel] = val
+
+        # Strategic programs -> array of {name, status} objects
+        programs = meeting_context.get('strategic_programs')
+        if programs:
+            prep["strategicPrograms"] = [
+                {"name": p.get('name', str(p)), "status": p.get('status', 'in_progress')}
+                if isinstance(p, dict) else {"name": str(p), "status": "in_progress"}
+                for p in programs
+            ]
+
+        # Open items -> array of {title, dueDate, context, isOverdue}
+        open_items = meeting_context.get('open_items')
+        if open_items:
+            prep["openItems"] = [
+                {
+                    "title": item.get('title', str(item)) if isinstance(item, dict) else str(item),
+                    "dueDate": item.get('due_date') if isinstance(item, dict) else None,
+                    "context": item.get('context') if isinstance(item, dict) else None,
+                    "isOverdue": item.get('is_overdue', False) if isinstance(item, dict) else False,
+                }
+                for item in open_items
+            ]
+
+        # References -> array of {label, path, lastUpdated}
+        references = meeting_context.get('references')
+        if references:
+            prep["references"] = [
+                {
+                    "label": ref.get('label', str(ref)) if isinstance(ref, dict) else str(ref),
+                    "path": ref.get('path') if isinstance(ref, dict) else None,
+                    "lastUpdated": ref.get('last_updated') if isinstance(ref, dict) else None,
+                }
+                for ref in references
+            ]
+
+    return prep
+
+
+def write_json_data(directive: Dict) -> List[Path]:
+    """
+    Write JSON data files to _today/data/ for consumption by the Tauri frontend.
+
+    This is the JSON-primary data path (Track B item 2.0a). The Tauri Rust
+    backend reads these files via json_loader.rs, falling back to markdown
+    parsing when they are absent.
+
+    Generated files:
+        - data/schedule.json   — meetings with classifications
+        - data/actions.json    — all action items (flat list)
+        - data/emails.json     — email summaries
+        - data/preps/*.json    — one per meeting with context
+        - data/manifest.json   — generation metadata and file index
+
+    All JSON uses camelCase keys to match the serde(rename_all = "camelCase")
+    annotations in src-tauri/src/json_loader.rs.
+
+    Note: The schemas under templates/schemas/ currently use snake_case keys.
+    This is a known mismatch (RAIDD candidate). The Rust consumer is
+    authoritative.
+
+    Args:
+        directive: The full directive dictionary
+
+    Returns:
+        List of paths to written JSON files
+    """
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PREPS_DIR.mkdir(parents=True, exist_ok=True)
+
+    context = directive.get('context', {})
+    date = context.get('date', datetime.now().strftime('%Y-%m-%d'))
+    meetings_by_type = directive.get('meetings', {})
+    meeting_contexts = directive.get('meeting_contexts', [])
+
+    files_written: List[Path] = []
+    prep_manifest_paths: List[str] = []
+
+    # --- schedule.json ---
+    schedule_data = _build_schedule_json(directive)
+    schedule_path = DATA_DIR / "schedule.json"
+    with open(schedule_path, 'w') as f:
+        json.dump(schedule_data, f, indent=2, default=str)
+    files_written.append(schedule_path)
+
+    # --- actions.json ---
+    actions_data = _build_actions_json(directive)
+    actions_path = DATA_DIR / "actions.json"
+    with open(actions_path, 'w') as f:
+        json.dump(actions_data, f, indent=2, default=str)
+    files_written.append(actions_path)
+
+    # --- emails.json ---
+    emails_data = _build_emails_json(directive)
+    emails_path = DATA_DIR / "emails.json"
+    with open(emails_path, 'w') as f:
+        json.dump(emails_data, f, indent=2, default=str)
+    files_written.append(emails_path)
+
+    # --- preps/*.json ---
+    # Write a prep file for each meeting that has associated context.
+    # Walk the meetings_by_type dict and match against meeting_contexts.
+    events = directive.get('calendar', {}).get('events', [])
+
+    for mtype, meeting_list in meetings_by_type.items():
+        normalized_type = _normalize_meeting_type(mtype)
+
+        for meeting in meeting_list:
+            account = meeting.get('account')
+            mc = _find_meeting_context(account, meeting_contexts) if account else None
+
+            # Skip meetings with no useful context to write
+            if not mc and not account:
+                continue
+
+            # Find the matching calendar event to build a stable ID
+            event_id = meeting.get('event_id')
+            matched_event = None
+            for ev in events:
+                if ev.get('id') == event_id:
+                    matched_event = ev
+                    break
+
+            if matched_event:
+                meeting_id = _make_meeting_id(matched_event, normalized_type)
+            else:
+                # Build ID from meeting fields directly
+                title = meeting.get('title', meeting.get('summary', account or 'meeting'))
+                slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:40]
+                start = meeting.get('start_display', meeting.get('start', ''))
+                time_part = re.sub(r'[^0-9]', '', start)[:4] if start else '0000'
+                meeting_id = f"{time_part}-{normalized_type}-{slug}"
+
+            prep_data = _build_prep_json(meeting, normalized_type, meeting_id, mc)
+            prep_path = PREPS_DIR / f"{meeting_id}.json"
+            with open(prep_path, 'w') as f:
+                json.dump(prep_data, f, indent=2, default=str)
+            files_written.append(prep_path)
+            prep_manifest_paths.append(f"preps/{meeting_id}.json")
+
+    # --- manifest.json ---
+    # Gather statistics
+    total_meetings = len(schedule_data.get('meetings', []))
+    customer_count = sum(
+        1 for m in schedule_data.get('meetings', [])
+        if m.get('type') in ('customer', 'qbr')
+    )
+    internal_count = sum(
+        1 for m in schedule_data.get('meetings', [])
+        if m.get('type') in ('internal', 'team_sync', 'one_on_one', 'all_hands')
+    )
+    personal_count = sum(
+        1 for m in schedule_data.get('meetings', [])
+        if m.get('type') == 'personal'
+    )
+
+    raw_actions = directive.get('actions', {})
+    actions_due = len(raw_actions.get('due_today', []))
+    actions_overdue = len(raw_actions.get('overdue', []))
+    emails_flagged = len(directive.get('emails', {}).get('high_priority', []))
+
+    manifest: Dict[str, Any] = {
+        "schemaVersion": "1.0.0",
+        "date": date,
+        "generatedAt": datetime.utcnow().isoformat() + "Z",
+        "partial": False,
+        "files": {
+            "schedule": "schedule.json",
+            "actions": "actions.json",
+            "emails": "emails.json",
+            "preps": prep_manifest_paths,
+        },
+        "stats": {
+            "totalMeetings": total_meetings,
+            "customerMeetings": customer_count,
+            "internalMeetings": internal_count,
+            "personalMeetings": personal_count,
+            "actionsDue": actions_due,
+            "actionsOverdue": actions_overdue,
+            "emailsFlagged": emails_flagged,
+        },
+    }
+
+    # Include profile if available from directive context
+    profile = context.get('profile')
+    if profile:
+        manifest["profile"] = profile
+
+    manifest_path = DATA_DIR / "manifest.json"
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2, default=str)
+    files_written.append(manifest_path)
+
+    return files_written
+
+
 def update_week_overview(directive: Dict) -> bool:
     """
     Update week overview with prep status for today's meetings.
@@ -608,6 +1302,18 @@ def main():
     parser.add_argument('--directive', type=str, default=str(DIRECTIVE_FILE), help='Directive file path')
     parser.add_argument('--skip-calendar', action='store_true', help='Skip calendar event creation')
     parser.add_argument('--keep-directive', action='store_true', help='Keep directive file after delivery')
+    parser.add_argument(
+        '--json', action='store_true', default=True, dest='write_json',
+        help='Write JSON data files to _today/data/ (default: enabled)',
+    )
+    parser.add_argument(
+        '--no-json', action='store_false', dest='write_json',
+        help='Skip JSON data file generation',
+    )
+    parser.add_argument(
+        '--json-only', action='store_true', default=False,
+        help='Write ONLY JSON data files, skip markdown generation',
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -626,42 +1332,67 @@ def main():
     ensure_today_structure()
 
     files_written = []
+    skip_markdown = args.json_only
 
-    # Write overview
-    print("\nWriting 00-overview.md...")
-    overview = write_overview_file(directive, {})
-    files_written.append(overview)
-    print(f"  ✅ {overview.name}")
+    # ---- Markdown delivery (unless --json-only) ----
+    if not skip_markdown:
+        # Write overview
+        print("\nWriting 00-overview.md...")
+        overview = write_overview_file(directive, {})
+        files_written.append(overview)
+        print(f"  ✅ {overview.name}")
 
-    # Write actions file
-    print("\nWriting 80-actions-due.md...")
-    actions = write_actions_file(directive)
-    files_written.append(actions)
-    print(f"  ✅ {actions.name}")
+        # Write actions file
+        print("\nWriting 80-actions-due.md...")
+        actions = write_actions_file(directive)
+        files_written.append(actions)
+        print(f"  ✅ {actions.name}")
 
-    # Write email summary
-    print("\nWriting 83-email-summary.md...")
-    emails = write_email_summary_file(directive)
-    files_written.append(emails)
-    print(f"  ✅ {emails.name}")
+        # Write email summary
+        print("\nWriting 83-email-summary.md...")
+        emails = write_email_summary_file(directive)
+        files_written.append(emails)
+        print(f"  ✅ {emails.name}")
 
-    # Write suggested focus
-    print("\nWriting 81-suggested-focus.md...")
-    focus = write_suggested_focus_file(directive)
-    files_written.append(focus)
-    print(f"  ✅ {focus.name}")
+        # Write suggested focus
+        print("\nWriting 81-suggested-focus.md...")
+        focus = write_suggested_focus_file(directive)
+        files_written.append(focus)
+        print(f"  ✅ {focus.name}")
 
-    # Update week overview
-    print("\nUpdating week overview...")
-    if update_week_overview(directive):
-        print("  ✅ Week overview updated with prep status")
+        # Update week overview
+        print("\nUpdating week overview...")
+        if update_week_overview(directive):
+            print("  ✅ Week overview updated with prep status")
+        else:
+            print("  ⚠️  No week overview found (run /week first)")
+
+        # Note about meeting prep files
+        print("\n📋 Meeting Prep Files:")
+        print("  Note: Meeting prep files are generated by Claude during Phase 2.")
+        print("  If prep files are missing, Claude should generate them from meeting contexts.")
     else:
-        print("  ⚠️  No week overview found (run /week first)")
+        print("\n  Skipping markdown (--json-only mode)")
 
-    # Note about meeting prep files
-    print("\n📋 Meeting Prep Files:")
-    print("  Note: Meeting prep files are generated by Claude during Phase 2.")
-    print("  If prep files are missing, Claude should generate them from meeting contexts.")
+    # ---- JSON delivery (unless --no-json) ----
+    if args.write_json:
+        print("\nWriting JSON data files to _today/data/...")
+        try:
+            json_files = write_json_data(directive)
+            files_written.extend(json_files)
+            for jf in json_files:
+                # Show path relative to _today/
+                try:
+                    rel = jf.relative_to(TODAY_DIR)
+                except ValueError:
+                    rel = jf.name
+                print(f"  ✅ {rel}")
+        except Exception as e:
+            # JSON generation should not block markdown delivery.
+            # Log the error and continue so the briefing is still usable.
+            print(f"  ⚠️  JSON generation failed: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
 
     # Cleanup
     if not args.keep_directive:
@@ -675,9 +1406,16 @@ def main():
     print("=" * 60)
     print(f"\nFiles written: {len(files_written)}")
     for f in files_written:
-        print(f"  - {f.name}")
+        # Show relative paths where possible
+        try:
+            rel = f.relative_to(TODAY_DIR)
+            print(f"  - {rel}")
+        except ValueError:
+            print(f"  - {f.name}")
 
     print(f"\nOutput directory: {TODAY_DIR}")
+    if args.write_json:
+        print(f"JSON data directory: {DATA_DIR}")
     print("\n/today workflow complete!")
 
     return 0

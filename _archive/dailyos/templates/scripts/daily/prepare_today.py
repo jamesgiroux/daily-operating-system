@@ -56,6 +56,9 @@ from meeting_utils import (
 from dashboard_utils import (
     is_dashboard_autostart_enabled, start_dashboard_background
 )
+from context_gatherer import (
+    get_context_gatherer, build_research_context
+)
 
 
 def extract_json_from_output(output: str) -> str:
@@ -330,6 +333,64 @@ def gather_meeting_context(classifications: List[Dict], account_lookup: Dict) ->
     return meeting_contexts
 
 
+# Mapping from meeting classification type to prep template filename.
+# Used to tell the AI enrichment phase which template to apply.
+# None means no prep is generated (e.g., personal meetings).
+MEETING_TYPE_TO_TEMPLATE: Dict[str, Optional[str]] = {
+    'customer': 'customer-call',
+    'qbr': 'qbr',
+    'training': 'training',
+    'internal': 'internal-sync',
+    'team_sync': 'internal-sync',
+    'one_on_one': 'one-on-one',
+    'partnership': 'partnership',
+    'all_hands': 'all-hands',
+    'external': 'external-unknown',
+    'personal': None,
+    'project': 'internal-sync',
+}
+
+
+def gather_general_context(classifications: List[Dict]) -> List[Dict]:
+    """
+    Gather lightweight context for general profile meetings.
+
+    Unlike gather_meeting_context (which enriches with account data for
+    CS profiles), this builds simpler context with just meeting metadata
+    and any prior meeting history from the archive.
+
+    Args:
+        classifications: List of meeting classifications
+
+    Returns:
+        List of context dictionaries for non-trivial meetings
+    """
+    contexts: List[Dict] = []
+
+    for meeting in classifications:
+        # Skip personal and internal meetings -- no context needed
+        if meeting.get('type') in ('personal', 'internal'):
+            continue
+
+        context: Dict[str, Any] = {
+            'event_id': meeting.get('event_id'),
+            'title': meeting.get('title'),
+            'start': meeting.get('start'),
+            'type': meeting.get('type'),
+        }
+
+        # Check for recent meetings with the same title pattern.
+        # NOTE: find_recent_meeting_summaries searches by account name in
+        # the Accounts directory. For general profile this may not find
+        # matches, but it degrades gracefully to an empty list.
+        recent = find_recent_meeting_summaries(meeting.get('title', ''), limit=2)
+        context['recent_meetings'] = [str(p) for p in recent]
+
+        contexts.append(context)
+
+    return contexts
+
+
 def main():
     """Main preparation orchestrator."""
     parser = argparse.ArgumentParser(description='Prepare today directive')
@@ -355,6 +416,18 @@ def main():
     yesterday = now - timedelta(days=1)
     monday, friday, week_number = get_week_dates(now)
 
+    # Load profile from DailyOS config
+    profile = "general"  # default
+    daybreak_config_path = Path.home() / ".daybreak" / "config.json"
+    if daybreak_config_path.exists():
+        try:
+            with open(daybreak_config_path) as f:
+                daybreak_config = json.load(f)
+            profile = daybreak_config.get("profile", "general")
+        except (json.JSONDecodeError, IOError):
+            pass
+    print(f"  Profile: {profile}")
+
     # Check Google API availability early
     api_available, api_reason = check_google_api_available()
 
@@ -366,6 +439,7 @@ def main():
             'day_of_week': today.strftime('%A'),
             'week_number': week_number,
             'year': today.year,
+            'profile': profile,
         },
         'api_status': {
             'available': api_available,
@@ -381,10 +455,15 @@ def main():
         },
         'meetings': {
             'customer': [],
+            'qbr': [],
+            'training': [],
             'internal': [],
-            'project': [],
-            'personal': [],
+            'team_sync': [],
+            'one_on_one': [],
+            'partnership': [],
+            'all_hands': [],
             'external': [],
+            'personal': [],
         },
         'meeting_contexts': [],
         'actions': {
@@ -432,22 +511,26 @@ def main():
     domain_mapping = load_domain_mapping()
     bu_cache = load_bu_cache()
 
-    if api_available:
+    if profile == "customer-success" and api_available:
         sheet_data = fetch_account_data()
         if sheet_data:
             account_lookup = build_account_lookup(sheet_data)
             print(f"  Loaded {len(account_lookup)} accounts")
 
             # Build domain set for email classification
-            account_domains = set()
+            account_domains: set = set()
             for data in account_lookup.values():
                 if data.get('email_domain'):
                     account_domains.add(data['email_domain'].lower())
         else:
             print("  Warning: Could not load account data from Google Sheets")
             account_domains = set(domain_mapping.keys())
-    else:
+    elif profile == "customer-success" and not api_available:
         print(f"  Skipped (Google API unavailable: {api_reason})")
+        account_domains = set(domain_mapping.keys())
+    else:
+        # General profile -- no account tracking
+        print("  Skipped (General profile -- no account tracking)")
         account_domains = set(domain_mapping.keys())
 
     # Step 3: Fetch calendar events
@@ -464,7 +547,7 @@ def main():
     print("\nStep 4: Classifying meetings...")
     classifications = []
     for event in events:
-        classification = classify_meeting(event, domain_mapping, bu_cache)
+        classification = classify_meeting(event, domain_mapping, bu_cache, profile=profile)
         classification['start_display'] = format_time_for_display(event.get('start', ''))
         classification['start_filename'] = format_time_for_filename(event.get('start', ''))
         classifications.append(classification)
@@ -472,14 +555,20 @@ def main():
         # Attach classification to event for later use
         event['classification'] = classification
 
-    # Categorize by type
+    # Categorize by type and attach prep_template
     for c in classifications:
         meeting_type = c.get('type', 'unknown')
         formatted = format_classification_for_directive(c)
         formatted['start_display'] = c.get('start_display')
         formatted['start_filename'] = c.get('start_filename')
+        formatted['prep_template'] = MEETING_TYPE_TO_TEMPLATE.get(meeting_type)
 
-        if meeting_type in directive['meetings']:
+        # Map legacy 'project' type to 'internal' bucket (project is no
+        # longer a top-level meeting category, but classify_meeting may
+        # still return it until meeting_utils is updated).
+        if meeting_type == 'project':
+            directive['meetings']['internal'].append(formatted)
+        elif meeting_type in directive['meetings']:
             directive['meetings'][meeting_type].append(formatted)
         else:
             directive['meetings']['external'].append(formatted)
@@ -505,11 +594,23 @@ def main():
 
     print(f"  Customer: {len(directive['meetings']['customer'])}")
     print(f"  Internal: {len(directive['meetings']['internal'])}")
-    print(f"  Project: {len(directive['meetings']['project'])}")
+    print(f"  External: {len(directive['meetings']['external'])}")
+    print(f"  Personal: {len(directive['meetings']['personal'])}")
 
-    # Step 5: Gather meeting context
-    print("\nStep 5: Gathering meeting context...")
-    meeting_contexts = gather_meeting_context(classifications, account_lookup)
+    # Step 5: Gather meeting context (reference approach — DEC19)
+    # Instead of embedding full file contents, we produce:
+    #   inline_metrics: small key metrics that go into the directive
+    #   refs: file paths that Claude reads during Phase 2 enrichment
+    print("\nStep 5: Gathering meeting context (reference approach)...")
+    context_gatherer = get_context_gatherer(profile, account_lookup)
+    meeting_contexts = []
+    for meeting in classifications:
+        ctx = context_gatherer.gather_context(meeting)
+        ctx['event_id'] = meeting.get('event_id')
+        ctx['title'] = meeting.get('title')
+        ctx['start'] = meeting.get('start')
+        ctx['type'] = meeting.get('type')
+        meeting_contexts.append(ctx)
     directive['meeting_contexts'] = meeting_contexts
 
     # Step 6: Aggregate action items
@@ -590,7 +691,7 @@ def main():
         look_ahead_events = fetch_calendar_events(days=5)
         # Classify them
         for event in look_ahead_events:
-            event['classification'] = classify_meeting(event, domain_mapping, bu_cache)
+            event['classification'] = classify_meeting(event, domain_mapping, bu_cache, profile=profile)
 
         agendas_needed = identify_agendas_needed(look_ahead_events)
         print(f"  Agendas needed: {len(agendas_needed)}")
@@ -609,33 +710,72 @@ def main():
     # Step 10: Generate AI task list
     print("\nStep 10: Generating AI task list...")
 
-    # Customer meeting preps
-    for meeting in directive['meetings']['customer']:
+    # Customer meeting preps (includes QBR sub-type)
+    for meeting_type in ('customer', 'qbr'):
+        for meeting in directive['meetings'][meeting_type]:
+            if meeting.get('event_id') not in directive['calendar']['past']:
+                directive['ai_tasks'].append({
+                    'type': 'generate_customer_prep',
+                    'event_id': meeting.get('event_id'),
+                    'account': meeting.get('account'),
+                    'prep_template': meeting.get('prep_template'),
+                    'priority': 'high' if meeting.get('prep_status') == '\U0001f4c5 Agenda needed' else 'medium',
+                })
+
+    # Partnership meeting preps
+    for meeting in directive['meetings']['partnership']:
         if meeting.get('event_id') not in directive['calendar']['past']:
             directive['ai_tasks'].append({
                 'type': 'generate_customer_prep',
                 'event_id': meeting.get('event_id'),
                 'account': meeting.get('account'),
-                'priority': 'high' if meeting.get('prep_status') == '📅 Agenda needed' else 'medium',
+                'prep_template': meeting.get('prep_template'),
+                'priority': 'medium',
             })
 
-    # Internal meeting preps
+    # Internal meeting preps (includes project meetings mapped here)
     for meeting in directive['meetings']['internal']:
         if meeting.get('event_id') not in directive['calendar']['past']:
+            # Project meetings get elevated priority
+            is_project = meeting.get('project') is not None
             directive['ai_tasks'].append({
-                'type': 'generate_internal_prep',
-                'event_id': meeting.get('event_id'),
-                'priority': 'low',
-            })
-
-    # Project meeting preps
-    for meeting in directive['meetings']['project']:
-        if meeting.get('event_id') not in directive['calendar']['past']:
-            directive['ai_tasks'].append({
-                'type': 'generate_project_prep',
+                'type': 'generate_project_prep' if is_project else 'generate_internal_prep',
                 'event_id': meeting.get('event_id'),
                 'project': meeting.get('project'),
-                'priority': 'medium',
+                'prep_template': meeting.get('prep_template'),
+                'priority': 'medium' if is_project else 'low',
+            })
+
+    # Team sync, one-on-one, training preps
+    for meeting_type in ('team_sync', 'one_on_one', 'training'):
+        for meeting in directive['meetings'][meeting_type]:
+            if meeting.get('event_id') not in directive['calendar']['past']:
+                directive['ai_tasks'].append({
+                    'type': 'generate_internal_prep',
+                    'event_id': meeting.get('event_id'),
+                    'prep_template': meeting.get('prep_template'),
+                    'priority': 'low',
+                })
+
+    # External meeting preps — unknown contacts get research (2.0f)
+    for meeting in directive['meetings']['external']:
+        if meeting.get('event_id') not in directive['calendar']['past']:
+            # Build research context for unknown external meetings
+            # Find the original classification for this event
+            original = next(
+                (c for c in classifications if c.get('event_id') == meeting.get('event_id')),
+                {}
+            )
+            attendees = original.get('attendees', [])
+            research = build_research_context(original, attendees)
+            meeting['research'] = research
+
+            task_type = 'research_unknown_meeting' if research.get('company_domains') else 'generate_internal_prep'
+            directive['ai_tasks'].append({
+                'type': task_type,
+                'event_id': meeting.get('event_id'),
+                'prep_template': meeting.get('prep_template'),
+                'priority': 'medium' if task_type == 'research_unknown_meeting' else 'low',
             })
 
     # High priority email summaries
