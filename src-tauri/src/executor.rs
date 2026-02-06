@@ -99,6 +99,11 @@ impl Executor {
 
         match &result {
             Ok(_) => {
+                // Post-processing: generate JSON and sync to DB
+                if workflow_id == WorkflowId::Today {
+                    self.run_post_processing(&workspace);
+                }
+
                 self.state.update_execution_record(&execution_id, |r| {
                     r.finished_at = Some(finished_at);
                     r.duration_secs = Some(duration_secs);
@@ -245,6 +250,33 @@ impl Executor {
         run_python_script(&deliver_script, workspace, SCRIPT_TIMEOUT_SECS)?;
 
         Ok(())
+    }
+
+    /// Run post-processing after the today workflow completes.
+    ///
+    /// 1. Generate JSON from markdown (dashboard data)
+    /// 2. Sync actions from JSON into SQLite
+    ///
+    /// Failures are logged as warnings but don't fail the workflow.
+    fn run_post_processing(&self, workspace: &Path) {
+        // Step 1: Generate JSON
+        match crate::workflow::today::run_json_generation(workspace) {
+            Ok(()) => log::info!("Post-processing: JSON generation succeeded"),
+            Err(e) => {
+                log::warn!("Post-processing: JSON generation failed (non-fatal): {}", e);
+                return; // No point syncing to DB if JSON wasn't generated
+            }
+        }
+
+        // Step 2: Sync actions to SQLite
+        if let Ok(db_guard) = self.state.db.lock() {
+            if let Some(ref db) = *db_guard {
+                match crate::workflow::today::sync_actions_to_db(workspace, db) {
+                    Ok(count) => log::info!("Post-processing: synced {} actions to DB", count),
+                    Err(e) => log::warn!("Post-processing: action sync failed (non-fatal): {}", e),
+                }
+            }
+        }
     }
 
     /// Get workspace path from config
