@@ -7,6 +7,7 @@
 
 pub mod archive;
 pub mod today;
+pub mod week;
 
 use crate::types::WorkflowId;
 
@@ -25,6 +26,9 @@ impl Workflow {
         match id {
             WorkflowId::Today => today::TODAY_WORKFLOW,
             WorkflowId::Archive => Self::archive(),
+            WorkflowId::Week => week::WEEK_WORKFLOW,
+            // InboxBatch is handled directly by the executor, not via three-phase
+            WorkflowId::InboxBatch => unreachable!("InboxBatch uses direct processor calls"),
         }
     }
 
