@@ -22,6 +22,7 @@
 | A1 | Users have Claude Code CLI installed and authenticated | No | Need onboarding check |
 | A2 | Workspace follows PARA structure | No | Should gracefully handle variations |
 | A3 | `_today/` files use expected markdown format | Partial | Parser handles basic cases |
+| A4 | Users have Google Workspace (Calendar + Gmail) | No | MVP scope — personal Gmail, Outlook, iCloud Calendar not supported |
 
 ---
 
@@ -29,7 +30,7 @@
 
 | ID | Issue | Priority | Owner | Status |
 |----|-------|----------|-------|--------|
-| I1 | Config directory named `.daybreak` should be `.dailyos` for brand consistency | Low | — | Open |
+| I1 | Config directory named `.daybreak` should be `.dailyos` for brand consistency | Low | — | Closed |
 | I2 | Compact `meetings.md` format for dashboard dropdowns | Low | — | Explore |
 | I3 | Browser extension for web page capture to `_inbox/` | Low | — | Explore |
 | I4 | Motivational quotes as personality layer | Low | — | Explore |
@@ -39,8 +40,16 @@
 | I8 | No app update/distribution mechanism decided | Medium | — | Open |
 | I9 | Focus page and Week priorities are disconnected stubs | Medium | — | Open |
 | I10 | No shared glossary of app terms and workflow names | Low | — | Open |
-| I11 | Phase 2 email enrichment not fed back to JSON pipeline | High | — | Open |
-| I12 | Email page missing AI context (summary, arc, recommended action) | High | — | Open |
+| I11 | Phase 2 email enrichment not fed back to JSON pipeline | High | — | Resolved |
+| I12 | Email page missing AI context (summary, arc, recommended action) | High | — | Resolved |
+| I13 | No onboarding flow — first-time user hits dead end after profile selection | High | — | Open |
+| I14 | Dashboard meeting cards don't link to meeting detail page | High | — | Open |
+| I15 | Profile switching unavailable in Settings (promised at onboarding) | Medium | — | Open |
+| I16 | Schedule editing requires manual config.json editing (cron expressions) | Medium | — | Open |
+| I17 | Post-meeting capture outcomes don't visibly resurface in briefings | Medium | — | Open |
+| I18 | Google API calls not coordinated across callers (no shared cache) | Medium | — | Open |
+| I19 | AI enrichment failure not communicated to user (briefing feels "thin") | Low | — | Open |
+| I20 | No standalone email refresh — emails only update with full briefing | Medium | — | Open |
 
 ### I2 Notes
 The archive from 2026-02-04 contains a compact `meetings.md` format with structured prep summaries:
@@ -181,40 +190,109 @@ Multiple features use overlapping terms without shared definitions:
 
 **What needs to happen:** A shared glossary (could live in `DEVELOPMENT.md` or a new `GLOSSARY.md`) defining each term, its user-facing label, and which workflow/data source backs it. Button labels and page titles should be consistent.
 
-### I11 Notes
-Phase 2 AI enrichment generates rich email analysis in `83-email-summary.md`: conversation arcs, recommended actions, action owners, and strategic context. But `deliver_today.py` only reads the Phase 1 directive data when building `emails.json`. The Phase 2 output is thrown away.
+### I11 Notes — RESOLVED
+Phase 2 email enrichment is now parsed back into the JSON pipeline.
 
-**The `EmailDetail` TypeScript type already has the fields:**
-```typescript
-interface EmailDetail {
-  summary?: string;
-  conversationArc?: string;
-  recommendedAction?: string;
-  actionOwner?: string;
-  actionPriority?: string;
-}
-```
+`deliver_today.py` gained `parse_email_enrichment()` which reads `83-email-summary.md`, extracts per-email enrichment (summary, recommended action, conversation arc, email type, action owner), and merges it into `emails.json` by fuzzy subject matching.
 
-**What needs to happen:**
-1. `deliver_today.py` should parse `83-email-summary.md` after Phase 2 completes (or Phase 2 should write a structured `email-enrichment.json` alongside the markdown)
-2. Merge enrichment data into `emails.json` — matching by email ID or subject
-3. Frontend uses the rich fields to show *why* an email is high priority, not just *that* it is
-4. Per DEC6: Python does the parsing/merging (deterministic), Claude does the analysis (non-deterministic). This maintains the determinism boundary.
+Three-tier priority restored: high / medium / low (was collapsed to high / normal). Full stack updated: Python → Rust types + JSON loader → TypeScript types → frontend.
 
-**Blocked by:** DEC29 (email tier decision). The enrichment output format and which emails get enriched depends on the tier strategy.
+### I12 Notes — RESOLVED
+Email page now shows AI context from Phase 2 enrichment:
+- **High priority:** Summary, recommended action (gold `→` prefix), conversation arc (italic)
+- **Medium priority:** Summary
+- **Low priority:** Subject only (collapsed section)
 
-### I12 Notes
-The email page currently shows: sender, subject, snippet, priority badge. The markdown output (`83-email-summary.md`) shows: badges (ACTION/RISK/INFO), one-line summaries, conversation arc, recommended response, and strategic context.
+Dashboard email widget shows recommended action or summary on high-priority items.
 
-**What the user wants to see on each high-priority email:**
-- **Why it matters** — "Customer requesting timeline update ahead of renewal" (conversation arc)
-- **What to do** — "Draft response with updated Q2 timeline" (recommended action)
-- **Who owns it** — "You" or "Delegated to [person]" (action owner)
-- **Risk level** — ACTION (you must respond), RISK (potential problem), INFO (awareness only)
+Also removed fake "Scan emails" button that was a no-op (called nonexistent `email_scan` workflow). See I20.
 
-This is the difference between "here's an email" and "here's why you should care about this email." Without the *why*, the lazy response is to ignore it — exactly the anti-pattern the user described.
+### I13 Notes
+**Ref:** USER-JOURNEYS.md Journey 1 (First Launch)
 
-**Depends on:** I11 (enrichment data in JSON pipeline). Once the data is available, the frontend work is styling the additional fields.
+The app goes from profile selection directly to the dashboard. If `~/.dailyos/config.json` doesn't exist or has no workspace path, behavior is undefined. If Google isn't connected, "Generate Briefing" fails because `prepare_today.py` can't fetch calendar or email data.
+
+**What a minimal onboarding needs:**
+1. Profile selection (exists, works)
+2. Google account connection (exists in Settings, not surfaced during setup)
+3. Workspace path selection (I7 — display exists, editing doesn't)
+4. First briefing trigger with progress feedback
+
+**Design constraint:** Principle 4 (Opinionated Defaults, Escapable Constraints). We could create `~/Documents/DailyOS/` as default workspace and skip the path picker entirely. Google connection is the only truly mandatory step.
+
+**Open question:** Can the app show anything useful before Google is connected? If yes, onboarding is "connect Google when you're ready." If no, onboarding must gate the dashboard behind Google auth.
+
+### I14 Notes
+**Ref:** USER-JOURNEYS.md Journey 2 (Morning Briefing)
+
+DEC13 decided meeting detail is a drill-down from the dashboard (not a sidebar item). The detail page exists at `/meeting/$prepFile` and renders prep data from `preps/*.json`. But the dashboard meeting cards (`MeetingCard.tsx`) don't link to it. The most important user action on the dashboard — "I see my next meeting, let me review the prep" — is a dead end.
+
+**What's needed:** `MeetingCard` gets an `onClick` or `Link` that navigates to `/meeting/{prepFile}` when a prep file exists. If no prep exists, the card is not clickable (or shows "No prep available" on click).
+
+**Scope:** Small. One `Link` wrapper + conditional logic. But it's the highest-impact UX fix because it completes the core promise.
+
+### I15 Notes
+**Ref:** USER-JOURNEYS.md Journey 9 (Settings)
+
+The profile selector at first launch says "You can change this later in Settings." But the Settings page has no profile switching UI. DEC12 mentions "Phase 2: clickable to switch" in the sidebar header, but neither location currently supports it.
+
+**What's needed:** A profile selector in Settings (dropdown or radio) that writes to `~/.dailyos/config.json` and triggers a config reload. The sidebar profile label should update without an app restart.
+
+**Scope:** Medium. Tauri command to update config + UI control + live reload.
+
+### I16 Notes
+**Ref:** USER-JOURNEYS.md Journey 9 (Settings)
+
+The Settings page displays schedule cron expressions (`0 6 * * *`) that are meaningless to non-technical users. Schedule editing requires manually editing `~/.dailyos/config.json`.
+
+**What's needed:** A time picker ("Briefing time: 6:00 AM [change]") that writes the equivalent cron to config. Hide the cron syntax entirely. Power users can still edit the JSON directly (Principle 4: Escapable Constraints).
+
+**Scope:** Medium. Time picker component + Tauri command to update schedule config.
+
+### I17 Notes
+**Ref:** USER-JOURNEYS.md Journey 5 (Post-Meeting Capture)
+
+When the user captures wins, risks, and actions after a meeting, data goes to SQLite and the impact log markdown. But none of it visibly appears in the next day's briefing or on the dashboard. The user captures data and it vanishes into the system.
+
+**This erodes trust.** If the user types "Win: Acme agreed to expand" and never sees that reflected anywhere, they'll stop capturing.
+
+**Where captured data should resurface:**
+- **Actions** → Next day's Actions list (SQLite already handles this)
+- **Wins/Risks** → Next meeting prep for the same account (requires `prepare_today.py` to query SQLite for recent captures by account)
+- **Weekly summary** → "This week: 4 wins captured, 2 risks flagged" (requires aggregation query)
+
+**Depends on:** DEC31 (action source of truth), CS extension architecture for account-scoped data.
+
+### I18 Notes
+**Ref:** USER-JOURNEYS.md Cross-Journey (Google API Efficiency)
+
+Multiple callers hit Google APIs independently:
+- `prepare_today.py` fetches Calendar + Gmail during briefing
+- Calendar poller (`scheduler.rs`) fetches Calendar every 5 minutes
+- Manual "Generate Briefing" re-fetches everything
+
+No caching or coordination between these callers. A shared API cache with TTL (e.g., calendar data valid for 5 minutes, email data valid for 15 minutes) would reduce redundant calls and make manual re-runs faster.
+
+**Not blocking MVP** but becomes important as more features consume calendar/email data.
+
+### I19 Notes
+**Ref:** USER-JOURNEYS.md Cross-Journey (AI Enrichment Timing)
+
+When Phase 2 (Claude Code enrichment) fails or is skipped, the briefing renders with Phase 1 data only. The dashboard looks functional but is notably thinner — no AI summary, no prep context, no focus suggestions. The user has no indication of why.
+
+**Options:**
+- Quiet indicator: "AI-enriched" badge on overview when enrichment succeeded (absence = not enriched)
+- Explicit note: "Quick briefing — AI enrichment will run on next refresh" when Phase 2 was skipped
+- Nothing: just let the briefing be what it is (current behavior)
+
+**Recommendation:** The quiet indicator (option 1) fits Principle 9 (Show the Work, Hide the Plumbing) — inform without alarming.
+
+### I20 Notes
+The email page and dashboard widget had a "Scan emails" button that called `run_workflow({ workflow: "email_scan" })`. No such workflow exists — `WorkflowId` only has Today, Archive, InboxBatch, Week. The button was silently catching the error and spinning for 3 seconds to fake activity.
+
+**Removed** the dead buttons. Emails now correctly refresh only as part of the `/today` briefing workflow (prepare → enrich → deliver).
+
+**Future consideration:** A lightweight email-only refresh pipeline (just email fetch + classify + deliver, skipping calendar/meetings/actions) could be valuable. But it introduces a question: if email data refreshes independently, does the rest of the briefing show stale data? Need to think about partial refresh semantics before building this. DEC6 (determinism boundary) still applies — any new pipeline must go through Python, not be a frontend-initiated API call.
 
 ---
 
@@ -263,6 +341,9 @@ This is the difference between "here's an email" and "here's why you should care
 | DEC29 | Three-tier email priority with AI-enriched context | 2026-02 | **PENDING.** Keep three tiers (high/medium/low) throughout the pipeline instead of collapsing to two. High = customer/urgent (show with full AI context: summary, conversation arc, recommended action). Medium = internal/meeting-related (show in collapsible section, not silently archived). Low = automated/newsletters (archived with reviewable manifest per DEC24). Phase 2 enrichment writes structured data back to JSON, not just markdown. User-configurable rules are Phase 4+ (extension point). | Two tiers high/normal (loses medium nuance), User classifies manually (violates zero-guilt), All emails shown equally (information overload) |
 | DEC30 | Weekly prep generation with daily refresh | 2026-02 | **PENDING.** `/week` (running Sunday) generates prep documents for all eligible meetings in the coming week. `/today` then refreshes rather than creating from scratch — updating with latest data, new emails, recent actions. Preps live in `_today/data/preps/` (ephemeral, regenerated). Week-generated preps cached in `_today/data/week-cache/` with staleness tracking. Trade-off: faster daily briefings vs. potential staleness by Thursday. Requires freshness check (manifest date comparison). | Daily-only preps (slower briefings, no look-ahead), Week preps with no daily refresh (stale by midweek), Persistent prep store (complexity, storage) |
 | DEC31 | Actions: SQLite as working store, markdown as historical record | 2026-02 | **PENDING.** Actions live in SQLite for speed and queryability. Daily `actions.json` is a snapshot for the dashboard. No single `master-task-list.md` — actions are scoped to their source (meeting, email, manual). Completion in the app updates SQLite; post-enrichment hooks can write back to source markdown if a `source_label` points to a specific file. The Actions page is the canonical view; markdown files in `_today/` and `_archive/` are historical records. Bidirectional sync (markdown → SQLite) happens during inbox processing and briefing generation. | Single markdown file (slow, merge conflicts), SQLite only (not portable, not human-readable), Separate task app (fragmented) |
+| DEC32 | Calendar source of truth: briefing snapshot vs live poll vs hybrid | 2026-02 | **PENDING.** See notes. | Briefing-only (stale), Live-only (no enrichment), Hybrid overlay (complex but correct) |
+| DEC33 | Meeting entity unification: shared state vs independent views | 2026-02 | **PENDING.** See notes. | Unified Meeting entity in SQLite (correct but architectural change), Independent views (current, fragmented), Shared ID mapping (middle ground) |
+| DEC34 | Adaptive dashboard: density-aware layout or static | 2026-02 | **PENDING.** See notes. | Time-aware adaptive layout (complex, polished), Static single layout (simple, adequate), Density hint in overview text only (middle ground) |
 
 ### DEC25 Notes
 
@@ -527,6 +608,93 @@ App frontend    → reads actions.json for dashboard
 
 **Decision needed:** Confirm this model. Then: (1) implement the post-enrichment writeback for action completions, (2) add deduplication logic to prepare_today.py that checks SQLite before extracting from markdown, (3) decide whether manual action creation (from the app UI) writes to SQLite only or also creates a markdown file.
 
+### DEC32 Notes (PENDING)
+**Ref:** USER-JOURNEYS.md Cross-Journey (Two-Source Calendar Problem)
+
+**Problem statement:** The app has two sources of calendar data that can disagree:
+
+| Source | Generated | Freshness | Enrichment | Used By |
+|--------|-----------|-----------|------------|---------|
+| `schedule.json` | Once at briefing time | Stale within hours | AI prep summaries, meeting classification, context | Dashboard meeting timeline |
+| `calendar_events` (AppState) | Polled every 5 min | Near-real-time | None | Header meeting count, future live features |
+
+A meeting cancelled at 7 AM still shows on the dashboard (briefing source) but not in the header count (live source). A meeting added at 2 PM shows in the header but not the dashboard.
+
+**Options:**
+
+1. **Briefing-only** (current): Dashboard shows the 6 AM snapshot. Live data is ignored for display purposes. Stale but enriched.
+   - Pro: Simple, consistent, already works
+   - Con: Cancelled meetings linger, new meetings invisible
+
+2. **Live-only**: Dashboard reads from calendar poller. No enrichment on cards.
+   - Pro: Always current
+   - Con: Loses the entire value of meeting prep, classification, AI context
+
+3. **Hybrid overlay** (recommended): Live calendar is the source of truth for *which meetings exist*. Briefing enrichment (prep, classification, context) is overlaid onto live events by matching on calendar event ID.
+   - If meeting exists in briefing but not live → cancelled, hide it (or show greyed with "Cancelled" badge)
+   - If meeting exists in live but not briefing → new, show it bare with "No prep" indicator
+   - If meeting exists in both → show live timing + briefing enrichment
+   - Pro: Current AND enriched
+   - Con: Requires stable event ID matching between Google Calendar API and `prepare_today.py` output. Requires refactoring how the dashboard consumes meeting data.
+
+**Key question:** Does `schedule.json` include Google Calendar event IDs? If not, matching between live and briefing requires fuzzy matching on title + time (fragile).
+
+**Affects:** Journey 2 (Morning Briefing), Journey 3 (Busy Day), Journey 6 (Weekly Planning).
+
+### DEC33 Notes (PENDING)
+**Ref:** USER-JOURNEYS.md Cross-Journey (Meeting Card Unification)
+
+**Problem statement:** Meetings exist in three independent forms with no shared state:
+
+| View | Data Source | State Tracked | Linked? |
+|------|------------|---------------|---------|
+| Daily dashboard card | `schedule.json` | None | No link to detail page (I14) |
+| Weekly grid cell | `week-overview.json` | Prep status badge (decorative) | No link to prep |
+| Meeting detail page | `preps/*.json` | Full prep content | Orphaned (no entry point) |
+
+Marking prep as "reviewed" on the daily view has no effect on the weekly view. A meeting that's "happening now" on the daily view has no time-aware equivalent on the weekly view.
+
+**Options:**
+
+1. **Unified Meeting entity** (most correct): Single `meetings` table in SQLite. Every meeting has a stable ID (calendar event ID), state (prep status, notes, outcomes), and lifecycle. All views read from the same source.
+   - Pro: Consistent everywhere, enables real features (prep tracking, outcome linking)
+   - Con: Significant refactoring. Requires DEC32 (calendar source of truth) to be decided first. Changes the data flow for both daily and weekly workflows.
+
+2. **Independent views** (current): Each workflow generates its own meeting data. Views don't share state.
+   - Pro: No refactoring needed
+   - Con: Fragmented experience, broken flows (I14), decorative-only prep badges
+
+3. **Shared ID mapping** (middle ground): Keep independent data sources but add a lookup table that maps calendar event IDs across views. A "prep reviewed" flag in SQLite can be queried by any view.
+   - Pro: Less refactoring than option 1, solves the state-sharing problem
+   - Con: Data still generated independently, potential for drift
+
+**Recommendation:** Start with option 3 for near-term (fixes I14, enables prep tracking), plan for option 1 as a Phase 3 architectural goal.
+
+**Depends on:** DEC32 (calendar source of truth determines the ID scheme).
+
+### DEC34 Notes (PENDING)
+**Ref:** USER-JOURNEYS.md Journey 3 (Busy Day), Journey 4 (Light Day)
+
+**Problem statement:** The dashboard layout is identical whether the user has 0 meetings or 9. On a busy day, the full timeline is overwhelming and the user needs a "what's next" view. On a light day, the sparse timeline wastes space and the user needs focus/coaching content.
+
+**Options:**
+
+1. **Time-aware adaptive layout**: Dashboard adjusts based on meeting count and current time. Busy day: "now → next → later" with collapsed future meetings. Light day: expanded focus section, action coaching. Between meetings: focused HUD showing next meeting + countdown.
+   - Pro: Feels like a personal assistant, serves each day type well
+   - Con: Complex to build and test, many layout states, potential for confusing transitions
+
+2. **Static single layout** (current): Same layout always. Works adequately for all day types.
+   - Pro: Simple, predictable, fewer bugs
+   - Con: Not optimized for any specific scenario, wastes the light-day opportunity
+
+3. **Density hint in overview only** (recommended for near-term): Keep the current layout but make the AI-generated overview density-aware. Busy day: "Packed day — your 9 AM Acme call is the priority." Light day: "Open afternoon — good day to tackle that overdue Globex proposal." The text coaches; the layout stays stable.
+   - Pro: Low implementation cost, leverages existing AI enrichment, no layout changes
+   - Con: Doesn't solve the "between meetings" UX problem on busy days
+
+**Recommendation:** Option 3 for now. Option 1 is a Phase 3+ aspirational goal. The "between meetings HUD" is a separate feature that could be explored as a tray popover rather than a dashboard layout change.
+
+**Not blocking MVP.** The current static layout works. But this decision should be revisited when post-meeting capture (DEC16, Phase 3) ships, since that's when the "between meetings" UX becomes critical.
+
 ---
 
-*Last updated: 2026-02-05*
+*Last updated: 2026-02-06*
