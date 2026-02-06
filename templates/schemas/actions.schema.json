@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dailyos.dev/schemas/actions.json",
   "title": "DailyOS Actions",
-  "description": "Action items with context",
+  "description": "Action items with context. Keys use camelCase to match Rust serde(rename_all = camelCase).",
   "type": "object",
   "required": ["date", "actions"],
   "properties": {
@@ -14,9 +14,9 @@
       "type": "object",
       "properties": {
         "overdue": { "type": "integer", "minimum": 0 },
-        "due_today": { "type": "integer", "minimum": 0 },
-        "due_this_week": { "type": "integer", "minimum": 0 },
-        "waiting_on": { "type": "integer", "minimum": 0 }
+        "dueToday": { "type": "integer", "minimum": 0 },
+        "dueThisWeek": { "type": "integer", "minimum": 0 },
+        "waitingOn": { "type": "integer", "minimum": 0 }
       }
     },
     "actions": {
@@ -47,15 +47,15 @@
           "type": "string",
           "enum": ["pending", "completed", "waiting"]
         },
-        "due_date": {
+        "dueDate": {
           "type": "string",
           "format": "date"
         },
-        "is_overdue": {
+        "isOverdue": {
           "type": "boolean",
           "default": false
         },
-        "days_overdue": {
+        "daysOverdue": {
           "type": "integer",
           "minimum": 0
         },

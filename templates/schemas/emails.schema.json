@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dailyos.dev/schemas/emails.json",
   "title": "DailyOS Email Summary",
-  "description": "Prioritized email summary",
+  "description": "Prioritized email summary. Keys use camelCase to match Rust serde(rename_all = camelCase).",
   "type": "object",
   "required": ["date", "emails"],
   "properties": {
@@ -13,9 +13,9 @@
     "stats": {
       "type": "object",
       "properties": {
-        "high_priority": { "type": "integer", "minimum": 0 },
-        "normal_priority": { "type": "integer", "minimum": 0 },
-        "needs_action": { "type": "integer", "minimum": 0 }
+        "highPriority": { "type": "integer", "minimum": 0 },
+        "normalPriority": { "type": "integer", "minimum": 0 },
+        "needsAction": { "type": "integer", "minimum": 0 }
       }
     },
     "emails": {
@@ -35,7 +35,7 @@
           "type": "string",
           "description": "Display name"
         },
-        "sender_email": {
+        "senderEmail": {
           "type": "string",
           "format": "email"
         },
@@ -54,19 +54,19 @@
           "type": "string",
           "format": "date-time"
         },
-        "email_type": {
+        "emailType": {
           "type": "string",
           "description": "Classification (customer_response, internal, etc.)"
         },
-        "conversation_arc": {
+        "conversationArc": {
           "type": "string",
           "description": "Where this fits in the conversation"
         },
-        "recommended_action": {
+        "recommendedAction": {
           "type": "string",
           "description": "What to do with this email"
         },
-        "action_owner": {
+        "actionOwner": {
           "type": "string",
           "description": "Who should act on this"
         }

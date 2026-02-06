@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dailyos.dev/schemas/manifest.json",
   "title": "DailyOS Manifest",
-  "description": "Index of files for a given day",
+  "description": "Index of files for a given day. Keys use camelCase to match Rust serde(rename_all = camelCase).",
   "type": "object",
-  "required": ["date", "generated_at", "schema_version"],
+  "required": ["date", "generatedAt"],
   "properties": {
-    "schema_version": {
+    "schemaVersion": {
       "type": "string",
       "const": "1.0.0"
     },
@@ -15,7 +15,7 @@
       "format": "date",
       "description": "The date this manifest represents (YYYY-MM-DD)"
     },
-    "generated_at": {
+    "generatedAt": {
       "type": "string",
       "format": "date-time",
       "description": "When this manifest was generated"
@@ -24,6 +24,10 @@
       "type": "boolean",
       "default": false,
       "description": "True if generation was incomplete"
+    },
+    "profile": {
+      "type": "string",
+      "description": "User profile (csm, general)"
     },
     "files": {
       "type": "object",
@@ -40,13 +44,12 @@
     "stats": {
       "type": "object",
       "properties": {
-        "total_meetings": { "type": "integer", "minimum": 0 },
-        "customer_meetings": { "type": "integer", "minimum": 0 },
-        "internal_meetings": { "type": "integer", "minimum": 0 },
-        "personal_meetings": { "type": "integer", "minimum": 0 },
-        "actions_due": { "type": "integer", "minimum": 0 },
-        "actions_overdue": { "type": "integer", "minimum": 0 },
-        "emails_flagged": { "type": "integer", "minimum": 0 }
+        "totalMeetings": { "type": "integer", "minimum": 0 },
+        "customerMeetings": { "type": "integer", "minimum": 0 },
+        "internalMeetings": { "type": "integer", "minimum": 0 },
+        "actionsDue": { "type": "integer", "minimum": 0 },
+        "actionsOverdue": { "type": "integer", "minimum": 0 },
+        "emailsFlagged": { "type": "integer", "minimum": 0 }
       }
     }
   }

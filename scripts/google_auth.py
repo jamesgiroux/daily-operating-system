@@ -29,13 +29,36 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 GOOGLE_DIR: Path = Path.home() / ".dailyos" / "google"
-CREDENTIALS_FILE: Path = GOOGLE_DIR / "credentials.json"
 TOKEN_FILE: Path = GOOGLE_DIR / "token.json"
 
-# MVP scopes: read-only calendar + read-only gmail
+
+def _resolve_credentials_file(workspace: Path | None = None) -> Path:
+    """Find the Google OAuth credentials.json file.
+
+    Resolution order:
+        1. ~/.dailyos/google/credentials.json  (primary)
+        2. <workspace>/.config/google/credentials.json  (CLI-era fallback)
+    """
+    primary = GOOGLE_DIR / "credentials.json"
+    if primary.exists():
+        return primary
+
+    if workspace is not None:
+        fallback = workspace / ".config" / "google" / "credentials.json"
+        if fallback.exists():
+            return fallback
+
+    return primary  # Return primary path even if missing, for error message
+
+# Full scopes matching the CLI-era authorization.
+# calendar (read/write), gmail, docs, sheets, drive.
 SCOPES: list[str] = [
-    "https://www.googleapis.com/auth/calendar.readonly",
-    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.compose",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/documents",
+    "https://www.googleapis.com/auth/drive",
 ]
 
 
@@ -149,7 +172,7 @@ def _try_existing_token() -> Any | None:
     return None
 
 
-def _run_consent_flow() -> Any:
+def _run_consent_flow(workspace: Path | None = None) -> Any:
     """Run the full OAuth consent flow via the system browser.
 
     Opens a browser window and starts a temporary localhost HTTP server
@@ -157,17 +180,21 @@ def _run_consent_flow() -> Any:
     """
     from google_auth_oauthlib.flow import InstalledAppFlow
 
-    if not CREDENTIALS_FILE.exists():
+    credentials_file = _resolve_credentials_file(workspace)
+
+    if not credentials_file.exists():
         _error(
-            f"Google credentials not found at {CREDENTIALS_FILE}. "
+            f"Google credentials not found. Checked:\n"
+            f"  {GOOGLE_DIR / 'credentials.json'}\n"
+            f"  {workspace / '.config' / 'google' / 'credentials.json' if workspace else '(no workspace)'}\n"
             "Download credentials.json from Google Cloud Console "
             "(OAuth 2.0 Desktop App) and place it at "
-            f"{CREDENTIALS_FILE}"
+            f"{GOOGLE_DIR / 'credentials.json'}"
         )
 
     # Validate the credentials file before using it
     try:
-        with open(CREDENTIALS_FILE) as f:
+        with open(credentials_file) as f:
             creds_data = json.load(f)
         if "installed" not in creds_data:
             key = "web" if "web" in creds_data else None
@@ -186,7 +213,7 @@ def _run_consent_flow() -> Any:
 
     try:
         flow = InstalledAppFlow.from_client_secrets_file(
-            str(CREDENTIALS_FILE), SCOPES
+            str(credentials_file), SCOPES
         )
         # port=0 lets the OS pick a random available port
         creds = flow.run_local_server(port=0)
@@ -211,9 +238,7 @@ def _save_token(creds: Any) -> None:
 
 def main() -> None:
     """Entry point. Authenticate and output JSON result."""
-    # Workspace argument (unused by auth, but accepted for interface parity
-    # with other scripts the Rust executor calls).
-    _workspace = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
+    workspace = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(os.getcwd())
 
     _check_dependencies()
 
@@ -222,7 +247,7 @@ def main() -> None:
 
     if creds is None:
         # No valid token -- run full browser consent flow
-        creds = _run_consent_flow()
+        creds = _run_consent_flow(workspace)
         _save_token(creds)
 
     email = _get_email(creds)

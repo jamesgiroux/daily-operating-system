@@ -217,8 +217,8 @@ pub fn google_token_path() -> PathBuf {
     home.join(".dailyos").join("google").join("token.json")
 }
 
-/// Detect existing Google authentication on startup
-fn detect_google_auth() -> GoogleAuthStatus {
+/// Detect existing Google authentication by checking the token file on disk.
+pub fn detect_google_auth() -> GoogleAuthStatus {
     let token_path = google_token_path();
     if !token_path.exists() {
         return GoogleAuthStatus::NotConfigured;
@@ -235,9 +235,12 @@ fn detect_google_auth() -> GoogleAuthStatus {
                 if !has_token {
                     return GoogleAuthStatus::NotConfigured;
                 }
+                // google-auth-oauthlib stores email in the "account" field, not "email"
                 let email = token
                     .get("email")
+                    .or_else(|| token.get("account"))
                     .and_then(|e| e.as_str())
+                    .filter(|s| !s.is_empty())
                     .unwrap_or("connected")
                     .to_string();
                 GoogleAuthStatus::Authenticated { email }
