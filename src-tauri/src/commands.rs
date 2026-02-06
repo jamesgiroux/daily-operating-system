@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
 use crate::json_loader::{
@@ -11,8 +11,9 @@ use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
-    Action, Config, DashboardData, DayStats, ExecutionRecord, FocusData, FullMeetingPrep,
-    InboxFile, MeetingType, WeekOverview, WorkflowId, WorkflowStatus,
+    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
+    FocusBlock, FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
+    PostMeetingCaptureConfig, WeekOverview, WeekPlanningState, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -30,7 +31,7 @@ pub enum DashboardResult {
 pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
     let guard = state.config.lock().map_err(|_| "Lock poisoned")?;
     guard.clone().ok_or_else(|| {
-        "No configuration loaded. Create ~/.daybreak/config.json".to_string()
+        "No configuration loaded. Create ~/.dailyos/config.json".to_string()
     })
 }
 
@@ -49,7 +50,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             Some(c) => c,
             None => {
                 return DashboardResult::Error {
-                    message: "No configuration. Create ~/.daybreak/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
+                    message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
                 }
             }
         },
@@ -166,6 +167,8 @@ pub fn get_next_run_time(
     let entry = match workflow_id {
         WorkflowId::Today => &config.schedules.today,
         WorkflowId::Archive => &config.schedules.archive,
+        WorkflowId::InboxBatch => &config.schedules.inbox_batch,
+        WorkflowId::Week => &config.schedules.week,
     };
 
     if !entry.enabled {
@@ -257,11 +260,14 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
         }
     };
 
-    let _workspace = Path::new(&config.workspace_path);
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
 
-    // TODO: Implement week JSON loading
-    WeekResult::NotFound {
-        message: "Week overview not yet implemented for JSON format.".to_string(),
+    match crate::json_loader::load_week_json(&today_dir) {
+        Ok(week) => WeekResult::Success { data: week },
+        Err(e) => WeekResult::NotFound {
+            message: format!("No week data: {}", e),
+        },
     }
 }
 
@@ -421,83 +427,87 @@ pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
 }
 
 /// Process a single inbox file (classify, route, log).
+///
+/// Runs on a background thread to avoid blocking the main thread.
 #[tauri::command]
-pub fn process_inbox_file(
+pub async fn process_inbox_file(
     filename: String,
-    state: State<Arc<AppState>>,
-) -> crate::processor::ProcessingResult {
-    let config = match state.config.lock() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return crate::processor::ProcessingResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
-            return crate::processor::ProcessingResult::Error {
-                message: "Internal error".to_string(),
-            }
-        }
-    };
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::processor::ProcessingResult, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Internal error")?
+        .clone()
+        .ok_or("No configuration loaded")?;
 
-    let workspace = Path::new(&config.workspace_path);
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+    let state = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
 
-    crate::processor::process_file(workspace, &filename, db_ref)
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspace = Path::new(&workspace_path);
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        crate::processor::process_file(workspace, &filename, db_ref)
+    })
+    .await
+    .map_err(|e| format!("Processing task failed: {}", e))
 }
 
 /// Process all inbox files (batch).
+///
+/// Runs on a background thread to avoid blocking the main thread.
 #[tauri::command]
-pub fn process_all_inbox(
-    state: State<Arc<AppState>>,
-) -> Vec<(String, crate::processor::ProcessingResult)> {
-    let config = match state.config.lock() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => return Vec::new(),
-        },
-        Err(_) => return Vec::new(),
-    };
+pub async fn process_all_inbox(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<(String, crate::processor::ProcessingResult)>, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Internal error")?
+        .clone()
+        .ok_or("No configuration loaded")?;
 
-    let workspace = Path::new(&config.workspace_path);
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+    let state = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
 
-    crate::processor::process_all(workspace, db_ref)
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspace = Path::new(&workspace_path);
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        crate::processor::process_all(workspace, db_ref)
+    })
+    .await
+    .map_err(|e| format!("Batch processing failed: {}", e))
 }
 
 /// Process an inbox file with AI enrichment via Claude Code.
 ///
 /// Used for files that the quick classifier couldn't categorize.
+/// Runs on a background thread — Claude Code can take 1-2 minutes.
 #[tauri::command]
-pub fn enrich_inbox_file(
+pub async fn enrich_inbox_file(
     filename: String,
-    state: State<Arc<AppState>>,
-) -> crate::processor::enrich::EnrichResult {
-    let config = match state.config.lock() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return crate::processor::enrich::EnrichResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
-            }
-        },
-        Err(_) => {
-            return crate::processor::enrich::EnrichResult::Error {
-                message: "Internal error".to_string(),
-            }
-        }
-    };
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::processor::enrich::EnrichResult, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Internal error")?
+        .clone()
+        .ok_or("No configuration loaded")?;
 
-    let workspace = Path::new(&config.workspace_path);
-    let db_guard = state.db.lock().ok();
-    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+    let state = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
 
-    crate::processor::enrich::enrich_file(workspace, &filename, db_ref)
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspace = Path::new(&workspace_path);
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        crate::processor::enrich::enrich_file(workspace, &filename, db_ref)
+    })
+    .await
+    .map_err(|e| format!("AI processing task failed: {}", e))
 }
 
 /// Get the content of a specific inbox file for preview
@@ -700,7 +710,7 @@ pub fn set_profile(
 
     // Write back to disk
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".daybreak").join("config.json");
+    let config_path = home.join(".dailyos").join("config.json");
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
     std::fs::write(&config_path, content)
@@ -791,4 +801,377 @@ pub fn get_meeting_history(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_meeting_history(&account_id, lookback_days.unwrap_or(30), limit.unwrap_or(3))
         .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Phase 3.0: Google Auth Commands
+// =============================================================================
+
+/// Get current Google authentication status
+#[tauri::command]
+pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
+    state
+        .google_auth
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or(GoogleAuthStatus::NotConfigured)
+}
+
+/// Start Google OAuth flow
+#[tauri::command]
+pub async fn start_google_auth(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<GoogleAuthStatus, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace_path = config.workspace_path.clone();
+
+    // Run the blocking Python subprocess off the main thread
+    let email = tauri::async_runtime::spawn_blocking(move || {
+        let workspace = std::path::Path::new(&workspace_path);
+        crate::google::start_auth(workspace)
+    })
+    .await
+    .map_err(|e| format!("Auth task failed: {}", e))?
+    .map_err(|e| e)?;
+
+    let new_status = GoogleAuthStatus::Authenticated {
+        email: email.clone(),
+    };
+
+    // Update state
+    if let Ok(mut guard) = state.google_auth.lock() {
+        *guard = new_status.clone();
+    }
+
+    // Emit event
+    let _ = app_handle.emit("google-auth-changed", &new_status);
+
+    Ok(new_status)
+}
+
+/// Disconnect Google account
+#[tauri::command]
+pub fn disconnect_google(
+    state: State<Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::google::disconnect()?;
+
+    let new_status = GoogleAuthStatus::NotConfigured;
+
+    // Update state
+    if let Ok(mut guard) = state.google_auth.lock() {
+        *guard = new_status.clone();
+    }
+
+    // Clear calendar events
+    if let Ok(mut guard) = state.calendar_events.lock() {
+        guard.clear();
+    }
+
+    // Emit event
+    let _ = app_handle.emit("google-auth-changed", &new_status);
+
+    Ok(())
+}
+
+// =============================================================================
+// Phase 3A: Calendar Commands
+// =============================================================================
+
+/// Get calendar events from the polling cache
+#[tauri::command]
+pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
+    state
+        .calendar_events
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default()
+}
+
+/// Get the currently active meeting (if any)
+#[tauri::command]
+pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
+    let now = chrono::Utc::now();
+    state
+        .calendar_events
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .iter()
+                .find(|e| e.start <= now && e.end > now && !e.is_all_day)
+                .cloned()
+        })
+}
+
+/// Get the next upcoming meeting
+#[tauri::command]
+pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
+    let now = chrono::Utc::now();
+    state
+        .calendar_events
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .iter()
+                .filter(|e| e.start > now && !e.is_all_day)
+                .min_by_key(|e| e.start)
+                .cloned()
+        })
+}
+
+// =============================================================================
+// Phase 3B: Post-Meeting Capture Commands
+// =============================================================================
+
+/// Capture meeting outcomes (wins, risks, actions)
+#[tauri::command]
+pub fn capture_meeting_outcome(
+    outcome: CapturedOutcome,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+
+    // Mark as captured
+    if let Ok(mut guard) = state.capture_captured.lock() {
+        guard.insert(outcome.meeting_id.clone());
+    }
+
+    // Persist actions to SQLite
+    let db_guard = state.db.lock().ok();
+    let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+
+    if let Some(db) = db_ref {
+        for action in &outcome.actions {
+            let now = chrono::Utc::now().to_rfc3339();
+            let db_action = crate::db::DbAction {
+                id: uuid::Uuid::new_v4().to_string(),
+                title: action.title.clone(),
+                priority: "P2".to_string(),
+                status: "pending".to_string(),
+                created_at: now.clone(),
+                due_date: action.due_date.clone(),
+                completed_at: None,
+                account_id: outcome.account.clone(),
+                project_id: None,
+                source_type: Some("post_meeting".to_string()),
+                source_id: Some(outcome.meeting_id.clone()),
+                source_label: Some(outcome.meeting_title.clone()),
+                context: action.owner.clone(),
+                waiting_on: None,
+                updated_at: now,
+            };
+            if let Err(e) = db.upsert_action(&db_action) {
+                log::warn!("Failed to save captured action: {}", e);
+            }
+        }
+    }
+
+    // Persist captures (wins + risks) to SQLite captures table
+    if let Some(db) = db_ref {
+        for win in &outcome.wins {
+            let _ = db.insert_capture(
+                &outcome.meeting_id,
+                &outcome.meeting_title,
+                outcome.account.as_deref(),
+                "win",
+                win,
+            );
+        }
+        for risk in &outcome.risks {
+            let _ = db.insert_capture(
+                &outcome.meeting_id,
+                &outcome.meeting_title,
+                outcome.account.as_deref(),
+                "risk",
+                risk,
+            );
+        }
+    }
+
+    // Append wins to impact log
+    let impact_log = workspace.join("_today").join("90-impact-log.md");
+    if !outcome.wins.is_empty() {
+        let mut content = String::new();
+        if !impact_log.exists() {
+            content.push_str("# Impact Log\n\n");
+        }
+        for win in &outcome.wins {
+            content.push_str(&format!(
+                "- **{}**: {} ({})\n",
+                outcome
+                    .account
+                    .as_deref()
+                    .unwrap_or(&outcome.meeting_title),
+                win,
+                outcome.captured_at.format("%H:%M")
+            ));
+        }
+        if impact_log.exists() {
+            let existing = std::fs::read_to_string(&impact_log).unwrap_or_default();
+            let _ = std::fs::write(&impact_log, format!("{}{}", existing, content));
+        } else {
+            let _ = std::fs::write(&impact_log, content);
+        }
+    }
+
+    Ok(())
+}
+
+/// Dismiss a post-meeting capture prompt (skip)
+#[tauri::command]
+pub fn dismiss_meeting_prompt(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if let Ok(mut guard) = state.capture_dismissed.lock() {
+        guard.insert(meeting_id);
+    }
+    Ok(())
+}
+
+/// Get post-meeting capture settings
+#[tauri::command]
+pub fn get_capture_settings(state: State<Arc<AppState>>) -> PostMeetingCaptureConfig {
+    state
+        .config
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .map(|c| c.post_meeting_capture)
+        .unwrap_or_default()
+}
+
+/// Toggle post-meeting capture on/off
+#[tauri::command]
+pub fn set_capture_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let mut config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    config.post_meeting_capture.enabled = enabled;
+
+    // Write back to disk
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let config_path = home.join(".dailyos").join("config.json");
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    std::fs::write(&config_path, content)
+        .map_err(|e| format!("Failed to write config: {}", e))?;
+
+    // Update in-memory state
+    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+    *guard = Some(config);
+
+    Ok(())
+}
+
+// =============================================================================
+// Phase 3C: Weekly Planning Commands
+// =============================================================================
+
+/// Get current weekly planning state
+#[tauri::command]
+pub fn get_week_planning_state(state: State<Arc<AppState>>) -> WeekPlanningState {
+    state
+        .week_planning_state
+        .lock()
+        .map(|guard| guard.clone())
+        .unwrap_or_default()
+}
+
+/// Get prepared week data for the wizard
+#[tauri::command]
+pub fn get_week_prep_data(state: State<Arc<AppState>>) -> WeekResult {
+    // Just delegates to get_week_data — the wizard reads the same JSON
+    get_week_data(state)
+}
+
+/// Submit user's priority selections from wizard step 1
+#[tauri::command]
+pub fn submit_week_priorities(
+    priorities: Vec<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    // Write priorities to a file for reference
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let priorities_path = workspace.join("_today").join("data").join("week-priorities.json");
+    let content = serde_json::to_string_pretty(&priorities)
+        .map_err(|e| format!("Serialize error: {}", e))?;
+    std::fs::write(&priorities_path, content)
+        .map_err(|e| format!("Write error: {}", e))?;
+
+    // Update planning state
+    if let Ok(mut guard) = state.week_planning_state.lock() {
+        *guard = WeekPlanningState::InProgress;
+    }
+
+    Ok(())
+}
+
+/// Submit selected focus blocks from wizard step 3
+#[tauri::command]
+pub fn submit_focus_blocks(
+    blocks: Vec<FocusBlock>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    // Write focus blocks to a file
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let blocks_path = workspace.join("_today").join("data").join("week-focus-selected.json");
+    let content = serde_json::to_string_pretty(&blocks)
+        .map_err(|e| format!("Serialize error: {}", e))?;
+    std::fs::write(&blocks_path, content)
+        .map_err(|e| format!("Write error: {}", e))?;
+
+    // Mark planning as completed
+    if let Ok(mut guard) = state.week_planning_state.lock() {
+        *guard = WeekPlanningState::Completed;
+    }
+
+    Ok(())
+}
+
+/// Skip weekly planning entirely (apply defaults)
+#[tauri::command]
+pub fn skip_week_planning(state: State<Arc<AppState>>) -> Result<(), String> {
+    if let Ok(mut guard) = state.week_planning_state.lock() {
+        *guard = WeekPlanningState::DefaultsApplied;
+    }
+    Ok(())
 }
