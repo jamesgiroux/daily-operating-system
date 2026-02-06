@@ -24,7 +24,7 @@ export function Header({ onCommandMenuOpen }: HeaderProps) {
 
       <div className="flex flex-1 items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">Overview</h1>
+          <h1 className="text-lg font-semibold">Today</h1>
           <StatusIndicator status={status} nextRunTime={nextRunTime} />
         </div>
 

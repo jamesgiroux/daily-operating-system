@@ -22,10 +22,12 @@ export function Dashboard({ data }: DashboardProps) {
           {/* Main content grid */}
           <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
             {/* Meeting timeline - main column */}
-            <MeetingTimeline meetings={data.meetings} />
+            <div className="min-w-0">
+              <MeetingTimeline meetings={data.meetings} />
+            </div>
 
             {/* Right sidebar: Emails + Actions */}
-            <div className="space-y-6">
+            <div className="min-w-0 space-y-6">
               <div className="animate-fade-in-up opacity-0 animate-delay-3">
                 <EmailList emails={emails} />
               </div>
