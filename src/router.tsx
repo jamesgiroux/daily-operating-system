@@ -19,6 +19,7 @@ import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
 import { DashboardError } from "@/components/dashboard/DashboardError";
 import { useDashboardData } from "@/hooks/useDashboardData";
+import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
@@ -85,16 +86,17 @@ function RootLayout() {
 // Dashboard page content
 function DashboardPage() {
   const { state, refresh } = useDashboardData();
+  const { runNow } = useWorkflow();
 
   switch (state.status) {
     case "loading":
       return <DashboardSkeleton />;
     case "empty":
-      return <DashboardEmpty message={state.message} />;
+      return <DashboardEmpty message={state.message} onGenerate={runNow} />;
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
-      return <Dashboard data={state.data} />;
+      return <Dashboard data={state.data} freshness={state.freshness} />;
   }
 }
 
