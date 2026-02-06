@@ -73,15 +73,17 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         event.kind,
                         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
                     ) {
-                        // Filter to only .md files if paths are available
-                        let dominated_by_md = event.paths.is_empty()
+                        // Filter out hidden/temp files, accept all others.
+                        // The inbox pipeline handles .md, .txt, .vtt, .srt, and more.
+                        let dominated_by_relevant = event.paths.is_empty()
                             || event.paths.iter().any(|p| {
-                                p.extension()
-                                    .map(|ext| ext == "md")
+                                p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .map(|n| !n.starts_with('.'))
                                     .unwrap_or(false)
                             });
 
-                        if dominated_by_md {
+                        if dominated_by_relevant {
                             let _ = tx.try_send(());
                         }
                     }

@@ -214,8 +214,7 @@ fn should_poll(state: &AppState) -> bool {
         None => (8, 18),
     };
 
-    let now_hour = Utc::now().hour() as u8;
-    // Simple UTC check — good enough for MVP. TZ-aware version later.
+    let now_hour = chrono::Local::now().hour() as u8;
     now_hour >= start_hour && now_hour < end_hour
 }
 
