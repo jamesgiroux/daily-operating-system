@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useInbox } from "@/hooks/useInbox";
-import type { InboxFile } from "@/types";
+import type { InboxFile, InboxFileType } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -15,12 +15,14 @@ import {
   Calendar,
   CheckSquare,
   ChevronDown,
-  ChevronRight,
+  Database,
   Download,
+  FileSpreadsheet,
   FileText,
+  Image,
   Lightbulb,
+  Loader2,
   RefreshCw,
-  X,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -53,58 +55,63 @@ interface ProcessingResultPayload {
 }
 
 // =============================================================================
-// File classification (display-side, mirrors Rust classifier patterns)
+// File classification
 // =============================================================================
 
 interface FileClassification {
-  type: "meeting" | "actions" | "account" | "context" | "unknown";
+  type: string;
   label: string;
   icon: LucideIcon;
-  borderClass: string;
 }
 
-const classifications: Record<FileClassification["type"], Omit<FileClassification, "type">> = {
-  meeting:  { label: "Meeting Notes", icon: Calendar,    borderClass: "border-l-primary" },
-  actions:  { label: "Action Items",  icon: CheckSquare, borderClass: "border-l-success" },
-  account:  { label: "Account",       icon: Building2,   borderClass: "border-l-primary" },
-  context:  { label: "Context",       icon: Lightbulb,   borderClass: "border-l-muted-foreground/30" },
-  unknown:  { label: "File",          icon: FileText,    borderClass: "" },
+const fileTypeClassifications: Record<string, Omit<FileClassification, "type">> = {
+  image:       { label: "Image",       icon: Image },
+  spreadsheet: { label: "Spreadsheet", icon: FileSpreadsheet },
+  document:    { label: "Document",    icon: FileText },
+  data:        { label: "Data",        icon: Database },
+  text:        { label: "Text",        icon: FileText },
+  other:       { label: "File",        icon: FileText },
 };
 
-function classifyByFilename(filename: string): FileClassification {
-  const lower = filename.toLowerCase();
-  let type: FileClassification["type"] = "unknown";
+const mdClassifications: Record<string, Omit<FileClassification, "type">> = {
+  meeting:  { label: "Meeting Notes", icon: Calendar },
+  actions:  { label: "Actions",       icon: CheckSquare },
+  account:  { label: "Account",       icon: Building2 },
+  context:  { label: "Context",       icon: Lightbulb },
+};
 
-  if (lower.includes("meeting") || lower.includes("notes") || lower.includes("sync") || lower.includes("standup")) {
-    type = "meeting";
-  } else if (lower.includes("action") || lower.includes("todo") || lower.includes("task")) {
-    type = "actions";
-  } else if (lower.includes("account") || lower.includes("dashboard") || lower.includes("customer")) {
-    type = "account";
-  } else if (lower.includes("context") || lower.includes("brief") || lower.includes("prep")) {
-    type = "context";
+function classifyFile(file: InboxFile): FileClassification {
+  const fileType: InboxFileType = file.fileType ?? "other";
+
+  if (fileType !== "markdown") {
+    const cls = fileTypeClassifications[fileType] ?? fileTypeClassifications.other;
+    return { type: fileType, ...cls };
   }
 
-  return { type, ...classifications[type] };
+  const lower = file.filename.toLowerCase();
+  let mdType = "markdown";
+
+  if (lower.includes("meeting") || lower.includes("notes") || lower.includes("sync") || lower.includes("standup")) {
+    mdType = "meeting";
+  } else if (lower.includes("action") || lower.includes("todo") || lower.includes("task")) {
+    mdType = "actions";
+  } else if (lower.includes("account") || lower.includes("dashboard") || lower.includes("customer")) {
+    mdType = "account";
+  } else if (lower.includes("context") || lower.includes("brief") || lower.includes("prep")) {
+    mdType = "context";
+  }
+
+  const cls = mdClassifications[mdType] ?? { label: "Markdown", icon: FileText };
+  return { type: mdType, ...cls };
 }
 
-/** Turn `acme-corp-meeting-notes-2026-02-05.md` into `Acme Corp Meeting Notes` */
 function humanizeFilename(filename: string): string {
-  // Strip extension
-  const base = filename.replace(/\.md$/i, "");
-  // Strip trailing date patterns (YYYY-MM-DD, YYYYMMDD)
+  const base = filename.replace(/\.(md|txt|csv|tsv|json|yaml|yml|xml|toml|xlsx|xls|docx|doc|pdf|rtf|png|jpg|jpeg|gif|webp|svg|heic|numbers|pages|ods|odt)$/i, "");
   const withoutDate = base.replace(/[-_]?\d{4}[-_]?\d{2}[-_]?\d{2}$/, "");
-  // Replace hyphens/underscores with spaces, title-case
   return (withoutDate || base)
     .replace(/[-_]+/g, " ")
     .trim()
     .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatModified(isoDate: string): string {
@@ -258,11 +265,10 @@ export default function InboxPage() {
   }, [files, getFileState, updateFileState]);
 
   // ---------------------------------------------------------------------------
-  // Expand / collapse — click the card
+  // Expand / collapse
   // ---------------------------------------------------------------------------
   const toggleExpand = useCallback(
     async (filename: string) => {
-      // Read current state directly to avoid stale closure
       const current = fileStates[filename] ?? defaultFileState;
 
       if (current.expanded) {
@@ -270,13 +276,11 @@ export default function InboxPage() {
         return;
       }
 
-      // If we already have content, just expand
       if (current.content) {
         updateFileState(filename, { expanded: true });
         return;
       }
 
-      // Load content
       updateFileState(filename, { expanded: true, loadingContent: true });
       try {
         const content = await invoke<string>("get_inbox_file_content", { filename });
@@ -292,7 +296,7 @@ export default function InboxPage() {
   );
 
   // ---------------------------------------------------------------------------
-  // Process single file: quick classify → AI enrich if needed
+  // Process single file
   // ---------------------------------------------------------------------------
   const processFile = useCallback(
     async (filename: string) => {
@@ -355,7 +359,7 @@ export default function InboxPage() {
   );
 
   // ---------------------------------------------------------------------------
-  // Process all: batch classify → AI enrich remainders sequentially
+  // Process all
   // ---------------------------------------------------------------------------
   const processAll = useCallback(async () => {
     setProcessingAll(true);
@@ -450,32 +454,33 @@ export default function InboxPage() {
   }, [files, updateFileState, refresh]);
 
   // ---------------------------------------------------------------------------
-  // Derived state
+  // Derived
   // ---------------------------------------------------------------------------
+  const visibleFiles = files.filter(
+    (f) => getFileState(f.filename).status !== "processed"
+  );
   const processingCount = files.filter(
     (f) => getFileState(f.filename).status === "processing"
   ).length;
   const allProcessing = processingCount === files.length && files.length > 0;
 
   // ---------------------------------------------------------------------------
-  // Loading state
+  // Loading
   // ---------------------------------------------------------------------------
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
+        <div className="mb-8 space-y-2">
           <Skeleton className="h-8 w-32" />
           <Skeleton className="h-4 w-48" />
         </div>
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="flex gap-4 rounded-lg border p-5">
-              <Skeleton className="size-10 shrink-0 rounded-lg" />
-              <div className="flex-1 space-y-2">
-                <Skeleton className="h-5 w-48" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-3 w-24" />
-              </div>
+        <div className="space-y-0 divide-y rounded-lg border">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3">
+              <Skeleton className="size-5 shrink-0 rounded" />
+              <Skeleton className="h-4 w-40" />
+              <div className="flex-1" />
+              <Skeleton className="h-3 w-16" />
             </div>
           ))}
         </div>
@@ -484,7 +489,7 @@ export default function InboxPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Error state
+  // Error
   // ---------------------------------------------------------------------------
   if (error) {
     return (
@@ -502,7 +507,49 @@ export default function InboxPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Render
+  // Empty state — the drop zone IS the page
+  // ---------------------------------------------------------------------------
+  if (files.length === 0) {
+    return (
+      <main className="flex-1 overflow-hidden">
+        <div className="p-6">
+          <div className="mb-8">
+            <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Files dropped here get picked up by DailyOS
+            </p>
+          </div>
+
+          <div
+            className={cn(
+              "flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center transition-all",
+              isDragging
+                ? "border-primary bg-accent/50"
+                : "border-border"
+            )}
+          >
+            <Download
+              className={cn(
+                "mb-3 size-10",
+                isDragging ? "text-primary" : "text-muted-foreground/20"
+              )}
+            />
+            <p className="font-medium">
+              {isDragging ? "Drop files here" : "Inbox is clear"}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isDragging
+                ? "Files will be copied to your inbox"
+                : "Drag files here or drop them into _inbox/"}
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // File list
   // ---------------------------------------------------------------------------
   return (
     <main className="flex-1 overflow-hidden">
@@ -516,85 +563,20 @@ export default function InboxPage() {
             </div>
           )}
 
-          {/* Header */}
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-              <p className="text-sm text-muted-foreground">
-                {processingAll
-                  ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
-                  : files.length > 0
-                    ? `${files.length} file${files.length === 1 ? "" : "s"} to process`
-                    : "Files dropped here get picked up by DailyOS"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {processingAll ? (
-                <Button variant="outline" size="sm" onClick={cancelAll}>
-                  <X className="mr-1.5 size-3.5" />
-                  Cancel
-                </Button>
-              ) : (
-                files.length > 0 && (
-                  <Button variant="outline" size="sm" onClick={processAll}>
-                    <Zap className="mr-1.5 size-3.5" />
-                    Process All
-                  </Button>
-                )
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                onClick={handleRefresh}
-                disabled={refreshing || processingAll}
-              >
-                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-              </Button>
-            </div>
-          </div>
-
-          {/* Drop zone — always visible above files */}
-          {files.length > 0 && (
-            <div
-              className={cn(
-                "mb-4 flex items-center justify-center gap-2 rounded-lg border-2 border-dashed py-3 text-sm transition-all",
-                isDragging
-                  ? "border-primary bg-accent/50 py-8 text-primary"
-                  : "border-border/40 text-muted-foreground/40"
-              )}
-            >
-              <Download className="size-4" />
-              {isDragging ? "Drop to add" : "Drop files to add"}
-            </div>
-          )}
-
-          {/* Processing banner */}
-          {allProcessing && (
-            <Card className="mb-4">
-              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
-                <div className="mb-4 h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-                  <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
-                </div>
-                <p className="text-sm text-muted-foreground">{processingQuote}</p>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Result banner */}
           {resultBanner && !processingAll && (
-            <div className="mb-4 flex items-center justify-between rounded-md border bg-muted/50 px-4 py-3">
+            <div className="mb-4 flex items-center justify-between rounded-md border bg-muted/50 px-4 py-2.5">
               <div className="flex items-center gap-4 text-sm">
                 {resultBanner.routed > 0 && (
                   <span className="text-success">
-                    {resultBanner.routed} file{resultBanner.routed === 1 ? "" : "s"} processed
+                    {resultBanner.routed} processed
                   </span>
                 )}
                 {resultBanner.errors > 0 && (
                   <span className="text-destructive">{resultBanner.errors} failed</span>
                 )}
                 {resultBanner.routed === 0 && resultBanner.errors === 0 && (
-                  <span className="text-muted-foreground">No files to process</span>
+                  <span className="text-muted-foreground">Nothing to process</span>
                 )}
               </div>
               <button
@@ -606,50 +588,79 @@ export default function InboxPage() {
             </div>
           )}
 
-          {/* File list / empty state */}
-          {files.length === 0 ? (
-            <div
-              className={cn(
-                "flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-16 text-center transition-all",
-                isDragging
-                  ? "border-primary bg-accent/50"
-                  : "border-border bg-card"
-              )}
-            >
-              <Download
-                className={cn(
-                  "mb-4 size-12",
-                  isDragging ? "text-primary" : "text-muted-foreground/30"
-                )}
-              />
-              <p className="text-lg font-medium">
-                {isDragging ? "Drop files here" : "Inbox is clear"}
-              </p>
+          {/* Header */}
+          <div className="mb-6 flex items-end justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {isDragging
-                  ? "Files will be copied to your inbox for processing"
-                  : "Drag files here or drop them into _inbox/"}
+                {processingAll
+                  ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
+                  : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`}
               </p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {files.map((file) => {
-                const state = getFileState(file.filename);
-                if (state.status === "processed") return null;
-                return (
-                  <InboxFileCard
-                    key={file.filename}
-                    file={file}
-                    state={state}
-                    processingAll={processingAll}
-                    onToggleExpand={() => toggleExpand(file.filename)}
-                    onProcess={() => processFile(file.filename)}
-                    onCancel={() => cancelFile(file.filename)}
-                  />
-                );
-              })}
+            <div className="flex items-center gap-1.5">
+              {processingAll ? (
+                <Button variant="ghost" size="sm" onClick={cancelAll} className="h-8 text-xs">
+                  Cancel
+                </Button>
+              ) : (
+                visibleFiles.length > 0 && (
+                  <Button variant="ghost" size="sm" onClick={processAll} className="h-8 text-xs">
+                    <Zap className="mr-1 size-3.5" />
+                    Process All
+                  </Button>
+                )
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                onClick={handleRefresh}
+                disabled={refreshing || processingAll}
+              >
+                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+              </Button>
+            </div>
+          </div>
+
+          {/* Drop zone */}
+          <div
+            className={cn(
+              "mb-5 flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-card py-8 text-sm transition-all",
+              isDragging
+                ? "border-primary bg-accent/60 text-primary"
+                : "text-muted-foreground"
+            )}
+          >
+            <Download className={cn("size-5", isDragging ? "text-primary" : "text-muted-foreground/40")} />
+            <span>{isDragging ? "Drop to add" : "Drop files here"}</span>
+          </div>
+
+          {/* Batch processing banner */}
+          {allProcessing && (
+            <div className="mb-5 flex flex-col items-center py-6 text-center">
+              <div className="mb-3 h-1 w-40 overflow-hidden rounded-full bg-muted">
+                <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
+              </div>
+              <p className="text-sm text-muted-foreground">{processingQuote}</p>
             </div>
           )}
+
+          {/* File list — compact rows inside a single container */}
+          <div className="overflow-hidden rounded-lg border">
+            {visibleFiles.map((file, i) => (
+              <InboxRow
+                key={file.filename}
+                file={file}
+                state={getFileState(file.filename)}
+                processingAll={processingAll}
+                isLast={i === visibleFiles.length - 1}
+                onToggleExpand={() => toggleExpand(file.filename)}
+                onProcess={() => processFile(file.filename)}
+                onCancel={() => cancelFile(file.filename)}
+              />
+            ))}
+          </div>
         </div>
       </ScrollArea>
     </main>
@@ -657,13 +668,14 @@ export default function InboxPage() {
 }
 
 // =============================================================================
-// Inbox File Card — content-first design
+// Inbox Row — compact, scannable
 // =============================================================================
 
-function InboxFileCard({
+function InboxRow({
   file,
   state,
   processingAll,
+  isLast,
   onToggleExpand,
   onProcess,
   onCancel,
@@ -671,163 +683,137 @@ function InboxFileCard({
   file: InboxFile;
   state: FileState;
   processingAll: boolean;
+  isLast: boolean;
   onToggleExpand: () => void;
   onProcess: () => void;
   onCancel: () => void;
 }) {
   const isProcessing = state.status === "processing";
   const isError = state.status === "error";
-  const classification = classifyByFilename(file.filename);
+  const classification = classifyFile(file);
   const title = humanizeFilename(file.filename);
   const Icon = classification.icon;
-
-  const meta: string[] = [];
-  if (file.modified) meta.push(formatModified(file.modified));
-  if (file.sizeBytes) meta.push(formatFileSize(file.sizeBytes));
+  const time = file.modified ? formatModified(file.modified) : "";
 
   return (
-    <Card
-      className={cn(
-        "overflow-hidden transition-all",
-        !isProcessing && "hover:-translate-y-0.5 hover:shadow-md",
-        classification.borderClass && `border-l-4 ${classification.borderClass}`,
-      )}
-    >
-      <CardContent className="p-0">
-        {/* Clickable card body */}
+    <div className={cn(!isLast && !state.expanded && "border-b")}>
+      {/* Row — the main scannable line */}
+      <div className="group flex items-center gap-3 px-4 py-3">
+        {/* Icon */}
+        <Icon
+          className={cn(
+            "size-[18px] shrink-0",
+            isProcessing ? "text-primary" : "text-muted-foreground/50"
+          )}
+        />
+
+        {/* Expand toggle + title */}
         <button
           type="button"
           onClick={onToggleExpand}
           disabled={isProcessing}
-          className={cn(
-            "flex w-full items-start gap-4 p-5 text-left",
-            !isProcessing && "cursor-pointer",
-          )}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          {/* Icon */}
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-lg",
-              isProcessing
-                ? "animate-pulse bg-primary/10 text-primary"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            <Icon className="size-5" />
-          </div>
-
-          {/* Content */}
-          <div className="min-w-0 flex-1 space-y-1">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h3 className={cn(
-                  "font-medium leading-snug",
-                  isProcessing && "text-muted-foreground"
-                )}>
-                  {title}
-                </h3>
-                <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{classification.label}</span>
-                  {meta.length > 0 && (
-                    <>
-                      <span className="text-border">·</span>
-                      <span>{meta.join(" · ")}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Status badges — only for non-default states */}
-              <div className="flex shrink-0 items-center gap-2">
-                {isProcessing && (
-                  <Badge variant="default" className="text-xs">Processing</Badge>
-                )}
-                {isError && (
-                  <Badge variant="destructive" className="text-xs">Error</Badge>
-                )}
-                {state.expanded ? (
-                  <ChevronDown className="size-4 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="size-4 text-muted-foreground/40" />
-                )}
-              </div>
-            </div>
-
-            {/* Preview — always shown when collapsed, not processing */}
-            {!isProcessing && !state.expanded && file.preview && (
-              <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-                {file.preview}
-              </p>
-            )}
-          </div>
+          <span className={cn(
+            "truncate text-sm",
+            isProcessing && "text-muted-foreground",
+          )}>
+            {title}
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground/50">
+            {classification.label}
+          </span>
         </button>
 
-        {/* Action bar — outside the button to avoid nested interactives */}
-        <div className="flex items-center justify-between border-t px-5 py-2">
-          <span className="truncate text-xs text-muted-foreground/50 font-mono">
-            {file.filename}
-          </span>
-          <div className="flex shrink-0 gap-1">
-            {isProcessing ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => { e.stopPropagation(); onCancel(); }}
-                className="h-7 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <X className="mr-1 size-3" />
-                Cancel
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => { e.stopPropagation(); onProcess(); }}
-                disabled={state.status === "processed" || processingAll}
-                className="h-7 text-xs"
-              >
-                <Zap className="mr-1 size-3" />
-                Process
-              </Button>
+        {/* Right side: status / time / actions */}
+        <div className="flex shrink-0 items-center gap-2">
+          {isProcessing && (
+            <Loader2 className="size-3.5 animate-spin text-primary" />
+          )}
+
+          {isError && (
+            <Badge variant="destructive" className="h-5 text-[10px] px-1.5">Error</Badge>
+          )}
+
+          {!isProcessing && !isError && time && (
+            <span className="text-xs text-muted-foreground/40">{time}</span>
+          )}
+
+          {/* Process button — visible on hover or always on touch */}
+          {isProcessing ? (
+            <button
+              onClick={onCancel}
+              className="text-xs text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+            >
+              Cancel
+            </button>
+          ) : (
+            <button
+              onClick={(e) => { e.stopPropagation(); onProcess(); }}
+              disabled={processingAll}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-all",
+                "text-muted-foreground/50 hover:bg-muted hover:text-foreground",
+                "opacity-0 group-hover:opacity-100",
+                // Always visible on touch / when focused
+                "focus-visible:opacity-100",
+              )}
+            >
+              <Zap className="size-3" />
+              Process
+            </button>
+          )}
+
+          {/* Expand chevron */}
+          <ChevronDown
+            className={cn(
+              "size-3.5 text-muted-foreground/30 transition-transform",
+              state.expanded && "rotate-180"
             )}
-          </div>
+          />
         </div>
+      </div>
 
-        {/* Error message */}
-        {isError && state.error && (
-          <div className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive">
-            {state.error}
-          </div>
-        )}
+      {/* Error inline */}
+      {isError && state.error && (
+        <div className="border-t border-destructive/10 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+          {state.error}
+        </div>
+      )}
 
-        {/* Expanded content */}
-        {!isProcessing && state.expanded && (
-          <div className="border-t bg-muted/30 px-5 py-4">
-            {state.loadingContent ? (
-              <div className="space-y-2">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
+      {/* Expanded content */}
+      {!isProcessing && state.expanded && (
+        <div className={cn("border-t bg-muted/20 px-4 py-4", !isLast && "border-b")}>
+          {state.loadingContent ? (
+            <div className="space-y-2">
+              <Skeleton className="h-3.5 w-full" />
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3.5 w-1/2" />
+            </div>
+          ) : (
+            <>
+              {/* File metadata line */}
+              <div className="mb-3 flex items-center gap-3 text-xs text-muted-foreground/50">
+                <span className="font-mono">{file.filename}</span>
               </div>
-            ) : (
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-sm leading-relaxed text-muted-foreground">
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-muted-foreground">
                 {state.content
                   ? state.content.length > 2000
                     ? state.content.slice(0, 2000) + "\n\n... (truncated)"
                     : state.content
                   : "No content available."}
               </pre>
-            )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
+      )}
 
-        {/* Heartbeat progress bar */}
-        {isProcessing && (
-          <div className="h-1 w-full bg-muted">
-            <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      {/* Processing progress bar */}
+      {isProcessing && (
+        <div className="h-0.5 w-full bg-muted">
+          <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
+        </div>
+      )}
+    </div>
   );
 }
