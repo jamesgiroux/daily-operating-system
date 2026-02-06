@@ -3,7 +3,19 @@
  * Core type definitions for the DailyOS dashboard
  */
 
-export type MeetingType = "customer" | "internal" | "personal";
+export type ProfileType = "customer-success" | "general";
+
+export type MeetingType =
+  | "customer"
+  | "qbr"
+  | "training"
+  | "internal"
+  | "team_sync"
+  | "one_on_one"
+  | "partnership"
+  | "all_hands"
+  | "external"
+  | "personal";
 
 export type Priority = "P1" | "P2" | "P3";
 
@@ -74,6 +86,25 @@ export interface Action {
   daysOverdue?: number;
 }
 
+/** Action from SQLite database (cross-day persistence). */
+export interface DbAction {
+  id: string;
+  title: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+  dueDate?: string;
+  completedAt?: string;
+  accountId?: string;
+  projectId?: string;
+  sourceType?: string;
+  sourceId?: string;
+  sourceLabel?: string;
+  context?: string;
+  waitingOn?: string;
+  updatedAt: string;
+}
+
 export interface DayStats {
   totalMeetings: number;
   customerMeetings: number;
@@ -91,6 +122,14 @@ export interface Email {
   snippet?: string;
   priority: EmailPriority;
   avatarUrl?: string;
+}
+
+export interface InboxFile {
+  filename: string;
+  path: string;
+  sizeBytes: number;
+  modified: string;
+  preview?: string;
 }
 
 export interface DashboardData {
