@@ -100,28 +100,54 @@ def write_json(path: Path, data: Any) -> None:
 def extract_focus_from_markdown(today_dir: Path) -> Optional[str]:
     """Extract the primary focus from ``81-suggested-focus.md``.
 
-    Reads the first priority item's bold text as a one-line focus
-    summary.  This serves as a fallback when Phase 2 doesn't write
-    focus back to the directive's context block.
+    Uses a multi-strategy approach to handle varying Phase 2 output
+    formats:
+
+        1. Bold checkbox item: ``- [ ] **Do the thing**``
+        2. Plain checkbox item: ``- [ ] Do the thing (13 days overdue)``
+        3. Priority section header: ``## Priority 1: The Focus Area``
 
     Args:
         today_dir: Path to the ``_today`` directory.
 
     Returns:
         A short focus string, or None if the file doesn't exist or
-        no priority item is found.
+        no actionable item is found.
     """
     focus_path = today_dir / "81-suggested-focus.md"
     if not focus_path.exists():
         return None
     try:
         content = focus_path.read_text(encoding="utf-8")
-        for line in content.splitlines():
+        lines = content.splitlines()
+
+        # Strategy 1: First bold item in a checkbox
+        for line in lines:
             stripped = line.strip()
             if stripped.startswith("- [ ] **"):
                 match = re.search(r"\*\*(.+?)\*\*", stripped)
                 if match:
                     return match.group(1)
+
+        # Strategy 2: First unchecked checkbox item (plain text)
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("- [ ] "):
+                text = stripped[6:].strip()
+                # Clean common prefixes like "Address:"
+                text = re.sub(r"^Address:\s*", "", text)
+                # Strip trailing overdue metadata
+                text = re.sub(r"\s*\(\d+ days? overdue\)$", "", text)
+                if text:
+                    return text
+
+        # Strategy 3: First priority section header
+        for line in lines:
+            stripped = line.strip()
+            match = re.match(r"^## Priority \d+:\s*(.+)$", stripped)
+            if match:
+                return match.group(1).strip()
+
         return None
     except OSError:
         return None
