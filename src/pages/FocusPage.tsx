@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { FocusData, FocusPriority, TimeBlock } from "@/types";
+import { PageEmpty, PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
-  AlertCircle,
+  ArrowLeft,
   Target,
   Clock,
   Zap,
@@ -69,17 +71,22 @@ export default function FocusPage() {
     );
   }
 
-  if (error || !data) {
+  if (error) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error || "No focus data available."}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <main className="flex-1 overflow-hidden">
+        <PageError message={error} />
+      </main>
+    );
+  }
+
+  if (!data) {
+    return (
+      <main className="flex-1 overflow-hidden">
+        <PageEmpty
+          icon={Target}
+          title="No focus data yet"
+          message="Your focus priorities and time blocks will appear here after the daily briefing runs."
+        />
       </main>
     );
   }
@@ -89,8 +96,16 @@ export default function FocusPage() {
       <ScrollArea className="h-full">
         <div className="p-6">
           <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">Focus</h1>
-            <p className="text-sm text-muted-foreground">
+            <div className="flex items-center gap-3">
+              <Link
+                to="/"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="size-5" />
+              </Link>
+              <h1 className="text-2xl font-semibold tracking-tight">Focus</h1>
+            </div>
+            <p className="mt-1 ml-8 text-sm text-muted-foreground">
               Suggested priorities and time blocks for today
             </p>
           </div>

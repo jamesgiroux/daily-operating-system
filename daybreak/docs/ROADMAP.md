@@ -21,8 +21,9 @@
 | Phase | Name | Core Delivery | Key Features |
 |-------|------|---------------|--------------|
 | **Phase 1** | "Your day is ready" | Passive consumption | F1 Briefing, F7 Dashboard, F6 Tray, F3 Archive |
-| **Phase 2** | "Active processing" | Inbox automation | F4 Processing Queue |
-| **Phase 3** | "Intelligent prompts" | Event-driven UX | F2 Post-Meeting, F5 Weekly Planning |
+| **Phase 2** | "Active processing" | Inbox automation + post-enrichment | F4 Processing Queue, dashboard enrichment, action sync |
+| **Phase 3** | "Intelligent prompts" | Event-driven UX | Calendar awareness, post-meeting intelligence, weekly planning |
+| **Phase 4** | "Extensible platform" | Extensions + MCP | CS extension, ProDev extension, MCP server/client |
 
 ---
 
@@ -76,7 +77,20 @@ flowchart TB
         Dashboard --> WeeklyPlan
     end
 
-    Phase1 --> Phase2 --> Phase3
+    Phase1 --> Phase2 --> Phase3 --> Phase4
+
+    subgraph Phase4["PHASE 4: Extensible Platform"]
+        ExtReg["Extension Registry<br/>Module system"]
+        CSExt["CS Extension<br/>daily-csm as Rust module"]
+        ProDevExt["ProDev Extension<br/>Impact, coaching"]
+        MCPServer["MCP Server<br/>Expose tools/resources"]
+        MCPClient["MCP Client<br/>Clay, external services"]
+
+        ExtReg --> CSExt
+        ExtReg --> ProDevExt
+        ExtReg --> MCPServer
+        MCPServer --> MCPClient
+    end
 ```
 
 ---
@@ -179,6 +193,58 @@ flowchart TB
 
 ---
 
+## Phase 4: "Extensible Platform"
+
+**Goal:** Domain-specific features as extensions. MCP integration for AI-native automation.
+
+### Prerequisites
+
+- Phase 2 post-enrichment engine proven (dashboard updates, action sync working)
+- Phase 3 calendar + capture flows stable
+- Extension boundaries validated through CS and ProDev internal modules
+
+### Milestones
+
+| Milestone | Deliverable | Definition of Done |
+|-----------|-------------|-------------------|
+| **4.1 Extension Registry** | Internal module system | Extensions register hooks, schemas, UI contributions |
+| **4.2 Customer Success Extension** | daily-csm as Rust module | Dashboard refresh, action tracking, health monitoring, value capture, renewal countdown, portfolio triage — all working as post-enrichment hooks |
+| **4.3 Professional Development Extension** | Coaching + impact as opt-in module | Two-sided impact capture, coaching reflections, weekly/monthly roll-ups |
+| **4.4 MCP Server** | App exposes tools/resources via MCP | Claude Desktop can query briefing, actions, account data, meeting schedule |
+| **4.5 MCP Client** | App consumes external MCP services | Clay integration (contact notes, creation after meetings) |
+| **4.6 Dashboard JSON Schemas** | Structured document migration | Account dashboards as JSON with markdown views, mechanical updates working |
+
+### Phase 4 Acceptance Criteria
+
+- [ ] CS extension activates with CSM profile, deactivates with GA
+- [ ] Post-enrichment hooks update account dashboards without AI
+- [ ] Bidirectional action sync between SQLite and account markdown files
+- [ ] Impact capture distinguishes customer outcomes vs. personal impact
+- [ ] MCP server responds to resource/tool requests from Claude Desktop
+- [ ] Clay MCP client creates notes after customer meetings
+- [ ] Extension toggle in Settings (enable/disable per extension)
+
+### What's NOT in Phase 4
+
+- Public SDK / community plugin marketplace (Phase 5+)
+- Extension sandboxing / security model for untrusted code
+- Extension distribution or versioning
+- Non-Automattic MCP integrations (Slack, Linear, Notion)
+
+---
+
+### Future: Phase 5+ (Community Platform)
+
+Items captured for future consideration, not scheduled:
+
+- **Public Extension SDK** — Formalize internal extension contract into documented API
+- **Extension Marketplace** — Discovery, installation, updates for community extensions
+- **MCP Expansion** — Additional MCP server tools, broader client integrations
+- **Extension Sandboxing** — Security model for running untrusted extension code
+- **Cross-workspace** — Multiple workspaces, workspace templates, workspace sharing
+
+---
+
 ## Technical Milestones (Cross-Phase)
 
 ### Foundation (Before Phase 1)
@@ -236,11 +302,20 @@ flowchart TB
 | Calendar API rate limits | Cache calendar data, poll less frequently |
 | Weekly planning abandonment | Timeout with sensible defaults |
 
+### Phase 4 Risks
+
+| Risk | Mitigation |
+|------|------------|
+| Extension boundaries too rigid | Design hooks generically, validate with 2+ real extensions before formalizing |
+| MCP server security exposure | Localhost only, explicit consent for write tools, respect privacy levels |
+| JSON schema migration breaks existing dashboards | One-time migration script, keep markdown as fallback reader |
+| Extension overhead on startup | Lazy-load extensions, only init when profile/settings activate them |
+
 ---
 
 ## Decision Log
 
-See `RAIDD.md` for the canonical decision log (DEC1-DEC23).
+See `RAIDD.md` for the canonical decision log (DEC1-DEC28).
 
 ---
 

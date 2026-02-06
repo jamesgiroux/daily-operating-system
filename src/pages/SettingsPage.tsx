@@ -250,7 +250,7 @@ export default function SettingsPage() {
                   Trigger workflows manually without waiting for schedule
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex gap-3">
+              <CardContent className="flex flex-wrap gap-3">
                 <Button
                   onClick={() => handleRunWorkflow("today")}
                   disabled={running !== null}
@@ -261,6 +261,18 @@ export default function SettingsPage() {
                     <Play className="mr-2 size-4" />
                   )}
                   Run /today
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleRunWorkflow("week")}
+                  disabled={running !== null}
+                >
+                  {running === "week" ? (
+                    <RefreshCw className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Play className="mr-2 size-4" />
+                  )}
+                  Run /week
                 </Button>
                 <Button
                   variant="outline"
@@ -377,6 +389,16 @@ function CaptureSettingsCard() {
     }
   }
 
+  async function updateDelay(minutes: number) {
+    if (!captureConfig) return;
+    try {
+      await invoke("set_capture_delay", { delayMinutes: minutes });
+      setCaptureConfig({ ...captureConfig, delayMinutes: minutes });
+    } catch (err) {
+      console.error("Failed to update delay:", err);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -388,16 +410,16 @@ function CaptureSettingsCard() {
           Prompt for quick outcomes after customer meetings
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm">
               {captureConfig?.enabled ? "Enabled" : "Disabled"}
             </p>
             <p className="text-xs text-muted-foreground">
-              {captureConfig
-                ? `${captureConfig.delayMinutes} min delay, ${captureConfig.autoDismissSecs}s auto-dismiss`
-                : "Loading..."}
+              {captureConfig?.enabled
+                ? "Prompts appear after customer meetings end"
+                : "Post-meeting prompts are turned off"}
             </p>
           </div>
           <Button
@@ -409,6 +431,30 @@ function CaptureSettingsCard() {
             {captureConfig?.enabled ? "Disable" : "Enable"}
           </Button>
         </div>
+
+        {captureConfig?.enabled && (
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">Prompt delay</p>
+              <p className="text-xs text-muted-foreground">
+                Wait before showing the prompt
+              </p>
+            </div>
+            <div className="flex gap-1">
+              {[2, 5, 10].map((mins) => (
+                <Button
+                  key={mins}
+                  variant={captureConfig.delayMinutes === mins ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs"
+                  onClick={() => updateDelay(mins)}
+                >
+                  {mins}m
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
