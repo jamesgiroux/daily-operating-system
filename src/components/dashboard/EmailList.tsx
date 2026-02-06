@@ -1,10 +1,6 @@
-import { useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
-import { Archive, ChevronRight, Mail, RefreshCw } from "lucide-react";
+import { Archive, ChevronRight, Mail } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import type { Email } from "@/types";
 
 interface EmailListProps {
@@ -13,43 +9,17 @@ interface EmailListProps {
 }
 
 export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
-  const [scanning, setScanning] = useState(false);
-
   const highPriority = emails.filter((e) => e.priority === "high");
-  const normalPriority = emails.filter((e) => e.priority !== "high");
+  const otherPriority = emails.filter((e) => e.priority !== "high");
   const visibleEmails = highPriority.slice(0, maxVisible);
   const hiddenCount = highPriority.length - visibleEmails.length;
-
-  const handleScanEmails = useCallback(async () => {
-    setScanning(true);
-    try {
-      await invoke("run_workflow", { workflow: "email_scan" });
-    } catch {
-      // Workflow may not be registered yet — silent for now
-    } finally {
-      // Keep spinner for a few seconds so user sees feedback
-      setTimeout(() => setScanning(false), 3000);
-    }
-  }, []);
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-medium">
-            Emails
-          </CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-xs text-muted-foreground"
-            onClick={handleScanEmails}
-            disabled={scanning}
-          >
-            <RefreshCw className={cn("size-3", scanning && "animate-spin")} />
-            {scanning ? "Scanning..." : "Scan"}
-          </Button>
-        </div>
+        <CardTitle className="text-base font-medium">
+          Emails
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {highPriority.length === 0 ? (
@@ -57,20 +27,9 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
             <Mail className="mb-2 size-8 text-muted-foreground/50" />
             <p className="text-sm text-muted-foreground">
               {emails.length === 0
-                ? "No emails scanned yet"
+                ? "No email data yet"
                 : "Nothing needs attention"}
             </p>
-            {emails.length === 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="mt-2 h-7 text-xs"
-                onClick={handleScanEmails}
-                disabled={scanning}
-              >
-                {scanning ? "Scanning..." : "Run email scan"}
-              </Button>
-            )}
           </div>
         ) : (
           <div className="space-y-1">
@@ -88,13 +47,13 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
               </Link>
             )}
 
-            {normalPriority.length > 0 && (
+            {otherPriority.length > 0 && (
               <Link
                 to="/emails"
                 className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 <Archive className="size-3" />
-                {normalPriority.length} lower priority reviewed
+                {otherPriority.length} lower priority reviewed
                 <ChevronRight className="size-3" />
               </Link>
             )}
@@ -121,11 +80,19 @@ function EmailItem({ email }: { email: Email }) {
             {email.subject}
           </p>
         )}
-        {email.snippet && (
+        {email.recommendedAction ? (
+          <p className="mt-0.5 text-xs font-medium text-primary/80 truncate">
+            → {email.recommendedAction}
+          </p>
+        ) : email.summary ? (
+          <p className="mt-0.5 text-xs text-muted-foreground/60 truncate">
+            {email.summary}
+          </p>
+        ) : email.snippet ? (
           <p className="mt-0.5 text-xs text-muted-foreground/60 truncate">
             {email.snippet}
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );
