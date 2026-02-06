@@ -272,6 +272,76 @@ export interface ActionWithContext {
   isOverdue: boolean;
 }
 
+// =============================================================================
+// Google & Calendar Types (Phase 3.0 / 3A)
+// =============================================================================
+
+export type GoogleAuthStatus =
+  | { status: "notconfigured" }
+  | { status: "authenticated"; email: string }
+  | { status: "tokenexpired" };
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  type: MeetingType;
+  account?: string;
+  attendees: string[];
+  isAllDay: boolean;
+}
+
+// =============================================================================
+// Post-Meeting Capture Types (Phase 3B)
+// =============================================================================
+
+export interface PostMeetingCaptureConfig {
+  enabled: boolean;
+  delayMinutes: number;
+  autoDismissSecs: number;
+}
+
+export interface CapturedOutcome {
+  meetingId: string;
+  meetingTitle: string;
+  account?: string;
+  capturedAt: string;
+  wins: string[];
+  risks: string[];
+  actions: CapturedAction[];
+}
+
+export interface CapturedAction {
+  title: string;
+  owner?: string;
+  dueDate?: string;
+}
+
+// =============================================================================
+// Weekly Planning Types (Phase 3C)
+// =============================================================================
+
+export type WeekPlanningState =
+  | "notready"
+  | "dataready"
+  | "inprogress"
+  | "completed"
+  | "defaultsapplied";
+
+export interface FocusBlock {
+  day: string;
+  start: string;
+  end: string;
+  durationMinutes: number;
+  suggestedActivity: string;
+  selected: boolean;
+}
+
+// =============================================================================
+// Full Meeting Prep (from individual prep files)
+// =============================================================================
+
 export interface FullMeetingPrep {
   filePath: string;
   title: string;
