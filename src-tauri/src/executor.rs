@@ -449,21 +449,12 @@ impl Executor {
 
     /// Run post-processing after the today workflow completes.
     ///
-    /// 1. Generate JSON from markdown (dashboard data)
-    /// 2. Sync actions from JSON into SQLite
+    /// deliver_today.py (Phase 3) already writes _today/data/*.json, so no
+    /// separate JSON generation step is needed. We only sync actions to SQLite.
     ///
     /// Failures are logged as warnings but don't fail the workflow.
     fn run_post_processing(&self, workspace: &Path) {
-        // Step 1: Generate JSON
-        match crate::workflow::today::run_json_generation(workspace) {
-            Ok(()) => log::info!("Post-processing: JSON generation succeeded"),
-            Err(e) => {
-                log::warn!("Post-processing: JSON generation failed (non-fatal): {}", e);
-                return; // No point syncing to DB if JSON wasn't generated
-            }
-        }
-
-        // Step 2: Sync actions to SQLite
+        // Sync actions from _today/data/actions.json into SQLite
         if let Ok(db_guard) = self.state.db.lock() {
             if let Some(ref db) = *db_guard {
                 match crate::workflow::today::sync_actions_to_db(workspace, db) {
