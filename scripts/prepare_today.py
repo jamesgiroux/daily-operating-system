@@ -506,12 +506,16 @@ def classify_meeting(
         result["type"] = "personal"
         return result
 
-    # External attendees present -> customer or external
+    # External attendees present
     result["external_domains"] = sorted(external_domains)
 
     # Apply title override if set (e.g., QBR with external attendees)
     if title_override_type:
         result["type"] = title_override_type
+    elif attendee_count == 2:
+        # Exactly 2 people (you + one external) is a 1:1, not a customer call.
+        # Account matching downstream can still enrich it with customer context.
+        result["type"] = "one_on_one"
     else:
         # Default: customer (will be refined in meeting_contexts by account matching)
         result["type"] = "customer"
