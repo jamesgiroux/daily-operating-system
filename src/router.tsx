@@ -26,6 +26,7 @@ import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import EmailsPage from "@/pages/EmailsPage";
+import FocusPage from "@/pages/FocusPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
@@ -133,6 +134,12 @@ const emailsRoute = createRoute({
   component: EmailsPage,
 });
 
+const focusRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/focus",
+  component: FocusPage,
+});
+
 const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/$prepFile",
@@ -163,6 +170,7 @@ const routeTree = rootRoute.addChildren([
   accountsRoute,
   actionsRoute,
   emailsRoute,
+  focusRoute,
   inboxRoute,
   meetingDetailRoute,
   projectsRoute,

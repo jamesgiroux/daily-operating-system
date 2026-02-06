@@ -1,19 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { WeekOverview, WeekDay, WeekMeeting, PrepStatus, AlertSeverity } from "@/types";
+
+import type { WeekOverview, WeekDay, WeekMeeting, TimeBlock, PrepStatus, AlertSeverity } from "@/types";
 import { cn } from "@/lib/utils";
 import {
-  AlertCircle,
   Calendar,
   CheckCircle,
+  Check,
   Clock,
   FileText,
+  ListChecks,
+  Play,
+  RefreshCw,
   Users,
   AlertTriangle,
+  Focus,
+  Sparkles,
+  Database,
+  Wand2,
+  Package,
 } from "lucide-react";
 
 interface WeekResult {
@@ -38,29 +49,152 @@ const severityStyles: Record<AlertSeverity, string> = {
   info: "border-l-muted-foreground",
 };
 
+type WorkflowPhase = "preparing" | "enriching" | "delivering";
+
+const phaseSteps: { key: WorkflowPhase; label: string; icon: typeof Database }[] = [
+  { key: "preparing", label: "Prepare", icon: Database },
+  { key: "enriching", label: "Enrich", icon: Wand2 },
+  { key: "delivering", label: "Deliver", icon: Package },
+];
+
+// I4: Motivational quotes as personality layer
+// Shuffled on each workflow run to keep it fresh
+const waitingMessages = [
+  `"You miss 100% of the shots you don't take." — Wayne Gretzky — Michael Scott`,
+  "Combobulating your priorities...",
+  "In a van, down by the river, preparing your week...",
+  `"The secret of getting ahead is getting started." — Mark Twain`,
+  "Manifesting your best week yet...",
+  "Teaching the AI about your calendar...",
+  `"It's not the load that breaks you down, it's the way you carry it." — Lou Holtz`,
+  "Consulting the schedule oracle...",
+  "Crunching context like it owes us money...",
+  `"Preparation is the key to success." — Alexander Graham Bell`,
+  "Cross-referencing all the things...",
+  "Making meetings make sense since 2025...",
+  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
+  "Synthesizing the week ahead...",
+  "Turning chaos into calendar clarity...",
+  `"The best time to plant a tree was 20 years ago. The second best time is now."`,
+  "Pondering your meetings with great intensity...",
+  "Almost done thinking about thinking...",
+  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
+  "Polishing the details...",
+];
+
 export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<WorkflowPhase | null>(null);
 
-  useEffect(() => {
-    async function loadWeek() {
-      try {
-        const result = await invoke<WeekResult>("get_week_data");
-        if (result.status === "success" && result.data) {
-          setData(result.data);
-        } else if (result.status === "not_found") {
-          setError(result.message || "No week overview found");
-        } else if (result.status === "error") {
-          setError(result.message || "Failed to load week data");
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
+  const loadWeek = useCallback(async () => {
+    try {
+      const result = await invoke<WeekResult>("get_week_data");
+      if (result.status === "success" && result.data) {
+        setData(result.data);
+        setError(null);
+      } else if (result.status === "not_found") {
+        setData(null);
+      } else if (result.status === "error") {
+        setError(result.message || "Failed to load week data");
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
     }
+  }, []);
+
+  // On mount: load data + check if workflow is already running (walk-away support)
+  useEffect(() => {
     loadWeek();
+
+    // Check if the week workflow is already in progress (user navigated away and back)
+    invoke<{
+      status: string;
+      phase?: WorkflowPhase;
+    }>("get_workflow_status", { workflow: "week" })
+      .then((status) => {
+        if (status.status === "running") {
+          setRunning(true);
+          setPhase(status.phase ?? "preparing");
+        }
+      })
+      .catch(() => {});
+  }, [loadWeek]);
+
+  // Poll workflow status while running
+  useEffect(() => {
+    if (!running) return;
+
+    // Track whether we've seen the workflow actually start.
+    // The first polls may return stale status before the executor picks up the message.
+    let sawRunning = false;
+
+    const interval = setInterval(async () => {
+      try {
+        const status = await invoke<{
+          status: string;
+          phase?: WorkflowPhase;
+          error?: { message: string; recoverySuggestion: string };
+        }>("get_workflow_status", { workflow: "week" });
+
+        if (status.status === "running") {
+          sawRunning = true;
+          if (status.phase) setPhase(status.phase);
+        } else if (status.status === "completed" && sawRunning) {
+          clearInterval(interval);
+          setRunning(false);
+          setPhase(null);
+          loadWeek();
+        } else if (status.status === "failed" && sawRunning) {
+          clearInterval(interval);
+          setRunning(false);
+          setPhase(null);
+          const msg = status.error?.message || "Week workflow failed";
+          const hint = status.error?.recoverySuggestion;
+          setError(hint ? `${msg}\n${hint}` : msg);
+        } else if (status.status === "idle" && sawRunning) {
+          clearInterval(interval);
+          setRunning(false);
+          setPhase(null);
+          loadWeek();
+        }
+        // If !sawRunning, any status is stale from a previous run — keep polling
+      } catch {
+        // Ignore polling errors
+      }
+    }, 1000);
+
+    // Safety timeout: if nothing happens after 5 minutes, stop polling
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setRunning(false);
+      setPhase(null);
+      setError("Week workflow timed out. Check Settings for workflow status.");
+    }, 300_000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [running, loadWeek]);
+
+  const handleRunWeek = useCallback(async () => {
+    setRunning(true);
+    setError(null);
+    try {
+      await invoke("run_workflow", { workflow: "week" });
+    } catch (err) {
+      setRunning(false);
+      setError(err instanceof Error ? err.message : "Failed to queue week workflow");
+    }
+  }, []);
+
+  const handleOpenWizard = useCallback(() => {
+    emit("show-week-wizard");
   }, []);
 
   if (loading) {
@@ -79,17 +213,51 @@ export default function WeekPage() {
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error || "No week data available. Run /week to generate."}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <main className="flex-1 overflow-hidden">
+        <div className="flex h-full flex-col items-center justify-center text-center">
+          {running ? (
+            <WorkflowProgress phase={phase ?? "preparing"} />
+          ) : (
+            <>
+              <Calendar className="mb-4 size-12 text-muted-foreground/30" />
+              <p className="text-lg font-medium">No week overview yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Run the week workflow to generate your weekly overview with meetings, actions, and focus blocks.
+              </p>
+              <Button
+                className="mt-4 gap-1.5"
+                onClick={handleRunWeek}
+              >
+                <Play className="size-3.5" />
+                Run /week
+              </Button>
+            </>
+          )}
+          {error && (
+            <Card className="mt-6 max-w-md border-destructive text-left">
+              <CardContent className="pt-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                  <div className="min-w-0 space-y-1">
+                    {error.split("\n").map((line, i) => (
+                      <p
+                        key={i}
+                        className={cn(
+                          "text-sm",
+                          i === 0 ? "text-destructive" : "text-muted-foreground"
+                        )}
+                      >
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </main>
     );
   }
@@ -99,17 +267,54 @@ export default function WeekPage() {
       <ScrollArea className="h-full">
         <div className="p-6">
           {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Week {data.weekNumber}
-            </h1>
-            <p className="text-sm text-muted-foreground">{data.dateRange}</p>
+          <div className="mb-6 flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Week {data.weekNumber}
+              </h1>
+              <p className="text-sm text-muted-foreground">{data.dateRange}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleOpenWizard}
+              >
+                <ListChecks className="size-3.5" />
+                Plan this week
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleRunWeek}
+                disabled={running}
+              >
+                {running ? (
+                  <RefreshCw className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                {running
+                  ? phase
+                    ? phaseSteps.find((s) => s.key === phase)?.label ?? "Running..."
+                    : "Running..."
+                  : "Refresh"}
+              </Button>
+            </div>
           </div>
 
           {/* Week calendar grid */}
           <div className="mb-8 grid grid-cols-5 gap-3">
             {data.days.map((day) => (
-              <DayColumn key={day.dayName} day={day} />
+              <DayColumn
+                key={day.dayName}
+                day={day}
+                timeBlocks={data.availableTimeBlocks?.filter(
+                  (b) => b.day === day.dayName
+                )}
+              />
             ))}
           </div>
 
@@ -156,7 +361,7 @@ export default function WeekPage() {
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
-                    <AlertCircle className="size-4 text-destructive" />
+                    <AlertTriangle className="size-4 text-destructive" />
                     Hygiene Alerts
                   </CardTitle>
                 </CardHeader>
@@ -209,7 +414,13 @@ export default function WeekPage() {
   );
 }
 
-function DayColumn({ day }: { day: WeekDay }) {
+function DayColumn({
+  day,
+  timeBlocks,
+}: {
+  day: WeekDay;
+  timeBlocks?: TimeBlock[];
+}) {
   const today = new Date().toLocaleDateString("en-US", { weekday: "short" });
   const isToday = day.dayName.toLowerCase().startsWith(today.toLowerCase());
 
@@ -239,6 +450,25 @@ function DayColumn({ day }: { day: WeekDay }) {
           ))
         )}
       </div>
+      {/* Focus time blocks */}
+      {timeBlocks && timeBlocks.length > 0 && (
+        <div className="mt-3 space-y-1.5 border-t pt-3">
+          {timeBlocks.map((block, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-1.5 rounded-md bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground"
+            >
+              <Focus className="size-3 shrink-0" />
+              <span className="truncate">
+                {block.suggestedUse || "Focus"}{" "}
+                <span className="font-mono text-[0.65rem] opacity-60">
+                  {block.start}–{block.end}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -259,6 +489,107 @@ function WeekMeetingCard({ meeting }: { meeting: WeekMeeting }) {
       <div className={cn("mt-1 flex items-center gap-1", config.color)}>
         <Icon className="size-3" />
         <span>{config.label}</span>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowProgress({ phase }: { phase: WorkflowPhase }) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const startTime = useRef(Date.now());
+  // Shuffle messages once on mount so repeat runs feel different
+  const messages = useRef(
+    [...waitingMessages].sort(() => Math.random() - 0.5)
+  );
+
+  const currentStepIndex = phaseSteps.findIndex((s) => s.key === phase);
+
+  // Rotate messages every 6 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMessageIndex((i) => (i + 1) % messages.current.length);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Elapsed time counter
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatElapsed = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  };
+
+  return (
+    <div className="flex flex-col items-center gap-6">
+      <Sparkles className="size-10 text-primary animate-pulse" />
+
+      {/* Phase steps */}
+      <div className="flex items-center gap-2">
+        {phaseSteps.map((step, i) => {
+          const StepIcon = step.icon;
+          const isComplete = i < currentStepIndex;
+          const isCurrent = i === currentStepIndex;
+
+          return (
+            <div key={step.key} className="flex items-center gap-2">
+              {i > 0 && (
+                <div
+                  className={cn(
+                    "h-px w-8",
+                    i <= currentStepIndex ? "bg-primary" : "bg-border"
+                  )}
+                />
+              )}
+              <div className="flex flex-col items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-full border-2 transition-colors",
+                    isComplete && "border-primary bg-primary text-primary-foreground",
+                    isCurrent && "border-primary bg-primary/10 text-primary",
+                    !isComplete && !isCurrent && "border-border text-muted-foreground"
+                  )}
+                >
+                  {isComplete ? (
+                    <Check className="size-4" />
+                  ) : (
+                    <StepIcon className={cn("size-4", isCurrent && "animate-pulse")} />
+                  )}
+                </div>
+                <span
+                  className={cn(
+                    "text-xs font-medium",
+                    isCurrent ? "text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  {step.label}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Rotating message */}
+      <p className="max-w-md text-sm italic text-muted-foreground">
+        {messages.current[messageIndex]}
+      </p>
+
+      {/* Elapsed time + reassurance */}
+      <div className="space-y-1 text-center">
+        <p className="font-mono text-xs text-muted-foreground/60">
+          {formatElapsed(elapsed)}
+        </p>
+        <p className="text-xs text-muted-foreground/50">
+          This runs in the background — feel free to navigate away
+        </p>
       </div>
     </div>
   );
