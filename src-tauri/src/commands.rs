@@ -810,14 +810,31 @@ pub fn get_meeting_history(
 // Phase 3.0: Google Auth Commands
 // =============================================================================
 
-/// Get current Google authentication status
+/// Get current Google authentication status.
+///
+/// Re-checks the token file on disk when the cached state is NotConfigured,
+/// so the UI picks up tokens written by external flows (e.g. manual auth).
 #[tauri::command]
 pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
-    state
+    let cached = state
         .google_auth
         .lock()
         .map(|guard| guard.clone())
-        .unwrap_or(GoogleAuthStatus::NotConfigured)
+        .unwrap_or(GoogleAuthStatus::NotConfigured);
+
+    // If cached state says not configured, re-check disk — token may have
+    // been written by a script or the browser auth flow completing late.
+    if matches!(cached, GoogleAuthStatus::NotConfigured) {
+        let fresh = crate::state::detect_google_auth();
+        if matches!(fresh, GoogleAuthStatus::Authenticated { .. }) {
+            if let Ok(mut guard) = state.google_auth.lock() {
+                *guard = fresh.clone();
+            }
+            return fresh;
+        }
+    }
+
+    cached
 }
 
 /// Start Google OAuth flow

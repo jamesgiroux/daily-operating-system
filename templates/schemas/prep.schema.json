@@ -2,18 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dailyos.dev/schemas/prep.json",
   "title": "DailyOS Meeting Prep",
-  "description": "Full meeting preparation document",
+  "description": "Full meeting preparation document. Keys use camelCase to match Rust serde(rename_all = camelCase).",
   "type": "object",
-  "required": ["meeting_id", "title", "type"],
+  "required": ["meetingId", "title", "type"],
   "properties": {
-    "meeting_id": {
+    "meetingId": {
       "type": "string",
       "description": "Unique identifier matching schedule"
     },
     "title": {
       "type": "string"
     },
-    "time_range": {
+    "timeRange": {
       "type": "string",
       "description": "e.g., 9:00 AM - 9:45 AM"
     },
@@ -24,11 +24,11 @@
     "account": {
       "type": "string"
     },
-    "meeting_context": {
+    "meetingContext": {
       "type": "string",
       "description": "Narrative context paragraph"
     },
-    "quick_context": {
+    "quickContext": {
       "type": "object",
       "additionalProperties": { "type": "string" },
       "description": "Key-value pairs (Ring, ARR, Health, etc.)"
@@ -37,17 +37,17 @@
       "type": "array",
       "items": { "$ref": "#/$defs/stakeholder" }
     },
-    "since_last": {
+    "sinceLast": {
       "type": "array",
       "items": { "type": "string" },
       "description": "What happened since last meeting"
     },
-    "strategic_programs": {
+    "strategicPrograms": {
       "type": "array",
       "items": { "$ref": "#/$defs/program" },
       "description": "Current strategic initiatives"
     },
-    "current_state": {
+    "currentState": {
       "type": "array",
       "items": { "type": "string" },
       "description": "Current status points"
@@ -57,12 +57,12 @@
       "items": { "type": "string" },
       "description": "Risks to monitor"
     },
-    "talking_points": {
+    "talkingPoints": {
       "type": "array",
       "items": { "type": "string" },
       "description": "Suggested conversation points"
     },
-    "open_items": {
+    "openItems": {
       "type": "array",
       "items": { "$ref": "#/$defs/actionItem" },
       "description": "Open action items to discuss"
@@ -72,7 +72,7 @@
       "items": { "type": "string" },
       "description": "Questions to surface"
     },
-    "key_principles": {
+    "keyPrinciples": {
       "type": "array",
       "items": { "type": "string" },
       "description": "Guiding principles for this meeting"
@@ -110,9 +110,9 @@
       "required": ["title"],
       "properties": {
         "title": { "type": "string" },
-        "due_date": { "type": "string", "format": "date" },
+        "dueDate": { "type": "string", "format": "date" },
         "context": { "type": "string" },
-        "is_overdue": { "type": "boolean", "default": false }
+        "isOverdue": { "type": "boolean", "default": false }
       }
     },
     "reference": {
@@ -121,7 +121,7 @@
       "properties": {
         "label": { "type": "string" },
         "path": { "type": "string" },
-        "last_updated": { "type": "string" }
+        "lastUpdated": { "type": "string" }
       }
     }
   }

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dailyos.dev/schemas/schedule.json",
   "title": "DailyOS Schedule",
-  "description": "Daily schedule with meetings and overview",
+  "description": "Daily schedule with meetings and overview. Keys use camelCase to match Rust serde(rename_all = camelCase).",
   "type": "object",
   "required": ["date", "meetings"],
   "properties": {
@@ -30,17 +30,17 @@
   "$defs": {
     "meeting": {
       "type": "object",
-      "required": ["id", "time", "title", "type", "has_prep"],
+      "required": ["id", "time", "title", "type", "hasPrep"],
       "properties": {
         "id": {
           "type": "string",
-          "description": "Unique identifier (e.g., 0900-acme-sync)"
+          "description": "Unique identifier (e.g., 0900-customer-acme-sync)"
         },
         "time": {
           "type": "string",
           "description": "Start time (e.g., 9:00 AM)"
         },
-        "end_time": {
+        "endTime": {
           "type": "string",
           "description": "End time (e.g., 9:45 AM)"
         },
@@ -55,20 +55,20 @@
           "type": "string",
           "description": "Account name for customer meetings"
         },
-        "is_current": {
+        "isCurrent": {
           "type": "boolean",
           "default": false,
           "description": "True if this meeting is happening now"
         },
-        "has_prep": {
+        "hasPrep": {
           "type": "boolean",
           "description": "Whether a prep file exists for this meeting"
         },
-        "prep_file": {
+        "prepFile": {
           "type": "string",
           "description": "Path to prep JSON file (relative to data/)"
         },
-        "prep_summary": {
+        "prepSummary": {
           "$ref": "#/$defs/prepSummary"
         }
       }
@@ -77,7 +77,7 @@
       "type": "object",
       "description": "Condensed prep for dashboard dropdown",
       "properties": {
-        "at_a_glance": {
+        "atAGlance": {
           "type": "array",
           "items": { "type": "string" },
           "maxItems": 4,
