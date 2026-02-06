@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import type { DashboardData } from "@/types";
+import type { DashboardData, DataFreshness } from "@/types";
 
 /**
  * Discriminated union for dashboard loading states
@@ -10,13 +10,13 @@ export type DashboardLoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "empty"; message: string }
-  | { status: "success"; data: DashboardData };
+  | { status: "success"; data: DashboardData; freshness: DataFreshness };
 
 /**
  * Response from get_dashboard_data Tauri command
  */
 type DashboardResult =
-  | { status: "success"; data: DashboardData }
+  | { status: "success"; data: DashboardData; freshness: DataFreshness }
   | { status: "empty"; message: string }
   | { status: "error"; message: string };
 
@@ -50,7 +50,7 @@ export function useDashboardData(): {
 
       switch (result.status) {
         case "success":
-          setState({ status: "success", data: result.data });
+          setState({ status: "success", data: result.data, freshness: result.freshness });
           break;
         case "empty":
           setState({ status: "empty", message: result.message });
