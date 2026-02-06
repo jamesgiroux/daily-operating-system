@@ -83,10 +83,10 @@ impl ExecutionError {
             ExecutionError::Timeout(_) => "The operation took too long. Try again.",
             ExecutionError::ApiRateLimit => "Wait a few minutes and try again.",
             ExecutionError::ConfigurationError(_) => {
-                "Check your configuration in ~/.daybreak/config.json"
+                "Check your configuration in ~/.dailyos/config.json"
             }
             ExecutionError::WorkspaceNotFound(_) => {
-                "Verify your workspace path in ~/.daybreak/config.json"
+                "Verify your workspace path in ~/.dailyos/config.json"
             }
             ExecutionError::ScriptFailed { .. } => "Check the script logs for details.",
             ExecutionError::ScriptNotFound(_) => "Ensure the required scripts are installed.",
