@@ -100,6 +100,26 @@ impl Scheduler {
                     .await;
             }
         }
+
+        // Check inbox batch workflow
+        if config.schedules.inbox_batch.enabled {
+            if let Ok(true) =
+                self.should_run_now(&config.schedules.inbox_batch, WorkflowId::InboxBatch, now)
+            {
+                self.trigger_workflow(WorkflowId::InboxBatch, ExecutionTrigger::Scheduled)
+                    .await;
+            }
+        }
+
+        // Check week workflow
+        if config.schedules.week.enabled {
+            if let Ok(true) =
+                self.should_run_now(&config.schedules.week, WorkflowId::Week, now)
+            {
+                self.trigger_workflow(WorkflowId::Week, ExecutionTrigger::Scheduled)
+                    .await;
+            }
+        }
     }
 
     /// Check if a workflow should run at the given time
@@ -171,6 +191,28 @@ impl Scheduler {
             {
                 log::info!("Found missed 'archive' job, running now");
                 self.trigger_workflow(WorkflowId::Archive, ExecutionTrigger::Missed)
+                    .await;
+            }
+        }
+
+        // Check inbox batch workflow
+        if config.schedules.inbox_batch.enabled {
+            if let Ok(Some(_)) =
+                self.find_missed_job(&config.schedules.inbox_batch, WorkflowId::InboxBatch, now)
+            {
+                log::info!("Found missed 'inbox_batch' job, running now");
+                self.trigger_workflow(WorkflowId::InboxBatch, ExecutionTrigger::Missed)
+                    .await;
+            }
+        }
+
+        // Check week workflow
+        if config.schedules.week.enabled {
+            if let Ok(Some(_)) =
+                self.find_missed_job(&config.schedules.week, WorkflowId::Week, now)
+            {
+                log::info!("Found missed 'week' job, running now");
+                self.trigger_workflow(WorkflowId::Week, ExecutionTrigger::Missed)
                     .await;
             }
         }

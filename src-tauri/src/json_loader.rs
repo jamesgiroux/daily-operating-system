@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::types::{
-    Action, DayOverview, Email, FullMeetingPrep, Meeting, MeetingPrep,
+    Action, DayOverview, Email, FullMeetingPrep, Meeting, MeetingPrep, WeekOverview,
 };
 
 /// Check if JSON data directory exists
@@ -412,4 +412,17 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         references,
         raw_markdown: None,
     })
+}
+
+// =============================================================================
+// Week JSON Loading (Phase 3C)
+// =============================================================================
+
+/// Load week overview from JSON
+pub fn load_week_json(today_dir: &Path) -> Result<WeekOverview, String> {
+    let week_path = today_dir.join("data").join("week-overview.json");
+    let content = fs::read_to_string(&week_path)
+        .map_err(|e| format!("Failed to read week overview: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse week overview: {}", e))
 }

@@ -1,5 +1,5 @@
 -- DailyOS Actions State Management
--- Location: ~/.daybreak/actions.db
+-- Location: ~/.dailyos/actions.db
 -- This file is embedded via include_str! and executed on DB open.
 
 CREATE TABLE IF NOT EXISTS actions (
@@ -68,3 +68,20 @@ CREATE TABLE IF NOT EXISTS processing_log (
 
 CREATE INDEX IF NOT EXISTS idx_processing_status ON processing_log(status);
 CREATE INDEX IF NOT EXISTS idx_processing_created ON processing_log(created_at);
+
+-- Post-meeting captures (wins, risks from capture prompts)
+CREATE TABLE IF NOT EXISTS captures (
+    id TEXT PRIMARY KEY,
+    meeting_id TEXT NOT NULL,
+    meeting_title TEXT NOT NULL,
+    account_id TEXT,
+    capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action')) NOT NULL,
+    content TEXT NOT NULL,
+    owner TEXT,
+    due_date TEXT,
+    captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
+CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);

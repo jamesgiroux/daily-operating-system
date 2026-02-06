@@ -77,6 +77,20 @@ impl Executor {
                 .await;
         }
 
+        // Inbox batch: direct processor calls, no three-phase
+        if workflow_id == WorkflowId::InboxBatch {
+            return self
+                .execute_inbox_batch(&workspace, &execution_id, trigger)
+                .await;
+        }
+
+        // Week workflow: three-phase, with week-data-ready event
+        if workflow_id == WorkflowId::Week {
+            return self
+                .execute_week(&workspace, &execution_id, trigger, &record)
+                .await;
+        }
+
         // Other workflows: three-phase pattern with notifications
 
         // Get the workflow implementation
@@ -207,6 +221,178 @@ impl Executor {
         Ok(())
     }
 
+    /// Execute inbox batch workflow (classify + enrich, no three-phase)
+    ///
+    /// 1. Quick-classify all inbox files
+    /// 2. For each NeedsEnrichment result, run AI enrichment (cap at 5 per batch)
+    /// 3. Emit `inbox-updated` so the frontend refreshes
+    async fn execute_inbox_batch(
+        &self,
+        workspace: &Path,
+        execution_id: &str,
+        trigger: ExecutionTrigger,
+    ) -> Result<(), ExecutionError> {
+        log::info!("Running inbox batch workflow");
+
+        // Get DB reference
+        let db_guard = self.state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+
+        // Step 1: Quick-classify all inbox files
+        let results = crate::processor::process_all(workspace, db_ref);
+
+        let routed_count = results
+            .iter()
+            .filter(|(_, r)| matches!(r, crate::processor::ProcessingResult::Routed { .. }))
+            .count();
+        let needs_enrichment: Vec<String> = results
+            .iter()
+            .filter(|(_, r)| matches!(r, crate::processor::ProcessingResult::NeedsEnrichment))
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        log::info!(
+            "Inbox batch: {} files routed, {} need enrichment",
+            routed_count,
+            needs_enrichment.len()
+        );
+
+        // Step 2: Enrich up to 5 files per batch (2 min per file × 5 = 10 min max)
+        const MAX_ENRICHMENTS_PER_BATCH: usize = 5;
+        let to_enrich = &needs_enrichment[..needs_enrichment.len().min(MAX_ENRICHMENTS_PER_BATCH)];
+        let mut enriched_count = 0;
+
+        for filename in to_enrich {
+            log::info!("AI enriching '{}'", filename);
+            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref);
+            match &result {
+                crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
+                    log::info!("Enriched '{}' → routed as {}", filename, classification);
+                    enriched_count += 1;
+                }
+                crate::processor::enrich::EnrichResult::Archived { .. } => {
+                    log::info!("Enriched '{}' → archived", filename);
+                    enriched_count += 1;
+                }
+                crate::processor::enrich::EnrichResult::Error { message } => {
+                    log::warn!("Enrichment failed for '{}': {}", filename, message);
+                }
+            }
+        }
+
+        if needs_enrichment.len() > MAX_ENRICHMENTS_PER_BATCH {
+            log::info!(
+                "Inbox batch: {} files deferred to next batch",
+                needs_enrichment.len() - MAX_ENRICHMENTS_PER_BATCH
+            );
+        }
+
+        log::info!(
+            "Inbox batch complete: {} routed, {} enriched",
+            routed_count,
+            enriched_count
+        );
+
+        // Update execution record
+        let finished_at = Utc::now();
+        self.state.update_execution_record(execution_id, |r| {
+            r.finished_at = Some(finished_at);
+            r.success = true;
+        });
+
+        // Update last scheduled run time
+        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+            self.state
+                .set_last_scheduled_run(WorkflowId::InboxBatch, Utc::now());
+        }
+
+        // Emit inbox-updated so frontend refreshes
+        let _ = self.app_handle.emit("inbox-updated", ());
+
+        Ok(())
+    }
+
+    /// Execute week workflow (three-phase + week-data-ready event)
+    async fn execute_week(
+        &self,
+        workspace: &Path,
+        execution_id: &str,
+        trigger: ExecutionTrigger,
+        record: &crate::types::ExecutionRecord,
+    ) -> Result<(), ExecutionError> {
+        let workflow = Workflow::from_id(WorkflowId::Week);
+
+        // Emit started event
+        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
+            started_at: record.started_at,
+            phase: WorkflowPhase::Preparing,
+            execution_id: execution_id.to_string(),
+        });
+
+        let result = self
+            .run_three_phase(&workflow, workspace, execution_id, WorkflowId::Week)
+            .await;
+
+        let finished_at = Utc::now();
+        let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
+
+        match &result {
+            Ok(_) => {
+                self.state.update_execution_record(execution_id, |r| {
+                    r.finished_at = Some(finished_at);
+                    r.duration_secs = Some(duration_secs);
+                    r.success = true;
+                });
+
+                if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+                    self.state
+                        .set_last_scheduled_run(WorkflowId::Week, record.started_at);
+                }
+
+                // Update week planning state to DataReady
+                if let Ok(mut guard) = self.state.week_planning_state.lock() {
+                    *guard = crate::types::WeekPlanningState::DataReady;
+                }
+
+                self.emit_status_event(WorkflowId::Week, WorkflowStatus::Completed {
+                    finished_at,
+                    duration_secs,
+                    execution_id: execution_id.to_string(),
+                });
+
+                // Emit week-data-ready for the frontend wizard
+                let _ = self.app_handle.emit("week-data-ready", ());
+
+                let _ = send_notification(
+                    &self.app_handle,
+                    "Your week is ready",
+                    "DailyOS has prepared your weekly overview",
+                );
+            }
+            Err(e) => {
+                self.state.update_execution_record(execution_id, |r| {
+                    r.finished_at = Some(finished_at);
+                    r.duration_secs = Some(duration_secs);
+                    r.success = false;
+                    r.error_message = Some(e.to_string());
+                });
+
+                self.emit_status_event(WorkflowId::Week, WorkflowStatus::Failed {
+                    error: WorkflowError::from(e),
+                    execution_id: execution_id.to_string(),
+                });
+
+                let _ = send_notification(
+                    &self.app_handle,
+                    "Week workflow failed",
+                    &e.to_string(),
+                );
+            }
+        }
+
+        result
+    }
+
     /// Run the three-phase workflow
     async fn run_three_phase(
         &self,
@@ -328,9 +514,16 @@ fn get_script_path(workspace: &Path, script_name: &str) -> PathBuf {
         return workspace_script;
     }
 
-    // Fall back to bundled scripts (extracted at runtime)
-    // For now, we expect scripts in _tools directory
-    // TODO: Bundle scripts with app and extract to temp
+    // Check repo-relative scripts/ directory (dev mode)
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or(std::path::Path::new("."));
+    let repo_script = repo_root.join("scripts").join(script_name);
+    if repo_script.exists() {
+        return repo_script;
+    }
+
+    // Fall back to workspace _tools (may not exist yet)
     workspace_script
 }
 

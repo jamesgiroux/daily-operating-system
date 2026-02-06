@@ -1,6 +1,6 @@
 //! SQLite-based local state management for actions, accounts, and meeting history.
 //!
-//! The database lives at `~/.daybreak/actions.db` and serves as a disposable cache.
+//! The database lives at `~/.dailyos/actions.db` and serves as a disposable cache.
 //! Markdown files remain the source of truth; this DB enables fast queries and
 //! state tracking (e.g., action completion) that markdown cannot provide.
 
@@ -103,7 +103,7 @@ pub struct ActionDb {
 }
 
 impl ActionDb {
-    /// Open (or create) the database at `~/.daybreak/actions.db` and apply the schema.
+    /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
         Self::open_at(path)
@@ -129,10 +129,10 @@ impl ActionDb {
         Ok(Self { conn })
     }
 
-    /// Resolve the default database path: `~/.daybreak/actions.db`.
+    /// Resolve the default database path: `~/.dailyos/actions.db`.
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
-        Ok(home.join(".daybreak").join("actions.db"))
+        Ok(home.join(".dailyos").join("actions.db"))
     }
 
     // =========================================================================
@@ -466,6 +466,29 @@ impl ActionDb {
             entries.push(row?);
         }
         Ok(entries)
+    }
+
+    // =========================================================================
+    // Captures (post-meeting wins/risks)
+    // =========================================================================
+
+    /// Insert a capture (win, risk, or action) from a post-meeting prompt.
+    pub fn insert_capture(
+        &self,
+        meeting_id: &str,
+        meeting_title: &str,
+        account_id: Option<&str>,
+        capture_type: &str,
+        content: &str,
+    ) -> Result<(), DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, meeting_id, meeting_title, account_id, capture_type, content, now],
+        )?;
+        Ok(())
     }
 
     // =========================================================================

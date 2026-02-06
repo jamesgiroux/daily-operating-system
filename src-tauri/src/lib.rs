@@ -1,7 +1,9 @@
+mod capture;
 mod commands;
 mod db;
 mod error;
 mod executor;
+mod google;
 mod json_loader;
 mod notification;
 mod parser;
@@ -62,6 +64,20 @@ pub fn run() {
 
             // Start inbox file watcher
             watcher::start_watcher(state.clone(), app.handle().clone());
+
+            // Spawn calendar poller (Phase 3A)
+            let poller_state = state.clone();
+            let poller_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                google::run_calendar_poller(poller_state, poller_handle).await;
+            });
+
+            // Spawn capture detection loop (Phase 3B)
+            let capture_state = state.clone();
+            let capture_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                capture::run_capture_loop(capture_state, capture_handle).await;
+            });
 
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
@@ -129,6 +145,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Core
             commands::get_config,
             commands::reload_configuration,
             commands::get_dashboard_data,
@@ -150,6 +167,27 @@ pub fn run() {
             commands::get_actions_from_db,
             commands::complete_action,
             commands::get_meeting_history,
+            // Phase 3.0: Google Auth
+            commands::get_google_auth_status,
+            commands::start_google_auth,
+            commands::disconnect_google,
+            // Phase 3A: Calendar
+            commands::get_calendar_events,
+            commands::get_current_meeting,
+            commands::get_next_meeting,
+            // Phase 3B: Post-Meeting Capture
+            commands::capture_meeting_outcome,
+            commands::dismiss_meeting_prompt,
+            commands::get_capture_settings,
+            commands::set_capture_enabled,
+            // Phase 3C: Weekly Planning
+            commands::get_week_data,
+            commands::get_week_planning_state,
+            commands::get_week_prep_data,
+            commands::submit_week_priorities,
+            commands::submit_focus_blocks,
+            commands::skip_week_planning,
+            commands::get_focus_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
