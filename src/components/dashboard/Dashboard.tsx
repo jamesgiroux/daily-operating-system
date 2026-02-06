@@ -26,8 +26,12 @@ export function Dashboard({ data }: DashboardProps) {
 
             {/* Right sidebar: Emails + Actions */}
             <div className="space-y-6">
-              <EmailList emails={emails} />
-              <ActionList actions={data.actions} />
+              <div className="animate-fade-in-up opacity-0 animate-delay-3">
+                <EmailList emails={emails} />
+              </div>
+              <div className="animate-fade-in-up opacity-0 animate-delay-4">
+                <ActionList actions={data.actions} />
+              </div>
             </div>
           </div>
         </div>
