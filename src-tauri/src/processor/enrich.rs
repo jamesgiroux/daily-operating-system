@@ -43,6 +43,7 @@ pub fn enrich_file(
     workspace: &Path,
     filename: &str,
     db: Option<&ActionDb>,
+    profile: &str,
 ) -> EnrichResult {
     let inbox_dir = workspace.join("_inbox");
     let file_path = inbox_dir.join(filename);
@@ -107,12 +108,17 @@ pub fn enrich_file(
 
     let destination = resolve_destination(&classification, workspace, filename);
 
+    // Capture fields before the match to avoid borrow-after-move issues
+    let summary = parsed.summary.clone();
+    let file_type = parsed.file_type.clone();
+    let account = parsed.account.clone();
+
     let result = match destination {
         Some(dest) => match move_file(&file_path, &dest) {
             Ok(_) => EnrichResult::Routed {
-                classification: parsed.file_type.clone(),
+                classification: file_type.clone(),
                 destination: dest.display().to_string(),
-                summary: parsed.summary.clone(),
+                summary: summary.clone(),
             },
             Err(e) => EnrichResult::Error {
                 message: format!("Failed to route: {}", e),
@@ -124,7 +130,7 @@ pub fn enrich_file(
             let archive_dest = workspace.join("_archive").join(&date).join(filename);
             match move_file(&file_path, &archive_dest) {
                 Ok(_) => EnrichResult::Archived {
-                    summary: parsed.summary,
+                    summary: summary.clone(),
                     destination: archive_dest.display().to_string(),
                 },
                 Err(e) => EnrichResult::Error {
@@ -133,6 +139,33 @@ pub fn enrich_file(
             }
         }
     };
+
+    // Run post-enrichment hooks
+    if let Some(db) = db {
+        let ctx = super::hooks::EnrichmentContext {
+            workspace: workspace.to_path_buf(),
+            filename: filename.to_string(),
+            classification: file_type.clone(),
+            account: account.clone(),
+            summary: summary.clone(),
+            actions: Vec::new(), // actions already extracted by extract_actions_from_ai
+            destination_path: match &result {
+                EnrichResult::Routed { destination, .. }
+                | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
+                _ => None,
+            },
+            profile: profile.to_string(),
+        };
+        let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
+        for hr in &hook_results {
+            log::info!(
+                "Post-enrichment hook '{}': {} — {}",
+                hr.hook_name,
+                if hr.success { "OK" } else { "FAILED" },
+                hr.message.as_deref().unwrap_or("")
+            );
+        }
+    }
 
     // Log to database
     if let Some(db) = db {
@@ -145,7 +178,7 @@ pub fn enrich_file(
                 | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
                 _ => None,
             },
-            classification: parsed.file_type,
+            classification: file_type,
             status: match &result {
                 EnrichResult::Routed { .. } | EnrichResult::Archived { .. } => {
                     "completed".to_string()

@@ -563,6 +563,50 @@ src/components/
 - Review handled inline on InboxPage (auto-escalates Unknown → AI enrich)
 - Config: `schedules.inboxBatch` in `~/.daybreak/config.json`
 
+### 2C+ Post-Enrichment Engine
+
+**Goal:** After AI enrichment completes on a file, run mechanical updates to propagate intelligence through the workspace. This is the critical step that closes the compound intelligence loop (DEC26).
+
+Post-enrichment is **not AI** — it's Rust code that takes structured AI output and updates downstream files. It runs as the final step of inbox processing, after Claude Code has generated summaries and extracted actions.
+
+**Post-enrichment steps (extension-provided):**
+
+| Step | Owner Extension | What It Does |
+|------|----------------|--------------|
+| Insert actions into SQLite | Core | Parse action items from enriched file, insert into `actions` table |
+| Sync actions to account markdown | CS extension | Write actions to `Accounts/{Account}/04-Action-Items/` files |
+| Update account dashboard | CS extension | Update `dashboard.json`: Last Contact, Recent Wins, Value Delivered, Next Actions (DEC28) |
+| Update account index | CS extension | Append new files to `Accounts/{Account}/00-Index.md` Recent Activity section |
+| Append to impact log | ProDev extension | Extract wins and append to weekly impact file |
+| Bidirectional action sync | Core | When action marked complete in SQLite, update source markdown file (checkbox `[ ]` → `[x]`) |
+
+**Architecture:**
+
+```
+AI Enrichment (Claude Code)
+    ↓ produces: summary.md, actions.md (with structured frontmatter)
+Post-Enrichment Engine (Rust)
+    ↓ reads enriched files
+    ├── Core: SQLite action insert
+    ├── CS Extension: dashboard.json update, account index, action file sync
+    └── ProDev Extension: impact log append
+    ↓ emits: enrichment-complete event
+Frontend refresh
+```
+
+**Key design principle:** Post-enrichment hooks are registered by extensions (DEC26). Core always runs its hooks (SQLite insert). Profile-activated extensions run theirs. The engine iterates registered hooks — it doesn't know about specific extensions.
+
+**Files:**
+```
+src-tauri/src/
+├── enrichment/
+│   ├── mod.rs           # Post-enrichment engine, hook registry
+│   ├── actions.rs       # Core: SQLite insert + bidirectional sync
+│   └── hooks.rs         # Extension hook trait + registration
+```
+
+Extension-specific hooks live in extension modules (Phase 4), but the engine and core hooks ship in Phase 2C.
+
 ---
 
 ## Phase 3A: Calendar Polling
@@ -584,36 +628,48 @@ src/components/
 
 ---
 
-## Phase 3B: Post-Meeting Capture
+## Phase 3B: Post-Meeting Intelligence
 
-**Goal:** Prompt appears after meetings for quick outcome capture.
+**Goal:** After meetings end, the system automatically processes transcripts and enriches account intelligence. Manual capture is a lightweight fallback, not the primary path.
+
+**Primary path (transcript exists):**
+Meeting ends → user drops transcript in `_inbox/` → file watcher detects → Rust classifies as transcript for account → AI enrichment generates summary + extracts actions + infers wins/risks → post-enrichment engine (Phase 2C+) updates dashboard, syncs actions, appends impact log → zero user input required.
+
+**Fallback path (no transcript):**
+Meeting ends → configurable delay passes → no transcript detected in `_inbox/` → lightweight prompt: "Quick note about [Meeting]? Or skip — we'll process the transcript if one arrives later." → capture is optional, zero-guilt, ~10 seconds. If transcript arrives later, full processing happens automatically and supersedes the quick note.
 
 ### Frontend
-- PostMeetingPrompt component
-- CaptureModal (Win/Risk/Action)
-- Easy dismissal
+- PostMeetingPrompt component (fallback overlay, bottom-right)
+- Lightweight: meeting title + "Quick note?" + text field + [Save] [Skip]
+- Auto-dismiss after 60 seconds
+- Native notification if window hidden (click opens overlay)
+- Manual trigger: "Outcomes" button on past MeetingCards (already built)
 
 ### Backend (Rust)
-- Trigger prompt on meeting end (5 min delay)
-- Persist captured data
-- Filter to customer meetings only
+- Meeting end detection via calendar polling (Phase 3A)
+- Transcript detection: watch `_inbox/` for files matching meeting account + date
+- Prompt trigger: only if no transcript detected after delay
+- Defer prompt if user is in another meeting
+- Persist quick notes to SQLite `captures` table
+- Quick notes feed into post-enrichment engine (same as transcript path)
 
 ### Files
 ```
 src/components/
-├── PostMeetingPrompt.tsx
-├── CaptureModal.tsx
-└── CaptureInput.tsx
+└── PostMeetingPrompt.tsx      # Lightweight fallback overlay
 
 src-tauri/src/
-└── capture.rs
+└── capture.rs                 # Meeting end detection + transcript watching + prompt logic
 ```
 
 ### Done When
-- [ ] Prompt appears 5 minutes after meeting
-- [ ] Only for customer meetings
-- [ ] Capture in under 10 seconds
-- [ ] Skip is prominent and guilt-free
+- [ ] Transcripts in `_inbox/` auto-process through enrichment pipeline
+- [ ] Post-enrichment updates account dashboard, syncs actions, appends impact
+- [ ] Fallback prompt only appears when no transcript detected
+- [ ] Prompt is dismissible without guilt
+- [ ] Quick note capture in under 10 seconds
+- [ ] Manual "Outcomes" button on past meeting cards triggers prompt
+- [ ] Native notification when window hidden
 
 ---
 
@@ -682,7 +738,8 @@ Phase 0 (Foundation)
                             └── Phase 2C (Full)      │
                                                      │
                               Phase 3A (Calendar Polling)
-                                    ├── Phase 3B (Post-Meeting Capture)
+                                    ├── Phase 3B (Post-Meeting Intelligence)
+                                    │        ↑ depends on 2C+ (Post-Enrichment Engine)
                                     └── Phase 3C (Weekly Planning + Week Page)
 ```
 
@@ -713,9 +770,9 @@ Phase 0 (Foundation)
 
 ## Decisions Made
 
-See `RAIDD.md` for the canonical decision log (DEC1-DEC23).
+See `RAIDD.md` for the canonical decision log (DEC1-DEC28).
 
 ---
 
-*Document Version: 1.2*
-*Last Updated: 2026-02-05 — Added Phase 1.5 (Nav Refactor), updated dependency graph, fixed Phase 2A prerequisites*
+*Document Version: 1.3*
+*Last Updated: 2026-02-05 — Added post-enrichment engine (2C+), revised Phase 3B to post-meeting intelligence, added extension hook architecture*

@@ -135,7 +135,15 @@ def _build_calendar_service() -> Any | None:
         )
         return None
 
-    creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    try:
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    except (ValueError, KeyError) as exc:
+        print(
+            f"  WARN: Google token format invalid: {exc}. "
+            "Calendar data will be empty.",
+            file=sys.stderr,
+        )
+        return None
 
     if creds.expired and creds.refresh_token:
         try:
@@ -149,7 +157,11 @@ def _build_calendar_service() -> Any | None:
         print("  WARN: Google credentials are invalid.", file=sys.stderr)
         return None
 
-    return build("calendar", "v3", credentials=creds, cache_discovery=False)
+    try:
+        return build("calendar", "v3", credentials=creds, cache_discovery=False)
+    except Exception as exc:
+        print(f"  WARN: Calendar service build failed: {exc}", file=sys.stderr)
+        return None
 
 
 def fetch_week_events(
