@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useActions } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, stripMarkdown } from "@/lib/utils";
 import { PageError } from "@/components/PageState";
 import {
   Check,
@@ -235,7 +235,7 @@ function ActionCard({
                   isCompleted && "line-through"
                 )}
               >
-                {action.title}
+                {stripMarkdown(action.title)}
               </h3>
               <Badge
                 variant="outline"

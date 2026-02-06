@@ -33,6 +33,7 @@ interface NavItem {
   title: string;
   icon: LucideIcon;
   href: string;
+  tooltip?: string;
 }
 
 const todayItems: NavItem[] = [
@@ -42,7 +43,7 @@ const todayItems: NavItem[] = [
 
 const workspaceItems: NavItem[] = [
   { title: "Actions", icon: CheckSquare, href: "/actions" },
-  { title: "Inbox", icon: Inbox, href: "/inbox" },
+  { title: "Inbox", icon: Inbox, href: "/inbox", tooltip: "Document Inbox" },
 ];
 
 const profileNavItem: Record<ProfileType, NavItem> = {
@@ -136,7 +137,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     isActive={currentPath === item.href}
-                    tooltip={item.title}
+                    tooltip={item.tooltip ?? item.title}
                     asChild
                   >
                     <Link to={item.href}>
