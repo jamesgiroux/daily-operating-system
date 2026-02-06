@@ -1,7 +1,7 @@
 import { Circle, CheckCircle2, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Action, Priority } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, stripMarkdown } from "@/lib/utils";
 
 interface ActionItemProps {
   action: Action;
@@ -56,7 +56,7 @@ export function ActionItem({ action, isLocallyCompleted, onComplete }: ActionIte
               isCompleted && "line-through text-muted-foreground"
             )}
           >
-            {action.title}
+            {stripMarkdown(action.title)}
           </span>
           <Badge className={cn("shrink-0", priorityStyles[action.priority])} variant="secondary">
             {action.priority}
