@@ -413,12 +413,13 @@ pub struct DayStats {
     pub inbox_count: usize,
 }
 
-/// Email priority level
+/// Email priority level (three-tier: high / medium / low)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EmailPriority {
     High,
-    Normal,
+    Medium,
+    Low,
 }
 
 /// A single email needing attention
@@ -434,6 +435,18 @@ pub struct Email {
     pub priority: EmailPriority,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// AI-generated one-line summary of the email
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// Suggested next action (e.g. "Reply with counter-proposal")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recommended_action: Option<String>,
+    /// Thread history arc (e.g. "Initial outreach → follow-up → this response")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_arc: Option<String>,
+    /// Email category from AI classification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_type: Option<String>,
 }
 
 /// Complete dashboard data payload

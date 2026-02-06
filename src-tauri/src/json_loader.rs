@@ -271,6 +271,9 @@ pub struct JsonEmails {
 #[serde(rename_all = "camelCase")]
 pub struct JsonEmailStats {
     pub high_priority: Option<u32>,
+    pub medium_priority: Option<u32>,
+    pub low_priority: Option<u32>,
+    /// Legacy field — mapped from older two-tier format
     pub normal_priority: Option<u32>,
     pub needs_action: Option<u32>,
 }
@@ -284,6 +287,14 @@ pub struct JsonEmail {
     pub subject: String,
     pub snippet: Option<String>,
     pub priority: String,
+    /// AI-generated one-line summary
+    pub summary: Option<String>,
+    /// Suggested next action
+    pub recommended_action: Option<String>,
+    /// Thread history arc
+    pub conversation_arc: Option<String>,
+    /// Email category from AI classification
+    pub email_type: Option<String>,
 }
 
 /// Load emails from JSON
@@ -297,7 +308,11 @@ pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
     let emails = data.emails.into_iter().map(|e| {
         let priority = match e.priority.as_str() {
             "high" => crate::types::EmailPriority::High,
-            _ => crate::types::EmailPriority::Normal,
+            "medium" => crate::types::EmailPriority::Medium,
+            "low" => crate::types::EmailPriority::Low,
+            // Legacy "normal" maps to medium
+            "normal" => crate::types::EmailPriority::Medium,
+            _ => crate::types::EmailPriority::Low,
         };
 
         Email {
@@ -308,6 +323,10 @@ pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
             snippet: e.snippet,
             priority,
             avatar_url: None,
+            summary: e.summary,
+            recommended_action: e.recommended_action,
+            conversation_arc: e.conversation_arc,
+            email_type: e.email_type,
         }
     }).collect();
 
