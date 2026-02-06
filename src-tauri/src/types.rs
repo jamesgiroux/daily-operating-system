@@ -201,6 +201,19 @@ pub enum ExecutionTrigger {
     Missed,
 }
 
+/// High-level file type for inbox display
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InboxFileType {
+    Markdown,
+    Image,
+    Spreadsheet,
+    Document,
+    Data,
+    Text,
+    Other,
+}
+
 /// A file in the _inbox/ directory
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -210,6 +223,7 @@ pub struct InboxFile {
     pub size_bytes: u64,
     pub modified: String,
     pub preview: Option<String>,
+    pub file_type: InboxFileType,
 }
 
 /// Day overview parsed from _today/overview.md

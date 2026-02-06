@@ -525,8 +525,24 @@ pub fn get_inbox_file_content(
         return Err(format!("File not found: {}", filename));
     }
 
-    std::fs::read_to_string(&file_path)
-        .map_err(|e| format!("Failed to read file: {}", e))
+    // Try reading as text; binary files will fail gracefully
+    match std::fs::read_to_string(&file_path) {
+        Ok(content) => Ok(content),
+        Err(_) => {
+            // Binary file — return a descriptive message instead of erroring
+            let size = std::fs::metadata(&file_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            let ext = file_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown");
+            Ok(format!(
+                "[Binary file — .{} — {} bytes]\n\nThis file cannot be previewed as text. Use \"Process\" to let DailyOS handle it.",
+                ext, size
+            ))
+        }
+    }
 }
 
 // =============================================================================
