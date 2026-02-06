@@ -1,4 +1,4 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, Clock } from "lucide-react";
 import { MeetingCard } from "./MeetingCard";
 import type { Meeting, MeetingType } from "@/types";
 import { useCalendar } from "@/hooks/useCalendar";
@@ -16,8 +16,16 @@ const dotColors: Partial<Record<MeetingType, string>> = {
   personal: "bg-success",
 };
 
+/** Format a timestamp to a short time like "10:30 AM" */
+function formatNowTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
-  const { currentMeeting } = useCalendar();
+  const { currentMeeting, now } = useCalendar();
 
   if (meetings.length === 0) {
     return (
@@ -31,7 +39,6 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
   // Determine which briefing meeting is "current" by checking live calendar
   function isLive(meeting: Meeting): boolean {
     if (!currentMeeting) return false;
-    // Match by title + approximate time
     return (
       meeting.title === currentMeeting.title ||
       meeting.id === currentMeeting.id
@@ -55,6 +62,10 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
               In meeting
             </span>
           )}
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Clock className="size-3" />
+            {formatNowTime(now)}
+          </span>
           <span className="text-sm text-muted-foreground">
             {meetings.length} meeting{meetings.length !== 1 ? "s" : ""}
           </span>

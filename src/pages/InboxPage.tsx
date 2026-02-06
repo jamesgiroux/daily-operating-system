@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,8 +8,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useInbox } from "@/hooks/useInbox";
 import type { InboxFile, InboxFileType } from "@/types";
 import { cn } from "@/lib/utils";
+import { PageError } from "@/components/PageState";
 import {
-  AlertCircle,
   Building2,
   Calendar,
   CheckSquare,
@@ -493,15 +492,8 @@ export default function InboxPage() {
   // ---------------------------------------------------------------------------
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error}</p>
-            </div>
-          </CardContent>
-        </Card>
+      <main className="flex-1 overflow-hidden">
+        <PageError message={error} onRetry={refresh} />
       </main>
     );
   }

@@ -6,21 +6,33 @@ import type { CalendarEvent, CapturedOutcome } from "@/types";
 interface CaptureState {
   visible: boolean;
   meeting: CalendarEvent | null;
+  isFallback: boolean;
 }
 
 export function usePostMeetingCapture() {
   const [state, setState] = useState<CaptureState>({
     visible: false,
     meeting: null,
+    isFallback: false,
   });
 
   useEffect(() => {
-    const unlisten = listen<CalendarEvent>("post-meeting-prompt", (event) => {
-      setState({ visible: true, meeting: event.payload });
+    // Full capture prompt (manual trigger or auto with transcript)
+    const unlistenFull = listen<CalendarEvent>("post-meeting-prompt", (event) => {
+      setState({ visible: true, meeting: event.payload, isFallback: false });
     });
 
+    // Fallback prompt (no transcript detected after deadline)
+    const unlistenFallback = listen<CalendarEvent>(
+      "post-meeting-prompt-fallback",
+      (event) => {
+        setState({ visible: true, meeting: event.payload, isFallback: true });
+      }
+    );
+
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenFull.then((fn) => fn());
+      unlistenFallback.then((fn) => fn());
     };
   }, []);
 
@@ -31,7 +43,7 @@ export function usePostMeetingCapture() {
       } catch (err) {
         console.error("Failed to capture outcome:", err);
       }
-      setState({ visible: false, meeting: null });
+      setState({ visible: false, meeting: null, isFallback: false });
     },
     []
   );
@@ -46,16 +58,17 @@ export function usePostMeetingCapture() {
         console.error("Failed to dismiss prompt:", err);
       }
     }
-    setState({ visible: false, meeting: null });
+    setState({ visible: false, meeting: null, isFallback: false });
   }, [state.meeting]);
 
   const dismiss = useCallback(() => {
-    setState({ visible: false, meeting: null });
+    setState({ visible: false, meeting: null, isFallback: false });
   }, []);
 
   return {
     visible: state.visible,
     meeting: state.meeting,
+    isFallback: state.isFallback,
     capture,
     skip,
     dismiss,

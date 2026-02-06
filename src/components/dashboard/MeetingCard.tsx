@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
-import { ChevronDown, FileText } from "lucide-react";
+import { emit } from "@tauri-apps/api/event";
+import { ChevronDown, FileText, Trophy } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -8,7 +9,7 @@ import {
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { Meeting, MeetingType } from "@/types";
+import type { Meeting, MeetingType, CalendarEvent } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface MeetingCardProps {
@@ -44,10 +45,45 @@ const badgeLabels: Partial<Record<MeetingType, string>> = {
   personal: "Personal",
 };
 
+/** Check if a meeting's end time has passed today. */
+function isPastMeeting(meeting: Meeting): boolean {
+  const timeStr = meeting.endTime || meeting.time;
+  if (!timeStr) return false;
+
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return false;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+
+  const now = new Date();
+  const end = new Date();
+  end.setHours(hours, minutes, 0, 0);
+  return now > end;
+}
+
 export function MeetingCard({ meeting }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const hasInlinePrep = meeting.prep && Object.keys(meeting.prep).length > 0;
   const hasPrepFile = meeting.hasPrep && meeting.prepFile;
+  const isPast = isPastMeeting(meeting);
+
+  const handleCaptureOutcomes = React.useCallback(() => {
+    const payload: CalendarEvent = {
+      id: meeting.id,
+      title: meeting.title,
+      start: "",
+      end: "",
+      type: meeting.type,
+      account: meeting.account,
+      attendees: [],
+      isAllDay: false,
+    };
+    emit("post-meeting-prompt", payload);
+  }, [meeting]);
 
   return (
     <div
@@ -108,6 +144,19 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
               <Badge variant="outline" className="text-muted-foreground">
                 No prep
               </Badge>
+            )}
+
+            {/* Outcomes button for past meetings */}
+            {isPast && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground"
+                onClick={handleCaptureOutcomes}
+              >
+                <Trophy className="mr-1 size-3.5" />
+                Outcomes
+              </Button>
             )}
 
             {/* Expand button for inline prep */}

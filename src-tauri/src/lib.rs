@@ -180,6 +180,7 @@ pub fn run() {
             commands::dismiss_meeting_prompt,
             commands::get_capture_settings,
             commands::set_capture_enabled,
+            commands::set_capture_delay,
             // Phase 3C: Weekly Planning
             commands::get_week_data,
             commands::get_week_planning_state,

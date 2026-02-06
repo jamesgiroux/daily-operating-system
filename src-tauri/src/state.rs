@@ -224,10 +224,17 @@ fn detect_google_auth() -> GoogleAuthStatus {
         return GoogleAuthStatus::NotConfigured;
     }
 
-    // Try to read the token file and extract email
+    // Try to read the token file and validate it has real OAuth fields
     match fs::read_to_string(&token_path) {
         Ok(content) => {
             if let Ok(token) = serde_json::from_str::<serde_json::Value>(&content) {
+                // A valid Google OAuth token must have at least a refresh_token or token field.
+                // An empty {} or missing fields means auth never completed.
+                let has_token = token.get("token").is_some()
+                    || token.get("refresh_token").is_some();
+                if !has_token {
+                    return GoogleAuthStatus::NotConfigured;
+                }
                 let email = token
                     .get("email")
                     .and_then(|e| e.as_str())
@@ -235,7 +242,7 @@ fn detect_google_auth() -> GoogleAuthStatus {
                     .to_string();
                 GoogleAuthStatus::Authenticated { email }
             } else {
-                // Token file exists but is invalid
+                // Token file exists but is invalid JSON
                 GoogleAuthStatus::TokenExpired
             }
         }

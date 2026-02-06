@@ -774,6 +774,9 @@ pub struct PostMeetingCaptureConfig {
     pub delay_minutes: u32,
     #[serde(default = "default_auto_dismiss_secs")]
     pub auto_dismiss_secs: u32,
+    /// How long to wait for a transcript to appear before showing a fallback prompt
+    #[serde(default = "default_transcript_wait_minutes")]
+    pub transcript_wait_minutes: u32,
 }
 
 fn default_capture_enabled() -> bool {
@@ -785,6 +788,9 @@ fn default_delay_minutes() -> u32 {
 fn default_auto_dismiss_secs() -> u32 {
     60
 }
+fn default_transcript_wait_minutes() -> u32 {
+    10
+}
 
 impl Default for PostMeetingCaptureConfig {
     fn default() -> Self {
@@ -792,6 +798,7 @@ impl Default for PostMeetingCaptureConfig {
             enabled: default_capture_enabled(),
             delay_minutes: default_delay_minutes(),
             auto_dismiss_secs: default_auto_dismiss_secs(),
+            transcript_wait_minutes: default_transcript_wait_minutes(),
         }
     }
 }

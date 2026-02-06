@@ -56,6 +56,19 @@ export function useWeekPlanning() {
     }
   }, []);
 
+  // Listen for manual wizard trigger (from WeekPage or Settings)
+  useEffect(() => {
+    const unlisten = listen("show-week-wizard", () => {
+      loadWeekData();
+      setStep(0);
+      setWizardVisible(true);
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [loadWeekData]);
+
   const submitPriorities = useCallback(async (priorities: string[]) => {
     try {
       await invoke("submit_week_priorities", { priorities });

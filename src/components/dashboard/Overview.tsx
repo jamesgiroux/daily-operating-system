@@ -1,4 +1,5 @@
-import { Target } from "lucide-react";
+import { Target, ChevronRight } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatsRow } from "./StatsRow";
 import type { DashboardData } from "@/types";
@@ -37,13 +38,17 @@ export function Overview({ overview, stats }: OverviewProps) {
           </h1>
           <p className="text-lg font-light text-muted-foreground">{greeting}</p>
           {overview.focus && (
-            <div className="space-y-1 text-sm">
+            <Link
+              to="/focus"
+              className="group block space-y-1 text-sm rounded-md -mx-2 px-2 py-1.5 transition-colors hover:bg-muted/50"
+            >
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Target className="size-4 text-primary" />
                 <span className="font-medium">Focus</span>
+                <ChevronRight className="size-3.5 opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
               </div>
               <p className="text-primary">{overview.focus}</p>
-            </div>
+            </Link>
           )}
         </div>
 

@@ -8,6 +8,7 @@ import {
   X,
   ChevronRight,
   Check,
+  MessageSquare,
 } from "lucide-react";
 import { usePostMeetingCapture } from "@/hooks/usePostMeetingCapture";
 import type { CapturedOutcome, CapturedAction } from "@/types";
@@ -22,7 +23,7 @@ interface CaptureItem {
 }
 
 export function PostMeetingPrompt() {
-  const { visible, meeting, capture, skip, dismiss } =
+  const { visible, meeting, isFallback, capture, skip, dismiss } =
     usePostMeetingCapture();
   const [phase, setPhase] = useState<
     "prompt" | "input" | "confirm"
@@ -76,6 +77,22 @@ export function PostMeetingPrompt() {
     setPhase("confirm");
   }, [inputValue, activeType]);
 
+  const handleFallbackSave = useCallback(async () => {
+    if (!meeting || !inputValue.trim()) return;
+
+    const outcome: CapturedOutcome = {
+      meetingId: meeting.id,
+      meetingTitle: meeting.title,
+      account: meeting.account,
+      capturedAt: new Date().toISOString(),
+      wins: [inputValue.trim()],
+      risks: [],
+      actions: [],
+    };
+
+    await capture(outcome);
+  }, [meeting, inputValue, capture]);
+
   const handleDone = useCallback(async () => {
     if (!meeting) return;
 
@@ -102,6 +119,80 @@ export function PostMeetingPrompt() {
 
   if (!visible || !meeting) return null;
 
+  // Fallback variant: simplified text-only prompt
+  if (isFallback) {
+    return (
+      <div className="fixed bottom-4 right-4 z-50 w-80 animate-slide-in-right">
+        <Card className="border-muted-foreground/20 shadow-lg">
+          <CardContent className="p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-xs font-medium text-muted-foreground">
+                Meeting ended
+              </p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6"
+                onClick={skip}
+              >
+                <X className="size-3" />
+              </Button>
+            </div>
+
+            <p className="mb-1 text-sm font-medium leading-tight">
+              {meeting.title}
+            </p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Quick note? Or skip — we'll process the transcript if one arrives.
+            </p>
+
+            <input
+              type="text"
+              autoFocus
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="Quick note..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && inputValue.trim()) handleFallbackSave();
+                if (e.key === "Escape") skip();
+              }}
+            />
+
+            <div className="mt-2 flex gap-2">
+              <Button
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={handleFallbackSave}
+                disabled={!inputValue.trim()}
+              >
+                <MessageSquare className="mr-1 size-3" />
+                Save
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs text-muted-foreground"
+                onClick={skip}
+              >
+                Skip
+              </Button>
+            </div>
+
+            {/* Auto-dismiss progress bar */}
+            <div className="mt-2 h-0.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-muted-foreground/30 transition-all duration-200"
+                style={{ width: `${autoDismissProgress}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Full variant: Win / Risk / Action buttons
   return (
     <div className="fixed bottom-4 right-4 z-50 w-80 animate-slide-in-right">
       <Card className="border-primary/20 shadow-lg">
