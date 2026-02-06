@@ -148,15 +148,13 @@ daybreak/docs/
 ├── BACKLOG.md             # Issues, risks, assumptions, dependencies
 ├── UI-SPEC.md             # Design system, colors, components
 ├── DEVELOPMENT.md         # Build and run instructions
-├── SKILLS.md              # Command catalog
 ├── MEETING-TYPES.md       # Classification algorithm reference
 ├── PREPARE-PHASE.md       # Prepare phase architecture reference
 ├── PROFILES.md            # Profile system reference
-├── ACTIONS-SCHEMA.md      # SQLite schema reference
 ├── decisions/             # Architecture Decision Records (append-only)
 │   ├── README.md          # Index + template
 │   └── 0001-*.md … 0034-*.md
-├── research/              # Market research, user research (reference)
+├── research/              # Market research, user research, positioning
 └── _archive/              # Retired docs (historical reference only)
 ```
 
