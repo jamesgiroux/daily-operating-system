@@ -165,6 +165,17 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
+        // Guard: if calendar went from populated to empty, auth likely expired.
+        // Don't treat every in-progress meeting as "just ended."
+        if current_events.is_empty() && !previous_in_progress.is_empty() {
+            log::debug!(
+                "Capture: calendar returned 0 events but {} were in-progress — skipping detection (likely auth issue)",
+                previous_in_progress.len()
+            );
+            // Keep previous_in_progress as-is so we re-evaluate next tick
+            continue;
+        }
+
         // Find meetings that just ended (were in progress, now aren't)
         let dismissed = state
             .capture_dismissed

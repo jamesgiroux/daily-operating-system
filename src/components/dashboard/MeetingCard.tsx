@@ -72,11 +72,27 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
   const isPast = isPastMeeting(meeting);
 
   const handleCaptureOutcomes = React.useCallback(() => {
+    // Build ISO timestamps from the meeting's display times (e.g., "09:00 AM").
+    // These are used by the capture backend; fallback to current time if unparseable.
+    const toIso = (timeStr?: string): string => {
+      if (!timeStr) return new Date().toISOString();
+      const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return new Date().toISOString();
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const period = match[3].toUpperCase();
+      if (period === "PM" && h !== 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      return d.toISOString();
+    };
+
     const payload: CalendarEvent = {
       id: meeting.id,
       title: meeting.title,
-      start: "",
-      end: "",
+      start: toIso(meeting.time),
+      end: toIso(meeting.endTime),
       type: meeting.type,
       account: meeting.account,
       attendees: [],
