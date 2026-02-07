@@ -48,7 +48,7 @@ fn default_history_count() -> u32 {
 }
 
 fn default_profile() -> String {
-    "general".to_string()
+    "customer-success".to_string()
 }
 
 /// Schedule configuration for workflows
@@ -375,6 +375,9 @@ pub struct Meeting {
     /// Calendar overlay status (ADR-0032)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overlay_status: Option<OverlayStatus>,
+    /// Whether the user has reviewed this prep (ADR-0033)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_reviewed: Option<bool>,
 }
 
 /// Action priority level

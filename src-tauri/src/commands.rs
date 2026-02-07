@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,8 +15,8 @@ use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
     FocusBlock, FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, WeekOverview, WeekPlanningState, WorkflowId,
-    WorkflowStatus,
+    OverlayStatus, PostMeetingCaptureConfig, Priority, WeekOverview, WeekPlanningState,
+    WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -106,9 +107,58 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         .timezone
         .parse()
         .unwrap_or(chrono_tz::America::New_York);
-    let meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+    let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
-    let actions = load_actions_json(&today_dir).unwrap_or_default();
+    // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(reviewed) = db.get_reviewed_preps() {
+                for m in &mut meetings {
+                    if let Some(ref pf) = m.prep_file {
+                        if reviewed.contains_key(pf) {
+                            m.prep_reviewed = Some(true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
+
+    // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
+                let json_titles: HashSet<String> = actions
+                    .iter()
+                    .map(|a| a.title.to_lowercase().trim().to_string())
+                    .collect();
+                for dba in db_actions {
+                    if !json_titles.contains(&dba.title.to_lowercase().trim().to_string()) {
+                        let priority = match dba.priority.as_str() {
+                            "P1" => Priority::P1,
+                            "P3" => Priority::P3,
+                            _ => Priority::P2,
+                        };
+                        actions.push(Action {
+                            id: dba.id,
+                            title: dba.title,
+                            account: dba.account_id,
+                            due_date: dba.due_date,
+                            priority,
+                            status: crate::types::ActionStatus::Pending,
+                            is_overdue: None,
+                            context: dba.context,
+                            source: dba.source_label,
+                            days_overdue: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
 
     // Calculate stats (exclude cancelled meetings)
@@ -246,7 +296,19 @@ pub fn get_meeting_prep(
     let today_dir = workspace.join("_today");
 
     match load_prep_json(&today_dir, &prep_file) {
-        Ok(prep) => MeetingPrepResult::Success { data: prep },
+        Ok(prep) => {
+            // Record that this prep was reviewed (ADR-0033)
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    let _ = db.mark_prep_reviewed(
+                        &prep_file,
+                        prep.calendar_event_id.as_deref(),
+                        &prep.title,
+                    );
+                }
+            }
+            MeetingPrepResult::Success { data: prep }
+        }
         Err(e) => MeetingPrepResult::NotFound {
             message: format!("Prep not found: {}", e),
         },
@@ -788,10 +850,11 @@ pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, St
 // SQLite Database Commands
 // =============================================================================
 
-/// Get actions from the SQLite database, filtered by due date window.
+/// Get actions from the SQLite database for display.
 ///
-/// Returns pending actions where `due_date` is within `days_ahead` days (default 7)
-/// or where `due_date` is NULL. Overdue actions appear first.
+/// Returns pending actions (within `days_ahead` window, default 7) combined
+/// with recently completed actions (last 48 hours) so the UI can show both
+/// active and done states.
 #[tauri::command]
 pub fn get_actions_from_db(
     days_ahead: Option<i32>,
@@ -799,8 +862,14 @@ pub fn get_actions_from_db(
 ) -> Result<Vec<crate::db::DbAction>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_due_actions(days_ahead.unwrap_or(7))
-        .map_err(|e| e.to_string())
+    let mut actions = db
+        .get_due_actions(days_ahead.unwrap_or(7))
+        .map_err(|e| e.to_string())?;
+    let completed = db
+        .get_completed_actions(48)
+        .map_err(|e| e.to_string())?;
+    actions.extend(completed);
+    Ok(actions)
 }
 
 /// Mark an action as completed in the SQLite database.
@@ -814,6 +883,17 @@ pub fn complete_action(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.complete_action(&id).map_err(|e| e.to_string())
+}
+
+/// Reopen a completed action, setting it back to pending.
+#[tauri::command]
+pub fn reopen_action(
+    id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.reopen_action(&id).map_err(|e| e.to_string())
 }
 
 /// Get recent meeting history for an account from the SQLite database.
