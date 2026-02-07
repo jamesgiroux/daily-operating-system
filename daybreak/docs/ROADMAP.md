@@ -6,12 +6,17 @@
 
 ## Where We Are (2026-02-07)
 
-**The app works.** Briefing generates automatically, dashboard renders schedule/actions/emails, meeting prep provides deep context for all meeting types, post-meeting capture processes transcripts into outcomes, inbox processes files, archive cleans up at midnight. No terminal required.
+**The app works end-to-end from first launch.** Onboarding wizard guides new users through entity mode selection, workspace setup, and optional Google auth. Briefing generates automatically, dashboard renders schedule/actions/emails, meeting prep provides deep context for all meeting types, post-meeting capture processes transcripts into outcomes, inbox processes files, archive cleans up at midnight. No terminal required, no manual config editing.
 
 ### What's Built
 
 | Capability | Status | Key ADRs |
 |------------|--------|----------|
+| **First-run onboarding wizard** | **Working** | **0046** |
+| **Entity-mode architecture (account / project / both)** | **Working** | **0046** |
+| **Workspace scaffolding (entity-mode-aware)** | **Working** | **0046** |
+| **Settings: workspace picker, entity-mode switcher, schedule editor** | **Working** | — |
+| **No-auth graceful degradation (Connect Google CTA)** | **Working** | — |
 | Daily briefing pipeline (prepare → enrich → deliver) | Working | 0006, 0042 |
 | Per-operation Rust-native delivery | Working | 0042 |
 | AI enrichment (emails, briefing narrative) | Working, fault-tolerant | 0042 |
@@ -27,7 +32,7 @@
 | Reactive meeting prep from calendar polling | Working | — |
 | Transcript-aware inbox enrichment (richer summaries) | Working | — |
 | Cross-briefing action dedup (3 layers) | Working | — |
-| Sidebar nav, profile-aware UI | Working | 0038 |
+| Sidebar nav, entity-mode-aware UI | Working | 0038, 0046 |
 | Feature toggles (per-operation, profile-conditional defaults) | Working | 0039 |
 | Standalone email refresh | Working | 0030 |
 | FYI email classification (bulk senders, noreply, headers) | Working | — |
@@ -36,11 +41,7 @@
 | Google API credential caching (per-process) | Working | — |
 | macOS chrome (overlay titlebar, tray icon, app icon) | Working | — |
 
-**155 Rust tests + 37 Python tests passing.** Core data pipeline is solid.
-
-### What's Untested End-to-End
-
-Everything above works in James's `~/Documents/VIP/` workspace. Nothing has been validated against a clean workspace, a first-time user, or a machine without pre-existing config. The gap is not "what to build" but **"does it work for someone who isn't the developer?"**
+**155 Rust tests + 37 Python tests passing.** Sprints 1–3 complete. Next: Sprint 4 (distribution).
 
 ---
 
@@ -48,57 +49,23 @@ Everything above works in James's `~/Documents/VIP/` workspace. Nothing has been
 
 Goal: get from working prototype to shippable product. Each sprint has a concrete, testable "done" milestone.
 
-### Sprint 1: "First Run to Working Briefing"
+### Sprint 1: "First Run to Working Briefing" — COMPLETE
 
-**Milestone:** A fresh `~/Documents/test-workspace/` goes from app launch → onboarding → first briefing → rendered dashboard. No hand-editing config files. All three entity modes work. Both Google-authed and no-auth paths work.
+**Milestone:** A fresh workspace goes from app launch → onboarding → first briefing → rendered dashboard. No hand-editing config files. All three entity modes work. Both Google-authed and no-auth paths work.
 
-**Code audit findings (2026-02-07):** The app has no workspace initialization, no config auto-creation, and Google auth is buried in Settings. The Python pipeline already handles missing Google auth gracefully (returns empty data). The real gaps are frontend signaling and first-run infrastructure.
+| Issue | What | Status |
+|-------|------|--------|
+| — | Shared infrastructure: `create_or_update_config` helper + `entity_mode` config field | Done — `state.rs`, handles "no config" case |
+| I48 | Workspace scaffolding — entity-mode-aware dir creation | Done — `initialize_workspace()`, 4 tests |
+| I49 | No-auth graceful degradation — dashboard "Connect Google" CTA | Done — `google_auth` in DashboardResult, DashboardEmpty CTA |
+| I7 | Settings: workspace path picker (directory dialog + validation) | Done — `set_workspace_path` command, WorkspaceCard |
+| I15 | Settings: entity-mode switcher (account / project / both) | Done — `set_entity_mode` command, EntityModeCard |
+| I16 | Settings: schedule editing (human-readable time display) | Done — `set_schedule` command, `cronToHumanTime()` |
+| I13 | Onboarding wizard: entity mode → workspace → Google → first briefing | Done — `OnboardingWizard.tsx`, replaces ProfileSelector |
 
-**ADR-0046 integration:** Onboarding asks "How do you organize your work?" (account-based / project-based / both) instead of choosing a profile. Config gains `entity_mode` field; `profile` kept for backend compat (derived from entity mode). Workspace scaffolding creates `Accounts/` only for account/both modes. Sidebar renders Accounts and Projects as peers.
+Phase C (I25 badge unification, I19 enrichment badge) deferred — low priority polish, can land in any sprint.
 
-#### Phase A: Foundation (prerequisites for onboarding)
-
-| Issue | What | Notes |
-|-------|------|-------|
-| — | Shared infrastructure: `create_or_update_config` helper + `entity_mode` config field | Unlocks all config-writing commands. Handles "no config exists yet" case. |
-| I48 | Workspace scaffolding — create dirs when workspace path is set | Entity-mode-aware: `Accounts/` only for account/both modes. |
-| I49 | No-auth graceful degradation — dashboard shows "Connect Google" CTA | Python already handles no-auth. Frontend needs auth status in DashboardResult. |
-| I7 | Settings: workspace path picker (directory dialog + validation) | Small scope. Calls workspace scaffolding on change. |
-| I15 | Settings: entity-mode switcher (account / project / both) | Replaces profile switcher per ADR-0046. |
-| I16 | Settings: schedule editing (time picker, writes cron, hides syntax) | Small scope. |
-
-All Phase A issues run in **parallel** (independent features on shared infrastructure).
-
-#### Phase B: Onboarding (depends on Phase A)
-
-| Issue | What | Notes |
-|-------|------|-------|
-| I13 | Onboarding wizard: entity mode → workspace → Google auth → first briefing | Depends on all Phase A. Uses `set_entity_mode` + `set_workspace_path` + existing auth flow. |
-
-**Three test paths:**
-1. **Account-based + Google auth:** Onboarding → select account-based → set workspace → connect Google → generate briefing → full dashboard
-2. **Project-based + no Google:** Onboarding → select project-based → set workspace → skip Google → dashboard with "Connect Google" CTA
-3. **Both mode:** Onboarding → select both → workspace gets `Accounts/` + `Projects/` → sidebar shows both sections
-
-#### Phase C: Polish (fills gaps while B is in progress)
-
-| Issue | What |
-|-------|------|
-| I25 | Meeting badge/status unification (MeetingDisplayState refactor) |
-| I19 | AI enrichment failure indicator (quiet badge, Principle 9) |
-
-#### Design decisions resolved
-
-1. **Default workspace path** — `~/Documents/DailyOS/` (user can change during onboarding)
-2. **Directory structure** — Pipeline dirs (`_today/`, `_inbox/`, `_archive/`) always. `Projects/` always (core PARA). `Accounts/` conditional on entity mode.
-3. **Google auth** — Optional with degraded experience. Dashboard shows clear "Connect Google" CTA.
-4. **Entity mode replaces profile** — ADR-0046. `profile` field derived from entity mode for backend compat during Sprint 1.
-
-#### Open design question
-
-5. **First briefing content** — What does a briefing look like with no historical data? Graceful "welcome" state vs. minimal real data?
-
-**Done when:** All three test paths work end-to-end in `~/Documents/test-workspace/`. Onboarding completes without manual config editing. Dashboard renders meaningfully in both authed and unauthed states.
+**Design decisions resolved:** Default workspace `~/Documents/DailyOS/`, entity mode replaces profile (ADR-0046), Google auth optional with clear CTA, `Accounts/` conditional on entity mode.
 
 ---
 
@@ -151,22 +118,23 @@ All 155 Rust + 37 Python tests passing.
 
 ## Parking Lot
 
-These are decided (ADRs exist) but not scheduled. Entity-mode architecture (ADR-0046) replaces the profile/extension model with entity modes + integrations + domain overlays.
+These are decided (ADRs exist) but not scheduled. Entity-mode architecture (ADR-0046) replaces the profile/extension model with entity modes + Kits + Intelligence + integrations.
 
 ### Entity-Mode Architecture (I27 umbrella)
 
-| Issue | What | Blocked by |
-|-------|------|------------|
-| I27 | Entity-mode architecture umbrella | — (Phase gate) |
-| I50 | Projects overlay table + project entity support | I27 |
-| I51 | People sub-entity table + relationships | I27 |
-| I52 | Meeting-entity many-to-many (replaces account_id FK) | I50 |
-| I53 | Entity-mode config, onboarding, UI adaptation | I50, I52 |
-| I54 | MCP client integration framework (Gong, Salesforce, Linear) | I27 |
-| I40 | CS domain overlay — account-mode vocabulary + schemas | I27 |
-| I35 | ProDev domain overlay — personal impact, career narrative | I27 |
-| I29 | Structured document schemas | I27 |
-| I28 | MCP server + client (I54 covers client side) | — (Phase gate) |
+| Issue | What | Type | Blocked by |
+|-------|------|------|------------|
+| I27 | Entity-mode architecture umbrella | — | — (Phase gate) |
+| I50 | Projects overlay table + project entity support | Foundation | I27 |
+| I51 | People sub-entity table + relationships | Foundation | I27 |
+| I52 | Meeting-entity many-to-many (replaces account_id FK) | Foundation | I50 |
+| I53 | Entity-mode config, onboarding, UI adaptation | Foundation | I50, I52 |
+| I54 | MCP client integration framework (Gong, Salesforce, Linear) | Integration | I27 |
+| I40 | CS Kit — account-mode fields, templates, vocabulary | Kit | I27 |
+| I55 | Executive Intelligence — decision framing, delegation, strategy | Intelligence | I27 |
+| I35 | ProDev Intelligence — personal impact, career narrative | Intelligence | I27 |
+| I29 | Structured document schemas | Foundation | I27 |
+| I28 | MCP server + client (I54 covers client side) | Integration | — (Phase gate) |
 
 ### Deferred
 
