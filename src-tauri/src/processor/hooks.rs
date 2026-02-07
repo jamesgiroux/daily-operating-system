@@ -117,14 +117,17 @@ fn sync_completion_to_markdown(ctx: &EnrichmentContext, db: &ActionDb) -> HookRe
             Err(_) => continue,
         };
 
-        let needle_unchecked = format!("- [ ] {}", action.title);
+        // Prefer source_id (raw text before metadata stripping) for matching.
+        // Falls back to title for actions created before metadata parsing existed.
+        let match_text = action.source_id.as_deref().unwrap_or(&action.title);
+        let needle_unchecked = format!("- [ ] {}", match_text);
         if !content.contains(&needle_unchecked) {
             continue;
         }
 
         let updated = content.replace(
             &needle_unchecked,
-            &format!("- [x] {}", action.title),
+            &format!("- [x] {}", match_text),
         );
 
         if updated != content {
