@@ -11,7 +11,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
-import { ProfileSelector } from "@/components/ProfileSelector";
+import { OnboardingWizard } from "@/components/OnboardingWizard";
 
 // Lazy load pages for code splitting
 import { Dashboard } from "@/components/dashboard/Dashboard";
@@ -28,6 +28,7 @@ import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import EmailsPage from "@/pages/EmailsPage";
 import FocusPage from "@/pages/FocusPage";
+import HistoryPage from "@/pages/HistoryPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
@@ -37,32 +38,50 @@ import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { WeekPlanningWizard } from "@/components/WeeklyPlanning/WeekPlanningWizard";
 import { Toaster } from "@/components/ui/sonner";
 
-import type { ProfileType } from "@/types";
-
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
-  const [needsProfile, setNeedsProfile] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [checkingConfig, setCheckingConfig] = useState(true);
 
   useEffect(() => {
-    async function checkProfile() {
+    async function checkConfig() {
       try {
-        const config = await invoke<{ profile?: string }>("get_config");
-        // Show selector if profile is missing, empty, or not set
-        if (!config.profile) {
-          setNeedsProfile(true);
+        const config = await invoke<{ workspacePath?: string; entityMode?: string }>("get_config");
+        // Show onboarding if config exists but workspace is missing/empty
+        if (!config.workspacePath) {
+          setNeedsOnboarding(true);
         }
       } catch {
-        // Config not loaded — don't show selector (bigger problem)
+        // No config at all — needs onboarding
+        setNeedsOnboarding(true);
+      } finally {
+        setCheckingConfig(false);
       }
     }
-    checkProfile();
+    checkConfig();
   }, []);
 
-  function handleProfileSet(_profile: ProfileType) {
-    setNeedsProfile(false);
-    // Reload page to pick up new profile across all components
+  function handleOnboardingComplete() {
+    setNeedsOnboarding(false);
     window.location.reload();
+  }
+
+  if (checkingConfig) {
+    return (
+      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+        <div className="flex h-screen items-center justify-center bg-background" />
+      </ThemeProvider>
+    );
+  }
+
+  if (needsOnboarding) {
+    return (
+      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+        <OnboardingWizard onComplete={handleOnboardingComplete} />
+        <Toaster position="bottom-right" />
+      </ThemeProvider>
+    );
   }
 
   return (
@@ -75,7 +94,6 @@ function RootLayout() {
         </SidebarInset>
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </SidebarProvider>
-      <ProfileSelector open={needsProfile} onProfileSet={handleProfileSet} />
       <PostMeetingPrompt />
       <WeekPlanningWizard />
       <Toaster position="bottom-right" />
@@ -92,7 +110,7 @@ function DashboardPage() {
     case "loading":
       return <DashboardSkeleton />;
     case "empty":
-      return <DashboardEmpty message={state.message} onGenerate={runNow} />;
+      return <DashboardEmpty message={state.message} onGenerate={runNow} googleAuth={state.googleAuth} />;
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
@@ -166,6 +184,12 @@ const weekRoute = createRoute({
   component: WeekPage,
 });
 
+const historyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/history",
+  component: HistoryPage,
+});
+
 // Create route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -173,6 +197,7 @@ const routeTree = rootRoute.addChildren([
   actionsRoute,
   emailsRoute,
   focusRoute,
+  historyRoute,
   inboxRoute,
   meetingDetailRoute,
   projectsRoute,

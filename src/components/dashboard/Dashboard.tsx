@@ -1,5 +1,6 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Overview } from "./Overview";
+import { IntelligenceCard } from "./IntelligenceCard";
 import { MeetingTimeline } from "./MeetingTimeline";
 import { ActionList } from "./ActionList";
 import { EmailList } from "./EmailList";
@@ -19,6 +20,9 @@ export function Dashboard({ data, freshness }: DashboardProps) {
         <div className="mx-auto max-w-6xl space-y-8">
           {/* Overview section */}
           <Overview overview={data.overview} stats={data.stats} freshness={freshness} />
+
+          {/* Executive Intelligence (I42) — auto-hides when no signals */}
+          <IntelligenceCard />
 
           {/* Main content grid */}
           <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
