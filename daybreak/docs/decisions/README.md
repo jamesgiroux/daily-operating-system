@@ -35,12 +35,12 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0012](0012-profile-indicator-in-sidebar.md) | Profile indicator in sidebar header | Accepted |
 | [0013](0013-meeting-detail-drill-down.md) | Meeting detail is a drill-down, not a nav item | Accepted |
 | [0014](0014-mvp-scope.md) | MVP = F1 + F7 + F6 + F3 | Accepted |
-| [0015](0015-defer-inbox-to-phase-2.md) | Defer inbox processing to Phase 2 | Accepted |
-| [0016](0016-defer-post-meeting-to-phase-3.md) | Defer post-meeting capture to Phase 3 | Accepted |
+| [0015](0015-defer-inbox-to-phase-2.md) | Defer inbox processing to Phase 2 | Superseded by [0036](0036-inbox-processing-in-phase-1.md) |
+| [0016](0016-defer-post-meeting-to-phase-3.md) | Defer post-meeting capture to Phase 3 | Superseded by [0037](0037-post-meeting-capture-in-phase-1.md) |
 | [0017](0017-pure-rust-archive.md) | Pure Rust archive, no three-phase | Accepted |
 | [0018](0018-hybrid-storage-markdown-sqlite.md) | Hybrid storage: Markdown + SQLite | Accepted |
 | [0019](0019-reference-approach-for-directives.md) | Reference approach for directives | Accepted |
-| [0020](0020-profile-dependent-accounts.md) | Profile system — role-based configuration | Accepted |
+| [0020](0020-profile-dependent-accounts.md) | Profile system — role-based configuration | Superseded by [0038](0038-cs-first-development.md) |
 | [0021](0021-multi-signal-meeting-classification.md) | Multi-signal meeting classification | Accepted |
 | [0022](0022-proactive-research-unknown-meetings.md) | Proactive research for unknown meetings | Accepted |
 | [0023](0023-post-meeting-capture-replaces-wrap.md) | /wrap replaced by post-meeting capture | Accepted |
@@ -52,9 +52,14 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0029](0029-three-tier-email-priority.md) | Three-tier email priority with AI-enriched context | Accepted |
 | [0030](0030-weekly-prep-with-daily-refresh.md) | Weekly prep generation with daily refresh | Proposed |
 | [0031](0031-actions-source-of-truth.md) | Actions: SQLite as working store, markdown as archive | Accepted |
-| [0032](0032-calendar-source-of-truth.md) | Calendar source of truth: hybrid overlay | Proposed |
-| [0033](0033-meeting-entity-unification.md) | Meeting entity unification | Proposed |
+| [0032](0032-calendar-source-of-truth.md) | Calendar source of truth: hybrid overlay | Accepted |
+| [0033](0033-meeting-entity-unification.md) | Meeting entity unification | Accepted |
 | [0034](0034-adaptive-dashboard.md) | Adaptive dashboard: density-aware layout | Proposed |
+| [0035](0035-incremental-prep-generation.md) | Incremental prep generation for new meetings | Proposed |
+| [0036](0036-inbox-processing-in-phase-1.md) | Inbox processing implemented in Phase 1 | Accepted |
+| [0037](0037-post-meeting-capture-in-phase-1.md) | Post-meeting capture implemented in Phase 1 | Accepted |
+| [0038](0038-cs-first-development.md) | CS-first development focus | Accepted |
+| [0039](0039-feature-toggle-architecture.md) | Feature toggle architecture | Accepted |
 
 ---
 
