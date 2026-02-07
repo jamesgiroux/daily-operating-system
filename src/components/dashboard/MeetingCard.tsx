@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { emit } from "@tauri-apps/api/event";
-import { ChevronDown, FileText, Trophy } from "lucide-react";
+import { Check, ChevronDown, FileText, Trophy } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -164,7 +164,11 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
                   to="/meeting/$prepFile"
                   params={{ prepFile: meeting.prepFile! }}
                 >
-                  <FileText className="mr-1 size-3.5" />
+                  {meeting.prepReviewed ? (
+                    <Check className="mr-1 size-3.5 text-success" />
+                  ) : (
+                    <FileText className="mr-1 size-3.5" />
+                  )}
                   View Prep
                 </Link>
               </Button>
