@@ -36,6 +36,10 @@
           "type": "string",
           "description": "Unique identifier (e.g., 0900-customer-acme-sync)"
         },
+        "calendarEventId": {
+          "type": "string",
+          "description": "Google Calendar event ID for cross-source matching"
+        },
         "time": {
           "type": "string",
           "description": "Start time (e.g., 9:00 AM)"

@@ -51,8 +51,8 @@ ADR-0031 specifies post-enrichment hooks should write `[x]` completion markers b
 **I23: No cross-briefing action deduplication in prepare_today.py**
 ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs.
 
-**I24: schedule.json meeting IDs are local slugs, not Google Calendar event IDs**
-`prepare_today.py` preserves Google Calendar event IDs, but `deliver_today.py` may generate local slugs (e.g., "0900-acme-sync") instead. ADR-0032 and ADR-0033 both depend on stable event ID matching. Verify whether IDs survive `deliver_today.py` and fix if not. Blocks hybrid calendar overlay and meeting entity unification.
+**I24: schedule.json meeting IDs are local slugs, not Google Calendar event IDs** — **Closed**
+Added `calendarEventId` field alongside the local slug `id` in both `schedule.json` and `preps/*.json`. Local slug preserved for routing/filenames; calendar event ID available for cross-source matching (ADR-0032, ADR-0033).
 
 ### Open — Low Priority
 

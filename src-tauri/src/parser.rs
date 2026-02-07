@@ -365,6 +365,7 @@ impl MeetingBuilder {
         let has_inline_prep = !self.prep.is_empty();
         Some(Meeting {
             id: self.id,
+            calendar_event_id: None,
             time: self.time,
             end_time: self.end_time,
             title: self.title,
@@ -1407,6 +1408,7 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
 
     Ok(FullMeetingPrep {
         file_path: filename,
+        calendar_event_id: None,
         title,
         time_range,
         meeting_context,
@@ -2118,6 +2120,7 @@ pub fn parse_meetings_from_overview(
 
                 meetings.push(Meeting {
                     id: format!("m{}", id_counter),
+                    calendar_event_id: None,
                     time: time.clone(),
                     end_time: None,
                     title: event,
