@@ -74,16 +74,8 @@ Profile selector at first launch says "You can change this later in Settings" bu
 **I16: Schedule editing requires manual config.json editing**
 Settings shows raw cron expressions. Needs: time picker ("Briefing time: 6:00 AM"), writes cron to config, hides syntax. Power users can still edit JSON directly.
 
-**I40: CS domain overlay — account-mode vocabulary and schemas**
-
-**I40: CS domain overlay — account-mode vocabulary and schemas**
-ADR-0046 replaces the CS extension concept with a CS domain overlay. What remains CS-specific after ADR-0043 narrowed extensions: CS-specific account fields (ARR, renewal dates, health scores, ring classification), account dashboard template/generation, success plan templates, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not overlay responsibilities. The existing `accounts` table IS the CS overlay — it carries CS-specific fields on top of the universal `entities` table. Remaining work: formalize overlay registration, schema contribution mechanism, template system. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
-
-**I20: No standalone email refresh**
-Emails only update with full briefing. ADR-0030 decomposition makes this more feasible — `ops/email_fetch.py` is now a standalone callable operation. Remaining work: a thin orchestrator or Rust command that invokes `email_fetch` independently and writes `emails.json`. Still raises partial-refresh semantics questions; ADR-0006 determinism boundary still applies.
-
-**I21: FYI emails may never appear due to classification defaults**
-`classify_email_priority()` in `ops/email_fetch.py` defaults to "medium." Only newsletters, automated senders, and GitHub notifications trigger "low." If a user's inbox is mostly customer + internal emails, the FYI section is permanently empty — not wrong, but means the three-tier promise (ADR-0029) is invisible. Consider: expanding low signals (marketing domains, bulk senders), or showing an explicit "0 FYI" indicator so users know the tier exists.
+**I40: CS Kit — account-mode fields, templates, and vocabulary**
+ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). What remains CS-specific after ADR-0043 narrowed extensions: CS account fields (ARR, renewal dates, health scores, ring classification), account dashboard templates, success plan templates, value driver categories, ring-based cadence thresholds, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not Kit responsibilities. The existing `accounts` table IS the CS Kit's schema contribution — it carries CS-specific fields on top of the universal `entities` table. Kit also contributes enrichment prompt fragments for CS vocabulary (value delivery moments, renewal signals, health indicators). Remaining work: formalize Kit registration, schema contribution mechanism, template system, prompt fragment composition. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
 
 **I25: Unify meeting badge/status rendering**
 MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overlayStatus, type) each with their own conditional. Consolidate into a computed MeetingDisplayState. Relates to ADR-0033.
@@ -129,17 +121,11 @@ Chromium extension for page capture to markdown in `_inbox/`. Aligns with "syste
 **I4: Motivational quotes as personality layer**
 Viable placements: overview greeting (daily rotating), empty states ("you crushed it"). Rejected approach: welcome interstitial (adds required click, violates Principle 2).
 
-**I6: Processing history page**
-`processing_log` table exists in SQLite with `get_processing_log()`. Missing: Tauri command + UI to render history. Supports Principle 9 (Show the Work).
-
 **I10: No shared glossary of app terms**
 Overlapping terms (briefing, workflow, capture, focus, etc.) used inconsistently. Needs shared definitions in DEVELOPMENT.md or a GLOSSARY.md.
 
 **I19: AI enrichment failure not communicated to user**
 When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet "AI-enriched" badge (absence = not enriched). Fits Principle 9.
-
-**I37: Dashboard overview text should adapt to day density**
-Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overview. The AI-generated overview text should be density-aware: busy day → "Packed day — your 9 AM Acme call is the priority." Light day → "Open afternoon — good day to tackle that overdue Globex proposal." Near-term: tweak Phase 2 enrichment prompt with meeting count context. Long-term: adaptive layout or between-meetings HUD (separate feature). Demoted from ADR-0034 — not an architectural decision.
 
 ### Closed
 
@@ -186,6 +172,18 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 **I41: Reactive meeting:prep wiring** — Resolved. `google.rs` calendar poller now generates lightweight prep JSON for new prep-eligible meetings (customer/qbr/partnership) after each poll cycle. Checks both meeting ID and calendar event ID to avoid duplicates. Enriches preps from SQLite account data (Ring, ARR, Health, Renewal, open actions). Emits `prep-ready` event; `useDashboardData` listens for silent refresh. Rust-native (ADR-0025), no Python subprocess. 8 new tests.
 
 **I31: Inbox transcript summarization** — Resolved. `enrich.rs` gained `detect_transcript()` heuristic (filename keywords, speaker label ratio >40%, timestamp ratio >20%, minimum 10 lines) and richer enrichment prompt for transcripts: 2-3 sentence executive summary + discussion highlights block. Parser handles `DISCUSSION:` / `END_DISCUSSION` markers. Non-transcript files unchanged (backward compatible). 12 enrich tests.
+
+**I39: Feature toggle runtime** — Resolved. `features: HashMap<String, bool>` on Config with `#[serde(default)]` for zero-config upgrade. `default_features(profile)` returns profile-conditional defaults (CS-only features off for general). `is_feature_enabled()` priority chain: explicit override → profile default → true. Executor gates: emailTriage, meetingPrep, inboxProcessing, impactRollup. Settings UI: FeaturesCard with toggle list. 7 new tests.
+
+**I18: Google API credential caching** — Resolved. Module-level `_cached_credentials` and `_cached_services` dict in `ops/config.py`. `build_google_credentials()`, `build_calendar_service()`, `build_gmail_service()` check cache first, return cached if valid, refresh if expired. Per-process only (separate subprocesses don't share). Eliminates double token refresh within `prepare_today.py`.
+
+**I20: Standalone email refresh** — Resolved. New `scripts/refresh_emails.py` thin orchestrator (reuses `ops.email_fetch`). `execute_email_refresh()` in executor.rs spawns script, reads output, calls `deliver_emails()` + optional `enrich_emails()`. `refresh_emails` Tauri command with WorkflowStatus guard (rejects if pipeline Running). Refresh button in EmailList.tsx. Emits `operation-delivered: emails` for frontend refresh.
+
+**I21: FYI email classification expansion** — Resolved. Expanded `LOW_PRIORITY_SIGNALS` with marketing/promo/noreply terms. Added `BULK_SENDER_DOMAINS` frozenset (mailchimp, sendgrid, hubspot, etc.), `NOREPLY_LOCAL_PARTS` set. Enhanced classification: List-Unsubscribe header → low, Precedence bulk/list → low, bulk sender domain → low, noreply local part → low. Customer domain check still runs first (high priority wins). 16 new Python tests.
+
+**I37: Density-aware dashboard overview** — Resolved. `classify_meeting_density()` in `deliver.rs` categorizes day as light (0-2), moderate (3-5), busy (6-8), packed (9+). Density guidance injected into `enrich_briefing()` prompt so Claude adapts narrative tone. First meeting time included in context. 4 new tests.
+
+**I6: Processing history page** — Resolved. `get_processing_history` Tauri command (reads `processing_log` table, default limit 50). `HistoryPage.tsx` with table rendering (filename, classification badge, status badge, destination, timestamp, error). Route at `/history`, sidebar nav item under Workspace group.
 
 **I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. `meeting_prep.py` only gathered rich context (SQLite history, captures, open actions) for customer meetings with account-based queries. Internal syncs, 1:1s, and partnership meetings got at most a single archive ref. Per ADR-0043 (meeting intelligence is core), expanded with title-based SQLite queries (`_get_meeting_history_by_title`, `_get_captures_by_meeting_title`, `_get_all_pending_actions`) so all non-personal/non-all-hands types get meeting history, captures, and actions context. 1:1s get deeper lookback (60-day history, 3 archive refs). Partnership meetings try account match first, fall back to title-based. No schema or orchestrator changes.
 

@@ -65,15 +65,52 @@ Integrations are MCP data source connectors (ADR-0027). Any integration works wi
 
 Each integration is an MCP server. The app is an MCP client. Community can build integrations without touching core code.
 
-### Domain overlays (replaces extensions)
+### Kits and Intelligence (replaces extensions)
 
-Domain-specific field schemas and templates are contributed by **domain overlays**:
+Overlays come in two types: **Kits** and **Intelligence**. Both are composable — a user can enable any combination.
 
-- CS overlay: ARR, health, ring fields on accounts + CS dashboard templates
-- Sales overlay: pipeline stage, deal size fields on accounts + pipeline views
-- ProDev overlay: personal impact capture + career narrative (ADR-0041)
+**Kits** are entity-mode-specific. They add domain fields, templates, and vocabulary for a specific role within an entity mode. A Kit requires a compatible entity mode.
 
-Domain overlays are thinner than ADR-0026 extensions — they contribute fields, templates, and vocabulary. They don't provide features (core per ADR-0043) and they don't provide data sources (integrations).
+| Kit | Entity mode | Adds |
+|-----|------------|------|
+| CS Kit | Account-based | ARR, health, ring, renewal fields. Account dashboard + success plan templates. Value driver categories. Ring-based cadence thresholds. |
+| Sales Kit | Account-based | Pipeline stage, deal size, forecast fields. Pipeline views. Win/loss analysis vocabulary. |
+| Marketing Kit | Project-based | Campaign attribution, channel performance fields. Campaign templates. |
+| PM Kit | Project-based | Sprint velocity, feature status fields. Roadmap templates. |
+
+**Intelligence** is entity-mode-agnostic. It adds an analytical perspective — changing how the system *interprets* the same data. Intelligence works with any entity mode and composes with any Kit.
+
+| Intelligence | What it changes | Source inspiration |
+|-------------|----------------|-------------------|
+| Executive Intelligence | Decision framing (SCQA, options analysis, reversibility/stakes). Delegation tracking ("WAITING ON" with staleness). Time protection (cancelable meetings). Political dynamics in meeting prep. Noise filtering (what doesn't need attention today). | `/cos`, `strategy-consulting` frameworks, `/veep` |
+| ProDev Intelligence | Personal impact capture (daily "what did you move forward?"). Weekly/monthly/quarterly narrative rollup. Skill demonstration tracking. Career evidence accumulation. | `/wrap`, `/month`, `/quarter` |
+
+**The key difference:** Kits contribute *entity fields and templates* (schema-level). Intelligence contributes *analytical perspective* (enrichment-level). A CS leader enables account-based mode + CS Kit + Executive Intelligence. A VP Engineering enables project-based + Executive Intelligence. A PM enables project-based + PM Kit + ProDev Intelligence.
+
+### Enrichment prompt fragments
+
+Intelligence layers manifest primarily through **enrichment prompt fragments** — overlay-contributed additions to the AI enrichment phase that change what questions the system asks about your data.
+
+Core enrichment (always active):
+- "Summarize outcomes, actions, and decisions from this meeting"
+- "Surface attention signals for entities needing follow-up"
+
+Executive Intelligence adds:
+- "Assess decision quality — what was decided, what's still open, what's the reversibility and stakes?"
+- "Identify delegation opportunities — what can be handed off and to whom?"
+- "Flag political dynamics — stakeholder alignment, power shifts, relationship temperature changes"
+- "Evaluate time protection — which upcoming meetings lack clear purpose?"
+
+ProDev Intelligence adds:
+- "Capture personal impact — what did the user demonstrate, influence, or move forward?"
+- "Identify skill demonstrations and career-narrative-worthy moments"
+- "Note cross-functional contributions and leadership signals"
+
+Kit enrichment adds domain vocabulary:
+- CS Kit: "Identify value delivery moments, renewal risk signals, and health indicators"
+- Sales Kit: "Track pipeline movement, competitive signals, and buying intent"
+
+The prompt fragment mechanism means overlays don't touch core code — they contribute text fragments that the enrichment orchestrator appends to the base prompt. This is the same pattern as ADR-0042's AI enrichment ops, extended with overlay-aware prompt composition.
 
 ### Data model
 
@@ -98,25 +135,27 @@ Account association has a natural key (email domain). Project association doesn'
 
 ### Onboarding
 
-Profile selector becomes entity-mode selector:
+Profile selector becomes a composable setup:
 
 1. "How do you organize your work?" → Account-based / Project-based / Both
 2. "What tools do you use?" → Integration checklist (Gmail, Gong, Salesforce, Linear, etc.)
-3. (Optional shortcut) "What's your role?" → Pre-selects entity mode + domain overlay
+3. "Enhance your experience" → Kit selection (CS Kit, Sales Kit, etc.) + Intelligence (Executive, ProDev)
+4. (Optional shortcut) "I'm a..." → Role shortcut that pre-selects entity mode + Kit + Intelligence
 
-Job title is a convenience shortcut to configuration, not the organizing principle. "I'm a CSM" pre-selects account-based + CS overlay + recommends Gainsight. The system doesn't know or care about "CSM" — it knows account-based entity mode with these integrations.
+Job title is a convenience shortcut to configuration, not the organizing principle. "I'm a CS leader" pre-selects account-based + CS Kit + Executive Intelligence + recommends Gainsight. The system doesn't know "CS leader" — it knows the composable configuration.
 
 ### Config evolution
 
 ```json
 {
   "entityMode": "both",
+  "kits": ["customer-success"],
+  "intelligence": ["executive", "prodev"],
   "integrations": {
     "gmail": { "enabled": true },
     "gcal": { "enabled": true },
     "gong": { "enabled": false }
   },
-  "domainOverlay": "customer-success",
   "features": {
     "accountTracking": true,
     "projectTracking": true,
@@ -125,29 +164,33 @@ Job title is a convenience shortcut to configuration, not the organizing princip
 }
 ```
 
-Migration: `profile: "customer-success"` maps to `entityMode: "account"` + `domainOverlay: "customer-success"`. `profile: "general"` maps to `entityMode: "project"` + no overlay.
+Migration: `profile: "customer-success"` maps to `entityMode: "account"` + `kits: ["customer-success"]`. `profile: "general"` maps to `entityMode: "project"` + empty kits/intelligence.
 
 ## Consequences
 
 **Easier:**
-- Adding new roles: pick entity mode + integrations. No custom profile code.
+- Adding new roles: pick entity mode + Kit + Intelligence. No custom profile code.
+- Kits and Intelligence compose freely — a CS leader can add Executive Intelligence without any code change.
 - Integrations are independent — ship one at a time, any combination works.
 - "Both" mode supported from day one — no architectural retrofit.
 - People as universal sub-entity enriches meeting prep and stakeholder context for all users.
 - Community can build MCP integrations without touching core.
-- Thinner overlays are simpler to build and maintain than full extensions.
+- Enrichment prompt fragments mean new Intelligence layers don't touch core enrichment code.
+- Kits are thinner than ADR-0026 extensions — entity fields + templates, not features.
 
 **Harder:**
 - "Both" mode UX requires unified attention view with type-aware rendering.
 - Project-entity association lacks a natural key (unlike account's domain matching).
 - Three entity tables (entities + accounts + projects) to keep synchronized via bridge pattern.
 - MCP client infrastructure must be production-ready before integrations work.
-- Migration from `profile` config to `entityMode` + `integrations` schema.
+- Migration from `profile` config to `entityMode` + `kits` + `intelligence` schema.
 - People table introduces a new data source that needs population strategy.
+- Enrichment prompt composition must be deterministic — fragment ordering and conflicts between multiple Intelligence layers need rules.
 
 **Trade-offs:**
 - Chose "both as first-class" over "ship simple, add both later" — more upfront complexity, prevents retrofit.
 - Chose people as sub-entity over third mode — matches how users actually organize their work.
 - Chose MCP for integrations over custom protocol — leverages ecosystem, community-contributable, already decided in ADR-0027.
-- Domain overlays are thinner than ADR-0026 extensions — less powerful but sufficient given ADR-0043's narrowed scope.
+- Kits are entity-mode-specific, Intelligence is entity-mode-agnostic — two overlay types instead of one, but the distinction maps to how users think (tools for my role vs. how I think about my day).
+- Enrichment prompt fragments over hardcoded prompts — more flexible, but prompt quality depends on fragment composition.
 - Accepted that project association is weaker than account association without integrations — project-based mode improves with tool connections, account-based mode works standalone.
