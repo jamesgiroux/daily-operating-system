@@ -6,6 +6,8 @@
 //! - Phase 3 deliver script
 
 pub mod archive;
+pub mod deliver;
+pub mod operations;
 pub mod reconcile;
 pub mod today;
 pub mod week;
