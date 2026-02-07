@@ -380,6 +380,7 @@ impl MeetingBuilder {
             prep_file: self.prep_file,
             has_prep: self.has_prep || has_inline_prep,
             overlay_status: None,
+            prep_reviewed: None,
         })
     }
 }
@@ -2132,6 +2133,7 @@ pub fn parse_meetings_from_overview(
                     prep_file,
                     has_prep,
                     overlay_status: None,
+                    prep_reviewed: None,
                 });
 
                 id_counter += 1;
