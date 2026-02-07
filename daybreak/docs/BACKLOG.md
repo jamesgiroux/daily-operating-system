@@ -15,7 +15,7 @@ Active issues, known risks, assumptions, and dependencies.
   ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
   Email Pipeline:      I20, I21        — Three-tier email promise (ADR-0029)
-  UI Consistency:      I25, I9         — Badge unification, stub pages
+  UI Consistency:      I25, I9, I37    — Badge unification, stub pages, density-aware overview
   First-Run & Ship:    I13, I8         — Onboarding, distribution
   Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems
 -->
@@ -103,6 +103,9 @@ Overlapping terms (briefing, workflow, capture, focus, etc.) used inconsistently
 
 **I19: AI enrichment failure not communicated to user**
 When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet "AI-enriched" badge (absence = not enriched). Fits Principle 9.
+
+**I37: Dashboard overview text should adapt to day density**
+Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overview. The AI-generated overview text should be density-aware: busy day → "Packed day — your 9 AM Acme call is the priority." Light day → "Open afternoon — good day to tackle that overdue Globex proposal." Near-term: tweak Phase 2 enrichment prompt with meeting count context. Long-term: adaptive layout or between-meetings HUD (separate feature). Demoted from ADR-0034 — not an architectural decision.
 
 ### Closed
 
