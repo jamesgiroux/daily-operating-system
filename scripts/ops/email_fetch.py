@@ -10,8 +10,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .config import (
+    BULK_SENDER_DOMAINS,
     HIGH_PRIORITY_SUBJECT_KEYWORDS,
     LOW_PRIORITY_SIGNALS,
+    NOREPLY_LOCAL_PARTS,
     build_gmail_service,
     _warn,
 )
@@ -108,7 +110,10 @@ def _fetch_unread_emails(max_results: int = 30) -> list[dict[str, Any]]:
                         userId="me",
                         id=msg_stub["id"],
                         format="metadata",
-                        metadataHeaders=["From", "Subject", "Date"],
+                        metadataHeaders=[
+                            "From", "Subject", "Date",
+                            "List-Unsubscribe", "Precedence",
+                        ],
                     )
                     .execute()
                 )
@@ -125,6 +130,8 @@ def _fetch_unread_emails(max_results: int = 30) -> list[dict[str, Any]]:
                     "subject": headers.get("Subject", ""),
                     "snippet": msg.get("snippet", ""),
                     "date": headers.get("Date", ""),
+                    "list_unsubscribe": headers.get("List-Unsubscribe", ""),
+                    "precedence": headers.get("Precedence", ""),
                 })
             except Exception:
                 continue
@@ -192,6 +199,24 @@ def _classify_email_priority(
     if any(signal in from_lower or signal in subject_lower for signal in LOW_PRIORITY_SIGNALS):
         return "low"
     if "github.com" in domain:
+        return "low"
+
+    # LOW: List-Unsubscribe header present (bulk/marketing mail) — I21
+    if email.get("list_unsubscribe"):
+        return "low"
+
+    # LOW: Precedence: bulk or list — I21
+    precedence = email.get("precedence", "").lower()
+    if precedence in ("bulk", "list"):
+        return "low"
+
+    # LOW: Sender domain is a known bulk/marketing sender — I21
+    if domain in BULK_SENDER_DOMAINS:
+        return "low"
+
+    # LOW: Noreply local-part (checked AFTER customer/account domain) — I21
+    local_part = from_addr.split("@")[0] if "@" in from_addr else ""
+    if local_part in NOREPLY_LOCAL_PARTS:
         return "low"
 
     # MEDIUM: Internal colleagues

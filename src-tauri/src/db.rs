@@ -109,6 +109,61 @@ pub struct DbCapture {
     pub captured_at: String,
 }
 
+/// Stakeholder relationship signals computed from meeting history and account data (I43).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StakeholderSignals {
+    /// Number of meetings in the last 30 days
+    pub meeting_frequency_30d: i32,
+    /// Number of meetings in the last 90 days
+    pub meeting_frequency_90d: i32,
+    /// ISO timestamp of the most recent meeting
+    pub last_meeting: Option<String>,
+    /// ISO timestamp of last account contact (updated_at from accounts table)
+    pub last_contact: Option<String>,
+    /// Relationship temperature: "hot", "warm", "cool", "cold"
+    pub temperature: String,
+    /// Trend: "increasing", "stable", "decreasing"
+    pub trend: String,
+}
+
+/// Compute relationship temperature from last meeting date.
+fn compute_temperature(last_meeting_iso: &str) -> String {
+    let days = days_since_iso(last_meeting_iso);
+    match days {
+        Some(d) if d < 7 => "hot".to_string(),
+        Some(d) if d < 30 => "warm".to_string(),
+        Some(d) if d < 60 => "cool".to_string(),
+        _ => "cold".to_string(),
+    }
+}
+
+/// Compute meeting trend from 30d vs 90d frequency.
+fn compute_trend(count_30d: i32, count_90d: i32) -> String {
+    if count_90d == 0 {
+        return "stable".to_string();
+    }
+    // Expected 30d count is ~1/3 of 90d count (even distribution)
+    let expected_30d = count_90d as f64 / 3.0;
+    let actual_30d = count_30d as f64;
+
+    if actual_30d > expected_30d * 1.3 {
+        "increasing".to_string()
+    } else if actual_30d < expected_30d * 0.7 {
+        "decreasing".to_string()
+    } else {
+        "stable".to_string()
+    }
+}
+
+/// Parse an ISO datetime string and return days since that date.
+fn days_since_iso(iso: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(iso)
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", iso.trim_end_matches('Z'))))
+        .ok()
+        .map(|dt| (Utc::now() - dt.with_timezone(&Utc)).num_days())
+}
+
 /// SQLite connection wrapper for action/account/meeting state.
 ///
 /// This is intentionally NOT `Clone` or `Sync`. It is held behind a
@@ -157,6 +212,11 @@ impl ActionDb {
         let _ = conn.execute_batch(
             "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
              SELECT id, name, 'account', tracker_path, updated_at FROM accounts;",
+        );
+
+        // Migration: add needs_decision flag to actions (I42 — Executive Intelligence)
+        let _ = conn.execute_batch(
+            "ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;",
         );
 
         // Migration: add 'decision' to captures.capture_type CHECK constraint.
@@ -827,6 +887,76 @@ impl ActionDb {
     }
 
     // =========================================================================
+    // Stakeholder Signals (I43)
+    // =========================================================================
+
+    /// Compute stakeholder signals for an account: meeting frequency, last contact,
+    /// and relationship temperature. Returns `None` if account not found.
+    pub fn get_stakeholder_signals(&self, account_id: &str) -> Result<StakeholderSignals, DbError> {
+        // Meeting counts for 30/90 day windows
+        let count_30d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history
+                 WHERE account_id = ?1
+                   AND start_time >= date('now', '-30 days')",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let count_90d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history
+                 WHERE account_id = ?1
+                   AND start_time >= date('now', '-90 days')",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        // Last meeting date
+        let last_meeting: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MAX(start_time) FROM meetings_history WHERE account_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+
+        // Last contact from accounts table (updated_at is touched on each interaction)
+        let last_contact: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT updated_at FROM accounts
+                 WHERE id = ?1 OR LOWER(name) = LOWER(?1)",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        // Temperature: based on days since last meeting
+        let temperature = match &last_meeting {
+            Some(dt) => compute_temperature(dt),
+            None => "cold".to_string(),
+        };
+
+        // Trend: compare 30d vs 90d rate
+        let trend = compute_trend(count_30d, count_90d);
+
+        Ok(StakeholderSignals {
+            meeting_frequency_30d: count_30d,
+            meeting_frequency_90d: count_90d,
+            last_meeting,
+            last_contact,
+            temperature,
+            trend,
+        })
+    }
+
+    // =========================================================================
     // Processing Log
     // =========================================================================
 
@@ -1133,6 +1263,180 @@ impl ActionDb {
             map.insert(file, at);
         }
         Ok(map)
+    }
+
+    // =========================================================================
+    // Intelligence Queries (I42 — Executive Intelligence)
+    // =========================================================================
+
+    /// Get actions in `waiting` status that are older than `stale_days`.
+    ///
+    /// These represent stale delegations — things handed off to someone else
+    /// that haven't been resolved. Ordered by staleness (oldest first).
+    pub fn get_stale_delegations(&self, stale_days: i32) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE status = 'waiting'
+               AND created_at <= datetime('now', ?1 || ' days')
+             ORDER BY created_at ASC",
+        )?;
+
+        let days_param = format!("-{stale_days}");
+        let rows = stmt.query_map(params![days_param], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get actions flagged as needing a decision, due within `days_ahead` days.
+    ///
+    /// The `needs_decision` flag is set by AI enrichment during briefing generation.
+    /// Actions with no due date are included (they still need decisions).
+    pub fn get_flagged_decisions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE needs_decision = 1
+               AND status = 'pending'
+               AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
+             ORDER BY
+               CASE WHEN due_date IS NULL THEN 1 ELSE 0 END,
+               due_date ASC,
+               priority",
+        )?;
+
+        let days_param = format!("+{days_ahead}");
+        let rows = stmt.query_map(params![days_param], Self::map_action_row)?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get accounts with `contract_end` within `days_ahead` days.
+    ///
+    /// Returns accounts approaching renewal, ordered by soonest first.
+    pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+                    csm, champion, tracker_path, updated_at
+             FROM accounts
+             WHERE contract_end IS NOT NULL
+               AND contract_end >= date('now')
+               AND contract_end <= date('now', ?1 || ' days')
+             ORDER BY contract_end ASC",
+        )?;
+
+        let days_param = format!("+{days_ahead}");
+        let rows = stmt.query_map(params![days_param], |row| {
+            Ok(DbAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                ring: row.get(2)?,
+                arr: row.get(3)?,
+                health: row.get(4)?,
+                contract_start: row.get(5)?,
+                contract_end: row.get(6)?,
+                csm: row.get(7)?,
+                champion: row.get(8)?,
+                tracker_path: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+
+        let mut accounts = Vec::new();
+        for row in rows {
+            accounts.push(row?);
+        }
+        Ok(accounts)
+    }
+
+    /// Get accounts where `updated_at` is older than `stale_days`.
+    ///
+    /// Represents accounts that haven't been touched (via meetings, captures,
+    /// or manual updates) in a while — a signal to check in.
+    pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+                    csm, champion, tracker_path, updated_at
+             FROM accounts
+             WHERE updated_at <= datetime('now', ?1 || ' days')
+             ORDER BY updated_at ASC",
+        )?;
+
+        let days_param = format!("-{stale_days}");
+        let rows = stmt.query_map(params![days_param], |row| {
+            Ok(DbAccount {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                ring: row.get(2)?,
+                arr: row.get(3)?,
+                health: row.get(4)?,
+                contract_start: row.get(5)?,
+                contract_end: row.get(6)?,
+                csm: row.get(7)?,
+                champion: row.get(8)?,
+                tracker_path: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+
+        let mut accounts = Vec::new();
+        for row in rows {
+            accounts.push(row?);
+        }
+        Ok(accounts)
+    }
+
+    /// Flag an action as needing a decision. Called by AI enrichment during
+    /// briefing generation to mark actions that require user decisions.
+    pub fn flag_action_as_decision(&self, id: &str) -> Result<bool, DbError> {
+        let rows = self.conn.execute(
+            "UPDATE actions SET needs_decision = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Clear all decision flags. Called before re-flagging during enrichment
+    /// so that stale flags from previous runs are removed.
+    pub fn clear_decision_flags(&self) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE actions SET needs_decision = 0 WHERE needs_decision = 1",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Helper: map a row to `DbAction`. Reduces repetition across queries.
+    fn map_action_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAction> {
+        Ok(DbAction {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            priority: row.get(2)?,
+            status: row.get(3)?,
+            created_at: row.get(4)?,
+            due_date: row.get(5)?,
+            completed_at: row.get(6)?,
+            account_id: row.get(7)?,
+            project_id: row.get(8)?,
+            source_type: row.get(9)?,
+            source_id: row.get(10)?,
+            source_label: row.get(11)?,
+            context: row.get(12)?,
+            waiting_on: row.get(13)?,
+            updated_at: row.get(14)?,
+        })
     }
 }
 
@@ -1848,5 +2152,349 @@ mod tests {
 
         let _db1 = ActionDb::open_at(path.clone()).expect("first open");
         let _db2 = ActionDb::open_at(path).expect("second open should not fail");
+    }
+
+    // =========================================================================
+    // Intelligence query tests (I42)
+    // =========================================================================
+
+    #[test]
+    fn test_get_stale_delegations() {
+        let db = test_db();
+
+        // Insert a waiting action created 10 days ago (should be stale at 3-day threshold)
+        let mut stale = sample_action("wait-001", "Waiting on legal review");
+        stale.status = "waiting".to_string();
+        stale.waiting_on = Some("Legal".to_string());
+        stale.created_at = "2020-01-01T00:00:00Z".to_string(); // very old
+        db.upsert_action(&stale).expect("insert stale");
+
+        // Insert a waiting action created now (should NOT be stale)
+        let mut fresh = sample_action("wait-002", "Fresh delegation");
+        fresh.status = "waiting".to_string();
+        fresh.waiting_on = Some("Bob".to_string());
+        db.upsert_action(&fresh).expect("insert fresh");
+
+        // Insert a pending action (not waiting — should NOT appear)
+        let pending = sample_action("pend-001", "Pending task");
+        db.upsert_action(&pending).expect("insert pending");
+
+        let results = db.get_stale_delegations(3).expect("query");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "wait-001");
+        assert_eq!(results[0].waiting_on, Some("Legal".to_string()));
+    }
+
+    #[test]
+    fn test_get_stale_delegations_empty() {
+        let db = test_db();
+        let results = db.get_stale_delegations(3).expect("query");
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_flag_and_get_decisions() {
+        let db = test_db();
+
+        // Insert actions
+        let mut act1 = sample_action("dec-001", "Decide on vendor");
+        act1.due_date = Some("2099-12-31".to_string()); // future, within range
+        db.upsert_action(&act1).expect("insert");
+
+        let mut act2 = sample_action("dec-002", "Choose architecture");
+        act2.due_date = Some("2099-12-31".to_string());
+        db.upsert_action(&act2).expect("insert");
+
+        let act3 = sample_action("dec-003", "Not flagged");
+        db.upsert_action(&act3).expect("insert");
+
+        // Flag only the first two
+        assert!(db.flag_action_as_decision("dec-001").expect("flag"));
+        assert!(db.flag_action_as_decision("dec-002").expect("flag"));
+
+        // Non-existent action returns false
+        assert!(!db.flag_action_as_decision("nonexistent").expect("flag"));
+
+        // Query with large lookahead — should get both flagged actions
+        let results = db.get_flagged_decisions(365_000).expect("query");
+        assert_eq!(results.len(), 2);
+        let ids: Vec<&str> = results.iter().map(|a| a.id.as_str()).collect();
+        assert!(ids.contains(&"dec-001"));
+        assert!(ids.contains(&"dec-002"));
+    }
+
+    #[test]
+    fn test_flagged_decisions_excludes_completed() {
+        let db = test_db();
+
+        let mut act = sample_action("dec-010", "Completed decision");
+        act.due_date = Some("2099-12-31".to_string());
+        db.upsert_action(&act).expect("insert");
+        db.flag_action_as_decision("dec-010").expect("flag");
+        db.complete_action("dec-010").expect("complete");
+
+        let results = db.get_flagged_decisions(365_000).expect("query");
+        assert!(results.is_empty(), "Completed actions should not appear");
+    }
+
+    #[test]
+    fn test_flagged_decisions_includes_no_due_date() {
+        let db = test_db();
+
+        // Action with no due date but flagged
+        let act = sample_action("dec-020", "Open-ended decision");
+        db.upsert_action(&act).expect("insert");
+        db.flag_action_as_decision("dec-020").expect("flag");
+
+        let results = db.get_flagged_decisions(3).expect("query");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "dec-020");
+    }
+
+    #[test]
+    fn test_clear_decision_flags() {
+        let db = test_db();
+
+        let act = sample_action("dec-030", "Will be unflagged");
+        db.upsert_action(&act).expect("insert");
+        db.flag_action_as_decision("dec-030").expect("flag");
+
+        // Verify flagged
+        let before = db.get_flagged_decisions(365_000).expect("query");
+        assert_eq!(before.len(), 1);
+
+        // Clear
+        db.clear_decision_flags().expect("clear");
+
+        let after = db.get_flagged_decisions(365_000).expect("query");
+        assert!(after.is_empty(), "All flags should be cleared");
+    }
+
+    #[test]
+    fn test_get_renewal_alerts() {
+        let db = test_db();
+
+        // Account renewing in 30 days (should appear at 60-day threshold)
+        let soon = DbAccount {
+            id: "renew-soon".to_string(),
+            name: "Renewing Soon Corp".to_string(),
+            ring: Some(1),
+            arr: Some(100_000.0),
+            health: Some("green".to_string()),
+            contract_start: Some("2025-01-01".to_string()),
+            contract_end: Some(
+                (Utc::now() + chrono::Duration::days(30))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            ),
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&soon).expect("insert");
+
+        // Account with no contract_end (should NOT appear)
+        let no_end = DbAccount {
+            id: "no-end".to_string(),
+            name: "No End Corp".to_string(),
+            ring: Some(2),
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&no_end).expect("insert");
+
+        // Account already expired (should NOT appear — contract_end < now)
+        let expired = DbAccount {
+            id: "expired".to_string(),
+            name: "Expired Corp".to_string(),
+            ring: Some(3),
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: Some("2020-01-01".to_string()),
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&expired).expect("insert");
+
+        let results = db.get_renewal_alerts(60).expect("query");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "renew-soon");
+    }
+
+    #[test]
+    fn test_get_stale_accounts() {
+        let db = test_db();
+
+        // Account updated 60 days ago (should be stale at 30-day threshold)
+        let stale = DbAccount {
+            id: "stale-acct".to_string(),
+            name: "Stale Corp".to_string(),
+            ring: Some(2),
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_account(&stale).expect("insert");
+
+        // Account updated just now (should NOT be stale)
+        let fresh = DbAccount {
+            id: "fresh-acct".to_string(),
+            name: "Fresh Corp".to_string(),
+            ring: Some(1),
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&fresh).expect("insert");
+
+        let results = db.get_stale_accounts(30).expect("query");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "stale-acct");
+    }
+
+    #[test]
+    fn test_needs_decision_migration() {
+        // Verify the needs_decision column exists after opening a fresh DB
+        let db = test_db();
+        let act = sample_action("mig-001", "Test migration");
+        db.upsert_action(&act).expect("insert");
+
+        // Should be able to flag it without error
+        db.flag_action_as_decision("mig-001").expect("flag");
+
+        // Verify directly
+        let flagged: i32 = db
+            .conn
+            .query_row(
+                "SELECT needs_decision FROM actions WHERE id = 'mig-001'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("direct query");
+        assert_eq!(flagged, 1);
+    }
+
+    // =========================================================================
+    // Stakeholder Signals tests (I43)
+    // =========================================================================
+
+    #[test]
+    fn test_stakeholder_signals_empty() {
+        let db = test_db();
+        let signals = db
+            .get_stakeholder_signals("nonexistent-corp")
+            .expect("should not error for missing account");
+        assert_eq!(signals.meeting_frequency_30d, 0);
+        assert_eq!(signals.meeting_frequency_90d, 0);
+        assert!(signals.last_meeting.is_none());
+        assert!(signals.last_contact.is_none());
+        assert_eq!(signals.temperature, "cold");
+        assert_eq!(signals.trend, "stable");
+    }
+
+    #[test]
+    fn test_stakeholder_signals_with_meetings() {
+        let db = test_db();
+        let now = Utc::now();
+
+        // Insert recent meetings
+        for i in 0..5 {
+            let meeting = DbMeeting {
+                id: format!("mtg-{}", i),
+                title: format!("Sync #{}", i),
+                meeting_type: "customer".to_string(),
+                start_time: (now - chrono::Duration::days(i * 5)).to_rfc3339(),
+                end_time: None,
+                account_id: Some("acme-corp".to_string()),
+                attendees: None,
+                notes_path: None,
+                summary: None,
+                created_at: now.to_rfc3339(),
+                calendar_event_id: None,
+            };
+            db.upsert_meeting(&meeting).expect("insert meeting");
+        }
+
+        let signals = db
+            .get_stakeholder_signals("acme-corp")
+            .expect("signals");
+        assert_eq!(signals.meeting_frequency_30d, 5);
+        assert_eq!(signals.meeting_frequency_90d, 5);
+        assert!(signals.last_meeting.is_some());
+        assert_eq!(signals.temperature, "hot"); // most recent < 7 days ago
+    }
+
+    #[test]
+    fn test_stakeholder_signals_with_account_contact() {
+        let db = test_db();
+
+        let account = DbAccount {
+            id: "acme-corp".to_string(),
+            name: "Acme Corp".to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&account).expect("insert account");
+
+        let signals = db
+            .get_stakeholder_signals("acme-corp")
+            .expect("signals");
+        assert!(signals.last_contact.is_some());
+    }
+
+    #[test]
+    fn test_compute_temperature() {
+        assert_eq!(super::compute_temperature(&Utc::now().to_rfc3339()), "hot");
+
+        let days_ago_10 = (Utc::now() - chrono::Duration::days(10)).to_rfc3339();
+        assert_eq!(super::compute_temperature(&days_ago_10), "warm");
+
+        let days_ago_45 = (Utc::now() - chrono::Duration::days(45)).to_rfc3339();
+        assert_eq!(super::compute_temperature(&days_ago_45), "cool");
+
+        let days_ago_90 = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
+        assert_eq!(super::compute_temperature(&days_ago_90), "cold");
+    }
+
+    #[test]
+    fn test_compute_trend() {
+        // Even distribution: 3 in 30d out of 9 in 90d → stable
+        assert_eq!(super::compute_trend(3, 9), "stable");
+
+        // Increasing: 5 in 30d out of 6 in 90d (way above 1/3)
+        assert_eq!(super::compute_trend(5, 6), "increasing");
+
+        // Decreasing: 0 in 30d out of 9 in 90d (way below 1/3)
+        assert_eq!(super::compute_trend(0, 9), "decreasing");
+
+        // No data: should be stable
+        assert_eq!(super::compute_trend(0, 0), "stable");
     }
 }

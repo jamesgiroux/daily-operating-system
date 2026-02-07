@@ -4,6 +4,7 @@ mod commands;
 mod db;
 pub mod entity;
 mod error;
+pub mod intelligence;
 mod executor;
 mod google;
 mod json_loader;
@@ -167,6 +168,9 @@ pub fn run() {
             commands::copy_to_inbox,
             commands::list_meeting_preps,
             commands::set_profile,
+            commands::set_entity_mode,
+            commands::set_workspace_path,
+            commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
             commands::reopen_action,
@@ -198,6 +202,15 @@ pub fn run() {
             commands::get_meeting_outcomes,
             commands::update_capture,
             commands::update_action_priority,
+            // I42: Executive Intelligence
+            commands::get_executive_intelligence,
+            // I6: Processing History
+            commands::get_processing_history,
+            // I20: Email Refresh
+            commands::refresh_emails,
+            // I39: Feature Toggles
+            commands::get_features,
+            commands::set_feature_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
