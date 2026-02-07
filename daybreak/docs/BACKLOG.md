@@ -139,7 +139,7 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 
 **I34: Archive workflow lacks end-of-day reconciliation** — Resolved. Added `workflow/reconcile.rs` with mechanical reconciliation that runs before archive: reads schedule.json to identify completed meetings, checks transcript status in `Accounts/` and `_inbox/`, computes action stats from SQLite, writes `day-summary.json` to archive directory and `next-morning-flags.json` to `_today/` for tomorrow's briefing. Pure Rust, no AI (ADR-0040).
 
-**I23: No cross-briefing action deduplication in prepare_today.py** — Resolved. ADR-0030 `action_parse.py` implements SQLite pre-check: `_load_existing_titles()` queries all action titles from SQLite before markdown parsing, skipping any titles that already exist (completed or pending). Stable content-hash IDs in `id_gen.py` address ID instability.
+**I23: No cross-briefing action deduplication** — Resolved. Three layers: (1) `action_parse.py` SQLite pre-check (`_load_existing_titles()`) skips known titles during Phase 1 parsing. (2) `deliver_today.py` `_make_id()` uses category-agnostic `action-` prefix so the same action gets the same ID regardless of overdue/today/week bucket, plus within-briefing dedup by ID, plus its own SQLite pre-check before JSON generation. (3) Rust-side `upsert_action_if_not_completed()` title-based dedup as final guard.
 
 **I33: Captured wins/risks don't resurface in meeting preps** — Resolved. ADR-0030 `meeting_prep.py` queries `captures` table via `_get_captures_for_account()` for recent wins/risks by account_id (14-day lookback). Also queries open actions and meeting history per account. Rust `db.rs` gained `get_captures_for_account()` method with test.
 
