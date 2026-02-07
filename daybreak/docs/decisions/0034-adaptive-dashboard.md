@@ -17,5 +17,5 @@ Long-term: Time-aware adaptive layout (collapsed future meetings on busy days, e
 
 - Near-term: Low implementation cost, leverages existing AI enrichment, no layout changes
 - Doesn't solve the "between meetings" UX on busy days — that's a separate feature
-- Not blocking MVP — the static layout works
-- Revisit when post-meeting capture (ADR-0016) ships, since that's when "between meetings" becomes critical
+- Not blocking anything — the static layout works
+- Revisit when post-meeting capture (ADR-0023) ships, since that's when "between meetings" becomes critical
