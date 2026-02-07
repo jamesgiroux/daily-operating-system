@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS captures (
     meeting_id TEXT NOT NULL,
     meeting_title TEXT NOT NULL,
     account_id TEXT,
-    capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action')) NOT NULL,
+    capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
     content TEXT NOT NULL,
     owner TEXT,
     due_date TEXT,
@@ -85,6 +85,19 @@ CREATE TABLE IF NOT EXISTS captures (
 CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
 CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);
+
+-- Profile-agnostic tracked entities (ADR-0045).
+-- CS = Account, PM = Project, Manager = Person.
+-- Domain-specific fields (ring, ARR, health) stay in `accounts`.
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT 'account',
+    tracker_path TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
 
 -- Meeting prep state tracking (ADR-0033 near-term)
 CREATE TABLE IF NOT EXISTS meeting_prep_state (
