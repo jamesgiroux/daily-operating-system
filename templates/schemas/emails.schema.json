@@ -14,7 +14,8 @@
       "type": "object",
       "properties": {
         "highPriority": { "type": "integer", "minimum": 0 },
-        "normalPriority": { "type": "integer", "minimum": 0 },
+        "mediumPriority": { "type": "integer", "minimum": 0 },
+        "lowPriority": { "type": "integer", "minimum": 0 },
         "needsAction": { "type": "integer", "minimum": 0 }
       }
     },
@@ -48,11 +49,15 @@
         },
         "priority": {
           "type": "string",
-          "enum": ["high", "normal"]
+          "enum": ["high", "medium", "low"]
         },
         "received": {
           "type": "string",
           "format": "date-time"
+        },
+        "summary": {
+          "type": "string",
+          "description": "AI-generated one-line summary"
         },
         "emailType": {
           "type": "string",
@@ -69,6 +74,10 @@
         "actionOwner": {
           "type": "string",
           "description": "Who should act on this"
+        },
+        "actionPriority": {
+          "type": "string",
+          "description": "Urgency level of the recommended action"
         }
       }
     }
