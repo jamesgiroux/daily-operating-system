@@ -172,8 +172,10 @@ impl Executor {
 
     /// Execute archive workflow (pure Rust, silent operation)
     ///
-    /// Archive is special: no three-phase pattern, no AI, no notification.
-    /// Just moves _today/*.md files to archive/YYYY-MM-DD/.
+    /// Sequence (ADR-0040):
+    /// 1. Reconcile: read schedule.json, check transcript status, compute stats
+    /// 2. Archive: move files, clean data/
+    /// 3. Persist: write day-summary.json, next-morning-flags.json, meetings to DB
     async fn execute_archive(
         &self,
         workspace: &Path,
@@ -181,9 +183,28 @@ impl Executor {
         trigger: ExecutionTrigger,
     ) -> Result<(), ExecutionError> {
         use crate::workflow::archive::run_archive;
+        use crate::workflow::reconcile;
 
-        log::info!("Running archive workflow (silent)");
+        log::info!("Running archive workflow with reconciliation");
 
+        // Step 1: Reconcile BEFORE archive (schedule.json gets cleaned)
+        // Lock DB briefly for reconciliation, then drop before the await
+        let recon = {
+            let db_guard = self.state.db.lock().ok();
+            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+            let r = reconcile::run_reconciliation(workspace, db_ref);
+            // db_guard dropped here
+            r
+        };
+
+        log::info!(
+            "Reconciliation: {} meetings completed, {} actions completed today, {} flags",
+            recon.meetings.completed,
+            recon.actions.completed_today,
+            recon.flags.len(),
+        );
+
+        // Step 2: Archive (move files, clean data/)
         let result = run_archive(workspace).await.map_err(|e| {
             ExecutionError::ScriptFailed {
                 code: 1,
@@ -200,6 +221,28 @@ impl Executor {
                 format!(" to {}", result.archive_path)
             }
         );
+
+        // Step 3: Persist reconciliation results
+        // Write day-summary.json to archive directory (if files were archived)
+        if !result.archive_path.is_empty() {
+            let archive_path = std::path::Path::new(&result.archive_path);
+            if let Err(e) = reconcile::write_day_summary(archive_path, &recon, result.files_archived) {
+                log::warn!("Failed to write day summary: {}", e);
+            }
+        }
+
+        // Write next-morning-flags.json to _today/data/ (survives until next archive)
+        let today_dir = workspace.join("_today");
+        if let Err(e) = reconcile::write_morning_flags(&today_dir, &recon) {
+            log::warn!("Failed to write morning flags: {}", e);
+        }
+
+        // Re-lock DB briefly to persist meetings
+        if let Ok(db_guard) = self.state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                reconcile::persist_meetings(db, &recon);
+            }
+        }
 
         // Update execution record
         let finished_at = Utc::now();
