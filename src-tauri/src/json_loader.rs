@@ -106,6 +106,7 @@ pub struct JsonSchedule {
 #[serde(rename_all = "camelCase")]
 pub struct JsonMeeting {
     pub id: String,
+    pub calendar_event_id: Option<String>,
     pub time: String,
     pub end_time: Option<String>,
     pub title: String,
@@ -173,6 +174,7 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
 
         Meeting {
             id: m.id,
+            calendar_event_id: m.calendar_event_id,
             time: m.time,
             end_time: m.end_time,
             title: m.title,
@@ -338,6 +340,7 @@ pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
 #[serde(rename_all = "camelCase")]
 pub struct JsonPrep {
     pub meeting_id: String,
+    pub calendar_event_id: Option<String>,
     pub title: String,
     pub time_range: Option<String>,
     #[serde(rename = "type")]
@@ -447,6 +450,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
 
     Ok(FullMeetingPrep {
         file_path: prep_path.to_string_lossy().to_string(),
+        calendar_event_id: data.calendar_event_id,
         title: data.title,
         time_range: data.time_range.unwrap_or_default(),
         meeting_context: data.meeting_context,
