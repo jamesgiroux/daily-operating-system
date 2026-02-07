@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,11 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
+  Building2,
+  Check,
+  FolderKanban,
   FolderOpen,
+  Layers,
   Play,
   RefreshCw,
   Clock,
@@ -19,12 +24,15 @@ import {
   MessageSquare,
   LogOut,
   Loader2,
+  ToggleRight,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
-import type { PostMeetingCaptureConfig } from "@/types";
+import { toast } from "sonner";
+import type { PostMeetingCaptureConfig, FeatureDefinition, EntityMode } from "@/types";
 
 interface Config {
   workspacePath: string;
+  entityMode: EntityMode;
   schedules: {
     today: ScheduleEntry;
     archive: ScheduleEntry;
@@ -148,31 +156,20 @@ export default function SettingsPage() {
             {/* Post-Meeting Capture */}
             <CaptureSettingsCard />
 
+            {/* Feature Toggles */}
+            <FeaturesCard />
+
+            {/* Entity Mode */}
+            <EntityModeCard
+              currentMode={config?.entityMode ?? "account"}
+              onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
+            />
+
             {/* Workspace */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <FolderOpen className="size-4" />
-                  Workspace
-                </CardTitle>
-                <CardDescription>
-                  The directory where your DailyOS workspace lives
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <code className="rounded bg-muted px-3 py-1.5 font-mono text-sm">
-                    {config?.workspacePath || "Not configured"}
-                  </code>
-                  <Button variant="ghost" size="sm" onClick={handleReloadConfig}>
-                    <RefreshCw className="size-4" />
-                  </Button>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Edit <code className="rounded bg-muted px-1">~/.dailyos/config.json</code> to change
-                </p>
-              </CardContent>
-            </Card>
+            <WorkspaceCard
+              workspacePath={config?.workspacePath ?? ""}
+              onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
+            />
 
             {/* Theme */}
             <Card>
@@ -460,6 +457,80 @@ function CaptureSettingsCard() {
   );
 }
 
+function FeaturesCard() {
+  const [features, setFeatures] = useState<FeatureDefinition[]>([]);
+
+  useEffect(() => {
+    invoke<FeatureDefinition[]>("get_features")
+      .then(setFeatures)
+      .catch(() => {});
+  }, []);
+
+  async function toggleFeature(key: string, currentEnabled: boolean) {
+    try {
+      await invoke("set_feature_enabled", { feature: key, enabled: !currentEnabled });
+      setFeatures((prev) =>
+        prev.map((f) => (f.key === key ? { ...f, enabled: !currentEnabled } : f)),
+      );
+    } catch (err) {
+      console.error("Failed to toggle feature:", err);
+    }
+  }
+
+  if (features.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ToggleRight className="size-4" />
+          Features
+        </CardTitle>
+        <CardDescription>
+          Enable or disable pipeline operations
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {features.map((feature) => (
+          <div key={feature.key} className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">{feature.label}</p>
+                {feature.csOnly && (
+                  <Badge variant="outline" className="text-[10px]">CS</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {feature.description}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => toggleFeature(feature.key, feature.enabled)}
+            >
+              {feature.enabled ? "Enabled" : "Disabled"}
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function cronToHumanTime(cron: string): string {
+  const parts = cron.split(" ");
+  if (parts.length < 2) return cron;
+  const minute = parseInt(parts[0], 10);
+  const hour = parseInt(parts[1], 10);
+  if (isNaN(minute) || isNaN(hour)) return cron;
+  const h = hour % 12 || 12;
+  const ampm = hour < 12 ? "AM" : "PM";
+  const m = minute.toString().padStart(2, "0");
+  return `${h}:${m} ${ampm}`;
+}
+
 function ScheduleRow({
   label,
   schedule,
@@ -480,8 +551,9 @@ function ScheduleRow({
             {schedule.enabled ? "Enabled" : "Disabled"}
           </Badge>
         </div>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">
-          {schedule.cron} ({schedule.timezone})
+        <p className="mt-1 text-xs text-muted-foreground">
+          {cronToHumanTime(schedule.cron)}{" "}
+          <span className="text-muted-foreground/60">({schedule.timezone})</span>
         </p>
       </div>
       <Button
@@ -497,5 +569,170 @@ function ScheduleRow({
         )}
       </Button>
     </div>
+  );
+}
+
+// =============================================================================
+// Entity Mode Card
+// =============================================================================
+
+const entityModeOptions: { id: EntityMode; title: string; description: string; icon: typeof Building2 }[] = [
+  {
+    id: "account",
+    title: "Account-based",
+    description: "External relationships — customers, clients, partners",
+    icon: Building2,
+  },
+  {
+    id: "project",
+    title: "Project-based",
+    description: "Internal efforts — features, campaigns, initiatives",
+    icon: FolderKanban,
+  },
+  {
+    id: "both",
+    title: "Both",
+    description: "Relationships and initiatives",
+    icon: Layers,
+  },
+];
+
+function EntityModeCard({
+  currentMode,
+  onModeChange,
+}: {
+  currentMode: EntityMode;
+  onModeChange: (mode: EntityMode) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function handleSelect(mode: EntityMode) {
+    if (mode === currentMode || saving) return;
+    setSaving(true);
+    try {
+      await invoke("set_entity_mode", { mode });
+      onModeChange(mode);
+      toast.success("Entity mode updated — reloading...");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update entity mode");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Layers className="size-4" />
+          Work Mode
+        </CardTitle>
+        <CardDescription>
+          How you organize your work — shapes workspace structure and sidebar
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {entityModeOptions.map((option) => {
+          const Icon = option.icon;
+          const isSelected = currentMode === option.id;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors",
+                isSelected
+                  ? "border-primary bg-primary/5"
+                  : "hover:bg-muted/50",
+                saving && !isSelected && "pointer-events-none opacity-50",
+              )}
+              onClick={() => handleSelect(option.id)}
+              disabled={saving}
+            >
+              <div className="flex size-8 items-center justify-center rounded-md bg-muted">
+                <Icon className="size-4" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium">{option.title}</p>
+                <p className="text-xs text-muted-foreground">{option.description}</p>
+              </div>
+              {isSelected && (
+                <div className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                  <Check className="size-3" />
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// Workspace Card
+// =============================================================================
+
+function WorkspaceCard({
+  workspacePath,
+  onPathChange,
+}: {
+  workspacePath: string;
+  onPathChange: (path: string) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  async function handleChooseWorkspace() {
+    const selected = await open({
+      directory: true,
+      title: "Choose workspace directory",
+    });
+    if (!selected) return;
+
+    setSaving(true);
+    try {
+      await invoke("set_workspace_path", { path: selected });
+      onPathChange(selected);
+      toast.success("Workspace updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to set workspace");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FolderOpen className="size-4" />
+          Workspace
+        </CardTitle>
+        <CardDescription>
+          The directory where DailyOS stores briefings, actions, and files
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <code className="rounded bg-muted px-3 py-1.5 font-mono text-sm">
+            {workspacePath || "Not configured"}
+          </code>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleChooseWorkspace}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : (
+              <FolderOpen className="mr-1.5 size-3.5" />
+            )}
+            Change
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

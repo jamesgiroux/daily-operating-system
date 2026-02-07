@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
-import type { DashboardData, DataFreshness } from "@/types";
+import type { DashboardData, DataFreshness, GoogleAuthStatus } from "@/types";
 
 /**
  * Discriminated union for dashboard loading states
@@ -9,15 +9,15 @@ import type { DashboardData, DataFreshness } from "@/types";
 export type DashboardLoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "empty"; message: string }
-  | { status: "success"; data: DashboardData; freshness: DataFreshness };
+  | { status: "empty"; message: string; googleAuth?: GoogleAuthStatus }
+  | { status: "success"; data: DashboardData; freshness: DataFreshness; googleAuth?: GoogleAuthStatus };
 
 /**
  * Response from get_dashboard_data Tauri command
  */
 type DashboardResult =
-  | { status: "success"; data: DashboardData; freshness: DataFreshness }
-  | { status: "empty"; message: string }
+  | { status: "success"; data: DashboardData; freshness: DataFreshness; googleAuth: GoogleAuthStatus }
+  | { status: "empty"; message: string; googleAuth: GoogleAuthStatus }
   | { status: "error"; message: string };
 
 /**
@@ -50,10 +50,10 @@ export function useDashboardData(): {
 
       switch (result.status) {
         case "success":
-          setState({ status: "success", data: result.data, freshness: result.freshness });
+          setState({ status: "success", data: result.data, freshness: result.freshness, googleAuth: result.googleAuth });
           break;
         case "empty":
-          setState({ status: "empty", message: result.message });
+          setState({ status: "empty", message: result.message, googleAuth: result.googleAuth });
           break;
         case "error":
           setState({ status: "error", message: result.message });
@@ -104,8 +104,10 @@ export function useDashboardData(): {
   }, [loadData]);
 
   // Silent refresh when calendar poll detects changes (ADR-0032)
+  // Also refreshes on prep-ready (I41 — reactive prep generation)
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    let unlistenCalendar: UnlistenFn | undefined;
+    let unlistenPrep: UnlistenFn | undefined;
     let cancelled = false;
 
     listen("calendar-updated", () => {
@@ -114,13 +116,24 @@ export function useDashboardData(): {
       if (cancelled) {
         fn();
       } else {
-        unlisten = fn;
+        unlistenCalendar = fn;
+      }
+    });
+
+    listen("prep-ready", () => {
+      loadData(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenPrep = fn;
       }
     });
 
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlistenCalendar?.();
+      unlistenPrep?.();
     };
   }, [loadData]);
 

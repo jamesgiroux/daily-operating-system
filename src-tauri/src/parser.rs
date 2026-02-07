@@ -1426,6 +1426,7 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         key_principles: if key_principles.is_empty() { None } else { Some(key_principles) },
         references: if references.is_empty() { None } else { Some(references) },
         raw_markdown: Some(content),
+        stakeholder_signals: None,
     })
 }
 

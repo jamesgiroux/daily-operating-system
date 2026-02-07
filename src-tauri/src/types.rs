@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +20,14 @@ pub struct Config {
     pub profile: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_config: Option<ProfileConfig>,
+    #[serde(default = "default_entity_mode")]
+    pub entity_mode: String,
     #[serde(default)]
     pub google: GoogleConfig,
     #[serde(default)]
     pub post_meeting_capture: PostMeetingCaptureConfig,
+    #[serde(default)]
+    pub features: HashMap<String, bool>,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -49,6 +55,61 @@ fn default_history_count() -> u32 {
 
 fn default_profile() -> String {
     "customer-success".to_string()
+}
+
+fn default_entity_mode() -> String {
+    "account".to_string()
+}
+
+/// Entity mode type for validation
+pub fn validate_entity_mode(mode: &str) -> Result<(), String> {
+    match mode {
+        "account" | "project" | "both" => Ok(()),
+        _ => Err(format!(
+            "Invalid entity mode: '{}'. Must be 'account', 'project', or 'both'.",
+            mode
+        )),
+    }
+}
+
+/// Derive profile from entity mode for backend compat
+pub fn profile_for_entity_mode(mode: &str) -> String {
+    match mode {
+        "project" => "general".to_string(),
+        _ => "customer-success".to_string(), // account + both → customer-success
+    }
+}
+
+/// Default feature flags for a given profile.
+///
+/// All features default ON for the profile that supports them.
+/// CS-only features default OFF for non-CS profiles.
+pub fn default_features(profile: &str) -> HashMap<String, bool> {
+    let mut features = HashMap::new();
+    // Universal features (all profiles)
+    features.insert("emailTriage".to_string(), true);
+    features.insert("postMeetingCapture".to_string(), true);
+    features.insert("meetingPrep".to_string(), true);
+    features.insert("weeklyPlanning".to_string(), true);
+    features.insert("inboxProcessing".to_string(), true);
+    // CS-only features
+    let is_cs = profile == "customer-success";
+    features.insert("accountTracking".to_string(), is_cs);
+    features.insert("impactRollup".to_string(), is_cs);
+    features
+}
+
+/// Check if a feature is enabled, falling through to profile defaults.
+///
+/// Priority: explicit config value > profile default > true (safe fallback).
+pub fn is_feature_enabled(config: &Config, feature: &str) -> bool {
+    // Explicit override in config.features takes priority
+    if let Some(&enabled) = config.features.get(feature) {
+        return enabled;
+    }
+    // Fall through to profile defaults
+    let defaults = default_features(&config.profile);
+    defaults.get(feature).copied().unwrap_or(true)
 }
 
 /// Schedule configuration for workflows
@@ -285,7 +346,7 @@ pub enum OverlayStatus {
 }
 
 /// Meeting type classification
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MeetingType {
     Customer,
@@ -704,6 +765,9 @@ pub struct FullMeetingPrep {
     pub references: Option<Vec<SourceReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_markdown: Option<String>,
+    /// Stakeholder relationship signals computed from meeting history (I43)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stakeholder_signals: Option<crate::db::StakeholderSignals>,
 }
 
 /// Action item with context (for prep files)
@@ -954,4 +1018,84 @@ pub struct FocusBlock {
     pub suggested_activity: String,
     #[serde(default)]
     pub selected: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(profile: &str) -> Config {
+        Config {
+            workspace_path: "/tmp/test".to_string(),
+            schedules: Schedules::default(),
+            profile: profile.to_string(),
+            profile_config: None,
+            entity_mode: "account".to_string(),
+            google: GoogleConfig::default(),
+            post_meeting_capture: PostMeetingCaptureConfig::default(),
+            features: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_default_features_cs_profile() {
+        let defaults = default_features("customer-success");
+        assert_eq!(defaults.get("emailTriage"), Some(&true));
+        assert_eq!(defaults.get("accountTracking"), Some(&true));
+        assert_eq!(defaults.get("impactRollup"), Some(&true));
+    }
+
+    #[test]
+    fn test_default_features_general_profile() {
+        let defaults = default_features("general");
+        assert_eq!(defaults.get("emailTriage"), Some(&true));
+        assert_eq!(defaults.get("accountTracking"), Some(&false));
+        assert_eq!(defaults.get("impactRollup"), Some(&false));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_defaults() {
+        let config = test_config("customer-success");
+        // Empty features HashMap → falls through to defaults
+        assert!(is_feature_enabled(&config, "emailTriage"));
+        assert!(is_feature_enabled(&config, "impactRollup"));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_explicit_override() {
+        let mut config = test_config("customer-success");
+        config.features.insert("emailTriage".to_string(), false);
+        assert!(!is_feature_enabled(&config, "emailTriage"));
+        // Other features still use defaults
+        assert!(is_feature_enabled(&config, "impactRollup"));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_general_profile_cs_features() {
+        let config = test_config("general");
+        // CS-only features default off for general profile
+        assert!(!is_feature_enabled(&config, "accountTracking"));
+        assert!(!is_feature_enabled(&config, "impactRollup"));
+        // Universal features still on
+        assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_unknown_feature() {
+        let config = test_config("customer-success");
+        // Unknown features fall through to true (safe fallback)
+        assert!(is_feature_enabled(&config, "unknownFeature"));
+    }
+
+    #[test]
+    fn test_config_deserializes_without_features() {
+        // Backwards compat: config.json without a "features" key
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.features.is_empty());
+        assert!(is_feature_enabled(&config, "emailTriage"));
+    }
 }

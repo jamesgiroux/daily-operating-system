@@ -8,25 +8,56 @@ Active issues, known risks, assumptions, and dependencies.
 
 ## Issues
 
-<!-- Thematic grouping for orientation:
-  Meeting Intelligence: (none open)     — I44 transcript intake resolved, I45 outcome interaction resolved
-  Executive Intel:     I42, I43         — CoS decision support, political intelligence (consumption-first)
-  Composable Ops:      I39, I41        — Feature toggles, reactive prep (ADR-0030/0042)
-  CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
-  Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
-  Archive & Reconcil:  (none open)      — I36 resolved, impact rollup shipped
-  ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
-  Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
-  Email Pipeline:      I18, I20, I21   — API coordination, three-tier email (ADR-0029)
-  UI Consistency:      I25, I9, I37    — Badge unification, stub pages, density-aware overview
-  First-Run & Ship:    I13, I8         — Onboarding, distribution
-  Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems (I47 entity abstraction resolved)
+<!-- Sprint-oriented grouping (2026-02-07 PM analysis, revised after code audit):
+
+  TEST BED: ~/Documents/test-workspace/ — clean workspace for end-to-end validation.
+  Every sprint milestone is tested here, not in VIP/. See ROADMAP.md for full sprint plan.
+
+  SPRINT 1: "First Run to Working Briefing" — two phases + polish
+    Phase A (foundation, parallel):
+      I48 (workspace scaffolding — NEW), I49 (no-auth graceful degradation — NEW)
+      I7 (workspace path), I15 (profile switch), I16 (schedule UI)
+    Phase B (sequential, depends on Phase A):
+      I13 (onboarding) — depends on I7, I48, I49. Design decisions during impl.
+    Phase C (polish, fills gaps):
+      I25 (badge unification), I19 (enrichment failure indicator)
+    Test paths: with-Google-auth AND without-Google-auth
+    Done when: Both paths work e2e in test-workspace, no manual config editing
+
+  SPRINT 2: "Make it Smarter" — COMPLETE
+    I42 (executive intelligence), I43 (stakeholder context), I41 (reactive prep), I31 (transcript enrichment)
+    168 Rust tests passing.
+
+  SPRINT 3: "Make it Reliable" — COMPLETE
+    I39 (feature toggles), I18 (API caching), I20 (email refresh), I21 (FYI classification),
+    I37 (density-aware overview), I6 (processing history). 155 Rust + 37 Python tests passing.
+
+  SPRINT 4: "Ship It"
+    I8 (distribution — DMG, notarization)
+    I9 (focus/week stubs — non-embarrassing)
+    7-day crash-free validation on test-workspace
+    Done when:       DMG installs cleanly, onboarding→briefing works 7 days on clean machine
+
+  PARKING LOT (post-ship, entity-mode architecture):
+    I27 (umbrella) → I50, I51, I52, I53, I54 (entity-mode foundation)
+    I40 (CS overlay), I35 (ProDev overlay), I29 (doc schemas)
+    I28 (MCP — now integration protocol per ADR-0046)
+    Deferred: I26 | I2, I3, I4, I10
+    Revisit after Sprint 4 ships with real usage data. ADR-0046 accepted.
 -->
+
+### Open — High Priority (Sprint 1 prerequisites)
+
+**I48: Workspace scaffolding on initialization**
+App never creates workspace directories. When a workspace path is set (via onboarding or Settings), the app must create `_today/`, `_inbox/`, `_archive/` if they don't exist. Currently: `_today/data/` is created on-demand by `deliver_today.py` (line 94), but `_inbox/` and `_archive/` are never created — inbox batch and archive workflow fail silently on a fresh workspace. Needs: a Rust `initialize_workspace(path)` function called when workspace path is set, with validation that the parent directory exists and is writable. Design decision: whether to also create `Projects/`, `Accounts/`, or other PARA dirs depends on the onboarding workspace strategy (see I13).
+
+**I49: Graceful degradation without Google authentication**
+Pipeline behavior when Google isn't authenticated is undefined. `prepare_today.py` calls Google Calendar and Gmail APIs — if no token exists, it may crash or return partial data. The app must handle the no-auth path cleanly: skip calendar/email API calls, generate a briefing with empty schedule/email sections, show a clear "Connect Google for calendar and email" prompt on the dashboard. This is a thin slice of I39 (feature toggles) — just the auth check, not the full toggle UI. Needed before onboarding (I13) can offer a "skip Google for now" path. Check: `scripts/prepare_today.py` Google API call sites, `src-tauri/src/google.rs` token detection, dashboard empty states in `src/components/dashboard/`.
 
 ### Open — Medium Priority
 
 **I7: Settings page can't change workspace path**
-Displays as read-only. Needs Tauri `dialog::FileDialogBuilder` for directory picker, a `set_workspace_path(path)` command, and validation. Small scope.
+Displays as read-only. Needs Tauri `dialog::FileDialogBuilder` for directory picker, a `set_workspace_path(path)` command, and validation. Small scope. When workspace path is set, should call workspace scaffolding (I48).
 
 **I8: No app update/distribution mechanism**
 Options: Tauri's built-in updater, GitHub Releases + Sparkle, manual DMG, Mac App Store. Needs Apple Developer ID for notarization. Not blocking MVP — can ship as manual DMG.
@@ -35,7 +66,7 @@ Options: Tauri's built-in updater, GitHub Releases + Sparkle, manual DMG, Mac Ap
 `focus.json` returns "not yet implemented." Weekly priorities from `week-overview.json` don't flow into daily focus. `/week` should set weekly priorities; `/today` should derive daily focus from those + today's schedule.
 
 **I13: No onboarding flow**
-First-time user hits dead end after profile selection. If Google isn't connected, "Generate Briefing" fails. Minimal onboarding needs: profile selection (exists, defaults to CS per ADR-0038), Google connection (exists in Settings, not surfaced), workspace path (display exists, editing doesn't — see I7), first briefing trigger. Design constraint: Principle 4 (Opinionated Defaults). Could create `~/Documents/DailyOS/` as default workspace. Google is the only mandatory step.
+First-time user hits dead end after profile selection. Depends on I7 (workspace path picker), I48 (workspace scaffolding), I49 (no-auth graceful degradation). Onboarding flow must handle two paths: (1) with Google auth → full briefing, (2) without Google → degraded but functional dashboard with "Connect Google" prompt. Design decisions needed during implementation: workspace strategy (create fresh dir vs map to existing working directory vs let user choose), directory structure (minimum pipeline dirs vs full PARA), default workspace path, first-briefing content with no historical data, Google auth as optional vs required. Current state: profile selector exists and works (router.tsx:47-60), config auto-creation does not exist, workspace dirs are never scaffolded, Google auth is only accessible via Settings page. Design constraint: Principle 4 (Opinionated Defaults) — should work out-of-box with sensible choices, escapable for power users.
 
 **I15: Profile switching unavailable in Settings**
 Profile selector at first launch says "You can change this later in Settings" but Settings has no switcher. Needs: dropdown/radio in Settings, writes to config.json, triggers reload.
@@ -43,23 +74,10 @@ Profile selector at first launch says "You can change this later in Settings" bu
 **I16: Schedule editing requires manual config.json editing**
 Settings shows raw cron expressions. Needs: time picker ("Briefing time: 6:00 AM"), writes cron to config, hides syntax. Power users can still edit JSON directly.
 
-**I18: Google API calls not coordinated across callers**
-`prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. ADR-0030 decomposition complete — `ops/calendar_fetch.py` is now the shared operation for all callers. Remaining work: add a cache/TTL layer so concurrent callers (e.g., calendar poller + manual refresh) reuse recent responses instead of hitting Google twice. Not blocking MVP.
+**I40: CS domain overlay — account-mode vocabulary and schemas**
 
-**I39: Feature toggle runtime implementation**
-ADR-0039 accepted the feature toggle architecture but no code implements it. Each atomic operation from ADR-0030 should be individually toggleable (e.g., disable `email:fetch` if Gmail not connected, skip `meeting:prep` for personal meetings). Needs: toggle storage in `config.json`, runtime check in orchestrators, UI in Settings.
-
-**I41: Reactive meeting:prep — wire calendar polling to prep pipeline**
-`prepare_meeting_prep.py` exists and generates single-meeting directives, but nothing in Rust triggers it. When `calendar_merge.rs` detects a `New` meeting: (a) check if a prep directive already exists for that meeting, (b) if not, execute `prepare_meeting_prep.py` via `executor.rs` (Phase 1 → Phase 2 → write `preps/{id}.json`), (c) emit `prep-ready` event for frontend refresh. Small scope — the Python script and Rust `get_captures_for_account()` are ready. ADR-0030 Phase 7b.
-
-**I42: Chief of Staff executive intelligence layer**
-The `/cos` CLI skill provides consumption-first decision support: surfaces decisions due within 72 hours with options + recommendations, tracks stale delegations (outbound asks >3 days), computes portfolio alerts (renewals within 60 days, stale contacts >30 days), identifies cancelable internal meetings (no agenda + recurring), and filters noise (items not needing attention today). Core data sources already exist in-app: calendar (`schedule.json`), actions (SQLite), account data (`meeting_prep.py` context gathering). Missing: the intelligence computation layer that cross-references these sources and a UI surface (could be a dashboard card, a dedicated page, or a section within the briefing). Fits Principle 7 (Consumption Over Production) — pure read/compute, no content generation. Confirmed as core per ADR-0043. Reference: `~/Documents/VIP/.claude/skills/cos/`.
-
-**I43: Political intelligence and stakeholder context layer**
-The `/veep` CLI skill provides stakeholder intelligence: communication review (political implications, audience framing), situation analysis (stakeholder maps, power dynamics, risk assessment), pre-conversation prep (working agreement context, anticipated reactions), and post-meeting debrief (signals, relationship temperature). The *consumption* side is core per ADR-0043: surfacing working agreement context and recent interaction history in meeting preps, relationship temperature signals from meeting/email frequency, stakeholder intelligence from `Leadership/06-Political-Intelligence/`. The *production* side (situation analyses, session notes) is closer to an extension capability that writes to `Leadership/` workspace. Consider: (a) meeting prep enrichment with stakeholder context (low-hanging, extends existing prep pipeline), (b) post-meeting debrief as a capture workflow (extends post-meeting capture), (c) full political intelligence extension (Phase 4+). Reference: `~/Documents/VIP/.claude/skills/veep/`. Privacy constraint: all outputs are confidential/James-facing only.
-
-**I40: CS extension — domain-specific data sources and vocabulary**
-Narrowed by ADR-0043: meeting intelligence (prep, portfolio triage, post-meeting capture) moved to core. What remains CS-specific: Clay MCP contact lookup (CRM data source), Google Sheets sync (Last Engagement Date writeback), CS-specific metrics vocabulary (ARR, renewal dates, health scores, ring classification), account dashboard template/generation, success plan templates. These are domain data sources and labels that feed the core intelligence engine. Blocked by extension registry (I27). Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
+**I40: CS domain overlay — account-mode vocabulary and schemas**
+ADR-0046 replaces the CS extension concept with a CS domain overlay. What remains CS-specific after ADR-0043 narrowed extensions: CS-specific account fields (ARR, renewal dates, health scores, ring classification), account dashboard template/generation, success plan templates, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not overlay responsibilities. The existing `accounts` table IS the CS overlay — it carries CS-specific fields on top of the universal `entities` table. Remaining work: formalize overlay registration, schema contribution mechanism, template system. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
 
 **I20: No standalone email refresh**
 Emails only update with full briefing. ADR-0030 decomposition makes this more feasible — `ops/email_fetch.py` is now a standalone callable operation. Remaining work: a thin orchestrator or Rust command that invokes `email_fetch` independently and writes `emails.json`. Still raises partial-refresh semantics questions; ADR-0006 determinism boundary still applies.
@@ -73,20 +91,32 @@ MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overla
 **I26: Web search for unknown external meetings not implemented**
 ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `ops/meeting_prep.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
 
-**I27: Extension registry and schema system not implemented**
-ADR-0026 accepts extension architecture (profile-activated modules with post-enrichment hooks, data schemas, UI contributions). Current state: profile field exists, hook execution checks profile, UI route stubs exist. Missing: formal extension registration mechanism, extension schemas, template system. Phase 4 per ADR. Profile-specific classification depends on this. ADR-0039 adds feature toggle granularity within extensions.
+**I27: Entity-mode architecture — umbrella issue**
+ADR-0046 replaces profile-activated extensions (ADR-0026) with three-layer architecture: Core + Entity Mode + Integrations. Entity mode (account-based, project-based, or both) replaces profile as the organizing principle. Integrations (MCP data sources) are orthogonal to entity mode. Domain overlays replace extensions as thin vocabulary/schema contributors. Sub-issues: I50 (projects table), I51 (people table), I52 (meeting-entity M2M), I53 (entity-mode config/onboarding), I54 (MCP integration framework). Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven. Post-Sprint 4.
 
 **I28: MCP server and client not implemented**
-ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop, client consumes Clay/Slack/Linear). IPC commands are designed to be MCP-exposable (good foundation from ADR-0025). No MCP protocol code exists. Phase 4 per ADR.
+ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop, client consumes Clay/Slack/Linear). ADR-0046 elevates MCP client to the integration protocol — every external data source (Gong, Salesforce, Linear, etc.) is an MCP server consumed by the app. IPC commands are designed to be MCP-exposable (good foundation from ADR-0025). No MCP protocol code exists. Server side exposes DailyOS tools; client side is the integration layer. See I54 for client framework.
 
 **I29: Structured document schemas not implemented**
-ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and structured documents (`dashboard.json` + `dashboard.md` pattern). Briefing JSON pattern exists as a template. Account dashboard UI is a stub. No schema validation system. Blocked by extension architecture (I27) for CS-specific schemas.
+ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and structured documents (`dashboard.json` + `dashboard.md` pattern). Briefing JSON pattern exists as a template. Account dashboard UI is a stub. No schema validation system. Less coupled to extensions post-ADR-0046 — core entity schemas are universal, domain overlays contribute additional fields. Blocked by I27 umbrella for overlay-contributed schemas.
 
-**I31: No transcript summarization in inbox processor**
-CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
+**I50: Projects overlay table and project entity support**
+ADR-0046 requires a `projects` overlay table parallel to `accounts`. Fields: id, name, status, milestone, owner, target_date. Bridge pattern: `upsert_project()` auto-mirrors to `entities` table (same mechanism as `upsert_account()` → `ensure_entity_for_account()`). CRUD commands: `upsert_project`, `get_project`, `get_projects_by_status`. Frontend: Projects page (parallel to Accounts page), project entity in sidebar for project-based and both modes. Blocked by I27.
 
-**I35: ProDev extension — personal impact and career narrative**
-ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
+**I51: People sub-entity table and entity-people relationships**
+ADR-0046 establishes people as universal sub-entities. Create `people` table (id, name, email, organization, role, last_contact) and `entity_people` junction (entity_id, person_id, relationship_type). People are populated from: meeting attendees (automatic), CRM integrations (I54), manual entry. Enriches meeting prep with stakeholder context (interaction history, relationship signals). Population strategy: attendee-seeded on first briefing, CRM-enriched when integrations are connected, user-correctable. Blocked by I27.
+
+**I52: Meeting-entity many-to-many association**
+Replace `account_id` FK on `meetings_history`, `actions`, `captures` with `meeting_entities` junction table. Enables meetings to associate with multiple entities (an account AND a project). Deferred explicitly from ADR-0045 to I27. Migration: existing `account_id` values become rows in `meeting_entities`. Association logic: account-based uses domain matching (existing), project-based uses integration links + AI inference + manual correction. Blocked by I50 (projects must exist first).
+
+**I53: Entity-mode config, onboarding, and UI adaptation**
+Replace `profile` config field with `entityMode` (account | project | both) + `integrations` + `domainOverlay`. Update onboarding: entity-mode selector ("How do you organize your work?") → integration checklist → optional role shortcut. Update sidebar to render Accounts and/or Projects based on entity mode. Update dashboard portfolio attention to compute signals for active entity types. Migration: `profile: "customer-success"` → `entityMode: "account"` + `domainOverlay: "customer-success"`. `profile: "general"` → `entityMode: "project"`. Blocked by I50, I52.
+
+**I54: MCP client integration framework**
+Build MCP client infrastructure in Rust for consuming external data sources per ADR-0046 and ADR-0027. Requirements: auth flow per integration (OAuth where needed), sync cadence configuration, error handling and retry, integration settings in Settings page. Start with one integration per category to prove the pattern: one transcript source (Gong or Granola), one CRM (Salesforce), one task tool (Linear). Each integration is an MCP server the app consumes — community can build new ones without touching core. Evolves I28 (MCP client side). Blocked by I27.
+
+**I35: ProDev domain overlay — personal impact and career narrative**
+ADR-0046 replaces ProDev extension with a domain overlay. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Works with any entity mode (account-based, project-based, or both) — personal impact is orthogonal to how work is organized. Blocked by overlay registration mechanism (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
 
 ### Open — Low Priority
 
@@ -148,6 +178,14 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 **I32: Inbox processor doesn't update account intelligence** — Resolved. AI enrichment prompt extracts WINS/RISKS sections. Post-enrichment `entity_intelligence` hook writes captures (with synthetic `inbox-{filename}` meeting IDs) and touches `accounts.updated_at` as last-contact signal. Read side (`get_captures_for_account`) + write side both wired.
 
 **I47: Profile-agnostic entity abstraction** — Resolved. Introduced `entities` table and `EntityType` enum (ADR-0045). Bridge pattern: `upsert_account()` auto-mirrors to entities table, backfill migration populates from existing accounts on DB open. `entity_intelligence()` hook replaces profile-gated `cs_account_intelligence()` — now runs for all profiles as core behavior (ADR-0043). `account_id` FK migration deferred to I27.
+
+**I42: CoS executive intelligence layer** — Resolved. New `intelligence.rs` module computes five signal types from existing SQLite data + schedule: decisions due (AI-flagged `needs_decision` actions ≤72h), stale delegations (waiting actions >3 days), portfolio alerts (renewals ≤60d, stale contacts >30d, CS-only), cancelable meetings (internal + no prep), skip-today (AI enrichment). New `IntelligenceCard.tsx` renders signal counts as badges with expandable detail sections. Schema migration adds `needs_decision` column. 13 new tests.
+
+**I43: Stakeholder context in meeting prep** — Resolved. `db.rs` gained `get_stakeholder_signals()` which computes meeting frequency (30d/90d), last contact, relationship temperature (hot/warm/cool/cold), and trend (increasing/stable/decreasing) from `meetings_history` and `accounts` tables. Signals computed live at prep load time in `get_meeting_prep` command (always fresh from SQLite, not baked into prep files). `RelationshipContext` component in `MeetingDetailPage.tsx` shows four-metric grid. 5 new tests.
+
+**I41: Reactive meeting:prep wiring** — Resolved. `google.rs` calendar poller now generates lightweight prep JSON for new prep-eligible meetings (customer/qbr/partnership) after each poll cycle. Checks both meeting ID and calendar event ID to avoid duplicates. Enriches preps from SQLite account data (Ring, ARR, Health, Renewal, open actions). Emits `prep-ready` event; `useDashboardData` listens for silent refresh. Rust-native (ADR-0025), no Python subprocess. 8 new tests.
+
+**I31: Inbox transcript summarization** — Resolved. `enrich.rs` gained `detect_transcript()` heuristic (filename keywords, speaker label ratio >40%, timestamp ratio >20%, minimum 10 lines) and richer enrichment prompt for transcripts: 2-3 sentence executive summary + discussion highlights block. Parser handles `DISCUSSION:` / `END_DISCUSSION` markers. Non-transcript files unchanged (backward compatible). 12 enrich tests.
 
 **I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. `meeting_prep.py` only gathered rich context (SQLite history, captures, open actions) for customer meetings with account-based queries. Internal syncs, 1:1s, and partnership meetings got at most a single archive ref. Per ADR-0043 (meeting intelligence is core), expanded with title-based SQLite queries (`_get_meeting_history_by_title`, `_get_captures_by_meeting_title`, `_get_all_pending_actions`) so all non-personal/non-all-hands types get meeting history, captures, and actions context. 1:1s get deeper lookback (60-day history, 3 archive refs). Partnership meetings try account match first, fall back to title-based. No schema or orchestrator changes.
 

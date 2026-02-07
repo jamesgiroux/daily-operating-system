@@ -153,6 +153,107 @@ impl Default for AppState {
     }
 }
 
+/// Get the canonical config file path (~/.dailyos/config.json)
+pub fn config_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    Ok(home.join(".dailyos").join("config.json"))
+}
+
+/// Create or update config.json atomically.
+///
+/// If config already exists in-memory, clones it, applies the mutator, and writes back.
+/// If config is None (first-run), creates a default Config with serde defaults, applies
+/// the mutator, ensures ~/.dailyos/ exists, and writes + updates in-memory state.
+pub fn create_or_update_config(
+    state: &AppState,
+    mutator: impl FnOnce(&mut Config),
+) -> Result<Config, String> {
+    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+
+    let mut config = match guard.clone() {
+        Some(c) => c,
+        None => {
+            // Create default config — workspace_path empty, will be set by mutator or later
+            Config {
+                workspace_path: String::new(),
+                schedules: crate::types::Schedules::default(),
+                profile: crate::types::profile_for_entity_mode("account"),
+                profile_config: None,
+                entity_mode: "account".to_string(),
+                google: crate::types::GoogleConfig::default(),
+                post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
+                features: std::collections::HashMap::new(),
+            }
+        }
+    };
+
+    mutator(&mut config);
+
+    // Ensure ~/.dailyos/ exists
+    let path = config_path()?;
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create config dir: {}", e))?;
+        }
+    }
+
+    // Write to disk
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+    fs::write(&path, content)
+        .map_err(|e| format!("Failed to write config: {}", e))?;
+
+    // Update in-memory state
+    *guard = Some(config.clone());
+
+    Ok(config)
+}
+
+/// Initialize workspace directory structure.
+///
+/// Always creates: _today/, _today/data/, _inbox/, _archive/, Projects/
+/// Conditionally creates: Accounts/ if entity_mode is "account" or "both"
+/// Idempotent: skips existing dirs, never overwrites files.
+pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result<(), String> {
+    // Validate parent exists
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            return Err(format!(
+                "Parent directory does not exist: {}",
+                parent.display()
+            ));
+        }
+    }
+
+    let dirs = vec![
+        path.to_path_buf(),
+        path.join("_today"),
+        path.join("_today").join("data"),
+        path.join("_inbox"),
+        path.join("_archive"),
+        path.join("Projects"),
+    ];
+
+    for dir in &dirs {
+        if !dir.exists() {
+            fs::create_dir_all(dir)
+                .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+        }
+    }
+
+    // Conditionally create Accounts/
+    if entity_mode == "account" || entity_mode == "both" {
+        let accounts_dir = path.join("Accounts");
+        if !accounts_dir.exists() {
+            fs::create_dir_all(&accounts_dir)
+                .map_err(|e| format!("Failed to create Accounts: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Get the state directory (~/.dailyos)
 fn get_state_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Could not find home directory")?;
