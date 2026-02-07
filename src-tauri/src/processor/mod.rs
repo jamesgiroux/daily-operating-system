@@ -10,6 +10,7 @@ pub mod enrich;
 pub mod hooks;
 pub mod metadata;
 pub mod router;
+pub mod transcript;
 
 use std::path::Path;
 
@@ -116,6 +117,7 @@ pub fn process_file(
                             profile: profile.to_string(),
                             wins: Vec::new(),  // quick path has no AI extraction
                             risks: Vec::new(),
+                            entity_type: None,
                         };
                         let hook_results = hooks::run_post_enrichment_hooks(&ctx, db);
                         for hr in &hook_results {

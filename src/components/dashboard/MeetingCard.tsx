@@ -1,7 +1,16 @@
 import * as React from "react";
 import { Link } from "@tanstack/react-router";
 import { emit } from "@tauri-apps/api/event";
-import { Check, ChevronDown, FileText, Trophy } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  Check,
+  ChevronDown,
+  FileText,
+  Loader2,
+  Paperclip,
+  Trophy,
+} from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -9,6 +18,8 @@ import {
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useMeetingOutcomes } from "@/hooks/useMeetingOutcomes";
+import { MeetingOutcomes } from "./MeetingOutcomes";
 import type { Meeting, MeetingType, CalendarEvent } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -67,11 +78,69 @@ function isPastMeeting(meeting: Meeting): boolean {
 
 export function MeetingCard({ meeting }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
+  const [attaching, setAttaching] = React.useState(false);
   const hasInlinePrep = meeting.prep && Object.keys(meeting.prep).length > 0;
   const hasPrepFile = meeting.hasPrep && meeting.prepFile;
   const isPast = isPastMeeting(meeting);
   const isCancelled = meeting.overlayStatus === "cancelled";
   const isNew = meeting.overlayStatus === "new";
+
+  // Load outcomes for past meetings
+  const { outcomes, refresh: refreshOutcomes } =
+    useMeetingOutcomes(meeting.id);
+  const hasOutcomes = outcomes !== null;
+
+  const handleAttachTranscript = React.useCallback(async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: "Transcripts",
+          extensions: ["md", "txt", "vtt", "srt", "docx", "pdf"],
+        },
+      ],
+    });
+    if (!selected) return;
+
+    setAttaching(true);
+    // Build ISO timestamps from display times
+    const toIso = (timeStr?: string): string => {
+      if (!timeStr) return new Date().toISOString();
+      const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+      if (!match) return new Date().toISOString();
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const period = match[3].toUpperCase();
+      if (period === "PM" && h !== 12) h += 12;
+      if (period === "AM" && h === 12) h = 0;
+      const d = new Date();
+      d.setHours(h, m, 0, 0);
+      return d.toISOString();
+    };
+
+    const calendarEvent: CalendarEvent = {
+      id: meeting.id,
+      title: meeting.title,
+      start: toIso(meeting.time),
+      end: toIso(meeting.endTime),
+      type: meeting.type,
+      account: meeting.account,
+      attendees: [],
+      isAllDay: false,
+    };
+
+    try {
+      await invoke("attach_meeting_transcript", {
+        filePath: selected,
+        meeting: calendarEvent,
+      });
+      refreshOutcomes();
+    } catch (err) {
+      console.error("Failed to attach transcript:", err);
+    } finally {
+      setAttaching(false);
+    }
+  }, [meeting, refreshOutcomes]);
 
   const handleCaptureOutcomes = React.useCallback(() => {
     // Build ISO timestamps from the meeting's display times (e.g., "09:00 AM").
@@ -181,21 +250,46 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
               </Badge>
             )}
 
-            {/* Outcomes button for past meetings (hidden for cancelled) */}
+            {/* Past meeting actions: outcomes display or attach/capture (hidden for cancelled) */}
             {isPast && !isCancelled && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={handleCaptureOutcomes}
-              >
-                <Trophy className="mr-1 size-3.5" />
-                Outcomes
-              </Button>
+              <>
+                {hasOutcomes ? (
+                  <Badge variant="outline" className="text-success border-success/30">
+                    <Check className="mr-1 size-3" />
+                    Processed
+                  </Badge>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={handleAttachTranscript}
+                      disabled={attaching}
+                    >
+                      {attaching ? (
+                        <Loader2 className="mr-1 size-3.5 animate-spin" />
+                      ) : (
+                        <Paperclip className="mr-1 size-3.5" />
+                      )}
+                      Attach
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={handleCaptureOutcomes}
+                    >
+                      <Trophy className="mr-1 size-3.5" />
+                      Outcomes
+                    </Button>
+                  </>
+                )}
+              </>
             )}
 
-            {/* Expand button for inline prep */}
-            {hasInlinePrep && (
+            {/* Expand button for inline prep or outcomes */}
+            {(hasInlinePrep || hasOutcomes) && (
               <CollapsibleTrigger asChild>
                 <button
                   className={cn(
@@ -215,10 +309,18 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
           </div>
         </div>
 
-        {hasInlinePrep && (
+        {(hasInlinePrep || hasOutcomes) && (
           <CollapsibleContent>
             <div className="border-t bg-muted/30 p-5">
-              <MeetingPrepContent prep={meeting.prep!} />
+              {hasOutcomes && (
+                <MeetingOutcomes
+                  outcomes={outcomes}
+                  onRefresh={refreshOutcomes}
+                />
+              )}
+              {hasInlinePrep && !hasOutcomes && (
+                <MeetingPrepContent prep={meeting.prep!} />
+              )}
             </div>
           </CollapsibleContent>
         )}

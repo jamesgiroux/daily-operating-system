@@ -359,6 +359,34 @@ export interface FocusBlock {
 }
 
 // =============================================================================
+// Transcript & Meeting Outcomes (I44 / I45 / ADR-0044)
+// =============================================================================
+
+/** Result of transcript processing */
+export interface TranscriptResult {
+  status: "success" | "error";
+  summary?: string;
+  destination?: string;
+  wins: string[];
+  risks: string[];
+  decisions: string[];
+  actions: CapturedAction[];
+  message?: string;
+}
+
+/** Meeting outcomes (from transcript processing or manual capture) */
+export interface MeetingOutcomeData {
+  meetingId: string;
+  summary?: string;
+  wins: string[];
+  risks: string[];
+  decisions: string[];
+  actions: DbAction[];
+  transcriptPath?: string;
+  processedAt?: string;
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 

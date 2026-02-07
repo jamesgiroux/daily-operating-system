@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::db::{ActionDb, DbAction};
+use crate::entity::EntityType;
 
 /// Context passed to every post-enrichment hook.
 pub struct EnrichmentContext {
@@ -22,6 +23,8 @@ pub struct EnrichmentContext {
     pub profile: String,
     pub wins: Vec<String>,
     pub risks: Vec<String>,
+    /// Entity type derived from the active profile (ADR-0045).
+    pub entity_type: Option<EntityType>,
 }
 
 /// Result from a single hook.
@@ -36,10 +39,9 @@ pub fn run_post_enrichment_hooks(ctx: &EnrichmentContext, db: &ActionDb) -> Vec<
     let mut results = Vec::new();
     results.push(sync_actions_to_sqlite(ctx, db));
     results.push(sync_completion_to_markdown(ctx, db));
-    // CS account intelligence: write wins/risks as captures, touch last-contact
-    if ctx.profile == "customer-success" {
-        results.push(cs_account_intelligence(ctx, db));
-    }
+    // Entity intelligence: write wins/risks as captures, touch last-contact (ADR-0045).
+    // Core behavior — runs for all profiles, not just CS.
+    results.push(entity_intelligence(ctx, db));
     results
 }
 
@@ -157,22 +159,26 @@ fn sync_completion_to_markdown(ctx: &EnrichmentContext, db: &ActionDb) -> HookRe
     }
 }
 
-/// Write extracted wins/risks as captures and touch account last-contact.
+/// Write extracted wins/risks as captures and touch entity last-contact (ADR-0045).
 ///
-/// Only runs when an account is associated with the file. Uses a synthetic
-/// `meeting_id` of `inbox-{filename}` since inbox files don't have a real
-/// meeting context.
-fn cs_account_intelligence(ctx: &EnrichmentContext, db: &ActionDb) -> HookResult {
-    let account = match &ctx.account {
+/// Core behavior — runs for all profiles, not just CS. When the entity type is
+/// `Account`, also touches the CS-specific `accounts` table for backwards
+/// compatibility. Skips gracefully when no entity (account) is associated.
+fn entity_intelligence(ctx: &EnrichmentContext, db: &ActionDb) -> HookResult {
+    let entity_name = match &ctx.account {
         Some(a) => a,
         None => {
             return HookResult {
-                hook_name: "cs_account_intelligence",
+                hook_name: "entity_intelligence",
                 success: true,
-                message: Some("Skipped: no account associated".to_string()),
+                message: Some("Skipped: no entity associated".to_string()),
             };
         }
     };
+
+    let entity_type = ctx
+        .entity_type
+        .unwrap_or_else(|| EntityType::default_for_profile(&ctx.profile));
 
     let synthetic_meeting_id = format!("inbox-{}", ctx.filename);
     let mut captures_written = 0;
@@ -182,13 +188,13 @@ fn cs_account_intelligence(ctx: &EnrichmentContext, db: &ActionDb) -> HookResult
         match db.insert_capture(
             &synthetic_meeting_id,
             &ctx.filename,
-            Some(account),
+            Some(entity_name),
             "win",
             win,
         ) {
             Ok(()) => captures_written += 1,
             Err(e) => {
-                log::warn!("cs_account_intelligence: failed to write win: {}", e);
+                log::warn!("entity_intelligence: failed to write win: {}", e);
                 errors += 1;
             }
         }
@@ -198,33 +204,46 @@ fn cs_account_intelligence(ctx: &EnrichmentContext, db: &ActionDb) -> HookResult
         match db.insert_capture(
             &synthetic_meeting_id,
             &ctx.filename,
-            Some(account),
+            Some(entity_name),
             "risk",
             risk,
         ) {
             Ok(()) => captures_written += 1,
             Err(e) => {
-                log::warn!("cs_account_intelligence: failed to write risk: {}", e);
+                log::warn!("entity_intelligence: failed to write risk: {}", e);
                 errors += 1;
             }
         }
     }
 
-    // Touch last-contact on the account
-    let touched = match db.touch_account_last_contact(account) {
+    // Touch last-contact on the entity
+    let entity_touched = match db.touch_entity_last_contact(entity_name) {
         Ok(matched) => matched,
         Err(e) => {
-            log::warn!("cs_account_intelligence: failed to touch account: {}", e);
+            log::warn!("entity_intelligence: failed to touch entity: {}", e);
             false
         }
     };
 
+    // For Account entities, also touch the CS-specific accounts table
+    let account_touched = if entity_type == EntityType::Account {
+        match db.touch_account_last_contact(entity_name) {
+            Ok(matched) => matched,
+            Err(e) => {
+                log::warn!("entity_intelligence: failed to touch account: {}", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
     HookResult {
-        hook_name: "cs_account_intelligence",
+        hook_name: "entity_intelligence",
         success: errors == 0,
         message: Some(format!(
-            "Wrote {} captures ({} errors), account touched: {}",
-            captures_written, errors, touched
+            "Wrote {} captures ({} errors), entity touched: {}, account touched: {}",
+            captures_written, errors, entity_touched, account_touched
         )),
     }
 }
@@ -284,14 +303,15 @@ mod tests {
             profile: profile.to_string(),
             wins: Vec::new(),
             risks: Vec::new(),
+            entity_type: None,
         }
     }
 
     #[test]
-    fn test_cs_hook_writes_captures() {
+    fn test_entity_intelligence_writes_captures() {
         let db = test_db();
 
-        // Create the account so touch works
+        // Create the account so touch works (also creates entity via bridge)
         let account = DbAccount {
             id: "acme".to_string(),
             name: "Acme".to_string(),
@@ -311,10 +331,10 @@ mod tests {
         ctx.wins = vec!["Expanded to 3 teams".to_string()];
         ctx.risks = vec!["Budget freeze".to_string(), "Champion leaving".to_string()];
 
-        let result = cs_account_intelligence(&ctx, &db);
+        let result = entity_intelligence(&ctx, &db);
 
         assert!(result.success);
-        assert_eq!(result.hook_name, "cs_account_intelligence");
+        assert_eq!(result.hook_name, "entity_intelligence");
 
         // Verify captures were written
         let captures = db
@@ -338,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cs_hook_touches_account() {
+    fn test_entity_intelligence_touches_account_for_cs() {
         let db = test_db();
 
         let account = DbAccount {
@@ -357,41 +377,48 @@ mod tests {
         db.upsert_account(&account).expect("upsert");
 
         let ctx = base_context(Some("Acme".to_string()), "customer-success");
-        cs_account_intelligence(&ctx, &db);
+        let result = entity_intelligence(&ctx, &db);
 
+        assert!(result.success);
+        // Account should have been touched
         let acct = db.get_account("acme").expect("get").unwrap();
         assert_ne!(acct.updated_at, "2020-01-01T00:00:00Z");
+        // Entity should also have been touched
+        let ent = db.get_entity("acme").expect("get entity").unwrap();
+        assert_ne!(ent.updated_at, "2020-01-01T00:00:00Z");
     }
 
     #[test]
-    fn test_cs_hook_skips_when_no_account() {
+    fn test_entity_intelligence_skips_when_no_entity() {
         let db = test_db();
 
         let ctx = base_context(None, "customer-success");
-        let result = cs_account_intelligence(&ctx, &db);
+        let result = entity_intelligence(&ctx, &db);
 
         assert!(result.success);
         assert!(result
             .message
             .as_ref()
             .unwrap()
-            .contains("no account"));
+            .contains("no entity"));
     }
 
     #[test]
-    fn test_cs_hook_not_run_for_general_profile() {
+    fn test_entity_intelligence_runs_for_all_profiles() {
         let db = test_db();
 
-        let mut ctx = base_context(Some("Acme".to_string()), "general");
-        ctx.wins = vec!["Should not be written".to_string()];
+        // Even for a "general" profile, entity_intelligence should run and appear
+        let mut ctx = base_context(Some("SomeProject".to_string()), "general");
+        ctx.wins = vec!["Milestone reached".to_string()];
 
         let results = run_post_enrichment_hooks(&ctx, &db);
 
-        // CS hook should not appear in results for general profile
-        let cs_hooks: Vec<_> = results
+        // entity_intelligence should appear in results for any profile
+        let entity_hooks: Vec<_> = results
             .iter()
-            .filter(|r| r.hook_name == "cs_account_intelligence")
+            .filter(|r| r.hook_name == "entity_intelligence")
             .collect();
-        assert!(cs_hooks.is_empty());
+        assert_eq!(entity_hooks.len(), 1);
+        assert!(entity_hooks[0].success);
     }
 }
