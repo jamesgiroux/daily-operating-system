@@ -343,6 +343,8 @@ pub struct MeetingPrep {
 #[serde(rename_all = "camelCase")]
 pub struct Meeting {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_event_id: Option<String>,
     pub time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<String>,
@@ -651,6 +653,8 @@ pub struct EmailStats {
 #[serde(rename_all = "camelCase")]
 pub struct FullMeetingPrep {
     pub file_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_event_id: Option<String>,
     pub title: String,
     pub time_range: String,
     #[serde(skip_serializing_if = "Option::is_none")]

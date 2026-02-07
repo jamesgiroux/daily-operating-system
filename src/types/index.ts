@@ -44,6 +44,7 @@ export interface SourceReference {
 
 export interface Meeting {
   id: string;
+  calendarEventId?: string;
   time: string;
   endTime?: string;
   title: string;
@@ -357,6 +358,7 @@ export interface FocusBlock {
 
 export interface FullMeetingPrep {
   filePath: string;
+  calendarEventId?: string;
   title: string;
   timeRange: string;
   meetingContext?: string;
