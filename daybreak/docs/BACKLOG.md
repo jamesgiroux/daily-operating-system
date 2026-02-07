@@ -9,7 +9,7 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
-  Meeting Intelligence: I45            — Outcome interaction UI (I44 transcript intake resolved)
+  Meeting Intelligence: (none open)     — I44 transcript intake resolved, I45 outcome interaction resolved
   Executive Intel:     I42, I43         — CoS decision support, political intelligence (consumption-first)
   Composable Ops:      I39, I41        — Feature toggles, reactive prep (ADR-0030/0042)
   CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
@@ -22,14 +22,6 @@ Active issues, known risks, assumptions, and dependencies.
   First-Run & Ship:    I13, I8         — Onboarding, distribution
   Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems (I47 entity abstraction resolved)
 -->
-
-### Open — High Priority
-
-**I44: ~~Meeting-scoped transcript intake from dashboard~~ RESOLVED**
-Implemented in ADR-0044. Both surfaces have transcript attachment: `PostMeetingPrompt` file picker button and `MeetingCard` attach affordance. Backend: `processor/transcript.rs` handles full pipeline — frontmatter stamping (meeting ID, title, account, type), AI enrichment via Claude (`--print`), extraction of summary/actions/wins/risks/decisions, routing to account/project location. Immutability enforced via `transcript_processed` state map (one transcript per meeting). `attach_meeting_transcript` command processes async, emits `transcript-processed` event. `get_meeting_outcomes` command returns AI-extracted data. Frontend: `MeetingOutcomes.tsx` renders extracted outcomes, `useMeetingOutcomes.ts` hook manages state. `capture.rs` extended with decision capture type. Schema gained `decisions` column on captures table. Meeting card is now a lifecycle view: prep → current → outcomes.
-
-**I45: Post-transcript outcome interaction UI**
-After a transcript is processed (I44), the meeting card displays AI-extracted summary, wins, risks, and actions. Users need lightweight interaction with these generated outputs: reprioritize actions (e.g., promote to P1), amplify or edit wins (emphasize what matters for EBRs/reviews), adjust risk severity, edit the summary. This is distinct from capture — it's post-capture refinement. The manual Outcomes flow becomes redundant when a transcript exists; this replaces it with richer, editable AI output. Design constraint: interactions should write back to the stored markdown (source of truth), not just update SQLite. Blocked by I44.
 
 ### Open — Medium Priority
 
@@ -93,9 +85,6 @@ ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and s
 **I31: No transcript summarization in inbox processor**
 CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
 
-**I32: ~~Inbox processor doesn't update account intelligence~~ RESOLVED**
-AI enrichment prompt now extracts WINS/RISKS sections. Post-enrichment `cs_account_intelligence` hook writes captures (with synthetic `inbox-{filename}` meeting IDs) and touches `accounts.updated_at` as last-contact signal. Only runs for `customer-success` profile with an associated account. Read side (`get_captures_for_account`) + write side are now both wired.
-
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
 
@@ -151,6 +140,12 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 **I38: Deliver script decomposition** — Resolved. ADR-0042 Chunk 1 replaces deliver_today.py with Rust-native per-operation delivery (`workflow/deliver.rs`). Chunk 3 adds AI enrichment ops: `deliver_emails()` (mechanical email mapping), `enrich_emails()` (PTY-spawned Claude for summaries/actions/arcs per high-priority email), `enrich_briefing()` (PTY-spawned Claude for 2-3 sentence day narrative patched into schedule.json). All AI ops are fault-tolerant — if Claude fails, mechanical data renders fine. Pipeline: Phase 1 Python → mechanical delivery (instant) → partial manifest → AI enrichment (progressive) → final manifest. Week delivery (deliver_week.py) remains monolithic (ADR-0042 Chunk 6).
 
 **I36: Daily impact rollup for CS extension** — Resolved. Added `workflow/impact_rollup.rs` with `rollup_daily_impact()` that queries today's captures from SQLite, groups wins/risks by account, and appends to `Weekly-Impact/{YYYY}-W{WW}-impact-capture.md`. Runs in archive workflow between reconciliation and file moves, profile-gated to `customer-success`, non-fatal. Idempotent (day header check prevents double-writes). Creates file with template if missing. `db.rs` gained `get_captures_for_date()`. 9 new tests.
+
+**I45: Post-transcript outcome interaction UI** — Resolved. `MeetingOutcomes.tsx` renders AI-extracted summary, wins, risks, decisions, and actions inside MeetingCard's collapsible area. Actions: checkbox completion (`complete_action`/`reopen_action`), priority cycling via `update_action_priority` command. Wins/risks/decisions: inline text editing via `update_capture` command. All changes write to SQLite (working store). Markdown writeback for actions already exists via `sync_completion_to_markdown` hook; non-action capture edits stay SQLite-only (consistent with ADR-0018 — SQLite is disposable cache, originals from transcript processing are the markdown source of truth).
+
+**I44: Meeting-scoped transcript intake from dashboard** — Resolved. ADR-0044. Both surfaces have transcript attachment: `PostMeetingPrompt` file picker and `MeetingCard` attach affordance. `processor/transcript.rs` handles full pipeline — frontmatter stamping, AI enrichment via Claude (`--print`), extraction of summary/actions/wins/risks/decisions, routing to account location. Immutability enforced via `transcript_processed` state map. Frontend: `MeetingOutcomes.tsx` + `useMeetingOutcomes.ts`. Meeting card is now a lifecycle view: prep → current → outcomes.
+
+**I32: Inbox processor doesn't update account intelligence** — Resolved. AI enrichment prompt extracts WINS/RISKS sections. Post-enrichment `entity_intelligence` hook writes captures (with synthetic `inbox-{filename}` meeting IDs) and touches `accounts.updated_at` as last-contact signal. Read side (`get_captures_for_account`) + write side both wired.
 
 **I47: Profile-agnostic entity abstraction** — Resolved. Introduced `entities` table and `EntityType` enum (ADR-0045). Bridge pattern: `upsert_account()` auto-mirrors to entities table, backfill migration populates from existing accounts on DB open. `entity_intelligence()` hook replaces profile-gated `cs_account_intelligence()` — now runs for all profiles as core behavior (ADR-0043). `account_id` FK migration deferred to I27.
 
