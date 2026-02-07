@@ -10,6 +10,10 @@
       "type": "string",
       "description": "Unique identifier matching schedule"
     },
+    "calendarEventId": {
+      "type": "string",
+      "description": "Google Calendar event ID for cross-source matching"
+    },
     "title": {
       "type": "string"
     },
