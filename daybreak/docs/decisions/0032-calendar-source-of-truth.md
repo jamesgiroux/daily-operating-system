@@ -1,7 +1,7 @@
 # ADR-0032: Calendar source of truth: hybrid overlay
 
 **Date:** 2026-02
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
@@ -11,7 +11,7 @@ The app has two calendar data sources that can disagree:
 
 A meeting cancelled at 7 AM still shows on the dashboard. A meeting added at 2 PM shows nowhere — the dashboard only reads `schedule.json`.
 
-**Event ID status:** Google Calendar event IDs are preserved by `prepare_today.py` and `calendar_poll.py`. Both data sources can be matched by event ID. However, `deliver_today.py` may generate local slugs (e.g., "0900-acme-sync") rather than preserving the Google Calendar event ID in `schedule.json`. This needs verification.
+**Event ID status:** Google Calendar event IDs are preserved through the full pipeline — `prepare_today.py`, `deliver_today.py` (schedule.json + preps/*.json), and `calendar_poll.py`. Both data sources can be matched by event ID (resolved by I24).
 
 ## Decision
 
@@ -24,7 +24,7 @@ Hybrid overlay: Live calendar is source of truth for *which meetings exist*. Bri
 ## Consequences
 
 - Dashboard is both current AND enriched
-- Requires stable event ID matching between Google Calendar API and `schedule.json`
-- Requires refactoring `get_dashboard_data()` to merge `schedule.json` + `state.calendar_events`
-- Must resolve the ID format question: `deliver_today.py` needs to preserve Google Calendar event IDs, not generate local slugs
+- Requires stable event ID matching between Google Calendar API and `schedule.json` (implemented via `calendar_merge.rs`)
+- `get_dashboard_data()` merges `schedule.json` + `state.calendar_events` with 4-state overlay (Enriched, Cancelled, New, BriefingOnly)
+- Event ID format resolved: Google Calendar event IDs flow through the full pipeline (I24)
 - This decision should be resolved before ADR-0033 (meeting entity unification)
