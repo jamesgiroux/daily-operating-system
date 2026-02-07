@@ -20,6 +20,8 @@ pub struct EnrichmentContext {
     pub actions: Vec<DbAction>,
     pub destination_path: Option<String>,
     pub profile: String,
+    pub wins: Vec<String>,
+    pub risks: Vec<String>,
 }
 
 /// Result from a single hook.
@@ -34,13 +36,9 @@ pub fn run_post_enrichment_hooks(ctx: &EnrichmentContext, db: &ActionDb) -> Vec<
     let mut results = Vec::new();
     results.push(sync_actions_to_sqlite(ctx, db));
     results.push(sync_completion_to_markdown(ctx, db));
-    // CS extension hooks -> Phase 4 (log as "skipped" when profile == "customer-success")
+    // CS account intelligence: write wins/risks as captures, touch last-contact
     if ctx.profile == "customer-success" {
-        results.push(HookResult {
-            hook_name: "cs_extension",
-            success: true,
-            message: Some("CS hooks deferred to Phase 4".to_string()),
-        });
+        results.push(cs_account_intelligence(ctx, db));
     }
     results
 }
@@ -159,6 +157,78 @@ fn sync_completion_to_markdown(ctx: &EnrichmentContext, db: &ActionDb) -> HookRe
     }
 }
 
+/// Write extracted wins/risks as captures and touch account last-contact.
+///
+/// Only runs when an account is associated with the file. Uses a synthetic
+/// `meeting_id` of `inbox-{filename}` since inbox files don't have a real
+/// meeting context.
+fn cs_account_intelligence(ctx: &EnrichmentContext, db: &ActionDb) -> HookResult {
+    let account = match &ctx.account {
+        Some(a) => a,
+        None => {
+            return HookResult {
+                hook_name: "cs_account_intelligence",
+                success: true,
+                message: Some("Skipped: no account associated".to_string()),
+            };
+        }
+    };
+
+    let synthetic_meeting_id = format!("inbox-{}", ctx.filename);
+    let mut captures_written = 0;
+    let mut errors = 0;
+
+    for win in &ctx.wins {
+        match db.insert_capture(
+            &synthetic_meeting_id,
+            &ctx.filename,
+            Some(account),
+            "win",
+            win,
+        ) {
+            Ok(()) => captures_written += 1,
+            Err(e) => {
+                log::warn!("cs_account_intelligence: failed to write win: {}", e);
+                errors += 1;
+            }
+        }
+    }
+
+    for risk in &ctx.risks {
+        match db.insert_capture(
+            &synthetic_meeting_id,
+            &ctx.filename,
+            Some(account),
+            "risk",
+            risk,
+        ) {
+            Ok(()) => captures_written += 1,
+            Err(e) => {
+                log::warn!("cs_account_intelligence: failed to write risk: {}", e);
+                errors += 1;
+            }
+        }
+    }
+
+    // Touch last-contact on the account
+    let touched = match db.touch_account_last_contact(account) {
+        Ok(matched) => matched,
+        Err(e) => {
+            log::warn!("cs_account_intelligence: failed to touch account: {}", e);
+            false
+        }
+    };
+
+    HookResult {
+        hook_name: "cs_account_intelligence",
+        success: errors == 0,
+        message: Some(format!(
+            "Wrote {} captures ({} errors), account touched: {}",
+            captures_written, errors, touched
+        )),
+    }
+}
+
 /// Search common workspace locations for a source file by label.
 fn find_source_file(workspace: &Path, filename: &str) -> Option<PathBuf> {
     // Direct path in common locations
@@ -188,4 +258,140 @@ fn find_source_file(workspace: &Path, filename: &str) -> Option<PathBuf> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{ActionDb, DbAccount};
+
+    fn test_db() -> ActionDb {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("test_hooks.db");
+        std::mem::forget(dir);
+        ActionDb::open_at(path).expect("Failed to open test database")
+    }
+
+    fn base_context(account: Option<String>, profile: &str) -> EnrichmentContext {
+        EnrichmentContext {
+            workspace: PathBuf::from("/tmp/test-workspace"),
+            filename: "acme-update.md".to_string(),
+            classification: "account_update".to_string(),
+            account,
+            summary: "Test summary".to_string(),
+            actions: Vec::new(),
+            destination_path: None,
+            profile: profile.to_string(),
+            wins: Vec::new(),
+            risks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_cs_hook_writes_captures() {
+        let db = test_db();
+
+        // Create the account so touch works
+        let account = DbAccount {
+            id: "acme".to_string(),
+            name: "Acme".to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_account(&account).expect("upsert account");
+
+        let mut ctx = base_context(Some("Acme".to_string()), "customer-success");
+        ctx.wins = vec!["Expanded to 3 teams".to_string()];
+        ctx.risks = vec!["Budget freeze".to_string(), "Champion leaving".to_string()];
+
+        let result = cs_account_intelligence(&ctx, &db);
+
+        assert!(result.success);
+        assert_eq!(result.hook_name, "cs_account_intelligence");
+
+        // Verify captures were written
+        let captures = db
+            .get_captures_for_account("Acme", 30)
+            .expect("query captures");
+        assert_eq!(captures.len(), 3);
+
+        let wins: Vec<_> = captures
+            .iter()
+            .filter(|c| c.capture_type == "win")
+            .collect();
+        assert_eq!(wins.len(), 1);
+        assert_eq!(wins[0].content, "Expanded to 3 teams");
+        assert_eq!(wins[0].meeting_id, "inbox-acme-update.md");
+
+        let risks: Vec<_> = captures
+            .iter()
+            .filter(|c| c.capture_type == "risk")
+            .collect();
+        assert_eq!(risks.len(), 2);
+    }
+
+    #[test]
+    fn test_cs_hook_touches_account() {
+        let db = test_db();
+
+        let account = DbAccount {
+            id: "acme".to_string(),
+            name: "Acme".to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_account(&account).expect("upsert");
+
+        let ctx = base_context(Some("Acme".to_string()), "customer-success");
+        cs_account_intelligence(&ctx, &db);
+
+        let acct = db.get_account("acme").expect("get").unwrap();
+        assert_ne!(acct.updated_at, "2020-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_cs_hook_skips_when_no_account() {
+        let db = test_db();
+
+        let ctx = base_context(None, "customer-success");
+        let result = cs_account_intelligence(&ctx, &db);
+
+        assert!(result.success);
+        assert!(result
+            .message
+            .as_ref()
+            .unwrap()
+            .contains("no account"));
+    }
+
+    #[test]
+    fn test_cs_hook_not_run_for_general_profile() {
+        let db = test_db();
+
+        let mut ctx = base_context(Some("Acme".to_string()), "general");
+        ctx.wins = vec!["Should not be written".to_string()];
+
+        let results = run_post_enrichment_hooks(&ctx, &db);
+
+        // CS hook should not appear in results for general profile
+        let cs_hooks: Vec<_> = results
+            .iter()
+            .filter(|r| r.hook_name == "cs_account_intelligence")
+            .collect();
+        assert!(cs_hooks.is_empty());
+    }
 }
