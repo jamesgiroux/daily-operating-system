@@ -472,6 +472,223 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
 }
 
 // =============================================================================
+// Directive Loading (ADR-0042: per-operation pipelines)
+// =============================================================================
+
+/// The today-directive.json produced by Phase 1 (prepare_today.py).
+///
+/// Uses serde defaults throughout so missing keys don't cause parse failures.
+/// The Rust delivery functions read what they need; unknown fields are ignored.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct Directive {
+    #[serde(default)]
+    pub context: DirectiveContext,
+    #[serde(default)]
+    pub calendar: DirectiveCalendar,
+    #[serde(default)]
+    pub meetings: std::collections::HashMap<String, Vec<DirectiveMeeting>>,
+    #[serde(default)]
+    pub meeting_contexts: Vec<DirectiveMeetingContext>,
+    #[serde(default)]
+    pub actions: DirectiveActions,
+    #[serde(default)]
+    pub emails: DirectiveEmails,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveContext {
+    #[serde(default)]
+    pub date: Option<String>,
+    #[serde(default)]
+    pub profile: Option<String>,
+    #[serde(default)]
+    pub greeting: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub focus: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveCalendar {
+    #[serde(default)]
+    pub events: Vec<DirectiveEvent>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveEvent {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub start: Option<String>,
+    #[serde(default)]
+    pub end: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveMeeting {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub event_id: Option<String>,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub start: Option<String>,
+    #[serde(default)]
+    pub end: Option<String>,
+    #[serde(default)]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub start_display: Option<String>,
+    #[serde(default)]
+    pub end_display: Option<String>,
+    #[serde(rename = "type", default)]
+    pub meeting_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveMeetingContext {
+    #[serde(default)]
+    pub event_id: Option<String>,
+    #[serde(default)]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub account_data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub attendees: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub narrative: Option<String>,
+    #[serde(default)]
+    pub talking_points: Option<Vec<String>>,
+    #[serde(default)]
+    pub risks: Option<Vec<String>>,
+    #[serde(default)]
+    pub wins: Option<Vec<String>>,
+    #[serde(default)]
+    pub questions: Option<Vec<String>>,
+    #[serde(default)]
+    pub key_principles: Option<Vec<String>>,
+    #[serde(default)]
+    pub since_last: Option<Vec<String>>,
+    #[serde(default)]
+    pub current_state: Option<Vec<String>>,
+    #[serde(default)]
+    pub strategic_programs: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub open_items: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub references: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveActions {
+    #[serde(default)]
+    pub overdue: Vec<DirectiveAction>,
+    #[serde(default)]
+    pub due_today: Vec<DirectiveAction>,
+    #[serde(default)]
+    pub due_this_week: Vec<DirectiveAction>,
+    #[serde(default)]
+    pub waiting_on: Vec<DirectiveWaiting>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveAction {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub account: Option<String>,
+    #[serde(default)]
+    pub due_date: Option<String>,
+    #[serde(default, alias = "due")]
+    pub due: Option<String>,
+    #[serde(default)]
+    pub days_overdue: Option<u32>,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+impl DirectiveAction {
+    /// Get the due date, trying due_date first then due
+    pub fn effective_due_date(&self) -> Option<&str> {
+        self.due_date
+            .as_deref()
+            .or(self.due.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveWaiting {
+    #[serde(default)]
+    pub what: Option<String>,
+    #[serde(default)]
+    pub who: Option<String>,
+    #[serde(default)]
+    pub context: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveEmails {
+    #[serde(default)]
+    pub classified: Vec<DirectiveEmail>,
+    #[serde(default)]
+    pub high_priority: Vec<DirectiveEmail>,
+    #[serde(default)]
+    pub medium_count: u32,
+    #[serde(default)]
+    pub low_count: u32,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct DirectiveEmail {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub from_email: Option<String>,
+    #[serde(default)]
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub snippet: Option<String>,
+    #[serde(default)]
+    pub priority: Option<String>,
+}
+
+/// Load the today-directive.json produced by Phase 1.
+///
+/// Checks `_today/data/today-directive.json` first, then falls back to
+/// `_today/.today-directive.json` (legacy location).
+pub fn load_directive(today_dir: &Path) -> Result<Directive, String> {
+    let primary = today_dir.join("data").join("today-directive.json");
+    let legacy = today_dir.join(".today-directive.json");
+
+    let path = if primary.exists() {
+        &primary
+    } else if legacy.exists() {
+        &legacy
+    } else {
+        return Err(format!(
+            "Directive not found. Checked:\n  {}\n  {}",
+            primary.display(),
+            legacy.display()
+        ));
+    };
+
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read directive: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse directive: {}", e))
+}
+
+// =============================================================================
 // Week JSON Loading (Phase 3C)
 // =============================================================================
 
