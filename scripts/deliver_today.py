@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -697,25 +698,42 @@ def build_actions(
     due_this_week = raw_actions.get("due_this_week", [])
     waiting_on = raw_actions.get("waiting_on", [])
 
+    # Load existing action titles from SQLite to skip duplicates (I23)
+    existing_titles: set[str] = set()
+    db_path = Path.home() / ".dailyos" / "actions.db"
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.execute("SELECT LOWER(TRIM(title)) FROM actions")
+            for row in cursor.fetchall():
+                if row[0]:
+                    existing_titles.add(row[0])
+            conn.close()
+        except (sqlite3.Error, OSError):
+            pass
+
     actions_list: List[Dict[str, Any]] = []
 
-    def _make_id(prefix: str, title: str, account: str = "", due: str = "") -> str:
-        """Generate a content-stable action ID.
+    def _make_id(title: str, account: str = "", due: str = "") -> str:
+        """Generate a content-stable, category-agnostic action ID.
 
-        Uses a hash of title + account + due date so the same action always
-        gets the same ID regardless of its position in the list.  This
-        prevents zombie duplicates when surrounding actions change order
-        between briefing runs (I23).
+        Same title + account + due date = same ID regardless of whether the
+        action is overdue, due today, or due this week.  This prevents zombie
+        duplicates when an action moves between categories across briefing
+        runs (I23).
         """
         key = f"{title.lower().strip()}|{account.lower().strip()}|{due.strip()}"
         h = hashlib.sha256(key.encode()).hexdigest()[:10]
-        return f"{prefix}-{h}"
+        return f"action-{h}"
 
     # Overdue -> P1, pending, isOverdue = true
     for task in overdue:
+        title = task.get("title", "Unknown")
+        if title.lower().strip() in existing_titles:
+            continue
         actions_list.append({
-            "id": _make_id("overdue", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
-            "title": task.get("title", "Unknown"),
+            "id": _make_id(task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
+            "title": title,
             "account": task.get("account"),
             "priority": "P1",
             "status": "pending",
@@ -728,9 +746,12 @@ def build_actions(
 
     # Due today -> P1, pending
     for task in due_today:
+        title = task.get("title", "Unknown")
+        if title.lower().strip() in existing_titles:
+            continue
         actions_list.append({
-            "id": _make_id("today", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
-            "title": task.get("title", "Unknown"),
+            "id": _make_id(task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
+            "title": title,
             "account": task.get("account"),
             "priority": "P1",
             "status": "pending",
@@ -742,9 +763,12 @@ def build_actions(
 
     # Due this week -> P2, pending
     for task in due_this_week:
+        title = task.get("title", "Unknown")
+        if title.lower().strip() in existing_titles:
+            continue
         actions_list.append({
-            "id": _make_id("week", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
-            "title": task.get("title", "Unknown"),
+            "id": _make_id(task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
+            "title": title,
             "account": task.get("account"),
             "priority": "P2",
             "status": "pending",
@@ -756,14 +780,26 @@ def build_actions(
 
     # Waiting on -> P2, waiting
     for item in waiting_on:
+        title = f"Waiting: {item.get('what', 'Unknown')}"
+        if title.lower().strip() in existing_titles:
+            continue
         actions_list.append({
-            "id": _make_id("waiting", item.get("what", ""), item.get("who", "")),
-            "title": f"Waiting: {item.get('what', 'Unknown')}",
+            "id": _make_id(item.get("what", ""), item.get("who", "")),
+            "title": title,
             "account": item.get("who"),
             "priority": "P2",
             "status": "waiting",
             "context": item.get("context"),
         })
+
+    # Deduplicate: same action may appear in multiple categories (I23)
+    seen_ids: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for action in actions_list:
+        if action["id"] not in seen_ids:
+            deduped.append(action)
+            seen_ids.add(action["id"])
+    actions_list = deduped
 
     return {
         "date": date,
