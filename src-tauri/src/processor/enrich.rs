@@ -79,7 +79,7 @@ pub fn enrich_file(
     // Extract actions if any
     if let Some(ref actions_text) = parsed.actions_text {
         if let Some(db) = db {
-            extract_actions_from_ai(actions_text, filename, db);
+            extract_actions_from_ai(actions_text, filename, db, parsed.account.as_deref());
         }
     }
 
@@ -223,9 +223,17 @@ ACCOUNT: <account name if relevant, or NONE>
 MEETING: <meeting name if relevant, or NONE>
 SUMMARY: <one-line summary>
 ACTIONS:
-- <action item 1>
-- <action item 2>
+- <action with optional inline metadata>
 END_ACTIONS
+
+Rules for actions:
+- Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
+- Include @AccountName when action relates to a specific customer/account
+- Include due: YYYY-MM-DD when a deadline is mentioned or implied
+- Include #context for topic category (billing, onboarding, support, etc.)
+- Use "waiting" or "blocked" if action depends on someone else
+- If no metadata can be inferred, just write the action text plainly
+- Example: P1 @Acme Follow up on renewal due: 2026-03-15 #billing
 
 Filename: {}
 Content:
@@ -301,13 +309,22 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
 }
 
 /// Extract actions from AI-generated action text and sync to SQLite.
-fn extract_actions_from_ai(actions_text: &str, source_filename: &str, db: &ActionDb) {
+///
+/// Parses inline metadata tokens from each action line (priority, @account, etc.).
+fn extract_actions_from_ai(
+    actions_text: &str,
+    source_filename: &str,
+    db: &ActionDb,
+    account_fallback: Option<&str>,
+) {
+    use super::metadata;
+
     let now = Utc::now().to_rfc3339();
     let mut count = 0;
 
     for line in actions_text.lines() {
         let trimmed = line.trim();
-        let title = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
+        let raw_title = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
             rest.trim()
         } else if let Some(rest) = trimmed.strip_prefix("- ") {
             rest.trim()
@@ -315,9 +332,22 @@ fn extract_actions_from_ai(actions_text: &str, source_filename: &str, db: &Actio
             continue;
         };
 
-        if title.is_empty() {
+        if raw_title.is_empty() {
             continue;
         }
+
+        let meta = metadata::parse_action_metadata(raw_title);
+
+        let status = if meta.is_waiting {
+            "waiting".to_string()
+        } else {
+            "pending".to_string()
+        };
+
+        let account_id = meta
+            .account
+            .clone()
+            .or_else(|| account_fallback.map(String::from));
 
         let action = crate::db::DbAction {
             id: format!(
@@ -325,19 +355,23 @@ fn extract_actions_from_ai(actions_text: &str, source_filename: &str, db: &Actio
                 source_filename.trim_end_matches(".md"),
                 count
             ),
-            title: title.to_string(),
-            priority: "P2".to_string(),
-            status: "pending".to_string(),
+            title: meta.clean_title,
+            priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
+            status,
             created_at: now.clone(),
-            due_date: None,
+            due_date: meta.due_date,
             completed_at: None,
-            account_id: None,
+            account_id,
             project_id: None,
             source_type: Some("ai-inbox".to_string()),
-            source_id: None,
+            source_id: Some(raw_title.to_string()),
             source_label: Some(source_filename.to_string()),
-            context: None,
-            waiting_on: None,
+            context: meta.context,
+            waiting_on: if meta.is_waiting {
+                Some("true".to_string())
+            } else {
+                None
+            },
             updated_at: now.clone(),
         };
 
