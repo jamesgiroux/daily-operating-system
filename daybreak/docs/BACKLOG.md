@@ -42,6 +42,9 @@ Captured data goes to SQLite/impact log but never appears in next day's briefing
 **I20: No standalone email refresh**
 Emails only update with full briefing. A lightweight email-only pipeline could be valuable but raises partial-refresh semantics questions. ADR-0006 determinism boundary still applies.
 
+**I21: FYI emails may never appear due to classification defaults**
+`classify_email_priority()` defaults to "medium" (line 712). Only newsletters, automated senders, and GitHub notifications trigger "low." If a user's inbox is mostly customer + internal emails, the FYI section is permanently empty — not wrong, but means the three-tier promise (ADR-0029) is invisible. Consider: expanding low signals (marketing domains, bulk senders), or showing an explicit "0 FYI" indicator so users know the tier exists.
+
 ### Open — Low Priority
 
 **I2: Compact meetings.md format for dashboard dropdowns**
