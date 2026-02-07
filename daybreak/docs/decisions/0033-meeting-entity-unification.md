@@ -1,7 +1,7 @@
 # ADR-0033: Meeting entity unification
 
 **Date:** 2026-02
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
@@ -22,7 +22,15 @@ Long-term (Phase 3): Unified Meeting entity in SQLite with stable ID (calendar e
 
 ## Consequences
 
-- Near-term: Fixes backlog I14 (meeting card links), enables prep tracking, minimal refactoring
-- Long-term: Consistent meeting experience everywhere, but significant architectural change
+**Near-term (implemented):**
+- `meeting_prep_state` SQLite table tracks which preps the user has reviewed, keyed by `prep_file` with optional `calendar_event_id`
+- `get_meeting_prep` command records review on load; `get_dashboard_data` annotates meetings with `prep_reviewed: true`
+- MeetingCard shows a checkmark icon when prep has been reviewed
+- `meetings_history` table gains `calendar_event_id` column for cross-source matching
+- Works without Google Calendar (keyed by prep_file, not event ID)
+- I14 (meeting card links) was already resolved in Phase 1.5
+
+**Long-term (Phase 3):**
+- Unified Meeting entity in SQLite with stable ID, state, and lifecycle
+- All views read from the same source — significant architectural change
 - Depends on ADR-0032 (calendar source of truth determines the ID scheme)
-- Depends on resolving the event ID format question in `deliver_today.py`
