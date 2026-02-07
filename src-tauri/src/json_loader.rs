@@ -184,6 +184,7 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
             is_current: if m.is_current { Some(true) } else { None },
             prep_file: m.prep_file,
             has_prep: m.has_prep,
+            overlay_status: None,
         }
     }).collect();
 

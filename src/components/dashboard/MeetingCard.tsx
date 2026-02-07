@@ -70,6 +70,8 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
   const hasInlinePrep = meeting.prep && Object.keys(meeting.prep).length > 0;
   const hasPrepFile = meeting.hasPrep && meeting.prepFile;
   const isPast = isPastMeeting(meeting);
+  const isCancelled = meeting.overlayStatus === "cancelled";
+  const isNew = meeting.overlayStatus === "new";
 
   const handleCaptureOutcomes = React.useCallback(() => {
     // Build ISO timestamps from the meeting's display times (e.g., "09:00 AM").
@@ -105,9 +107,10 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
     <div
       className={cn(
         "rounded-lg border bg-card shadow-sm transition-all duration-150",
-        "hover:-translate-y-0.5 hover:shadow-md",
+        !isCancelled && "hover:-translate-y-0.5 hover:shadow-md",
         borderStyles[meeting.type],
-        meeting.isCurrent && "animate-pulse-gold ring-2 ring-primary/50"
+        meeting.isCurrent && !isCancelled && "animate-pulse-gold ring-2 ring-primary/50",
+        isCancelled && "opacity-50"
       )}
     >
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -126,19 +129,31 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
                 </>
               )}
             </div>
-            <h3 className="font-semibold">{meeting.title}</h3>
+            <h3 className={cn("font-semibold", isCancelled && "line-through")}>{meeting.title}</h3>
             {meeting.account && (
               <p className="text-sm text-primary">{meeting.account}</p>
             )}
           </div>
 
           <div className="flex items-center gap-2">
+            {isCancelled && (
+              <Badge variant="outline" className="text-destructive border-destructive/30">
+                Cancelled
+              </Badge>
+            )}
+
+            {isNew && (
+              <Badge variant="outline" className="text-muted-foreground">
+                No prep available
+              </Badge>
+            )}
+
             <Badge className={badgeStyles[meeting.type]} variant="secondary">
               {badgeLabels[meeting.type]}
             </Badge>
 
-            {/* View Prep button for meetings with prep files */}
-            {hasPrepFile && (
+            {/* View Prep button for meetings with prep files (hidden for cancelled) */}
+            {hasPrepFile && !isCancelled && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -156,14 +171,14 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
             )}
 
             {/* No prep badge for customer meetings without prep */}
-            {!meeting.hasPrep && meeting.type === "customer" && (
+            {!meeting.hasPrep && !isNew && meeting.type === "customer" && (
               <Badge variant="outline" className="text-muted-foreground">
                 No prep
               </Badge>
             )}
 
-            {/* Outcomes button for past meetings */}
-            {isPast && (
+            {/* Outcomes button for past meetings (hidden for cancelled) */}
+            {isPast && !isCancelled && (
               <Button
                 variant="ghost"
                 size="sm"

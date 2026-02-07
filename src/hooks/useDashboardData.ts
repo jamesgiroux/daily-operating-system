@@ -103,6 +103,27 @@ export function useDashboardData(): {
     };
   }, [loadData]);
 
+  // Silent refresh when calendar poll detects changes (ADR-0032)
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+
+    listen("calendar-updated", () => {
+      loadData(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlisten = fn;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [loadData]);
+
   return {
     state,
     refresh: () => loadData(true),
