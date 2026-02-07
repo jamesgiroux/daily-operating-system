@@ -79,6 +79,7 @@ pub fn merge_meetings(
                 prep_file: None,
                 has_prep: false,
                 overlay_status: Some(OverlayStatus::New),
+                prep_reviewed: None,
             });
         }
     }
@@ -167,6 +168,7 @@ mod tests {
             prep_file: Some("prep-acme".to_string()),
             has_prep: true,
             overlay_status: None,
+            prep_reviewed: None,
         }
     }
 
