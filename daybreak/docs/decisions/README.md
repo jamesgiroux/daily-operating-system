@@ -64,6 +64,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0041](0041-two-sided-impact-model.md) | Two-sided impact model (CS outcomes vs personal impact) | Accepted |
 | [0042](0042-per-operation-pipelines.md) | Per-operation pipelines with progressive delivery | Accepted |
 | [0043](0043-meeting-intelligence-is-core.md) | Meeting intelligence is core, not extension | Accepted |
+| [0044](0044-meeting-scoped-transcript-intake.md) | Meeting-scoped transcript intake from dashboard | Accepted |
+| [0045](0045-entity-abstraction.md) | Profile-agnostic entity abstraction | Accepted |
 
 ---
 

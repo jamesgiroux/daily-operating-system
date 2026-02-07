@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,9 +10,11 @@ import {
   ChevronRight,
   Check,
   MessageSquare,
+  FileText,
+  Loader2,
 } from "lucide-react";
 import { usePostMeetingCapture } from "@/hooks/usePostMeetingCapture";
-import type { CapturedOutcome, CapturedAction } from "@/types";
+import type { CapturedOutcome, CapturedAction, TranscriptResult } from "@/types";
 
 type CaptureType = "win" | "risk" | "action";
 
@@ -23,11 +26,12 @@ interface CaptureItem {
 }
 
 export function PostMeetingPrompt() {
-  const { visible, meeting, isFallback, capture, skip, dismiss } =
+  const { visible, meeting, isFallback, capture, skip, dismiss, attachTranscript } =
     usePostMeetingCapture();
   const [phase, setPhase] = useState<
-    "prompt" | "input" | "confirm"
+    "prompt" | "input" | "confirm" | "processing" | "done"
   >("prompt");
+  const [transcriptResult, setTranscriptResult] = useState<TranscriptResult | null>(null);
   const [activeType, setActiveType] = useState<CaptureType>("win");
   const [inputValue, setInputValue] = useState("");
   const [items, setItems] = useState<CaptureItem[]>([]);
@@ -95,6 +99,28 @@ export function PostMeetingPrompt() {
 
     await capture(outcome);
   }, [meeting, inputValue, capture]);
+
+  const handleAttachTranscript = useCallback(async () => {
+    setInteracted(true);
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: "Transcripts",
+          extensions: ["md", "txt", "vtt", "srt", "docx", "pdf"],
+        },
+      ],
+    });
+    if (!selected) return;
+    setPhase("processing");
+    const result = await attachTranscript(selected);
+    if (result) {
+      setTranscriptResult(result);
+      setPhase("done");
+    } else {
+      setPhase("prompt");
+    }
+  }, [attachTranscript]);
 
   const handleDone = useCallback(async () => {
     if (!meeting) return;
@@ -261,6 +287,15 @@ export function PostMeetingPrompt() {
                 variant="ghost"
                 size="sm"
                 className="mt-2 w-full text-xs text-muted-foreground"
+                onClick={handleAttachTranscript}
+              >
+                <FileText className="mr-1 size-3" />
+                Attach transcript
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-xs text-muted-foreground"
                 onClick={skip}
               >
                 Skip
@@ -370,6 +405,42 @@ export function PostMeetingPrompt() {
                 </Button>
               </div>
             </>
+          )}
+
+          {/* Processing phase */}
+          {phase === "processing" && (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">
+                Processing transcript...
+              </p>
+            </div>
+          )}
+
+          {/* Done phase */}
+          {phase === "done" && transcriptResult && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Check className="size-3.5 text-success" />
+                <span className="text-xs font-medium">Transcript processed</span>
+              </div>
+              {transcriptResult.summary && (
+                <p className="text-xs text-muted-foreground line-clamp-2">
+                  {transcriptResult.summary}
+                </p>
+              )}
+              <div className="flex gap-3 text-[10px] text-muted-foreground">
+                {transcriptResult.wins.length > 0 && (
+                  <span>{transcriptResult.wins.length} wins</span>
+                )}
+                {transcriptResult.risks.length > 0 && (
+                  <span>{transcriptResult.risks.length} risks</span>
+                )}
+                {transcriptResult.actions.length > 0 && (
+                  <span>{transcriptResult.actions.length} actions</span>
+                )}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
