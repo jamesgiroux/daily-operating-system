@@ -151,14 +151,89 @@ def gather_meeting_context(
                 if mentions:
                     ctx.refs[f"archive_{domain}"] = [str(p) for p in mentions]
 
-    # For internal / team_sync / one_on_one, find last meeting
-    elif meeting_type in ("internal", "team_sync", "one_on_one"):
+    # For internal / team_sync: last meeting note + SQLite enrichment
+    elif meeting_type in ("internal", "team_sync"):
         archive_dir = workspace / "_archive"
         title = meeting.get("title", "")
         if title:
             recent = _find_recent_summaries(title, archive_dir, limit=1)
             if recent:
                 ctx.refs["last_meeting"] = str(recent[0])
+
+        # SQLite enrichment
+        if db_path is None:
+            db_path = Path.home() / ".dailyos" / "actions.db"
+        if db_path.exists():
+            if title:
+                ctx.meeting_history = _get_meeting_history_by_title(
+                    db_path, title, lookback_days=30, limit=2,
+                )
+                ctx.recent_captures = _get_captures_by_meeting_title(
+                    db_path, title, days_back=14,
+                )
+            ctx.open_actions = _get_all_pending_actions(db_path, limit=10)
+
+    # For 1:1s: deeper lookback (2-3 past meetings, relationship context)
+    elif meeting_type == "one_on_one":
+        archive_dir = workspace / "_archive"
+        title = meeting.get("title", "")
+        if title:
+            recent = _find_recent_summaries(title, archive_dir, limit=3)
+            if recent:
+                ctx.refs["recent_meetings"] = [str(p) for p in recent]
+
+        # SQLite enrichment
+        if db_path is None:
+            db_path = Path.home() / ".dailyos" / "actions.db"
+        if db_path.exists():
+            if title:
+                ctx.meeting_history = _get_meeting_history_by_title(
+                    db_path, title, lookback_days=60, limit=3,
+                )
+                ctx.recent_captures = _get_captures_by_meeting_title(
+                    db_path, title, days_back=30,
+                )
+            ctx.open_actions = _get_all_pending_actions(db_path, limit=10)
+
+    # For partnership meetings: try account match, fall back to title-based
+    elif meeting_type == "partnership":
+        accounts_dir = workspace / "Accounts"
+        if accounts_dir.is_dir():
+            account_name = _guess_account_name(meeting, accounts_dir)
+            if account_name:
+                ctx.account = account_name
+                account_path = accounts_dir / account_name
+                for fname in ("dashboard.md", "stakeholders.md", "actions.md"):
+                    found = _find_file_in_dir(account_path, fname)
+                    if found:
+                        ctx.refs[fname.replace(".md", "")] = str(found)
+
+        archive_dir = workspace / "_archive"
+        title = meeting.get("title", "")
+        if title:
+            recent = _find_recent_summaries(title, archive_dir, limit=2)
+            if recent:
+                ctx.refs["recent_meetings"] = [str(p) for p in recent]
+
+        # SQLite enrichment
+        if db_path is None:
+            db_path = Path.home() / ".dailyos" / "actions.db"
+        if db_path.exists():
+            if ctx.account:
+                ctx.recent_captures = _get_captures_for_account(
+                    db_path, ctx.account, days_back=14,
+                )
+                ctx.open_actions = _get_account_actions(db_path, ctx.account)
+                ctx.meeting_history = _get_meeting_history(
+                    db_path, ctx.account, lookback_days=30, limit=3,
+                )
+            elif title:
+                ctx.meeting_history = _get_meeting_history_by_title(
+                    db_path, title, lookback_days=30, limit=3,
+                )
+                ctx.recent_captures = _get_captures_by_meeting_title(
+                    db_path, title, days_back=14,
+                )
 
     return ctx
 
@@ -344,6 +419,117 @@ def _get_meeting_history(
                 "type": row["meeting_type"],
                 "start_time": row["start_time"],
                 "summary": row["summary"],
+            }
+            for row in cursor.fetchall()
+        ]
+        conn.close()
+        return results
+    except (sqlite3.Error, OSError):
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Title-based SQLite queries (no account_id needed)
+# ---------------------------------------------------------------------------
+
+def _get_meeting_history_by_title(
+    db_path: Path,
+    title: str,
+    lookback_days: int = 30,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """Query recent meetings matching a title from SQLite.
+
+    Uses exact (case-insensitive) title match — recurring meetings have
+    consistent titles so LIKE wildcards would over-match.
+    """
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            """SELECT id, title, meeting_type, start_time, summary
+               FROM meetings_history
+               WHERE LOWER(title) = LOWER(?1)
+                 AND start_time >= date('now', ?2)
+               ORDER BY start_time DESC
+               LIMIT ?3""",
+            (title, f"-{lookback_days} days", limit),
+        )
+        results = [
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "type": row["meeting_type"],
+                "start_time": row["start_time"],
+                "summary": row["summary"],
+            }
+            for row in cursor.fetchall()
+        ]
+        conn.close()
+        return results
+    except (sqlite3.Error, OSError):
+        return []
+
+
+def _get_captures_by_meeting_title(
+    db_path: Path,
+    title: str,
+    days_back: int = 14,
+) -> list[dict[str, Any]]:
+    """Query recent captures (wins/risks) by meeting title from SQLite."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            """SELECT id, meeting_id, meeting_title, capture_type, content, captured_at
+               FROM captures
+               WHERE LOWER(meeting_title) = LOWER(?1)
+                 AND captured_at >= date('now', ?2)
+               ORDER BY captured_at DESC""",
+            (title, f"-{days_back} days"),
+        )
+        results = [
+            {
+                "id": row["id"],
+                "meeting_title": row["meeting_title"],
+                "type": row["capture_type"],
+                "content": row["content"],
+                "captured_at": row["captured_at"],
+            }
+            for row in cursor.fetchall()
+        ]
+        conn.close()
+        return results
+    except (sqlite3.Error, OSError):
+        return []
+
+
+def _get_all_pending_actions(
+    db_path: Path,
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Query the user's top pending actions (no account filter).
+
+    For team syncs and 1:1s, provides "my actions" context.
+    """
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            """SELECT id, title, priority, status, due_date
+               FROM actions
+               WHERE status IN ('pending', 'waiting')
+               ORDER BY priority, due_date
+               LIMIT ?1""",
+            (limit,),
+        )
+        results = [
+            {
+                "id": row["id"],
+                "title": row["title"],
+                "priority": row["priority"],
+                "status": row["status"],
+                "due_date": row["due_date"],
             }
             for row in cursor.fetchall()
         ]
