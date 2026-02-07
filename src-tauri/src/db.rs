@@ -94,6 +94,19 @@ pub struct DbProcessingLog {
     pub created_at: String,
 }
 
+/// A row from the `captures` table (post-meeting wins/risks).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCapture {
+    pub id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub account_id: Option<String>,
+    pub capture_type: String,
+    pub content: String,
+    pub captured_at: String,
+}
+
 /// SQLite connection wrapper for action/account/meeting state.
 ///
 /// This is intentionally NOT `Clone` or `Sync`. It is held behind a
@@ -699,6 +712,43 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Query recent captures (wins/risks) for an account within `days_back` days.
+    ///
+    /// Used by meeting:prep (ADR-0030 / I33) to surface recent wins and risks
+    /// in meeting preparation context.
+    pub fn get_captures_for_account(
+        &self,
+        account_id: &str,
+        days_back: i32,
+    ) -> Result<Vec<DbCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+             FROM captures
+             WHERE account_id = ?1
+               AND captured_at >= date('now', ?2 || ' days')
+             ORDER BY captured_at DESC",
+        )?;
+
+        let days_param = format!("-{days_back}");
+        let rows = stmt.query_map(params![account_id, days_param], |row| {
+            Ok(DbCapture {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                account_id: row.get(3)?,
+                capture_type: row.get(4)?,
+                content: row.get(5)?,
+                captured_at: row.get(6)?,
+            })
+        })?;
+
+        let mut captures = Vec::new();
+        for row in rows {
+            captures.push(row?);
+        }
+        Ok(captures)
+    }
+
     // =========================================================================
     // Meetings
     // =========================================================================
@@ -1171,6 +1221,43 @@ mod tests {
         assert!(ids.contains(&"pm-001"));
         assert!(ids.contains(&"inbox-001"));
         assert!(ids.contains(&"inbox-wait"));
+    }
+
+    #[test]
+    fn test_get_captures_for_account() {
+        let db = test_db();
+
+        // Insert captures for two accounts
+        db.insert_capture("mtg-1", "Acme QBR", Some("acme"), "win", "Expanded deployment")
+            .expect("insert capture 1");
+        db.insert_capture("mtg-1", "Acme QBR", Some("acme"), "risk", "Budget freeze")
+            .expect("insert capture 2");
+        db.insert_capture("mtg-2", "Beta Sync", Some("beta"), "win", "New champion identified")
+            .expect("insert capture 3");
+
+        // Query for acme — should get 2
+        let results = db
+            .get_captures_for_account("acme", 30)
+            .expect("query captures");
+        assert_eq!(results.len(), 2);
+
+        // Verify capture types are correct
+        let types: Vec<&str> = results.iter().map(|c| c.capture_type.as_str()).collect();
+        assert!(types.contains(&"win"));
+        assert!(types.contains(&"risk"));
+
+        // Query for beta — should get 1
+        let results = db
+            .get_captures_for_account("beta", 30)
+            .expect("query captures");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content, "New champion identified");
+
+        // Query for nonexistent account — should get 0
+        let results = db
+            .get_captures_for_account("nonexistent", 30)
+            .expect("query captures");
+        assert_eq!(results.len(), 0);
     }
 
     #[test]
