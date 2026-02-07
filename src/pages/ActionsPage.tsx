@@ -8,7 +8,6 @@ import type { DbAction } from "@/types";
 import { cn, stripMarkdown } from "@/lib/utils";
 import { PageError } from "@/components/PageState";
 import {
-  Check,
   CheckCircle2,
   Circle,
   Clock,
@@ -48,10 +47,11 @@ const priorityLabels: Record<string, string> = {
 export default function ActionsPage() {
   const {
     actions,
+    allActions,
     loading,
     error,
     refresh,
-    completeAction,
+    toggleAction,
     statusFilter,
     setStatusFilter,
     priorityFilter,
@@ -59,6 +59,13 @@ export default function ActionsPage() {
     searchQuery,
     setSearchQuery,
   } = useActions();
+
+  const statusCounts: Record<StatusTab, number> = {
+    all: allActions.length,
+    pending: allActions.filter((a) => a.status === "pending").length,
+    completed: allActions.filter((a) => a.status === "completed").length,
+    waiting: allActions.filter((a) => a.status === "waiting").length,
+  };
 
   if (loading) {
     return (
@@ -126,6 +133,18 @@ export default function ActionsPage() {
                 )}
               >
                 {tab.label}
+                {statusCounts[tab.key] > 0 && (
+                  <span
+                    className={cn(
+                      "ml-1.5 inline-flex size-5 items-center justify-center rounded-full text-xs",
+                      statusFilter === tab.key
+                        ? "bg-primary-foreground/20 text-primary-foreground"
+                        : "bg-muted-foreground/15 text-muted-foreground"
+                    )}
+                  >
+                    {statusCounts[tab.key]}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -169,7 +188,7 @@ export default function ActionsPage() {
                 <ActionCard
                   key={action.id}
                   action={action}
-                  onComplete={() => completeAction(action.id)}
+                  onToggle={() => toggleAction(action.id)}
                 />
               ))
             )}
@@ -182,10 +201,10 @@ export default function ActionsPage() {
 
 function ActionCard({
   action,
-  onComplete,
+  onToggle,
 }: {
   action: DbAction;
-  onComplete: () => void;
+  onToggle: () => void;
 }) {
   const isOverdue =
     action.dueDate &&
@@ -211,17 +230,16 @@ function ActionCard({
         <div className="flex items-start gap-3">
           {/* Completion toggle */}
           <button
-            onClick={onComplete}
-            disabled={isCompleted}
+            onClick={onToggle}
             className={cn(
               "mt-0.5 shrink-0 transition-colors",
               isCompleted
-                ? "text-muted-foreground"
+                ? "text-primary hover:text-muted-foreground"
                 : "text-muted-foreground/50 hover:text-primary"
             )}
           >
             {isCompleted ? (
-              <Check className="size-5" />
+              <CheckCircle2 className="size-5" />
             ) : (
               <Circle className="size-5" />
             )}

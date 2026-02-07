@@ -7,10 +7,12 @@ type PriorityFilter = "all" | "P1" | "P2" | "P3";
 
 interface UseActionsReturn {
   actions: DbAction[];
+  allActions: DbAction[];
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
   completeAction: (id: string) => Promise<void>;
+  toggleAction: (id: string) => Promise<void>;
   statusFilter: StatusFilter;
   setStatusFilter: (f: StatusFilter) => void;
   priorityFilter: PriorityFilter;
@@ -93,7 +95,6 @@ export function useActions(): UseActionsReturn {
     async (id: string) => {
       try {
         await invoke("complete_action", { id });
-        // Optimistic update: mark as completed in local state
         setAllActions((prev) =>
           prev.map((a) =>
             a.id === id
@@ -106,6 +107,39 @@ export function useActions(): UseActionsReturn {
       }
     },
     []
+  );
+
+  const toggleAction = useCallback(
+    async (id: string) => {
+      const action = allActions.find((a) => a.id === id);
+      if (!action) return;
+
+      const isCompleted = action.status === "completed";
+      try {
+        if (isCompleted) {
+          await invoke("reopen_action", { id });
+          setAllActions((prev) =>
+            prev.map((a) =>
+              a.id === id
+                ? { ...a, status: "pending", completedAt: undefined }
+                : a
+            )
+          );
+        } else {
+          await invoke("complete_action", { id });
+          setAllActions((prev) =>
+            prev.map((a) =>
+              a.id === id
+                ? { ...a, status: "completed", completedAt: new Date().toISOString() }
+                : a
+            )
+          );
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to update action");
+      }
+    },
+    [allActions]
   );
 
   // Apply filters
@@ -136,10 +170,12 @@ export function useActions(): UseActionsReturn {
 
   return {
     actions,
+    allActions,
     loading,
     error,
     refresh: loadActions,
     completeAction,
+    toggleAction,
     statusFilter,
     setStatusFilter,
     priorityFilter,
