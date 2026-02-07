@@ -45,6 +45,15 @@ Emails only update with full briefing. A lightweight email-only pipeline could b
 **I21: FYI emails may never appear due to classification defaults**
 `classify_email_priority()` defaults to "medium" (line 712). Only newsletters, automated senders, and GitHub notifications trigger "low." If a user's inbox is mostly customer + internal emails, the FYI section is permanently empty — not wrong, but means the three-tier promise (ADR-0029) is invisible. Consider: expanding low signals (marketing domains, bulk senders), or showing an explicit "0 FYI" indicator so users know the tier exists.
 
+**I22: Action completion doesn't write back to source markdown**
+ADR-0031 specifies post-enrichment hooks should write `[x]` completion markers back to source markdown files when `source_label` points to a specific file. Not implemented. Risk: if SQLite is deleted, all in-progress completion status is lost. Markdown writeback would make completion durable.
+
+**I23: No cross-briefing action deduplication in prepare_today.py**
+ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs.
+
+**I24: schedule.json meeting IDs are local slugs, not Google Calendar event IDs**
+`prepare_today.py` preserves Google Calendar event IDs, but `deliver_today.py` may generate local slugs (e.g., "0900-acme-sync") instead. ADR-0032 and ADR-0033 both depend on stable event ID matching. Verify whether IDs survive `deliver_today.py` and fix if not. Blocks hybrid calendar overlay and meeting entity unification.
+
 ### Open — Low Priority
 
 **I2: Compact meetings.md format for dashboard dropdowns**
