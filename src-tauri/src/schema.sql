@@ -85,3 +85,12 @@ CREATE TABLE IF NOT EXISTS captures (
 CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
 CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);
+
+-- Meeting prep state tracking (ADR-0033 near-term)
+CREATE TABLE IF NOT EXISTS meeting_prep_state (
+    prep_file TEXT PRIMARY KEY,
+    calendar_event_id TEXT,
+    reviewed_at TEXT NOT NULL,
+    title TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_prep_state_event ON meeting_prep_state(calendar_event_id);
