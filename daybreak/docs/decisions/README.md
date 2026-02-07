@@ -51,7 +51,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0028](0028-structured-document-schemas.md) | Structured document schemas (JSON-first templates) | Accepted |
 | [0029](0029-three-tier-email-priority.md) | Three-tier email priority with AI-enriched context | Accepted |
 | [0030](0030-weekly-prep-with-daily-refresh.md) | Weekly prep generation with daily refresh | Proposed |
-| [0031](0031-actions-source-of-truth.md) | Actions: SQLite as working store, markdown as archive | Proposed |
+| [0031](0031-actions-source-of-truth.md) | Actions: SQLite as working store, markdown as archive | Accepted |
 | [0032](0032-calendar-source-of-truth.md) | Calendar source of truth: hybrid overlay | Proposed |
 | [0033](0033-meeting-entity-unification.md) | Meeting entity unification | Proposed |
 | [0034](0034-adaptive-dashboard.md) | Adaptive dashboard: density-aware layout | Proposed |
