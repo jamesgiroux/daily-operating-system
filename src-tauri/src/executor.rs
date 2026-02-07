@@ -1,9 +1,10 @@
-//! Executor for three-phase workflow orchestration
+//! Workflow execution engine
 //!
-//! Runs workflows through: Prepare → Enrich → Deliver
-//! - Phase 1: Python script prepares data
-//! - Phase 2: Claude Code enriches with AI
-//! - Phase 3: Python script delivers output
+//! Each workflow has its own execution strategy:
+//! - Today: per-operation pipeline (ADR-0042) — Phase 1 Python, then Rust-native delivery
+//! - Week: three-phase (Prepare → Enrich → Deliver)
+//! - Archive: pure Rust reconciliation + file moves
+//! - InboxBatch: direct processor calls
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -91,83 +92,11 @@ impl Executor {
                 .await;
         }
 
-        // Other workflows: three-phase pattern with notifications
-
-        // Get the workflow implementation
-        let workflow = Workflow::from_id(workflow_id);
-
-        // Emit started event
-        self.emit_status_event(workflow_id, WorkflowStatus::Running {
-            started_at: record.started_at,
-            phase: WorkflowPhase::Preparing,
-            execution_id: execution_id.clone(),
-        });
-
-        let result = self
-            .run_three_phase(&workflow, &workspace, &execution_id, workflow_id)
+        // Today workflow: per-operation pipeline (ADR-0042)
+        // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
+        return self
+            .execute_today_pipeline(&workspace, &execution_id, trigger, &record)
             .await;
-
-        // Update execution record
-        let finished_at = Utc::now();
-        let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
-
-        match &result {
-            Ok(_) => {
-                // Post-processing: generate JSON and sync to DB
-                if workflow_id == WorkflowId::Today {
-                    self.run_post_processing(&workspace);
-                }
-
-                self.state.update_execution_record(&execution_id, |r| {
-                    r.finished_at = Some(finished_at);
-                    r.duration_secs = Some(duration_secs);
-                    r.success = true;
-                });
-
-                // Update last scheduled run time
-                if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
-                    self.state
-                        .set_last_scheduled_run(workflow_id, record.started_at);
-                }
-
-                // Emit completed event
-                self.emit_status_event(workflow_id, WorkflowStatus::Completed {
-                    finished_at,
-                    duration_secs,
-                    execution_id: execution_id.clone(),
-                });
-
-                // Send success notification
-                let _ = send_notification(
-                    &self.app_handle,
-                    "Your day is ready",
-                    "DailyOS has prepared your briefing",
-                );
-            }
-            Err(e) => {
-                self.state.update_execution_record(&execution_id, |r| {
-                    r.finished_at = Some(finished_at);
-                    r.duration_secs = Some(duration_secs);
-                    r.success = false;
-                    r.error_message = Some(e.to_string());
-                });
-
-                // Emit failed event
-                self.emit_status_event(workflow_id, WorkflowStatus::Failed {
-                    error: WorkflowError::from(e),
-                    execution_id: execution_id.clone(),
-                });
-
-                // Send error notification
-                let _ = send_notification(
-                    &self.app_handle,
-                    "Workflow failed",
-                    &e.to_string(),
-                );
-            }
-        }
-
-        result
     }
 
     /// Execute archive workflow (pure Rust, silent operation)
@@ -445,6 +374,140 @@ impl Executor {
         result
     }
 
+    /// Execute the Today workflow using per-operation pipelines (ADR-0042).
+    ///
+    /// Sequence:
+    /// 1. Phase 1: prepare_today.py (unchanged — fetches APIs, writes directive)
+    /// 2. Load directive JSON
+    /// 3. Deliver mechanical operations (schedule, actions, preps) — instant
+    /// 4. Sync actions to SQLite
+    /// 5. Write manifest (partial: true initially, partial: false when done)
+    /// 6. [Future: AI enrichment for emails + briefing narrative — Chunk 3]
+    ///
+    /// Each mechanical operation emits an `operation-delivered:{op}` event
+    /// so the frontend can progressively render sections as they land.
+    async fn execute_today_pipeline(
+        &self,
+        workspace: &Path,
+        execution_id: &str,
+        trigger: ExecutionTrigger,
+        record: &crate::types::ExecutionRecord,
+    ) -> Result<(), ExecutionError> {
+        // --- Phase 1: Prepare (Python) ---
+        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
+            started_at: record.started_at,
+            phase: WorkflowPhase::Preparing,
+            execution_id: execution_id.to_string(),
+        });
+
+        let prepare_script = get_script_path(workspace, "prepare_today.py");
+        log::info!("Today pipeline Phase 1: Running {}", prepare_script.display());
+        run_python_script(&prepare_script, workspace, SCRIPT_TIMEOUT_SECS)?;
+
+        // --- Phase 2+3: Rust-native mechanical delivery ---
+        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
+            started_at: Utc::now(),
+            phase: WorkflowPhase::Delivering,
+            execution_id: execution_id.to_string(),
+        });
+
+        let today_dir = workspace.join("_today");
+        let data_dir = today_dir.join("data");
+
+        // Load the directive produced by Phase 1
+        let directive = crate::json_loader::load_directive(&today_dir).map_err(|e| {
+            ExecutionError::ParseError(format!("Failed to load directive: {}", e))
+        })?;
+
+        // Deliver schedule
+        let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let _ = self.app_handle.emit("operation-delivered", "schedule");
+        log::info!("Today pipeline: schedule delivered");
+
+        // Deliver actions (with DB for dedup)
+        let db_guard = self.state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        let actions_data =
+            crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
+                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let _ = self.app_handle.emit("operation-delivered", "actions");
+        log::info!("Today pipeline: actions delivered");
+
+        // Sync actions to SQLite (same as old post-processing)
+        if let Some(db) = db_ref {
+            match crate::workflow::today::sync_actions_to_db(workspace, db) {
+                Ok(count) => log::info!("Today pipeline: synced {} actions to DB", count),
+                Err(e) => log::warn!("Today pipeline: action sync failed (non-fatal): {}", e),
+            }
+        }
+        // Drop DB guard before any awaits
+        drop(db_guard);
+
+        // Deliver preps
+        let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let _ = self.app_handle.emit("operation-delivered", "preps");
+        log::info!("Today pipeline: preps delivered");
+
+        // Write manifest (partial: true — AI enrichment not yet done)
+        crate::workflow::deliver::deliver_manifest(
+            &directive,
+            &schedule_data,
+            &actions_data,
+            &prep_paths,
+            &data_dir,
+            true,
+        )
+        .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+
+        // TODO (Chunk 3): AI enrichment for emails + briefing narrative
+        // When implemented:
+        //   1. spawn_claude("/email-enrich", context_file) → emails.json
+        //   2. spawn_claude("/briefing-narrative", context_file) → update schedule.json
+        //   3. Re-write manifest with partial: false
+
+        // For now, mark manifest as complete (no AI ops to wait for)
+        crate::workflow::deliver::deliver_manifest(
+            &directive,
+            &schedule_data,
+            &actions_data,
+            &prep_paths,
+            &data_dir,
+            false,
+        )
+        .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+
+        // --- Completion ---
+        let finished_at = Utc::now();
+        let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
+
+        self.state.update_execution_record(execution_id, |r| {
+            r.finished_at = Some(finished_at);
+            r.duration_secs = Some(duration_secs);
+            r.success = true;
+        });
+
+        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+            self.state
+                .set_last_scheduled_run(WorkflowId::Today, record.started_at);
+        }
+
+        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Completed {
+            finished_at,
+            duration_secs,
+            execution_id: execution_id.to_string(),
+        });
+
+        let _ = send_notification(
+            &self.app_handle,
+            "Your day is ready",
+            "DailyOS has prepared your briefing",
+        );
+
+        Ok(())
+    }
+
     /// Run the three-phase workflow
     async fn run_three_phase(
         &self,
@@ -488,24 +551,6 @@ impl Executor {
         run_python_script(&deliver_script, workspace, SCRIPT_TIMEOUT_SECS)?;
 
         Ok(())
-    }
-
-    /// Run post-processing after the today workflow completes.
-    ///
-    /// deliver_today.py (Phase 3) already writes _today/data/*.json, so no
-    /// separate JSON generation step is needed. We only sync actions to SQLite.
-    ///
-    /// Failures are logged as warnings but don't fail the workflow.
-    fn run_post_processing(&self, workspace: &Path) {
-        // Sync actions from _today/data/actions.json into SQLite
-        if let Ok(db_guard) = self.state.db.lock() {
-            if let Some(ref db) = *db_guard {
-                match crate::workflow::today::sync_actions_to_db(workspace, db) {
-                    Ok(count) => log::info!("Post-processing: synced {} actions to DB", count),
-                    Err(e) => log::warn!("Post-processing: action sync failed (non-fatal): {}", e),
-                }
-            }
-        }
     }
 
     /// Get workspace path from config
