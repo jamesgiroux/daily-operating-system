@@ -167,6 +167,7 @@ pub fn run() {
             commands::set_profile,
             commands::get_actions_from_db,
             commands::complete_action,
+            commands::reopen_action,
             commands::get_meeting_history,
             // Phase 3.0: Google Auth
             commands::get_google_auth_status,
