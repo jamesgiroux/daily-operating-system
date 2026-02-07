@@ -8,6 +8,7 @@
 pub mod classifier;
 pub mod enrich;
 pub mod hooks;
+pub mod metadata;
 pub mod router;
 
 use std::path::Path;
@@ -87,7 +88,11 @@ pub fn process_file(
                     // Extract actions if applicable
                     if matches!(classification, Classification::ActionItems { .. }) {
                         if let Some(db) = db {
-                            extract_and_sync_actions(&content, filename, db);
+                            let account_fallback = match &classification {
+                                Classification::ActionItems { account } => account.as_deref(),
+                                _ => None,
+                            };
+                            extract_and_sync_actions(&content, filename, db, account_fallback);
                         }
                     }
 
@@ -218,7 +223,13 @@ pub fn process_all(
 /// Extract action items from file content and sync to SQLite.
 ///
 /// Looks for markdown checkboxes (- [ ] / - [x]) and inserts them as actions.
-fn extract_and_sync_actions(content: &str, source_filename: &str, db: &ActionDb) {
+/// Parses inline metadata tokens (priority, @account, due date, #context, waiting).
+fn extract_and_sync_actions(
+    content: &str,
+    source_filename: &str,
+    db: &ActionDb,
+    account_fallback: Option<&str>,
+) {
     let now = Utc::now().to_rfc3339();
     let mut count = 0;
 
@@ -226,7 +237,7 @@ fn extract_and_sync_actions(content: &str, source_filename: &str, db: &ActionDb)
         let trimmed = line.trim();
 
         // Match markdown checkboxes
-        let (is_completed, title) = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
+        let (is_completed, raw_title) = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
             (false, rest.trim())
         } else if let Some(rest) = trimmed.strip_prefix("- [x] ") {
             (true, rest.trim())
@@ -238,33 +249,50 @@ fn extract_and_sync_actions(content: &str, source_filename: &str, db: &ActionDb)
             continue;
         };
 
-        if title.is_empty() {
+        if raw_title.is_empty() {
             continue;
         }
 
+        let meta = metadata::parse_action_metadata(raw_title);
+
+        // Determine status: explicit completion > waiting > pending
+        let status = if is_completed {
+            "completed".to_string()
+        } else if meta.is_waiting {
+            "waiting".to_string()
+        } else {
+            "pending".to_string()
+        };
+
+        // Account resolution: @Account in text > classifier fallback > None
+        let account_id = meta
+            .account
+            .clone()
+            .or_else(|| account_fallback.map(String::from));
+
         let action = crate::db::DbAction {
             id: format!("inbox-{}-{}", source_filename.trim_end_matches(".md"), count),
-            title: title.to_string(),
-            priority: "P2".to_string(),
-            status: if is_completed {
-                "completed".to_string()
-            } else {
-                "pending".to_string()
-            },
+            title: meta.clean_title,
+            priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
+            status,
             created_at: now.clone(),
-            due_date: None,
+            due_date: meta.due_date,
             completed_at: if is_completed {
                 Some(now.clone())
             } else {
                 None
             },
-            account_id: None,
+            account_id,
             project_id: None,
             source_type: Some("inbox".to_string()),
-            source_id: None,
+            source_id: Some(raw_title.to_string()),
             source_label: Some(source_filename.to_string()),
-            context: None,
-            waiting_on: None,
+            context: meta.context,
+            waiting_on: if meta.is_waiting {
+                Some("true".to_string())
+            } else {
+                None
+            },
             updated_at: now.clone(),
         };
 

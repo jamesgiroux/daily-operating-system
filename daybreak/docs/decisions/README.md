@@ -60,6 +60,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0037](0037-post-meeting-capture-in-phase-1.md) | Post-meeting capture implemented in Phase 1 | Accepted |
 | [0038](0038-cs-first-development.md) | CS-first development focus | Accepted |
 | [0039](0039-feature-toggle-architecture.md) | Feature toggle architecture | Accepted |
+| [0040](0040-archive-reconciliation.md) | Archive reconciliation (end-of-day mechanical cleanup) | Accepted |
+| [0041](0041-two-sided-impact-model.md) | Two-sided impact model (CS outcomes vs personal impact) | Accepted |
 
 ---
 

@@ -11,6 +11,8 @@ Active issues, known risks, assumptions, and dependencies.
 <!-- Thematic grouping for orientation:
   Data Trust:          I23, I33        — Actions dedup, outcomes resurface in preps
   Inbox Pipeline:      I30, I31, I32   — Rich enrichment matching CLI capabilities
+  Archive & Reconcil:  I34, I36        — End-of-day cleanup, impact rollups (ADR-0040, ADR-0041)
+  ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
   Email Pipeline:      I20, I21        — Three-tier email promise (ADR-0029)
   UI Consistency:      I25, I9         — Badge unification, stub pages
@@ -78,6 +80,15 @@ CLI generates customer/internal meeting summaries from transcripts. App's AI enr
 
 **I32: Inbox processor doesn't update account intelligence**
 Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. Depends on I30 (need rich extraction first).
+
+**I34: Archive workflow lacks end-of-day reconciliation**
+ADR-0040 accepts that the archive workflow should gain mechanical reconciliation steps from `/wrap`: (1) mark completed meetings as "Done" in week overview, (2) check transcript processing status for recorded meetings, (3) generate `day-summary.json` in the archive directory, (4) write `next-morning-flags.json` for unresolved items to surface in tomorrow's briefing. All deterministic Rust operations — no AI. Currently archive only does file moves (ADR-0017).
+
+**I35: ProDev extension — personal impact and career narrative**
+ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
+
+**I36: Daily impact rollup for CS extension**
+Post-meeting capture stores per-meeting wins/risks in SQLite, but there's no daily aggregation into weekly impact files. `/wrap` aggregated these into `Weekly-Impact/YYYY-WNN-impact-capture.md` with a "Customer Outcomes" section. The CS extension needs: (a) end-of-day rollup of captured outcomes into weekly impact file, (b) tagging for monthly/quarterly rollup (EBRs, renewals, value stories). Could run as part of archive reconciliation (I34). ADR-0041 establishes the model; this tracks CS-side implementation.
 
 ### Open — Low Priority
 

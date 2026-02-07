@@ -104,6 +104,11 @@ pub struct ActionDb {
 }
 
 impl ActionDb {
+    /// Borrow the underlying connection for ad-hoc queries.
+    pub fn conn_ref(&self) -> &Connection {
+        &self.conn
+    }
+
     /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
@@ -380,24 +385,25 @@ impl ActionDb {
     ///
     /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
     pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
-        // Guard 1: Title-based cross-source dedup
-        let title_match: Option<String> = self
+        // Guard 1: Title-based cross-source dedup — skip if ANY action with the
+        // same title+account already exists (pending, waiting, or completed).
+        let title_exists: bool = self
             .conn
             .query_row(
-                "SELECT status FROM actions
+                "SELECT 1 FROM actions
                  WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
                    AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
-                   AND status = 'completed'",
+                 LIMIT 1",
                 params![action.title, action.account_id],
-                |row| row.get(0),
+                |_row| Ok(true),
             )
-            .ok();
+            .unwrap_or(false);
 
-        if title_match.as_deref() == Some("completed") {
+        if title_exists {
             return Ok(());
         }
 
-        // Guard 2: ID-based check (existing behavior)
+        // Guard 2: ID-based check — don't overwrite a completed action
         let existing_status: Option<String> = self
             .conn
             .query_row(
@@ -468,7 +474,7 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, updated_at
              FROM actions
-             WHERE status = 'pending'
+             WHERE status IN ('pending', 'waiting')
                AND source_type IN ('post_meeting', 'inbox', 'ai-inbox')
              ORDER BY priority, created_at DESC",
         )?;
@@ -1101,6 +1107,31 @@ mod tests {
     }
 
     #[test]
+    fn test_upsert_action_title_dedup_pending() {
+        let db = test_db();
+
+        // Insert a PENDING action
+        let action = sample_action("inbox-001", "Review contract");
+        db.upsert_action_if_not_completed(&action).expect("insert");
+
+        // Try to insert the same title under a different ID (re-processing same file)
+        let action2 = DbAction {
+            id: "inbox-002".to_string(),
+            title: "Review contract".to_string(),
+            ..sample_action("inbox-002", "Review contract")
+        };
+        db.upsert_action_if_not_completed(&action2)
+            .expect("dedup upsert");
+
+        // The duplicate should NOT have been inserted
+        let result = db.get_action_by_id("inbox-002").expect("query");
+        assert!(
+            result.is_none(),
+            "Title-based dedup should prevent duplicate pending actions"
+        );
+    }
+
+    #[test]
     fn test_get_non_briefing_pending_actions() {
         let db = test_db();
 
@@ -1125,13 +1156,21 @@ mod tests {
         db.upsert_action(&completed).expect("insert");
         db.complete_action("pm-002").expect("complete");
 
+        // Insert a waiting inbox action (SHOULD appear)
+        let mut waiting_action = sample_action("inbox-wait", "Waiting on legal");
+        waiting_action.source_type = Some("inbox".to_string());
+        waiting_action.status = "waiting".to_string();
+        waiting_action.waiting_on = Some("true".to_string());
+        db.upsert_action(&waiting_action).expect("insert");
+
         let results = db
             .get_non_briefing_pending_actions()
             .expect("query");
-        assert_eq!(results.len(), 2);
+        assert_eq!(results.len(), 3);
         let ids: Vec<&str> = results.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"pm-001"));
         assert!(ids.contains(&"inbox-001"));
+        assert!(ids.contains(&"inbox-wait"));
     }
 
     #[test]
