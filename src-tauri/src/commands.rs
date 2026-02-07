@@ -14,7 +14,8 @@ use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
     FocusBlock, FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    PostMeetingCaptureConfig, WeekOverview, WeekPlanningState, WorkflowId, WorkflowStatus,
+    OverlayStatus, PostMeetingCaptureConfig, WeekOverview, WeekPlanningState, WorkflowId,
+    WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -84,7 +85,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     }
 
     // Load from JSON
-    let (overview, meetings) = match load_schedule_json(&today_dir) {
+    let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
         Ok(data) => data,
         Err(e) => {
             return DashboardResult::Error {
@@ -93,14 +94,32 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
     };
 
+    // Merge briefing meetings with live calendar events (ADR-0032)
+    let live_events = state
+        .calendar_events
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let tz: chrono_tz::Tz = config
+        .schedules
+        .today
+        .timezone
+        .parse()
+        .unwrap_or(chrono_tz::America::New_York);
+    let meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+
     let actions = load_actions_json(&today_dir).unwrap_or_default();
     let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
 
-    // Calculate stats
+    // Calculate stats (exclude cancelled meetings)
     let inbox_count = count_inbox(workspace);
+    let active_meetings: Vec<_> = meetings
+        .iter()
+        .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
+        .collect();
     let stats = DayStats {
-        total_meetings: meetings.len(),
-        customer_meetings: meetings
+        total_meetings: active_meetings.len(),
+        customer_meetings: active_meetings
             .iter()
             .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
             .count(),
