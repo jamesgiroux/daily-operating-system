@@ -60,6 +60,8 @@ export interface Meeting {
   hasPrep: boolean;
   /** Calendar overlay status (ADR-0032) */
   overlayStatus?: OverlayStatus;
+  /** Whether the user has reviewed this prep (ADR-0033) */
+  prepReviewed?: boolean;
 }
 
 export interface MeetingPrep {
