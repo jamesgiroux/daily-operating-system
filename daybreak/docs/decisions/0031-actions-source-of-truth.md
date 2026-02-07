@@ -1,7 +1,7 @@
 # ADR-0031: Actions: SQLite as working store, markdown as archive
 
 **Date:** 2026-02
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
@@ -17,12 +17,16 @@ Actions exist in multiple places: SQLite (`actions` table), daily JSON snapshot 
 
 No single `master-task-list.md`. Actions are scoped to their source (meeting, email, manual). The Actions page aggregates across sources.
 
-Post-enrichment hooks write completion markers (`[x]`) back to source markdown when a `source_label` points to a specific file.
+Action completion flow: user clicks checkbox → SQLite `complete_action()` sets status + timestamp → `upsert_action_if_not_completed()` prevents re-briefing from overwriting user completions.
+
+Post-meeting captured actions go directly to SQLite with `source_type = "post_meeting"`.
+
+Post-enrichment hooks should write completion markers (`[x]`) back to source markdown when `source_label` points to a specific file. This writeback is not yet implemented.
 
 ## Consequences
 
-- Fast action management in the app (SQLite)
-- User's markdown files stay in sync via writeback hooks
-- If SQLite is deleted, in-progress status is lost — markdown writeback mitigates this
-- Deduplication needed: `prepare_today.py` must check SQLite before extracting from markdown
-- Open: does manual action creation (from app UI) write to SQLite only or also create markdown?
+- Fast action management in the app (SQLite queries, optimistic UI)
+- Actions persist across briefing cycles — completion status survives re-briefing
+- Within-day deduplication in `deliver_today.py` via seen-ID set
+- If SQLite is deleted, in-progress status is lost — markdown writeback would mitigate this
+- Open gaps: markdown writeback hooks, cross-briefing deduplication in `prepare_today.py`, manual action creation from UI

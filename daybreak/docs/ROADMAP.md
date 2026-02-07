@@ -50,9 +50,8 @@ These proposed ADRs gate Phase 2/3 work — they need to be accepted or revised 
 
 | ADR | Decision | Gates |
 |-----|----------|-------|
-| [0031](decisions/0031-actions-source-of-truth.md) | Actions: SQLite as working store | Action sync design |
-| [0032](decisions/0032-calendar-source-of-truth.md) | Calendar source of truth | Calendar data flow |
-| [0033](decisions/0033-meeting-entity-unification.md) | Meeting entity unification | Meeting card links (I14) |
+| [0032](decisions/0032-calendar-source-of-truth.md) | Calendar source of truth | Calendar data flow, event ID scheme (I24) |
+| [0033](decisions/0033-meeting-entity-unification.md) | Meeting entity unification | Meeting card links (I14), depends on 0032 |
 | [0034](decisions/0034-adaptive-dashboard.md) | Adaptive dashboard density | Dashboard layout evolution |
 
 ### What "Done" Looks Like
