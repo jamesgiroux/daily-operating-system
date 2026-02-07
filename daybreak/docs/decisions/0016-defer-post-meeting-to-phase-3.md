@@ -1,7 +1,7 @@
 # ADR-0016: Defer post-meeting capture to Phase 3
 
 **Date:** 2026-02
-**Status:** Accepted
+**Status:** Superseded by [ADR-0037](0037-post-meeting-capture-in-phase-1.md)
 
 ## Context
 

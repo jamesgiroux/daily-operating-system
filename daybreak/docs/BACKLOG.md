@@ -9,7 +9,7 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
-  Data Trust:          I23, I17        — Actions flow correctly, outcomes resurface
+  Data Trust:          I23, I33        — Actions dedup, outcomes resurface in preps
   Inbox Pipeline:      I30, I31, I32   — Rich enrichment matching CLI capabilities
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
   Email Pipeline:      I20, I21        — Three-tier email promise (ADR-0029)
@@ -23,8 +23,8 @@ Active issues, known risks, assumptions, and dependencies.
 **I23: No cross-briefing action deduplication in prepare_today.py**
 ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs. Stable content-hash IDs + title-based dedup guard address the ID instability side; the SQLite pre-check is separate future work.
 
-**I17: Post-meeting capture outcomes don't resurface in briefings**
-Captured data goes to SQLite/impact log but never appears in next day's briefing. Erodes trust. Actions should appear in next day's list. Wins/risks should appear in next meeting prep for that account. Actions side addressed by merging SQLite non-briefing actions into dashboard. Wins/risks in prep depends on account linking — deferred.
+**I33: Captured wins/risks don't resurface in meeting preps**
+Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. Depends on account linking (captured outcome → account_id → prep lookup). Blocked by I30 (rich metadata extraction) and account registry (I27 extension system).
 
 ### Open — Medium Priority
 
@@ -110,6 +110,8 @@ When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet
 **I12: Email page missing AI context** — Resolved. Email page shows summary, recommended action, conversation arc per priority tier. Removed fake "Scan emails" button.
 
 **I14: Dashboard meeting cards don't link to detail page** — Resolved. MeetingCard renders "View Prep" button linking to `/meeting/$prepFile` when prep exists. Added in Phase 1.5.
+
+**I17: Post-meeting capture outcomes don't resurface in briefings** — Resolved (actions side). Non-briefing actions (post-meeting, inbox) now merge into dashboard via `get_non_briefing_pending_actions()` with title-based dedup. Wins/risks resurfacing split to I33.
 
 **I22: Action completion doesn't write back to source markdown** — Resolved. `sync_completion_to_markdown()` in `hooks.rs` runs during post-enrichment hooks. Queries recently completed actions with `source_label`, writes `[x]` markers back to source files. Lazy writeback is acceptable — SQLite is working store, markdown is archive.
 
