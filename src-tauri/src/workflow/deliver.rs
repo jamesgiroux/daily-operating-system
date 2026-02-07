@@ -1,14 +1,15 @@
 //! Rust-native delivery functions (ADR-0042: per-operation pipelines)
 //!
-//! Ports the mechanical delivery logic from deliver_today.py into Rust.
-//! These functions take the Phase 1 directive and write JSON output files
-//! that the frontend consumes — no AI enrichment needed.
-//!
-//! Functions:
+//! Mechanical delivery (instant, no AI):
 //! - `deliver_schedule()` → schedule.json
 //! - `deliver_actions()` → actions.json
 //! - `deliver_preps()` → preps/*.json
+//! - `deliver_emails()` → emails.json
 //! - `deliver_manifest()` → manifest.json
+//!
+//! AI enrichment (progressive, fault-tolerant):
+//! - `enrich_emails()` → updates emails.json with summaries/actions/arcs
+//! - `enrich_briefing()` → updates schedule.json with day narrative
 
 use std::collections::HashMap;
 use std::fs;
@@ -19,7 +20,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::json_loader::{
-    Directive, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
+    Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
 
 // ============================================================================
@@ -814,6 +815,414 @@ fn build_prep_json(
     prep
 }
 
+/// Build and write emails.json from directive data.
+///
+/// Maps `directive.emails` (classified + high_priority) to the frontend
+/// `Email` type. This is a mechanical op — no AI needed.
+///
+/// Returns the emails JSON value (needed by manifest builder).
+pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, String> {
+    let emails = &directive.emails;
+
+    // Build high-priority email objects from both sources, deduplicating by ID
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut high_priority: Vec<Value> = Vec::new();
+
+    let mut add_email = |email: &DirectiveEmail, priority: &str| {
+        let id = email
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("email-{}", seen_ids.len()));
+        if seen_ids.contains(&id) {
+            return;
+        }
+        seen_ids.insert(id.clone());
+
+        high_priority.push(json!({
+            "id": id,
+            "sender": email.from.as_deref().unwrap_or("Unknown"),
+            "senderEmail": email.from_email.as_deref().unwrap_or(""),
+            "subject": email.subject.as_deref().unwrap_or("(no subject)"),
+            "snippet": email.snippet,
+            "priority": priority,
+        }));
+    };
+
+    // High-priority emails first
+    for email in &emails.high_priority {
+        add_email(email, "high");
+    }
+
+    // Classified emails that are high priority (avoid duplicating)
+    for email in &emails.classified {
+        let prio = email.priority.as_deref().unwrap_or("medium");
+        if prio == "high" {
+            add_email(email, "high");
+        }
+    }
+
+    let high_count = high_priority.len();
+
+    // Count medium emails from classified list
+    let medium_from_classified = emails
+        .classified
+        .iter()
+        .filter(|e| e.priority.as_deref() == Some("medium"))
+        .count() as u32;
+    let medium_count = emails.medium_count.max(medium_from_classified);
+
+    let low_count = emails.low_count;
+    let total = high_count as u32 + medium_count + low_count;
+
+    let emails_data = json!({
+        "highPriority": high_priority,
+        "stats": {
+            "highCount": high_count,
+            "mediumCount": medium_count,
+            "lowCount": low_count,
+            "total": total,
+        },
+    });
+
+    write_json(&data_dir.join("emails.json"), &emails_data)?;
+    log::info!(
+        "deliver_emails: {} high-priority, {} total",
+        high_count,
+        total
+    );
+    Ok(emails_data)
+}
+
+// ============================================================================
+// AI enrichment (progressive, fault-tolerant)
+// ============================================================================
+
+/// Parsed enrichment for a single email.
+#[derive(Debug, Clone, Default)]
+pub struct EmailEnrichment {
+    pub summary: Option<String>,
+    pub action: Option<String>,
+    pub arc: Option<String>,
+}
+
+/// Parse Claude's email enrichment response.
+///
+/// Expected format per email:
+/// ```text
+/// ENRICHMENT:email-id
+/// SUMMARY: one-line summary
+/// ACTION: recommended next action
+/// ARC: conversation context
+/// END_ENRICHMENT
+/// ```
+pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment> {
+    let mut result: HashMap<String, EmailEnrichment> = HashMap::new();
+    let mut current_id: Option<String> = None;
+    let mut current = EmailEnrichment::default();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+
+        if let Some(id) = trimmed.strip_prefix("ENRICHMENT:") {
+            // Start a new enrichment block
+            current_id = Some(id.trim().to_string());
+            current = EmailEnrichment::default();
+        } else if trimmed == "END_ENRICHMENT" {
+            // Close the current block
+            if let Some(ref id) = current_id {
+                result.insert(id.clone(), current.clone());
+            }
+            current_id = None;
+            current = EmailEnrichment::default();
+        } else if current_id.is_some() {
+            // Inside a block — parse fields
+            if let Some(val) = trimmed.strip_prefix("SUMMARY:") {
+                current.summary = Some(val.trim().to_string());
+            } else if let Some(val) = trimmed.strip_prefix("ACTION:") {
+                current.action = Some(val.trim().to_string());
+            } else if let Some(val) = trimmed.strip_prefix("ARC:") {
+                current.arc = Some(val.trim().to_string());
+            }
+        }
+    }
+
+    result
+}
+
+/// AI-enrich high-priority emails via PTY-spawned Claude.
+///
+/// Reads `emails.json`, asks Claude for summaries/actions/arcs,
+/// merges enrichments back. If AI fails, emails.json stays unenriched.
+pub fn enrich_emails(
+    data_dir: &Path,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+) -> Result<(), String> {
+    let emails_path = data_dir.join("emails.json");
+    let raw = fs::read_to_string(&emails_path)
+        .map_err(|e| format!("Failed to read emails.json: {}", e))?;
+    let mut emails_data: Value =
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse emails.json: {}", e))?;
+
+    let high_priority = emails_data
+        .get("highPriority")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    if high_priority.is_empty() {
+        log::info!("enrich_emails: no high-priority emails to enrich");
+        return Ok(());
+    }
+
+    // Build context for Claude
+    let mut email_context = String::new();
+    for email in &high_priority {
+        let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+        let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
+        let subject = email
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or("?");
+        let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+        email_context.push_str(&format!(
+            "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
+            id, sender, subject, snippet
+        ));
+    }
+
+    // Write context file
+    let context_path = data_dir.join(".email-context.json");
+    let context_json = json!({ "emails": high_priority });
+    write_json(&context_path, &context_json)?;
+
+    let prompt = format!(
+        "You are enriching email briefing data. For each email below, provide a one-line summary, \
+         a recommended action, and brief conversation arc context.\n\n\
+         Format your response as:\n\
+         ENRICHMENT:email-id-here\n\
+         SUMMARY: <one-line summary>\n\
+         ACTION: <recommended next action>\n\
+         ARC: <conversation context>\n\
+         END_ENRICHMENT\n\n\
+         {}",
+        email_context
+    );
+
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude enrichment failed: {}", e))?;
+
+    let enrichments = parse_email_enrichment(&output.stdout);
+    if enrichments.is_empty() {
+        log::warn!("enrich_emails: no enrichments parsed from Claude output");
+        // Clean up context file
+        let _ = fs::remove_file(&context_path);
+        return Ok(());
+    }
+
+    // Merge enrichments into emails.json
+    if let Some(hp) = emails_data.get_mut("highPriority").and_then(|v| v.as_array_mut()) {
+        for email in hp.iter_mut() {
+            let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if let Some(enrichment) = enrichments.get(id) {
+                let obj = email.as_object_mut().unwrap();
+                if let Some(ref s) = enrichment.summary {
+                    obj.insert("summary".to_string(), json!(s));
+                }
+                if let Some(ref a) = enrichment.action {
+                    obj.insert("recommendedAction".to_string(), json!(a));
+                }
+                if let Some(ref arc) = enrichment.arc {
+                    obj.insert("conversationArc".to_string(), json!(arc));
+                }
+            }
+        }
+    }
+
+    write_json(&emails_path, &emails_data)?;
+    let _ = fs::remove_file(&context_path);
+    log::info!(
+        "enrich_emails: enriched {}/{} emails",
+        enrichments.len(),
+        high_priority.len()
+    );
+    Ok(())
+}
+
+/// Parse Claude's briefing narrative response.
+///
+/// Expected format:
+/// ```text
+/// NARRATIVE:
+/// 2-3 sentence narrative here.
+/// END_NARRATIVE
+/// ```
+pub fn parse_briefing_narrative(response: &str) -> Option<String> {
+    let mut in_block = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("NARRATIVE:") {
+            in_block = true;
+            // Check if there's content on the same line after the marker
+            let after = trimmed.strip_prefix("NARRATIVE:").unwrap().trim();
+            if !after.is_empty() {
+                lines.push(after);
+            }
+        } else if trimmed == "END_NARRATIVE" {
+            break;
+        } else if in_block {
+            lines.push(trimmed);
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let narrative = lines.join(" ").trim().to_string();
+    if narrative.is_empty() {
+        None
+    } else {
+        Some(narrative)
+    }
+}
+
+/// AI-generate a briefing narrative via PTY-spawned Claude.
+///
+/// Reads schedule.json + actions.json + emails.json to build context,
+/// asks Claude for a 2-3 sentence narrative, patches schedule.json.
+/// If AI fails, schedule.json keeps its mechanical greeting/summary.
+pub fn enrich_briefing(
+    data_dir: &Path,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+) -> Result<(), String> {
+    // Read context files
+    let schedule_raw = fs::read_to_string(data_dir.join("schedule.json"))
+        .map_err(|e| format!("Failed to read schedule.json: {}", e))?;
+    let mut schedule: Value = serde_json::from_str(&schedule_raw)
+        .map_err(|e| format!("Failed to parse schedule.json: {}", e))?;
+
+    let actions_raw = fs::read_to_string(data_dir.join("actions.json")).unwrap_or_default();
+    let actions: Value = serde_json::from_str(&actions_raw).unwrap_or(json!({}));
+
+    let emails_raw = fs::read_to_string(data_dir.join("emails.json")).unwrap_or_default();
+    let emails: Value = serde_json::from_str(&emails_raw).unwrap_or(json!({}));
+
+    // Extract context for prompt
+    let date = schedule
+        .get("date")
+        .and_then(|v| v.as_str())
+        .unwrap_or("today");
+    let meetings = schedule
+        .get("meetings")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let customer_count = schedule
+        .get("meetings")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter(|m| {
+                    let t = m.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    t == "customer" || t == "qbr"
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
+    let top_meetings: Vec<String> = schedule
+        .get("meetings")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(3)
+                .filter_map(|m| m.get("title").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let overdue_count = actions
+        .get("summary")
+        .and_then(|s| s.get("overdue"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let due_today = actions
+        .get("summary")
+        .and_then(|s| s.get("dueToday"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    let high_count = emails
+        .get("stats")
+        .and_then(|s| s.get("highCount"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
+    // Write context file
+    let context = json!({
+        "date": date,
+        "meetings": meetings,
+        "customerMeetings": customer_count,
+        "topMeetings": top_meetings,
+        "overdueActions": overdue_count,
+        "dueToday": due_today,
+        "highPriorityEmails": high_count,
+    });
+    let context_path = data_dir.join(".briefing-context.json");
+    write_json(&context_path, &context)?;
+
+    let prompt = format!(
+        "You are writing a morning briefing narrative for a Customer Success Manager.\n\n\
+         Today's context:\n\
+         - Date: {}\n\
+         - Meetings: {} ({} customer)\n\
+         - Key meetings: {}\n\
+         - Actions: {} overdue, {} due today\n\
+         - Emails: {} high-priority\n\n\
+         Write a 2-3 sentence narrative that helps them understand the shape of their day.\n\
+         Focus on what matters most — customer calls, overdue items, important emails.\n\
+         Be direct, not chatty.\n\n\
+         NARRATIVE:\n\
+         <your narrative here>\n\
+         END_NARRATIVE",
+        date,
+        meetings,
+        customer_count,
+        top_meetings.join(", "),
+        overdue_count,
+        due_today,
+        high_count
+    );
+
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude briefing failed: {}", e))?;
+
+    let narrative = parse_briefing_narrative(&output.stdout);
+    let _ = fs::remove_file(&context_path);
+
+    match narrative {
+        Some(text) => {
+            schedule
+                .as_object_mut()
+                .unwrap()
+                .insert("narrative".to_string(), json!(text));
+            write_json(&data_dir.join("schedule.json"), &schedule)?;
+            log::info!("enrich_briefing: narrative written ({} chars)", text.len());
+            Ok(())
+        }
+        None => {
+            log::warn!("enrich_briefing: no narrative parsed from Claude output");
+            Ok(())
+        }
+    }
+}
+
 /// Build and write manifest.json.
 ///
 /// When `partial` is true, the manifest indicates that AI enrichment
@@ -823,6 +1232,7 @@ pub fn deliver_manifest(
     directive: &Directive,
     schedule_data: &Value,
     actions_data: &Value,
+    emails_data: &Value,
     prep_paths: &[String],
     data_dir: &Path,
     partial: bool,
@@ -863,6 +1273,16 @@ pub fn deliver_manifest(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
+    let email_stats = emails_data.get("stats");
+    let emails_high = email_stats
+        .and_then(|s| s.get("highCount"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let emails_total = email_stats
+        .and_then(|s| s.get("total"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+
     let mut manifest = json!({
         "schemaVersion": "1.0.0",
         "date": date,
@@ -871,6 +1291,7 @@ pub fn deliver_manifest(
         "files": {
             "schedule": "schedule.json",
             "actions": "actions.json",
+            "emails": "emails.json",
             "preps": prep_paths,
         },
         "stats": {
@@ -878,6 +1299,8 @@ pub fn deliver_manifest(
             "customerMeetings": customer_count,
             "actionsDue": actions_due,
             "actionsOverdue": actions_overdue,
+            "emailsHighPriority": emails_high,
+            "emailsTotal": emails_total,
         },
     });
 
@@ -890,10 +1313,11 @@ pub fn deliver_manifest(
 
     write_json(&data_dir.join("manifest.json"), &manifest)?;
     log::info!(
-        "deliver_manifest: partial={}, {} meetings, {} actions due",
+        "deliver_manifest: partial={}, {} meetings, {} actions due, {} emails",
         partial,
         meetings,
         actions_due,
+        emails_total,
     );
     Ok(manifest)
 }
@@ -1052,9 +1476,169 @@ mod tests {
             ..Default::default()
         };
 
+        let emails = json!({});
         let result =
-            deliver_manifest(&directive, &schedule, &actions, &[], &data_dir, true).unwrap();
+            deliver_manifest(&directive, &schedule, &actions, &emails, &[], &data_dir, true)
+                .unwrap();
         assert_eq!(result["partial"], true);
         assert!(data_dir.join("manifest.json").exists());
+    }
+
+    #[test]
+    fn test_deliver_emails_minimal() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+
+        let directive = Directive {
+            emails: crate::json_loader::DirectiveEmails {
+                high_priority: vec![
+                    crate::json_loader::DirectiveEmail {
+                        id: Some("e1".to_string()),
+                        from: Some("Alice".to_string()),
+                        from_email: Some("alice@example.com".to_string()),
+                        subject: Some("Contract renewal".to_string()),
+                        snippet: Some("Please review the...".to_string()),
+                        priority: Some("high".to_string()),
+                    },
+                ],
+                classified: vec![
+                    crate::json_loader::DirectiveEmail {
+                        id: Some("e2".to_string()),
+                        from: Some("Bob".to_string()),
+                        from_email: Some("bob@example.com".to_string()),
+                        subject: Some("Meeting notes".to_string()),
+                        snippet: None,
+                        priority: Some("medium".to_string()),
+                    },
+                ],
+                medium_count: 3,
+                low_count: 5,
+            },
+            ..Default::default()
+        };
+
+        let result = deliver_emails(&directive, &data_dir).unwrap();
+        let hp = result["highPriority"].as_array().unwrap();
+        assert_eq!(hp.len(), 1);
+        assert_eq!(hp[0]["sender"], "Alice");
+        assert_eq!(hp[0]["priority"], "high");
+        assert_eq!(result["stats"]["highCount"], 1);
+        assert_eq!(result["stats"]["mediumCount"], 3);
+        assert_eq!(result["stats"]["lowCount"], 5);
+        assert_eq!(result["stats"]["total"], 9);
+        assert!(data_dir.join("emails.json").exists());
+    }
+
+    #[test]
+    fn test_deliver_emails_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+
+        let directive = Directive {
+            emails: Default::default(),
+            ..Default::default()
+        };
+
+        let result = deliver_emails(&directive, &data_dir).unwrap();
+        let hp = result["highPriority"].as_array().unwrap();
+        assert_eq!(hp.len(), 0);
+        assert_eq!(result["stats"]["total"], 0);
+    }
+
+    #[test]
+    fn test_parse_email_enrichment() {
+        let response = "\
+ENRICHMENT:e1
+SUMMARY: Customer requesting contract extension
+ACTION: Reply with proposed terms
+ARC: Initial outreach → negotiation → this follow-up
+END_ENRICHMENT
+
+ENRICHMENT:e2
+SUMMARY: QBR scheduling request
+ACTION: Confirm date and send agenda
+ARC: First contact about Q2 QBR
+END_ENRICHMENT
+";
+        let enrichments = parse_email_enrichment(response);
+        assert_eq!(enrichments.len(), 2);
+
+        let e1 = &enrichments["e1"];
+        assert_eq!(
+            e1.summary.as_deref(),
+            Some("Customer requesting contract extension")
+        );
+        assert_eq!(e1.action.as_deref(), Some("Reply with proposed terms"));
+        assert!(e1.arc.as_deref().unwrap().contains("follow-up"));
+
+        let e2 = &enrichments["e2"];
+        assert_eq!(e2.summary.as_deref(), Some("QBR scheduling request"));
+    }
+
+    #[test]
+    fn test_parse_email_enrichment_partial() {
+        let response = "\
+ENRICHMENT:e1
+SUMMARY: Important update
+END_ENRICHMENT
+";
+        let enrichments = parse_email_enrichment(response);
+        assert_eq!(enrichments.len(), 1);
+
+        let e1 = &enrichments["e1"];
+        assert_eq!(e1.summary.as_deref(), Some("Important update"));
+        assert!(e1.action.is_none());
+        assert!(e1.arc.is_none());
+    }
+
+    #[test]
+    fn test_parse_briefing_narrative() {
+        let response = "\
+NARRATIVE:
+You have a busy day with 3 customer calls. Two overdue actions need attention before your 10 AM call with Acme. One high-priority email from the VP requires a response.
+END_NARRATIVE
+";
+        let narrative = parse_briefing_narrative(response);
+        assert!(narrative.is_some());
+        let text = narrative.unwrap();
+        assert!(text.contains("busy day"));
+        assert!(text.contains("overdue actions"));
+    }
+
+    #[test]
+    fn test_parse_briefing_narrative_missing() {
+        let response = "Here's some random output without markers.";
+        let narrative = parse_briefing_narrative(response);
+        assert!(narrative.is_none());
+    }
+
+    #[test]
+    fn test_deliver_manifest_with_emails() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+
+        let schedule = json!({"date": "2025-02-07", "meetings": []});
+        let actions = json!({"summary": {"overdue": 1, "dueToday": 2}, "actions": []});
+        let emails = json!({
+            "highPriority": [],
+            "stats": {"highCount": 3, "mediumCount": 5, "lowCount": 10, "total": 18}
+        });
+        let directive = Directive {
+            context: crate::json_loader::DirectiveContext {
+                date: Some("2025-02-07".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let result = deliver_manifest(
+            &directive, &schedule, &actions, &emails, &[], &data_dir, false,
+        )
+        .unwrap();
+        assert_eq!(result["partial"], false);
+        assert_eq!(result["files"]["emails"], "emails.json");
+        assert_eq!(result["stats"]["emailsHighPriority"], 3);
+        assert_eq!(result["stats"]["emailsTotal"], 18);
+        assert_eq!(result["stats"]["actionsOverdue"], 1);
     }
 }
