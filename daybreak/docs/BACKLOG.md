@@ -9,8 +9,9 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
+  Meeting Intelligence: I44, I45, I46  — Meeting-scoped transcript intake, outcome interaction (ADR-0044), all-type prep (ADR-0043)
   Executive Intel:     I42, I43         — CoS decision support, political intelligence (consumption-first)
-  Composable Ops:      I38, I39, I41   — Deliver decomp, feature toggles, reactive prep (ADR-0030)
+  Composable Ops:      I39, I41        — Feature toggles, reactive prep (ADR-0030/0042)
   CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
   Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
   Archive & Reconcil:  I36             — Impact rollups (ADR-0040, ADR-0041)
@@ -24,7 +25,11 @@ Active issues, known risks, assumptions, and dependencies.
 
 ### Open — High Priority
 
-(None currently)
+**I44: Meeting-scoped transcript intake from dashboard**
+Post-meeting capture (ADR-0037) lets users manually log wins/risks/actions, but the highest-value input — the meeting transcript — requires navigating to a separate Inbox page, losing all meeting context. The `PostMeetingPrompt` fallback even says "we'll process the transcript if one arrives" but offers no way to do so. Two surfaces need a transcript attachment affordance: (1) `PostMeetingPrompt` — file picker button alongside Win/Risk/Action (prompt auto-dismisses at 60s, so this covers the "transcript ready immediately" case), (2) `MeetingCard` — attach button or drop zone for past meetings (covers the common case where Otter/Fathom takes 5-10 minutes). File gets frontmatter stamped with meeting ID, title, account, type. Routed to account/project location per workspace patterns (not `_inbox/`). Full enrichment pipeline runs: AI extracts summary, actions, wins, risks, outcomes. Transcript is immutable — processed once, never re-processed on briefing re-runs. Extracted outcomes supersede manual capture on the meeting card. The meeting card becomes a lifecycle view: prep → current → outcomes. ADR-0044. Relates: I31 (generic inbox transcript summarization remains separate), I45 (outcome interaction UI).
+
+**I45: Post-transcript outcome interaction UI**
+After a transcript is processed (I44), the meeting card displays AI-extracted summary, wins, risks, and actions. Users need lightweight interaction with these generated outputs: reprioritize actions (e.g., promote to P1), amplify or edit wins (emphasize what matters for EBRs/reviews), adjust risk severity, edit the summary. This is distinct from capture — it's post-capture refinement. The manual Outcomes flow becomes redundant when a transcript exists; this replaces it with richer, editable AI output. Design constraint: interactions should write back to the stored markdown (source of truth), not just update SQLite. Blocked by I44.
 
 ### Open — Medium Priority
 
@@ -48,9 +53,6 @@ Settings shows raw cron expressions. Needs: time picker ("Briefing time: 6:00 AM
 
 **I18: Google API calls not coordinated across callers**
 `prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. ADR-0030 decomposition complete — `ops/calendar_fetch.py` is now the shared operation for all callers. Remaining work: add a cache/TTL layer so concurrent callers (e.g., calendar poller + manual refresh) reuse recent responses instead of hitting Google twice. Not blocking MVP.
-
-**I38: Deliver script decomposition**
-`deliver_today.py` and `deliver_week.py` remain monolithic. The `ops/` decomposition (ADR-0030) is now stable — prerequisite met. Evaluate whether Phase 3 should consume per-operation outputs rather than monolithic directive. Not blocking; current deliver scripts work with the richer directive unchanged.
 
 **I39: Feature toggle runtime implementation**
 ADR-0039 accepted the feature toggle architecture but no code implements it. Each atomic operation from ADR-0030 should be individually toggleable (e.g., disable `email:fetch` if Gmail not connected, skip `meeting:prep` for personal meetings). Needs: toggle storage in `config.json`, runtime check in orchestrators, UI in Settings.
@@ -148,6 +150,10 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 **I23: No cross-briefing action deduplication** — Resolved. Three layers: (1) `action_parse.py` SQLite pre-check (`_load_existing_titles()`) skips known titles during Phase 1 parsing. (2) `deliver_today.py` `_make_id()` uses category-agnostic `action-` prefix so the same action gets the same ID regardless of overdue/today/week bucket, plus within-briefing dedup by ID, plus its own SQLite pre-check before JSON generation. (3) Rust-side `upsert_action_if_not_completed()` title-based dedup as final guard.
 
 **I33: Captured wins/risks don't resurface in meeting preps** — Resolved. ADR-0030 `meeting_prep.py` queries `captures` table via `_get_captures_for_account()` for recent wins/risks by account_id (14-day lookback). Also queries open actions and meeting history per account. Rust `db.rs` gained `get_captures_for_account()` method with test.
+
+**I38: Deliver script decomposition** — Resolved. ADR-0042 Chunk 1 replaces deliver_today.py with Rust-native per-operation delivery (`workflow/deliver.rs`). Executor calls `execute_today_pipeline()` which runs Phase 1 (Python), then delivers schedule, actions, and preps from Rust instantly — no Phase 2/3 needed for mechanical ops. deliver_today.py kept as reference. Week delivery (deliver_week.py) remains monolithic but is low priority (ADR-0042 Chunk 6).
+
+**I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. `meeting_prep.py` only gathered rich context (SQLite history, captures, open actions) for customer meetings with account-based queries. Internal syncs, 1:1s, and partnership meetings got at most a single archive ref. Per ADR-0043 (meeting intelligence is core), expanded with title-based SQLite queries (`_get_meeting_history_by_title`, `_get_captures_by_meeting_title`, `_get_all_pending_actions`) so all non-personal/non-all-hands types get meeting history, captures, and actions context. 1:1s get deeper lookback (60-day history, 3 archive refs). Partnership meetings try account match first, fall back to title-based. No schema or orchestrator changes.
 
 ---
 
