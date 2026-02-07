@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Archive, ChevronRight, Mail } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Archive, ChevronRight, Loader2, Mail, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import type { Email } from "@/types";
 
 interface EmailListProps {
@@ -9,17 +12,45 @@ interface EmailListProps {
 }
 
 export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
+  const [refreshing, setRefreshing] = useState(false);
   const highPriority = emails.filter((e) => e.priority === "high");
   const otherPriority = emails.filter((e) => e.priority !== "high");
   const visibleEmails = highPriority.slice(0, maxVisible);
   const hiddenCount = highPriority.length - visibleEmails.length;
 
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await invoke("refresh_emails");
+    } catch (err) {
+      console.error("Email refresh failed:", err);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base font-medium">
-          Emails
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-medium">
+            Emails
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh emails"
+          >
+            {refreshing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {highPriority.length === 0 ? (

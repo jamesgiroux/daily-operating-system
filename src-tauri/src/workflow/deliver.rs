@@ -274,7 +274,7 @@ fn make_action_id(title: &str, account: &str, due: &str) -> String {
 }
 
 /// Write JSON to a file with pretty printing.
-fn write_json(path: &Path, data: &Value) -> Result<(), String> {
+pub fn write_json(path: &Path, data: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create directory {}: {}", parent.display(), e))?;
@@ -1090,6 +1090,22 @@ pub fn parse_briefing_narrative(response: &str) -> Option<String> {
     }
 }
 
+/// Classify meeting density for briefing tone adaptation (I37).
+///
+/// Returns a density label based on meeting count:
+/// - 0–2: "light"
+/// - 3–5: "moderate"
+/// - 6–8: "busy"
+/// - 9+:  "packed"
+fn classify_meeting_density(count: usize) -> &'static str {
+    match count {
+        0..=2 => "light",
+        3..=5 => "moderate",
+        6..=8 => "busy",
+        _ => "packed",
+    }
+}
+
 /// AI-generate a briefing narrative via PTY-spawned Claude.
 ///
 /// Reads schedule.json + actions.json + emails.json to build context,
@@ -1163,6 +1179,17 @@ pub fn enrich_briefing(
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
+    // Density classification (I37)
+    let density = classify_meeting_density(meetings);
+
+    // First meeting time for context
+    let first_meeting_time = schedule
+        .get("meetings")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|m| m.get("time").and_then(|v| v.as_str()))
+        .unwrap_or("N/A");
+
     // Write context file
     let context = json!({
         "date": date,
@@ -1172,18 +1199,30 @@ pub fn enrich_briefing(
         "overdueActions": overdue_count,
         "dueToday": due_today,
         "highPriorityEmails": high_count,
+        "density": density,
+        "firstMeetingTime": first_meeting_time,
     });
     let context_path = data_dir.join(".briefing-context.json");
     write_json(&context_path, &context)?;
+
+    let density_guidance = match density {
+        "light" => "This is a light day. Highlight available open time and suggest tackling overdue items or deep work.",
+        "moderate" => "This is a balanced day. Note customer commitments and any gaps worth protecting.",
+        "busy" => "This is a busy day. Focus on the 1-2 highest-stakes meetings and what to prioritize.",
+        "packed" => "This is a packed day. Triage mode — identify what can be skipped, delegated, or deferred.",
+        _ => "",
+    };
 
     let prompt = format!(
         "You are writing a morning briefing narrative for a Customer Success Manager.\n\n\
          Today's context:\n\
          - Date: {}\n\
-         - Meetings: {} ({} customer)\n\
+         - Meetings: {} ({} customer) — density: {}\n\
+         - First meeting: {}\n\
          - Key meetings: {}\n\
          - Actions: {} overdue, {} due today\n\
          - Emails: {} high-priority\n\n\
+         {}\n\n\
          Write a 2-3 sentence narrative that helps them understand the shape of their day.\n\
          Focus on what matters most — customer calls, overdue items, important emails.\n\
          Be direct, not chatty.\n\n\
@@ -1193,10 +1232,13 @@ pub fn enrich_briefing(
         date,
         meetings,
         customer_count,
+        density,
+        first_meeting_time,
         top_meetings.join(", "),
         overdue_count,
         due_today,
-        high_count
+        high_count,
+        density_guidance,
     );
 
     let output = pty
@@ -1640,5 +1682,20 @@ END_NARRATIVE
         assert_eq!(result["stats"]["emailsHighPriority"], 3);
         assert_eq!(result["stats"]["emailsTotal"], 18);
         assert_eq!(result["stats"]["actionsOverdue"], 1);
+    }
+
+    #[test]
+    fn test_classify_meeting_density() {
+        assert_eq!(classify_meeting_density(0), "light");
+        assert_eq!(classify_meeting_density(1), "light");
+        assert_eq!(classify_meeting_density(2), "light");
+        assert_eq!(classify_meeting_density(3), "moderate");
+        assert_eq!(classify_meeting_density(5), "moderate");
+        assert_eq!(classify_meeting_density(6), "busy");
+        assert_eq!(classify_meeting_density(7), "busy");
+        assert_eq!(classify_meeting_density(8), "busy");
+        assert_eq!(classify_meeting_density(9), "packed");
+        assert_eq!(classify_meeting_density(10), "packed");
+        assert_eq!(classify_meeting_density(15), "packed");
     }
 }

@@ -20,13 +20,14 @@ import {
   Calendar,
   CheckSquare,
   FolderKanban,
+  History,
   Inbox,
   LayoutDashboard,
   Settings,
   Zap,
 } from "lucide-react";
 import { useInboxCount } from "@/hooks/useInbox";
-import type { ProfileType } from "@/types";
+import type { EntityMode } from "@/types";
 import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
@@ -44,40 +45,49 @@ const todayItems: NavItem[] = [
 const workspaceItems: NavItem[] = [
   { title: "Actions", icon: CheckSquare, href: "/actions" },
   { title: "Inbox", icon: Inbox, href: "/inbox", tooltip: "Document Inbox" },
+  { title: "History", icon: History, href: "/history", tooltip: "Processing History" },
 ];
 
-const profileNavItem: Record<ProfileType, NavItem> = {
-  "customer-success": { title: "Accounts", icon: Building2, href: "/accounts" },
-  general: { title: "Projects", icon: FolderKanban, href: "/projects" },
-};
+const accountsItem: NavItem = { title: "Accounts", icon: Building2, href: "/accounts" };
+const projectsItem: NavItem = { title: "Projects", icon: FolderKanban, href: "/projects" };
 
-const profileLabel: Record<ProfileType, string> = {
-  "customer-success": "Customer Success",
-  general: "General",
-};
+function entityModeLabel(mode: EntityMode): string {
+  switch (mode) {
+    case "account": return "Account-based";
+    case "project": return "Project-based";
+    case "both": return "Accounts & Projects";
+  }
+}
+
+function entityNavItems(mode: EntityMode): NavItem[] {
+  switch (mode) {
+    case "account": return [accountsItem];
+    case "project": return [projectsItem];
+    case "both": return [accountsItem, projectsItem];
+  }
+}
 
 export function AppSidebar() {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
-  const [profile, setProfile] = useState<ProfileType>("general");
+  const [entityMode, setEntityMode] = useState<EntityMode>("account");
   const inboxCount = useInboxCount();
 
   useEffect(() => {
-    async function loadProfile() {
+    async function loadEntityMode() {
       try {
-        const config = await invoke<{ profile?: string }>("get_config");
-        if (config.profile === "customer-success") {
-          setProfile("customer-success");
+        const config = await invoke<{ entityMode?: string }>("get_config");
+        if (config.entityMode === "project" || config.entityMode === "both" || config.entityMode === "account") {
+          setEntityMode(config.entityMode);
         }
       } catch {
-        // Config not loaded yet — default to general
+        // Config not loaded yet — default to account
       }
     }
-    loadProfile();
+    loadEntityMode();
   }, []);
 
-  const profileItem = profileNavItem[profile];
-  const allWorkspaceItems = [...workspaceItems, profileItem];
+  const allWorkspaceItems = [...workspaceItems, ...entityNavItems(entityMode)];
 
   return (
     <Sidebar collapsible="icon">
@@ -97,7 +107,7 @@ export function AppSidebar() {
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">DailyOS</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {profileLabel[profile]}
+                    {entityModeLabel(entityMode)}
                   </span>
                 </div>
               </Link>

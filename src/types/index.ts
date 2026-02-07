@@ -5,6 +5,8 @@
 
 export type ProfileType = "customer-success" | "general";
 
+export type EntityMode = "account" | "project" | "both";
+
 export type MeetingType =
   | "customer"
   | "qbr"
@@ -387,6 +389,65 @@ export interface MeetingOutcomeData {
 }
 
 // =============================================================================
+// Executive Intelligence (I42)
+// =============================================================================
+
+export interface DecisionSignal {
+  actionId: string;
+  title: string;
+  dueDate?: string;
+  account?: string;
+  priority: string;
+}
+
+export interface DelegationSignal {
+  actionId: string;
+  title: string;
+  waitingOn?: string;
+  createdAt: string;
+  account?: string;
+  daysStale: number;
+}
+
+export type PortfolioSignalType = "renewal_approaching" | "stale_contact";
+
+export interface PortfolioAlert {
+  accountId: string;
+  accountName: string;
+  signal: PortfolioSignalType;
+  detail: string;
+}
+
+export interface CancelableSignal {
+  meetingId: string;
+  title: string;
+  time: string;
+  reason: string;
+}
+
+export interface SkipSignal {
+  item: string;
+  reason: string;
+}
+
+export interface SignalCounts {
+  decisions: number;
+  delegations: number;
+  portfolioAlerts: number;
+  cancelable: number;
+  skipToday: number;
+}
+
+export interface ExecutiveIntelligence {
+  decisions: DecisionSignal[];
+  delegations: DelegationSignal[];
+  portfolioAlerts: PortfolioAlert[];
+  cancelableMeetings: CancelableSignal[];
+  skipToday: SkipSignal[];
+  signalCounts: SignalCounts;
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 
@@ -413,4 +474,47 @@ export interface FullMeetingPrep {
   keyPrinciples?: string[];
   references?: SourceReference[];
   rawMarkdown?: string;
+  /** Stakeholder relationship signals (I43) — computed live from meeting history */
+  stakeholderSignals?: StakeholderSignals;
+}
+
+/** Relationship context signals computed from meeting history and account data (I43) */
+export interface StakeholderSignals {
+  meetingFrequency30d: number;
+  meetingFrequency90d: number;
+  lastMeeting?: string;
+  lastContact?: string;
+  /** "hot" (<7d), "warm" (7-30d), "cool" (30-60d), "cold" (>60d) */
+  temperature: string;
+  /** "increasing", "stable", "decreasing" */
+  trend: string;
+}
+
+// =============================================================================
+// Feature Toggles (I39)
+// =============================================================================
+
+export interface FeatureDefinition {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  csOnly: boolean;
+}
+
+// =============================================================================
+// Processing History (I6)
+// =============================================================================
+
+/** A row from the processing_log table in SQLite. */
+export interface ProcessingLogEntry {
+  id: string;
+  filename: string;
+  sourcePath: string;
+  destinationPath?: string;
+  classification: string;
+  status: string;
+  processedAt?: string;
+  errorMessage?: string;
+  createdAt: string;
 }
