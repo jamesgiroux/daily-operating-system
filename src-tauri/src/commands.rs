@@ -27,8 +27,14 @@ pub enum DashboardResult {
     Success {
         data: DashboardData,
         freshness: DataFreshness,
+        #[serde(rename = "googleAuth")]
+        google_auth: GoogleAuthStatus,
     },
-    Empty { message: String },
+    Empty {
+        message: String,
+        #[serde(rename = "googleAuth")]
+        google_auth: GoogleAuthStatus,
+    },
     Error { message: String },
 }
 
@@ -50,6 +56,13 @@ pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, Strin
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
 pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
+    // Get Google auth status for frontend
+    let google_auth = state
+        .google_auth
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or(GoogleAuthStatus::NotConfigured);
+
     // Get config
     let config = match state.config.lock() {
         Ok(guard) => match guard.clone() {
@@ -74,6 +87,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     if !today_dir.exists() {
         return DashboardResult::Empty {
             message: "Your daily briefing will appear here once generated.".to_string(),
+            google_auth,
         };
     }
 
@@ -82,6 +96,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     if !data_dir.exists() {
         return DashboardResult::Empty {
             message: "Your daily briefing will appear here once generated.".to_string(),
+            google_auth,
         };
     }
 
@@ -188,6 +203,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             emails,
         },
         freshness,
+        google_auth,
     }
 }
 
@@ -296,8 +312,9 @@ pub fn get_meeting_prep(
     let today_dir = workspace.join("_today");
 
     match load_prep_json(&today_dir, &prep_file) {
-        Ok(prep) => {
+        Ok(mut prep) => {
             // Record that this prep was reviewed (ADR-0033)
+            // Also compute stakeholder signals from DB (I43)
             if let Ok(db_guard) = state.db.lock() {
                 if let Some(db) = db_guard.as_ref() {
                     let _ = db.mark_prep_reviewed(
@@ -305,6 +322,23 @@ pub fn get_meeting_prep(
                         prep.calendar_event_id.as_deref(),
                         &prep.title,
                     );
+
+                    // Compute stakeholder signals if prep has an account
+                    if let Some(account) = extract_account_from_prep(&prep_file, &today_dir) {
+                        match db.get_stakeholder_signals(&account) {
+                            Ok(signals) => {
+                                // Only attach if there's meaningful data
+                                if signals.meeting_frequency_90d > 0
+                                    || signals.last_contact.is_some()
+                                {
+                                    prep.stakeholder_signals = Some(signals);
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to compute stakeholder signals: {}", e);
+                            }
+                        }
+                    }
                 }
             }
             MeetingPrepResult::Success { data: prep }
@@ -313,6 +347,28 @@ pub fn get_meeting_prep(
             message: format!("Prep not found: {}", e),
         },
     }
+}
+
+/// Extract the account name from a prep JSON file (for stakeholder signal lookup).
+fn extract_account_from_prep(prep_file: &str, today_dir: &Path) -> Option<String> {
+    let prep_path = if prep_file.starts_with("preps/") {
+        today_dir.join("data").join(prep_file)
+    } else {
+        today_dir
+            .join("data")
+            .join("preps")
+            .join(format!(
+                "{}.json",
+                prep_file
+                    .trim_end_matches(".json")
+                    .trim_end_matches(".md")
+            ))
+    };
+    let content = std::fs::read_to_string(prep_path).ok()?;
+    let data: serde_json::Value = serde_json::from_str(&content).ok()?;
+    data.get("account")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 // =============================================================================
@@ -777,6 +833,35 @@ pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
     }
 }
 
+/// Refresh emails independently without re-running the full /today pipeline (I20).
+///
+/// Re-fetches from Gmail, classifies, and updates emails.json.
+/// Rejects if /today pipeline is currently running.
+#[tauri::command]
+pub async fn refresh_emails(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let state_clone = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let workspace = std::path::Path::new(&workspace_path);
+        let executor = crate::executor::Executor::new(state_clone, app_handle);
+        executor.execute_email_refresh(workspace)
+    })
+    .await
+    .map_err(|e| format!("Email refresh task failed: {}", e))?
+    .map(|_| "Email refresh complete".to_string())
+}
+
 /// Set user profile (customer-success or general)
 #[tauri::command]
 pub fn set_profile(
@@ -788,30 +873,112 @@ pub fn set_profile(
         return Err(format!("Invalid profile: {}. Must be 'customer-success' or 'general'.", profile));
     }
 
-    // Load current config
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
+    crate::state::create_or_update_config(&state, |config| {
+        config.profile = profile.clone();
+    })
+}
 
-    // Update profile
-    config.profile = profile;
+/// Set entity mode (account, project, or both)
+///
+/// Also derives the correct profile for backend compatibility.
+/// Creates Accounts/ dir if switching to account/both mode.
+#[tauri::command]
+pub fn set_entity_mode(
+    mode: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::types::validate_entity_mode(&mode)?;
 
-    // Write back to disk
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".dailyos").join("config.json");
-    let content = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(&config_path, content)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
+    let config = crate::state::create_or_update_config(&state, |config| {
+        config.entity_mode = mode.clone();
+        config.profile = crate::types::profile_for_entity_mode(&mode);
+    })?;
 
-    // Update in-memory state
-    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
-    *guard = Some(config.clone());
+    // If workspace exists, ensure Accounts/ dir is created for account/both
+    if !config.workspace_path.is_empty() {
+        let workspace = std::path::Path::new(&config.workspace_path);
+        if workspace.exists() && (mode == "account" || mode == "both") {
+            let accounts_dir = workspace.join("Accounts");
+            if !accounts_dir.exists() {
+                let _ = std::fs::create_dir_all(&accounts_dir);
+            }
+        }
+    }
 
     Ok(config)
+}
+
+/// Set workspace path and scaffold directory structure
+#[tauri::command]
+pub fn set_workspace_path(
+    path: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    let workspace = std::path::Path::new(&path);
+
+    // Validate path is absolute
+    if !workspace.is_absolute() {
+        return Err("Workspace path must be absolute".to_string());
+    }
+
+    // Read current entity_mode (or default)
+    let entity_mode = state
+        .config
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
+        .unwrap_or_else(|| "account".to_string());
+
+    // Scaffold workspace dirs
+    crate::state::initialize_workspace(workspace, &entity_mode)?;
+
+    crate::state::create_or_update_config(&state, |config| {
+        config.workspace_path = path.clone();
+    })
+}
+
+/// Set schedule for a workflow
+#[tauri::command]
+pub fn set_schedule(
+    workflow: String,
+    hour: u32,
+    minute: u32,
+    timezone: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    // Validate inputs
+    if hour > 23 {
+        return Err("Hour must be 0-23".to_string());
+    }
+    if minute > 59 {
+        return Err("Minute must be 0-59".to_string());
+    }
+
+    // Validate timezone parses
+    timezone
+        .parse::<chrono_tz::Tz>()
+        .map_err(|_| format!("Invalid timezone: {}", timezone))?;
+
+    let workflow_id: WorkflowId = workflow.parse()?;
+
+    crate::state::create_or_update_config(&state, |config| {
+        let cron = match workflow_id {
+            WorkflowId::Today => format!("{} {} * * 1-5", minute, hour),
+            WorkflowId::Archive => format!("{} {} * * *", minute, hour),
+            WorkflowId::InboxBatch => format!("{} {} * * 1-5", minute, hour),
+            WorkflowId::Week => format!("{} {} * * 1", minute, hour),
+        };
+
+        let entry = match workflow_id {
+            WorkflowId::Today => &mut config.schedules.today,
+            WorkflowId::Archive => &mut config.schedules.archive,
+            WorkflowId::InboxBatch => &mut config.schedules.inbox_batch,
+            WorkflowId::Week => &mut config.schedules.week,
+        };
+
+        entry.cron = cron;
+        entry.timezone = timezone.clone();
+    })
 }
 
 /// List available meeting prep files
@@ -1190,27 +1357,9 @@ pub fn set_capture_enabled(
     enabled: bool,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    config.post_meeting_capture.enabled = enabled;
-
-    // Write back to disk
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".dailyos").join("config.json");
-    let content = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(&config_path, content)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
-
-    // Update in-memory state
-    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
-    *guard = Some(config);
-
+    crate::state::create_or_update_config(&state, |config| {
+        config.post_meeting_capture.enabled = enabled;
+    })?;
     Ok(())
 }
 
@@ -1220,27 +1369,9 @@ pub fn set_capture_delay(
     delay_minutes: u32,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    config.post_meeting_capture.delay_minutes = delay_minutes;
-
-    // Write back to disk
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let config_path = home.join(".dailyos").join("config.json");
-    let content = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    std::fs::write(&config_path, content)
-        .map_err(|e| format!("Failed to write config: {}", e))?;
-
-    // Update in-memory state
-    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
-    *guard = Some(config);
-
+    crate::state::create_or_update_config(&state, |config| {
+        config.post_meeting_capture.delay_minutes = delay_minutes;
+    })?;
     Ok(())
 }
 
@@ -1501,6 +1632,83 @@ pub fn update_action_priority(
         .map_err(|e| e.to_string())
 }
 
+// =============================================================================
+// Processing History (I6)
+// =============================================================================
+
+/// Get processing history from the SQLite database.
+///
+/// Returns recent inbox processing log entries for the History page.
+#[tauri::command]
+pub fn get_processing_history(
+    limit: Option<i32>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbProcessingLog>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_processing_log(limit.unwrap_or(50))
+        .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// Feature Toggles (I39)
+// =============================================================================
+
+/// Feature definition for the Settings UI.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureDefinition {
+    pub key: String,
+    pub label: String,
+    pub description: String,
+    pub enabled: bool,
+    pub cs_only: bool,
+}
+
+/// Get all features with their current enabled state.
+#[tauri::command]
+pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let definitions = vec![
+        ("emailTriage", "Email Triage", "Fetch and classify Gmail messages", false),
+        ("postMeetingCapture", "Post-Meeting Capture", "Prompt for outcomes after meetings end", false),
+        ("meetingPrep", "Meeting Prep", "Generate prep context for upcoming meetings", false),
+        ("weeklyPlanning", "Weekly Planning", "Weekly overview and focus block suggestions", false),
+        ("inboxProcessing", "Inbox Processing", "Classify and route files from _inbox", false),
+        ("accountTracking", "Account Tracking", "Track customer accounts, health, and ARR", true),
+        ("impactRollup", "Impact Rollup", "Roll up daily wins and risks to account files", true),
+    ];
+
+    Ok(definitions
+        .into_iter()
+        .map(|(key, label, desc, cs_only)| FeatureDefinition {
+            enabled: crate::types::is_feature_enabled(&config, key),
+            key: key.to_string(),
+            label: label.to_string(),
+            description: desc.to_string(),
+            cs_only,
+        })
+        .collect())
+}
+
+/// Set a single feature toggle on or off.
+#[tauri::command]
+pub fn set_feature_enabled(
+    feature: String,
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.features.insert(feature.clone(), enabled);
+    })
+}
+
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
 fn build_outcome_data(
     meeting_id: &str,
@@ -1535,4 +1743,75 @@ fn build_outcome_data(
         transcript_path,
         processed_at: Some(chrono::Utc::now().to_rfc3339()),
     }
+}
+
+/// Compute executive intelligence signals (I42).
+///
+/// Cross-references SQLite data + today's schedule to surface decisions due,
+/// stale delegations, portfolio alerts, cancelable meetings, and skip-today items.
+#[tauri::command]
+pub fn get_executive_intelligence(
+    state: State<Arc<AppState>>,
+) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
+    // Load config for profile + workspace
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    // Load schedule meetings (merged with live calendar)
+    let meetings = if today_dir.join("data").exists() {
+        let briefing_meetings = load_schedule_json(&today_dir)
+            .map(|(_overview, meetings)| meetings)
+            .unwrap_or_default();
+        let live_events = state
+            .calendar_events
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let tz: chrono_tz::Tz = config
+            .schedules
+            .today
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::America::New_York);
+        crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
+    } else {
+        Vec::new()
+    };
+
+    // Load cached skip-today from AI enrichment (if available)
+    let skip_today = load_skip_today(&today_dir);
+
+    // Compute intelligence from DB
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    Ok(crate::intelligence::compute_executive_intelligence(
+        db,
+        &meetings,
+        &config.profile,
+        skip_today,
+    ))
+}
+
+/// Load cached SKIP TODAY results from `_today/data/intelligence.json`.
+///
+/// Written by AI enrichment. Returns empty vec if file doesn't exist or is
+/// malformed — fault-tolerant per ADR-0042 principle.
+fn load_skip_today(today_dir: &std::path::Path) -> Vec<crate::intelligence::SkipSignal> {
+    let path = today_dir.join("data").join("intelligence.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<Vec<crate::intelligence::SkipSignal>>(&s).ok())
+        .unwrap_or_default()
 }

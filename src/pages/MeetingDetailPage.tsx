@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { FullMeetingPrep, Stakeholder, ActionWithContext, SourceReference } from "@/types";
+import type { FullMeetingPrep, Stakeholder, StakeholderSignals, ActionWithContext, SourceReference } from "@/types";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -172,6 +172,11 @@ export default function MeetingDetailPage() {
                     </div>
                   </CardContent>
                 </Card>
+              )}
+
+              {/* Relationship Context (I43) */}
+              {data.stakeholderSignals && (
+                <RelationshipContext signals={data.stakeholderSignals} />
               )}
 
               {/* Meeting context */}
@@ -404,6 +409,79 @@ export default function MeetingDetailPage() {
       </ScrollArea>
     </main>
   );
+}
+
+function RelationshipContext({ signals }: { signals: StakeholderSignals }) {
+  const tempColor = {
+    hot: "text-success",
+    warm: "text-primary",
+    cool: "text-muted-foreground",
+    cold: "text-destructive",
+  }[signals.temperature] ?? "text-muted-foreground";
+
+  const trendLabel = {
+    increasing: "Increasing",
+    stable: "Stable",
+    decreasing: "Decreasing",
+  }[signals.trend] ?? signals.trend;
+
+  const lastMeetingText = signals.lastMeeting
+    ? formatRelativeDate(signals.lastMeeting)
+    : "No meetings recorded";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <History className="size-4" />
+          Relationship Context
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-md bg-muted/50 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Last Meeting</p>
+            <p className={cn("text-sm font-semibold", tempColor)}>
+              {lastMeetingText}
+            </p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Temperature</p>
+            <p className={cn("text-sm font-semibold capitalize", tempColor)}>
+              {signals.temperature}
+            </p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Last 30 Days</p>
+            <p className="text-sm font-semibold">
+              {signals.meetingFrequency30d} meeting{signals.meetingFrequency30d !== 1 ? "s" : ""}
+            </p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-3">
+            <p className="text-xs font-medium text-muted-foreground">Trend</p>
+            <p className="text-sm font-semibold">{trendLabel}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatRelativeDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `${months} month${months !== 1 ? "s" : ""} ago`;
 }
 
 function StakeholderRow({ stakeholder }: { stakeholder: Stakeholder }) {
