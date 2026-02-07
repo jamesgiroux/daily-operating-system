@@ -114,6 +114,8 @@ pub fn process_file(
                             actions: Vec::new(), // actions already extracted above
                             destination_path: Some(dest.display().to_string()),
                             profile: profile.to_string(),
+                            wins: Vec::new(),  // quick path has no AI extraction
+                            risks: Vec::new(),
                         };
                         let hook_results = hooks::run_post_enrichment_hooks(&ctx, db);
                         for hr in &hook_results {
