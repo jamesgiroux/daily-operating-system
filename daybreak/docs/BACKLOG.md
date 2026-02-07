@@ -10,7 +10,6 @@ Active issues, known risks, assumptions, and dependencies.
 
 <!-- Thematic grouping for orientation:
   Executive Intel:     I42, I43         — CoS decision support, political intelligence (consumption-first)
-  Data Trust:          I32             — Account intelligence writeback
   Composable Ops:      I38, I39, I41   — Deliver decomp, feature toggles, reactive prep (ADR-0030)
   CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
   Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
@@ -92,8 +91,8 @@ ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and s
 **I31: No transcript summarization in inbox processor**
 CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
 
-**I32: Inbox processor doesn't update account intelligence**
-Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. I30 (rich metadata extraction) is resolved — enrichment now populates account, priority, and context fields. This is the write side; the read side (`ops/meeting_prep.py` querying captures + actions per account) is now implemented via ADR-0030. Next step: a post-enrichment hook that upserts wins/risks/last-contact into captures or account tables keyed by account_id.
+**I32: ~~Inbox processor doesn't update account intelligence~~ RESOLVED**
+AI enrichment prompt now extracts WINS/RISKS sections. Post-enrichment `cs_account_intelligence` hook writes captures (with synthetic `inbox-{filename}` meeting IDs) and touches `accounts.updated_at` as last-contact signal. Only runs for `customer-success` profile with an associated account. Read side (`get_captures_for_account`) + write side are now both wired.
 
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.

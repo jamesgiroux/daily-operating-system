@@ -129,7 +129,7 @@ impl ActionDb {
     }
 
     /// Open a database at an explicit path. Useful for testing.
-    fn open_at(path: PathBuf) -> Result<Self, DbError> {
+    pub(crate) fn open_at(path: PathBuf) -> Result<Self, DbError> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -519,6 +519,19 @@ impl ActionDb {
         Ok(actions)
     }
 
+    /// Get all action titles from the database (for dedup in Rust delivery).
+    pub fn get_all_action_titles(&self) -> Result<Vec<String>, DbError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT LOWER(TRIM(title)) FROM actions")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut titles = Vec::new();
+        for row in rows {
+            titles.push(row?);
+        }
+        Ok(titles)
+    }
+
     // =========================================================================
     // Accounts
     // =========================================================================
@@ -556,6 +569,20 @@ impl ActionDb {
             ],
         )?;
         Ok(())
+    }
+
+    /// Touch `updated_at` on an account as a last-contact signal.
+    ///
+    /// Matches by ID or by case-insensitive name. Returns `true` if a row
+    /// was updated, `false` if no account matched.
+    pub fn touch_account_last_contact(&self, account_name: &str) -> Result<bool, DbError> {
+        let now = Utc::now().to_rfc3339();
+        let rows = self.conn.execute(
+            "UPDATE accounts SET updated_at = ?1
+             WHERE id = ?2 OR LOWER(name) = LOWER(?2)",
+            params![now, account_name],
+        )?;
+        Ok(rows > 0)
     }
 
     /// Get an account by ID.
@@ -1258,6 +1285,68 @@ mod tests {
             .get_captures_for_account("nonexistent", 30)
             .expect("query captures");
         assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_touch_account_last_contact_by_name() {
+        let db = test_db();
+        let account = DbAccount {
+            id: "acme-corp".to_string(),
+            name: "Acme Corp".to_string(),
+            ring: Some(1),
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_account(&account).expect("upsert");
+
+        // Touch by name (case-insensitive)
+        let matched = db
+            .touch_account_last_contact("acme corp")
+            .expect("touch");
+        assert!(matched, "Should match by case-insensitive name");
+
+        // Verify updated_at changed
+        let acct = db.get_account("acme-corp").expect("get").unwrap();
+        assert_ne!(acct.updated_at, "2020-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_touch_account_last_contact_by_id() {
+        let db = test_db();
+        let account = DbAccount {
+            id: "acme-corp".to_string(),
+            name: "Acme Corp".to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_account(&account).expect("upsert");
+
+        let matched = db
+            .touch_account_last_contact("acme-corp")
+            .expect("touch by id");
+        assert!(matched, "Should match by id");
+    }
+
+    #[test]
+    fn test_touch_account_last_contact_no_match() {
+        let db = test_db();
+        let matched = db
+            .touch_account_last_contact("nonexistent")
+            .expect("touch");
+        assert!(!matched, "Should return false when no account matches");
     }
 
     #[test]
