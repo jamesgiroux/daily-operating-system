@@ -1,7 +1,7 @@
 # ADR-0035: Incremental prep generation for new meetings
 
 **Date:** 2026-02
-**Status:** Proposed
+**Status:** Superseded by [ADR-0030](0030-weekly-prep-with-daily-refresh.md)
 
 ## Context
 
