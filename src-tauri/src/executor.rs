@@ -134,17 +134,17 @@ impl Executor {
             recon.flags.len(),
         );
 
-        // Step 1.5: Daily impact rollup (CS profile only, I36)
+        // Step 1.5: Daily impact rollup (feature-gated, I36/I39)
         {
-            let profile = self
+            let impact_enabled = self
                 .state
                 .config
                 .lock()
                 .ok()
-                .and_then(|g| g.as_ref().map(|c| c.profile.clone()))
-                .unwrap_or_default();
+                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "impactRollup")))
+                .unwrap_or(false);
 
-            if profile == "customer-success" {
+            if impact_enabled {
                 if let Ok(db_guard) = self.state.db.lock() {
                     if let Some(db) = db_guard.as_ref() {
                         match crate::workflow::impact_rollup::rollup_daily_impact(
@@ -246,6 +246,24 @@ impl Executor {
         execution_id: &str,
         trigger: ExecutionTrigger,
     ) -> Result<(), ExecutionError> {
+        // Feature gate (I39): skip if inbox processing is disabled
+        let inbox_enabled = self
+            .state
+            .config
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "inboxProcessing")))
+            .unwrap_or(true);
+        if !inbox_enabled {
+            log::info!("Inbox batch skipped (feature disabled)");
+            let finished_at = Utc::now();
+            self.state.update_execution_record(execution_id, |r| {
+                r.finished_at = Some(finished_at);
+                r.success = true;
+            });
+            return Ok(());
+        }
+
         log::info!("Running inbox batch workflow");
 
         // Get profile from config
@@ -486,20 +504,46 @@ impl Executor {
         // Drop DB guard before any awaits
         drop(db_guard);
 
-        // Deliver preps
-        let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
-            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
-        let _ = self.app_handle.emit("operation-delivered", "preps");
-        log::info!("Today pipeline: preps delivered");
+        // Deliver preps (feature-gated I39)
+        let prep_enabled = self
+            .state
+            .config
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "meetingPrep")))
+            .unwrap_or(true);
+        let prep_paths = if prep_enabled {
+            let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
+                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+            let _ = self.app_handle.emit("operation-delivered", "preps");
+            log::info!("Today pipeline: preps delivered");
+            paths
+        } else {
+            log::info!("Today pipeline: preps skipped (feature disabled)");
+            Vec::new()
+        };
 
-        // Deliver emails (mechanical — instant)
-        let emails_data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
-            .unwrap_or_else(|e| {
-                log::warn!("Email delivery failed (non-fatal): {}", e);
-                json!({})
-            });
-        let _ = self.app_handle.emit("operation-delivered", "emails");
-        log::info!("Today pipeline: emails delivered");
+        // Deliver emails (mechanical — instant, feature-gated I39)
+        let email_enabled = self
+            .state
+            .config
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "emailTriage")))
+            .unwrap_or(true);
+        let emails_data = if email_enabled {
+            let data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
+                .unwrap_or_else(|e| {
+                    log::warn!("Email delivery failed (non-fatal): {}", e);
+                    json!({})
+                });
+            let _ = self.app_handle.emit("operation-delivered", "emails");
+            log::info!("Today pipeline: emails delivered");
+            data
+        } else {
+            log::info!("Today pipeline: emails skipped (feature disabled)");
+            json!({})
+        };
 
         // Write manifest (partial: true — AI enrichment not yet done)
         crate::workflow::deliver::deliver_manifest(
@@ -520,15 +564,17 @@ impl Executor {
             execution_id: execution_id.to_string(),
         });
 
-        // AI: Enrich emails (high-priority only)
-        if let Err(e) = crate::workflow::deliver::enrich_emails(
-            &data_dir,
-            &self.pty_manager,
-            &workspace,
-        ) {
-            log::warn!("Email enrichment failed (non-fatal): {}", e);
+        // AI: Enrich emails (high-priority only, feature-gated I39)
+        if email_enabled {
+            if let Err(e) = crate::workflow::deliver::enrich_emails(
+                &data_dir,
+                &self.pty_manager,
+                &workspace,
+            ) {
+                log::warn!("Email enrichment failed (non-fatal): {}", e);
+            }
+            let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
         }
-        let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
 
         // AI: Generate briefing narrative
         if let Err(e) = crate::workflow::deliver::enrich_briefing(
@@ -645,6 +691,103 @@ impl Executor {
         }
 
         Ok(path)
+    }
+
+    /// Execute standalone email refresh (I20).
+    ///
+    /// 1. Check that /today pipeline is not currently running
+    /// 2. Run refresh_emails.py (Phase 1 email-only)
+    /// 3. Read refresh directive and deliver via deliver_emails()
+    /// 4. Optionally run AI enrichment (fault-tolerant)
+    /// 5. Emit operation-delivered for frontend refresh
+    /// 6. Clean up refresh directive
+    pub fn execute_email_refresh(
+        &self,
+        workspace: &Path,
+    ) -> Result<(), String> {
+        // Guard: reject if /today pipeline is currently running
+        let today_status = self.state.get_workflow_status(WorkflowId::Today);
+        if matches!(today_status, WorkflowStatus::Running { .. }) {
+            return Err("Cannot refresh emails while /today pipeline is running".to_string());
+        }
+
+        // Step 1: Run refresh_emails.py
+        let refresh_script = get_script_path(workspace, "refresh_emails.py");
+        log::info!("Email refresh: running {}", refresh_script.display());
+        run_python_script(&refresh_script, workspace, SCRIPT_TIMEOUT_SECS)
+            .map_err(|e| format!("Email refresh script failed: {}", e))?;
+
+        // Step 2: Read refresh directive
+        let data_dir = workspace.join("_today").join("data");
+        let refresh_path = data_dir.join("email-refresh-directive.json");
+
+        if !refresh_path.exists() {
+            return Err("Email refresh script did not produce directive".to_string());
+        }
+
+        let raw = std::fs::read_to_string(&refresh_path)
+            .map_err(|e| format!("Failed to read refresh directive: {}", e))?;
+        let refresh_data: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("Failed to parse refresh directive: {}", e))?;
+
+        // Step 3: Build emails data matching deliver_emails output shape
+        let emails_section = refresh_data.get("emails").cloned().unwrap_or(json!({}));
+
+        let high_priority = emails_section
+            .get("highPriority")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let medium_count = emails_section
+            .get("mediumCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let low_count = emails_section
+            .get("lowCount")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let emails_json = json!({
+            "highPriority": high_priority.iter().map(|e| {
+                json!({
+                    "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
+                    "sender": e.get("from").and_then(|v| v.as_str()).unwrap_or(""),
+                    "senderEmail": e.get("from_email").and_then(|v| v.as_str()).unwrap_or(""),
+                    "subject": e.get("subject").and_then(|v| v.as_str()).unwrap_or(""),
+                    "snippet": e.get("snippet").and_then(|v| v.as_str()).unwrap_or(""),
+                    "priority": "high",
+                })
+            }).collect::<Vec<_>>(),
+            "stats": {
+                "highCount": high_priority.len(),
+                "mediumCount": medium_count,
+                "lowCount": low_count,
+                "total": high_priority.len() as u64 + medium_count + low_count,
+            }
+        });
+
+        crate::workflow::deliver::write_json(
+            &data_dir.join("emails.json"),
+            &emails_json,
+        )?;
+        let _ = self.app_handle.emit("operation-delivered", "emails");
+        log::info!("Email refresh: emails.json written ({} high)", high_priority.len());
+
+        // Step 4: AI enrichment (fault-tolerant)
+        if let Err(e) = crate::workflow::deliver::enrich_emails(
+            &data_dir,
+            &self.pty_manager,
+            workspace,
+        ) {
+            log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
+        }
+        let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
+
+        // Step 5: Clean up refresh directive
+        let _ = std::fs::remove_file(&refresh_path);
+
+        log::info!("Email refresh complete");
+        Ok(())
     }
 
     /// Emit a workflow status event to the frontend
