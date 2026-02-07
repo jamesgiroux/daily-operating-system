@@ -9,24 +9,24 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
-  Meeting Intelligence: I44, I45, I46  — Meeting-scoped transcript intake, outcome interaction (ADR-0044), all-type prep (ADR-0043)
+  Meeting Intelligence: I45            — Outcome interaction UI (I44 transcript intake resolved)
   Executive Intel:     I42, I43         — CoS decision support, political intelligence (consumption-first)
   Composable Ops:      I39, I41        — Feature toggles, reactive prep (ADR-0030/0042)
   CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
   Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
-  Archive & Reconcil:  I36             — Impact rollups (ADR-0040, ADR-0041)
+  Archive & Reconcil:  (none open)      — I36 resolved, impact rollup shipped
   ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
   Email Pipeline:      I18, I20, I21   — API coordination, three-tier email (ADR-0029)
   UI Consistency:      I25, I9, I37    — Badge unification, stub pages, density-aware overview
   First-Run & Ship:    I13, I8         — Onboarding, distribution
-  Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems
+  Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems (I47 entity abstraction resolved)
 -->
 
 ### Open — High Priority
 
-**I44: Meeting-scoped transcript intake from dashboard**
-Post-meeting capture (ADR-0037) lets users manually log wins/risks/actions, but the highest-value input — the meeting transcript — requires navigating to a separate Inbox page, losing all meeting context. The `PostMeetingPrompt` fallback even says "we'll process the transcript if one arrives" but offers no way to do so. Two surfaces need a transcript attachment affordance: (1) `PostMeetingPrompt` — file picker button alongside Win/Risk/Action (prompt auto-dismisses at 60s, so this covers the "transcript ready immediately" case), (2) `MeetingCard` — attach button or drop zone for past meetings (covers the common case where Otter/Fathom takes 5-10 minutes). File gets frontmatter stamped with meeting ID, title, account, type. Routed to account/project location per workspace patterns (not `_inbox/`). Full enrichment pipeline runs: AI extracts summary, actions, wins, risks, outcomes. Transcript is immutable — processed once, never re-processed on briefing re-runs. Extracted outcomes supersede manual capture on the meeting card. The meeting card becomes a lifecycle view: prep → current → outcomes. ADR-0044. Relates: I31 (generic inbox transcript summarization remains separate), I45 (outcome interaction UI).
+**I44: ~~Meeting-scoped transcript intake from dashboard~~ RESOLVED**
+Implemented in ADR-0044. Both surfaces have transcript attachment: `PostMeetingPrompt` file picker button and `MeetingCard` attach affordance. Backend: `processor/transcript.rs` handles full pipeline — frontmatter stamping (meeting ID, title, account, type), AI enrichment via Claude (`--print`), extraction of summary/actions/wins/risks/decisions, routing to account/project location. Immutability enforced via `transcript_processed` state map (one transcript per meeting). `attach_meeting_transcript` command processes async, emits `transcript-processed` event. `get_meeting_outcomes` command returns AI-extracted data. Frontend: `MeetingOutcomes.tsx` renders extracted outcomes, `useMeetingOutcomes.ts` hook manages state. `capture.rs` extended with decision capture type. Schema gained `decisions` column on captures table. Meeting card is now a lifecycle view: prep → current → outcomes.
 
 **I45: Post-transcript outcome interaction UI**
 After a transcript is processed (I44), the meeting card displays AI-extracted summary, wins, risks, and actions. Users need lightweight interaction with these generated outputs: reprioritize actions (e.g., promote to P1), amplify or edit wins (emphasize what matters for EBRs/reviews), adjust risk severity, edit the summary. This is distinct from capture — it's post-capture refinement. The manual Outcomes flow becomes redundant when a transcript exists; this replaces it with richer, editable AI output. Design constraint: interactions should write back to the stored markdown (source of truth), not just update SQLite. Blocked by I44.
@@ -99,9 +99,6 @@ AI enrichment prompt now extracts WINS/RISKS sections. Post-enrichment `cs_accou
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
 
-**I36: Daily impact rollup for CS extension**
-Post-meeting capture stores per-meeting wins/risks in SQLite, but there's no daily aggregation into weekly impact files. `/wrap` aggregated these into `Weekly-Impact/YYYY-WNN-impact-capture.md` with a "Customer Outcomes" section. The CS extension needs: (a) end-of-day rollup of captured outcomes into weekly impact file, (b) tagging for monthly/quarterly rollup (EBRs, renewals, value stories). Could run as part of archive reconciliation (I34). ADR-0041 establishes the model; this tracks CS-side implementation.
-
 ### Open — Low Priority
 
 **I2: Compact meetings.md format for dashboard dropdowns**
@@ -151,7 +148,11 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 
 **I33: Captured wins/risks don't resurface in meeting preps** — Resolved. ADR-0030 `meeting_prep.py` queries `captures` table via `_get_captures_for_account()` for recent wins/risks by account_id (14-day lookback). Also queries open actions and meeting history per account. Rust `db.rs` gained `get_captures_for_account()` method with test.
 
-**I38: Deliver script decomposition** — Resolved. ADR-0042 Chunk 1 replaces deliver_today.py with Rust-native per-operation delivery (`workflow/deliver.rs`). Executor calls `execute_today_pipeline()` which runs Phase 1 (Python), then delivers schedule, actions, and preps from Rust instantly — no Phase 2/3 needed for mechanical ops. deliver_today.py kept as reference. Week delivery (deliver_week.py) remains monolithic but is low priority (ADR-0042 Chunk 6).
+**I38: Deliver script decomposition** — Resolved. ADR-0042 Chunk 1 replaces deliver_today.py with Rust-native per-operation delivery (`workflow/deliver.rs`). Chunk 3 adds AI enrichment ops: `deliver_emails()` (mechanical email mapping), `enrich_emails()` (PTY-spawned Claude for summaries/actions/arcs per high-priority email), `enrich_briefing()` (PTY-spawned Claude for 2-3 sentence day narrative patched into schedule.json). All AI ops are fault-tolerant — if Claude fails, mechanical data renders fine. Pipeline: Phase 1 Python → mechanical delivery (instant) → partial manifest → AI enrichment (progressive) → final manifest. Week delivery (deliver_week.py) remains monolithic (ADR-0042 Chunk 6).
+
+**I36: Daily impact rollup for CS extension** — Resolved. Added `workflow/impact_rollup.rs` with `rollup_daily_impact()` that queries today's captures from SQLite, groups wins/risks by account, and appends to `Weekly-Impact/{YYYY}-W{WW}-impact-capture.md`. Runs in archive workflow between reconciliation and file moves, profile-gated to `customer-success`, non-fatal. Idempotent (day header check prevents double-writes). Creates file with template if missing. `db.rs` gained `get_captures_for_date()`. 9 new tests.
+
+**I47: Profile-agnostic entity abstraction** — Resolved. Introduced `entities` table and `EntityType` enum (ADR-0045). Bridge pattern: `upsert_account()` auto-mirrors to entities table, backfill migration populates from existing accounts on DB open. `entity_intelligence()` hook replaces profile-gated `cs_account_intelligence()` — now runs for all profiles as core behavior (ADR-0043). `account_id` FK migration deferred to I27.
 
 **I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. `meeting_prep.py` only gathered rich context (SQLite history, captures, open actions) for customer meetings with account-based queries. Internal syncs, 1:1s, and partnership meetings got at most a single archive ref. Per ADR-0043 (meeting intelligence is core), expanded with title-based SQLite queries (`_get_meeting_history_by_title`, `_get_captures_by_meeting_title`, `_get_all_pending_actions`) so all non-personal/non-all-hands types get meeting history, captures, and actions context. 1:1s get deeper lookback (60-day history, 3 archive refs). Partnership meetings try account match first, fall back to title-based. No schema or orchestrator changes.
 

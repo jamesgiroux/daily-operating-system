@@ -1331,3 +1331,208 @@ pub fn skip_week_planning(state: State<Arc<AppState>>) -> Result<(), String> {
     }
     Ok(())
 }
+
+// =============================================================================
+// Transcript Intake & Meeting Outcomes (I44 / I45 / ADR-0044)
+// =============================================================================
+
+/// Attach and process a transcript for a specific meeting.
+///
+/// Checks immutability (one transcript per meeting), processes the transcript
+/// with full meeting context via Claude, stores outcomes, and routes the file.
+#[tauri::command]
+pub async fn attach_meeting_transcript(
+    file_path: String,
+    meeting: CalendarEvent,
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<crate::types::TranscriptResult, String> {
+    // Check immutability — one transcript per meeting
+    {
+        let guard = state
+            .transcript_processed
+            .lock()
+            .map_err(|_| "Lock poisoned")?;
+        if guard.contains_key(&meeting.id) {
+            return Err(format!(
+                "Meeting '{}' already has a processed transcript",
+                meeting.title
+            ));
+        }
+    }
+
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let state_clone = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
+    let profile = config.profile.clone();
+    let meeting_id = meeting.id.clone();
+    let meeting_clone = meeting.clone();
+    let file_path_for_record = file_path.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let workspace = Path::new(&workspace_path);
+        let db_guard = state_clone.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        crate::processor::transcript::process_transcript(
+            workspace,
+            &file_path,
+            &meeting_clone,
+            db_ref,
+            &profile,
+        )
+    })
+    .await
+    .map_err(|e| format!("Transcript processing task failed: {}", e))?;
+
+    // On success, record transcript and mark as captured
+    if result.status == "success" {
+        let record = crate::types::TranscriptRecord {
+            meeting_id: meeting_id.clone(),
+            file_path: file_path_for_record,
+            destination: result.destination.clone().unwrap_or_default(),
+            summary: result.summary.clone(),
+            processed_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        if let Ok(mut guard) = state.transcript_processed.lock() {
+            guard.insert(meeting_id.clone(), record);
+            let _ = crate::state::save_transcript_records(&guard);
+        }
+
+        if let Ok(mut guard) = state.capture_captured.lock() {
+            guard.insert(meeting_id.clone());
+        }
+
+        // Build and emit outcome data for live frontend updates
+        let outcome_data = build_outcome_data(&meeting_id, &result, &state);
+        let _ = app_handle.emit("transcript-processed", &outcome_data);
+    }
+
+    Ok(result)
+}
+
+/// Get meeting outcomes (from transcript processing or manual capture).
+///
+/// Returns `None` if the meeting has no processed transcript.
+#[tauri::command]
+pub fn get_meeting_outcomes(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Option<crate::types::MeetingOutcomeData>, String> {
+    // Check transcript records
+    let record = state
+        .transcript_processed
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .get(&meeting_id)
+        .cloned();
+
+    let Some(record) = record else {
+        return Ok(None);
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let captures = db
+        .get_captures_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+    let actions = db
+        .get_actions_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    let mut wins = Vec::new();
+    let mut risks = Vec::new();
+    let mut decisions = Vec::new();
+
+    for cap in captures {
+        match cap.capture_type.as_str() {
+            "win" => wins.push(cap.content),
+            "risk" => risks.push(cap.content),
+            "decision" => decisions.push(cap.content),
+            _ => {}
+        }
+    }
+
+    Ok(Some(crate::types::MeetingOutcomeData {
+        meeting_id,
+        summary: record.summary,
+        wins,
+        risks,
+        decisions,
+        actions,
+        transcript_path: Some(record.destination),
+        processed_at: Some(record.processed_at),
+    }))
+}
+
+/// Update the content of a capture (win/risk/decision) — I45 inline editing.
+#[tauri::command]
+pub fn update_capture(
+    id: String,
+    content: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.update_capture(&id, &content).map_err(|e| e.to_string())
+}
+
+/// Cycle an action's priority (P1→P2→P3→P1) — I45 interaction.
+#[tauri::command]
+pub fn update_action_priority(
+    id: String,
+    priority: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    // Validate priority
+    if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
+        return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", priority));
+    }
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.update_action_priority(&id, &priority)
+        .map_err(|e| e.to_string())
+}
+
+/// Build MeetingOutcomeData from a TranscriptResult + state lookups.
+fn build_outcome_data(
+    meeting_id: &str,
+    result: &crate::types::TranscriptResult,
+    state: &AppState,
+) -> crate::types::MeetingOutcomeData {
+    // Try to get actions from DB for richer data
+    let actions = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
+        })
+        .unwrap_or_default();
+
+    let transcript_path = state
+        .transcript_processed
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));
+
+    crate::types::MeetingOutcomeData {
+        meeting_id: meeting_id.to_string(),
+        summary: result.summary.clone(),
+        wins: result.wins.clone(),
+        risks: result.risks.clone(),
+        decisions: result.decisions.clone(),
+        actions,
+        transcript_path,
+        processed_at: Some(chrono::Utc::now().to_rfc3339()),
+    }
+}

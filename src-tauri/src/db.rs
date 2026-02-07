@@ -8,8 +8,10 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::entity::{DbEntity, EntityType};
 
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
@@ -25,7 +27,7 @@ pub enum DbError {
 }
 
 /// A row from the `actions` table.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAction {
     pub id: String,
@@ -150,6 +152,18 @@ impl ActionDb {
             "ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;",
         );
 
+        // Migration: backfill entities from accounts (ADR-0045).
+        // Idempotent — INSERT OR IGNORE skips existing rows.
+        let _ = conn.execute_batch(
+            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
+             SELECT id, name, 'account', tracker_path, updated_at FROM accounts;",
+        );
+
+        // Migration: add 'decision' to captures.capture_type CHECK constraint.
+        // SQLite can't ALTER CHECK constraints, so we recreate the table if needed.
+        // The captures table is a disposable cache (ADR-0018), so this is safe.
+        Self::migrate_captures_decision(&conn)?;
+
         Ok(Self { conn })
     }
 
@@ -157,6 +171,51 @@ impl ActionDb {
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         Ok(home.join(".dailyos").join("actions.db"))
+    }
+
+    /// Migrate the `captures` table to accept 'decision' as a capture_type.
+    ///
+    /// Tries a test insert — if it succeeds the constraint already allows
+    /// 'decision' (e.g. fresh DB from updated schema.sql). If it fails,
+    /// recreate the table with the new constraint, preserving existing rows.
+    fn migrate_captures_decision(conn: &Connection) -> Result<(), DbError> {
+        // Quick probe: try inserting and rolling back
+        let needs_migration = conn
+            .execute(
+                "INSERT INTO captures (id, meeting_id, meeting_title, capture_type, content)
+                 VALUES ('__probe__', '__probe__', '__probe__', 'decision', '__probe__')",
+                [],
+            )
+            .is_err();
+
+        if !needs_migration {
+            // Probe succeeded — clean up and return
+            let _ = conn.execute("DELETE FROM captures WHERE id = '__probe__'", []);
+            return Ok(());
+        }
+
+        // Recreate with new constraint
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS captures_v2 (
+                id TEXT PRIMARY KEY,
+                meeting_id TEXT NOT NULL,
+                meeting_title TEXT NOT NULL,
+                account_id TEXT,
+                capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
+                content TEXT NOT NULL,
+                owner TEXT,
+                due_date TEXT,
+                captured_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT OR IGNORE INTO captures_v2 SELECT * FROM captures;
+            DROP TABLE captures;
+            ALTER TABLE captures_v2 RENAME TO captures;
+            CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
+            CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
+            CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);",
+        )?;
+
+        Ok(())
     }
 
     // =========================================================================
@@ -488,7 +547,7 @@ impl ActionDb {
                     context, waiting_on, updated_at
              FROM actions
              WHERE status IN ('pending', 'waiting')
-               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox')
+               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript')
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -536,7 +595,7 @@ impl ActionDb {
     // Accounts
     // =========================================================================
 
-    /// Insert or update an account.
+    /// Insert or update an account. Also mirrors to the `entities` table (ADR-0045).
     pub fn upsert_account(&self, account: &DbAccount) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO accounts (
@@ -568,6 +627,8 @@ impl ActionDb {
                 account.updated_at,
             ],
         )?;
+        // Keep entity mirror in sync
+        self.ensure_entity_for_account(account)?;
         Ok(())
     }
 
@@ -614,6 +675,109 @@ impl ActionDb {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    // =========================================================================
+    // Entities (ADR-0045)
+    // =========================================================================
+
+    /// Insert or update a profile-agnostic entity.
+    pub fn upsert_entity(&self, entity: &DbEntity) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO entities (id, name, entity_type, tracker_path, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                entity_type = excluded.entity_type,
+                tracker_path = excluded.tracker_path,
+                updated_at = excluded.updated_at",
+            params![
+                entity.id,
+                entity.name,
+                entity.entity_type.as_str(),
+                entity.tracker_path,
+                entity.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch an entity by ID.
+    pub fn get_entity(&self, id: &str) -> Result<Option<DbEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, entity_type, tracker_path, updated_at
+             FROM entities WHERE id = ?1",
+        )?;
+
+        let mut rows = stmt.query_map(params![id], |row| {
+            let et: String = row.get(2)?;
+            Ok(DbEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: EntityType::from_str_lossy(&et),
+                tracker_path: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Touch `updated_at` on an entity as a last-contact signal.
+    ///
+    /// Matches by ID or by case-insensitive name. Returns `true` if a row
+    /// was updated, `false` if no entity matched.
+    pub fn touch_entity_last_contact(&self, name: &str) -> Result<bool, DbError> {
+        let now = Utc::now().to_rfc3339();
+        let rows = self.conn.execute(
+            "UPDATE entities SET updated_at = ?1
+             WHERE id = ?2 OR LOWER(name) = LOWER(?2)",
+            params![now, name],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// List entities of a given type.
+    pub fn get_entities_by_type(&self, entity_type: &str) -> Result<Vec<DbEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, entity_type, tracker_path, updated_at
+             FROM entities WHERE entity_type = ?1
+             ORDER BY name",
+        )?;
+
+        let rows = stmt.query_map(params![entity_type], |row| {
+            let et: String = row.get(2)?;
+            Ok(DbEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: EntityType::from_str_lossy(&et),
+                tracker_path: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+
+        let mut entities = Vec::new();
+        for row in rows {
+            entities.push(row?);
+        }
+        Ok(entities)
+    }
+
+    /// Upsert an entity row that mirrors a CS account.
+    ///
+    /// Called from `upsert_account()` to keep the entity layer in sync.
+    pub fn ensure_entity_for_account(&self, account: &DbAccount) -> Result<(), DbError> {
+        let entity = DbEntity {
+            id: account.id.clone(),
+            name: account.name.clone(),
+            entity_type: EntityType::Account,
+            tracker_path: account.tracker_path.clone(),
+            updated_at: account.updated_at.clone(),
+        };
+        self.upsert_entity(&entity)
     }
 
     // =========================================================================
@@ -774,6 +938,122 @@ impl ActionDb {
             captures.push(row?);
         }
         Ok(captures)
+    }
+
+    /// Query all captures (wins, risks, decisions) for a specific meeting.
+    pub fn get_captures_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+             FROM captures
+             WHERE meeting_id = ?1
+             ORDER BY captured_at",
+        )?;
+
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok(DbCapture {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                account_id: row.get(3)?,
+                capture_type: row.get(4)?,
+                content: row.get(5)?,
+                captured_at: row.get(6)?,
+            })
+        })?;
+
+        let mut captures = Vec::new();
+        for row in rows {
+            captures.push(row?);
+        }
+        Ok(captures)
+    }
+
+    /// Query actions extracted from a transcript for a specific meeting.
+    pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE source_id = ?1 AND source_type = 'transcript'
+             ORDER BY priority, created_at",
+        )?;
+
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Query all captures (wins/risks/decisions) recorded on a given date.
+    ///
+    /// Used by the daily impact rollup (I36) to aggregate outcomes into
+    /// the weekly impact file during the archive workflow.
+    pub fn get_captures_for_date(&self, date: &str) -> Result<Vec<DbCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+             FROM captures
+             WHERE date(captured_at) = ?1
+             ORDER BY account_id, captured_at",
+        )?;
+
+        let rows = stmt.query_map(params![date], |row| {
+            Ok(DbCapture {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                meeting_title: row.get(2)?,
+                account_id: row.get(3)?,
+                capture_type: row.get(4)?,
+                content: row.get(5)?,
+                captured_at: row.get(6)?,
+            })
+        })?;
+
+        let mut captures = Vec::new();
+        for row in rows {
+            captures.push(row?);
+        }
+        Ok(captures)
+    }
+
+    /// Update the content of a capture (win/risk/decision).
+    pub fn update_capture(&self, id: &str, content: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE captures SET content = ?1 WHERE id = ?2",
+            params![content, id],
+        )?;
+        Ok(())
+    }
+
+    /// Update an action's priority.
+    pub fn update_action_priority(&self, id: &str, priority: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE actions SET priority = ?1, updated_at = ?2 WHERE id = ?3",
+            params![priority, now, id],
+        )?;
+        Ok(())
     }
 
     // =========================================================================
@@ -1288,6 +1568,57 @@ mod tests {
     }
 
     #[test]
+    fn test_get_captures_for_date() {
+        let db = test_db();
+
+        // Insert captures with explicit timestamps for today and yesterday
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let today_ts = format!("{}T10:00:00+00:00", today);
+        let yesterday = (Utc::now() - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let yesterday_ts = format!("{}T10:00:00+00:00", yesterday);
+
+        // Today's captures
+        db.conn
+            .execute(
+                "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, captured_at)
+                 VALUES ('c1', 'mtg-1', 'Acme QBR', 'acme', 'win', 'Expanded deployment', ?1)",
+                params![today_ts],
+            )
+            .expect("insert c1");
+        db.conn
+            .execute(
+                "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, captured_at)
+                 VALUES ('c2', 'mtg-1', 'Acme QBR', 'acme', 'risk', 'Budget freeze', ?1)",
+                params![today_ts],
+            )
+            .expect("insert c2");
+
+        // Yesterday's capture (should NOT appear)
+        db.conn
+            .execute(
+                "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, captured_at)
+                 VALUES ('c3', 'mtg-2', 'Beta Sync', 'beta', 'win', 'Old win', ?1)",
+                params![yesterday_ts],
+            )
+            .expect("insert c3");
+
+        let results = db.get_captures_for_date(&today).expect("query");
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].capture_type, "win");
+        assert_eq!(results[1].capture_type, "risk");
+
+        // Yesterday should have exactly 1
+        let yesterday_results = db.get_captures_for_date(&yesterday).expect("query");
+        assert_eq!(yesterday_results.len(), 1);
+
+        // Nonexistent date returns empty
+        let empty = db.get_captures_for_date("2020-01-01").expect("query");
+        assert!(empty.is_empty());
+    }
+
+    #[test]
     fn test_touch_account_last_contact_by_name() {
         let db = test_db();
         let account = DbAccount {
@@ -1347,6 +1678,166 @@ mod tests {
             .touch_account_last_contact("nonexistent")
             .expect("touch");
         assert!(!matched, "Should return false when no account matches");
+    }
+
+    // =========================================================================
+    // Entity tests (ADR-0045)
+    // =========================================================================
+
+    #[test]
+    fn test_upsert_and_get_entity() {
+        let db = test_db();
+
+        let entity = DbEntity {
+            id: "proj-alpha".to_string(),
+            name: "Project Alpha".to_string(),
+            entity_type: EntityType::Project,
+            tracker_path: Some("Projects/alpha".to_string()),
+            updated_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_entity(&entity).expect("upsert entity");
+
+        let result = db.get_entity("proj-alpha").expect("get entity");
+        assert!(result.is_some());
+        let e = result.unwrap();
+        assert_eq!(e.name, "Project Alpha");
+        assert_eq!(e.entity_type, EntityType::Project);
+        assert_eq!(e.tracker_path, Some("Projects/alpha".to_string()));
+
+        // Not found
+        let missing = db.get_entity("nonexistent").expect("get entity");
+        assert!(missing.is_none());
+    }
+
+    #[test]
+    fn test_touch_entity_last_contact() {
+        let db = test_db();
+
+        let entity = DbEntity {
+            id: "acme".to_string(),
+            name: "Acme Corp".to_string(),
+            entity_type: EntityType::Account,
+            tracker_path: None,
+            updated_at: "2020-01-01T00:00:00Z".to_string(),
+        };
+        db.upsert_entity(&entity).expect("upsert");
+
+        // Touch by name (case-insensitive)
+        let matched = db
+            .touch_entity_last_contact("acme corp")
+            .expect("touch by name");
+        assert!(matched);
+
+        let e = db.get_entity("acme").expect("get").unwrap();
+        assert_ne!(e.updated_at, "2020-01-01T00:00:00Z");
+
+        // Touch by ID
+        let matched_id = db.touch_entity_last_contact("acme").expect("touch by id");
+        assert!(matched_id);
+
+        // No match
+        let no_match = db
+            .touch_entity_last_contact("nonexistent")
+            .expect("touch");
+        assert!(!no_match);
+    }
+
+    #[test]
+    fn test_ensure_entity_for_account() {
+        let db = test_db();
+
+        let account = DbAccount {
+            id: "beta-inc".to_string(),
+            name: "Beta Inc".to_string(),
+            ring: Some(2),
+            arr: Some(50_000.0),
+            health: Some("yellow".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: Some("Accounts/beta-inc".to_string()),
+            updated_at: "2025-06-01T00:00:00Z".to_string(),
+        };
+
+        // upsert_account now calls ensure_entity_for_account automatically
+        db.upsert_account(&account).expect("upsert account");
+
+        // Entity should exist with matching fields
+        let entity = db.get_entity("beta-inc").expect("get entity").unwrap();
+        assert_eq!(entity.name, "Beta Inc");
+        assert_eq!(entity.entity_type, EntityType::Account);
+        assert_eq!(entity.tracker_path, Some("Accounts/beta-inc".to_string()));
+        assert_eq!(entity.updated_at, "2025-06-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_get_entities_by_type() {
+        let db = test_db();
+
+        let e1 = DbEntity {
+            id: "acme".to_string(),
+            name: "Acme".to_string(),
+            entity_type: EntityType::Account,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        let e2 = DbEntity {
+            id: "beta".to_string(),
+            name: "Beta".to_string(),
+            entity_type: EntityType::Account,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        let e3 = DbEntity {
+            id: "proj-x".to_string(),
+            name: "Project X".to_string(),
+            entity_type: EntityType::Project,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        db.upsert_entity(&e1).expect("upsert");
+        db.upsert_entity(&e2).expect("upsert");
+        db.upsert_entity(&e3).expect("upsert");
+
+        let accounts = db.get_entities_by_type("account").expect("query");
+        assert_eq!(accounts.len(), 2);
+
+        let projects = db.get_entities_by_type("project").expect("query");
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "Project X");
+    }
+
+    #[test]
+    fn test_backfill_migration_populates_entities() {
+        // Create a DB, insert an account directly (bypassing the bridge),
+        // then re-open to trigger the backfill migration.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("backfill_test.db");
+        std::mem::forget(dir);
+
+        // First open: create DB and insert an account via raw SQL
+        // (simulating pre-ADR-0045 state)
+        {
+            let conn = rusqlite::Connection::open(&path).expect("open");
+            conn.execute_batch("PRAGMA journal_mode=WAL;").expect("wal");
+            conn.execute_batch(include_str!("schema.sql")).expect("schema");
+            conn.execute(
+                "INSERT INTO accounts (id, name, ring, tracker_path, updated_at)
+                 VALUES ('legacy-acct', 'Legacy Corp', 1, 'Accounts/legacy', '2025-01-01T00:00:00Z')",
+                [],
+            )
+            .expect("insert legacy account");
+        }
+
+        // Second open via ActionDb: backfill migration should run
+        let db = ActionDb::open_at(path).expect("reopen");
+        let entity = db.get_entity("legacy-acct").expect("get entity");
+        assert!(entity.is_some(), "Backfill should create entity from account");
+        let e = entity.unwrap();
+        assert_eq!(e.name, "Legacy Corp");
+        assert_eq!(e.entity_type, EntityType::Account);
     }
 
     #[test]

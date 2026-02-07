@@ -159,6 +159,7 @@ pub fn enrich_file(
             profile: profile.to_string(),
             wins: wins.clone(),
             risks: risks.clone(),
+            entity_type: None,
         };
         let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
         for hr in &hook_results {
@@ -261,18 +262,19 @@ Content:
 }
 
 /// Parsed response from Claude Code enrichment.
-struct ParsedEnrichment {
-    file_type: String,
-    account: Option<String>,
-    meeting_name: Option<String>,
-    summary: String,
-    actions_text: Option<String>,
-    wins: Vec<String>,
-    risks: Vec<String>,
+pub struct ParsedEnrichment {
+    pub file_type: String,
+    pub account: Option<String>,
+    pub meeting_name: Option<String>,
+    pub summary: String,
+    pub actions_text: Option<String>,
+    pub wins: Vec<String>,
+    pub risks: Vec<String>,
+    pub decisions: Vec<String>,
 }
 
 /// Parse Claude's enrichment response.
-fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
+pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut file_type = "general".to_string();
     let mut account = None;
     let mut meeting_name = None;
@@ -282,8 +284,10 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut actions_buf = String::new();
     let mut wins = Vec::new();
     let mut risks = Vec::new();
+    let mut decisions = Vec::new();
     let mut in_wins = false;
     let mut in_risks = false;
+    let mut in_decisions = false;
 
     for line in output.lines() {
         let line = line.trim();
@@ -306,6 +310,7 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_actions = true;
             in_wins = false;
             in_risks = false;
+            in_decisions = false;
         } else if line == "END_ACTIONS" {
             in_actions = false;
             if !actions_buf.is_empty() {
@@ -315,14 +320,23 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             in_wins = true;
             in_actions = false;
             in_risks = false;
+            in_decisions = false;
         } else if line == "END_WINS" {
             in_wins = false;
         } else if line == "RISKS:" {
             in_risks = true;
             in_actions = false;
             in_wins = false;
+            in_decisions = false;
         } else if line == "END_RISKS" {
             in_risks = false;
+        } else if line == "DECISIONS:" {
+            in_decisions = true;
+            in_actions = false;
+            in_wins = false;
+            in_risks = false;
+        } else if line == "END_DECISIONS" {
+            in_decisions = false;
         } else if in_actions && line.starts_with("- ") {
             if !actions_buf.is_empty() {
                 actions_buf.push('\n');
@@ -332,6 +346,8 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             wins.push(line.strip_prefix("- ").unwrap().to_string());
         } else if in_risks && line.starts_with("- ") {
             risks.push(line.strip_prefix("- ").unwrap().to_string());
+        } else if in_decisions && line.starts_with("- ") {
+            decisions.push(line.strip_prefix("- ").unwrap().to_string());
         }
     }
 
@@ -348,13 +364,14 @@ fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         actions_text,
         wins,
         risks,
+        decisions,
     }
 }
 
 /// Extract actions from AI-generated action text and sync to SQLite.
 ///
 /// Parses inline metadata tokens from each action line (priority, @account, etc.).
-fn extract_actions_from_ai(
+pub fn extract_actions_from_ai(
     actions_text: &str,
     source_filename: &str,
     db: &ActionDb,

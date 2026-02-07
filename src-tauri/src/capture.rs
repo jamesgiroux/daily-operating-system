@@ -263,12 +263,108 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 PromptState::TranscriptDetected { filename } => {
-                    // Transcript found — the inbox pipeline will handle it.
-                    log::debug!(
-                        "Removing prompt for '{}' — transcript '{}' will be processed via inbox",
-                        prompt.meeting.title,
-                        filename
-                    );
+                    // Transcript found — process with full meeting context (ADR-0044)
+                    if let Some(ref ws) = workspace_path {
+                        let file_path =
+                            Path::new(ws).join("_inbox").join(filename.as_str());
+
+                        // Check immutability before processing
+                        let already_processed = state
+                            .transcript_processed
+                            .lock()
+                            .map(|g| g.contains_key(&prompt.meeting.id))
+                            .unwrap_or(false);
+
+                        if already_processed {
+                            log::info!(
+                                "Transcript for '{}' already processed — skipping",
+                                prompt.meeting.title
+                            );
+                        } else {
+                            log::info!(
+                                "Auto-processing transcript '{}' for '{}' with meeting context",
+                                filename,
+                                prompt.meeting.title
+                            );
+
+                            let profile = config
+                                .as_ref()
+                                .map(|c| c.profile.clone())
+                                .unwrap_or_else(|| "customer-success".to_string());
+
+                            let db_guard = state.db.lock().ok();
+                            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+
+                            let result =
+                                crate::processor::transcript::process_transcript(
+                                    Path::new(ws),
+                                    &file_path.display().to_string(),
+                                    &prompt.meeting,
+                                    db_ref,
+                                    &profile,
+                                );
+
+                            if result.status == "success" {
+                                // Record transcript
+                                let record = crate::types::TranscriptRecord {
+                                    meeting_id: prompt.meeting.id.clone(),
+                                    file_path: file_path.display().to_string(),
+                                    destination: result
+                                        .destination
+                                        .clone()
+                                        .unwrap_or_default(),
+                                    summary: result.summary.clone(),
+                                    processed_at: Utc::now().to_rfc3339(),
+                                };
+                                if let Ok(mut guard) =
+                                    state.transcript_processed.lock()
+                                {
+                                    guard.insert(
+                                        prompt.meeting.id.clone(),
+                                        record,
+                                    );
+                                    let _ = crate::state::save_transcript_records(
+                                        &guard,
+                                    );
+                                }
+
+                                // Mark as captured
+                                if let Ok(mut guard) =
+                                    state.capture_captured.lock()
+                                {
+                                    guard.insert(prompt.meeting.id.clone());
+                                }
+
+                                // Remove the source file from inbox (it's been routed)
+                                if file_path.exists() {
+                                    let _ = std::fs::remove_file(&file_path);
+                                }
+
+                                // Emit event for live frontend updates
+                                let outcome = build_auto_outcome(
+                                    &prompt.meeting.id,
+                                    &result,
+                                    &state,
+                                );
+                                let _ = app_handle
+                                    .emit("transcript-processed", &outcome);
+
+                                log::info!(
+                                    "Auto-processed transcript for '{}' — {} wins, {} risks, {} decisions",
+                                    prompt.meeting.title,
+                                    result.wins.len(),
+                                    result.risks.len(),
+                                    result.decisions.len(),
+                                );
+                            } else {
+                                log::warn!(
+                                    "Auto-processing transcript for '{}' failed: {}",
+                                    prompt.meeting.title,
+                                    result.message.unwrap_or_default()
+                                );
+                            }
+                        }
+                    }
                     to_remove.push(i);
                 }
             }
@@ -281,5 +377,40 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Clean up old pending prompts (> 2 hours old)
         pending_prompts.retain(|p| now - p.trigger_time < Duration::hours(2));
+    }
+}
+
+/// Build MeetingOutcomeData from an auto-processed transcript result.
+fn build_auto_outcome(
+    meeting_id: &str,
+    result: &crate::types::TranscriptResult,
+    state: &AppState,
+) -> crate::types::MeetingOutcomeData {
+    let actions = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
+        })
+        .unwrap_or_default();
+
+    let transcript_path = state
+        .transcript_processed
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));
+
+    crate::types::MeetingOutcomeData {
+        meeting_id: meeting_id.to_string(),
+        summary: result.summary.clone(),
+        wins: result.wins.clone(),
+        risks: result.risks.clone(),
+        decisions: result.decisions.clone(),
+        actions,
+        transcript_path,
+        processed_at: Some(Utc::now().to_rfc3339()),
     }
 }

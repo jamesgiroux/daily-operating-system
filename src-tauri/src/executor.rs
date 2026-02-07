@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::Utc;
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
@@ -132,6 +133,47 @@ impl Executor {
             recon.actions.completed_today,
             recon.flags.len(),
         );
+
+        // Step 1.5: Daily impact rollup (CS profile only, I36)
+        {
+            let profile = self
+                .state
+                .config
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.profile.clone()))
+                .unwrap_or_default();
+
+            if profile == "customer-success" {
+                if let Ok(db_guard) = self.state.db.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        match crate::workflow::impact_rollup::rollup_daily_impact(
+                            workspace,
+                            db,
+                            &recon.date,
+                        ) {
+                            Ok(r) if !r.skipped && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) => {
+                                log::info!(
+                                    "Impact rollup: {} wins, {} risks → {}",
+                                    r.wins_rolled_up,
+                                    r.risks_rolled_up,
+                                    r.file_path,
+                                );
+                            }
+                            Ok(r) if r.skipped => {
+                                log::info!("Impact rollup: skipped (already rolled up today)");
+                            }
+                            Ok(_) => {
+                                log::info!("Impact rollup: no captures to roll up");
+                            }
+                            Err(e) => {
+                                log::warn!("Impact rollup failed (non-fatal): {}", e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Step 2: Archive (move files, clean data/)
         let result = run_archive(workspace).await.map_err(|e| {
@@ -450,28 +492,60 @@ impl Executor {
         let _ = self.app_handle.emit("operation-delivered", "preps");
         log::info!("Today pipeline: preps delivered");
 
+        // Deliver emails (mechanical — instant)
+        let emails_data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
+            .unwrap_or_else(|e| {
+                log::warn!("Email delivery failed (non-fatal): {}", e);
+                json!({})
+            });
+        let _ = self.app_handle.emit("operation-delivered", "emails");
+        log::info!("Today pipeline: emails delivered");
+
         // Write manifest (partial: true — AI enrichment not yet done)
         crate::workflow::deliver::deliver_manifest(
             &directive,
             &schedule_data,
             &actions_data,
+            &emails_data,
             &prep_paths,
             &data_dir,
             true,
         )
         .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
 
-        // TODO (Chunk 3): AI enrichment for emails + briefing narrative
-        // When implemented:
-        //   1. spawn_claude("/email-enrich", context_file) → emails.json
-        //   2. spawn_claude("/briefing-narrative", context_file) → update schedule.json
-        //   3. Re-write manifest with partial: false
+        // --- AI enrichment (progressive, fault-tolerant) ---
+        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
+            started_at: Utc::now(),
+            phase: WorkflowPhase::Enriching,
+            execution_id: execution_id.to_string(),
+        });
 
-        // For now, mark manifest as complete (no AI ops to wait for)
+        // AI: Enrich emails (high-priority only)
+        if let Err(e) = crate::workflow::deliver::enrich_emails(
+            &data_dir,
+            &self.pty_manager,
+            &workspace,
+        ) {
+            log::warn!("Email enrichment failed (non-fatal): {}", e);
+        }
+        let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
+
+        // AI: Generate briefing narrative
+        if let Err(e) = crate::workflow::deliver::enrich_briefing(
+            &data_dir,
+            &self.pty_manager,
+            &workspace,
+        ) {
+            log::warn!("Briefing narrative failed (non-fatal): {}", e);
+        }
+        let _ = self.app_handle.emit("operation-delivered", "briefing");
+
+        // Final manifest (partial: false — all ops complete)
         crate::workflow::deliver::deliver_manifest(
             &directive,
             &schedule_data,
             &actions_data,
+            &emails_data,
             &prep_paths,
             &data_dir,
             false,

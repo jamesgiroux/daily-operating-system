@@ -6,8 +6,8 @@ use std::sync::Mutex;
 use chrono::{DateTime, Utc};
 
 use crate::types::{
-    CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, WeekPlanningState,
-    WorkflowId, WorkflowStatus,
+    CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, TranscriptRecord,
+    WeekPlanningState, WorkflowId, WorkflowStatus,
 };
 
 /// Maximum number of execution records to keep in memory
@@ -26,6 +26,8 @@ pub struct AppState {
     pub capture_dismissed: Mutex<std::collections::HashSet<String>>,
     pub capture_captured: Mutex<std::collections::HashSet<String>>,
     pub week_planning_state: Mutex<WeekPlanningState>,
+    /// Tracks processed transcripts by meeting_id for immutability (one transcript per meeting)
+    pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
 }
 
 impl AppState {
@@ -44,6 +46,9 @@ impl AppState {
         // Detect existing Google token on startup
         let google_auth = detect_google_auth();
 
+        // Load transcript records from disk
+        let transcript_processed = load_transcript_records().unwrap_or_default();
+
         Self {
             config: Mutex::new(config),
             workflow_status: Mutex::new(HashMap::new()),
@@ -55,6 +60,7 @@ impl AppState {
             capture_dismissed: Mutex::new(std::collections::HashSet::new()),
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             week_planning_state: Mutex::new(WeekPlanningState::default()),
+            transcript_processed: Mutex::new(transcript_processed),
         }
     }
 
@@ -201,6 +207,29 @@ fn load_execution_history() -> Result<Vec<ExecutionRecord>, String> {
         fs::read_to_string(&path).map_err(|e| format!("Failed to read history: {}", e))?;
 
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse history: {}", e))
+}
+
+/// Load transcript records from `~/.dailyos/transcript_records.json`.
+fn load_transcript_records() -> Result<HashMap<String, TranscriptRecord>, String> {
+    let path = get_state_dir()?.join("transcript_records.json");
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read transcript records: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse transcript records: {}", e))
+}
+
+/// Save transcript records to `~/.dailyos/transcript_records.json`.
+pub fn save_transcript_records(
+    records: &HashMap<String, TranscriptRecord>,
+) -> Result<(), String> {
+    let path = get_state_dir()?.join("transcript_records.json");
+    let content = serde_json::to_string_pretty(records)
+        .map_err(|e| format!("Serialize error: {}", e))?;
+    fs::write(&path, content).map_err(|e| format!("Write error: {}", e))?;
+    Ok(())
 }
 
 /// Reload configuration from disk
