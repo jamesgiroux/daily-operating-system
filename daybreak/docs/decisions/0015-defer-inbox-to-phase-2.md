@@ -1,7 +1,7 @@
 # ADR-0015: Defer inbox processing to Phase 2
 
 **Date:** 2026-02
-**Status:** Accepted
+**Status:** Superseded by [ADR-0036](0036-inbox-processing-in-phase-1.md)
 
 ## Context
 
