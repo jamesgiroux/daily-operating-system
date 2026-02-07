@@ -9,8 +9,8 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
-  Data Trust:          I23, I33        — Actions dedup, outcomes resurface in preps
-  Inbox Pipeline:      I31, I32        — Rich enrichment matching CLI capabilities
+  Data Trust:          I23, I32, I33   — Actions dedup, account intelligence, outcomes in preps
+  Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
   Archive & Reconcil:  I36             — Impact rollups (ADR-0040, ADR-0041)
   ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
@@ -26,7 +26,7 @@ Active issues, known risks, assumptions, and dependencies.
 ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs. Stable content-hash IDs + title-based dedup guard address the ID instability side; the SQLite pre-check is separate future work.
 
 **I33: Captured wins/risks don't resurface in meeting preps**
-Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. Depends on account linking (captured outcome → account_id → prep lookup). Blocked by account registry (I27 extension system).
+Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. With ADR-0030, the `meeting:prep` atomic operation is the natural place for this — it already knows the account from calendar data, so it can query `captures` for recent wins/risks by account_id. Needs: (1) account_id populated on captures rows, (2) `meeting:prep` queries captures as part of context gathering.
 
 ### Open — Medium Priority
 
@@ -49,7 +49,7 @@ Profile selector at first launch says "You can change this later in Settings" bu
 Settings shows raw cron expressions. Needs: time picker ("Briefing time: 6:00 AM"), writes cron to config, hides syntax. Power users can still edit JSON directly.
 
 **I18: Google API calls not coordinated across callers**
-`prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. Needs shared API cache with TTL. Not blocking MVP.
+`prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. Needs shared API cache with TTL. ADR-0030 (composable operations) makes this natural — `calendar:fetch` becomes a shared operation instead of each script calling the API independently. Not blocking MVP.
 
 **I20: No standalone email refresh**
 Emails only update with full briefing. A lightweight email-only pipeline could be valuable but raises partial-refresh semantics questions. ADR-0006 determinism boundary still applies.
@@ -76,7 +76,7 @@ ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and s
 CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
 
 **I32: Inbox processor doesn't update account intelligence**
-Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. Depends on I30 (need rich extraction first).
+Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. I30 (rich metadata extraction) is resolved — enrichment now populates account, priority, and context fields. This is the write side; `meeting:prep` (ADR-0030) is the read side. Next step: a post-enrichment hook that upserts wins/risks/last-contact into captures or account tables keyed by account_id.
 
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.

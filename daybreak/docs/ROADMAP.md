@@ -94,14 +94,14 @@ Code paths that are built but not tested end-to-end:
 |---------|-------------|-------------|
 | Calendar polling | How does real-time calendar data layer over daily briefing? | ADR-0032 |
 | Post-meeting capture | What UI? What persists where? How does it feed back into next briefing? | ADR-0023, I17 |
-| Weekly planning | Interactive or generated? What does "skipping" look like? | ADR-0030 |
+| Weekly planning | Composable operations: /week orchestrates prep generation, /today assembles daily view | ADR-0030 |
 
 ### What "Done" Looks Like
 
 - [ ] System knows when meetings end (calendar polling)
 - [ ] Post-meeting prompt appears at natural moment, dismissible without guilt
 - [ ] Captured outcomes appear in next day's briefing (I17)
-- [ ] Weekly prep generated with daily refresh (ADR-0030)
+- [ ] Workflow decomposition: /week generates preps, /today assembles daily view (ADR-0030)
 - [ ] Skipping weekly planning has sensible defaults (zero-guilt)
 
 ---

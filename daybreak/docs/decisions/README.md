@@ -50,12 +50,12 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0027](0027-mcp-dual-mode.md) | MCP integration: dual-mode server + client | Accepted |
 | [0028](0028-structured-document-schemas.md) | Structured document schemas (JSON-first templates) | Accepted |
 | [0029](0029-three-tier-email-priority.md) | Three-tier email priority with AI-enriched context | Accepted |
-| [0030](0030-weekly-prep-with-daily-refresh.md) | Weekly prep generation with daily refresh | Proposed |
+| [0030](0030-weekly-prep-with-daily-refresh.md) | Composable workflow operations | Accepted |
 | [0031](0031-actions-source-of-truth.md) | Actions: SQLite as working store, markdown as archive | Accepted |
 | [0032](0032-calendar-source-of-truth.md) | Calendar source of truth: hybrid overlay | Accepted |
 | [0033](0033-meeting-entity-unification.md) | Meeting entity unification | Accepted |
 | [0034](0034-adaptive-dashboard.md) | Adaptive dashboard: density-aware layout | Proposed |
-| [0035](0035-incremental-prep-generation.md) | Incremental prep generation for new meetings | Proposed |
+| [0035](0035-incremental-prep-generation.md) | Incremental prep generation for new meetings | Superseded by [0030](0030-weekly-prep-with-daily-refresh.md) |
 | [0036](0036-inbox-processing-in-phase-1.md) | Inbox processing implemented in Phase 1 | Accepted |
 | [0037](0037-post-meeting-capture-in-phase-1.md) | Post-meeting capture implemented in Phase 1 | Accepted |
 | [0038](0038-cs-first-development.md) | CS-first development focus | Accepted |
