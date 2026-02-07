@@ -10,8 +10,8 @@ Active issues, known risks, assumptions, and dependencies.
 
 <!-- Thematic grouping for orientation:
   Data Trust:          I23, I33        — Actions dedup, outcomes resurface in preps
-  Inbox Pipeline:      I30, I31, I32   — Rich enrichment matching CLI capabilities
-  Archive & Reconcil:  I34, I36        — End-of-day cleanup, impact rollups (ADR-0040, ADR-0041)
+  Inbox Pipeline:      I31, I32        — Rich enrichment matching CLI capabilities
+  Archive & Reconcil:  I36             — Impact rollups (ADR-0040, ADR-0041)
   ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
   Email Pipeline:      I20, I21        — Three-tier email promise (ADR-0029)
@@ -26,7 +26,7 @@ Active issues, known risks, assumptions, and dependencies.
 ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs. Stable content-hash IDs + title-based dedup guard address the ID instability side; the SQLite pre-check is separate future work.
 
 **I33: Captured wins/risks don't resurface in meeting preps**
-Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. Depends on account linking (captured outcome → account_id → prep lookup). Blocked by I30 (rich metadata extraction) and account registry (I27 extension system).
+Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. Depends on account linking (captured outcome → account_id → prep lookup). Blocked by account registry (I27 extension system).
 
 ### Open — Medium Priority
 
@@ -72,17 +72,11 @@ ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop
 **I29: Structured document schemas not implemented**
 ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and structured documents (`dashboard.json` + `dashboard.md` pattern). Briefing JSON pattern exists as a template. Account dashboard UI is a stub. No schema validation system. Blocked by extension architecture (I27) for CS-specific schemas.
 
-**I30: Inbox action extraction lacks rich metadata**
-Owner, due date, priority, context fields exist in SQLite schema but inbox processor never populates them. AI enrichment prompt (`enrich.rs`) should extract these when processing transcripts and meeting notes. High impact for closing I17's feedback loop.
-
 **I31: No transcript summarization in inbox processor**
 CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
 
 **I32: Inbox processor doesn't update account intelligence**
 Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. Depends on I30 (need rich extraction first).
-
-**I34: Archive workflow lacks end-of-day reconciliation**
-ADR-0040 accepts that the archive workflow should gain mechanical reconciliation steps from `/wrap`: (1) mark completed meetings as "Done" in week overview, (2) check transcript processing status for recorded meetings, (3) generate `day-summary.json` in the archive directory, (4) write `next-morning-flags.json` for unresolved items to surface in tomorrow's briefing. All deterministic Rust operations — no AI. Currently archive only does file moves (ADR-0017).
 
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
@@ -127,6 +121,10 @@ When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet
 **I22: Action completion doesn't write back to source markdown** — Resolved. `sync_completion_to_markdown()` in `hooks.rs` runs during post-enrichment hooks. Queries recently completed actions with `source_label`, writes `[x]` markers back to source files. Lazy writeback is acceptable — SQLite is working store, markdown is archive.
 
 **I24: schedule.json meeting IDs are local slugs, not Google Calendar event IDs** — Resolved. Added `calendarEventId` field alongside the local slug `id` in both `schedule.json` and `preps/*.json`. Local slug preserved for routing/filenames; calendar event ID available for cross-source matching (ADR-0032, ADR-0033).
+
+**I30: Inbox action extraction lacks rich metadata** — Resolved. Added `processor/metadata.rs` with regex-based extraction of priority (`P1`/`P2`/`P3`), `@Account`, `due: YYYY-MM-DD`, `#context`, and waiting/blocked status. Both inbox (Path A) and AI enrichment (Path B) paths now populate all `DbAction` fields. AI prompt enhanced with metadata token guidance. Title-based dedup widened to prevent duplicate pending actions. Waiting actions now visible in dashboard query.
+
+**I34: Archive workflow lacks end-of-day reconciliation** — Resolved. Added `workflow/reconcile.rs` with mechanical reconciliation that runs before archive: reads schedule.json to identify completed meetings, checks transcript status in `Accounts/` and `_inbox/`, computes action stats from SQLite, writes `day-summary.json` to archive directory and `next-morning-flags.json` to `_today/` for tomorrow's briefing. Pure Rust, no AI (ADR-0040).
 
 ---
 
