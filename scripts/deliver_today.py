@@ -620,6 +620,7 @@ def build_schedule(
 
         meeting_obj: Dict[str, Any] = {
             "id": meeting_id,
+            "calendarEventId": event.get("id"),
             "time": format_time_display(start),
             "title": event.get("summary", "No title"),
             "type": meeting_type,
@@ -958,6 +959,7 @@ def build_prep(
 
     prep: Dict[str, Any] = {
         "meetingId": meeting_id,
+        "calendarEventId": meeting.get("event_id") or meeting.get("id"),
         "title": meeting.get("title", meeting.get("summary", "Meeting")),
         "type": meeting_type,
     }
