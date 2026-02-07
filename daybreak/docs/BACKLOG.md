@@ -9,12 +9,14 @@ Active issues, known risks, assumptions, and dependencies.
 ## Issues
 
 <!-- Thematic grouping for orientation:
-  Data Trust:          I23, I32, I33   — Actions dedup, account intelligence, outcomes in preps
+  Data Trust:          I32             — Account intelligence writeback
+  Composable Ops:      I38, I39, I41   — Deliver decomp, feature toggles, reactive prep (ADR-0030)
+  CS Extension:        I40             — daily-csm CLI parity (blocked by I27)
   Inbox Pipeline:      I31             — Rich enrichment matching CLI capabilities
   Archive & Reconcil:  I36             — Impact rollups (ADR-0040, ADR-0041)
   ProDev Extension:    I35             — Personal impact, career narrative (ADR-0041)
   Settings Self-Serve: I7, I15, I16    — User can configure without editing JSON
-  Email Pipeline:      I20, I21        — Three-tier email promise (ADR-0029)
+  Email Pipeline:      I18, I20, I21   — API coordination, three-tier email (ADR-0029)
   UI Consistency:      I25, I9, I37    — Badge unification, stub pages, density-aware overview
   First-Run & Ship:    I13, I8         — Onboarding, distribution
   Infrastructure:      I26, I27, I28, I29 — Extension/MCP/schema systems
@@ -22,11 +24,7 @@ Active issues, known risks, assumptions, and dependencies.
 
 ### Open — High Priority
 
-**I23: No cross-briefing action deduplication in prepare_today.py**
-ADR-0031 notes that `prepare_today.py` should check SQLite before extracting actions from markdown, to avoid re-extracting already-indexed actions. Currently extracts everything and relies on `upsert_action_if_not_completed()` to not overwrite. Works but wasteful, and same action from different sources can create duplicate entries with different IDs. Stable content-hash IDs + title-based dedup guard address the ID instability side; the SQLite pre-check is separate future work.
-
-**I33: Captured wins/risks don't resurface in meeting preps**
-Post-meeting capture stores wins, risks, and context in SQLite, but none of it appears in the next prep for that account. When you meet with Acme on Monday and capture a risk, Tuesday's Acme prep should reference it. With ADR-0030, the `meeting:prep` atomic operation is the natural place for this — it already knows the account from calendar data, so it can query `captures` for recent wins/risks by account_id. Needs: (1) account_id populated on captures rows, (2) `meeting:prep` queries captures as part of context gathering.
+(None currently)
 
 ### Open — Medium Priority
 
@@ -49,19 +47,31 @@ Profile selector at first launch says "You can change this later in Settings" bu
 Settings shows raw cron expressions. Needs: time picker ("Briefing time: 6:00 AM"), writes cron to config, hides syntax. Power users can still edit JSON directly.
 
 **I18: Google API calls not coordinated across callers**
-`prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. Needs shared API cache with TTL. ADR-0030 (composable operations) makes this natural — `calendar:fetch` becomes a shared operation instead of each script calling the API independently. Not blocking MVP.
+`prepare_today.py`, calendar poller, and manual refresh all hit Google independently. No cache or coordination. ADR-0030 decomposition complete — `ops/calendar_fetch.py` is now the shared operation for all callers. Remaining work: add a cache/TTL layer so concurrent callers (e.g., calendar poller + manual refresh) reuse recent responses instead of hitting Google twice. Not blocking MVP.
+
+**I38: Deliver script decomposition**
+`deliver_today.py` and `deliver_week.py` remain monolithic. The `ops/` decomposition (ADR-0030) is now stable — prerequisite met. Evaluate whether Phase 3 should consume per-operation outputs rather than monolithic directive. Not blocking; current deliver scripts work with the richer directive unchanged.
+
+**I39: Feature toggle runtime implementation**
+ADR-0039 accepted the feature toggle architecture but no code implements it. Each atomic operation from ADR-0030 should be individually toggleable (e.g., disable `email:fetch` if Gmail not connected, skip `meeting:prep` for personal meetings). Needs: toggle storage in `config.json`, runtime check in orchestrators, UI in Settings.
+
+**I41: Reactive meeting:prep — wire calendar polling to prep pipeline**
+`prepare_meeting_prep.py` exists and generates single-meeting directives, but nothing in Rust triggers it. When `calendar_merge.rs` detects a `New` meeting: (a) check if a prep directive already exists for that meeting, (b) if not, execute `prepare_meeting_prep.py` via `executor.rs` (Phase 1 → Phase 2 → write `preps/{id}.json`), (c) emit `prep-ready` event for frontend refresh. Small scope — the Python script and Rust `get_captures_for_account()` are ready. ADR-0030 Phase 7b.
+
+**I40: CS extension — daily-csm CLI feature parity**
+The daily-csm CLI skill defines CS workflows not yet in the app. Consolidated from 5 capabilities: Clay MCP contact lookup (enriched attendee context), Google Sheets sync (Last Engagement Date update), portfolio triage (health-based account prioritization), dashboard write operations (dashboard refresh/update), renewal countdown (days-to-renewal in prep context). All blocked by extension registry (I27). Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
 
 **I20: No standalone email refresh**
-Emails only update with full briefing. A lightweight email-only pipeline could be valuable but raises partial-refresh semantics questions. ADR-0006 determinism boundary still applies.
+Emails only update with full briefing. ADR-0030 decomposition makes this more feasible — `ops/email_fetch.py` is now a standalone callable operation. Remaining work: a thin orchestrator or Rust command that invokes `email_fetch` independently and writes `emails.json`. Still raises partial-refresh semantics questions; ADR-0006 determinism boundary still applies.
 
 **I21: FYI emails may never appear due to classification defaults**
-`classify_email_priority()` defaults to "medium" (line 712). Only newsletters, automated senders, and GitHub notifications trigger "low." If a user's inbox is mostly customer + internal emails, the FYI section is permanently empty — not wrong, but means the three-tier promise (ADR-0029) is invisible. Consider: expanding low signals (marketing domains, bulk senders), or showing an explicit "0 FYI" indicator so users know the tier exists.
+`classify_email_priority()` in `ops/email_fetch.py` defaults to "medium." Only newsletters, automated senders, and GitHub notifications trigger "low." If a user's inbox is mostly customer + internal emails, the FYI section is permanently empty — not wrong, but means the three-tier promise (ADR-0029) is invisible. Consider: expanding low signals (marketing domains, bulk senders), or showing an explicit "0 FYI" indicator so users know the tier exists.
 
 **I25: Unify meeting badge/status rendering**
 MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overlayStatus, type) each with their own conditional. Consolidate into a computed MeetingDisplayState. Relates to ADR-0033.
 
 **I26: Web search for unknown external meetings not implemented**
-ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `prepare_today.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
+ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `ops/meeting_prep.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
 
 **I27: Extension registry and schema system not implemented**
 ADR-0026 accepts extension architecture (profile-activated modules with post-enrichment hooks, data schemas, UI contributions). Current state: profile field exists, hook execution checks profile, UI route stubs exist. Missing: formal extension registration mechanism, extension schemas, template system. Phase 4 per ADR. Profile-specific classification depends on this. ADR-0039 adds feature toggle granularity within extensions.
@@ -76,7 +86,7 @@ ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and s
 CLI generates customer/internal meeting summaries from transcripts. App's AI enrichment gives a one-line summary only. Needs customer/internal summary templates in the enrichment prompt.
 
 **I32: Inbox processor doesn't update account intelligence**
-Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. I30 (rich metadata extraction) is resolved — enrichment now populates account, priority, and context fields. This is the write side; `meeting:prep` (ADR-0030) is the read side. Next step: a post-enrichment hook that upserts wins/risks/last-contact into captures or account tables keyed by account_id.
+Post-enrichment hooks framework exists (ADR-0026) but no CS hook writes wins/risks/last-contact to account profiles. I30 (rich metadata extraction) is resolved — enrichment now populates account, priority, and context fields. This is the write side; the read side (`ops/meeting_prep.py` querying captures + actions per account) is now implemented via ADR-0030. Next step: a post-enrichment hook that upserts wins/risks/last-contact into captures or account tables keyed by account_id.
 
 **I35: ProDev extension — personal impact and career narrative**
 ADR-0026 listed ProDev as an optional extension ("coaching, two-sided impact, leadership metrics") but capabilities were never documented. ADR-0041 establishes that Personal Impact capture is ProDev territory: daily end-of-day reflection prompt ("What did you move forward today?"), weekly narrative summary, monthly/quarterly rollup for performance reviews. Distinct from CS outcomes (which are captured via transcripts and post-meeting prompts). Blocked by extension architecture (I27). `/wrap`'s "Personal Impact" section is the reference implementation.
@@ -128,6 +138,10 @@ Busy days (8+ meetings) and light days (0-2 meetings) get the same generic overv
 **I30: Inbox action extraction lacks rich metadata** — Resolved. Added `processor/metadata.rs` with regex-based extraction of priority (`P1`/`P2`/`P3`), `@Account`, `due: YYYY-MM-DD`, `#context`, and waiting/blocked status. Both inbox (Path A) and AI enrichment (Path B) paths now populate all `DbAction` fields. AI prompt enhanced with metadata token guidance. Title-based dedup widened to prevent duplicate pending actions. Waiting actions now visible in dashboard query.
 
 **I34: Archive workflow lacks end-of-day reconciliation** — Resolved. Added `workflow/reconcile.rs` with mechanical reconciliation that runs before archive: reads schedule.json to identify completed meetings, checks transcript status in `Accounts/` and `_inbox/`, computes action stats from SQLite, writes `day-summary.json` to archive directory and `next-morning-flags.json` to `_today/` for tomorrow's briefing. Pure Rust, no AI (ADR-0040).
+
+**I23: No cross-briefing action deduplication in prepare_today.py** — Resolved. ADR-0030 `action_parse.py` implements SQLite pre-check: `_load_existing_titles()` queries all action titles from SQLite before markdown parsing, skipping any titles that already exist (completed or pending). Stable content-hash IDs in `id_gen.py` address ID instability.
+
+**I33: Captured wins/risks don't resurface in meeting preps** — Resolved. ADR-0030 `meeting_prep.py` queries `captures` table via `_get_captures_for_account()` for recent wins/risks by account_id (14-day lookback). Also queries open actions and meeting history per account. Rust `db.rs` gained `get_captures_for_account()` method with test.
 
 ---
 
