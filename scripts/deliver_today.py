@@ -698,20 +698,23 @@ def build_actions(
     waiting_on = raw_actions.get("waiting_on", [])
 
     actions_list: List[Dict[str, Any]] = []
-    seen_ids: set = set()
 
-    def _make_id(prefix: str, index: int, title: str) -> str:
-        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:30]
-        aid = f"{prefix}-{index:03d}-{slug}"
-        if aid in seen_ids:
-            aid = f"{aid}-dup{index}"
-        seen_ids.add(aid)
-        return aid
+    def _make_id(prefix: str, title: str, account: str = "", due: str = "") -> str:
+        """Generate a content-stable action ID.
+
+        Uses a hash of title + account + due date so the same action always
+        gets the same ID regardless of its position in the list.  This
+        prevents zombie duplicates when surrounding actions change order
+        between briefing runs (I23).
+        """
+        key = f"{title.lower().strip()}|{account.lower().strip()}|{due.strip()}"
+        h = hashlib.sha256(key.encode()).hexdigest()[:10]
+        return f"{prefix}-{h}"
 
     # Overdue -> P1, pending, isOverdue = true
-    for i, task in enumerate(overdue):
+    for task in overdue:
         actions_list.append({
-            "id": _make_id("overdue", i, task.get("title", "")),
+            "id": _make_id("overdue", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
             "title": task.get("title", "Unknown"),
             "account": task.get("account"),
             "priority": "P1",
@@ -724,9 +727,9 @@ def build_actions(
         })
 
     # Due today -> P1, pending
-    for i, task in enumerate(due_today):
+    for task in due_today:
         actions_list.append({
-            "id": _make_id("today", i, task.get("title", "")),
+            "id": _make_id("today", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
             "title": task.get("title", "Unknown"),
             "account": task.get("account"),
             "priority": "P1",
@@ -738,9 +741,9 @@ def build_actions(
         })
 
     # Due this week -> P2, pending
-    for i, task in enumerate(due_this_week):
+    for task in due_this_week:
         actions_list.append({
-            "id": _make_id("week", i, task.get("title", "")),
+            "id": _make_id("week", task.get("title", ""), task.get("account", ""), task.get("due_date") or task.get("due", "")),
             "title": task.get("title", "Unknown"),
             "account": task.get("account"),
             "priority": "P2",
@@ -752,9 +755,9 @@ def build_actions(
         })
 
     # Waiting on -> P2, waiting
-    for i, item in enumerate(waiting_on):
+    for item in waiting_on:
         actions_list.append({
-            "id": _make_id("waiting", i, item.get("what", "")),
+            "id": _make_id("waiting", item.get("what", ""), item.get("who", "")),
             "title": f"Waiting: {item.get('what', 'Unknown')}",
             "account": item.get("who"),
             "priority": "P2",
