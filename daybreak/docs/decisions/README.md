@@ -54,7 +54,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0031](0031-actions-source-of-truth.md) | Actions: SQLite as working store, markdown as archive | Accepted |
 | [0032](0032-calendar-source-of-truth.md) | Calendar source of truth: hybrid overlay | Accepted |
 | [0033](0033-meeting-entity-unification.md) | Meeting entity unification | Accepted |
-| [0034](0034-adaptive-dashboard.md) | Adaptive dashboard: density-aware layout | Proposed |
+| [0034](0034-adaptive-dashboard.md) | Adaptive dashboard: density-aware layout | Deprecated (backlog I37) |
 | [0035](0035-incremental-prep-generation.md) | Incremental prep generation for new meetings | Superseded by [0030](0030-weekly-prep-with-daily-refresh.md) |
 | [0036](0036-inbox-processing-in-phase-1.md) | Inbox processing implemented in Phase 1 | Accepted |
 | [0037](0037-post-meeting-capture-in-phase-1.md) | Post-meeting capture implemented in Phase 1 | Accepted |
