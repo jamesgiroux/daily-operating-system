@@ -2,6 +2,7 @@ mod calendar_merge;
 mod capture;
 mod commands;
 mod db;
+pub mod entity;
 mod error;
 mod executor;
 mod google;
@@ -34,6 +35,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
@@ -191,6 +193,11 @@ pub fn run() {
             commands::submit_focus_blocks,
             commands::skip_week_planning,
             commands::get_focus_data,
+            // I44/I45: Transcript Intake & Meeting Outcomes
+            commands::attach_meeting_transcript,
+            commands::get_meeting_outcomes,
+            commands::update_capture,
+            commands::update_action_priority,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

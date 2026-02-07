@@ -865,6 +865,64 @@ pub struct CapturedAction {
 }
 
 // =============================================================================
+// Transcript Processing Types (I44 / ADR-0044)
+// =============================================================================
+
+/// Result of transcript processing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptResult {
+    pub status: String, // "success" | "error"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    #[serde(default)]
+    pub wins: Vec<String>,
+    #[serde(default)]
+    pub risks: Vec<String>,
+    #[serde(default)]
+    pub decisions: Vec<String>,
+    #[serde(default)]
+    pub actions: Vec<CapturedAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Outcomes for a meeting (query response)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingOutcomeData {
+    pub meeting_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub wins: Vec<String>,
+    #[serde(default)]
+    pub risks: Vec<String>,
+    #[serde(default)]
+    pub decisions: Vec<String>,
+    #[serde(default)]
+    pub actions: Vec<crate::db::DbAction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processed_at: Option<String>,
+}
+
+/// Persisted record of a processed transcript (for immutability tracking)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptRecord {
+    pub meeting_id: String,
+    pub file_path: String,
+    pub destination: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    pub processed_at: String,
+}
+
+// =============================================================================
 // Weekly Planning Types (Phase 3C)
 // =============================================================================
 

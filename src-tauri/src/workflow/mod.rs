@@ -7,6 +7,7 @@
 
 pub mod archive;
 pub mod deliver;
+pub mod impact_rollup;
 pub mod operations;
 pub mod reconcile;
 pub mod today;
