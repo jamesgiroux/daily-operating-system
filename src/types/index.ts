@@ -42,6 +42,8 @@ export interface SourceReference {
   lastUpdated?: string;
 }
 
+export type OverlayStatus = "enriched" | "cancelled" | "new" | "briefing_only";
+
 export interface Meeting {
   id: string;
   calendarEventId?: string;
@@ -56,6 +58,8 @@ export interface Meeting {
   prepFile?: string;
   /** Whether this meeting has a dedicated prep file */
   hasPrep: boolean;
+  /** Calendar overlay status (ADR-0032) */
+  overlayStatus?: OverlayStatus;
 }
 
 export interface MeetingPrep {

@@ -1,3 +1,4 @@
+mod calendar_merge;
 mod capture;
 mod commands;
 mod db;

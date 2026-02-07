@@ -39,11 +39,15 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
   // Determine which briefing meeting is "current" by checking live calendar
   function isLive(meeting: Meeting): boolean {
     if (!currentMeeting) return false;
+    // Prefer calendarEventId match (ADR-0032)
+    if (meeting.calendarEventId && meeting.calendarEventId === currentMeeting.id) return true;
     return (
       meeting.title === currentMeeting.title ||
       meeting.id === currentMeeting.id
     );
   }
+
+  const activeMeetings = meetings.filter(m => m.overlayStatus !== "cancelled");
 
   return (
     <div className="space-y-6">
@@ -67,7 +71,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
             {formatNowTime(now)}
           </span>
           <span className="text-sm text-muted-foreground">
-            {meetings.length} meeting{meetings.length !== 1 ? "s" : ""}
+            {activeMeetings.length} meeting{activeMeetings.length !== 1 ? "s" : ""}
           </span>
         </div>
       </div>
@@ -79,6 +83,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
         <div className="space-y-6">
           {meetings.map((meeting, index) => {
             const live = isLive(meeting);
+            const isCancelled = meeting.overlayStatus === "cancelled";
             return (
               <div
                 key={meeting.id}
@@ -98,9 +103,11 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
                 <div
                   className={cn(
                     "absolute left-0 top-5 size-3.5 rounded-full border-2 border-background",
-                    dotColors[meeting.type] ?? "bg-muted-foreground/50",
-                    (live || meeting.isCurrent) && "ring-2 ring-primary/50",
-                    live && "animate-pulse"
+                    isCancelled
+                      ? "bg-muted-foreground/30"
+                      : (dotColors[meeting.type] ?? "bg-muted-foreground/50"),
+                    !isCancelled && (live || meeting.isCurrent) && "ring-2 ring-primary/50",
+                    !isCancelled && live && "animate-pulse"
                   )}
                 />
 

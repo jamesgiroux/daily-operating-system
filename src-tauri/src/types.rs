@@ -274,6 +274,16 @@ pub struct DayOverview {
     pub focus: Option<String>,
 }
 
+/// Calendar overlay status (ADR-0032: hybrid overlay)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayStatus {
+    Enriched,     // In both: live timing + briefing enrichment
+    Cancelled,    // In briefing only: meeting removed from calendar
+    New,          // In live only: no prep available
+    BriefingOnly, // No live data (Google not connected)
+}
+
 /// Meeting type classification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -362,6 +372,9 @@ pub struct Meeting {
     pub prep_file: Option<String>,
     /// Whether this meeting has a dedicated prep file
     pub has_prep: bool,
+    /// Calendar overlay status (ADR-0032)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overlay_status: Option<OverlayStatus>,
 }
 
 /// Action priority level
