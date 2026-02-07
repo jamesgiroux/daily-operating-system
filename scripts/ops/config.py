@@ -73,7 +73,41 @@ LOW_PRIORITY_SIGNALS = (
     "noreply",
     "no-reply",
     "unsubscribe",
+    "marketing",
+    "promo",
+    "promotions",
+    "info@",
+    "updates@",
+    "news@",
+    "do-not-reply",
+    "donotreply",
+    "notify",
+    "mailer-daemon",
 )
+
+# Bulk/marketing sender domains (I21: FYI classification expansion)
+BULK_SENDER_DOMAINS = frozenset({
+    "mailchimp.com",
+    "sendgrid.net",
+    "mandrillapp.com",
+    "hubspot.com",
+    "marketo.com",
+    "pardot.com",
+    "intercom.io",
+    "customer.io",
+    "mailgun.org",
+    "postmarkapp.com",
+    "amazonses.com",
+})
+
+# Noreply local-part patterns (I21)
+NOREPLY_LOCAL_PARTS = frozenset({
+    "noreply",
+    "no-reply",
+    "donotreply",
+    "do-not-reply",
+    "mailer-daemon",
+})
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -206,11 +240,25 @@ def build_account_domain_hints(workspace: Path) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# Google API: authentication
+# Google API: authentication (I18: per-process credential + service caching)
 # ---------------------------------------------------------------------------
 
+_cached_credentials: Any | None = None
+_cached_services: dict[str, Any] = {}
+
+
 def build_google_credentials() -> Any | None:
-    """Load and refresh Google OAuth2 credentials, or return None."""
+    """Load and refresh Google OAuth2 credentials, or return None.
+
+    Caches credentials within the process to avoid redundant token
+    reads/refreshes when prepare_today.py calls both calendar and Gmail.
+    """
+    global _cached_credentials
+
+    # Return cached if still valid
+    if _cached_credentials is not None and _cached_credentials.valid:
+        return _cached_credentials
+
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
@@ -241,32 +289,49 @@ def build_google_credentials() -> Any | None:
         _warn("Google credentials are invalid. Google data will be empty.")
         return None
 
+    _cached_credentials = creds
     return creds
 
 
 def build_calendar_service() -> Any | None:
-    """Return an authenticated Google Calendar API service, or None."""
+    """Return an authenticated Google Calendar API service, or None.
+
+    Cached per-process (I18).
+    """
+    if "calendar" in _cached_services:
+        return _cached_services["calendar"]
+
     creds = build_google_credentials()
     if creds is None:
         return None
 
     try:
         from googleapiclient.discovery import build
-        return build("calendar", "v3", credentials=creds, cache_discovery=False)
+        svc = build("calendar", "v3", credentials=creds, cache_discovery=False)
+        _cached_services["calendar"] = svc
+        return svc
     except Exception as exc:
         _warn(f"Calendar service build failed: {exc}")
         return None
 
 
 def build_gmail_service() -> Any | None:
-    """Return an authenticated Gmail API service, or None."""
+    """Return an authenticated Gmail API service, or None.
+
+    Cached per-process (I18).
+    """
+    if "gmail" in _cached_services:
+        return _cached_services["gmail"]
+
     creds = build_google_credentials()
     if creds is None:
         return None
 
     try:
         from googleapiclient.discovery import build
-        return build("gmail", "v1", credentials=creds, cache_discovery=False)
+        svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
+        _cached_services["gmail"] = svc
+        return svc
     except Exception as exc:
         _warn(f"Gmail service build failed: {exc}")
         return None

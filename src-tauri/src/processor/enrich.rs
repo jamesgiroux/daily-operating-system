@@ -207,6 +207,9 @@ pub fn enrich_file(
 }
 
 /// Build the prompt for Claude Code enrichment.
+///
+/// Detects transcript-like content and uses a richer prompt with DISCUSSION
+/// section for transcript summarization (I31).
 fn build_enrichment_prompt(filename: &str, content: &str) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
@@ -220,13 +223,21 @@ fn build_enrichment_prompt(filename: &str, content: &str) -> String {
         content
     };
 
+    let is_transcript = detect_transcript(filename, truncated);
+
+    let summary_instruction = if is_transcript {
+        "SUMMARY: <2-3 sentence executive summary of the discussion and key outcomes>\nDISCUSSION:\n- <key topic 1: what was discussed and decided>\n- <key topic 2: what was discussed and decided>\nEND_DISCUSSION"
+    } else {
+        "SUMMARY: <one-line summary>"
+    };
+
     format!(
         r#"Analyze this inbox file and respond in exactly this format:
 
 FILE_TYPE: <one of: meeting_notes, account_update, action_items, meeting_context, general>
 ACCOUNT: <account name if relevant, or NONE>
 MEETING: <meeting name if relevant, or NONE>
-SUMMARY: <one-line summary>
+{summary_instruction}
 ACTIONS:
 - <action with optional inline metadata>
 END_ACTIONS
@@ -236,6 +247,9 @@ END_WINS
 RISKS:
 - <risk, concern, or potential issue>
 END_RISKS
+DECISIONS:
+- <key decision made during discussion>
+END_DECISIONS
 
 Rules for actions:
 - Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
@@ -253,12 +267,81 @@ Rules for wins/risks:
 - Keep each item to one concise sentence
 - If none are apparent, leave the section empty (just the markers)
 
-Filename: {}
+Rules for decisions:
+- Only include if clear decisions or commitments were made
+- Each item should state what was decided and who is responsible (if clear)
+- If no decisions are apparent, leave the section empty (just the markers)
+
+Filename: {filename}
 Content:
-{}
+{truncated}
 "#,
-        filename, truncated
     )
+}
+
+/// Detect whether content looks like a meeting transcript.
+///
+/// Uses filename + content heuristics: speaker labels ("Speaker 1:", "John:"),
+/// timestamp patterns ("[00:12:34]"), and the word "transcript" in filename.
+fn detect_transcript(filename: &str, content: &str) -> bool {
+    let filename_lower = filename.to_lowercase();
+    if filename_lower.contains("transcript") || filename_lower.contains("recording") {
+        return true;
+    }
+
+    // Check a sample of lines for speaker-label or timestamp patterns
+    let sample = &content[..content.len().min(3000)];
+    let mut speaker_lines = 0;
+    let mut timestamp_lines = 0;
+    let mut total_lines = 0;
+
+    for line in sample.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        total_lines += 1;
+
+        // Speaker label: "Name:" at start of line. A speaker name is typically
+        // 1-3 words and under 25 chars. Ignore markdown headers (#) and
+        // key-value metadata (words like "status", "arr", "health" before colon).
+        if !trimmed.starts_with('#') {
+            if let Some(i) = trimmed.find(':') {
+                let prefix = &trimmed[..i];
+                let word_count = prefix.split_whitespace().count();
+                if i > 0
+                    && i < 25
+                    && word_count <= 3
+                    && prefix.chars().all(|c| c.is_alphabetic() || c == ' ' || c == '.')
+                    && prefix.chars().next().unwrap_or(' ').is_uppercase()
+                {
+                    speaker_lines += 1;
+                }
+            }
+        }
+
+        // Timestamp: [HH:MM:SS] or [MM:SS] at start
+        if trimmed.starts_with('[')
+            && trimmed
+                .find(']')
+                .map(|i| i < 12 && trimmed[1..i].contains(':'))
+                .unwrap_or(false)
+        {
+            timestamp_lines += 1;
+        }
+    }
+
+    // Transcripts are substantial — require minimum 10 non-empty lines
+    // to avoid false positives on short metadata-heavy documents.
+    if total_lines < 10 {
+        return false;
+    }
+
+    // If >40% of lines look like speaker labels or >20% have timestamps
+    let speaker_ratio = speaker_lines as f64 / total_lines as f64;
+    let timestamp_ratio = timestamp_lines as f64 / total_lines as f64;
+
+    speaker_ratio > 0.4 || timestamp_ratio > 0.2
 }
 
 /// Parsed response from Claude Code enrichment.
@@ -267,6 +350,8 @@ pub struct ParsedEnrichment {
     pub account: Option<String>,
     pub meeting_name: Option<String>,
     pub summary: String,
+    /// Discussion highlights from transcript summarization (I31).
+    pub discussion: Vec<String>,
     pub actions_text: Option<String>,
     pub wins: Vec<String>,
     pub risks: Vec<String>,
@@ -279,12 +364,14 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut account = None;
     let mut meeting_name = None;
     let mut summary = String::new();
+    let mut discussion = Vec::new();
     let mut actions_text = None;
     let mut in_actions = false;
     let mut actions_buf = String::new();
     let mut wins = Vec::new();
     let mut risks = Vec::new();
     let mut decisions = Vec::new();
+    let mut in_discussion = false;
     let mut in_wins = false;
     let mut in_risks = false;
     let mut in_decisions = false;
@@ -306,8 +393,17 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             }
         } else if let Some(rest) = line.strip_prefix("SUMMARY:") {
             summary = rest.trim().to_string();
+        } else if line == "DISCUSSION:" {
+            in_discussion = true;
+            in_actions = false;
+            in_wins = false;
+            in_risks = false;
+            in_decisions = false;
+        } else if line == "END_DISCUSSION" {
+            in_discussion = false;
         } else if line == "ACTIONS:" {
             in_actions = true;
+            in_discussion = false;
             in_wins = false;
             in_risks = false;
             in_decisions = false;
@@ -319,6 +415,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         } else if line == "WINS:" {
             in_wins = true;
             in_actions = false;
+            in_discussion = false;
             in_risks = false;
             in_decisions = false;
         } else if line == "END_WINS" {
@@ -326,6 +423,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         } else if line == "RISKS:" {
             in_risks = true;
             in_actions = false;
+            in_discussion = false;
             in_wins = false;
             in_decisions = false;
         } else if line == "END_RISKS" {
@@ -333,10 +431,13 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         } else if line == "DECISIONS:" {
             in_decisions = true;
             in_actions = false;
+            in_discussion = false;
             in_wins = false;
             in_risks = false;
         } else if line == "END_DECISIONS" {
             in_decisions = false;
+        } else if in_discussion && line.starts_with("- ") {
+            discussion.push(line.strip_prefix("- ").unwrap().to_string());
         } else if in_actions && line.starts_with("- ") {
             if !actions_buf.is_empty() {
                 actions_buf.push('\n');
@@ -361,6 +462,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         account,
         meeting_name,
         summary,
+        discussion,
         actions_text,
         wins,
         risks,
@@ -551,5 +653,144 @@ END_RISKS";
         assert_eq!(parsed.wins[0], "Great adoption");
         assert_eq!(parsed.risks.len(), 1);
         assert_eq!(parsed.risks[0], "Champion leaving");
+    }
+
+    // =========================================================================
+    // Transcript detection & discussion parsing tests (I31)
+    // =========================================================================
+
+    #[test]
+    fn test_detect_transcript_by_filename() {
+        assert!(detect_transcript("acme-transcript-2026-01-15.md", "some content"));
+        assert!(detect_transcript("Meeting_Recording_Notes.md", "some content"));
+        assert!(!detect_transcript("acme-update.md", "some content"));
+    }
+
+    #[test]
+    fn test_detect_transcript_by_speaker_labels() {
+        let content = "\
+Alice: Hi everyone, thanks for joining.
+Bob: Great, let's get started.
+Alice: First item on the agenda is the Q1 review.
+Bob: Numbers look good. Revenue up 15%.
+Alice: Excellent. Next, let's discuss the hiring plan.
+Bob: We have 3 open reqs.
+Alice: Okay, let's prioritize engineering.
+Bob: Agreed. I'll send the updated JDs.
+Alice: Any other topics to cover today?
+Bob: Just the offsite planning for March.
+Alice: Right, let's schedule a follow-up for that.
+Bob: Sounds good. I'll send a calendar invite.";
+
+        // Not a transcript filename, but content has >40% speaker lines
+        assert!(detect_transcript("meeting-notes.md", content));
+    }
+
+    #[test]
+    fn test_detect_transcript_by_timestamps() {
+        let content = "\
+[00:00:00] Welcome everyone
+[00:00:15] Let's start with the agenda
+[00:01:30] First topic: Q1 results
+[00:05:22] Revenue grew 15%
+[00:08:45] Moving on to hiring
+[00:12:10] We need three engineers
+[00:15:00] Budget discussion
+[00:18:30] Wrapping up action items
+[00:20:00] Next meeting scheduled
+Some non-timestamped line here
+Another regular line
+Final notes from the call";
+
+        assert!(detect_transcript("notes.md", content));
+    }
+
+    #[test]
+    fn test_detect_transcript_negative() {
+        let content = "\
+# Acme Corp Account Update
+
+Current status: Green
+ARR: $120,000
+Next renewal: March 2026
+
+## Recent Activity
+- Deployed v3.2 to production
+- Trained 15 new users";
+
+        assert!(!detect_transcript("acme-update.md", content));
+    }
+
+    #[test]
+    fn test_transcript_prompt_includes_discussion() {
+        let prompt = build_enrichment_prompt(
+            "acme-transcript.md",
+            "Alice: Hi\nBob: Hello\nAlice: Let's discuss the project.",
+        );
+        assert!(prompt.contains("DISCUSSION:"));
+        assert!(prompt.contains("END_DISCUSSION"));
+        assert!(prompt.contains("2-3 sentence executive summary"));
+    }
+
+    #[test]
+    fn test_non_transcript_prompt_no_discussion() {
+        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.");
+        assert!(!prompt.contains("DISCUSSION:"));
+        assert!(!prompt.contains("END_DISCUSSION"));
+        assert!(prompt.contains("one-line summary"));
+    }
+
+    #[test]
+    fn test_parse_discussion_block() {
+        let output = "\
+FILE_TYPE: meeting_notes
+ACCOUNT: Acme Corp
+MEETING: Weekly Sync
+SUMMARY: Discussed Q1 results and hiring plan. Revenue up 15%. Agreed to prioritize engineering hires.
+DISCUSSION:
+- Q1 results: Revenue grew 15% YoY, exceeding target by 3%
+- Hiring plan: 3 open reqs, prioritizing engineering roles
+- Product roadmap: v4.0 launch planned for March
+END_DISCUSSION
+ACTIONS:
+- P2 @Acme Send updated JDs to recruiting
+END_ACTIONS
+WINS:
+- Revenue exceeded Q1 target
+END_WINS
+RISKS:
+END_RISKS
+DECISIONS:
+- Prioritize engineering hires over sales for Q2
+END_DECISIONS";
+
+        let parsed = parse_enrichment_response(output);
+
+        assert_eq!(parsed.discussion.len(), 3);
+        assert!(parsed.discussion[0].contains("Revenue grew 15%"));
+        assert!(parsed.discussion[1].contains("Hiring plan"));
+        assert!(parsed.discussion[2].contains("v4.0 launch"));
+        assert!(parsed.summary.contains("Q1 results"));
+        assert_eq!(parsed.decisions.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_no_discussion_backwards_compat() {
+        // Older responses without DISCUSSION block should still parse fine
+        let output = "\
+FILE_TYPE: general
+ACCOUNT: NONE
+MEETING: NONE
+SUMMARY: A simple document
+ACTIONS:
+END_ACTIONS
+WINS:
+END_WINS
+RISKS:
+END_RISKS";
+
+        let parsed = parse_enrichment_response(output);
+        assert!(parsed.discussion.is_empty());
+        assert_eq!(parsed.summary, "A simple document");
     }
 }

@@ -46,7 +46,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0023](0023-post-meeting-capture-replaces-wrap.md) | /wrap replaced by post-meeting capture | Accepted |
 | [0024](0024-email-ai-triage-not-client.md) | Email = AI triage, not email client | Accepted |
 | [0025](0025-app-native-governance.md) | App-native governance, not ported CLI tools | Accepted |
-| [0026](0026-extension-architecture.md) | Extension architecture with profile-activated modules | Accepted |
+| [0026](0026-extension-architecture.md) | Extension architecture with profile-activated modules | Superseded by [0046](0046-entity-mode-architecture.md) |
 | [0027](0027-mcp-dual-mode.md) | MCP integration: dual-mode server + client | Accepted |
 | [0028](0028-structured-document-schemas.md) | Structured document schemas (JSON-first templates) | Accepted |
 | [0029](0029-three-tier-email-priority.md) | Three-tier email priority with AI-enriched context | Accepted |
@@ -66,6 +66,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0043](0043-meeting-intelligence-is-core.md) | Meeting intelligence is core, not extension | Accepted |
 | [0044](0044-meeting-scoped-transcript-intake.md) | Meeting-scoped transcript intake from dashboard | Accepted |
 | [0045](0045-entity-abstraction.md) | Profile-agnostic entity abstraction | Accepted |
+| [0046](0046-entity-mode-architecture.md) | Entity-mode architecture with orthogonal integrations | Accepted |
 
 ---
 
