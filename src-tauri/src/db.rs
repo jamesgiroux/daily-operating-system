@@ -76,6 +76,7 @@ pub struct DbMeeting {
     pub notes_path: Option<String>,
     pub summary: Option<String>,
     pub created_at: String,
+    pub calendar_event_id: Option<String>,
 }
 
 /// A row from the `processing_log` table.
@@ -125,6 +126,11 @@ impl ActionDb {
 
         // Apply schema (all statements use IF NOT EXISTS, so this is idempotent)
         conn.execute_batch(include_str!("schema.sql"))?;
+
+        // Migration: add calendar_event_id to meetings_history (ignore if exists)
+        let _ = conn.execute_batch(
+            "ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;",
+        );
 
         Ok(Self { conn })
     }
@@ -234,6 +240,17 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Reopen a completed action, clearing the completed_at timestamp.
+    pub fn reopen_action(&self, id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE actions SET status = 'pending', completed_at = NULL, updated_at = ?1
+             WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
     /// Get a single action by its ID.
     pub fn get_action_by_id(&self, id: &str) -> Result<Option<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -268,6 +285,46 @@ impl ActionDb {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    /// Get all actions completed within the last N hours (for display in the UI).
+    pub fn get_completed_actions(&self, since_hours: u32) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE status = 'completed'
+               AND completed_at >= datetime('now', ?1)
+             ORDER BY completed_at DESC",
+        )?;
+
+        let hours_param = format!("-{} hours", since_hours);
+        let rows = stmt.query_map(params![hours_param], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
     }
 
     /// Get actions recently marked as completed (within the last N hours)
@@ -314,10 +371,33 @@ impl ActionDb {
 
     /// Insert or update an action, but never overwrite a user-set `completed` status.
     ///
-    /// If the action already exists and is `completed`, skip the update entirely.
-    /// This ensures that daily briefing syncs don't reset user-completed actions.
+    /// Checks two conditions before inserting:
+    /// 1. **Title-based guard**: If a matching action (same title + account) is already
+    ///    completed under *any* ID, skip the insert. This catches cross-source duplicates
+    ///    where the same action arrives from briefing vs inbox vs post-meeting capture
+    ///    with different ID schemes.
+    /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
+    ///
+    /// This ensures that daily briefing syncs don't resurrect completed actions (I23).
     pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
-        // Check if this action already exists and is completed
+        // Guard 1: Title-based cross-source dedup
+        let title_match: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT status FROM actions
+                 WHERE LOWER(TRIM(title)) = LOWER(TRIM(?1))
+                   AND (account_id = ?2 OR (?2 IS NULL AND account_id IS NULL))
+                   AND status = 'completed'",
+                params![action.title, action.account_id],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if title_match.as_deref() == Some("completed") {
+            return Ok(());
+        }
+
+        // Guard 2: ID-based check (existing behavior)
         let existing_status: Option<String> = self
             .conn
             .query_row(
@@ -328,7 +408,6 @@ impl ActionDb {
             .ok();
 
         if existing_status.as_deref() == Some("completed") {
-            // Don't overwrite user-completed actions
             return Ok(());
         }
 
@@ -376,6 +455,49 @@ impl ActionDb {
             ],
         )?;
         Ok(())
+    }
+
+    /// Get pending actions from non-briefing sources (post-meeting capture, inbox).
+    ///
+    /// These actions live in SQLite but are NOT in `actions.json` (which only
+    /// contains briefing-generated actions). Used by `get_dashboard_data()` to
+    /// merge captured actions into the dashboard view (I17).
+    pub fn get_non_briefing_pending_actions(&self) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE status = 'pending'
+               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox')
+             ORDER BY priority, created_at DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
     }
 
     // =========================================================================
@@ -461,7 +583,8 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id
              FROM meetings_history
              WHERE account_id = ?1
                AND start_time >= date('now', ?2 || ' days')
@@ -482,6 +605,7 @@ impl ActionDb {
                 notes_path: row.get(7)?,
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
             })
         })?;
 
@@ -578,8 +702,9 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO meetings_history (
                 id, title, meeting_type, start_time, end_time,
-                account_id, attendees, notes_path, summary, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                account_id, attendees, notes_path, summary, created_at,
+                calendar_event_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
@@ -588,7 +713,8 @@ impl ActionDb {
                 account_id = excluded.account_id,
                 attendees = excluded.attendees,
                 notes_path = excluded.notes_path,
-                summary = excluded.summary",
+                summary = excluded.summary,
+                calendar_event_id = excluded.calendar_event_id",
             params![
                 meeting.id,
                 meeting.title,
@@ -600,9 +726,50 @@ impl ActionDb {
                 meeting.notes_path,
                 meeting.summary,
                 meeting.created_at,
+                meeting.calendar_event_id,
             ],
         )?;
         Ok(())
+    }
+
+    // =========================================================================
+    // Prep State Tracking (ADR-0033)
+    // =========================================================================
+
+    /// Record that a meeting prep has been reviewed.
+    pub fn mark_prep_reviewed(
+        &self,
+        prep_file: &str,
+        calendar_event_id: Option<&str>,
+        title: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "INSERT INTO meeting_prep_state (prep_file, calendar_event_id, reviewed_at, title)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(prep_file) DO UPDATE SET
+                reviewed_at = excluded.reviewed_at,
+                calendar_event_id = excluded.calendar_event_id",
+            params![prep_file, calendar_event_id, now, title],
+        )?;
+        Ok(())
+    }
+
+    /// Get all reviewed prep files. Returns a map of prep_file → reviewed_at.
+    pub fn get_reviewed_preps(&self) -> Result<std::collections::HashMap<String, String>, DbError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT prep_file, reviewed_at FROM meeting_prep_state")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let (file, at) = row?;
+            map.insert(file, at);
+        }
+        Ok(map)
     }
 }
 
@@ -816,6 +983,7 @@ mod tests {
             notes_path: None,
             summary: Some("Discussed renewal".to_string()),
             created_at: now,
+            calendar_event_id: Some("gcal-evt-001".to_string()),
         };
 
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -845,6 +1013,7 @@ mod tests {
                 notes_path: None,
                 summary: None,
                 created_at: now.clone(),
+                calendar_event_id: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
         }
@@ -879,6 +1048,90 @@ mod tests {
         assert_eq!(results.len(), 3);
         // Overdue should be first
         assert_eq!(results[0].id, "act-c");
+    }
+
+    #[test]
+    fn test_mark_prep_reviewed() {
+        let db = test_db();
+
+        db.mark_prep_reviewed("preps/0900-acme-sync.json", Some("gcal-evt-1"), "Acme Sync")
+            .expect("mark reviewed");
+
+        let reviewed = db.get_reviewed_preps().expect("get reviewed");
+        assert_eq!(reviewed.len(), 1);
+        assert!(reviewed.contains_key("preps/0900-acme-sync.json"));
+    }
+
+    #[test]
+    fn test_mark_prep_reviewed_upsert() {
+        let db = test_db();
+
+        db.mark_prep_reviewed("preps/0900-acme.json", None, "Acme")
+            .expect("first mark");
+        db.mark_prep_reviewed("preps/0900-acme.json", Some("evt-1"), "Acme")
+            .expect("second mark (upsert)");
+
+        let reviewed = db.get_reviewed_preps().expect("get reviewed");
+        assert_eq!(reviewed.len(), 1);
+    }
+
+    #[test]
+    fn test_upsert_action_title_dedup() {
+        let db = test_db();
+
+        // Insert and complete an action under one ID
+        let mut action = sample_action("briefing-001", "Follow up with Acme");
+        action.account_id = Some("acme".to_string());
+        db.upsert_action(&action).expect("insert");
+        db.complete_action("briefing-001").expect("complete");
+
+        // Try to insert the same action under a different ID (cross-source)
+        let action2 = DbAction {
+            id: "postmeet-999".to_string(),
+            title: "Follow up with Acme".to_string(),
+            account_id: Some("acme".to_string()),
+            ..sample_action("postmeet-999", "Follow up with Acme")
+        };
+        db.upsert_action_if_not_completed(&action2)
+            .expect("dedup upsert");
+
+        // The new action should NOT have been inserted
+        let result = db.get_action_by_id("postmeet-999").expect("query");
+        assert!(result.is_none(), "Title-based dedup should prevent insert");
+    }
+
+    #[test]
+    fn test_get_non_briefing_pending_actions() {
+        let db = test_db();
+
+        // Insert a briefing-sourced action (should NOT appear)
+        let mut briefing_action = sample_action("brief-001", "Briefing task");
+        briefing_action.source_type = Some("briefing".to_string());
+        db.upsert_action(&briefing_action).expect("insert");
+
+        // Insert a post-meeting action (should appear)
+        let mut pm_action = sample_action("pm-001", "Post-meeting task");
+        pm_action.source_type = Some("post_meeting".to_string());
+        db.upsert_action(&pm_action).expect("insert");
+
+        // Insert an inbox action (should appear)
+        let mut inbox_action = sample_action("inbox-001", "Inbox task");
+        inbox_action.source_type = Some("inbox".to_string());
+        db.upsert_action(&inbox_action).expect("insert");
+
+        // Insert a completed post-meeting action (should NOT appear)
+        let mut completed = sample_action("pm-002", "Done task");
+        completed.source_type = Some("post_meeting".to_string());
+        db.upsert_action(&completed).expect("insert");
+        db.complete_action("pm-002").expect("complete");
+
+        let results = db
+            .get_non_briefing_pending_actions()
+            .expect("query");
+        assert_eq!(results.len(), 2);
+        let ids: Vec<&str> = results.iter().map(|a| a.id.as_str()).collect();
+        assert!(ids.contains(&"pm-001"));
+        assert!(ids.contains(&"inbox-001"));
     }
 
     #[test]
