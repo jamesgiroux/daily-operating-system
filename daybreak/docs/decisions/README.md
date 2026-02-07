@@ -62,6 +62,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0039](0039-feature-toggle-architecture.md) | Feature toggle architecture | Accepted |
 | [0040](0040-archive-reconciliation.md) | Archive reconciliation (end-of-day mechanical cleanup) | Accepted |
 | [0041](0041-two-sided-impact-model.md) | Two-sided impact model (CS outcomes vs personal impact) | Accepted |
+| [0042](0042-per-operation-pipelines.md) | Per-operation pipelines with progressive delivery | Accepted |
+| [0043](0043-meeting-intelligence-is-core.md) | Meeting intelligence is core, not extension | Accepted |
 
 ---
 
