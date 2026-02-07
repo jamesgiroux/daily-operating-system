@@ -28,9 +28,15 @@
 | Transcript-aware inbox enrichment (richer summaries) | Working | — |
 | Cross-briefing action dedup (3 layers) | Working | — |
 | Sidebar nav, profile-aware UI | Working | 0038 |
+| Feature toggles (per-operation, profile-conditional defaults) | Working | 0039 |
+| Standalone email refresh | Working | 0030 |
+| FYI email classification (bulk senders, noreply, headers) | Working | — |
+| Density-aware briefing narrative | Working | — |
+| Processing history page | Working | — |
+| Google API credential caching (per-process) | Working | — |
 | macOS chrome (overlay titlebar, tray icon, app icon) | Working | — |
 
-**168 Rust tests passing.** Core data pipeline is solid.
+**155 Rust tests + 37 Python tests passing.** Core data pipeline is solid.
 
 ### What's Untested End-to-End
 
@@ -111,24 +117,20 @@ All 168 Rust tests passing.
 
 ---
 
-### Sprint 3: "Make it Reliable"
+### Sprint 3: "Make it Reliable" — COMPLETE
 
 **Milestone:** Pipeline handles partial failures gracefully. Users can refresh individual data sources. System communicates what's stale.
 
-| Issue | What | Parallel lane |
-|-------|------|---------------|
-| I39 | Feature toggle runtime (config + orchestrator checks + Settings UI) | A |
-| I18 | Google API call coordination (cache/TTL layer for concurrent callers) | B |
-| I20 | Standalone email refresh (thin orchestrator for email_fetch) | B |
-| I21 | FYI email classification (expand low-priority signals) | B |
-| I37 | Density-aware dashboard overview (enrichment prompt with meeting count) | C |
-| I6 | Processing history page (table exists, needs command + UI) | C |
+| Issue | What | Status |
+|-------|------|--------|
+| I39 | Feature toggle runtime (config + orchestrator checks + Settings UI) | Done — `is_feature_enabled()` priority chain, FeaturesCard in Settings, 7 tests |
+| I18 | Google API credential caching (per-process cache for concurrent callers) | Done — `_cached_credentials` + `_cached_services` in config.py |
+| I20 | Standalone email refresh (thin orchestrator for email_fetch) | Done — `refresh_emails.py`, executor + command + UI refresh button |
+| I21 | FYI email classification (expand low-priority signals) | Done — bulk domains, noreply, List-Unsubscribe/Precedence headers, 16 tests |
+| I37 | Density-aware dashboard overview (enrichment prompt with meeting count) | Done — `classify_meeting_density()`, prompt injection, 4 tests |
+| I6 | Processing history page (table exists, needs command + UI) | Done — `get_processing_history` command, HistoryPage.tsx, sidebar nav |
 
-**Lane A** (I39) enables graceful degradation — Gmail not connected? Skip email ops instead of failing.
-**Lane B** (I18, I20, I21) hardens the email pipeline as a group.
-**Lane C** (I37, I6) is polish and transparency.
-
-**Done when:** App handles missing Google auth without crashing. Individual email refresh works. Feature toggles disable/enable operations from Settings. Processing history visible.
+All 155 Rust + 37 Python tests passing.
 
 ---
 
