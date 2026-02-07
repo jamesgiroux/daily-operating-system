@@ -1,7 +1,7 @@
 # ADR-0034: Adaptive dashboard: density-aware layout
 
 **Date:** 2026-02
-**Status:** Proposed
+**Status:** Deprecated — not an architectural decision; tracked as backlog I37
 
 ## Context
 
