@@ -23,6 +23,7 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
+import AccountDetailPage from "@/pages/AccountDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
@@ -148,6 +149,12 @@ const accountsRoute = createRoute({
   component: AccountsPage,
 });
 
+const accountDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts/$accountId",
+  component: AccountDetailPage,
+});
+
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
@@ -212,6 +219,7 @@ const personDetailRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   accountsRoute,
+  accountDetailRoute,
   actionsRoute,
   emailsRoute,
   focusRoute,

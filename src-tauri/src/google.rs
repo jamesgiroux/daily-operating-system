@@ -23,8 +23,8 @@ use crate::workflow::deliver::{make_meeting_id, write_json};
 ///
 /// Opens the user's browser, captures the redirect, saves the token.
 /// Returns the authenticated email on success.
-pub fn start_auth(workspace: &Path) -> Result<String, String> {
-    let script = find_script(workspace, "google_auth.py")
+pub fn start_auth(app_handle: &AppHandle, workspace: &Path) -> Result<String, String> {
+    let script = find_script(app_handle, workspace, "google_auth.py")
         .ok_or_else(|| "google_auth.py not found".to_string())?;
 
     let output = run_python_script(&script, workspace, 120)
@@ -78,8 +78,8 @@ pub fn disconnect() -> Result<(), String> {
 ///
 /// Returns parsed events or an error. Exit code 2 from the script
 /// indicates an auth failure (token expired/revoked).
-fn poll_calendar(workspace: &Path) -> Result<Vec<CalendarEvent>, PollError> {
-    let script = find_script(workspace, "calendar_poll.py")
+fn poll_calendar(app_handle: &AppHandle, workspace: &Path) -> Result<Vec<CalendarEvent>, PollError> {
+    let script = find_script(app_handle, workspace, "calendar_poll.py")
         .ok_or(PollError::ScriptNotFound)?;
 
     let output = run_python_script(&script, workspace, 30).map_err(|e| {
@@ -178,7 +178,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         };
 
         // Poll calendar
-        match poll_calendar(&workspace) {
+        match poll_calendar(&app_handle, &workspace) {
             Ok(events) => {
                 // Check for new prep-eligible meetings before storing (I41)
                 let new_preps = generate_preps_for_new_meetings(
@@ -262,20 +262,16 @@ fn get_poll_interval(state: &AppState) -> u64 {
         .unwrap_or(5)
 }
 
-/// Find a script, checking workspace _tools/ then repo scripts/
-fn find_script(workspace: &Path, name: &str) -> Option<PathBuf> {
-    let workspace_script = workspace.join("_tools").join(name);
-    if workspace_script.exists() {
-        return Some(workspace_script);
+/// Find a script, delegating to resolve_script_path (I59).
+///
+/// Returns `None` if the resolved path doesn't exist on disk.
+fn find_script(app_handle: &AppHandle, workspace: &Path, name: &str) -> Option<PathBuf> {
+    let path = crate::util::resolve_script_path(app_handle, workspace, name);
+    if path.exists() {
+        Some(path)
+    } else {
+        None
     }
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(std::path::Path::new("."));
-    let repo_script = repo_root.join("scripts").join(name);
-    if repo_script.exists() {
-        return Some(repo_script);
-    }
-    None
 }
 
 /// Prep-eligible meeting types (same as PREP_ELIGIBLE_TYPES in deliver.rs)
@@ -662,6 +658,7 @@ mod tests {
             contract_end: Some("2026-06-15".to_string()),
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
