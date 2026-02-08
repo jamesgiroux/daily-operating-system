@@ -7,10 +7,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { FullMeetingPrep, Stakeholder, StakeholderSignals, ActionWithContext, SourceReference } from "@/types";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/ui/copy-button";
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import {
   AlertCircle,
   ArrowLeft,
+  Check,
   Clock,
+  Copy,
   Users,
   FileText,
   HelpCircle,
@@ -129,8 +133,8 @@ export default function MeetingDetailPage() {
             )}
           </div>
 
-          {/* Toggle raw markdown */}
-          <div className="mb-6">
+          {/* Toggle raw markdown + Copy All */}
+          <div className="mb-6 flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -138,6 +142,7 @@ export default function MeetingDetailPage() {
             >
               {showRaw ? "Show Formatted" : "Show Raw Markdown"}
             </Button>
+            <CopyAllButton data={data} />
           </div>
 
           {showRaw && data.rawMarkdown ? (
@@ -157,6 +162,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <TrendingUp className="size-4" />
                       Quick Context
+                      <CopyButton text={formatQuickContext(data.quickContext!)} label="quick context" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -186,6 +192,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <FileText className="size-4" />
                       Context
+                      <CopyButton text={data.meetingContext} label="context" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -201,6 +208,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Users className="size-4" />
                       Key Attendees
+                      <CopyButton text={formatAttendees(data.attendees)} label="attendees" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -220,6 +228,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <History className="size-4" />
                       Since Last Meeting
+                      <CopyButton text={formatBulletList(data.sinceLast)} label="since last meeting" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -242,6 +251,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Target className="size-4" />
                       Current Strategic Programs
+                      <CopyButton text={formatBulletList(data.strategicPrograms)} label="programs" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -266,7 +276,10 @@ export default function MeetingDetailPage() {
               {data.currentState && data.currentState.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Current State</CardTitle>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      Current State
+                      <CopyButton text={formatBulletList(data.currentState)} label="current state" className="ml-auto" />
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <ul className="space-y-2">
@@ -288,6 +301,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <AlertTriangle className="size-4 text-destructive" />
                       Current Risks to Monitor
+                      <CopyButton text={formatBulletList(data.risks)} label="risks" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -310,6 +324,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <MessageSquare className="size-4 text-success" />
                       Suggested Talking Points
+                      <CopyButton text={formatNumberedList(data.talkingPoints)} label="talking points" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -331,6 +346,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <CheckCircle className="size-4 text-primary" />
                       Open Items to Discuss
+                      <CopyButton text={formatOpenItems(data.openItems)} label="open items" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -350,6 +366,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <HelpCircle className="size-4" />
                       Questions to Surface
+                      <CopyButton text={formatNumberedList(data.questions)} label="questions" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -371,6 +388,7 @@ export default function MeetingDetailPage() {
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BookOpen className="size-4" />
                       Key Principles
+                      <CopyButton text={formatBulletList(data.keyPrinciples)} label="principles" className="ml-auto" />
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -411,6 +429,25 @@ export default function MeetingDetailPage() {
   );
 }
 
+function CopyAllButton({ data }: { data: FullMeetingPrep }) {
+  const { copied, copy } = useCopyToClipboard();
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => copy(formatFullPrep(data))}
+    >
+      {copied ? (
+        <Check className="mr-2 size-3.5 text-success" />
+      ) : (
+        <Copy className="mr-2 size-3.5" />
+      )}
+      {copied ? "Copied!" : "Copy All"}
+    </Button>
+  );
+}
+
 function RelationshipContext({ signals }: { signals: StakeholderSignals }) {
   const tempColor = {
     hot: "text-success",
@@ -435,6 +472,7 @@ function RelationshipContext({ signals }: { signals: StakeholderSignals }) {
         <CardTitle className="flex items-center gap-2 text-base">
           <History className="size-4" />
           Relationship Context
+          <CopyButton text={formatRelationshipContext(signals)} label="relationship context" className="ml-auto" />
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -556,4 +594,113 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
       )}
     </div>
   );
+}
+
+// =============================================================================
+// Copy-to-clipboard formatters
+// Output is clean plaintext with light markdown — pastes well into Slack,
+// email, and docs.
+// =============================================================================
+
+function formatBulletList(items: string[]): string {
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
+function formatNumberedList(items: string[]): string {
+  return items.map((item, i) => `${i + 1}. ${item}`).join("\n");
+}
+
+function formatQuickContext(items: [string, string][]): string {
+  return items.map(([key, value]) => `${key}: ${value}`).join("\n");
+}
+
+function formatRelationshipContext(signals: StakeholderSignals): string {
+  const lastMeeting = signals.lastMeeting
+    ? formatRelativeDate(signals.lastMeeting)
+    : "No meetings recorded";
+  return [
+    `Last Meeting: ${lastMeeting}`,
+    `Temperature: ${signals.temperature}`,
+    `Last 30 Days: ${signals.meetingFrequency30d} meeting${signals.meetingFrequency30d !== 1 ? "s" : ""}`,
+    `Trend: ${signals.trend}`,
+  ].join("\n");
+}
+
+function formatAttendees(attendees: Stakeholder[]): string {
+  return attendees
+    .map((a) => {
+      const parts = [a.name];
+      if (a.role) parts.push(a.role);
+      return `- ${parts.join(" — ")}`;
+    })
+    .join("\n");
+}
+
+function formatOpenItems(items: ActionWithContext[]): string {
+  return items
+    .map((item) => {
+      let line = `- ${item.title}`;
+      if (item.dueDate) line += ` (due: ${item.dueDate})`;
+      if (item.isOverdue) line += " [OVERDUE]";
+      return line;
+    })
+    .join("\n");
+}
+
+function formatFullPrep(data: FullMeetingPrep): string {
+  const sections: string[] = [];
+
+  // Header
+  sections.push(`# ${data.title}`);
+  if (data.timeRange) sections.push(data.timeRange);
+
+  if (data.quickContext && data.quickContext.length > 0) {
+    sections.push(`\n## Quick Context\n${formatQuickContext(data.quickContext)}`);
+  }
+
+  if (data.stakeholderSignals) {
+    sections.push(`\n## Relationship Context\n${formatRelationshipContext(data.stakeholderSignals)}`);
+  }
+
+  if (data.meetingContext) {
+    sections.push(`\n## Context\n${data.meetingContext}`);
+  }
+
+  if (data.attendees && data.attendees.length > 0) {
+    sections.push(`\n## Key Attendees\n${formatAttendees(data.attendees)}`);
+  }
+
+  if (data.sinceLast && data.sinceLast.length > 0) {
+    sections.push(`\n## Since Last Meeting\n${formatBulletList(data.sinceLast)}`);
+  }
+
+  if (data.strategicPrograms && data.strategicPrograms.length > 0) {
+    sections.push(`\n## Current Strategic Programs\n${formatBulletList(data.strategicPrograms)}`);
+  }
+
+  if (data.currentState && data.currentState.length > 0) {
+    sections.push(`\n## Current State\n${formatBulletList(data.currentState)}`);
+  }
+
+  if (data.risks && data.risks.length > 0) {
+    sections.push(`\n## Risks\n${formatBulletList(data.risks)}`);
+  }
+
+  if (data.talkingPoints && data.talkingPoints.length > 0) {
+    sections.push(`\n## Talking Points\n${formatNumberedList(data.talkingPoints)}`);
+  }
+
+  if (data.openItems && data.openItems.length > 0) {
+    sections.push(`\n## Open Items\n${formatOpenItems(data.openItems)}`);
+  }
+
+  if (data.questions && data.questions.length > 0) {
+    sections.push(`\n## Questions\n${formatNumberedList(data.questions)}`);
+  }
+
+  if (data.keyPrinciples && data.keyPrinciples.length > 0) {
+    sections.push(`\n## Key Principles\n${formatBulletList(data.keyPrinciples)}`);
+  }
+
+  return sections.join("\n");
 }
