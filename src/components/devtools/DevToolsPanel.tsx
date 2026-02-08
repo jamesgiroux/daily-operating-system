@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -64,6 +64,19 @@ function DevToolsPanelInner() {
     }
   }
 
+  async function runCommand(key: string, command: string) {
+    setLoading(key);
+    try {
+      const result = await invoke<string>(command);
+      toast.success(result);
+      await refreshState();
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Command failed");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   return (
     <>
       {/* Floating wrench button */}
@@ -89,7 +102,7 @@ function DevToolsPanelInner() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="mt-6 space-y-6">
+          <div className="space-y-6 px-4 pb-6">
             {/* Current State */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
@@ -163,6 +176,68 @@ function DevToolsPanelInner() {
                   loading={loading === "mock_empty"}
                   disabled={loading !== null}
                   onClick={() => applyScenario("mock_empty")}
+                />
+                <ScenarioButton
+                  icon={Zap}
+                  label="Simulate Briefing"
+                  description="Full mock + workspace markdown + directive JSONs"
+                  variant="default"
+                  loading={loading === "simulate_briefing"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("simulate_briefing")}
+                />
+              </div>
+            </section>
+
+            {/* Pipeline Testing */}
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Daily Briefing
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Sun}
+                  label="Today — Mechanical"
+                  description="Deliver schedule, actions, preps, emails (no AI)"
+                  variant="outline"
+                  loading={loading === "today_mechanical"}
+                  disabled={loading !== null}
+                  onClick={() => runCommand("today_mechanical", "dev_run_today_mechanical")}
+                />
+                <ScenarioButton
+                  icon={Sparkles}
+                  label="Today — Full + AI"
+                  description="Mechanical + email/prep/briefing enrichment via Claude"
+                  variant="outline"
+                  loading={loading === "today_full"}
+                  disabled={loading !== null}
+                  onClick={() => runCommand("today_full", "dev_run_today_full")}
+                />
+              </div>
+            </section>
+
+            <section>
+              <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                Weekly Prep
+              </h3>
+              <div className="space-y-2">
+                <ScenarioButton
+                  icon={Calendar}
+                  label="Week — Mechanical"
+                  description="Deliver week-overview.json from directive"
+                  variant="outline"
+                  loading={loading === "week_mechanical"}
+                  disabled={loading !== null}
+                  onClick={() => runCommand("week_mechanical", "dev_run_week_mechanical")}
+                />
+                <ScenarioButton
+                  icon={Sparkles}
+                  label="Week — Full + AI"
+                  description="Claude /week enrichment + week-overview delivery"
+                  variant="outline"
+                  loading={loading === "week_full"}
+                  disabled={loading !== null}
+                  onClick={() => runCommand("week_full", "dev_run_week_full")}
                 />
               </div>
             </section>

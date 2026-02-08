@@ -2,14 +2,17 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SearchInput } from "@/components/ui/search-input";
+import { TabFilter } from "@/components/ui/tab-filter";
+import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import { StatusBadge, healthStyles } from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
-import { cn } from "@/lib/utils";
-import { Building2, Plus, RefreshCw, Search } from "lucide-react";
-import type { AccountListItem, AccountHealth } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { Building2, Plus, RefreshCw } from "lucide-react";
+import type { AccountListItem } from "@/types";
 
 type HealthTab = "all" | "green" | "yellow" | "red";
 
@@ -112,30 +115,13 @@ export default function AccountsPage() {
             </p>
           </div>
           {creating ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                autoFocus
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreate();
-                  if (e.key === "Escape") setCreating(false);
-                }}
-                placeholder="Account name"
-                className="rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-              />
-              <Button size="sm" onClick={handleCreate}>
-                Create
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setCreating(false)}
-              >
-                Cancel
-              </Button>
-            </div>
+            <InlineCreateForm
+              value={newName}
+              onChange={setNewName}
+              onCreate={handleCreate}
+              onCancel={() => setCreating(false)}
+              placeholder="Account name"
+            />
           ) : (
             <Button onClick={() => setCreating(true)}>
               <Plus className="mr-1 size-4" />
@@ -165,36 +151,16 @@ export default function AccountsPage() {
             </div>
             <div className="flex items-center gap-2">
               {creating ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    autoFocus
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCreate();
-                      if (e.key === "Escape") {
-                        setCreating(false);
-                        setNewName("");
-                      }
-                    }}
-                    placeholder="Account name"
-                    className="rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                  />
-                  <Button size="sm" onClick={handleCreate}>
-                    Create
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setCreating(false);
-                      setNewName("");
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                <InlineCreateForm
+                  value={newName}
+                  onChange={setNewName}
+                  onCreate={handleCreate}
+                  onCancel={() => {
+                    setCreating(false);
+                    setNewName("");
+                  }}
+                  placeholder="Account name"
+                />
               ) : (
                 <Button
                   variant="outline"
@@ -216,47 +182,20 @@ export default function AccountsPage() {
             </div>
           </div>
 
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search accounts..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-md border bg-background py-2 pl-10 pr-4 text-sm outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search accounts..."
+            className="mb-4"
+          />
 
-          {/* Health tabs */}
-          <div className="mb-6 flex gap-2">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                  tab === t.key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted hover:bg-muted/80"
-                )}
-              >
-                {t.label}
-                {tabCounts[t.key] > 0 && (
-                  <span
-                    className={cn(
-                      "ml-1.5 inline-flex size-5 items-center justify-center rounded-full text-xs",
-                      tab === t.key
-                        ? "bg-primary-foreground/20 text-primary-foreground"
-                        : "bg-muted-foreground/15 text-muted-foreground"
-                    )}
-                  >
-                    {tabCounts[t.key]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <TabFilter
+            tabs={tabs}
+            active={tab}
+            onChange={setTab}
+            counts={tabCounts}
+            className="mb-6"
+          />
 
           {/* Accounts list */}
           <div className="space-y-2">
@@ -296,10 +235,12 @@ function AccountRow({ account }: { account: AccountListItem }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate font-medium">{account.name}</span>
-              <HealthBadge health={account.health} />
-              {account.ring && (
-                <Badge variant="outline" className="text-xs">
-                  Ring {account.ring}
+              {account.health && (
+                <StatusBadge value={account.health} styles={healthStyles} />
+              )}
+              {account.lifecycle && (
+                <Badge variant="outline" className="text-xs capitalize">
+                  {account.lifecycle}
                 </Badge>
               )}
             </div>
@@ -340,19 +281,6 @@ function AccountRow({ account }: { account: AccountListItem }) {
   );
 }
 
-function HealthBadge({ health }: { health?: AccountHealth }) {
-  if (!health) return null;
-  const styles: Record<AccountHealth, string> = {
-    green: "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-    red: "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  };
-  return (
-    <Badge variant="outline" className={cn("text-xs", styles[health])}>
-      {health}
-    </Badge>
-  );
-}
 
 function formatArr(arr: number): string {
   if (arr >= 1_000_000) return `${(arr / 1_000_000).toFixed(1)}M`;

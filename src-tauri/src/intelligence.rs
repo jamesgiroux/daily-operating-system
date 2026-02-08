@@ -445,7 +445,7 @@ mod tests {
         let acct = crate::db::DbAccount {
             id: "renew-corp".to_string(),
             name: "Renew Corp".to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: Some(100_000.0),
             health: Some("green".to_string()),
             contract_start: None,
