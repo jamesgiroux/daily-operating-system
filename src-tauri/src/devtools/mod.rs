@@ -22,6 +22,8 @@ const PREP_ACME_TMPL: &str = include_str!("fixtures/prep-acme.json.tmpl");
 const PREP_GLOBEX_TMPL: &str = include_str!("fixtures/prep-globex.json.tmpl");
 const PREP_INITECH_TMPL: &str = include_str!("fixtures/prep-initech.json.tmpl");
 const WEEK_OVERVIEW_TMPL: &str = include_str!("fixtures/week-overview.json.tmpl");
+const TODAY_DIRECTIVE_TMPL: &str = include_str!("fixtures/today-directive.json.tmpl");
+const WEEK_DIRECTIVE_TMPL: &str = include_str!("fixtures/week-directive.json.tmpl");
 
 /// Dev workspace path — never touches the real workspace.
 fn dev_workspace() -> std::path::PathBuf {
@@ -68,6 +70,10 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
         "mock_empty" => {
             install_mock_empty(state)?;
             Ok("Empty workspace installed with config".into())
+        }
+        "simulate_briefing" => {
+            install_simulate_briefing(state)?;
+            Ok("Simulate briefing: workspace + directives seeded. Run dev_run_delivery to execute Phase 2+3.".into())
         }
         _ => Err(format!("Unknown scenario: {}", scenario)),
     }
@@ -318,6 +324,204 @@ fn install_mock_empty(state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
+/// Install full mock data + workspace markdown + directive JSONs for pipeline testing.
+///
+/// After this, `dev_run_delivery` will execute Phase 2+3 (mechanical delivery)
+/// from the pre-written directive — no Google API or Python needed.
+fn install_simulate_briefing(state: &AppState) -> Result<(), String> {
+    // Start with full mock data (includes DB + calendar events + fixtures)
+    install_mock_data(state, true)?;
+
+    let workspace = dev_workspace();
+
+    // Write workspace markdown files so prepare/ has content to parse
+    write_workspace_markdown(&workspace)?;
+
+    // Write directive JSONs so delivery can run without Phase 1
+    write_directive_fixtures(&workspace)?;
+
+    Ok(())
+}
+
+/// Ensure the simulate_briefing scenario has been applied.
+/// If the directive JSON is missing, seed everything automatically.
+fn ensure_briefing_seeded(state: &AppState) -> Result<(), String> {
+    let workspace = get_workspace(state)?;
+    let directive_path = workspace.join("_today").join("data").join("today-directive.json");
+    if !directive_path.exists() {
+        log::info!("Directive not found — auto-seeding simulate_briefing scenario");
+        install_simulate_briefing(state)?;
+    }
+    Ok(())
+}
+
+/// Daily briefing — mechanical only.
+///
+/// Loads today-directive.json → delivers schedule, actions, preps, emails, manifest.
+/// No AI enrichment. Tests the full Rust delivery pipeline.
+pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    ensure_briefing_seeded(state)?;
+
+    let workspace = get_workspace(state)?;
+    let today_dir = workspace.join("_today");
+    let data_dir = today_dir.join("data");
+
+    let directive = crate::json_loader::load_directive(&today_dir)
+        .map_err(|e| format!("Failed to load directive: {}", e))?;
+
+    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)?;
+
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db_ref = db_guard.as_ref();
+    let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
+    if let Some(db) = db_ref {
+        let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);
+    }
+    drop(db_guard);
+
+    let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)?;
+
+    let emails_data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    crate::workflow::deliver::deliver_manifest(
+        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, false,
+    )?;
+
+    Ok(format!(
+        "Today (mechanical): schedule, actions, {} preps, emails, manifest",
+        prep_paths.len()
+    ))
+}
+
+/// Daily briefing — full pipeline including AI enrichment.
+///
+/// Same as mechanical + enrich_emails, enrich_preps, enrich_briefing via Claude Code CLI.
+/// Requires Claude Code installed and authenticated.
+pub fn run_today_full(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    ensure_briefing_seeded(state)?;
+
+    let workspace = get_workspace(state)?;
+    let today_dir = workspace.join("_today");
+    let data_dir = today_dir.join("data");
+
+    let directive = crate::json_loader::load_directive(&today_dir)
+        .map_err(|e| format!("Failed to load directive: {}", e))?;
+
+    // --- Mechanical delivery ---
+    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)?;
+
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db_ref = db_guard.as_ref();
+    let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
+    if let Some(db) = db_ref {
+        let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);
+    }
+    drop(db_guard);
+
+    let prep_paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)?;
+
+    let emails_data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    // Partial manifest (AI enrichment pending)
+    crate::workflow::deliver::deliver_manifest(
+        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, true,
+    )?;
+
+    // --- AI enrichment ---
+    let pty = crate::pty::PtyManager::new();
+    let user_ctx = state.config.read().ok()
+        .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+        .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+
+    let mut enriched = Vec::new();
+
+    match crate::workflow::deliver::enrich_emails(&data_dir, &pty, &workspace, &user_ctx) {
+        Ok(()) => enriched.push("emails"),
+        Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
+    }
+
+    match crate::workflow::deliver::enrich_preps(&data_dir, &pty, &workspace) {
+        Ok(()) => enriched.push("preps"),
+        Err(e) => log::warn!("Prep enrichment failed (non-fatal): {}", e),
+    }
+
+    match crate::workflow::deliver::enrich_briefing(&data_dir, &pty, &workspace, &user_ctx) {
+        Ok(()) => enriched.push("briefing"),
+        Err(e) => log::warn!("Briefing enrichment failed (non-fatal): {}", e),
+    }
+
+    // Final manifest
+    crate::workflow::deliver::deliver_manifest(
+        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, false,
+    )?;
+
+    Ok(format!(
+        "Today (full): schedule, actions, {} preps, emails, manifest. AI enriched: [{}]",
+        prep_paths.len(),
+        enriched.join(", ")
+    ))
+}
+
+/// Weekly prep — mechanical only.
+///
+/// Loads week-directive.json → delivers week-overview.json.
+pub fn run_week_mechanical(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    ensure_briefing_seeded(state)?;
+
+    let workspace = get_workspace(state)?;
+    crate::prepare::orchestrate::deliver_week(&workspace)?;
+    Ok("Week (mechanical): week-overview.json delivered".into())
+}
+
+/// Weekly prep — full pipeline including AI enrichment.
+///
+/// Runs Claude Code with /week skill (reads week-directive.json from workspace),
+/// then delivers week-overview.json.
+pub fn run_week_full(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    ensure_briefing_seeded(state)?;
+
+    let workspace = get_workspace(state)?;
+
+    // Phase 2: AI enrichment via Claude Code /week
+    let pty = crate::pty::PtyManager::new();
+    let output = pty.spawn_claude(&workspace, "/week")
+        .map_err(|e| format!("Claude /week failed: {}", e))?;
+    log::info!("Week AI enrichment: {} bytes output", output.stdout.len());
+
+    // Phase 3: Mechanical delivery
+    crate::prepare::orchestrate::deliver_week(&workspace)?;
+
+    Ok("Week (full): Claude /week + week-overview.json delivered".into())
+}
+
+/// Helper: get workspace path from config.
+fn get_workspace(state: &AppState) -> Result<std::path::PathBuf, String> {
+    state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| std::path::PathBuf::from(&c.workspace_path)))
+        .ok_or_else(|| "No workspace configured".to_string())
+}
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -426,18 +630,18 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Accounts ---
     conn.execute(
-        "INSERT OR REPLACE INTO accounts (id, name, ring, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["acme-corp", "Acme Corp", 1, 1_200_000.0, "green", "Accounts/Acme Corp/dashboard.md", &today],
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params!["acme-corp", "Acme Corp", "steady-state", 1_200_000.0, "green", "Accounts/Acme Corp/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR REPLACE INTO accounts (id, name, ring, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["globex-industries", "Globex Industries", 2, 800_000.0, "yellow", "Accounts/Globex Industries/dashboard.md", &today],
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params!["globex-industries", "Globex Industries", "at-risk", 800_000.0, "yellow", "Accounts/Globex Industries/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
     conn.execute(
-        "INSERT OR REPLACE INTO accounts (id, name, ring, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params!["initech", "Initech", 3, 350_000.0, "green", "Accounts/Initech/dashboard.md", &today],
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params!["initech", "Initech", "onboarding", 350_000.0, "green", "Accounts/Initech/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
     // --- Entities (mirrors accounts) ---
@@ -631,6 +835,225 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
     if let Ok(mut guard) = state.calendar_events.write() {
         *guard = events;
     }
+
+    Ok(())
+}
+
+/// Write workspace markdown files that the prepare/ module can parse.
+///
+/// Creates actions.md + account dashboard files for Acme, Globex, Initech.
+fn write_workspace_markdown(workspace: &Path) -> Result<(), String> {
+    let today = Local::now();
+    let yesterday = (today - chrono::Duration::days(1)).format("%Y-%m-%d");
+    let last_week = (today - chrono::Duration::days(7)).format("%Y-%m-%d");
+    let tomorrow = (today + chrono::Duration::days(1)).format("%Y-%m-%d");
+    let friday = {
+        let weekday = today.weekday().num_days_from_monday() as i64;
+        (today + chrono::Duration::days(4 - weekday)).format("%Y-%m-%d")
+    };
+
+    // --- actions.md (checkbox format that actions.rs parses) ---
+    let actions_content = format!(
+        r#"# Actions
+
+## Overdue
+- [ ] Send updated SOW to Acme legal team due:{yesterday} P1 @acme-corp #legal
+- [ ] Follow up on NPS survey responses due:{last_week} P2 @acme-corp #customer-health
+
+## Due Today
+- [ ] Review Globex QBR deck with AE due:{today_date} P1 @globex-industries #qbr-prep
+
+## This Week
+- [ ] Schedule Phase 2 kickoff with Initech due:{tomorrow} P2 @initech #project
+- [ ] Create knowledge transfer plan for Alex Torres departure due:{friday} P1 @acme-corp #risk-mitigation
+
+## Waiting On
+- [ ] Phase 2 budget approval — waiting on Initech finance team @initech #budget
+"#,
+        yesterday = yesterday,
+        last_week = last_week,
+        today_date = today.format("%Y-%m-%d"),
+        tomorrow = tomorrow,
+        friday = friday,
+    );
+
+    std::fs::write(workspace.join("actions.md"), actions_content)
+        .map_err(|e| format!("Failed to write actions.md: {}", e))?;
+
+    // --- Account dashboards ---
+    let accounts_dir = workspace.join("Accounts");
+
+    // Acme Corp
+    let acme_dir = accounts_dir.join("Acme Corp");
+    std::fs::create_dir_all(&acme_dir)
+        .map_err(|e| format!("Failed to create Acme dir: {}", e))?;
+
+    let acme_dashboard = r#"# Acme Corp
+
+## Quick View
+| Field | Value |
+|-------|-------|
+| ARR | $1,200,000 |
+| Health | Green |
+| Lifecycle | Steady-state |
+| Renewal Date | 2025-09-15 |
+| CSM | You |
+
+## Key Stakeholders
+- Sarah Chen (VP Engineering) — Executive Sponsor
+- Alex Torres (Tech Lead) — Day-to-day contact, departing March
+- Pat Kim (CTO) — Strategic alignment
+
+## Recent Wins
+- Phase 1 migration completed ahead of schedule
+- Performance benchmarks exceeded targets by 15%
+- Executive sponsorship confirmed for Phase 2
+
+## Active Risks
+- Alex Torres leaving in March — knowledge transfer gap
+- NPS trending down — 3 detractors in last survey
+- Phase 2 budget approval still pending from finance
+
+## Notes
+Phase 2 scoping underway with April kickoff target. Need KT plan before Alex departs.
+"#;
+    std::fs::write(acme_dir.join("dashboard.md"), acme_dashboard)
+        .map_err(|e| format!("Failed to write Acme dashboard: {}", e))?;
+
+    let acme_json = serde_json::json!({
+        "name": "Acme Corp",
+        "lifecycle": "steady-state",
+        "arr": 1200000,
+        "health": "green",
+        "renewal_date": "2025-09-15",
+        "csm": "You",
+        "key_stakeholders": ["Sarah Chen (VP Eng)", "Alex Torres (Tech Lead)", "Pat Kim (CTO)"],
+        "notes": "Phase 2 scoping underway. KT plan needed before Alex departs."
+    });
+    std::fs::write(
+        acme_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&acme_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Acme dashboard.json: {}", e))?;
+
+    // Globex Industries
+    let globex_dir = accounts_dir.join("Globex Industries");
+    std::fs::create_dir_all(&globex_dir)
+        .map_err(|e| format!("Failed to create Globex dir: {}", e))?;
+
+    let globex_dashboard = r#"# Globex Industries
+
+## Quick View
+| Field | Value |
+|-------|-------|
+| ARR | $800,000 |
+| Health | Yellow |
+| Lifecycle | At-risk |
+| Renewal Date | 2025-06-30 |
+| CSM | You |
+
+## Key Stakeholders
+- Pat Reynolds (VP Product) — Executive Sponsor, departing Q2
+- Jamie Morrison (Eng Director) — Technical champion
+- Casey Lee (Head of Ops) — Usage & adoption
+
+## Recent Wins
+- Expanded to 3 new teams this quarter
+- Team A usage up 40% since January
+- CSAT score improved from 7.2 to 8.1
+
+## Active Risks
+- Pat Reynolds (key stakeholder) departing Q2
+- Usage declining in Team B — down 20% MoM
+- Renewal in 90 days with health at Yellow
+- Competitor (Contoso) actively pitching their team
+
+## Strategic Programs
+- **Team B Recovery** [At Risk]: Engagement plan to reverse usage decline
+- **APAC Expansion** [Proposed]: Extend deployment to Singapore and Sydney offices
+
+## Notes
+QBR is the highest-stakes meeting. Renewal decision expected this quarter.
+"#;
+    std::fs::write(globex_dir.join("dashboard.md"), globex_dashboard)
+        .map_err(|e| format!("Failed to write Globex dashboard: {}", e))?;
+
+    let globex_json = serde_json::json!({
+        "name": "Globex Industries",
+        "lifecycle": "at-risk",
+        "arr": 800000,
+        "health": "yellow",
+        "renewal_date": "2025-06-30",
+        "csm": "You",
+        "key_stakeholders": ["Pat Reynolds (VP Product)", "Jamie Morrison (Eng Director)", "Casey Lee (Head of Ops)"],
+        "notes": "Renewal at risk. QBR critical. Team B recovery plan underway."
+    });
+    std::fs::write(
+        globex_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&globex_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Globex dashboard.json: {}", e))?;
+
+    // Initech
+    let initech_dir = accounts_dir.join("Initech");
+    std::fs::create_dir_all(&initech_dir)
+        .map_err(|e| format!("Failed to create Initech dir: {}", e))?;
+
+    let initech_dashboard = r#"# Initech
+
+## Quick View
+| Field | Value |
+|-------|-------|
+| ARR | $350,000 |
+| Health | Green |
+| Lifecycle | Onboarding |
+| CSM | You |
+
+## Recent Wins
+- Phase 1 delivered on time and under budget
+
+## Active Risks
+- Budget approval pending from finance
+- Team bandwidth concerns for Q2
+
+## Notes
+Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executive sponsor.
+"#;
+    std::fs::write(initech_dir.join("dashboard.md"), initech_dashboard)
+        .map_err(|e| format!("Failed to write Initech dashboard: {}", e))?;
+
+    let initech_json = serde_json::json!({
+        "name": "Initech",
+        "lifecycle": "onboarding",
+        "arr": 350000,
+        "health": "green",
+        "csm": "You",
+        "notes": "Phase 2 kickoff planned. Budget approval pending."
+    });
+    std::fs::write(
+        initech_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&initech_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Initech dashboard.json: {}", e))?;
+
+    Ok(())
+}
+
+/// Write directive JSON fixtures for pipeline testing (bypass Phase 1).
+fn write_directive_fixtures(workspace: &Path) -> Result<(), String> {
+    let data_dir = workspace.join("_today").join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("Failed to create data dir: {}", e))?;
+
+    // Today directive
+    let today_content = patch_dates(TODAY_DIRECTIVE_TMPL);
+    std::fs::write(data_dir.join("today-directive.json"), today_content)
+        .map_err(|e| format!("Failed to write today-directive.json: {}", e))?;
+
+    // Week directive
+    let week_content = patch_dates(WEEK_DIRECTIVE_TMPL);
+    std::fs::write(data_dir.join("week-directive.json"), week_content)
+        .map_err(|e| format!("Failed to write week-directive.json: {}", e))?;
 
     Ok(())
 }

@@ -52,15 +52,17 @@ pub fn enrich_file(
         Err(e) => return EnrichResult::Error { message: e },
     };
 
-    // Read the file
-    let content = match std::fs::read_to_string(&file_path) {
+    // Detect format and extract text
+    let format = super::extract::detect_format(&file_path);
+    let content = match super::extract::extract_text(&file_path) {
         Ok(c) => c,
         Err(e) => {
             return EnrichResult::Error {
-                message: format!("Failed to read file: {}", e),
+                message: format!("Failed to extract text: {}", e),
             }
         }
     };
+    let is_non_md = !matches!(format, super::extract::SupportedFormat::Markdown);
 
     // Build the prompt for Claude
     let prompt = build_enrichment_prompt(filename, &content, user_ctx);
@@ -121,11 +123,28 @@ pub fn enrich_file(
 
     let result = match destination {
         Some(dest) => match move_file(&file_path, &dest) {
-            Ok(_) => EnrichResult::Routed {
-                classification: file_type.clone(),
-                destination: dest.display().to_string(),
-                summary: summary.clone(),
-            },
+            Ok(route_result) => {
+                // Write enriched companion .md for non-markdown files
+                if is_non_md {
+                    let companion_path = super::extract::companion_md_path(&route_result.destination);
+                    let companion_content = super::extract::build_enriched_companion_md(
+                        filename,
+                        format,
+                        &content,
+                        &file_type,
+                        account.as_deref(),
+                        &summary,
+                    );
+                    if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                        log::warn!("Failed to write companion .md for '{}': {}", filename, e);
+                    }
+                }
+                EnrichResult::Routed {
+                    classification: file_type.clone(),
+                    destination: route_result.destination.display().to_string(),
+                    summary: summary.clone(),
+                }
+            }
             Err(e) => EnrichResult::Error {
                 message: format!("Failed to route: {}", e),
             },
@@ -135,10 +154,27 @@ pub fn enrich_file(
             let date = Utc::now().format("%Y-%m-%d").to_string();
             let archive_dest = workspace.join("_archive").join(&date).join(filename);
             match move_file(&file_path, &archive_dest) {
-                Ok(_) => EnrichResult::Archived {
-                    summary: summary.clone(),
-                    destination: archive_dest.display().to_string(),
-                },
+                Ok(route_result) => {
+                    // Write enriched companion .md for non-markdown files
+                    if is_non_md {
+                        let companion_path = super::extract::companion_md_path(&route_result.destination);
+                        let companion_content = super::extract::build_enriched_companion_md(
+                            filename,
+                            format,
+                            &content,
+                            &file_type,
+                            account.as_deref(),
+                            &summary,
+                        );
+                        if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                            log::warn!("Failed to write companion .md for '{}': {}", filename, e);
+                        }
+                    }
+                    EnrichResult::Archived {
+                        summary: summary.clone(),
+                        destination: route_result.destination.display().to_string(),
+                    }
+                }
                 Err(e) => EnrichResult::Error {
                     message: format!("Failed to archive: {}", e),
                 },

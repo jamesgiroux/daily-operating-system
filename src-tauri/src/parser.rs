@@ -1948,7 +1948,7 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
     let ring_or_type = cells.get(4).map(|s| s.to_string());
     let prep_status_str = cells.get(5).map(|s| s.to_string());
 
-    // Determine meeting type from ring or explicit type
+    // Determine meeting type from lifecycle or explicit type
     let meeting_type = if let Some(ref t) = ring_or_type {
         match t.to_lowercase().as_str() {
             "customer" | "summit" | "foundation" | "evolution" | "influence" => MeetingType::Customer,
@@ -2009,7 +2009,7 @@ fn parse_hygiene_alert_row(line: &str) -> Option<HygieneAlert> {
     }
 
     let account = cells.get(1)?.to_string();
-    let ring = cells.get(2).map(|s| s.to_string());
+    let lifecycle = cells.get(2).map(|s| s.to_string());
     let arr = cells.get(3).map(|s| s.to_string());
     let issue = cells.get(4).map(|s| s.to_string()).unwrap_or_default();
 
@@ -2022,7 +2022,7 @@ fn parse_hygiene_alert_row(line: &str) -> Option<HygieneAlert> {
 
     Some(HygieneAlert {
         account,
-        ring: ring.filter(|s| !s.is_empty()),
+        lifecycle: lifecycle.filter(|s| !s.is_empty()),
         arr: arr.filter(|s| !s.is_empty()),
         issue,
         severity,

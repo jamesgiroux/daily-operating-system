@@ -28,7 +28,7 @@ const profiles: ProfileOption[] = [
     icon: Building2,
     features: [
       "Account health tracking",
-      "Customer meeting prep with ARR, ring, health",
+      "Customer meeting prep with ARR, lifecycle, health",
       "Stakeholder maps and relationship context",
       "Account-based action tracking",
     ],

@@ -55,7 +55,7 @@ pub struct AccountStructured {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ring: Option<i32>,
+    pub lifecycle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -120,7 +120,7 @@ pub fn write_account_json(
         structured: AccountStructured {
             arr: account.arr,
             health: account.health.clone(),
-            ring: account.ring,
+            lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
             csm: account.csm.clone(),
@@ -174,8 +174,8 @@ pub fn write_account_markdown(
         };
         md.push_str(&format!("**Health:** {} {}  \n", emoji, health));
     }
-    if let Some(ring) = account.ring {
-        md.push_str(&format!("**Tier:** Ring {}  \n", ring));
+    if let Some(ref lifecycle) = account.lifecycle {
+        md.push_str(&format!("**Lifecycle:** {}  \n", lifecycle));
     }
     if let Some(arr) = account.arr {
         md.push_str(&format!("**ARR:** ${:.0}  \n", arr));
@@ -419,7 +419,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
         account: DbAccount {
             id,
             name,
-            ring: json.structured.ring,
+            lifecycle: json.structured.lifecycle.clone(),
             arr: json.structured.arr,
             health: json.structured.health.clone(),
             contract_start: None, // Not in JSON schema — DB only
@@ -685,7 +685,7 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
         structured: AccountStructured {
             arr: account.arr,
             health: account.health.clone(),
-            ring: account.ring,
+            lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
             csm: account.csm.clone(),
@@ -718,7 +718,7 @@ mod tests {
         DbAccount {
             id: slugify(name),
             name: name.to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: Some(50_000.0),
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
@@ -765,7 +765,7 @@ mod tests {
             structured: AccountStructured {
                 arr: account.arr,
                 health: account.health.clone(),
-                ring: account.ring,
+                lifecycle: account.lifecycle.clone(),
                 renewal_date: account.contract_end.clone(),
                 nps: account.nps,
                 csm: account.csm.clone(),
@@ -837,7 +837,7 @@ mod tests {
             "structured": {
                 "arr": 25000.0,
                 "health": "yellow",
-                "ring": 2
+                "lifecycle": "ramping"
             }
         });
         std::fs::write(
@@ -870,7 +870,7 @@ mod tests {
             structured: AccountStructured {
                 arr: account.arr,
                 health: account.health.clone(),
-                ring: account.ring,
+                lifecycle: account.lifecycle.clone(),
                 renewal_date: account.contract_end.clone(),
                 nps: account.nps,
                 csm: account.csm.clone(),

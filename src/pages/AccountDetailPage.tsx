@@ -6,6 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  StatusBadge,
+  healthStyles,
+  progressStyles,
+} from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
@@ -50,7 +55,7 @@ export default function AccountDetailPage() {
 
   // Editable structured fields
   const [editHealth, setEditHealth] = useState<string>("");
-  const [editRing, setEditRing] = useState<string>("");
+  const [editLifecycle, setEditLifecycle] = useState<string>("");
   const [editArr, setEditArr] = useState<string>("");
   const [editNps, setEditNps] = useState<string>("");
   const [editCsm, setEditCsm] = useState<string>("");
@@ -71,7 +76,7 @@ export default function AccountDetailPage() {
       });
       setDetail(result);
       setEditHealth(result.health ?? "");
-      setEditRing(result.ring?.toString() ?? "");
+      setEditLifecycle(result.lifecycle ?? "");
       setEditArr(result.arr?.toString() ?? "");
       setEditNps(result.nps?.toString() ?? "");
       setEditCsm(result.csm ?? "");
@@ -99,8 +104,8 @@ export default function AccountDetailPage() {
       const fieldUpdates: [string, string][] = [];
       if (editHealth !== (detail.health ?? ""))
         fieldUpdates.push(["health", editHealth]);
-      if (editRing !== (detail.ring?.toString() ?? ""))
-        fieldUpdates.push(["ring", editRing]);
+      if (editLifecycle !== (detail.lifecycle ?? ""))
+        fieldUpdates.push(["lifecycle", editLifecycle]);
       if (editArr !== (detail.arr?.toString() ?? ""))
         fieldUpdates.push(["arr", editArr]);
       if (editNps !== (detail.nps?.toString() ?? ""))
@@ -197,11 +202,11 @@ export default function AccountDetailPage() {
                     {detail.name}
                   </h1>
                   {detail.health && (
-                    <HealthBadge health={detail.health as AccountHealth} />
+                    <StatusBadge value={detail.health} styles={healthStyles} />
                   )}
-                  {detail.ring && (
-                    <Badge variant="outline" className="text-xs">
-                      Ring {detail.ring}
+                  {detail.lifecycle && (
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {detail.lifecycle}
                     </Badge>
                   )}
                   {signals && (
@@ -267,20 +272,20 @@ export default function AccountDetailPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Ring
+                      Lifecycle
                     </label>
                     <select
-                      value={editRing}
+                      value={editLifecycle}
                       onChange={(e) => {
-                        setEditRing(e.target.value);
+                        setEditLifecycle(e.target.value);
                         setDirty(true);
                       }}
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                     >
                       <option value="">Not set</option>
-                      {[1, 2, 3, 4].map((r) => (
-                        <option key={r} value={r}>
-                          Ring {r}
+                      {["onboarding", "ramping", "steady-state", "at-risk", "churned"].map((s) => (
+                        <option key={s} value={s} className="capitalize">
+                          {s}
                         </option>
                       ))}
                     </select>
@@ -497,7 +502,11 @@ export default function AccountDetailPage() {
                   <div className="space-y-2">
                     {detail.strategicPrograms.map((p, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <ProgramStatusBadge status={p.status} />
+                        <StatusBadge
+                          value={p.status}
+                          styles={progressStyles}
+                          fallback={progressStyles.planned}
+                        />
                         <span className="font-medium">{p.name}</span>
                         {p.notes && (
                           <span className="text-muted-foreground">
@@ -653,36 +662,6 @@ export default function AccountDetailPage() {
   );
 }
 
-function HealthBadge({ health }: { health: AccountHealth }) {
-  const styles: Record<AccountHealth, string> = {
-    green:
-      "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-    yellow:
-      "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-    red: "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  };
-  return (
-    <Badge variant="outline" className={cn("text-xs", styles[health])}>
-      {health}
-    </Badge>
-  );
-}
-
-function ProgramStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    planned: "bg-muted text-muted-foreground",
-  };
-  return (
-    <Badge
-      variant="outline"
-      className={cn("text-xs", styles[status] ?? styles.planned)}
-    >
-      {status.replace("_", " ")}
-    </Badge>
-  );
-}
 
 function CaptureIcon({ type }: { type: string }) {
   const styles: Record<string, string> = {

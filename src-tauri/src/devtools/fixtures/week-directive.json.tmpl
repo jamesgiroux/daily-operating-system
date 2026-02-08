@@ -1,0 +1,113 @@
+{
+  "command": "week",
+  "generatedAt": "{{GENERATED_AT}}",
+  "context": {
+    "weekNumber": "W06",
+    "year": 2025,
+    "monday": "{{MON}}",
+    "friday": "{{FRI}}",
+    "dateRange": "{{MON}} – {{FRI}}",
+    "profile": "customer-success"
+  },
+  "meetingsByDay": {
+    "Monday": [
+      {"id": "cal-acme-weekly-{{MON}}", "title": "Acme Corp Weekly Sync", "start": "{{MON}}T13:00:00Z", "end": "{{MON}}T13:45:00Z", "type": "customer", "external_domains": ["acme.com"]},
+      {"id": "cal-eng-standup-{{MON}}", "title": "Engineering Standup", "start": "{{MON}}T14:30:00Z", "end": "{{MON}}T14:45:00Z", "type": "team_sync", "external_domains": []},
+      {"id": "cal-1on1-sarah-{{MON}}", "title": "1:1 with Sarah (Manager)", "start": "{{MON}}T19:00:00Z", "end": "{{MON}}T19:30:00Z", "type": "one_on_one", "external_domains": []}
+    ],
+    "Tuesday": [
+      {"id": "cal-globex-checkin-{{TUE}}", "title": "Globex Check-in", "start": "{{TUE}}T14:00:00Z", "end": "{{TUE}}T14:45:00Z", "type": "customer", "external_domains": ["globex.com"]},
+      {"id": "cal-eng-standup-{{TUE}}", "title": "Engineering Standup", "start": "{{TUE}}T14:30:00Z", "end": "{{TUE}}T14:45:00Z", "type": "team_sync", "external_domains": []},
+      {"id": "cal-product-planning-{{TUE}}", "title": "Product Planning", "start": "{{TUE}}T18:00:00Z", "end": "{{TUE}}T19:00:00Z", "type": "internal", "external_domains": []},
+      {"id": "cal-initech-status-{{TUE}}", "title": "Initech Phase 2 Status", "start": "{{TUE}}T20:00:00Z", "end": "{{TUE}}T20:30:00Z", "type": "customer", "external_domains": ["initech.com"]}
+    ],
+    "Wednesday": [
+      {"id": "cal-cs-team-sync-{{WED}}", "title": "CS Team Sync", "start": "{{WED}}T15:00:00Z", "end": "{{WED}}T15:45:00Z", "type": "team_sync", "external_domains": []},
+      {"id": "cal-acme-exec-{{WED}}", "title": "Acme Corp Exec Sponsor Call", "start": "{{WED}}T16:00:00Z", "end": "{{WED}}T16:30:00Z", "type": "customer", "external_domains": ["acme.com"]},
+      {"id": "cal-globex-qbr-{{WED}}", "title": "Globex Industries QBR", "start": "{{WED}}T19:00:00Z", "end": "{{WED}}T20:00:00Z", "type": "qbr", "external_domains": ["globex.com"]},
+      {"id": "cal-1on1-report-{{WED}}", "title": "1:1 with Direct Report", "start": "{{WED}}T21:00:00Z", "end": "{{WED}}T21:30:00Z", "type": "one_on_one", "external_domains": []}
+    ],
+    "Thursday": [
+      {"id": "cal-sprint-review-{{THU}}", "title": "Sprint Review", "start": "{{THU}}T14:00:00Z", "end": "{{THU}}T14:45:00Z", "type": "internal", "external_domains": []},
+      {"id": "cal-eng-standup-{{THU}}", "title": "Engineering Standup", "start": "{{THU}}T14:30:00Z", "end": "{{THU}}T14:45:00Z", "type": "team_sync", "external_domains": []},
+      {"id": "cal-initech-onboard-{{THU}}", "title": "Initech Onboarding Call", "start": "{{THU}}T18:00:00Z", "end": "{{THU}}T19:00:00Z", "type": "training", "external_domains": ["initech.com"]}
+    ],
+    "Friday": [
+      {"id": "cal-acme-monthly-{{FRI}}", "title": "Acme Corp Monthly Review", "start": "{{FRI}}T15:00:00Z", "end": "{{FRI}}T16:00:00Z", "type": "customer", "external_domains": ["acme.com"]},
+      {"id": "cal-cs-leadership-{{FRI}}", "title": "CS Leadership Sync", "start": "{{FRI}}T16:30:00Z", "end": "{{FRI}}T17:00:00Z", "type": "team_sync", "external_domains": []},
+      {"id": "cal-all-hands-{{FRI}}", "title": "Company All Hands", "start": "{{FRI}}T20:00:00Z", "end": "{{FRI}}T21:00:00Z", "type": "all_hands", "external_domains": []}
+    ]
+  },
+  "meetingContexts": [
+    {
+      "event_id": "cal-acme-weekly-{{MON}}",
+      "account": "Acme Corp",
+      "account_data": {"name": "Acme Corp", "lifecycle": "steady-state", "arr": 1200000, "health": "green"},
+      "narrative": "Acme completed Phase 1 ahead of schedule. NPS trending down. Phase 2 scoping underway.",
+      "talking_points": ["Review Phase 1 benchmarks", "Discuss NPS detractors", "Phase 2 timeline"]
+    },
+    {
+      "event_id": "cal-globex-checkin-{{TUE}}",
+      "account": "Globex Industries",
+      "account_data": {"name": "Globex Industries", "lifecycle": "at-risk", "arr": 800000, "health": "yellow"},
+      "narrative": "Team B usage declining. Renewal in 90 days. QBR later this week is critical.",
+      "talking_points": ["Team B engagement plan", "Pre-QBR alignment", "APAC expansion update"]
+    },
+    {
+      "event_id": "cal-globex-qbr-{{WED}}",
+      "account": "Globex Industries",
+      "account_data": {"name": "Globex Industries", "lifecycle": "at-risk", "arr": 800000, "health": "yellow"},
+      "narrative": "Highest-stakes meeting of the week. Renewal decision expected.",
+      "talking_points": ["Expansion wins — 3 new teams", "Team B decline — root cause", "Renewal terms", "Pat Reynolds transition"],
+      "risks": ["Pat Reynolds departing Q2", "Team B usage down 20% MoM", "Competitor actively pitching"],
+      "wins": ["3 new teams onboarded", "Team A usage up 40%", "CSAT improved to 8.1"]
+    },
+    {
+      "event_id": "cal-initech-status-{{TUE}}",
+      "account": "Initech",
+      "account_data": {"name": "Initech", "lifecycle": "onboarding", "arr": 350000, "health": "green"},
+      "narrative": "Phase 1 complete. Status call to align on Phase 2 scope before kickoff.",
+      "talking_points": ["Phase 1 wrap-up items", "Phase 2 scope confirmation", "Budget status"]
+    },
+    {
+      "event_id": "cal-acme-exec-{{WED}}",
+      "account": "Acme Corp",
+      "account_data": {"name": "Acme Corp", "lifecycle": "steady-state", "arr": 1200000, "health": "green"},
+      "narrative": "Exec sponsor call to confirm Phase 2 investment and address NPS concerns.",
+      "talking_points": ["Phase 2 business case", "NPS action plan", "Q3 roadmap alignment"]
+    }
+  ],
+  "actions": {
+    "overdue": [
+      {"title": "Send updated SOW to Acme legal team", "account": "Acme Corp", "due_date": "{{YESTERDAY}}", "priority": "P1"},
+      {"title": "Follow up on NPS survey responses", "account": "Acme Corp", "due_date": "{{LAST_WEEK}}", "priority": "P2"}
+    ],
+    "thisWeek": [
+      {"title": "Review Globex QBR deck with AE", "account": "Globex Industries", "due_date": "{{WED}}", "priority": "P1"},
+      {"title": "Schedule Phase 2 kickoff with Initech", "account": "Initech", "due_date": "{{THU}}", "priority": "P2"},
+      {"title": "Create knowledge transfer plan for Alex Torres departure", "account": "Acme Corp", "due_date": "{{FRI}}", "priority": "P1"}
+    ]
+  },
+  "timeBlocks": {
+    "gapsByDay": {
+      "Monday": [
+        {"start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120},
+        {"start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120}
+      ],
+      "Tuesday": [
+        {"start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90}
+      ],
+      "Thursday": [
+        {"start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180}
+      ],
+      "Friday": [
+        {"start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90}
+      ]
+    },
+    "suggestions": [
+      {"day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120, "suggestedUse": "Globex QBR prep"},
+      {"day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180, "suggestedUse": "Deep work — knowledge transfer plan"},
+      {"day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90, "suggestedUse": "Weekly wrap-up"}
+    ]
+  }
+}

@@ -375,10 +375,11 @@ export default function WeekPage() {
                       )}
                     >
                       <p className="font-medium">{alert.account}</p>
-                      {alert.ring && (
-                        <p className="text-xs text-muted-foreground">
-                          Ring: {alert.ring}
-                          {alert.arr && ` • ARR: ${alert.arr}`}
+                      {(alert.lifecycle || alert.arr) && (
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {alert.lifecycle && alert.lifecycle}
+                          {alert.lifecycle && alert.arr && " • "}
+                          {alert.arr && `ARR: ${alert.arr}`}
                         </p>
                       )}
                       <p className="mt-1 text-sm text-muted-foreground">

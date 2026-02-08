@@ -718,11 +718,29 @@ pub fn get_inbox_file_content(
         return Err(format!("File not found: {}", filename));
     }
 
-    // Try reading as text; binary files will fail gracefully
-    match std::fs::read_to_string(&file_path) {
+    // Extract text content — works for both text and binary document formats
+    use crate::processor::extract;
+
+    let format = extract::detect_format(&file_path);
+    if matches!(format, extract::SupportedFormat::Unsupported) {
+        // Truly unsupported format — show descriptive message
+        let size = std::fs::metadata(&file_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let ext = file_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("unknown");
+        return Ok(format!(
+            "[Unsupported file — .{} — {} bytes]\n\nText extraction is not available for this format. Use \"Process\" to archive it.",
+            ext, size
+        ));
+    }
+
+    match extract::extract_text(&file_path) {
         Ok(content) => Ok(content),
-        Err(_) => {
-            // Binary file — return a descriptive message instead of erroring
+        Err(e) => {
+            // Extraction failed — show error with fallback info
             let size = std::fs::metadata(&file_path)
                 .map(|m| m.len())
                 .unwrap_or(0);
@@ -731,8 +749,8 @@ pub fn get_inbox_file_content(
                 .and_then(|e| e.to_str())
                 .unwrap_or("unknown");
             Ok(format!(
-                "[Binary file — .{} — {} bytes]\n\nThis file cannot be previewed as text. Use \"Process\" to let DailyOS handle it.",
-                ext, size
+                "[Extraction failed — .{} — {} bytes]\n\nError: {}\n\nUse \"Process\" to let DailyOS handle it.",
+                ext, size, e
             ))
         }
     }
@@ -1903,7 +1921,7 @@ pub fn populate_workspace(
         let db_account = crate::db::DbAccount {
             id: slug,
             name: name.to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,
@@ -2069,6 +2087,62 @@ pub fn dev_get_state(
         return Err("Dev tools not available in release builds".into());
     }
     crate::devtools::get_dev_state(&state)
+}
+
+/// Daily briefing — mechanical delivery only (no AI).
+///
+/// Requires `simulate_briefing` scenario first. Delivers schedule, actions,
+/// preps, emails, manifest from the seeded today-directive.json.
+#[tauri::command]
+pub fn dev_run_today_mechanical(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::run_today_mechanical(&state)
+}
+
+/// Daily briefing — full pipeline with AI enrichment.
+///
+/// Requires `simulate_briefing` scenario + Claude Code CLI installed.
+/// Mechanical delivery + enrich_emails, enrich_preps, enrich_briefing.
+#[tauri::command]
+pub fn dev_run_today_full(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::run_today_full(&state)
+}
+
+/// Weekly prep — mechanical delivery only (no AI).
+///
+/// Requires `simulate_briefing` scenario first. Delivers week-overview.json
+/// from the seeded week-directive.json.
+#[tauri::command]
+pub fn dev_run_week_mechanical(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::run_week_mechanical(&state)
+}
+
+/// Weekly prep — full pipeline with AI enrichment.
+///
+/// Requires `simulate_briefing` scenario + Claude Code CLI installed.
+/// Runs Claude /week then delivers week-overview.json.
+#[tauri::command]
+pub fn dev_run_week_full(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::run_week_full(&state)
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
@@ -2392,7 +2466,7 @@ pub fn get_meeting_attendees(
 pub struct AccountListItem {
     pub id: String,
     pub name: String,
-    pub ring: Option<i32>,
+    pub lifecycle: Option<String>,
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
@@ -2409,7 +2483,7 @@ pub struct AccountListItem {
 pub struct AccountDetailResult {
     pub id: String,
     pub name: String,
-    pub ring: Option<i32>,
+    pub lifecycle: Option<String>,
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
@@ -2464,7 +2538,7 @@ pub fn get_accounts_list(
             AccountListItem {
                 id: a.id,
                 name: a.name,
-                ring: a.ring,
+                lifecycle: a.lifecycle,
                 arr: a.arr,
                 health: a.health,
                 nps: a.nps,
@@ -2545,7 +2619,7 @@ pub fn get_account_detail(
     Ok(AccountDetailResult {
         id: account.id,
         name: account.name,
-        ring: account.ring,
+        lifecycle: account.lifecycle,
         arr: account.arr,
         health: account.health,
         nps: account.nps,
@@ -2712,7 +2786,7 @@ pub fn create_account(
     let account = crate::db::DbAccount {
         id: id.clone(),
         name: name.clone(),
-        ring: None,
+        lifecycle: None,
         arr: None,
         health: None,
         contract_start: None,
@@ -3111,7 +3185,7 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
         structured: crate::accounts::AccountStructured {
             arr: account.arr,
             health: account.health.clone(),
-            ring: account.ring,
+            lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
             csm: account.csm.clone(),

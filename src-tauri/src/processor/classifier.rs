@@ -45,8 +45,14 @@ pub fn classify_file(path: &Path, content: &str) -> Classification {
         .unwrap_or("")
         .to_lowercase();
 
-    // Strip extension for pattern matching
-    let stem = filename.trim_end_matches(".md");
+    // Strip known extensions for pattern matching (supports non-md files too)
+    let mut stem = &filename[..];
+    for ext in super::extract::KNOWN_EXTENSIONS {
+        if let Some(stripped) = stem.strip_suffix(ext) {
+            stem = stripped;
+            break;
+        }
+    }
 
     // Pattern: *-meeting-notes* or *-meeting-recap*
     if stem.contains("meeting-notes") || stem.contains("meeting-recap") {
@@ -92,6 +98,9 @@ pub fn classify_file(path: &Path, content: &str) -> Classification {
 /// e.g., "acme-corp-meeting-notes" with suffix "meeting-notes" → Some("acme-corp")
 fn extract_account_from_filename(stem: &str, suffixes: &[&str]) -> Option<String> {
     for suffix in suffixes {
+        if !stem.contains(suffix) {
+            continue;
+        }
         if let Some(before) = stem.split(suffix).next() {
             let trimmed = before.trim_end_matches('-');
             if !trimmed.is_empty() {
@@ -181,5 +190,50 @@ mod tests {
         let content = "# Meeting\n\n- [ ] Follow up with team\n- [ ] Send proposal\n- [ ] Review docs\n";
         let result = classify_file(&path, content);
         assert!(matches!(result, Classification::ActionItems { .. }));
+    }
+
+    // Non-md extension tests (ADR-0050: universal file extraction)
+
+    #[test]
+    fn test_classifier_strips_pdf_extension() {
+        let path = PathBuf::from("acme-corp-meeting-notes.pdf");
+        let result = classify_file(&path, "");
+        match result {
+            Classification::MeetingNotes { account } => {
+                assert_eq!(account, Some("acme corp".to_string()));
+            }
+            other => panic!("Expected MeetingNotes for .pdf, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_classifier_strips_docx_extension() {
+        let path = PathBuf::from("acme-corp-account-update.docx");
+        let result = classify_file(&path, "");
+        match result {
+            Classification::AccountUpdate { account } => {
+                assert_eq!(account, "acme corp");
+            }
+            other => panic!("Expected AccountUpdate for .docx, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_classifier_strips_xlsx_extension() {
+        let path = PathBuf::from("acme-action-items.xlsx");
+        let result = classify_file(&path, "");
+        assert!(matches!(result, Classification::ActionItems { .. }));
+    }
+
+    #[test]
+    fn test_classifier_strips_html_extension() {
+        let path = PathBuf::from("context-for-weekly-sync.html");
+        let result = classify_file(&path, "");
+        match result {
+            Classification::MeetingContext { meeting_name } => {
+                assert_eq!(meeting_name, Some("weekly sync".to_string()));
+            }
+            other => panic!("Expected MeetingContext for .html, got {:?}", other),
+        }
     }
 }

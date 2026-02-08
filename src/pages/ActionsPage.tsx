@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SearchInput } from "@/components/ui/search-input";
+import { TabFilter } from "@/components/ui/tab-filter";
 import { useActions } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import { cn, stripMarkdown } from "@/lib/utils";
@@ -12,7 +14,6 @@ import {
   Circle,
   Clock,
   RefreshCw,
-  Search,
 } from "lucide-react";
 
 type StatusTab = "all" | "pending" | "completed" | "waiting";
@@ -107,47 +108,20 @@ export default function ActionsPage() {
             </Button>
           </div>
 
-          {/* Search */}
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search actions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-md border bg-background py-2 pl-10 pr-4 text-sm outline-none focus:ring-1 focus:ring-ring"
-            />
-          </div>
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search actions..."
+            className="mb-4"
+          />
 
-          {/* Status filter tabs */}
-          <div className="mb-4 flex gap-2">
-            {statusTabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                  statusFilter === tab.key
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted hover:bg-muted/80"
-                )}
-              >
-                {tab.label}
-                {statusCounts[tab.key] > 0 && (
-                  <span
-                    className={cn(
-                      "ml-1.5 inline-flex size-5 items-center justify-center rounded-full text-xs",
-                      statusFilter === tab.key
-                        ? "bg-primary-foreground/20 text-primary-foreground"
-                        : "bg-muted-foreground/15 text-muted-foreground"
-                    )}
-                  >
-                    {statusCounts[tab.key]}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+          <TabFilter
+            tabs={statusTabs}
+            active={statusFilter}
+            onChange={setStatusFilter}
+            counts={statusCounts}
+            className="mb-4"
+          />
 
           {/* Priority filter */}
           <div className="mb-6 flex gap-1.5">

@@ -1,0 +1,371 @@
+{
+  "context": {
+    "date": "{{DATE}}",
+    "profile": "customer-success",
+    "greeting": "Good morning — 7 meetings today. Globex QBR at 1 PM is the priority.",
+    "summary": "Acme weekly sync done. Initech kickoff at 10 AM. Big afternoon: Globex QBR followed by sprint review. Company all hands at 4:30.",
+    "focus": "Prepare for Globex QBR — renewal decision expected this quarter"
+  },
+  "calendar": {
+    "events": [
+      {
+        "id": "cal-acme-weekly-{{DATE}}",
+        "summary": "Acme Corp Weekly Sync",
+        "start": "{{DATE}}T13:00:00Z",
+        "end": "{{DATE}}T13:45:00Z"
+      },
+      {
+        "id": "cal-eng-standup-{{DATE}}",
+        "summary": "Engineering Standup",
+        "start": "{{DATE}}T14:30:00Z",
+        "end": "{{DATE}}T14:45:00Z"
+      },
+      {
+        "id": "cal-initech-kickoff-{{DATE}}",
+        "summary": "Initech Phase 2 Kickoff",
+        "start": "{{DATE}}T15:00:00Z",
+        "end": "{{DATE}}T16:00:00Z"
+      },
+      {
+        "id": "cal-1on1-sarah-{{DATE}}",
+        "summary": "1:1 with Sarah (Manager)",
+        "start": "{{DATE}}T16:00:00Z",
+        "end": "{{DATE}}T16:30:00Z"
+      },
+      {
+        "id": "cal-globex-qbr-{{DATE}}",
+        "summary": "Globex Industries QBR",
+        "start": "{{DATE}}T18:00:00Z",
+        "end": "{{DATE}}T19:00:00Z"
+      },
+      {
+        "id": "cal-sprint-review-{{DATE}}",
+        "summary": "Product Team Sprint Review",
+        "start": "{{DATE}}T19:30:00Z",
+        "end": "{{DATE}}T20:15:00Z"
+      },
+      {
+        "id": "cal-all-hands-{{DATE}}",
+        "summary": "Company All Hands",
+        "start": "{{DATE}}T21:30:00Z",
+        "end": "{{DATE}}T22:30:00Z"
+      }
+    ]
+  },
+  "meetings": {
+    "customer": [
+      {
+        "id": "mtg-acme-weekly-{{DATE}}",
+        "event_id": "cal-acme-weekly-{{DATE}}",
+        "title": "Acme Corp Weekly Sync",
+        "summary": "Acme Corp Weekly Sync",
+        "start": "{{DATE}}T13:00:00Z",
+        "end": "{{DATE}}T13:45:00Z",
+        "start_display": "8:00 AM",
+        "end_display": "8:45 AM",
+        "type": "customer",
+        "account": "Acme Corp"
+      },
+      {
+        "id": "mtg-initech-kickoff-{{DATE}}",
+        "event_id": "cal-initech-kickoff-{{DATE}}",
+        "title": "Initech Phase 2 Kickoff",
+        "summary": "Initech Phase 2 Kickoff",
+        "start": "{{DATE}}T15:00:00Z",
+        "end": "{{DATE}}T16:00:00Z",
+        "start_display": "10:00 AM",
+        "end_display": "11:00 AM",
+        "type": "customer",
+        "account": "Initech"
+      },
+      {
+        "id": "mtg-globex-qbr-{{DATE}}",
+        "event_id": "cal-globex-qbr-{{DATE}}",
+        "title": "Globex Industries QBR",
+        "summary": "Globex Industries QBR",
+        "start": "{{DATE}}T18:00:00Z",
+        "end": "{{DATE}}T19:00:00Z",
+        "start_display": "1:00 PM",
+        "end_display": "2:00 PM",
+        "type": "qbr",
+        "account": "Globex Industries"
+      }
+    ],
+    "internal": [
+      {
+        "id": "mtg-eng-standup-{{DATE}}",
+        "event_id": "cal-eng-standup-{{DATE}}",
+        "title": "Engineering Standup",
+        "summary": "Engineering Standup",
+        "start": "{{DATE}}T14:30:00Z",
+        "end": "{{DATE}}T14:45:00Z",
+        "start_display": "9:30 AM",
+        "end_display": "9:45 AM",
+        "type": "team_sync",
+        "account": null
+      },
+      {
+        "id": "mtg-sprint-review-{{DATE}}",
+        "event_id": "cal-sprint-review-{{DATE}}",
+        "title": "Product Team Sprint Review",
+        "summary": "Product Team Sprint Review",
+        "start": "{{DATE}}T19:30:00Z",
+        "end": "{{DATE}}T20:15:00Z",
+        "start_display": "2:30 PM",
+        "end_display": "3:15 PM",
+        "type": "internal",
+        "account": null
+      },
+      {
+        "id": "mtg-all-hands-{{DATE}}",
+        "event_id": "cal-all-hands-{{DATE}}",
+        "title": "Company All Hands",
+        "summary": "Company All Hands",
+        "start": "{{DATE}}T21:30:00Z",
+        "end": "{{DATE}}T22:30:00Z",
+        "start_display": "4:30 PM",
+        "end_display": "5:30 PM",
+        "type": "all_hands",
+        "account": null
+      }
+    ],
+    "one_on_one": [
+      {
+        "id": "mtg-1on1-sarah-{{DATE}}",
+        "event_id": "cal-1on1-sarah-{{DATE}}",
+        "title": "1:1 with Sarah (Manager)",
+        "summary": "1:1 with Sarah (Manager)",
+        "start": "{{DATE}}T16:00:00Z",
+        "end": "{{DATE}}T16:30:00Z",
+        "start_display": "11:00 AM",
+        "end_display": "11:30 AM",
+        "type": "one_on_one",
+        "account": null
+      }
+    ]
+  },
+  "meeting_contexts": [
+    {
+      "event_id": "cal-acme-weekly-{{DATE}}",
+      "account": "Acme Corp",
+      "account_data": {
+        "name": "Acme Corp",
+        "lifecycle": "steady-state",
+        "arr": 1200000,
+        "health": "green",
+        "renewal_date": "2025-09-15",
+        "csm": "You",
+        "key_stakeholders": ["Sarah Chen (VP Eng)", "Alex Torres (Tech Lead)", "Pat Kim (CTO)"]
+      },
+      "narrative": "Acme completed Phase 1 migration ahead of schedule. NPS trending down with 3 detractors identified. Phase 2 scoping underway with April kickoff target. Key risk: Alex Torres departing in March — need knowledge transfer plan.",
+      "talking_points": [
+        "Congratulate team on Phase 1 completion — benchmarks exceeded by 15%",
+        "Discuss Phase 2 timeline and scope document",
+        "Address Alex Torres departure — what's the KT plan?"
+      ],
+      "risks": [
+        "Alex Torres leaving in March — knowledge transfer gap",
+        "NPS trending down — 3 detractors in last survey",
+        "Phase 2 budget approval still pending from finance"
+      ],
+      "wins": [
+        "Phase 1 migration completed ahead of schedule",
+        "Performance benchmarks exceeded targets by 15%",
+        "Executive sponsorship confirmed for Phase 2"
+      ],
+      "questions": [
+        "What's the timeline for backfilling Alex's role?",
+        "Can we schedule detractor interviews this week?",
+        "Is the April kickoff date still realistic given budget review?"
+      ],
+      "since_last": [
+        "Phase 1 benchmarks published — all green",
+        "Sarah confirmed executive sponsorship",
+        "3 NPS detractors flagged in monthly survey"
+      ],
+      "current_state": [
+        "Phase 1 complete, Phase 2 in scoping",
+        "Health: Green but NPS at risk",
+        "Next renewal: September 2025"
+      ],
+      "references": [
+        {"label": "Account Dashboard", "path": "Accounts/Acme Corp/dashboard.md"},
+        {"label": "Phase 1 Retrospective", "path": "_archive/2025-01-15/acme-phase1-retro.md"}
+      ]
+    },
+    {
+      "event_id": "cal-initech-kickoff-{{DATE}}",
+      "account": "Initech",
+      "account_data": {
+        "name": "Initech",
+        "lifecycle": "onboarding",
+        "arr": 350000,
+        "health": "green",
+        "csm": "You"
+      },
+      "narrative": "Initech completed Phase 1 on time. This kickoff sets the direction for Phase 2. Budget approval is the gating item.",
+      "talking_points": [
+        "Review Phase 1 outcomes and lessons learned",
+        "Align on Phase 2 scope and success criteria",
+        "Confirm team assignments and onboarding plan"
+      ],
+      "risks": [
+        "Budget approval pending from finance",
+        "Team bandwidth concerns for Q2"
+      ],
+      "wins": [
+        "Phase 1 delivered on time and under budget"
+      ],
+      "references": [
+        {"label": "Account Dashboard", "path": "Accounts/Initech/dashboard.md"}
+      ]
+    },
+    {
+      "event_id": "cal-globex-qbr-{{DATE}}",
+      "account": "Globex Industries",
+      "account_data": {
+        "name": "Globex Industries",
+        "lifecycle": "at-risk",
+        "arr": 800000,
+        "health": "yellow",
+        "renewal_date": "2025-06-30",
+        "csm": "You",
+        "key_stakeholders": ["Pat Reynolds (VP Product)", "Jamie Morrison (Eng Director)", "Casey Lee (Head of Ops)"]
+      },
+      "narrative": "Globex QBR is the highest-stakes meeting today. Renewal in 90 days with health at Yellow. Pat Reynolds departing Q2 — need to build relationship with successor. Usage declining in Team B is a concern. Bright spot: expanded to 3 new teams this quarter.",
+      "talking_points": [
+        "Open with expansion wins — 3 new teams this quarter",
+        "Address Team B usage decline directly",
+        "Discuss renewal timeline and terms",
+        "Understand Pat Reynolds transition plan"
+      ],
+      "risks": [
+        "Pat Reynolds (key stakeholder) departing Q2",
+        "Usage declining in Team B — down 20% MoM",
+        "Renewal in 90 days with health at Yellow",
+        "Competitor (Contoso) actively pitching their team"
+      ],
+      "wins": [
+        "Expanded to 3 new teams this quarter",
+        "Team A usage up 40% since January",
+        "CSAT score improved from 7.2 to 8.1"
+      ],
+      "questions": [
+        "Who is replacing Pat Reynolds? When can we meet them?",
+        "What's driving the Team B usage decline?",
+        "Are there expansion opportunities in the APAC division?",
+        "What would make renewal a no-brainer decision?"
+      ],
+      "since_last": [
+        "3 new teams onboarded",
+        "Team B usage dropped 20%",
+        "CSAT survey completed — score up to 8.1"
+      ],
+      "current_state": [
+        "Health: Yellow (renewal risk)",
+        "Renewal: June 30, 2025 (90 days)",
+        "Active teams: 8 of 12 licensed"
+      ],
+      "strategic_programs": [
+        {"name": "Team B Recovery", "status": "at_risk", "description": "Engagement plan to reverse usage decline"},
+        {"name": "APAC Expansion", "status": "proposed", "description": "Extend deployment to Singapore and Sydney offices"}
+      ],
+      "references": [
+        {"label": "Account Dashboard", "path": "Accounts/Globex Industries/dashboard.md"},
+        {"label": "QBR Deck", "path": "_today/data/preps/globex-industries-qbr.json"},
+        {"label": "Last QBR Notes", "path": "_archive/2024-12-15/globex-qbr-notes.md"}
+      ]
+    }
+  ],
+  "actions": {
+    "overdue": [
+      {
+        "title": "Send updated SOW to Acme legal team",
+        "account": "Acme Corp",
+        "due_date": "{{YESTERDAY}}",
+        "days_overdue": 1,
+        "context": "legal",
+        "source": "briefing"
+      },
+      {
+        "title": "Follow up on NPS survey responses",
+        "account": "Acme Corp",
+        "due_date": "{{LAST_WEEK}}",
+        "days_overdue": 7,
+        "context": "customer-health",
+        "source": "briefing"
+      }
+    ],
+    "due_today": [
+      {
+        "title": "Review Globex QBR deck with AE",
+        "account": "Globex Industries",
+        "due_date": "{{DATE}}",
+        "context": "qbr-prep",
+        "source": "briefing"
+      }
+    ],
+    "due_this_week": [
+      {
+        "title": "Schedule Phase 2 kickoff with Initech",
+        "account": "Initech",
+        "due_date": "{{TOMORROW}}",
+        "context": "project",
+        "source": "briefing"
+      },
+      {
+        "title": "Create knowledge transfer plan for Alex Torres departure",
+        "account": "Acme Corp",
+        "due_date": "{{FRI}}",
+        "context": "risk-mitigation",
+        "source": "transcript"
+      }
+    ],
+    "waiting_on": [
+      {
+        "what": "Phase 2 budget approval",
+        "who": "Initech finance team",
+        "context": "budget"
+      }
+    ]
+  },
+  "emails": {
+    "high_priority": [
+      {
+        "id": "email-001",
+        "from": "Sarah Chen",
+        "from_email": "sarah.chen@acme.com",
+        "subject": "RE: Phase 2 Scope — Need your input by EOD",
+        "snippet": "Hi, following up on our discussion. Can you review the attached scope document and share feedback by end of day? Pat wants to present to the board next week...",
+        "priority": "high"
+      },
+      {
+        "id": "email-002",
+        "from": "Pat Reynolds",
+        "from_email": "pat.reynolds@globex.com",
+        "subject": "QBR Agenda — One Addition",
+        "snippet": "Can we add 15 minutes to discuss the APAC expansion timeline? Jamie and I have been exploring options and want to align before the board meeting...",
+        "priority": "high"
+      },
+      {
+        "id": "email-003",
+        "from": "Casey Lee",
+        "from_email": "casey.lee@globex.com",
+        "subject": "Team B Usage Report — Concerning Trend",
+        "snippet": "Attached the latest usage data for Team B. We've seen a 20% decline month-over-month. I think it's related to the new onboarding process...",
+        "priority": "high"
+      },
+      {
+        "id": "email-004",
+        "from": "Alex Torres",
+        "from_email": "alex.torres@acme.com",
+        "subject": "Knowledge Transfer Plan — Draft",
+        "snippet": "I've started documenting the key systems and processes. Here's the first draft of the KT plan. Can we review together this week?...",
+        "priority": "high"
+      }
+    ],
+    "medium_count": 8,
+    "low_count": 12
+  },
+  "generated_at": "{{GENERATED_AT}}"
+}

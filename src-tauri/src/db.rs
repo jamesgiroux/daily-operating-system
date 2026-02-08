@@ -55,7 +55,7 @@ pub struct DbAction {
 pub struct DbAccount {
     pub id: String,
     pub name: String,
-    pub ring: Option<i32>,
+    pub lifecycle: Option<String>,
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub contract_start: Option<String>,
@@ -283,6 +283,16 @@ impl ActionDb {
         let _ = conn.execute_batch(
             "ALTER TABLE accounts ADD COLUMN nps INTEGER;",
         );
+
+        // Migration: ring → lifecycle (ring was INTEGER 1-4, lifecycle is TEXT)
+        let has_lifecycle: bool = conn
+            .prepare("SELECT lifecycle FROM accounts LIMIT 0")
+            .is_ok();
+        if !has_lifecycle {
+            let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN lifecycle TEXT;");
+            // Drop the old ring column data — it was CS-specific decoration
+            // SQLite can't drop columns, so ring stays as a dead column
+        }
 
         // Migration: add 'decision' to captures.capture_type CHECK constraint.
         // SQLite can't ALTER CHECK constraints, so we recreate the table if needed.
@@ -757,12 +767,12 @@ impl ActionDb {
     pub fn upsert_account(&self, account: &DbAccount) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO accounts (
-                id, name, ring, arr, health, contract_start, contract_end,
+                id, name, lifecycle, arr, health, contract_start, contract_end,
                 csm, champion, nps, tracker_path, updated_at
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
-                ring = excluded.ring,
+                lifecycle = excluded.lifecycle,
                 arr = excluded.arr,
                 health = excluded.health,
                 contract_start = excluded.contract_start,
@@ -775,7 +785,7 @@ impl ActionDb {
             params![
                 account.id,
                 account.name,
-                account.ring,
+                account.lifecycle,
                 account.arr,
                 account.health,
                 account.contract_start,
@@ -809,7 +819,7 @@ impl ActionDb {
     /// Get an account by ID.
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE id = ?1",
@@ -826,7 +836,7 @@ impl ActionDb {
     /// Get an account by name (case-insensitive).
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
@@ -843,7 +853,7 @@ impl ActionDb {
     /// Get all accounts, ordered by name.
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     csm, champion, nps, tracker_path, updated_at
              FROM accounts ORDER BY name",
         )?;
@@ -894,7 +904,7 @@ impl ActionDb {
         let now = Utc::now().to_rfc3339();
         let sql = match field {
             "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
-            "ring" => "UPDATE accounts SET ring = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
+            "lifecycle" => "UPDATE accounts SET lifecycle = ?1, updated_at = ?3 WHERE id = ?2",
             "arr" => "UPDATE accounts SET arr = CAST(?1 AS REAL), updated_at = ?3 WHERE id = ?2",
             "nps" => "UPDATE accounts SET nps = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
             "csm" => "UPDATE accounts SET csm = ?1, updated_at = ?3 WHERE id = ?2",
@@ -1890,7 +1900,7 @@ impl ActionDb {
     /// Returns accounts approaching renewal, ordered by soonest first.
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE contract_end IS NOT NULL
@@ -1910,7 +1920,7 @@ impl ActionDb {
     /// or manual updates) in a while — a signal to check in.
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
@@ -2328,7 +2338,7 @@ impl ActionDb {
         Ok(DbAccount {
             id: row.get(0)?,
             name: row.get(1)?,
-            ring: row.get(2)?,
+            lifecycle: row.get(2)?,
             arr: row.get(3)?,
             health: row.get(4)?,
             contract_start: row.get(5)?,
@@ -2529,7 +2539,7 @@ mod tests {
         let account = DbAccount {
             id: "acme-corp".to_string(),
             name: "Acme Corp".to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: Some(120_000.0),
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
@@ -2547,7 +2557,7 @@ mod tests {
         assert!(result.is_some());
         let acct = result.unwrap();
         assert_eq!(acct.name, "Acme Corp");
-        assert_eq!(acct.ring, Some(1));
+        assert_eq!(acct.lifecycle, Some("steady-state".to_string()));
         assert_eq!(acct.arr, Some(120_000.0));
     }
 
@@ -2852,7 +2862,7 @@ mod tests {
         let account = DbAccount {
             id: "acme-corp".to_string(),
             name: "Acme Corp".to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: None,
             health: None,
             contract_start: None,
@@ -2882,7 +2892,7 @@ mod tests {
         let account = DbAccount {
             id: "acme-corp".to_string(),
             name: "Acme Corp".to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,
@@ -2979,7 +2989,7 @@ mod tests {
         let account = DbAccount {
             id: "beta-inc".to_string(),
             name: "Beta Inc".to_string(),
-            ring: Some(2),
+            lifecycle: Some("ramping".to_string()),
             arr: Some(50_000.0),
             health: Some("yellow".to_string()),
             contract_start: None,
@@ -3055,8 +3065,8 @@ mod tests {
             conn.execute_batch("PRAGMA journal_mode=WAL;").expect("wal");
             conn.execute_batch(include_str!("schema.sql")).expect("schema");
             conn.execute(
-                "INSERT INTO accounts (id, name, ring, tracker_path, updated_at)
-                 VALUES ('legacy-acct', 'Legacy Corp', 1, 'Accounts/legacy', '2025-01-01T00:00:00Z')",
+                "INSERT INTO accounts (id, name, lifecycle, tracker_path, updated_at)
+                 VALUES ('legacy-acct', 'Legacy Corp', 'steady-state', 'Accounts/legacy', '2025-01-01T00:00:00Z')",
                 [],
             )
             .expect("insert legacy account");
@@ -3205,7 +3215,7 @@ mod tests {
         let soon = DbAccount {
             id: "renew-soon".to_string(),
             name: "Renewing Soon Corp".to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: Some(100_000.0),
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
@@ -3226,7 +3236,7 @@ mod tests {
         let no_end = DbAccount {
             id: "no-end".to_string(),
             name: "No End Corp".to_string(),
-            ring: Some(2),
+            lifecycle: Some("ramping".to_string()),
             arr: None,
             health: None,
             contract_start: None,
@@ -3243,7 +3253,7 @@ mod tests {
         let expired = DbAccount {
             id: "expired".to_string(),
             name: "Expired Corp".to_string(),
-            ring: Some(3),
+            lifecycle: Some("onboarding".to_string()),
             arr: None,
             health: None,
             contract_start: None,
@@ -3269,7 +3279,7 @@ mod tests {
         let stale = DbAccount {
             id: "stale-acct".to_string(),
             name: "Stale Corp".to_string(),
-            ring: Some(2),
+            lifecycle: Some("ramping".to_string()),
             arr: None,
             health: None,
             contract_start: None,
@@ -3286,7 +3296,7 @@ mod tests {
         let fresh = DbAccount {
             id: "fresh-acct".to_string(),
             name: "Fresh Corp".to_string(),
-            ring: Some(1),
+            lifecycle: Some("steady-state".to_string()),
             arr: None,
             health: None,
             contract_start: None,
@@ -3383,7 +3393,7 @@ mod tests {
         let account = DbAccount {
             id: "acme-corp".to_string(),
             name: "Acme Corp".to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,
@@ -3510,7 +3520,7 @@ mod tests {
         let account = DbAccount {
             id: "acme-corp".to_string(),
             name: "Acme Corp".to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,

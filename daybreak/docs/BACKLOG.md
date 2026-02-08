@@ -62,7 +62,7 @@ Active issues, known risks, assumptions, and dependencies.
     Entity-mode architecture (ADR-0046, I27 umbrella):
       I50 (projects table), I52 (meeting-entity M2M), I53 (entity-mode config)
       I54 (MCP integration framework), I28 (MCP server + client)
-      I29 (non-entity structured document schemas)
+      ~~I29 (non-entity structured document schemas)~~ — Closed, superseded by I73 + kit issues
     Kits: I40 (CS Kit)
     Intelligence: I35 (ProDev Intelligence), I55 (Executive Intelligence)
     Research: I26 (web search for unknown meetings)
@@ -108,8 +108,8 @@ Build MCP client infrastructure in Rust for consuming external data sources per 
 **I28: MCP server and client not implemented**
 ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop, client consumes Clay/Slack/Linear). ADR-0046 elevates MCP client to the integration protocol. No MCP protocol code exists. See I54 for client framework.
 
-**I29: Structured document schemas not implemented** — Blocked by I27
-ADR-0028 accepts JSON-first schemas for structured documents. Entity dashboard schemas implemented (I73). Non-entity structured documents (success plans, etc.) remain in this issue's scope.
+**I29: Structured document schemas not implemented** — Closed
+Schema pattern delivered by I73 (entity dashboard template system). Remaining non-entity documents (success plans, QBR templates) belong to kit-specific issues (I40 CS Kit, etc.). Superseded.
 
 **I35: ProDev Intelligence — personal impact capture and career narrative** — Blocked by I27
 ADR-0046 classifies ProDev as an Intelligence layer (entity-mode-agnostic). Daily reflection, weekly narrative, quarterly rollup. Contributes enrichment prompt fragments. Reference: `/wrap` "Personal Impact" section, `/month`, `/quarter`.
@@ -279,6 +279,14 @@ Job: reduce friction for feeding external context into the system (P7: Consumpti
 **I81: People dynamics in meeting prep UI** — Resolved. "People in the Room" component in `MeetingDetailPage.tsx` with temperature badges, meeting count, last seen, organization, notes, "New contact" flags, cold-contact warnings, and person links. Pure frontend.
 
 **I82: Copy-to-clipboard for meeting prep page** — Resolved. "Copy All" button exports full prep as markdown. Per-section `<CopyButton>` for individual cards. Reusable `useCopyToClipboard` hook and `CopyButton` component.
+
+**I83: Rust-native Google API client** — Resolved. `google_api/` module: auth.rs (OAuth2 browser flow), calendar.rs (Calendar API v3), classify.rs (10-rule meeting classification), gmail.rs (Gmail API). Token compat with Python format. Sprint 8.
+
+**I84: Port Phase 1 operations to Rust** — Resolved. `prepare/` module: constants.rs, email_classify.rs (3-tier), actions.rs (markdown parse + SQLite dedup), gaps.rs (calendar gap analysis), meeting_context.rs (rich meeting context), orchestrate.rs (4 orchestrators). Sprint 8.
+
+**I85: Port orchestrators and delete Python** — Resolved. Wired Rust orchestrators into executor.rs, deleted `scripts/` (16 Python files), removed `run_python_script()` and related code. No Python on $PATH required. ADR-0049. Sprint 8. 324 tests.
+
+**I91: Universal file extraction for inbox pipeline** — Resolved. `processor/extract.rs` module with format-aware text extraction (PDF, DOCX, XLSX, PPTX, HTML, RTF, plaintext). Companion .md pattern: original binary + extracted .md travel together. Classifier strips all known extensions. Inbox preview shows extracted text. ADR-0050. 346 tests.
 
 ---
 
