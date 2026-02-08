@@ -33,6 +33,7 @@ import HistoryPage from "@/pages/HistoryPage";
 import PeoplePage from "@/pages/PeoplePage";
 import PersonDetailPage from "@/pages/PersonDetailPage";
 import ProjectsPage from "@/pages/ProjectsPage";
+import ProjectDetailPage from "@/pages/ProjectDetailPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
 
@@ -185,6 +186,12 @@ const projectsRoute = createRoute({
   component: ProjectsPage,
 });
 
+const projectDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId",
+  component: ProjectDetailPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
@@ -229,6 +236,7 @@ const routeTree = rootRoute.addChildren([
   peopleRoute,
   personDetailRoute,
   projectsRoute,
+  projectDetailRoute,
   settingsRoute,
   weekRoute,
 ]);

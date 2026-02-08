@@ -95,6 +95,15 @@ pub fn profile_for_entity_mode(mode: &str) -> String {
 /// All features default ON for the profile that supports them.
 /// CS-only features default OFF for non-CS profiles.
 pub fn default_features(profile: &str) -> HashMap<String, bool> {
+    default_features_for_mode(profile, "account")
+}
+
+/// Entity-mode-aware feature defaults (I53).
+///
+/// - `accountTracking`: ON for account or both modes (CS profile)
+/// - `projectTracking`: ON for project or both modes
+/// - `impactRollup`: CS-only (same as accountTracking)
+pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<String, bool> {
     let mut features = HashMap::new();
     // Universal features (all profiles)
     features.insert("emailTriage".to_string(), true);
@@ -102,10 +111,13 @@ pub fn default_features(profile: &str) -> HashMap<String, bool> {
     features.insert("meetingPrep".to_string(), true);
     features.insert("weeklyPlanning".to_string(), true);
     features.insert("inboxProcessing".to_string(), true);
-    // CS-only features
+    // Entity-mode-aware features
     let is_cs = profile == "customer-success";
-    features.insert("accountTracking".to_string(), is_cs);
-    features.insert("impactRollup".to_string(), is_cs);
+    let accounts_on = entity_mode == "account" || entity_mode == "both";
+    let projects_on = entity_mode == "project" || entity_mode == "both";
+    features.insert("accountTracking".to_string(), is_cs && accounts_on);
+    features.insert("projectTracking".to_string(), projects_on);
+    features.insert("impactRollup".to_string(), is_cs && accounts_on);
     features
 }
 
@@ -117,8 +129,8 @@ pub fn is_feature_enabled(config: &Config, feature: &str) -> bool {
     if let Some(&enabled) = config.features.get(feature) {
         return enabled;
     }
-    // Fall through to profile defaults
-    let defaults = default_features(&config.profile);
+    // Fall through to entity-mode-aware defaults
+    let defaults = default_features_for_mode(&config.profile, &config.entity_mode);
     defaults.get(feature).copied().unwrap_or(true)
 }
 
@@ -1273,5 +1285,49 @@ mod tests {
     fn test_user_context_title_or_default() {
         let ctx = UserContext::default();
         assert_eq!(ctx.title_or_default(), "a professional");
+    }
+
+    // =========================================================================
+    // I53: Entity-mode-aware feature defaults
+    // =========================================================================
+
+    #[test]
+    fn test_project_tracking_defaults_by_entity_mode() {
+        // account mode: projectTracking OFF
+        let defaults = default_features_for_mode("customer-success", "account");
+        assert_eq!(defaults.get("projectTracking"), Some(&false));
+        assert_eq!(defaults.get("accountTracking"), Some(&true));
+
+        // project mode: projectTracking ON, accountTracking OFF (general profile)
+        let defaults = default_features_for_mode("general", "project");
+        assert_eq!(defaults.get("projectTracking"), Some(&true));
+        assert_eq!(defaults.get("accountTracking"), Some(&false));
+
+        // both mode: both ON
+        let defaults = default_features_for_mode("customer-success", "both");
+        assert_eq!(defaults.get("projectTracking"), Some(&true));
+        assert_eq!(defaults.get("accountTracking"), Some(&true));
+        assert_eq!(defaults.get("impactRollup"), Some(&true));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_project_mode() {
+        let mut config = test_config("general");
+        config.entity_mode = "project".to_string();
+
+        assert!(is_feature_enabled(&config, "projectTracking"));
+        assert!(!is_feature_enabled(&config, "accountTracking"));
+        // Universal still on
+        assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    #[test]
+    fn test_is_feature_enabled_both_mode() {
+        let mut config = test_config("customer-success");
+        config.entity_mode = "both".to_string();
+
+        assert!(is_feature_enabled(&config, "projectTracking"));
+        assert!(is_feature_enabled(&config, "accountTracking"));
+        assert!(is_feature_enabled(&config, "impactRollup"));
     }
 }
