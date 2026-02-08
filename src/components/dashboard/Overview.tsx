@@ -1,20 +1,14 @@
 import { Target, ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatsRow } from "./StatsRow";
-import type { DashboardData, DataFreshness } from "@/types";
+import { ReadinessStrip } from "./ReadinessStrip";
+import type { DashboardData, DataFreshness, Meeting, Action } from "@/types";
 
 interface OverviewProps {
   overview: DashboardData["overview"];
-  stats: DashboardData["stats"];
+  meetings: Meeting[];
+  actions: Action[];
   freshness: DataFreshness;
-}
-
-function getTimeBasedGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
 }
 
 function getFormattedDate(): string {
@@ -41,13 +35,12 @@ function formatRelativeDate(isoString: string): string {
   }
 }
 
-export function Overview({ overview, stats, freshness }: OverviewProps) {
-  const greeting = getTimeBasedGreeting();
+export function Overview({ overview, meetings, actions, freshness }: OverviewProps) {
   const formattedDate = getFormattedDate();
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="space-y-4">
         <div className="space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight">
             {formattedDate}
@@ -57,19 +50,17 @@ export function Overview({ overview, stats, freshness }: OverviewProps) {
               Last updated {formatRelativeDate(freshness.generatedAt)}
             </p>
           )}
-          <p className="text-lg font-light text-muted-foreground">{greeting}</p>
           {overview.focus && (
-            <Link
-              to="/focus"
-              className="group block space-y-1 text-sm rounded-md -mx-2 px-2 py-1.5 transition-colors hover:bg-muted/50"
-            >
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Target className="size-4 text-primary" />
-                <span className="font-medium">Focus</span>
-                <ChevronRight className="size-3.5 opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+            <div className="flex items-center gap-2.5 rounded-lg bg-primary/5 border border-primary/10 px-3 py-2">
+              <Target className="size-4 shrink-0 text-primary" />
+              <div className="min-w-0">
+                <span className="text-xs font-medium text-muted-foreground">Focus</span>
+                <p className="text-sm font-medium text-primary truncate">{overview.focus}</p>
               </div>
-              <p className="text-primary">{overview.focus}</p>
-            </Link>
+              <Link to="/focus" className="ml-auto">
+                <ChevronRight className="size-4 text-muted-foreground hover:text-foreground transition-colors" />
+              </Link>
+            </div>
           )}
         </div>
 
@@ -88,7 +79,7 @@ export function Overview({ overview, stats, freshness }: OverviewProps) {
           </Card>
         )}
       </div>
-      <StatsRow stats={stats} />
+      <ReadinessStrip meetings={meetings} actions={actions} />
     </div>
   );
 }
