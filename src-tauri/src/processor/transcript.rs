@@ -410,10 +410,13 @@ fn build_frontmatter(meeting: &CalendarEvent, date: &str) -> String {
 }
 
 /// Append wins to the impact log file.
+///
+/// Uses `OpenOptions::append` to avoid read-modify-write race conditions (I65).
 fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[String]) {
     let impact_log = workspace.join("_today").join("90-impact-log.md");
     let mut content = String::new();
 
+    // If file doesn't exist yet, prepend header
     if !impact_log.exists() {
         content.push_str("# Impact Log\n\n");
     }
@@ -433,12 +436,12 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
         ));
     }
 
-    if impact_log.exists() {
-        let existing = std::fs::read_to_string(&impact_log).unwrap_or_default();
-        let _ = std::fs::write(&impact_log, format!("{}{}", existing, content));
-    } else {
-        let _ = std::fs::write(&impact_log, content);
-    }
+    // Atomic append — no read-modify-write race
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&impact_log)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, content.as_bytes()));
 }
 
 use crate::util::slugify;
