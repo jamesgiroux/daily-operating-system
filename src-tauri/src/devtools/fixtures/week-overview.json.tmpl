@@ -1,0 +1,89 @@
+{
+  "weekNumber": "6",
+  "dateRange": "{{MON}} – {{FRI}}",
+  "days": [
+    {
+      "date": "{{MON}}",
+      "dayName": "Monday",
+      "meetings": [
+        { "time": "9:00 AM", "title": "Acme Corp Weekly Sync", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_ready" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "2:00 PM", "title": "1:1 with Sarah (Manager)", "type": "one_on_one", "account": null, "prepStatus": "bring_updates" }
+      ]
+    },
+    {
+      "date": "{{TUE}}",
+      "dayName": "Tuesday",
+      "meetings": [
+        { "time": "9:00 AM", "title": "Globex Check-in", "type": "customer", "account": "Globex Industries", "prepStatus": "prep_needed" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "1:00 PM", "title": "Product Planning", "type": "internal", "account": null, "prepStatus": "agenda_needed" },
+        { "time": "3:00 PM", "title": "Initech Phase 2 Status", "type": "customer", "account": "Initech", "prepStatus": "context_needed" }
+      ]
+    },
+    {
+      "date": "{{WED}}",
+      "dayName": "Wednesday",
+      "meetings": [
+        { "time": "10:00 AM", "title": "CS Team Sync", "type": "team_sync", "account": null, "prepStatus": "bring_updates" },
+        { "time": "11:00 AM", "title": "Acme Corp Exec Sponsor Call", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
+        { "time": "2:00 PM", "title": "Globex Industries QBR", "type": "qbr", "account": "Globex Industries", "prepStatus": "prep_needed" },
+        { "time": "4:00 PM", "title": "1:1 with Direct Report", "type": "one_on_one", "account": null, "prepStatus": "bring_updates" }
+      ]
+    },
+    {
+      "date": "{{THU}}",
+      "dayName": "Thursday",
+      "meetings": [
+        { "time": "9:00 AM", "title": "Sprint Review", "type": "internal", "account": null, "prepStatus": "done" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "1:00 PM", "title": "Initech Onboarding Call", "type": "training", "account": "Initech", "prepStatus": "draft_ready" }
+      ]
+    },
+    {
+      "date": "{{FRI}}",
+      "dayName": "Friday",
+      "meetings": [
+        { "time": "10:00 AM", "title": "Acme Corp Monthly Review", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
+        { "time": "11:30 AM", "title": "CS Leadership Sync", "type": "team_sync", "account": null, "prepStatus": "bring_updates" },
+        { "time": "3:00 PM", "title": "Company All Hands", "type": "all_hands", "account": null, "prepStatus": "done" }
+      ]
+    }
+  ],
+  "actionSummary": {
+    "overdueCount": 2,
+    "dueThisWeek": 3,
+    "criticalItems": [
+      "Send updated SOW to Acme legal team (overdue)",
+      "Follow up on NPS survey responses (overdue)"
+    ]
+  },
+  "hygieneAlerts": [
+    {
+      "account": "Globex Industries",
+      "ring": "2",
+      "arr": "$800K",
+      "issue": "Health is Yellow — usage declining in Team B, key stakeholder departing Q2",
+      "severity": "warning"
+    },
+    {
+      "account": "Initech",
+      "ring": "3",
+      "arr": "$350K",
+      "issue": "No customer meeting in 10 days — last was Phase 1 Wrap",
+      "severity": "info"
+    }
+  ],
+  "focusAreas": [
+    "Globex QBR Preparation — renewal decision expected this quarter",
+    "Acme Renewal Prep — SOW overdue, NPS detractors need outreach",
+    "Initech Phase 2 Kickoff — set scope and confirm executive sponsor"
+  ],
+  "availableTimeBlocks": [
+    { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120, "suggestedUse": "Deep work" },
+    { "day": "Monday", "start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120, "suggestedUse": "Deep work" },
+    { "day": "Tuesday", "start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90, "suggestedUse": "Prep time" },
+    { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180, "suggestedUse": "Deep work" },
+    { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90, "suggestedUse": "Admin / catch-up" }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "meetingId": "mtg-acme-weekly-{{DATE}}",
+  "calendarEventId": "cal-acme-weekly-{{DATE}}",
+  "title": "Acme Corp Weekly Sync",
+  "type": "customer",
+  "account": "Acme Corp",
+  "timeRange": "8:00 AM – 8:45 AM",
+  "meetingContext": "Weekly sync with Acme Corp leadership. Phase 1 migration completed ahead of schedule — this meeting should focus on Phase 2 scoping and expansion timeline.",
+  "quickContext": {
+    "Tier": "Enterprise",
+    "ARR": "$1.2M",
+    "Health": "Green",
+    "Ring": "1",
+    "Renewal": "Aug 2025",
+    "NPS": "72"
+  },
+  "attendees": [
+    {
+      "name": "Sarah Chen",
+      "role": "VP Engineering",
+      "focus": "Technical roadmap, integration timeline"
+    },
+    {
+      "name": "David Kim",
+      "role": "Director of Operations",
+      "focus": "ROI metrics, team adoption"
+    }
+  ],
+  "sinceLast": [
+    "Phase 1 migration completed 2 weeks ahead of schedule",
+    "3 new team members onboarded to the platform",
+    "NPS improved from 65 to 72",
+    "Support ticket volume down 40% post-migration"
+  ],
+  "strategicPrograms": [
+    { "name": "Phase 2: Advanced Analytics rollout (Q2 target)", "status": "in_progress" },
+    { "name": "Enterprise SSO integration (pending security review)", "status": "planned" }
+  ],
+  "talkingPoints": [
+    "Celebrate Phase 1 completion — position as proof of execution",
+    "Phase 2 timeline: propose April start with June delivery",
+    "Address NPS detractor feedback before renewal",
+    "Explore expansion to APAC team (incremental $200K ARR)"
+  ],
+  "risks": [
+    "Key engineer (Alex Torres) leaving in March — knowledge transfer needed",
+    "3 NPS detractors identified in latest survey — follow up required",
+    "Budget approval for Phase 2 still pending CTO sign-off"
+  ],
+  "openItems": [
+    {
+      "title": "Send updated SOW to legal team",
+      "dueDate": "{{YESTERDAY}}",
+      "context": "Pricing needs revision per last call",
+      "isOverdue": true
+    },
+    {
+      "title": "Follow up on NPS survey responses",
+      "dueDate": "{{LAST_WEEK}}",
+      "context": "3 detractors need personal outreach",
+      "isOverdue": true
+    }
+  ],
+  "references": [
+    {
+      "label": "Account Dashboard",
+      "path": "Accounts/Acme Corp/dashboard.md"
+    },
+    {
+      "label": "Phase 1 Closeout",
+      "path": "Accounts/Acme Corp/Projects/phase-1-closeout.md"
+    }
+  ]
+}
