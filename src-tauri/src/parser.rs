@@ -1921,6 +1921,8 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
             overdue_count,
             due_this_week,
             critical_items,
+            overdue: None,
+            due_this_week_items: None,
         });
     }
 
@@ -1932,6 +1934,10 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
         hygiene_alerts: if hygiene_alerts.is_empty() { None } else { Some(hygiene_alerts) },
         focus_areas: if focus_areas.is_empty() { None } else { Some(focus_areas) },
         available_time_blocks: if available_time_blocks.is_empty() { None } else { Some(available_time_blocks) },
+        week_narrative: None,
+        top_priority: None,
+        readiness_checks: None,
+        day_shapes: None,
     })
 }
 

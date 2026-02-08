@@ -1,3 +1,4 @@
+import { useSearch } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ const priorityLabels: Record<string, string> = {
 };
 
 export default function ActionsPage() {
+  const { search: initialSearch } = useSearch({ strict: false });
   const {
     actions,
     allActions,
@@ -59,7 +61,7 @@ export default function ActionsPage() {
     setPriorityFilter,
     searchQuery,
     setSearchQuery,
-  } = useActions();
+  } = useActions(initialSearch as string | undefined);
 
   const statusCounts: Record<StatusTab, number> = {
     all: allActions.length,

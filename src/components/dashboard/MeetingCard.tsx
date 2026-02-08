@@ -182,9 +182,16 @@ export function computeMeetingDisplayState(
   else if (ctx.isPast && ctx.outcomesStatus === "loading") {
     primaryStatus = "past-loading";
   }
-  // 4. Past + no outcomes → Attach/Outcomes buttons
+  // 4. Past + no outcomes → View Prep (if available) + Attach/Outcomes buttons
   else if (ctx.isPast && ctx.outcomesStatus === "none") {
     primaryStatus = "past-unprocessed";
+    if (hasPrepFile) {
+      actions.push({
+        key: "view-prep",
+        label: "View Prep",
+        linkTo: meeting.prepFile!,
+      });
+    }
     actions.push(
       { key: "attach-transcript", label: "Attach" },
       { key: "capture-outcomes", label: "Outcomes" },

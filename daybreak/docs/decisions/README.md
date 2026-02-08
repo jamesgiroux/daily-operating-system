@@ -71,6 +71,10 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0048](0048-three-tier-data-model.md) | Three-tier data model — filesystem, SQLite, app memory | Accepted |
 | [0049](0049-eliminate-python-runtime.md) | Eliminate Python runtime dependency | Accepted |
 | [0050](0050-universal-file-extraction.md) | Universal file extraction for inbox pipeline | Accepted |
+| [0051](0051-user-configurable-metadata-settings.md) | User-configurable metadata settings | Proposed |
+| [0052](0052-week-page-redesign.md) | Week page redesign — consumption-first weekly briefing | Accepted |
+| [0054](0054-list-page-design-pattern.md) | List page design pattern — signal-first flat rows | Accepted |
+| [0053](0053-dashboard-ux-redesign.md) | Dashboard UX redesign — readiness-first overview | Accepted |
 
 ---
 

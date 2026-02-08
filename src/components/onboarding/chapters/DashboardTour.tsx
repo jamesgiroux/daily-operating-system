@@ -134,7 +134,8 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
         <TourHighlight ref={setStopRef(0)} active={stop.key === "overview"}>
           <Overview
             overview={data.overview}
-            stats={data.stats}
+            meetings={data.meetings}
+            actions={data.actions}
             freshness={freshness}
           />
         </TourHighlight>
