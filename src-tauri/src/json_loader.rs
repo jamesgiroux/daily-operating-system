@@ -360,6 +360,7 @@ pub struct JsonPrep {
     pub questions: Option<Vec<String>>,
     pub key_principles: Option<Vec<String>>,
     pub references: Option<Vec<JsonReference>>,
+    pub proposed_agenda: Option<Vec<JsonAgendaItem>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -385,6 +386,14 @@ pub struct JsonActionItem {
     pub context: Option<String>,
     #[serde(default)]
     pub is_overdue: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonAgendaItem {
+    pub topic: String,
+    pub why: Option<String>,
+    pub source: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -450,6 +459,14 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         }).collect()
     });
 
+    let proposed_agenda = data.proposed_agenda.map(|items| {
+        items.into_iter().map(|a| crate::types::AgendaItem {
+            topic: a.topic,
+            why: a.why,
+            source: a.source,
+        }).collect()
+    });
+
     Ok(FullMeetingPrep {
         file_path: prep_path.to_string_lossy().to_string(),
         calendar_event_id: data.calendar_event_id,
@@ -470,6 +487,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         raw_markdown: None,
         stakeholder_signals: None,
         attendee_context: None,
+        proposed_agenda,
     })
 }
 
