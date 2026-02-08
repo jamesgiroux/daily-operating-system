@@ -83,7 +83,7 @@ impl Executor {
                 .await;
         }
 
-        // Week workflow: three-phase, with week-data-ready event
+        // Week workflow: three-phase
         if workflow_id == WorkflowId::Week {
             return self
                 .execute_week(&workspace, &execution_id, trigger, &record)
@@ -355,7 +355,7 @@ impl Executor {
         Ok(())
     }
 
-    /// Execute week workflow (three-phase + week-data-ready event)
+    /// Execute week workflow (three-phase)
     async fn execute_week(
         &self,
         workspace: &Path,
@@ -392,19 +392,11 @@ impl Executor {
                         .set_last_scheduled_run(WorkflowId::Week, record.started_at);
                 }
 
-                // Update week planning state to DataReady
-                if let Ok(mut guard) = self.state.week_planning_state.lock() {
-                    *guard = crate::types::WeekPlanningState::DataReady;
-                }
-
                 self.emit_status_event(WorkflowId::Week, WorkflowStatus::Completed {
                     finished_at,
                     duration_secs,
                     execution_id: execution_id.to_string(),
                 });
-
-                // Emit week-data-ready for the frontend wizard
-                let _ = self.app_handle.emit("week-data-ready", ());
 
                 let _ = send_notification(
                     &self.app_handle,

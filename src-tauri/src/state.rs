@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::types::{
     CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, TranscriptRecord,
-    WeekPlanningState, WorkflowId, WorkflowStatus,
+    WorkflowId, WorkflowStatus,
 };
 
 /// Maximum number of execution records to keep in memory
@@ -20,12 +20,11 @@ pub struct AppState {
     pub execution_history: Mutex<Vec<ExecutionRecord>>,
     pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
     pub db: Mutex<Option<crate::db::ActionDb>>,
-    // Phase 3: Google + Calendar + Capture + Week Planning
+    // Phase 3: Google + Calendar + Capture
     pub google_auth: Mutex<GoogleAuthStatus>,
     pub calendar_events: RwLock<Vec<CalendarEvent>>,
     pub capture_dismissed: Mutex<std::collections::HashSet<String>>,
     pub capture_captured: Mutex<std::collections::HashSet<String>>,
-    pub week_planning_state: Mutex<WeekPlanningState>,
     /// Tracks processed transcripts by meeting_id for immutability (one transcript per meeting)
     pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
 }
@@ -89,7 +88,6 @@ impl AppState {
             calendar_events: RwLock::new(Vec::new()),
             capture_dismissed: Mutex::new(std::collections::HashSet::new()),
             capture_captured: Mutex::new(std::collections::HashSet::new()),
-            week_planning_state: Mutex::new(WeekPlanningState::default()),
             transcript_processed: Mutex::new(transcript_processed),
         }
     }

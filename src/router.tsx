@@ -27,6 +27,7 @@ import AccountDetailPage from "@/pages/AccountDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
+import MeetingHistoryDetailPage from "@/pages/MeetingHistoryDetailPage";
 import EmailsPage from "@/pages/EmailsPage";
 import FocusPage from "@/pages/FocusPage";
 import HistoryPage from "@/pages/HistoryPage";
@@ -39,7 +40,6 @@ import WeekPage from "@/pages/WeekPage";
 
 // Global overlays
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
-import { WeekPlanningWizard } from "@/components/WeeklyPlanning/WeekPlanningWizard";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 
@@ -102,7 +102,6 @@ function RootLayout() {
         <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
       </SidebarProvider>
       <PostMeetingPrompt />
-      <WeekPlanningWizard />
       <Toaster position="bottom-right" />
       <DevToolsPanel />
     </ThemeProvider>
@@ -142,6 +141,9 @@ const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/actions",
   component: ActionsPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    search: (search.search as string) || undefined,
+  }),
 });
 
 const accountsRoute = createRoute({
@@ -178,6 +180,12 @@ const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/$prepFile",
   component: MeetingDetailPage,
+});
+
+const meetingHistoryDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/meeting/history/$meetingId",
+  component: MeetingHistoryDetailPage,
 });
 
 const projectsRoute = createRoute({
@@ -232,6 +240,7 @@ const routeTree = rootRoute.addChildren([
   focusRoute,
   historyRoute,
   inboxRoute,
+  meetingHistoryDetailRoute,
   meetingDetailRoute,
   peopleRoute,
   personDetailRoute,

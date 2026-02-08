@@ -14,8 +14,8 @@ use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
-    FocusBlock, FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, Priority, WeekOverview, WeekPlanningState,
+    FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
+    OverlayStatus, PostMeetingCaptureConfig, Priority, WeekOverview,
     WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
@@ -1173,6 +1173,82 @@ pub fn get_meeting_history(
         .map_err(|e| e.to_string())
 }
 
+/// Assembled detail for a single past meeting: metadata + captures + actions.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingHistoryDetail {
+    pub id: String,
+    pub title: String,
+    pub meeting_type: String,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
+    pub summary: Option<String>,
+    pub attendees: Vec<String>,
+    pub captures: Vec<crate::db::DbCapture>,
+    pub actions: Vec<crate::db::DbAction>,
+}
+
+/// Get full detail for a single past meeting by ID.
+///
+/// Assembles the meeting row, its captures, actions, and resolves the account name.
+#[tauri::command]
+pub fn get_meeting_history_detail(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<MeetingHistoryDetail, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let meeting = db
+        .get_meeting_by_id(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {meeting_id}"))?;
+
+    let captures = db
+        .get_captures_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    let actions = db
+        .get_actions_for_meeting(&meeting_id)
+        .map_err(|e| e.to_string())?;
+
+    // Resolve account name from account_id
+    let account_name = if let Some(ref aid) = meeting.account_id {
+        db.get_account(aid)
+            .ok()
+            .flatten()
+            .map(|a| a.name)
+    } else {
+        None
+    };
+
+    // Parse attendees from comma-separated string
+    let attendees: Vec<String> = meeting
+        .attendees
+        .as_deref()
+        .unwrap_or("")
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    Ok(MeetingHistoryDetail {
+        id: meeting.id,
+        title: meeting.title,
+        meeting_type: meeting.meeting_type,
+        start_time: meeting.start_time,
+        end_time: meeting.end_time,
+        account_id: meeting.account_id,
+        account_name,
+        summary: meeting.summary,
+        attendees,
+        captures,
+        actions,
+    })
+}
+
 // =============================================================================
 // Phase 3.0: Google Auth Commands
 // =============================================================================
@@ -1477,93 +1553,6 @@ pub fn set_capture_delay(
 }
 
 // =============================================================================
-// Phase 3C: Weekly Planning Commands
-// =============================================================================
-
-/// Get current weekly planning state
-#[tauri::command]
-pub fn get_week_planning_state(state: State<Arc<AppState>>) -> WeekPlanningState {
-    state
-        .week_planning_state
-        .lock()
-        .map(|guard| guard.clone())
-        .unwrap_or_default()
-}
-
-/// Get prepared week data for the wizard
-#[tauri::command]
-pub fn get_week_prep_data(state: State<Arc<AppState>>) -> WeekResult {
-    // Just delegates to get_week_data — the wizard reads the same JSON
-    get_week_data(state)
-}
-
-/// Submit user's priority selections from wizard step 1
-#[tauri::command]
-pub fn submit_week_priorities(
-    priorities: Vec<String>,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    // Write priorities to a file for reference
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let priorities_path = workspace.join("_today").join("data").join("week-priorities.json");
-    let content = serde_json::to_string_pretty(&priorities)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&priorities_path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
-
-    // Update planning state
-    if let Ok(mut guard) = state.week_planning_state.lock() {
-        *guard = WeekPlanningState::InProgress;
-    }
-
-    Ok(())
-}
-
-/// Submit selected focus blocks from wizard step 3
-#[tauri::command]
-pub fn submit_focus_blocks(
-    blocks: Vec<FocusBlock>,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    // Write focus blocks to a file
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let blocks_path = workspace.join("_today").join("data").join("week-focus-selected.json");
-    let content = serde_json::to_string_pretty(&blocks)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&blocks_path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
-
-    // Mark planning as completed
-    if let Ok(mut guard) = state.week_planning_state.lock() {
-        *guard = WeekPlanningState::Completed;
-    }
-
-    Ok(())
-}
-
-/// Skip weekly planning entirely (apply defaults)
-#[tauri::command]
-pub fn skip_week_planning(state: State<Arc<AppState>>) -> Result<(), String> {
-    if let Ok(mut guard) = state.week_planning_state.lock() {
-        *guard = WeekPlanningState::DefaultsApplied;
-    }
-    Ok(())
-}
-
 // =============================================================================
 // Transcript Intake & Meeting Outcomes (I44 / I45 / ADR-0044)
 // =============================================================================
@@ -2256,15 +2245,15 @@ fn load_skip_today(today_dir: &std::path::Path) -> Vec<crate::intelligence::Skip
 // People Commands (I51)
 // =============================================================================
 
-/// Get all people, optionally filtered by relationship.
+/// Get all people with pre-computed signals, optionally filtered by relationship.
 #[tauri::command]
 pub fn get_people(
     relationship: Option<String>,
     state: State<Arc<AppState>>,
-) -> Result<Vec<crate::db::DbPerson>, String> {
+) -> Result<Vec<crate::db::PersonListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.get_people(relationship.as_deref())
+    db.get_people_with_signals(relationship.as_deref())
         .map_err(|e| e.to_string())
 }
 
@@ -2292,6 +2281,7 @@ pub struct MeetingSummary {
     pub id: String,
     pub title: String,
     pub start_time: String,
+    pub meeting_type: String,
 }
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
@@ -2329,6 +2319,7 @@ pub fn get_person_detail(
             id: m.id,
             title: m.title,
             start_time: m.start_time,
+            meeting_type: m.meeting_type,
         })
         .collect();
 
@@ -2495,6 +2486,7 @@ pub struct AccountDetailResult {
     pub strategic_programs: Vec<crate::accounts::StrategicProgram>,
     pub notes: Option<String>,
     pub open_actions: Vec<crate::db::DbAction>,
+    pub upcoming_meetings: Vec<MeetingSummary>,
     pub recent_meetings: Vec<MeetingSummary>,
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::StakeholderSignals>,
@@ -2595,6 +2587,18 @@ pub fn get_account_detail(
         .get_account_actions(&account_id)
         .map_err(|e| e.to_string())?;
 
+    let upcoming_meetings: Vec<MeetingSummary> = db
+        .get_upcoming_meetings_for_account(&account_id, 5)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+            meeting_type: m.meeting_type,
+        })
+        .collect();
+
     let recent_meetings = db
         .get_meetings_for_account(&account_id, 10)
         .map_err(|e| e.to_string())?
@@ -2603,6 +2607,7 @@ pub fn get_account_detail(
             id: m.id,
             title: m.title,
             start_time: m.start_time,
+            meeting_type: m.meeting_type,
         })
         .collect();
 
@@ -2631,6 +2636,7 @@ pub fn get_account_detail(
         strategic_programs: programs,
         notes,
         open_actions,
+        upcoming_meetings,
         recent_meetings,
         linked_people,
         signals,
@@ -2971,6 +2977,7 @@ pub fn get_project_detail(
             id: m.id,
             title: m.title,
             start_time: m.start_time,
+            meeting_type: m.meeting_type,
         })
         .collect();
 

@@ -1,5 +1,5 @@
 {
-  "weekNumber": "6",
+  "weekNumber": "W06",
   "dateRange": "{{MON}} – {{FRI}}",
   "days": [
     {
@@ -8,27 +8,27 @@
       "meetings": [
         { "time": "9:00 AM", "title": "Acme Corp Weekly Sync", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_ready" },
         { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
-        { "time": "2:00 PM", "title": "1:1 with Sarah (Manager)", "type": "one_on_one", "account": null, "prepStatus": "bring_updates" }
+        { "time": "2:00 PM", "title": "1:1 with Sarah (Manager)", "type": "one_on_one", "account": null, "prepStatus": "done" }
       ]
     },
     {
       "date": "{{TUE}}",
       "dayName": "Tuesday",
       "meetings": [
-        { "time": "9:00 AM", "title": "Globex Check-in", "type": "customer", "account": "Globex Industries", "prepStatus": "prep_needed" },
+        { "time": "10:00 AM", "title": "Globex Check-in", "type": "customer", "account": "Globex Industries", "prepStatus": "prep_needed" },
         { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
-        { "time": "1:00 PM", "title": "Product Planning", "type": "internal", "account": null, "prepStatus": "agenda_needed" },
-        { "time": "3:00 PM", "title": "Initech Phase 2 Status", "type": "customer", "account": "Initech", "prepStatus": "context_needed" }
+        { "time": "1:00 PM", "title": "Product Planning", "type": "internal", "account": null, "prepStatus": "done" },
+        { "time": "3:00 PM", "title": "Initech Phase 2 Status", "type": "customer", "account": "Initech", "prepStatus": "prep_needed" }
       ]
     },
     {
       "date": "{{WED}}",
       "dayName": "Wednesday",
       "meetings": [
-        { "time": "10:00 AM", "title": "CS Team Sync", "type": "team_sync", "account": null, "prepStatus": "bring_updates" },
+        { "time": "10:00 AM", "title": "CS Team Sync", "type": "team_sync", "account": null, "prepStatus": "done" },
         { "time": "11:00 AM", "title": "Acme Corp Exec Sponsor Call", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
-        { "time": "2:00 PM", "title": "Globex Industries QBR", "type": "qbr", "account": "Globex Industries", "prepStatus": "prep_needed" },
-        { "time": "4:00 PM", "title": "1:1 with Direct Report", "type": "one_on_one", "account": null, "prepStatus": "bring_updates" }
+        { "time": "2:00 PM", "title": "Globex Industries QBR", "type": "qbr", "account": "Globex Industries", "prepStatus": "prep_ready" },
+        { "time": "4:00 PM", "title": "1:1 with Direct Report", "type": "one_on_one", "account": null, "prepStatus": "done" }
       ]
     },
     {
@@ -37,7 +37,7 @@
       "meetings": [
         { "time": "9:00 AM", "title": "Sprint Review", "type": "internal", "account": null, "prepStatus": "done" },
         { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
-        { "time": "1:00 PM", "title": "Initech Onboarding Call", "type": "training", "account": "Initech", "prepStatus": "draft_ready" }
+        { "time": "1:00 PM", "title": "Initech Onboarding Call", "type": "training", "account": "Initech", "prepStatus": "done" }
       ]
     },
     {
@@ -45,8 +45,111 @@
       "dayName": "Friday",
       "meetings": [
         { "time": "10:00 AM", "title": "Acme Corp Monthly Review", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
-        { "time": "11:30 AM", "title": "CS Leadership Sync", "type": "team_sync", "account": null, "prepStatus": "bring_updates" },
+        { "time": "11:30 AM", "title": "CS Leadership Sync", "type": "team_sync", "account": null, "prepStatus": "done" },
         { "time": "3:00 PM", "title": "Company All Hands", "type": "all_hands", "account": null, "prepStatus": "done" }
+      ]
+    }
+  ],
+  "readinessChecks": [
+    {
+      "checkType": "no_prep",
+      "message": "Globex Check-in has no prep",
+      "severity": "action_needed",
+      "meetingId": "cal-globex-checkin-tue"
+    },
+    {
+      "checkType": "no_prep",
+      "message": "Acme Corp Exec Sponsor Call has no prep",
+      "severity": "action_needed",
+      "meetingId": "cal-acme-exec-wed"
+    },
+    {
+      "checkType": "overdue_action",
+      "message": "2 overdue actions need attention",
+      "severity": "action_needed"
+    },
+    {
+      "checkType": "stale_contact",
+      "message": "Initech — last meeting 55 days ago",
+      "severity": "heads_up",
+      "accountId": "Initech"
+    }
+  ],
+  "dayShapes": [
+    {
+      "dayName": "Monday",
+      "date": "{{MON}}",
+      "meetingCount": 3,
+      "meetingMinutes": 120,
+      "density": "moderate",
+      "meetings": [
+        { "time": "9:00 AM", "title": "Acme Corp Weekly Sync", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_ready" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "2:00 PM", "title": "1:1 with Sarah (Manager)", "type": "one_on_one", "account": null, "prepStatus": "done" }
+      ],
+      "availableBlocks": [
+        { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120 },
+        { "day": "Monday", "start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120 }
+      ]
+    },
+    {
+      "dayName": "Tuesday",
+      "date": "{{TUE}}",
+      "meetingCount": 4,
+      "meetingMinutes": 165,
+      "density": "moderate",
+      "meetings": [
+        { "time": "10:00 AM", "title": "Globex Check-in", "type": "customer", "account": "Globex Industries", "prepStatus": "prep_needed" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "1:00 PM", "title": "Product Planning", "type": "internal", "account": null, "prepStatus": "done" },
+        { "time": "3:00 PM", "title": "Initech Phase 2 Status", "type": "customer", "account": "Initech", "prepStatus": "prep_needed" }
+      ],
+      "availableBlocks": [
+        { "day": "Tuesday", "start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90 }
+      ]
+    },
+    {
+      "dayName": "Wednesday",
+      "date": "{{WED}}",
+      "meetingCount": 4,
+      "meetingMinutes": 165,
+      "density": "moderate",
+      "meetings": [
+        { "time": "10:00 AM", "title": "CS Team Sync", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "11:00 AM", "title": "Acme Corp Exec Sponsor Call", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
+        { "time": "2:00 PM", "title": "Globex Industries QBR", "type": "qbr", "account": "Globex Industries", "prepStatus": "prep_ready" },
+        { "time": "4:00 PM", "title": "1:1 with Direct Report", "type": "one_on_one", "account": null, "prepStatus": "done" }
+      ],
+      "availableBlocks": []
+    },
+    {
+      "dayName": "Thursday",
+      "date": "{{THU}}",
+      "meetingCount": 3,
+      "meetingMinutes": 120,
+      "density": "moderate",
+      "meetings": [
+        { "time": "9:00 AM", "title": "Sprint Review", "type": "internal", "account": null, "prepStatus": "done" },
+        { "time": "10:30 AM", "title": "Engineering Standup", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "1:00 PM", "title": "Initech Onboarding Call", "type": "training", "account": "Initech", "prepStatus": "done" }
+      ],
+      "availableBlocks": [
+        { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180 }
+      ]
+    },
+    {
+      "dayName": "Friday",
+      "date": "{{FRI}}",
+      "meetingCount": 3,
+      "meetingMinutes": 150,
+      "density": "moderate",
+      "meetings": [
+        { "time": "10:00 AM", "title": "Acme Corp Monthly Review", "type": "customer", "account": "Acme Corp", "prepStatus": "prep_needed" },
+        { "time": "11:30 AM", "title": "CS Leadership Sync", "type": "team_sync", "account": null, "prepStatus": "done" },
+        { "time": "3:00 PM", "title": "Company All Hands", "type": "all_hands", "account": null, "prepStatus": "done" }
+      ],
+      "availableBlocks": [
+        { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90 }
       ]
     }
   ],
@@ -54,8 +157,49 @@
     "overdueCount": 2,
     "dueThisWeek": 3,
     "criticalItems": [
-      "Send updated SOW to Acme legal team (overdue)",
-      "Follow up on NPS survey responses (overdue)"
+      "Send updated SOW to Acme legal team - Acme Corp",
+      "Follow up on NPS survey responses - Acme Corp"
+    ],
+    "overdue": [
+      {
+        "id": "overdue-0",
+        "title": "Send updated SOW to Acme legal team",
+        "account": "Acme Corp",
+        "dueDate": "{{YESTERDAY}}",
+        "priority": "P1",
+        "daysOverdue": 1
+      },
+      {
+        "id": "overdue-1",
+        "title": "Follow up on NPS survey responses",
+        "account": "Acme Corp",
+        "dueDate": "{{LAST_WEEK}}",
+        "priority": "P2",
+        "daysOverdue": 7
+      }
+    ],
+    "dueThisWeekItems": [
+      {
+        "id": "week-0",
+        "title": "Review Globex QBR deck with AE",
+        "account": "Globex Industries",
+        "dueDate": "{{WED}}",
+        "priority": "P1"
+      },
+      {
+        "id": "week-1",
+        "title": "Schedule Phase 2 kickoff with Initech",
+        "account": "Initech",
+        "dueDate": "{{THU}}",
+        "priority": "P2"
+      },
+      {
+        "id": "week-2",
+        "title": "Create knowledge transfer plan for Alex Torres departure",
+        "account": "Acme Corp",
+        "dueDate": "{{FRI}}",
+        "priority": "P1"
+      }
     ]
   },
   "hygieneAlerts": [
@@ -63,27 +207,18 @@
       "account": "Globex Industries",
       "lifecycle": "at-risk",
       "arr": "$800K",
-      "issue": "Health is Yellow — usage declining in Team B, key stakeholder departing Q2",
+      "issue": "Health is YELLOW — Team B usage declining. Renewal in 90 days. QBR later this week is critical.",
       "severity": "warning"
-    },
-    {
-      "account": "Initech",
-      "lifecycle": "onboarding",
-      "arr": "$350K",
-      "issue": "No customer meeting in 10 days — last was Phase 1 Wrap",
-      "severity": "info"
     }
   ],
   "focusAreas": [
-    "Globex QBR Preparation — renewal decision expected this quarter",
-    "Acme Renewal Prep — SOW overdue, NPS detractors need outreach",
-    "Initech Phase 2 Kickoff — set scope and confirm executive sponsor"
+    "Customer meetings (5)",
+    "Overdue items (2)",
+    "Due this week (3)"
   ],
   "availableTimeBlocks": [
-    { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120, "suggestedUse": "Deep work" },
-    { "day": "Monday", "start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120, "suggestedUse": "Deep work" },
-    { "day": "Tuesday", "start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90, "suggestedUse": "Prep time" },
-    { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180, "suggestedUse": "Deep work" },
-    { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90, "suggestedUse": "Admin / catch-up" }
+    { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120, "suggestedUse": "Globex QBR prep" },
+    { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180, "suggestedUse": "Deep work — knowledge transfer plan" },
+    { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90, "suggestedUse": "Weekly wrap-up" }
   ]
 }
