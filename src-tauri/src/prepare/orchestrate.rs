@@ -363,6 +363,14 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
         .map_err(|e| format!("Failed to write week overview: {}", e))?;
 
     log::info!("deliver_week: wrote {}", output_path.display());
+
+    // Write human-readable markdown alongside JSON
+    let md_content = build_week_markdown(&overview);
+    let md_path = workspace.join("_today").join("week-overview.md");
+    std::fs::write(&md_path, md_content)
+        .map_err(|e| format!("Failed to write week-overview.md: {}", e))?;
+    log::info!("deliver_week: wrote {}", md_path.display());
+
     Ok(())
 }
 
@@ -957,25 +965,35 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
             .cloned()
             .unwrap_or_default();
 
-        days.push(build_week_day(&day_date, day_name, &day_meetings));
+        days.push(build_week_day(&day_date, day_name, &day_meetings, data_dir));
     }
 
     let action_summary = build_action_summary(directive, data_dir);
     let focus_areas = build_focus_areas(directive);
     let time_blocks = build_time_blocks(directive);
+    let readiness_checks = build_readiness_checks(directive, data_dir);
+    let day_shapes = build_day_shapes(directive, data_dir);
 
-    json!({
+    let mut result = json!({
         "weekNumber": week_number,
         "dateRange": date_range,
         "days": days,
         "actionSummary": action_summary,
-        "hygieneAlerts": [],
+        "hygieneAlerts": build_hygiene_alerts(&directive),
         "focusAreas": focus_areas,
         "availableTimeBlocks": time_blocks,
-    })
+        "dayShapes": day_shapes,
+    });
+
+    if !readiness_checks.is_empty() {
+        result["readinessChecks"] = json!(readiness_checks);
+    }
+    // weekNarrative and topPriority left null — I94 adds them via AI
+
+    result
 }
 
-fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value]) -> Value {
+fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value], data_dir: &Path) -> Value {
     let mut meetings = Vec::new();
     for m in meetings_raw {
         let meeting_type = normalise_meeting_type(
@@ -988,12 +1006,15 @@ fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value]) -> Value {
         let start = m.get("start").and_then(|v| v.as_str()).unwrap_or("");
         let time_display = format_time_display(start);
 
+        let meeting_id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let prep_status = resolve_prep_status(meeting_id, &meeting_type, data_dir);
+
         meetings.push(json!({
             "time": if time_display.is_empty() { "TBD".to_string() } else { time_display },
             "title": m.get("title").or_else(|| m.get("summary")).and_then(|v| v.as_str()).unwrap_or("Meeting"),
             "account": m.get("account"),
             "type": meeting_type,
-            "prepStatus": "prep_needed",
+            "prepStatus": prep_status,
         }));
     }
 
@@ -1002,6 +1023,38 @@ fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value]) -> Value {
         "dayName": day_name,
         "meetings": meetings,
     })
+}
+
+/// Resolve actual prep status for a meeting by checking prep files on disk.
+fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) -> String {
+    let prep_eligible = ["customer", "qbr", "partnership"];
+    if meeting_id.is_empty() || !prep_eligible.contains(&meeting_type) {
+        // Non-prep-eligible meetings don't need prep
+        return "done".to_string();
+    }
+
+    let prep_path = data_dir.join("preps").join(format!("{}.json", meeting_id));
+    if !prep_path.exists() {
+        return "prep_needed".to_string();
+    }
+
+    // Check prep file content quality
+    match std::fs::read_to_string(&prep_path) {
+        Ok(content) => {
+            if let Ok(prep) = serde_json::from_str::<Value>(&content) {
+                let has_agenda = prep.get("proposedAgenda").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty());
+                let has_talking_points = prep.get("talkingPoints").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty());
+                if has_agenda || has_talking_points {
+                    "prep_ready".to_string()
+                } else {
+                    "context_needed".to_string()
+                }
+            } else {
+                "context_needed".to_string()
+            }
+        }
+        Err(_) => "prep_needed".to_string(),
+    }
 }
 
 fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
@@ -1046,11 +1099,260 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         })
         .collect();
 
+    let overdue_items: Vec<Value> = overdue
+        .iter()
+        .take(20)
+        .enumerate()
+        .map(|(i, a)| {
+            let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let due_date = a.get("due_date").or_else(|| a.get("dueDate")).and_then(|v| v.as_str());
+            let days_overdue = due_date.and_then(|d| {
+                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok().map(|dd| {
+                    (Utc::now().date_naive() - dd).num_days()
+                })
+            });
+            json!({
+                "id": a.get("id").and_then(|v| v.as_str()).unwrap_or(&format!("overdue-{}", i)),
+                "title": title,
+                "account": a.get("account"),
+                "dueDate": due_date,
+                "priority": a.get("priority").and_then(|v| v.as_str()).unwrap_or("P3"),
+                "daysOverdue": days_overdue,
+            })
+        })
+        .collect();
+
+    let due_this_week_items: Vec<Value> = this_week
+        .iter()
+        .take(20)
+        .enumerate()
+        .map(|(i, a)| {
+            let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            json!({
+                "id": a.get("id").and_then(|v| v.as_str()).unwrap_or(&format!("week-{}", i)),
+                "title": title,
+                "account": a.get("account"),
+                "dueDate": a.get("due_date").or_else(|| a.get("dueDate")),
+                "priority": a.get("priority").and_then(|v| v.as_str()).unwrap_or("P3"),
+            })
+        })
+        .collect();
+
     json!({
         "overdueCount": overdue.len(),
         "dueThisWeek": this_week.len(),
         "criticalItems": critical_items,
+        "overdue": overdue_items,
+        "dueThisWeekItems": due_this_week_items,
     })
+}
+
+/// Build readiness checks: surfaces prep gaps, overdue actions, and stale contacts.
+fn build_readiness_checks(directive: &Value, data_dir: &Path) -> Vec<Value> {
+    let mut checks = Vec::new();
+    let prep_eligible = ["customer", "qbr", "partnership"];
+
+    // 1. Meetings without preps
+    let meetings_by_day = directive.get("meetingsByDay").cloned().unwrap_or(json!({}));
+    if let Some(obj) = meetings_by_day.as_object() {
+        for day_meetings in obj.values() {
+            if let Some(arr) = day_meetings.as_array() {
+                for m in arr {
+                    let meeting_type = normalise_meeting_type(
+                        m.get("type").and_then(|v| v.as_str()).unwrap_or("internal"),
+                    );
+                    if !prep_eligible.contains(&meeting_type.as_str()) {
+                        continue;
+                    }
+                    let meeting_id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if meeting_id.is_empty() {
+                        continue;
+                    }
+                    let prep_path = data_dir.join("preps").join(format!("{}.json", meeting_id));
+                    if !prep_path.exists() {
+                        let title = m.get("title").or_else(|| m.get("summary"))
+                            .and_then(|v| v.as_str()).unwrap_or("Meeting");
+                        checks.push(json!({
+                            "checkType": "no_prep",
+                            "message": format!("{} has no prep", title),
+                            "severity": "action_needed",
+                            "meetingId": meeting_id,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Overdue actions
+    let actions = directive.get("actions").cloned().unwrap_or(json!({}));
+    let overdue = actions.get("overdue").and_then(|v| v.as_array());
+    if let Some(o) = overdue {
+        if !o.is_empty() {
+            checks.push(json!({
+                "checkType": "overdue_action",
+                "message": format!("{} overdue action{} need{} attention",
+                    o.len(),
+                    if o.len() == 1 { "" } else { "s" },
+                    if o.len() == 1 { "s" } else { "" },
+                ),
+                "severity": "action_needed",
+            }));
+        }
+    }
+
+    // 3. Stale contacts — check meetingContexts for last meeting > 30 days
+    let mut seen_accounts = HashSet::new();
+    if let Some(contexts) = directive.get("meetingContexts").and_then(|v| v.as_array()) {
+        for ctx in contexts {
+            let account = ctx.get("account").and_then(|v| v.as_str()).unwrap_or("");
+            if account.is_empty() || seen_accounts.contains(account) {
+                continue;
+            }
+            seen_accounts.insert(account.to_string());
+
+            if let Some(last_meeting) = ctx.get("lastMeetingDate")
+                .or_else(|| ctx.get("last_meeting_date"))
+                .and_then(|v| v.as_str())
+            {
+                if let Ok(last_date) = NaiveDate::parse_from_str(last_meeting, "%Y-%m-%d") {
+                    let days_since = (Utc::now().date_naive() - last_date).num_days();
+                    if days_since > 30 {
+                        checks.push(json!({
+                            "checkType": "stale_contact",
+                            "message": format!("{} — last meeting {} days ago", account, days_since),
+                            "severity": "heads_up",
+                            "accountId": account,
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    checks
+}
+
+/// Build per-day shape with density classification and meeting details.
+fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
+    let context = directive.get("context").cloned().unwrap_or(json!({}));
+    let monday_str = context.get("monday").and_then(|v| v.as_str()).unwrap_or("");
+    let meetings_by_day = directive.get("meetingsByDay").cloned().unwrap_or(json!({}));
+    let time_blocks_raw = directive.get("timeBlocks").or_else(|| directive.get("time_blocks"))
+        .cloned().unwrap_or(json!({}));
+    let gaps_by_day = time_blocks_raw.get("gapsByDay")
+        .or_else(|| time_blocks_raw.get("gaps_by_day"))
+        .cloned().unwrap_or(json!({}));
+
+    let mut shapes = Vec::new();
+
+    for (i, day_name) in DAY_NAMES.iter().enumerate() {
+        let day_date = if !monday_str.is_empty() {
+            NaiveDate::parse_from_str(monday_str, "%Y-%m-%d")
+                .ok()
+                .map(|m| (m + chrono::Duration::days(i as i64)).to_string())
+                .unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let day_meetings_raw = meetings_by_day
+            .get(day_name)
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        // Build meeting list (reusing same logic as build_week_day)
+        let mut meetings = Vec::new();
+        let mut total_minutes: u32 = 0;
+
+        for m in &day_meetings_raw {
+            let meeting_type = normalise_meeting_type(
+                m.get("type").and_then(|v| v.as_str()).unwrap_or("internal"),
+            );
+            if meeting_type == "personal" {
+                continue;
+            }
+
+            let start_str = m.get("start").and_then(|v| v.as_str()).unwrap_or("");
+            let end_str = m.get("end").and_then(|v| v.as_str()).unwrap_or("");
+            let time_display = format_time_display(start_str);
+
+            // Calculate duration
+            let duration = compute_meeting_duration(start_str, end_str);
+            total_minutes += duration;
+
+            let meeting_id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let prep_status = resolve_prep_status(meeting_id, &meeting_type, data_dir);
+
+            meetings.push(json!({
+                "time": if time_display.is_empty() { "TBD".to_string() } else { time_display },
+                "title": m.get("title").or_else(|| m.get("summary")).and_then(|v| v.as_str()).unwrap_or("Meeting"),
+                "account": m.get("account"),
+                "type": meeting_type,
+                "prepStatus": prep_status,
+            }));
+        }
+
+        // Density classification
+        let density = match total_minutes {
+            0..=90 => "light",
+            91..=180 => "moderate",
+            181..=300 => "busy",
+            _ => "packed",
+        };
+
+        // Available blocks for this day
+        let mut available_blocks = Vec::new();
+        if let Some(day_gaps) = gaps_by_day.get(day_name).and_then(|v| v.as_array()) {
+            for gap in day_gaps {
+                let dur = gap.get("duration_minutes")
+                    .or_else(|| gap.get("durationMinutes"))
+                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                if dur < 30 {
+                    continue;
+                }
+                let start = gap.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let end = gap.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if !start.is_empty() && !end.is_empty() {
+                    available_blocks.push(json!({
+                        "day": day_name,
+                        "start": start,
+                        "end": end,
+                        "durationMinutes": dur,
+                    }));
+                }
+            }
+        }
+
+        shapes.push(json!({
+            "dayName": day_name,
+            "date": day_date,
+            "meetingCount": meetings.len(),
+            "meetingMinutes": total_minutes,
+            "density": density,
+            "meetings": meetings,
+            "availableBlocks": available_blocks,
+        }));
+    }
+
+    shapes
+}
+
+/// Compute meeting duration in minutes from ISO start/end strings.
+fn compute_meeting_duration(start: &str, end: &str) -> u32 {
+    if start.is_empty() || end.is_empty() {
+        return 30; // Default assumption
+    }
+    let parse = |s: &str| {
+        chrono::DateTime::parse_from_rfc3339(&s.replace('Z', "+00:00"))
+            .ok()
+            .or_else(|| chrono::DateTime::parse_from_rfc3339(s).ok())
+    };
+    match (parse(start), parse(end)) {
+        (Some(s), Some(e)) => ((e - s).num_minutes().max(0)) as u32,
+        _ => 30,
+    }
 }
 
 fn build_focus_areas(directive: &Value) -> Vec<String> {
@@ -1187,6 +1489,222 @@ fn build_time_blocks(directive: &Value) -> Vec<Value> {
     blocks
 }
 
+/// Generate human-readable markdown from the week overview JSON.
+fn build_week_markdown(overview: &Value) -> String {
+    let mut md = String::new();
+
+    // Header
+    let week_number = overview.get("weekNumber").and_then(|v| v.as_str()).unwrap_or("W??");
+    let date_range = overview.get("dateRange").and_then(|v| v.as_str()).unwrap_or("");
+    md.push_str(&format!("# Week {} — {}\n\n", week_number, date_range));
+
+    // Readiness
+    if let Some(checks) = overview.get("readinessChecks").and_then(|v| v.as_array()) {
+        if !checks.is_empty() {
+            md.push_str("## Readiness\n\n");
+            for check in checks {
+                let msg = check.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                let severity = check.get("severity").and_then(|v| v.as_str()).unwrap_or("");
+                let icon = if severity == "action_needed" { "\u{26a0}\u{fe0f}" } else { "\u{2139}\u{fe0f}" };
+                md.push_str(&format!("- {} {}\n", icon, msg));
+            }
+            md.push('\n');
+        }
+    }
+
+    // Week Shape table
+    if let Some(shapes) = overview.get("dayShapes").and_then(|v| v.as_array()) {
+        md.push_str("## Week Shape\n\n");
+        md.push_str("| Day | Meetings | Density | Focus |\n");
+        md.push_str("|-----|----------|---------|-------|\n");
+        for shape in shapes {
+            let day = shape.get("dayName").and_then(|v| v.as_str()).unwrap_or("");
+            let count = shape.get("meetingCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let density = shape.get("density").and_then(|v| v.as_str()).unwrap_or("");
+            let density_cap = if density.is_empty() {
+                String::new()
+            } else {
+                let mut c = density.chars();
+                match c.next() {
+                    Some(first) => first.to_uppercase().to_string() + c.as_str(),
+                    None => String::new(),
+                }
+            };
+            // Sum available blocks for focus time
+            let focus_min: u64 = shape.get("availableBlocks")
+                .and_then(|v| v.as_array())
+                .map(|blocks| blocks.iter()
+                    .filter_map(|b| b.get("durationMinutes").and_then(|v| v.as_u64()))
+                    .sum())
+                .unwrap_or(0);
+            let focus_display = if focus_min >= 60 {
+                format!("{}h{}m", focus_min / 60, focus_min % 60)
+            } else {
+                format!("{}m", focus_min)
+            };
+            md.push_str(&format!("| {} | {} | {} | {} |\n", day, count, density_cap, focus_display));
+        }
+        md.push('\n');
+    }
+
+    // Actions
+    let action_summary = overview.get("actionSummary").cloned().unwrap_or(json!({}));
+    let overdue_count = action_summary.get("overdueCount").and_then(|v| v.as_u64()).unwrap_or(0);
+    let due_count = action_summary.get("dueThisWeek").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    if overdue_count > 0 || due_count > 0 {
+        md.push_str("## Actions\n\n");
+
+        if let Some(overdue) = action_summary.get("overdue").and_then(|v| v.as_array()) {
+            if !overdue.is_empty() {
+                md.push_str(&format!("### Overdue ({})\n\n", overdue.len()));
+                for item in overdue {
+                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let days = item.get("daysOverdue").and_then(|v| v.as_i64());
+                    let days_str = days.map(|d| format!(" ({}d overdue)", d)).unwrap_or_default();
+                    if account.is_empty() {
+                        md.push_str(&format!("- [{}] {}{}\n", priority, title, days_str));
+                    } else {
+                        md.push_str(&format!("- [{}] {} — {}{}\n", priority, title, account, days_str));
+                    }
+                }
+                md.push('\n');
+            }
+        }
+
+        if let Some(due) = action_summary.get("dueThisWeekItems").and_then(|v| v.as_array()) {
+            if !due.is_empty() {
+                md.push_str(&format!("### Due This Week ({})\n\n", due.len()));
+                for item in due {
+                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                    let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let due_date = item.get("dueDate").and_then(|v| v.as_str()).unwrap_or("");
+                    // Extract day name from date if possible
+                    let day_label = NaiveDate::parse_from_str(due_date, "%Y-%m-%d")
+                        .ok()
+                        .map(|d| d.format("%a").to_string())
+                        .unwrap_or_default();
+                    let suffix = if !day_label.is_empty() {
+                        format!(" ({})", day_label)
+                    } else {
+                        String::new()
+                    };
+                    if account.is_empty() {
+                        md.push_str(&format!("- [{}] {}{}\n", priority, title, suffix));
+                    } else {
+                        md.push_str(&format!("- [{}] {} — {}{}\n", priority, title, account, suffix));
+                    }
+                }
+                md.push('\n');
+            }
+        }
+    }
+
+    // Account Health (hygiene alerts)
+    if let Some(alerts) = overview.get("hygieneAlerts").and_then(|v| v.as_array()) {
+        if !alerts.is_empty() {
+            md.push_str("## Account Health\n\n");
+            for alert in alerts {
+                let account = alert.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                let lifecycle = alert.get("lifecycle").and_then(|v| v.as_str()).unwrap_or("");
+                let arr = alert.get("arr").and_then(|v| v.as_str()).unwrap_or("");
+                let issue = alert.get("issue").and_then(|v| v.as_str()).unwrap_or("");
+                let meta = [lifecycle, arr].iter()
+                    .filter(|s| !s.is_empty())
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if meta.is_empty() {
+                    md.push_str(&format!("- **{}** — {}\n", account, issue));
+                } else {
+                    md.push_str(&format!("- **{}** ({}) — {}\n", account, meta, issue));
+                }
+            }
+            md.push('\n');
+        }
+    }
+
+    md
+}
+
+/// Build hygiene alerts from meeting contexts — flags at-risk/churned accounts.
+fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
+    let mut alerts = Vec::new();
+    let mut seen_accounts = HashSet::new();
+
+    if let Some(contexts) = directive.get("meetingContexts").and_then(|v| v.as_array()) {
+        for ctx in contexts {
+            let account = ctx.get("account").and_then(|v| v.as_str()).unwrap_or("");
+            if account.is_empty() || seen_accounts.contains(account) {
+                continue;
+            }
+            seen_accounts.insert(account.to_string());
+
+            let account_data = ctx.get("account_data").cloned().unwrap_or(json!({}));
+            let lifecycle = account_data.get("lifecycle").and_then(|v| v.as_str()).unwrap_or("");
+            let health = account_data.get("health").and_then(|v| v.as_str()).unwrap_or("");
+            let arr_raw = account_data.get("arr");
+            let narrative = ctx.get("narrative").and_then(|v| v.as_str()).unwrap_or("");
+
+            let needs_alert = matches!(health, "yellow" | "red")
+                || matches!(lifecycle, "at-risk" | "churned");
+
+            if needs_alert {
+                let severity = if health == "red" || lifecycle == "churned" {
+                    "critical"
+                } else {
+                    "warning"
+                };
+
+                let issue = if !narrative.is_empty() {
+                    format!("Health is {} — {}", health.to_uppercase(), narrative)
+                } else {
+                    format!("Health is {}, lifecycle {}", health.to_uppercase(), lifecycle)
+                };
+
+                alerts.push(json!({
+                    "account": account,
+                    "lifecycle": lifecycle,
+                    "arr": format_arr(arr_raw),
+                    "issue": issue,
+                    "severity": severity,
+                }));
+            }
+        }
+    }
+
+    alerts
+}
+
+/// Format ARR value for display: number → "$1.2M" / "$350K" / "$50K", string passthrough.
+fn format_arr(raw: Option<&Value>) -> String {
+    match raw {
+        Some(Value::Number(n)) => {
+            if let Some(v) = n.as_f64() {
+                if v >= 1_000_000.0 {
+                    let m = v / 1_000_000.0;
+                    if (m * 10.0).fract().abs() < 0.001 {
+                        format!("${:.1}M", m)
+                    } else {
+                        format!("${:.2}M", m)
+                    }
+                } else if v >= 1_000.0 {
+                    format!("${}K", (v / 1_000.0) as u64)
+                } else {
+                    format!("${}", v as u64)
+                }
+            } else {
+                String::new()
+            }
+        }
+        Some(Value::String(s)) => s.clone(),
+        _ => String::new(),
+    }
+}
+
 fn normalise_meeting_type(raw: &str) -> String {
     let normalised = raw.to_lowercase().replace(' ', "_").replace('-', "_");
     let valid = [
@@ -1223,5 +1741,359 @@ impl IsoWeekFields for NaiveDate {
     fn iso_week_fields(&self) -> (i32, u32, u32) {
         let iso = self.iso_week();
         (iso.year(), iso.week(), self.weekday().num_days_from_monday() + 1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_readiness_checks_no_prep() {
+        let tmp = TempDir::new().unwrap();
+        let data_dir = tmp.path();
+        std::fs::create_dir_all(data_dir.join("preps")).unwrap();
+
+        let directive = json!({
+            "meetingsByDay": {
+                "Monday": [
+                    {"id": "m1", "title": "Customer Sync", "type": "customer", "start": "2025-02-10T13:00:00Z", "end": "2025-02-10T13:45:00Z"},
+                    {"id": "m2", "title": "Team Standup", "type": "team_sync", "start": "2025-02-10T14:00:00Z", "end": "2025-02-10T14:15:00Z"}
+                ]
+            },
+            "actions": {}
+        });
+
+        let checks = build_readiness_checks(&directive, data_dir);
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0]["checkType"], "no_prep");
+        assert!(checks[0]["message"].as_str().unwrap().contains("Customer Sync"));
+    }
+
+    #[test]
+    fn test_readiness_checks_with_prep() {
+        let tmp = TempDir::new().unwrap();
+        let data_dir = tmp.path();
+        let preps_dir = data_dir.join("preps");
+        std::fs::create_dir_all(&preps_dir).unwrap();
+        // Write a prep file
+        std::fs::write(
+            preps_dir.join("m1.json"),
+            r#"{"proposedAgenda": [{"topic": "Review"}]}"#,
+        ).unwrap();
+
+        let directive = json!({
+            "meetingsByDay": {
+                "Monday": [
+                    {"id": "m1", "title": "Customer Sync", "type": "customer"}
+                ]
+            },
+            "actions": {}
+        });
+
+        let checks = build_readiness_checks(&directive, data_dir);
+        // No check for m1 since prep exists
+        assert!(checks.is_empty());
+    }
+
+    #[test]
+    fn test_readiness_checks_overdue_actions() {
+        let tmp = TempDir::new().unwrap();
+        let directive = json!({
+            "meetingsByDay": {},
+            "actions": {
+                "overdue": [
+                    {"title": "Task 1"},
+                    {"title": "Task 2"}
+                ]
+            }
+        });
+
+        let checks = build_readiness_checks(&directive, tmp.path());
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0]["checkType"], "overdue_action");
+        assert!(checks[0]["message"].as_str().unwrap().contains("2 overdue actions"));
+    }
+
+    #[test]
+    fn test_day_shapes_density() {
+        let tmp = TempDir::new().unwrap();
+        let data_dir = tmp.path();
+        std::fs::create_dir_all(data_dir.join("preps")).unwrap();
+
+        let directive = json!({
+            "context": {"monday": "2025-02-10"},
+            "meetingsByDay": {
+                "Monday": [
+                    {"id": "m1", "title": "Meeting 1", "type": "internal",
+                     "start": "2025-02-10T09:00:00Z", "end": "2025-02-10T10:00:00Z"},
+                    {"id": "m2", "title": "Meeting 2", "type": "internal",
+                     "start": "2025-02-10T10:30:00Z", "end": "2025-02-10T11:30:00Z"},
+                    {"id": "m3", "title": "Meeting 3", "type": "internal",
+                     "start": "2025-02-10T14:00:00Z", "end": "2025-02-10T15:00:00Z"},
+                    {"id": "m4", "title": "Meeting 4", "type": "customer",
+                     "start": "2025-02-10T15:30:00Z", "end": "2025-02-10T16:30:00Z"}
+                ],
+                "Tuesday": [],
+                "Wednesday": [],
+                "Thursday": [],
+                "Friday": []
+            },
+            "timeBlocks": {"gapsByDay": {}}
+        });
+
+        let shapes = build_day_shapes(&directive, data_dir);
+        assert_eq!(shapes.len(), 5);
+
+        // Monday: 4 meetings × 60 min = 240 min → "busy"
+        assert_eq!(shapes[0]["dayName"], "Monday");
+        assert_eq!(shapes[0]["density"], "busy");
+        assert_eq!(shapes[0]["meetingCount"], 4);
+        assert_eq!(shapes[0]["meetingMinutes"], 240);
+
+        // Tuesday: 0 meetings → "light"
+        assert_eq!(shapes[1]["dayName"], "Tuesday");
+        assert_eq!(shapes[1]["density"], "light");
+        assert_eq!(shapes[1]["meetingCount"], 0);
+    }
+
+    #[test]
+    fn test_resolve_prep_status_non_eligible() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(resolve_prep_status("m1", "internal", tmp.path()), "done");
+        assert_eq!(resolve_prep_status("m1", "team_sync", tmp.path()), "done");
+    }
+
+    #[test]
+    fn test_resolve_prep_status_no_file() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("preps")).unwrap();
+        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "prep_needed");
+    }
+
+    #[test]
+    fn test_resolve_prep_status_with_agenda() {
+        let tmp = TempDir::new().unwrap();
+        let preps = tmp.path().join("preps");
+        std::fs::create_dir_all(&preps).unwrap();
+        std::fs::write(
+            preps.join("m1.json"),
+            r#"{"proposedAgenda": [{"topic": "Review"}]}"#,
+        ).unwrap();
+        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "prep_ready");
+    }
+
+    #[test]
+    fn test_resolve_prep_status_minimal_file() {
+        let tmp = TempDir::new().unwrap();
+        let preps = tmp.path().join("preps");
+        std::fs::create_dir_all(&preps).unwrap();
+        std::fs::write(preps.join("m1.json"), r#"{"title": "Meeting"}"#).unwrap();
+        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "context_needed");
+    }
+
+    #[test]
+    fn test_compute_meeting_duration() {
+        assert_eq!(
+            compute_meeting_duration("2025-02-10T09:00:00Z", "2025-02-10T10:00:00Z"),
+            60
+        );
+        assert_eq!(
+            compute_meeting_duration("2025-02-10T14:00:00Z", "2025-02-10T14:30:00Z"),
+            30
+        );
+        // Fallback for empty
+        assert_eq!(compute_meeting_duration("", ""), 30);
+    }
+
+    #[test]
+    fn test_action_summary_includes_items() {
+        let tmp = TempDir::new().unwrap();
+        let directive = json!({
+            "actions": {
+                "overdue": [
+                    {"title": "Overdue Task", "account": "Acme", "due_date": "2025-01-01", "priority": "P1"}
+                ],
+                "thisWeek": [
+                    {"title": "Week Task", "account": "Globex", "due_date": "2025-02-12", "priority": "P2"}
+                ]
+            }
+        });
+
+        let summary = build_action_summary(&directive, tmp.path());
+        assert_eq!(summary["overdueCount"], 1);
+        assert_eq!(summary["dueThisWeek"], 1);
+
+        let overdue = summary["overdue"].as_array().unwrap();
+        assert_eq!(overdue.len(), 1);
+        assert_eq!(overdue[0]["title"], "Overdue Task");
+        assert_eq!(overdue[0]["priority"], "P1");
+
+        let due = summary["dueThisWeekItems"].as_array().unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0]["title"], "Week Task");
+    }
+
+    #[test]
+    fn test_hygiene_alerts_yellow_health() {
+        let directive = json!({
+            "meetingContexts": [
+                {
+                    "account": "Globex Industries",
+                    "account_data": {"lifecycle": "at-risk", "arr": 800000, "health": "yellow"},
+                    "narrative": "Team B usage declining."
+                }
+            ]
+        });
+        let alerts = build_hygiene_alerts(&directive);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0]["account"], "Globex Industries");
+        assert_eq!(alerts[0]["severity"], "warning");
+        assert_eq!(alerts[0]["arr"], "$800K");
+        assert!(alerts[0]["issue"].as_str().unwrap().contains("YELLOW"));
+    }
+
+    #[test]
+    fn test_hygiene_alerts_red_health() {
+        let directive = json!({
+            "meetingContexts": [
+                {
+                    "account": "BadCo",
+                    "account_data": {"lifecycle": "churned", "arr": 50000, "health": "red"},
+                    "narrative": "Account lost."
+                }
+            ]
+        });
+        let alerts = build_hygiene_alerts(&directive);
+        assert_eq!(alerts.len(), 1);
+        assert_eq!(alerts[0]["severity"], "critical");
+    }
+
+    #[test]
+    fn test_hygiene_alerts_green_skipped() {
+        let directive = json!({
+            "meetingContexts": [
+                {
+                    "account": "Acme Corp",
+                    "account_data": {"lifecycle": "steady-state", "arr": 1200000, "health": "green"},
+                    "narrative": "All good."
+                }
+            ]
+        });
+        let alerts = build_hygiene_alerts(&directive);
+        assert!(alerts.is_empty());
+    }
+
+    #[test]
+    fn test_hygiene_alerts_deduplicates_by_account() {
+        let directive = json!({
+            "meetingContexts": [
+                {
+                    "account": "Globex",
+                    "account_data": {"health": "yellow"},
+                    "narrative": "First."
+                },
+                {
+                    "account": "Globex",
+                    "account_data": {"health": "yellow"},
+                    "narrative": "Second."
+                }
+            ]
+        });
+        let alerts = build_hygiene_alerts(&directive);
+        assert_eq!(alerts.len(), 1);
+    }
+
+    #[test]
+    fn test_format_arr_millions() {
+        assert_eq!(format_arr(Some(&json!(1200000))), "$1.2M");
+        assert_eq!(format_arr(Some(&json!(2000000))), "$2.0M");
+    }
+
+    #[test]
+    fn test_format_arr_thousands() {
+        assert_eq!(format_arr(Some(&json!(800000))), "$800K");
+        assert_eq!(format_arr(Some(&json!(350000))), "$350K");
+    }
+
+    #[test]
+    fn test_format_arr_string_passthrough() {
+        assert_eq!(format_arr(Some(&json!("$1.5M"))), "$1.5M");
+    }
+
+    #[test]
+    fn test_format_arr_none() {
+        assert_eq!(format_arr(None), "");
+    }
+
+    #[test]
+    fn test_build_week_markdown_includes_sections() {
+        let overview = json!({
+            "weekNumber": "W06",
+            "dateRange": "2025-02-10 – 2025-02-14",
+            "readinessChecks": [
+                {"checkType": "no_prep", "message": "Globex Check-in has no prep", "severity": "action_needed"}
+            ],
+            "dayShapes": [
+                {"dayName": "Monday", "date": "2025-02-10", "meetingCount": 3, "meetingMinutes": 120,
+                 "density": "moderate", "meetings": [], "availableBlocks": [
+                    {"day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120}
+                 ]}
+            ],
+            "actionSummary": {
+                "overdueCount": 1, "dueThisWeek": 1,
+                "overdue": [{"title": "Task A", "account": "Acme", "priority": "P1", "daysOverdue": 2}],
+                "dueThisWeekItems": [{"title": "Task B", "priority": "P2", "dueDate": "2025-02-12"}]
+            },
+            "hygieneAlerts": [
+                {"account": "Globex", "lifecycle": "at-risk", "arr": "$800K", "issue": "Health declining", "severity": "warning"}
+            ]
+        });
+
+        let md = build_week_markdown(&overview);
+        assert!(md.contains("# Week W06"));
+        assert!(md.contains("## Readiness"));
+        assert!(md.contains("Globex Check-in has no prep"));
+        assert!(md.contains("## Week Shape"));
+        assert!(md.contains("| Monday |"));
+        assert!(md.contains("## Actions"));
+        assert!(md.contains("[P1] Task A"));
+        assert!(md.contains("## Account Health"));
+        assert!(md.contains("**Globex**"));
+    }
+
+    #[test]
+    fn test_deliver_week_writes_json_and_md() {
+        let tmp = TempDir::new().unwrap();
+        let workspace = tmp.path();
+        let data_dir = workspace.join("_today").join("data");
+        std::fs::create_dir_all(data_dir.join("preps")).unwrap();
+
+        let directive = json!({
+            "context": {"weekNumber": "W06", "monday": "2025-02-10", "friday": "2025-02-14",
+                        "dateRange": "2025-02-10 – 2025-02-14"},
+            "meetingsByDay": {
+                "Monday": [{"id": "m1", "title": "Sync", "type": "customer",
+                            "start": "2025-02-10T13:00:00Z", "end": "2025-02-10T13:45:00Z"}],
+                "Tuesday": [], "Wednesday": [], "Thursday": [], "Friday": []
+            },
+            "meetingContexts": [],
+            "actions": {},
+            "timeBlocks": {"gapsByDay": {}}
+        });
+
+        std::fs::write(
+            data_dir.join("week-directive.json"),
+            serde_json::to_string_pretty(&directive).unwrap(),
+        ).unwrap();
+
+        let result = deliver_week(workspace);
+        assert!(result.is_ok(), "deliver_week failed: {:?}", result);
+        assert!(data_dir.join("week-overview.json").exists());
+        assert!(workspace.join("_today").join("week-overview.md").exists());
+
+        let md = std::fs::read_to_string(workspace.join("_today").join("week-overview.md")).unwrap();
+        assert!(md.contains("# Week W06"));
     }
 }
