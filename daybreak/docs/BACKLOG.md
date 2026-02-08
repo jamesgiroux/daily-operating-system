@@ -31,6 +31,10 @@ Active issues, known risks, assumptions, and dependencies.
     I9 (focus/week stubs — non-embarrassing)
     I56 (onboarding redesign — teach the philosophy)
     I57 (onboarding: add accounts/projects — populate workspace for first briefing)
+    I59 (CARGO_MANIFEST_DIR — scripts unfindable in release builds) — SHIP BLOCKER
+    I60 (path traversal in inbox/workspace commands) — SHIP BLOCKER
+    I62 (.unwrap() panics crash background tasks) — SHIP BLOCKER
+    I79 (Claude Code validation/installation in onboarding) — SHIP BLOCKER
     7-day crash-free validation on test-workspace
     Done when:       DMG installs cleanly, onboarding→briefing works 7 days on clean machine
 
@@ -42,6 +46,18 @@ Active issues, known risks, assumptions, and dependencies.
     Foundation: I29 (doc schemas)
     Deferred: I26 | I2, I3, I4, I10
     Revisit after Sprint 4 ships with real usage data.
+
+  ENTITY DASHBOARDS (ADR-0047, can start account-side without I27):
+    I73 (template system — JSON schema, markdown gen, file watching)
+    I72 (entity dashboard pages — list + detail UI, depends on I73)
+    I74 (account enrichment via Claude Code websearch, depends on I73)
+    I75 (external edit detection + reconciliation, depends on I73)
+    Account-side I72+I73 unblocked now. Project-side depends on I50.
+
+  DATA DURABILITY (ADR-0048 — SQLite is working store, not disposable):
+    I76 (SQLite backup + rebuild-from-filesystem command)
+    I77 (filesystem writeback audit — ensure important state reaches files)
+    I76 should land before ship (Sprint 4 or immediately after).
 -->
 
 ### Open — Medium Priority
@@ -53,7 +69,7 @@ Options: Tauri's built-in updater, GitHub Releases + Sparkle, manual DMG, Mac Ap
 `focus.json` returns "not yet implemented." Weekly priorities from `week-overview.json` don't flow into daily focus. `/week` should set weekly priorities; `/today` should derive daily focus from those + today's schedule.
 
 **I40: CS Kit — account-mode fields, templates, and vocabulary**
-ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). What remains CS-specific after ADR-0043 narrowed extensions: CS account fields (ARR, renewal dates, health scores, ring classification), account dashboard templates, success plan templates, value driver categories, ring-based cadence thresholds, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not Kit responsibilities. The existing `accounts` table IS the CS Kit's schema contribution — it carries CS-specific fields on top of the universal `entities` table. Kit also contributes enrichment prompt fragments for CS vocabulary (value delivery moments, renewal signals, health indicators). Remaining work: formalize Kit registration, schema contribution mechanism, template system, prompt fragment composition. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
+ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). What remains CS-specific after ADR-0043 narrowed extensions: CS account fields (ARR, renewal dates, health scores, ring classification), account dashboard templates, success plan templates, value driver categories, ring-based cadence thresholds, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not Kit responsibilities. The existing `accounts` table IS the CS Kit's schema contribution — it carries CS-specific fields on top of the universal `entities` table. Kit also contributes enrichment prompt fragments for CS vocabulary (value delivery moments, renewal signals, health indicators). Remaining work: formalize Kit registration, schema contribution mechanism, template system, prompt fragment composition. ADR-0047 defines the entity dashboard architecture — the CS Kit contributes the `structured` fields (ARR, health, ring, renewal, csm, champion) to the account `dashboard.json` schema, and CS-specific sections (commercial summary, renewal strategy) as `customSections` entries. Without the CS Kit enabled, account dashboards show generic company overview + stakeholders + activity. With the Kit, they add the commercial lens. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
 
 **I25: Unify meeting badge/status rendering**
 MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overlayStatus, type) each with their own conditional. Consolidate into a computed MeetingDisplayState. Relates to ADR-0033.
@@ -95,6 +111,43 @@ The first real briefing is only as good as the data in the workspace. Without ac
 
 Sprint 4 (ship blocker — without this, first briefing is empty).
 
+**I78: Onboarding: teach inbox-first behavior as the paradigm shift**
+The number one way DailyOS becomes useful is when users feed it context about their work. The current onboarding teaches *setup* (connect Google, add accounts). But the real paradigm shift is behavioral: users are trained by every other productivity app to *manage* — DailyOS flips that script to "drop things in, intelligence comes out." Inbox is the purest expression of this, and onboarding should train that muscle memory.
+
+**Proposed flow revision (refines I56/I57):**
+1. Tell us about your accounts/projects (I57 — gives the system entities to link against)
+2. **Inbox training:** guided first inbox drop — user drops a transcript, meeting notes, or document. System kicks off processing in the background. Visual progress sequence (similar to `/week` setup) shows the system is working — file received, classifying, extracting, linking. User doesn't wait for enrichment to finish.
+3. Dashboard tour with demo data (I56 — reliable, curated, teaches the UI). Demo data is the teaching tool; the inbox drop is the behavior training. Two different jobs.
+4. **Ready chapter gains a processing summary:** before exiting onboarding, a compact summary of what the background inbox processing found/is doing. "We found 3 action items and linked this to Acme Corp" or "Still processing — check your inbox page in a few minutes." Complements the existing Ready chapter.
+5. Drop into the real app — "add to inbox" is already established behavior.
+
+**Key insight:** Don't expect enrichment to complete during onboarding. The demo data drives the dashboard tour (reliable). The inbox drop trains the *behavior*. The summary at the end ties the two together — the user sees that what they dropped is already becoming intelligence.
+
+**Key tension:** Inbox processing quality depends on having entities to link against (chicken-and-egg). Sequencing accounts *before* the inbox drop solves this — the system has context, so the first drop produces a good result, not a cold one.
+
+**What this changes:** Doesn't replace I56/I57 — refines the sequencing and adds an inbox training chapter between I57 (populate workspace) and the dashboard tour. Extends the Ready chapter with a processing summary. Demo data remains the primary teaching tool for the dashboard.
+
+Relates to I56, I57. Post-ship refinement (current onboarding flow ships first, this improves it).
+
+**I79: Onboarding: Claude Code validation and installation step**
+Claude Code is the AI engine — without it installed and authenticated, enrichment produces nothing (briefing narrative, email triage, inbox processing, transcript insights all fail silently). This is a hard dependency that should be validated during onboarding, not discovered when the first briefing comes back flat.
+
+**What the step needs to do:**
+- Detect whether Claude Code CLI is installed (check PATH / known install locations)
+- Detect whether it's authenticated (API key or login session valid)
+- If missing: guide installation with platform-appropriate instructions (macOS: brew, npm, direct download)
+- If installed but not authenticated: guide auth flow
+- If both valid: green checkmark, move on
+
+**UX considerations:**
+- This is a technical dependency that non-technical users may not understand. Frame it as "Connect your AI" — parallel to "Connect Google." The user doesn't need to know it's a CLI tool.
+- Should be skippable (like Google Connect) with a clear warning: "Without this, DailyOS can organize your day but can't provide AI insights."
+- Placement: near Google Connect in the onboarding flow — both are "connect external dependencies" steps.
+
+**Existing code:** `PtyManager::is_claude_authenticated()` in `pty.rs` already checks auth status. `pty.rs` spawns Claude Code subprocesses for enrichment. Detection logic exists but isn't surfaced to the user.
+
+Relates to I56. **Ship blocker** — without Claude Code, the product's core promise ("AI-native daily productivity") doesn't work.
+
 **I26: Web search for unknown external meetings not implemented**
 ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `ops/meeting_prep.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
 
@@ -105,7 +158,7 @@ ADR-0046 replaces profile-activated extensions (ADR-0026) with three-layer archi
 ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop, client consumes Clay/Slack/Linear). ADR-0046 elevates MCP client to the integration protocol — every external data source (Gong, Salesforce, Linear, etc.) is an MCP server consumed by the app. IPC commands are designed to be MCP-exposable (good foundation from ADR-0025). No MCP protocol code exists. Server side exposes DailyOS tools; client side is the integration layer. See I54 for client framework.
 
 **I29: Structured document schemas not implemented**
-ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and structured documents (`dashboard.json` + `dashboard.md` pattern). Briefing JSON pattern exists as a template. Account dashboard UI is a stub. No schema validation system. Less coupled to extensions post-ADR-0046 — core entity schemas are universal, domain overlays contribute additional fields. Blocked by I27 umbrella for overlay-contributed schemas.
+ADR-0028 accepts JSON-first schemas for account dashboards, success plans, and structured documents (`dashboard.json` + `dashboard.md` pattern). Briefing JSON pattern exists as a template. Account dashboard UI is a stub. No schema validation system. Less coupled to extensions post-ADR-0046 — core entity schemas are universal, domain overlays contribute additional fields. ADR-0047 refines this for entity dashboards specifically: two-file pattern (JSON write interface + markdown read artifact), three-way sync (JSON ↔ SQLite ↔ markdown), external edit detection. Entity dashboard implementation is I73. Non-entity structured documents (success plans, etc.) remain in this issue's scope. Blocked by I27 umbrella for overlay-contributed schemas.
 
 **I50: Projects overlay table and project entity support**
 ADR-0046 requires a `projects` overlay table parallel to `accounts`. Fields: id, name, status, milestone, owner, target_date. Bridge pattern: `upsert_project()` auto-mirrors to `entities` table (same mechanism as `upsert_account()` → `ensure_entity_for_account()`). CRUD commands: `upsert_project`, `get_project`, `get_projects_by_status`. Frontend: Projects page (parallel to Accounts page), project entity in sidebar for project-based and both modes. Blocked by I27.
@@ -131,6 +184,72 @@ ADR-0046 classifies Executive as an Intelligence layer (entity-mode-agnostic). W
 **I58: Feed user profile context into AI enrichment prompts**
 User profile (name, company, title, focus) collected during onboarding should be injected into AI enrichment operations to personalize output. Scope: enrich_emails(), enrich_briefing(), meeting prep directives. The profile fields live in config.json (user_name, user_company, user_title, user_focus) and are set via the "About You" onboarding chapter or future Settings page. Depends on I57 (profile collection UI).
 
+**I72: Entity dashboard pages — list + detail views for accounts and projects**
+ADR-0047 establishes the two-file pattern (JSON + markdown). This issue is the actual UI: account list page (table with health/ARR/ring/renewal/last contact/open actions, sortable and filterable) + account detail page (composite dashboard: structured fields from SQLite, narrative content from `dashboard.json`, live data from SQLite queries). Project list page and project detail page follow the same pattern with different field sets (status/milestone/owner/target date instead of ARR/health/ring/renewal). The detail page is a card-based layout — not a rendered markdown document. Each card maps to a data source: Quick Context (SQLite), Company Overview (dashboard.json, refreshable), Key Stakeholders (people table from I51), Strategic Programs (dashboard.json, editable), Recent Activity (SQLite live query), Open Items (SQLite live query), Intelligence Signals (intelligence.rs live), Notes (dashboard.json, editable). Account side can ship with existing `accounts` table. Project side depends on I50 (projects table). Both sides depend on I73 (template system) for the JSON schema and markdown generation.
+
+**I73: Entity dashboard template system — JSON schema, in-app editing, markdown generation, file watching**
+ADR-0047 defines the data model. This issue implements: (1) JSON schema types in Rust (`AccountDashboard`, `ProjectDashboard` with `structured`, `companyOverview`, `strategicPrograms`, `notes`, `customSections` fields). (2) Read/write commands: `get_entity_dashboard`, `update_entity_dashboard` (reads/writes `dashboard.json`). (3) `render_entity_dashboard_md()` function that combines JSON content + SQLite live data into comprehensive markdown. (4) Regeneration triggers: after briefing delivery, after meeting capture, after in-app edits, after enrichment, after external JSON change detected. (5) File watching for `dashboard.json` changes (mtime-based, checked on entity access). (6) Three-way sync bridge: JSON `structured` fields ↔ SQLite `accounts`/`projects` tables. JSON is canonical — if they disagree, JSON wins on next sync. Markdown is always generated output. Refines I29 (structured document schemas) for entity-specific use.
+
+**I74: Account enrichment via Claude Code websearch**
+On account creation or on-demand refresh, spawn Claude Code to websearch company name and populate `dashboard.json` company overview. Flow: (1) `enrich_account()` spawns Claude Code with `--print` and a structured prompt: "Research [company name]. Return JSON with description, industry, company size, headquarters, and 3-5 key public facts." (2) App parses response, writes to `dashboard.json` `companyOverview` section with `enrichedAt` timestamp. (3) App regenerates `dashboard.md`. (4) Fault-tolerant: enrichment failure leaves empty overview card, not a broken page (per ADR-0042 pattern). Same PTY infrastructure as email/briefing enrichment. Refresh button on account detail page triggers re-enrichment. Could also infer email domains for meeting association (helpful for I57 onboarding). On-demand only in v1 — no scheduled enrichment. Future: enrich accounts with meetings today as part of prep generation for high-ring accounts.
+
+**I76: SQLite durability — backup strategy and rebuild-from-filesystem command**
+ADR-0048 establishes SQLite as a working store, not a disposable cache. This requires: (1) **Periodic backup:** copy `~/.dailyos/actions.db` to a backup location (e.g., `~/.dailyos/backup/actions-YYYY-MM-DD.db`) on a schedule — daily before archive workflow is natural. Use SQLite backup API for consistency. Keep last N backups (configurable, default 7). (2) **`rebuild_database` command:** reconstructs SQLite from workspace filesystem when the database is lost or corrupted. Reads `Accounts/*/dashboard.json` → rebuilds accounts + entities tables. Reads `_archive/*/day-summary.json` → rebuilds partial meeting history. Reads `_archive/*/actions/` and briefing JSON → rebuilds actions (without completion state for actions not written back). Cannot rebuild: AI-extracted captures (requires re-running transcript processing), processing history, computed stakeholder signals. The command reports what it recovered and what's missing. (3) **Corruption detection:** on startup, run `PRAGMA integrity_check`. If corrupt, offer to restore from backup or rebuild from filesystem.
+
+**I77: Filesystem writeback audit — ensure important SQLite state reaches files**
+ADR-0048 requires that important data eventually reaches the filesystem. Audit all SQLite tables and ensure writeback paths exist:
+
+| Table | Writeback exists? | Path | Gap |
+|-------|------------------|------|-----|
+| `actions` | Yes | `hooks.rs` `sync_completion_to_markdown` | Covers completion markers; priority/edit state not written back |
+| `captures` | Partial | `impact_rollup.rs` writes weekly impact file | Only wins/risks; decisions not included. Individual capture edits (I45) are SQLite-only |
+| `accounts` | Planned | ADR-0047 `dashboard.json` (I73) | Not yet implemented |
+| `entities` | Planned | ADR-0047 `dashboard.json` (I73) | Not yet implemented |
+| `meetings_history` | Partial | `reconcile.rs` writes `day-summary.json` | Outcomes included; full meeting record not archived |
+| `processing_log` | No | — | Low priority — operational metadata, acceptable loss |
+| `people` (planned) | No | — | Needs filesystem representation designed with I51 |
+
+Priority gaps to close: (1) Account/entity fields → dashboard.json (blocked by I73). (2) Action priority/edit state → extend `sync_completion_to_markdown` or add a separate writeback hook. (3) Capture edits → decide if inline edits should write back to transcript source or only live in SQLite. (4) People data → include filesystem representation in I51 design.
+
+**I75: Entity dashboard external edit detection and reconciliation**
+ADR-0047 specifies that external tools should write to `dashboard.json` (the write interface), but some will edit `dashboard.md` directly. This issue implements: (1) Change detection: track `last_generated_at` timestamp per entity dashboard. On entity access, compare markdown file mtime — if newer, show "externally modified" indicator. (2) JSON change detection: if `dashboard.json` mtime is newer than app's last read, re-read JSON, sync structured fields to SQLite, regenerate markdown. This is the happy path (external tool followed the protocol). (3) Markdown reconciliation (future/stretch): when markdown was edited directly, user can trigger AI-powered reconciliation — Claude reads the markdown diff, extracts changes, applies to JSON, regenerates markdown. Without reconciliation, next regeneration overwrites external markdown changes (with warning). (4) Conflict resolution UI: when both JSON and markdown have external changes, show diff and let user choose. Depends on I73 (template system). The JSON detection path (step 2) is the priority — it handles the recommended external write flow. Markdown reconciliation (step 3) is a stretch goal.
+
+**I59: `CARGO_MANIFEST_DIR` makes Python scripts unfindable in release builds**
+`executor.rs:820` and `google.rs:264` use `env!("CARGO_MANIFEST_DIR")` to locate Python scripts. This macro bakes the developer's local filesystem path at compile time. In a production DMG distributed to other machines, the path won't exist and all Phase 1 script execution fails with "Script not found." Fix: use Tauri's resource resolver or bundle scripts, falling back to `CARGO_MANIFEST_DIR` only under `cfg!(debug_assertions)`. Sprint 4 ship blocker.
+
+**I60: Path traversal in inbox processing and workspace population commands**
+`process_inbox_file` and `enrich_inbox_file` accept an arbitrary `filename` string without validating it stays within `_inbox/`. A filename like `../../.dailyos/config.json` causes the processor to read/move/delete files outside the inbox. `get_inbox_file_content` already has the correct `starts_with` guard — extract into a shared `validate_inbox_filename()` and apply to all three commands. Separately, `populate_workspace` passes user-provided names directly to `workspace.join("Accounts").join(name)` — a name containing `../` could escape the workspace. Validate names contain no path separators or `..`. Sprint 4 ship blocker (security). QA ref: F5, F25.
+
+**I61: TOCTOU race in transcript immutability check**
+`attach_meeting_transcript` checks `transcript_processed` under a lock, drops the lock, then does async processing, then records the result. Two concurrent calls for the same meeting can both pass the check. Fix: insert a sentinel value (e.g., a `TranscriptRecord` with status "processing") into the map before releasing the lock. Remove sentinel on failure. QA ref: F1.
+
+**I62: `.unwrap()` panics in JSON mutation paths crash background tasks**
+`workflow/deliver.rs` has 5 instances of `.as_object_mut().unwrap()` on `serde_json::Value` loaded from prep/schedule/email JSON files. If any file is malformed (corrupted write, truncated), this panics. In `google.rs`, the same pattern crashes the calendar poller (a `tokio::spawn` task that dies silently). Replace with `if let Some(obj) = val.as_object_mut()` or `.ok_or()` with graceful skip + warning log. Sprint 4 ship blocker (crashes). QA ref: F6.
+
+**I63: `run_python_script` ignores `timeout_secs` parameter — scripts can hang forever**
+`pty.rs:172` accepts `timeout_secs` but calls `cmd.output()` which blocks indefinitely. If a Python script hangs on a network call (Google API timeout, DNS failure), the executor thread is blocked forever. The PTY manager correctly implements timeout via channels — `run_python_script` should use `spawn()` + `wait_timeout` or similar. QA ref: F26.
+
+**I64: Non-atomic file writes risk corruption on crash**
+`state.rs` (config), `impact_rollup.rs`, `commands.rs` (impact log), and Python `config.py` all use direct `fs::write()` / `path.write_text()`. If the process is killed mid-write (force quit, power loss), files are left truncated. For `config.json`, this means the app cannot start. Fix: write to `.tmp` then `fs::rename()` (atomic on same filesystem). QA ref: F2, F17.
+
+**I65: Impact log append uses read-modify-write instead of atomic append**
+`capture_meeting_outcome` and `append_to_impact_log` in `transcript.rs` read existing content, concatenate, and write back. Two simultaneous captures (two meetings ending at the same time) race — one write overwrites the other's append. Fix: use `OpenOptions::new().append(true).create(true)` followed by `write_all()`. QA ref: F3.
+
+**I66: `deliver_preps` clears existing preps before writing new ones**
+`workflow/deliver.rs` removes all `*.json` from `preps/` before writing new ones. If the write fails partway (disk full, permission error), the user loses preps with no recovery. Fix: write new preps to temp names first, then remove old and rename, or use a swap directory. QA ref: F13.
+
+**I67: Scheduler `should_run_now` window can miss jobs near boundary**
+The poll loop sleeps 60s but the forward window check is `diff < 60`. If system load delays the poll to 61s after the scheduled minute, the job is missed until the 2-hour grace period catches it. Fix: widen to `diff < 120` or use a `last_check` comparison instead of absolute windows. QA ref: F14.
+
+**I68: `Mutex` contention on read-heavy `AppState` fields**
+All 11 `AppState` fields use `std::sync::Mutex`. Read-heavy fields (`config`, `calendar_events`, `google_auth`) take exclusive locks on every IPC command, serializing concurrent dashboard component polls. Fix: replace with `RwLock` for read-heavy fields to allow concurrent reads. QA ref: F19.
+
+**I69: File router silently overwrites duplicate destinations**
+`processor/router.rs` uses copy-then-delete without checking if the destination already exists. Two files with the same name routed to the same account directory — the first is silently overwritten. Fix: check existence and append a date/sequence suffix. QA ref: F9.
+
+**I70: `sanitize_account_dir` doesn't strip filesystem-unsafe characters**
+`processor/transcript.rs` converts account names to title case for directory names but doesn't strip `/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`. An account named `Acme/Corp` creates nested directories instead of a single folder. Fix: strip or replace filesystem-unsafe characters, or use `slugify()` for the directory component. QA ref: F22.
+
 ### Open — Low Priority
 
 **I2: Compact meetings.md format for dashboard dropdowns**
@@ -144,6 +263,9 @@ Viable placements: overview greeting (daily rotating), empty states ("you crushe
 
 **I10: No shared glossary of app terms**
 Overlapping terms (briefing, workflow, capture, focus, etc.) used inconsistently. Needs shared definitions in DEVELOPMENT.md or a GLOSSARY.md.
+
+**I71: Assorted low-severity edge hardening**
+Batch of minor issues from QA audit, none individually blocking but worth addressing for robustness: (1) Unbounded loop in `copy_to_inbox` duplicate naming — add upper bound or use UUID suffix (F4). (2) `google_token_path()` uses `unwrap_or_default()` on `home_dir()` — returns empty PathBuf if HOME unset (F10). (3) Config write doesn't validate workspace path still exists (F11). (4) Regex compiled on every call in `make_meeting_id` — use `OnceLock` like `metadata.rs` (F12). (5) `process_file` gives confusing UTF-8 error on binary files — check extension first (F15). (6) Reconciliation inbox flag logic only flags first unprocessed file — aggregate into one flag with count (F16). (7) Calendar merge time sort needs test coverage for "9:00 AM" < "10:00 AM" ordering (F18). (8) No length limit on `update_capture` content (F20). (9) Execution history 100-entry cap silently truncates — no UI indication (F24).
 
 **I19: AI enrichment failure not communicated to user**
 When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet "AI-enriched" badge (absence = not enriched). Fits Principle 9.
