@@ -116,8 +116,8 @@ pub fn rollup_daily_impact(
         }
     };
 
-    // 7. Write file
-    fs::write(&file_path, &final_content)
+    // 7. Write file (I64: atomic write)
+    crate::util::atomic_write_str(&file_path, &final_content)
         .map_err(|e| format!("Failed to write impact file: {}", e))?;
 
     Ok(RollupResult {

@@ -340,18 +340,19 @@ pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value,
             "isCurrent": is_meeting_current(event, now),
         });
 
-        let obj = meeting_obj.as_object_mut().unwrap();
-        if !end.is_empty() {
-            obj.insert("endTime".to_string(), json!(format_time_display(end)));
-        }
-        if let Some(ref acct) = account {
-            obj.insert("account".to_string(), json!(acct));
-        }
-        if let Some(ref pf) = prep_file {
-            obj.insert("prepFile".to_string(), json!(pf));
-        }
-        if let Some(ref ps) = prep_summary {
-            obj.insert("prepSummary".to_string(), ps.clone());
+        if let Some(obj) = meeting_obj.as_object_mut() {
+            if !end.is_empty() {
+                obj.insert("endTime".to_string(), json!(format_time_display(end)));
+            }
+            if let Some(ref acct) = account {
+                obj.insert("account".to_string(), json!(acct));
+            }
+            if let Some(ref pf) = prep_file {
+                obj.insert("prepFile".to_string(), json!(pf));
+            }
+            if let Some(ref ps) = prep_summary {
+                obj.insert("prepSummary".to_string(), ps.clone());
+            }
         }
 
         meetings_json.push(meeting_obj);
@@ -470,21 +471,22 @@ pub fn deliver_actions(
                 "status": status,
                 "isOverdue": is_overdue,
             });
-            let map = obj.as_object_mut().unwrap();
-            if !account.is_empty() {
-                map.insert("account".to_string(), json!(account));
-            }
-            if !due.is_empty() {
-                map.insert("dueDate".to_string(), json!(due));
-            }
-            if let Some(d) = days_overdue {
-                map.insert("daysOverdue".to_string(), json!(d));
-            }
-            if let Some(ref c) = context {
-                map.insert("context".to_string(), json!(c));
-            }
-            if let Some(ref s) = source {
-                map.insert("source".to_string(), json!(s));
+            if let Some(map) = obj.as_object_mut() {
+                if !account.is_empty() {
+                    map.insert("account".to_string(), json!(account));
+                }
+                if !due.is_empty() {
+                    map.insert("dueDate".to_string(), json!(due));
+                }
+                if let Some(d) = days_overdue {
+                    map.insert("daysOverdue".to_string(), json!(d));
+                }
+                if let Some(ref c) = context {
+                    map.insert("context".to_string(), json!(c));
+                }
+                if let Some(ref s) = source {
+                    map.insert("source".to_string(), json!(s));
+                }
             }
             actions_list.push(obj);
         };
@@ -688,12 +690,13 @@ fn build_prep_json(
                         .and_then(|v| v.as_str())
                         .unwrap_or("Unknown");
                     let mut entry = json!({"name": name});
-                    let obj = entry.as_object_mut().unwrap();
-                    if let Some(role) = a.get("role").and_then(|v| v.as_str()) {
-                        obj.insert("role".to_string(), json!(role));
-                    }
-                    if let Some(focus) = a.get("focus").and_then(|v| v.as_str()) {
-                        obj.insert("focus".to_string(), json!(focus));
+                    if let Some(obj) = entry.as_object_mut() {
+                        if let Some(role) = a.get("role").and_then(|v| v.as_str()) {
+                            obj.insert("role".to_string(), json!(role));
+                        }
+                        if let Some(focus) = a.get("focus").and_then(|v| v.as_str()) {
+                            obj.insert("focus".to_string(), json!(focus));
+                        }
                     }
                     entry
                 })
@@ -716,99 +719,99 @@ fn build_prep_json(
         "title": meeting.title.as_deref().or(meeting.summary.as_deref()).unwrap_or("Meeting"),
         "type": meeting_type,
     });
-    let obj = prep.as_object_mut().unwrap();
-
-    if !time_range.is_empty() {
-        obj.insert("timeRange".to_string(), json!(time_range));
-    }
-    if let Some(acct) = account {
-        obj.insert("account".to_string(), json!(acct));
-    }
-    if !quick_context.is_empty() {
-        obj.insert("quickContext".to_string(), Value::Object(quick_context));
-    }
-    if !attendees.is_empty() {
-        obj.insert("attendees".to_string(), json!(attendees));
-    }
-
-    if let Some(ctx) = ctx {
-        if let Some(ref narrative) = ctx.narrative {
-            obj.insert("meetingContext".to_string(), json!(narrative));
+    if let Some(obj) = prep.as_object_mut() {
+        if !time_range.is_empty() {
+            obj.insert("timeRange".to_string(), json!(time_range));
         }
-        if let Some(ref v) = ctx.since_last {
-            obj.insert("sinceLast".to_string(), json!(v));
+        if let Some(acct) = account {
+            obj.insert("account".to_string(), json!(acct));
         }
-        if let Some(ref v) = ctx.current_state {
-            obj.insert("currentState".to_string(), json!(v));
+        if !quick_context.is_empty() {
+            obj.insert("quickContext".to_string(), Value::Object(quick_context));
         }
-        if let Some(ref v) = ctx.risks {
-            obj.insert("risks".to_string(), json!(v));
-        }
-        if let Some(ref v) = ctx.talking_points {
-            obj.insert("talkingPoints".to_string(), json!(v));
-        }
-        if let Some(ref v) = ctx.questions {
-            obj.insert("questions".to_string(), json!(v));
-        }
-        if let Some(ref v) = ctx.key_principles {
-            obj.insert("keyPrinciples".to_string(), json!(v));
+        if !attendees.is_empty() {
+            obj.insert("attendees".to_string(), json!(attendees));
         }
 
-        // Strategic programs → array of {name, status}
-        if let Some(ref programs) = ctx.strategic_programs {
-            let prog_json: Vec<Value> = programs
-                .iter()
-                .map(|p| {
-                    if let Some(pobj) = p.as_object() {
-                        json!({
-                            "name": pobj.get("name").and_then(|v| v.as_str()).unwrap_or(&p.to_string()),
-                            "status": pobj.get("status").and_then(|v| v.as_str()).unwrap_or("in_progress"),
-                        })
-                    } else {
-                        json!({"name": p.to_string().trim_matches('"'), "status": "in_progress"})
-                    }
-                })
-                .collect();
-            obj.insert("strategicPrograms".to_string(), json!(prog_json));
-        }
+        if let Some(ctx) = ctx {
+            if let Some(ref narrative) = ctx.narrative {
+                obj.insert("meetingContext".to_string(), json!(narrative));
+            }
+            if let Some(ref v) = ctx.since_last {
+                obj.insert("sinceLast".to_string(), json!(v));
+            }
+            if let Some(ref v) = ctx.current_state {
+                obj.insert("currentState".to_string(), json!(v));
+            }
+            if let Some(ref v) = ctx.risks {
+                obj.insert("risks".to_string(), json!(v));
+            }
+            if let Some(ref v) = ctx.talking_points {
+                obj.insert("talkingPoints".to_string(), json!(v));
+            }
+            if let Some(ref v) = ctx.questions {
+                obj.insert("questions".to_string(), json!(v));
+            }
+            if let Some(ref v) = ctx.key_principles {
+                obj.insert("keyPrinciples".to_string(), json!(v));
+            }
 
-        // Open items → array of {title, dueDate, context, isOverdue}
-        if let Some(ref items) = ctx.open_items {
-            let items_json: Vec<Value> = items
-                .iter()
-                .map(|item| {
-                    if let Some(o) = item.as_object() {
-                        json!({
-                            "title": o.get("title").and_then(|v| v.as_str()).unwrap_or(&item.to_string()),
-                            "dueDate": o.get("due_date").and_then(|v| v.as_str()),
-                            "context": o.get("context").and_then(|v| v.as_str()),
-                            "isOverdue": o.get("is_overdue").and_then(|v| v.as_bool()).unwrap_or(false),
-                        })
-                    } else {
-                        json!({"title": item.to_string().trim_matches('"'), "isOverdue": false})
-                    }
-                })
-                .collect();
-            obj.insert("openItems".to_string(), json!(items_json));
-        }
+            // Strategic programs → array of {name, status}
+            if let Some(ref programs) = ctx.strategic_programs {
+                let prog_json: Vec<Value> = programs
+                    .iter()
+                    .map(|p| {
+                        if let Some(pobj) = p.as_object() {
+                            json!({
+                                "name": pobj.get("name").and_then(|v| v.as_str()).unwrap_or(&p.to_string()),
+                                "status": pobj.get("status").and_then(|v| v.as_str()).unwrap_or("in_progress"),
+                            })
+                        } else {
+                            json!({"name": p.to_string().trim_matches('"'), "status": "in_progress"})
+                        }
+                    })
+                    .collect();
+                obj.insert("strategicPrograms".to_string(), json!(prog_json));
+            }
 
-        // References → array of {label, path, lastUpdated}
-        if let Some(ref refs) = ctx.references {
-            let refs_json: Vec<Value> = refs
-                .iter()
-                .map(|r| {
-                    if let Some(o) = r.as_object() {
-                        json!({
-                            "label": o.get("label").and_then(|v| v.as_str()).unwrap_or(&r.to_string()),
-                            "path": o.get("path").and_then(|v| v.as_str()),
-                            "lastUpdated": o.get("last_updated").and_then(|v| v.as_str()),
-                        })
-                    } else {
-                        json!({"label": r.to_string().trim_matches('"')})
-                    }
-                })
-                .collect();
-            obj.insert("references".to_string(), json!(refs_json));
+            // Open items → array of {title, dueDate, context, isOverdue}
+            if let Some(ref items) = ctx.open_items {
+                let items_json: Vec<Value> = items
+                    .iter()
+                    .map(|item| {
+                        if let Some(o) = item.as_object() {
+                            json!({
+                                "title": o.get("title").and_then(|v| v.as_str()).unwrap_or(&item.to_string()),
+                                "dueDate": o.get("due_date").and_then(|v| v.as_str()),
+                                "context": o.get("context").and_then(|v| v.as_str()),
+                                "isOverdue": o.get("is_overdue").and_then(|v| v.as_bool()).unwrap_or(false),
+                            })
+                        } else {
+                            json!({"title": item.to_string().trim_matches('"'), "isOverdue": false})
+                        }
+                    })
+                    .collect();
+                obj.insert("openItems".to_string(), json!(items_json));
+            }
+
+            // References → array of {label, path, lastUpdated}
+            if let Some(ref refs) = ctx.references {
+                let refs_json: Vec<Value> = refs
+                    .iter()
+                    .map(|r| {
+                        if let Some(o) = r.as_object() {
+                            json!({
+                                "label": o.get("label").and_then(|v| v.as_str()).unwrap_or(&r.to_string()),
+                                "path": o.get("path").and_then(|v| v.as_str()),
+                                "lastUpdated": o.get("last_updated").and_then(|v| v.as_str()),
+                            })
+                        } else {
+                            json!({"label": r.to_string().trim_matches('"')})
+                        }
+                    })
+                    .collect();
+                obj.insert("references".to_string(), json!(refs_json));
+            }
         }
     }
 
@@ -816,9 +819,9 @@ fn build_prep_json(
     // Done after all other fields are inserted so we can read them back.
     let agenda = generate_mechanical_agenda(&prep);
     if !agenda.is_empty() {
-        prep.as_object_mut()
-            .unwrap()
-            .insert("proposedAgenda".to_string(), json!(agenda));
+        if let Some(obj) = prep.as_object_mut() {
+            obj.insert("proposedAgenda".to_string(), json!(agenda));
+        }
     }
 
     prep
@@ -1059,6 +1062,7 @@ pub fn enrich_emails(
     data_dir: &Path,
     pty: &crate::pty::PtyManager,
     workspace: &Path,
+    user_ctx: &crate::types::UserContext,
 ) -> Result<(), String> {
     let emails_path = data_dir.join("emails.json");
     let raw = fs::read_to_string(&emails_path)
@@ -1098,8 +1102,10 @@ pub fn enrich_emails(
     let context_json = json!({ "emails": high_priority });
     write_json(&context_path, &context_json)?;
 
+    let user_fragment = user_ctx.prompt_fragment();
     let prompt = format!(
-        "You are enriching email briefing data. For each email below, provide a one-line summary, \
+        "You are enriching email briefing data. {}\
+         For each email below, provide a one-line summary, \
          a recommended action, and brief conversation arc context.\n\n\
          Format your response as:\n\
          ENRICHMENT:email-id-here\n\
@@ -1108,7 +1114,7 @@ pub fn enrich_emails(
          ARC: <conversation context>\n\
          END_ENRICHMENT\n\n\
          {}",
-        email_context
+        user_fragment, email_context
     );
 
     let output = pty
@@ -1128,15 +1134,16 @@ pub fn enrich_emails(
         for email in hp.iter_mut() {
             let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if let Some(enrichment) = enrichments.get(id) {
-                let obj = email.as_object_mut().unwrap();
-                if let Some(ref s) = enrichment.summary {
-                    obj.insert("summary".to_string(), json!(s));
-                }
-                if let Some(ref a) = enrichment.action {
-                    obj.insert("recommendedAction".to_string(), json!(a));
-                }
-                if let Some(ref arc) = enrichment.arc {
-                    obj.insert("conversationArc".to_string(), json!(arc));
+                if let Some(obj) = email.as_object_mut() {
+                    if let Some(ref s) = enrichment.summary {
+                        obj.insert("summary".to_string(), json!(s));
+                    }
+                    if let Some(ref a) = enrichment.action {
+                        obj.insert("recommendedAction".to_string(), json!(a));
+                    }
+                    if let Some(ref arc) = enrichment.arc {
+                        obj.insert("conversationArc".to_string(), json!(arc));
+                    }
                 }
             }
         }
@@ -1217,6 +1224,7 @@ pub fn enrich_briefing(
     data_dir: &Path,
     pty: &crate::pty::PtyManager,
     workspace: &Path,
+    user_ctx: &crate::types::UserContext,
 ) -> Result<(), String> {
     // Read context files
     let schedule_raw = fs::read_to_string(data_dir.join("schedule.json"))
@@ -1315,8 +1323,11 @@ pub fn enrich_briefing(
         _ => "",
     };
 
+    let user_fragment = user_ctx.prompt_fragment();
+    let role_label = user_ctx.title_or_default();
     let prompt = format!(
-        "You are writing a morning briefing narrative for a Customer Success Manager.\n\n\
+        "You are writing a morning briefing narrative for {role_label}.\n\
+         {user_fragment}\n\
          Today's context:\n\
          - Date: {}\n\
          - Meetings: {} ({} customer) — density: {}\n\
@@ -1580,20 +1591,23 @@ pub fn enrich_preps(
                 .iter()
                 .map(|item| {
                     let mut obj = json!({"topic": item.topic});
-                    let m = obj.as_object_mut().unwrap();
-                    if let Some(ref why) = item.why {
-                        m.insert("why".to_string(), json!(why));
-                    }
-                    if let Some(ref source) = item.source {
-                        m.insert("source".to_string(), json!(source));
+                    if let Some(m) = obj.as_object_mut() {
+                        if let Some(ref why) = item.why {
+                            m.insert("why".to_string(), json!(why));
+                        }
+                        if let Some(ref source) = item.source {
+                            m.insert("source".to_string(), json!(source));
+                        }
                     }
                     obj
                 })
                 .collect();
 
-            prep.as_object_mut()
-                .unwrap()
-                .insert("proposedAgenda".to_string(), json!(agenda_json));
+            if let Some(obj) = prep.as_object_mut() {
+                obj.insert("proposedAgenda".to_string(), json!(agenda_json));
+            } else {
+                log::warn!("enrich_preps: prep is not a JSON object, skipping agenda insertion");
+            }
 
             if let Err(e) = write_json(path, &prep) {
                 log::warn!("enrich_preps: failed to write enriched prep {}: {}", path.display(), e);

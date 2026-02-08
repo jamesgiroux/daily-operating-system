@@ -620,6 +620,10 @@ pub async fn process_inbox_file(
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
 
+    // Validate filename before processing (I60: path traversal guard)
+    let workspace = Path::new(&workspace_path);
+    crate::util::validate_inbox_path(workspace, &filename)?;
+
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
@@ -678,11 +682,17 @@ pub async fn enrich_inbox_file(
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
 
+    // Validate filename before enriching (I60: path traversal guard)
+    let workspace = Path::new(&workspace_path);
+    crate::util::validate_inbox_path(workspace, &filename)?;
+
+    let user_ctx = crate::types::UserContext::from_config(&config);
+
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile)
+        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile, Some(&user_ctx))
     })
     .await
     .map_err(|e| format!("AI processing task failed: {}", e))
@@ -702,12 +712,7 @@ pub fn get_inbox_file_content(
         .ok_or("No configuration loaded")?;
 
     let workspace = Path::new(&config.workspace_path);
-    let file_path = workspace.join("_inbox").join(&filename);
-
-    // Prevent path traversal
-    if !file_path.starts_with(workspace.join("_inbox")) {
-        return Err("Invalid filename".to_string());
-    }
+    let file_path = crate::util::validate_inbox_path(workspace, &filename)?;
 
     if !file_path.exists() {
         return Err(format!("File not found: {}", filename));
@@ -1490,7 +1495,7 @@ pub fn submit_week_priorities(
     let priorities_path = workspace.join("_today").join("data").join("week-priorities.json");
     let content = serde_json::to_string_pretty(&priorities)
         .map_err(|e| format!("Serialize error: {}", e))?;
-    std::fs::write(&priorities_path, content)
+    crate::util::atomic_write_str(&priorities_path, &content)
         .map_err(|e| format!("Write error: {}", e))?;
 
     // Update planning state
@@ -1519,7 +1524,7 @@ pub fn submit_focus_blocks(
     let blocks_path = workspace.join("_today").join("data").join("week-focus-selected.json");
     let content = serde_json::to_string_pretty(&blocks)
         .map_err(|e| format!("Serialize error: {}", e))?;
-    std::fs::write(&blocks_path, content)
+    crate::util::atomic_write_str(&blocks_path, &content)
         .map_err(|e| format!("Write error: {}", e))?;
 
     // Mark planning as completed
@@ -1848,10 +1853,13 @@ pub fn populate_workspace(
     // 3. Process accounts
     let mut account_count = 0;
     for name in &accounts {
-        let name = name.trim();
-        if name.is_empty() {
-            continue;
-        }
+        let name = match crate::util::validate_entity_name(name) {
+            Ok(n) => n,
+            Err(e) => {
+                log::warn!("Skipping invalid account name '{}': {}", name, e);
+                continue;
+            }
+        };
 
         // Create folder (idempotent)
         let account_dir = workspace.join("Accounts").join(name);
@@ -1891,10 +1899,13 @@ pub fn populate_workspace(
     // 4. Process projects (filesystem only — I50 tracks projects table)
     let mut project_count = 0;
     for name in &projects {
-        let name = name.trim();
-        if name.is_empty() {
-            continue;
-        }
+        let name = match crate::util::validate_entity_name(name) {
+            Ok(n) => n,
+            Err(e) => {
+                log::warn!("Skipping invalid project name '{}': {}", name, e);
+                continue;
+            }
+        };
 
         let project_dir = workspace.join("Projects").join(name);
         if let Err(e) = std::fs::create_dir_all(&project_dir) {
@@ -1909,6 +1920,70 @@ pub fn populate_workspace(
         "Created {} accounts, {} projects",
         account_count, project_count
     ))
+}
+
+// =============================================================================
+// Onboarding: Claude Code Status (I79)
+// =============================================================================
+
+/// Check whether Claude Code CLI is installed and authenticated.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeStatus {
+    pub installed: bool,
+    pub authenticated: bool,
+}
+
+#[tauri::command]
+pub fn check_claude_status() -> ClaudeStatus {
+    let installed = crate::pty::PtyManager::is_claude_available();
+    let authenticated = if installed {
+        crate::pty::PtyManager::is_claude_authenticated().unwrap_or(false)
+    } else {
+        false
+    };
+    ClaudeStatus {
+        installed,
+        authenticated,
+    }
+}
+
+// =============================================================================
+// Onboarding: Inbox Training Sample (I78)
+// =============================================================================
+
+/// Copy a bundled sample meeting notes file into _inbox/ for onboarding training.
+///
+/// Returns the filename of the installed sample.
+#[tauri::command]
+pub fn install_inbox_sample(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let workspace_path = state
+        .config
+        .lock()
+        .map_err(|_| "Config lock failed")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("No workspace configured")?;
+
+    let workspace = std::path::Path::new(&workspace_path);
+    let inbox_dir = workspace.join("_inbox");
+
+    // Ensure _inbox/ exists
+    if !inbox_dir.exists() {
+        std::fs::create_dir_all(&inbox_dir)
+            .map_err(|e| format!("Failed to create _inbox: {}", e))?;
+    }
+
+    let filename = "sample-meeting-notes.md";
+    let content = include_str!("../resources/sample-meeting-notes.md");
+    let dest = inbox_dir.join(filename);
+
+    std::fs::write(&dest, content)
+        .map_err(|e| format!("Failed to write sample file: {}", e))?;
+
+    Ok(filename.to_string())
 }
 
 // =============================================================================
@@ -2573,6 +2648,9 @@ pub fn create_account(
     name: String,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
+    // I60: validate name before using as directory
+    let name = crate::util::validate_entity_name(&name)?.to_string();
+
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 

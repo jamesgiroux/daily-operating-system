@@ -95,7 +95,7 @@ pub fn write_person_json(workspace: &Path, person: &DbPerson, db: &ActionDb) -> 
     let path = dir.join("person.json");
     let content = serde_json::to_string_pretty(&json)
         .map_err(|e| format!("Serialize error: {}", e))?;
-    std::fs::write(&path, content)
+    crate::util::atomic_write_str(&path, &content)
         .map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
@@ -204,7 +204,7 @@ pub fn write_person_markdown(
     }
 
     let path = dir.join("person.md");
-    std::fs::write(&path, md).map_err(|e| format!("Write error: {}", e))?;
+    crate::util::atomic_write_str(&path, &md).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
 }
