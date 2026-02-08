@@ -25,8 +25,8 @@ Active issues, known risks, assumptions, and dependencies.
   ═══════════════════════════════════════════════════════════════════
 
     Track A — Onboarding (sequential):
-      I56 finish (wire PopulateWorkspace chapter to Tauri commands)
-      I57 (populate workspace — accounts/projects + userDomain, ship blocker)
+      ✅ I56 finish (wire PopulateWorkspace chapter to Tauri commands) — DONE
+      ✅ I57 (populate workspace — accounts/projects + userDomain, ship blocker) — DONE
       I78 (inbox-first behavior training — inbox drop chapter between I57 and dashboard tour, ship blocker)
       I79 (Claude Code validation/installation step, ship blocker)
       I58 (user profile context into enrichment prompts, depends on I57 profile fields)
@@ -108,7 +108,7 @@ MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overla
 **I56: Onboarding redesign — teach the philosophy, not just configure settings**
 Current I13 onboarding wizard is a config flow (entity mode → workspace → Google → generate briefing). "Generate First Briefing" is broken by design: a new user has no files, no transcripts, no data — there's nothing for AI to process. More fundamentally, the wizard treats onboarding as setup when it should be education and delight. A first-timer doesn't know what they don't know — this is our opportunity to teach the *why*, not just the *what*. Required content: calendar connection context (what DailyOS does with your calendar), email connection context (how triage works), anatomy of the dashboard (what each section means), where actions are sourced and how they flow, how emails are presented and prioritized, the meeting card lifecycle (prep → current → outcomes), best practices for enabling prep, workspace folder structure rationale (`_today/`, `_inbox/`, `_archive/`, `Accounts/`, `Projects/`), how to use inbox (drop files in, system processes them). Should replace the current "Generate First Briefing" step with something meaningful — either seed content to demonstrate with, or guided walkthrough of a mock dashboard. Supersedes I13's implementation (I13 remains Closed as the config mechanics are correct; this issue addresses the UX layer above them).
 
-**Progress:** OnboardingFlow.tsx with 7-chapter educational flow created (replaces OnboardingWizard.tsx). Demo data fixtures expanded for full UI coverage — 8 meetings (past with transcript outcomes, cancelled, new/calendar-only, QBR with prep, all_hands, etc.), 3 prep fixtures (Acme, Globex, Initech), week overview with 5 days + hygiene alerts + focus areas, calendar event seeding for overlay statuses, transcript record seeding for meeting outcomes. `install_demo_data` command + devtools scenarios working. 176 Rust tests passing. Remaining: wire PopulateWorkspace Tauri commands (I57 dependency), final onboarding chapter integration.
+**Status: DONE.** OnboardingFlow.tsx with 9-chapter educational flow complete. All Tauri commands wired (install_demo_data, populate_workspace, set_user_profile). Demo data fixtures operational. PopulateWorkspace chapter connected to backend. Closed Sprint 5.
 
 **I57: Onboarding: add accounts/projects — populate workspace before first briefing**
 The first real briefing is only as good as the data in the workspace. Without account/project folders, meeting-entity association fails — meetings appear but with zero context (no talking points, no risks, no history). This step sits between the Dashboard Tour and the Ready screen in the onboarding flow.
@@ -140,7 +140,7 @@ The first real briefing is only as good as the data in the workspace. Without ac
 - Maximum: no limit, but prompt suggests "start with 3-5"
 - Footer: "You can add more anytime from Settings."
 
-Sprint 4 (ship blocker — without this, first briefing is empty).
+**Status: DONE.** `populate_workspace` command creates folders + upserts accounts. `set_user_profile` saves userDomain. PopulateWorkspace.tsx chapter wired. Closed Sprint 5.
 
 **I78: Onboarding: teach inbox-first behavior as the paradigm shift**
 The number one way DailyOS becomes useful is when users feed it context about their work. The current onboarding teaches *setup* (connect Google, add accounts). But the real paradigm shift is behavioral: users are trained by every other productivity app to *manage* — DailyOS flips that script to "drop things in, intelligence comes out." Inbox is the purest expression of this, and onboarding should train that muscle memory.
