@@ -75,6 +75,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0052](0052-week-page-redesign.md) | Week page redesign — consumption-first weekly briefing | Accepted |
 | [0054](0054-list-page-design-pattern.md) | List page design pattern — signal-first flat rows | Accepted |
 | [0053](0053-dashboard-ux-redesign.md) | Dashboard UX redesign — readiness-first overview | Accepted |
+| [0055](0055-schedule-first-dashboard-layout.md) | Schedule-first dashboard layout — two-column with sidebar | Accepted |
 
 ---
 

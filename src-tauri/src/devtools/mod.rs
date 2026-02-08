@@ -682,34 +682,34 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Meetings history ---
     // Expanded to support diverse people signals (temperature + trend).
     // Need meetings at: 2d, 5d, 7d, 10d, 14d, 18d, 21d, 25d, 35d, 45d, 60d, 75d, 100d ago.
-    let meeting_rows: Vec<(&str, &str, &str, String, Option<&str>)> = vec![
+    let meeting_rows: Vec<(&str, &str, &str, String, Option<&str>, Option<&str>)> = vec![
         // Recent (within 7 days — "hot" temperature)
-        ("mh-standup-1d", "Engineering Standup", "team_sync", days_ago(1), None),
-        ("mh-acme-2d", "Acme Corp Status Call", "customer", days_ago(2), Some("acme-corp")),
-        ("mh-globex-3d", "Globex Check-in", "customer", days_ago(3), Some("globex-industries")),
-        ("mh-standup-5d", "Engineering Standup", "team_sync", days_ago(5), None),
-        ("mh-acme-7d", "Acme Corp Weekly Sync", "customer", days_ago(7), Some("acme-corp")),
+        ("mh-standup-1d", "Engineering Standup", "team_sync", days_ago(1), None, Some("Quick standup. Discussed sprint blockers and adjusted priorities for the week.")),
+        ("mh-acme-2d", "Acme Corp Status Call", "customer", days_ago(2), Some("acme-corp"), Some("Reviewed Phase 1 benchmarks with Sarah. Performance exceeded targets by 15%. Discussed Alex Torres transition timeline and knowledge transfer plan. Phase 2 scoping is on track for April kickoff.")),
+        ("mh-globex-3d", "Globex Check-in", "customer", days_ago(3), Some("globex-industries"), Some("Expansion to 3 new teams is going well. However, Pat Reynolds confirmed Q2 departure. Discussed succession plan. Team B usage declining — need intervention before renewal conversation.")),
+        ("mh-standup-5d", "Engineering Standup", "team_sync", days_ago(5), None, None),
+        ("mh-acme-7d", "Acme Corp Weekly Sync", "customer", days_ago(7), Some("acme-corp"), Some("Phase 1 migration completed ahead of schedule. NPS trending down with 3 detractors identified. Sarah confirmed executive sponsorship for Phase 2. Need to address detractor concerns before QBR.")),
         // Mid-range (8–30 days — "warm" temperature)
-        ("mh-initech-10d", "Initech Phase 1 Wrap", "customer", days_ago(10), Some("initech")),
-        ("mh-globex-14d", "Globex Sprint Demo", "customer", days_ago(14), Some("globex-industries")),
-        ("mh-acme-14d", "Acme Corp Sprint Review", "customer", days_ago(14), Some("acme-corp")),
-        ("mh-standup-18d", "Engineering Standup", "team_sync", days_ago(18), None),
-        ("mh-acme-21d", "Acme Corp Monthly Review", "customer", days_ago(21), Some("acme-corp")),
-        ("mh-globex-25d", "Globex Roadmap Sync", "customer", days_ago(25), Some("globex-industries")),
+        ("mh-initech-10d", "Initech Phase 1 Wrap", "customer", days_ago(10), Some("initech"), Some("Phase 1 successfully delivered on time and under budget. Dana and Priya expressed interest in Phase 2 but budget approval is pending from finance. Team bandwidth concerns for Q2 need to be addressed.")),
+        ("mh-globex-14d", "Globex Sprint Demo", "customer", days_ago(14), Some("globex-industries"), Some("Demoed new dashboard features to Globex team. Jamie enthusiastic about adoption potential. Casey raised concerns about Team B engagement metrics.")),
+        ("mh-acme-14d", "Acme Corp Sprint Review", "customer", days_ago(14), Some("acme-corp"), Some("Sprint review went well. On track for Phase 1 completion. Alex flagged some tech debt items that should be addressed before Phase 2.")),
+        ("mh-standup-18d", "Engineering Standup", "team_sync", days_ago(18), None, None),
+        ("mh-acme-21d", "Acme Corp Monthly Review", "customer", days_ago(21), Some("acme-corp"), Some("Monthly review with Sarah and Pat Kim. Discussed roadmap alignment for H2. Pat wants to ensure APAC expansion doesn't delay Phase 2 timeline.")),
+        ("mh-globex-25d", "Globex Roadmap Sync", "customer", days_ago(25), Some("globex-industries"), Some("Reviewed product roadmap with Jamie and Pat Reynolds. Discussed APAC expansion timeline. Pat confirmed Singapore as priority market.")),
         // Cool range (31–59 days)
-        ("mh-initech-35d", "Initech Sprint Demo", "customer", days_ago(35), Some("initech")),
-        ("mh-globex-45d", "Globex QBR Prep", "customer", days_ago(45), Some("globex-industries")),
-        ("mh-standup-40d", "Engineering Standup", "team_sync", days_ago(40), None),
+        ("mh-initech-35d", "Initech Sprint Demo", "customer", days_ago(35), Some("initech"), Some("Showed Phase 1 progress to Initech leadership. Good reception. Dana asked about integration timeline.")),
+        ("mh-globex-45d", "Globex QBR Prep", "customer", days_ago(45), Some("globex-industries"), Some("Internal prep for Globex QBR. Reviewed health metrics, usage trends, and renewal strategy. Need to address Team B decline before presenting.")),
+        ("mh-standup-40d", "Engineering Standup", "team_sync", days_ago(40), None, None),
         // Cold range (60+ days)
-        ("mh-acme-60d", "Acme Corp Quarterly Review", "customer", days_ago(60), Some("acme-corp")),
-        ("mh-globex-75d", "Globex Kickoff", "customer", days_ago(75), Some("globex-industries")),
-        ("mh-initech-100d", "Initech Discovery Call", "customer", days_ago(100), Some("initech")),
+        ("mh-acme-60d", "Acme Corp Quarterly Review", "customer", days_ago(60), Some("acme-corp"), Some("Q4 quarterly review. Celebrated Phase 1 milestones. Set objectives for H1 including Phase 2 planning and team expansion.")),
+        ("mh-globex-75d", "Globex Kickoff", "customer", days_ago(75), Some("globex-industries"), Some("Initial kickoff with Globex Industries. Met Pat Reynolds (VP Product) and Jamie Morrison (Eng Director). Outlined deployment plan for 3 teams.")),
+        ("mh-initech-100d", "Initech Discovery Call", "customer", days_ago(100), Some("initech"), Some("Discovery call with Initech. Dana Patel (CTO) walked through their requirements. Good fit for our platform. Phase 1 scope defined.")),
     ];
 
-    for (id, title, mtype, start_time, account_id) in &meeting_rows {
+    for (id, title, mtype, start_time, account_id, summary) in &meeting_rows {
         conn.execute(
-            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![id, title, mtype, start_time, account_id, &today],
+            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![id, title, mtype, start_time, account_id, summary, &today],
         ).map_err(|e| e.to_string())?;
     }
 
@@ -1143,13 +1143,26 @@ Phase 2 scoping underway with April kickoff target. Need KT plan before Alex dep
         .map_err(|e| format!("Failed to write Acme dashboard: {}", e))?;
 
     let acme_json = serde_json::json!({
-        "name": "Acme Corp",
-        "lifecycle": "steady-state",
-        "arr": 1200000,
-        "health": "green",
-        "renewal_date": "2025-09-15",
-        "csm": "You",
-        "key_stakeholders": ["Sarah Chen (VP Eng)", "Alex Torres (Tech Lead)", "Pat Kim (CTO)"],
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 1200000,
+            "health": "green",
+            "lifecycle": "steady-state",
+            "renewalDate": "2025-09-15",
+            "csm": "You",
+            "champion": "Sarah Chen"
+        },
+        "companyOverview": {
+            "description": "Acme Corp is a mid-market SaaS company specializing in supply chain optimization. They adopted our platform 18 months ago for their engineering team and expanded to ops last quarter. Strong executive sponsorship from Sarah Chen, with Phase 2 expansion planned for Q2.",
+            "industry": "Supply Chain / Logistics",
+            "size": "500-1000 employees",
+            "headquarters": "San Francisco, CA"
+        },
+        "strategicPrograms": [
+            { "name": "Phase 2 Expansion", "status": "in_progress", "notes": "April kickoff, scoping underway" },
+            { "name": "APAC Rollout", "status": "planned", "notes": "Separate workstream targeting Q3" }
+        ],
         "notes": "Phase 2 scoping underway. KT plan needed before Alex departs."
     });
     std::fs::write(
@@ -1201,13 +1214,26 @@ QBR is the highest-stakes meeting. Renewal decision expected this quarter.
         .map_err(|e| format!("Failed to write Globex dashboard: {}", e))?;
 
     let globex_json = serde_json::json!({
-        "name": "Globex Industries",
-        "lifecycle": "at-risk",
-        "arr": 800000,
-        "health": "yellow",
-        "renewal_date": "2025-06-30",
-        "csm": "You",
-        "key_stakeholders": ["Pat Reynolds (VP Product)", "Jamie Morrison (Eng Director)", "Casey Lee (Head of Ops)"],
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 800000,
+            "health": "yellow",
+            "lifecycle": "at-risk",
+            "renewalDate": "2025-06-30",
+            "csm": "You",
+            "champion": "Jamie Morrison"
+        },
+        "companyOverview": {
+            "description": "Globex Industries is an enterprise manufacturing company using our platform across 3 teams. Renewal in 90 days with health at Yellow due to key stakeholder departure and declining usage in Team B. Jamie Morrison is the strongest internal champion.",
+            "industry": "Manufacturing",
+            "size": "1000-5000 employees",
+            "headquarters": "Chicago, IL"
+        },
+        "strategicPrograms": [
+            { "name": "Team B Recovery", "status": "at_risk", "notes": "Engagement plan to reverse usage decline" },
+            { "name": "APAC Expansion", "status": "proposed", "notes": "Extend deployment to Singapore and Sydney offices" }
+        ],
         "notes": "Renewal at risk. QBR critical. Team B recovery plan underway."
     });
     std::fs::write(
@@ -1245,11 +1271,20 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
         .map_err(|e| format!("Failed to write Initech dashboard: {}", e))?;
 
     let initech_json = serde_json::json!({
-        "name": "Initech",
-        "lifecycle": "onboarding",
-        "arr": 350000,
-        "health": "green",
-        "csm": "You",
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 350000,
+            "health": "green",
+            "lifecycle": "onboarding",
+            "csm": "You"
+        },
+        "companyOverview": {
+            "description": "Initech is a growing fintech startup in their onboarding phase. Phase 1 was delivered on time and under budget. Currently planning Phase 2 kickoff pending budget approval from finance. Small but engaged team with strong potential for expansion.",
+            "industry": "Fintech",
+            "size": "100-250 employees",
+            "headquarters": "Austin, TX"
+        },
         "notes": "Phase 2 kickoff planned. Budget approval pending."
     });
     std::fs::write(

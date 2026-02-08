@@ -84,6 +84,9 @@ Active issues, known risks, assumptions, and dependencies.
     ~~I104 (PeoplePage redesign — ADR-0054)~~ — Closed
     ~~I105 (PeoplePage shared component consolidation)~~ — Closed
     ~~I106 (Surface temperature/trend in Person list type)~~ — Closed
+    ADR-0055: Schedule-first dashboard layout — Closed (Dashboard.tsx two-column,
+      Overview.tsx deleted, ReadinessStrip.tsx deleted, cancelable badge on MeetingCard,
+      cancelable removed from IntelligenceCard totalSignals)
 -->
 
 ### Open — Ship Blocker
@@ -190,6 +193,12 @@ Replace PeoplePage's hand-built search input and tab pills with shared `SearchIn
 
 **I26: Web search for unknown external meetings**
 When a meeting involves people/companies not in the workspace, prep is thin — violates P2 (Prepared, Not Empty). ADR-0022 specifies proactive research. Pattern exists: I74 does websearch for known accounts via `enrich_account()`. Extend to unknown meeting attendees: detect unrecognized domains in calendar events, research company + attendee context, inject into prep. Not blocked by I27 — can use existing `enrich_preps()` pipeline with a web search step.
+
+**I107: Action detail page**
+No `/actions/$actionId` route or detail page exists. Users can view actions in the list (ActionsPage) and as sub-items on entity detail pages, but can't drill into a single action. An action detail page should show: title, priority, status, source meeting (linked), related account/project (linked), creation date, completion date, context/notes, and edit capability. Mirrors the pattern of MeetingHistoryDetailPage for meetings. Low priority — the filtered actions list is sufficient for now.
+
+**I109: Focus page implementation** — ADR-0055
+The `/focus` route links from the dashboard Focus callout but `get_focus_data` in `commands.rs` is a stub returning `NotFound`. The `FocusData` type exists (priorities, timeBlocks, quickWins, energyNotes) but no data source is wired. Options: (a) construct `FocusData` from existing directive data (schedule.json `focus` field + actions + calendar gaps), (b) add a dedicated focus enrichment step in the AI pipeline, or (c) both — mechanical base with AI enhancement. The focus string on the dashboard is a one-liner from `overview.focus`; the FocusPage expects richer structured data. Not a ship blocker — the link works, the page just shows an empty state.
 
 ### Open — Low Priority
 

@@ -240,6 +240,18 @@ export function computeMeetingDisplayState(
     primaryStatus = "live";
   }
 
+  // Cancelable — secondary badge, additive after primary chain
+  // (cancelled already returned early above, so no need to re-check)
+  const CANCELABLE_TYPES: MeetingType[] = ["internal", "team_sync"];
+  if (CANCELABLE_TYPES.includes(meeting.type) && !meeting.hasPrep) {
+    badges.push({
+      key: "cancelable",
+      label: "Cancelable",
+      variant: "outline",
+      className: "text-muted-foreground",
+    });
+  }
+
   const showExpander =
     ctx.hasInlinePrep || ctx.outcomesStatus === "loaded";
 
