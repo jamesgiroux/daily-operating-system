@@ -3,7 +3,7 @@
 //! Spawns Claude Code via pseudo-terminal with timeout handling.
 //! This is necessary because Claude Code expects an interactive terminal.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 use std::sync::mpsc;
@@ -50,12 +50,17 @@ impl PtyManager {
     }
 
     /// Check if Claude Code is authenticated
+    ///
+    /// Uses `--print` which actually exercises auth. If unauthenticated,
+    /// Claude Code exits with a non-zero status code.
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
-        // Try running a simple command to check auth status
-        // claude --version should work even if not authenticated
-        // but claude --print "test" would fail
+        use std::process::Stdio;
+
         let output = Command::new("claude")
-            .args(["--version"])
+            .args(["--print", "hello"])
+            .env("TERM", "dumb")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .output()
             .map_err(|_| ExecutionError::ClaudeCodeNotFound)?;
 
@@ -186,33 +191,65 @@ pub fn run_python_script(
     let mut cmd = Command::new("python3");
     cmd.arg(script_path);
     cmd.current_dir(workspace);
-
-    // Set environment variables
     cmd.env("WORKSPACE", workspace);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
 
-    let output = cmd
-        .output()
-        .map_err(|e| ExecutionError::IoError(format!("Failed to run Python: {}", e)))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ExecutionError::IoError(format!("Failed to spawn Python: {}", e)))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    // Read stdout/stderr in a background thread to avoid pipe buffer deadlocks
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let (tx, rx) = mpsc::channel();
 
-    if !output.status.success() {
-        let code = output.status.code().unwrap_or(-1);
-        // Include stdout in the error if stderr alone is unhelpful (e.g. only warnings)
-        let detail = if stderr.trim().is_empty() || (!stdout.trim().is_empty() && stderr.len() < 200) {
-            format!("{}\n{}", stderr, stdout).trim().to_string()
-        } else {
-            stderr
-        };
-        return Err(ExecutionError::ScriptFailed { code, stderr: detail });
+    thread::spawn(move || {
+        let stdout = stdout_pipe
+            .map(|mut p| {
+                let mut s = String::new();
+                let _ = Read::read_to_string(&mut p, &mut s);
+                s
+            })
+            .unwrap_or_default();
+        let stderr = stderr_pipe
+            .map(|mut p| {
+                let mut s = String::new();
+                let _ = Read::read_to_string(&mut p, &mut s);
+                s
+            })
+            .unwrap_or_default();
+        let _ = tx.send((stdout, stderr));
+    });
+
+    let timeout = Duration::from_secs(timeout_secs);
+    match rx.recv_timeout(timeout) {
+        Ok((stdout, stderr)) => {
+            let status = child.wait()
+                .map_err(|e| ExecutionError::IoError(e.to_string()))?;
+
+            if !status.success() {
+                let code = status.code().unwrap_or(-1);
+                let detail = if stderr.trim().is_empty() || (!stdout.trim().is_empty() && stderr.len() < 200) {
+                    format!("{}\n{}", stderr, stdout).trim().to_string()
+                } else {
+                    stderr
+                };
+                return Err(ExecutionError::ScriptFailed { code, stderr: detail });
+            }
+
+            Ok(ScriptOutput {
+                stdout,
+                stderr,
+                exit_code: 0,
+            })
+        }
+        Err(_) => {
+            let _ = child.kill();
+            let _ = child.wait(); // Reap the zombie
+            Err(ExecutionError::Timeout(timeout_secs))
+        }
     }
-
-    Ok(ScriptOutput {
-        stdout,
-        stderr,
-        exit_code: 0,
-    })
 }
 
 /// Output from a Python script
