@@ -169,6 +169,33 @@ Your brain shouldn't have a landlord. Your thoughts, your files, your control.
 
 ---
 
+## AI-Native Is Open by Default
+
+Here's what separates AI-native from digital-native at a fundamental level.
+
+**Digital-native apps hoard data.** Salesforce locks your customer data behind their API. Notion stores your notes in their database. Gong keeps your transcripts in their cloud. Each app builds a moat around your information. The business model depends on it — if you could easily leave, you would.
+
+**AI-native apps produce data every AI can consume.**
+
+DailyOS writes markdown. Not because we're nostalgic for text files. Because markdown is the universal language of AI. Every LLM — Claude, ChatGPT, Gemini, whatever comes next — can read, understand, and reason about markdown files. When DailyOS maintains your meeting prep, your account dashboards, your action items, your transcript summaries — it's simultaneously maintaining a knowledge base that *any* AI tool can work with.
+
+This isn't a side effect. It's the strategy.
+
+**The ecosystem that emerges:**
+
+Your morning briefing is in DailyOS. But when you need to build a QBR deck for a customer, you open Claude Desktop — and it reads the same `Accounts/Acme/` directory that DailyOS maintains. When you need a GTM strategy, you start a session with your strategy skill — and it reads the same project files, the same meeting history, the same capture logs. When you need a monthly impact report, the weekly captures DailyOS archived are right there for any tool to synthesize.
+
+DailyOS doesn't need to be a report generator. It doesn't need to be a strategy tool. It doesn't need to be a writing assistant. Those capabilities exist elsewhere. DailyOS's job is to maintain the richest, most structured, most current archive of your professional life — and keep it in a format that every AI tool can consume.
+
+**The competitive moat isn't the app. It's the archive.**
+
+Anyone can build a dashboard. But a continuously maintained, AI-enriched, deeply cross-referenced knowledge base of every meeting, every interaction, every decision, every action, every outcome — organized in a structure that any AI can navigate — that's the product. The app is just the best view of it.
+
+Digital-native: lock the data in, make it hard to leave.
+AI-native: keep the data open, make it so good they never want to.
+
+---
+
 ## Productivity ≠ Collaboration
 
 Tools have conflated these. They've built "collaboration platforms" and called them "productivity tools."
