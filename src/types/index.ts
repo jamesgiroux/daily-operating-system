@@ -189,6 +189,14 @@ export interface WeekOverview {
   hygieneAlerts?: HygieneAlert[];
   focusAreas?: string[];
   availableTimeBlocks?: TimeBlock[];
+  /** AI-generated narrative overview of the week (I94) */
+  weekNarrative?: string;
+  /** AI-identified top priority (I94) */
+  topPriority?: unknown;
+  /** Proactive readiness checks surfacing prep gaps (I93) */
+  readinessChecks?: ReadinessCheck[];
+  /** Per-day density and meeting shape (I93) */
+  dayShapes?: DayShape[];
 }
 
 export interface WeekDay {
@@ -209,6 +217,41 @@ export interface WeekActionSummary {
   overdueCount: number;
   dueThisWeek: number;
   criticalItems: string[];
+  /** Actual overdue action items (I93) */
+  overdue?: WeekAction[];
+  /** Actual due-this-week action items (I93) */
+  dueThisWeekItems?: WeekAction[];
+}
+
+/** A single action item for week view (I93) */
+export interface WeekAction {
+  id: string;
+  title: string;
+  account?: string;
+  dueDate?: string;
+  priority: string;
+  daysOverdue?: number;
+  source?: string;
+}
+
+/** Proactive readiness check for the week (I93) */
+export interface ReadinessCheck {
+  checkType: string;
+  message: string;
+  severity: string;
+  meetingId?: string;
+  accountId?: string;
+}
+
+/** Per-day density shape for the week view (I93) */
+export interface DayShape {
+  dayName: string;
+  date: string;
+  meetingCount: number;
+  meetingMinutes: number;
+  density: string;
+  meetings: WeekMeeting[];
+  availableBlocks: TimeBlock[];
 }
 
 export type AlertSeverity = "critical" | "warning" | "info";
@@ -348,26 +391,6 @@ export interface CapturedAction {
 }
 
 // =============================================================================
-// Weekly Planning Types (Phase 3C)
-// =============================================================================
-
-export type WeekPlanningState =
-  | "notready"
-  | "dataready"
-  | "inprogress"
-  | "completed"
-  | "defaultsapplied";
-
-export interface FocusBlock {
-  day: string;
-  start: string;
-  end: string;
-  durationMinutes: number;
-  suggestedActivity: string;
-  selected: boolean;
-}
-
-// =============================================================================
 // Transcript & Meeting Outcomes (I44 / I45 / ADR-0044)
 // =============================================================================
 
@@ -480,7 +503,6 @@ export interface FullMeetingPrep {
   questions?: string[];
   keyPrinciples?: string[];
   references?: SourceReference[];
-  rawMarkdown?: string;
   /** Stakeholder relationship signals (I43) — computed live from meeting history */
   stakeholderSignals?: StakeholderSignals;
   /** Per-attendee context from people database (I51) */
@@ -522,6 +544,12 @@ export interface Person {
   updatedAt: string;
 }
 
+/** Person with pre-computed signals for list pages (I106). */
+export interface PersonListItem extends Person {
+  temperature: string;
+  trend: string;
+}
+
 export interface PersonSignals {
   meetingFrequency30d: number;
   meetingFrequency90d: number;
@@ -533,7 +561,12 @@ export interface PersonSignals {
 export interface PersonDetail extends Person {
   signals?: PersonSignals;
   entities?: { id: string; name: string; entityType: string }[];
-  recentMeetings?: { id: string; title: string; startTime: string }[];
+  recentMeetings?: {
+    id: string;
+    title: string;
+    startTime: string;
+    meetingType: string;
+  }[];
 }
 
 export interface AttendeeContext {
@@ -584,13 +617,22 @@ export interface StrategicProgram {
   notes?: string;
 }
 
+/** Compact meeting summary used across entity detail pages. */
+export interface MeetingSummary {
+  id: string;
+  title: string;
+  startTime: string;
+  meetingType: string;
+}
+
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
   companyOverview?: CompanyOverview;
   strategicPrograms: StrategicProgram[];
   notes?: string;
-  recentMeetings: { id: string; title: string; startTime: string }[];
+  upcomingMeetings: MeetingSummary[];
+  recentMeetings: MeetingSummary[];
   openActions: Action[];
   linkedPeople: Person[];
   signals?: {
@@ -603,6 +645,7 @@ export interface AccountDetail extends AccountListItem {
   };
   recentCaptures: {
     id: string;
+    meetingId: string;
     captureType: string;
     content: string;
     meetingTitle: string;
@@ -640,7 +683,7 @@ export interface ProjectDetail extends ProjectListItem {
   milestones: ProjectMilestone[];
   notes?: string;
   openActions: Action[];
-  recentMeetings: { id: string; title: string; startTime: string }[];
+  recentMeetings: MeetingSummary[];
   linkedPeople: Person[];
   signals?: {
     meetingFrequency30d: number;
@@ -686,4 +729,35 @@ export interface ProcessingLogEntry {
   processedAt?: string;
   errorMessage?: string;
   createdAt: string;
+}
+
+// =============================================================================
+// Meeting History Detail
+// =============================================================================
+
+/** A capture (win/risk/decision) from SQLite. */
+export interface DbCapture {
+  id: string;
+  meetingId: string;
+  meetingTitle: string;
+  accountId?: string;
+  projectId?: string;
+  captureType: string;
+  content: string;
+  capturedAt: string;
+}
+
+/** Full detail for a historical meeting. */
+export interface MeetingHistoryDetail {
+  id: string;
+  title: string;
+  meetingType: string;
+  startTime: string;
+  endTime?: string;
+  accountId?: string;
+  accountName?: string;
+  summary?: string;
+  attendees: string[];
+  captures: DbCapture[];
+  actions: DbAction[];
 }
