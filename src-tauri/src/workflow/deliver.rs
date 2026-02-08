@@ -812,7 +812,109 @@ fn build_prep_json(
         }
     }
 
+    // Proposed agenda (mechanical synthesis from prep ingredients)
+    // Done after all other fields are inserted so we can read them back.
+    let agenda = generate_mechanical_agenda(&prep);
+    if !agenda.is_empty() {
+        prep.as_object_mut()
+            .unwrap()
+            .insert("proposedAgenda".to_string(), json!(agenda));
+    }
+
     prep
+}
+
+/// Generate a mechanical agenda from existing prep data.
+///
+/// Synthesizes an agenda from open items (overdue first), risks,
+/// talking points, and questions. Caps at 7 items. No AI needed.
+fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
+    let mut agenda: Vec<Value> = Vec::new();
+    const MAX_ITEMS: usize = 7;
+
+    // 1. Overdue items first (most urgent)
+    if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+        for item in items {
+            if agenda.len() >= MAX_ITEMS {
+                break;
+            }
+            let is_overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
+            if is_overdue {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown item");
+                agenda.push(json!({
+                    "topic": format!("Follow up: {}", title),
+                    "why": "Overdue — needs resolution",
+                    "source": "open_item",
+                }));
+            }
+        }
+    }
+
+    // 2. Risks (limit 2)
+    if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
+        for risk in risks.iter().take(2) {
+            if agenda.len() >= MAX_ITEMS {
+                break;
+            }
+            if let Some(text) = risk.as_str() {
+                agenda.push(json!({
+                    "topic": text,
+                    "source": "risk",
+                }));
+            }
+        }
+    }
+
+    // 3. Talking points (limit 3)
+    if let Some(points) = prep.get("talkingPoints").and_then(|v| v.as_array()) {
+        for point in points.iter().take(3) {
+            if agenda.len() >= MAX_ITEMS {
+                break;
+            }
+            if let Some(text) = point.as_str() {
+                agenda.push(json!({
+                    "topic": text,
+                    "source": "talking_point",
+                }));
+            }
+        }
+    }
+
+    // 4. Questions (limit 2)
+    if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
+        for q in questions.iter().take(2) {
+            if agenda.len() >= MAX_ITEMS {
+                break;
+            }
+            if let Some(text) = q.as_str() {
+                agenda.push(json!({
+                    "topic": text,
+                    "source": "question",
+                }));
+            }
+        }
+    }
+
+    // 5. Non-overdue open items (limit 2)
+    if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+        for item in items.iter().take(4) {
+            if agenda.len() >= MAX_ITEMS {
+                break;
+            }
+            let is_overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !is_overdue {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown item");
+                agenda.push(json!({
+                    "topic": title,
+                    "source": "open_item",
+                }));
+            }
+        }
+    }
+
+    // Truncate to max
+    agenda.truncate(MAX_ITEMS);
+    agenda
 }
 
 /// Build and write emails.json from directive data.
@@ -1265,6 +1367,250 @@ pub fn enrich_briefing(
     }
 }
 
+/// Parsed enrichment for a single agenda item.
+#[derive(Debug, Clone, Default)]
+pub struct AgendaItemEnrichment {
+    pub topic: String,
+    pub why: Option<String>,
+    pub source: Option<String>,
+}
+
+/// Parse Claude's agenda enrichment response.
+///
+/// Expected format:
+/// ```text
+/// AGENDA:meeting-id
+/// ITEM:topic text here
+/// WHY:rationale for discussing this
+/// SOURCE:risk
+/// END_ITEM
+/// ITEM:another topic
+/// WHY:another rationale
+/// SOURCE:talking_point
+/// END_ITEM
+/// END_AGENDA
+/// ```
+pub fn parse_agenda_enrichment(response: &str) -> HashMap<String, Vec<AgendaItemEnrichment>> {
+    let mut result: HashMap<String, Vec<AgendaItemEnrichment>> = HashMap::new();
+    let mut current_meeting: Option<String> = None;
+    let mut current_items: Vec<AgendaItemEnrichment> = Vec::new();
+    let mut current_item: Option<AgendaItemEnrichment> = None;
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+
+        if let Some(id) = trimmed.strip_prefix("AGENDA:") {
+            current_meeting = Some(id.trim().to_string());
+            current_items = Vec::new();
+        } else if trimmed == "END_AGENDA" {
+            if let Some(ref id) = current_meeting {
+                if !current_items.is_empty() {
+                    result.insert(id.clone(), current_items.clone());
+                }
+            }
+            current_meeting = None;
+            current_items = Vec::new();
+        } else if current_meeting.is_some() {
+            if let Some(topic) = trimmed.strip_prefix("ITEM:") {
+                // Start a new item
+                current_item = Some(AgendaItemEnrichment {
+                    topic: topic.trim().to_string(),
+                    ..Default::default()
+                });
+            } else if trimmed == "END_ITEM" {
+                if let Some(item) = current_item.take() {
+                    if !item.topic.is_empty() {
+                        current_items.push(item);
+                    }
+                }
+            } else if let Some(ref mut item) = current_item {
+                if let Some(val) = trimmed.strip_prefix("WHY:") {
+                    item.why = Some(val.trim().to_string());
+                } else if let Some(val) = trimmed.strip_prefix("SOURCE:") {
+                    item.source = Some(val.trim().to_string());
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// AI-enrich prep agendas via PTY-spawned Claude.
+///
+/// Reads each prep JSON in data_dir/preps/, builds context from the prep
+/// ingredients + current mechanical agenda, asks Claude to refine agenda
+/// ordering and add rationale. If AI fails, mechanical agenda stays intact.
+pub fn enrich_preps(
+    data_dir: &Path,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+) -> Result<(), String> {
+    let preps_dir = data_dir.join("preps");
+    if !preps_dir.exists() {
+        log::info!("enrich_preps: no preps directory, skipping");
+        return Ok(());
+    }
+
+    // Collect prep files
+    let prep_files: Vec<std::path::PathBuf> = fs::read_dir(&preps_dir)
+        .map_err(|e| format!("Failed to read preps dir: {}", e))?
+        .flatten()
+        .filter(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(".json")))
+        .map(|e| e.path())
+        .collect();
+
+    if prep_files.is_empty() {
+        log::info!("enrich_preps: no prep files to enrich");
+        return Ok(());
+    }
+
+    // Build combined context for all preps
+    let mut prep_context = String::new();
+    let mut meeting_ids: Vec<String> = Vec::new();
+
+    for path in &prep_files {
+        let raw = match fs::read_to_string(path) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let prep: Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let meeting_id = prep.get("meetingId").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let title = prep.get("title").and_then(|v| v.as_str()).unwrap_or("Meeting");
+        meeting_ids.push(meeting_id.to_string());
+
+        prep_context.push_str(&format!("--- Meeting: {} (ID: {}) ---\n", title, meeting_id));
+
+        if let Some(points) = prep.get("talkingPoints").and_then(|v| v.as_array()) {
+            prep_context.push_str("Talking Points:\n");
+            for p in points {
+                if let Some(t) = p.as_str() {
+                    prep_context.push_str(&format!("- {}\n", t));
+                }
+            }
+        }
+        if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
+            prep_context.push_str("Risks:\n");
+            for r in risks {
+                if let Some(t) = r.as_str() {
+                    prep_context.push_str(&format!("- {}\n", t));
+                }
+            }
+        }
+        if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
+            prep_context.push_str("Open Items:\n");
+            for item in items {
+                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
+                let overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
+                prep_context.push_str(&format!("- {}{}\n", title, if overdue { " [OVERDUE]" } else { "" }));
+            }
+        }
+        if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
+            prep_context.push_str("Questions:\n");
+            for q in questions {
+                if let Some(t) = q.as_str() {
+                    prep_context.push_str(&format!("- {}\n", t));
+                }
+            }
+        }
+        if let Some(agenda) = prep.get("proposedAgenda").and_then(|v| v.as_array()) {
+            prep_context.push_str("Current Mechanical Agenda:\n");
+            for (i, item) in agenda.iter().enumerate() {
+                let topic = item.get("topic").and_then(|v| v.as_str()).unwrap_or("?");
+                prep_context.push_str(&format!("{}. {}\n", i + 1, topic));
+            }
+        }
+        prep_context.push('\n');
+    }
+
+    let prompt = format!(
+        "You are refining meeting agendas for a Customer Success Manager.\n\n\
+         For each meeting below, review the talking points, risks, open items, questions, \
+         and current mechanical agenda. Produce a refined agenda that:\n\
+         1. Orders items by impact (highest-stakes first)\n\
+         2. Adds a brief 'why' rationale for each item\n\
+         3. Keeps the source category (risk, talking_point, question, open_item)\n\
+         4. Caps at 7 items per meeting\n\n\
+         Format your response as:\n\
+         AGENDA:meeting-id\n\
+         ITEM:topic text\n\
+         WHY:rationale\n\
+         SOURCE:source_category\n\
+         END_ITEM\n\
+         ... more items ...\n\
+         END_AGENDA\n\n\
+         {}",
+        prep_context
+    );
+
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
+
+    let enrichments = parse_agenda_enrichment(&output.stdout);
+    if enrichments.is_empty() {
+        log::warn!("enrich_preps: no agenda enrichments parsed from Claude output");
+        return Ok(());
+    }
+
+    // Merge enriched agendas back into prep files
+    let mut enriched_count = 0;
+    for path in &prep_files {
+        let raw = match fs::read_to_string(path) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let mut prep: Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let meeting_id = prep
+            .get("meetingId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if let Some(items) = enrichments.get(&meeting_id) {
+            let agenda_json: Vec<Value> = items
+                .iter()
+                .map(|item| {
+                    let mut obj = json!({"topic": item.topic});
+                    let m = obj.as_object_mut().unwrap();
+                    if let Some(ref why) = item.why {
+                        m.insert("why".to_string(), json!(why));
+                    }
+                    if let Some(ref source) = item.source {
+                        m.insert("source".to_string(), json!(source));
+                    }
+                    obj
+                })
+                .collect();
+
+            prep.as_object_mut()
+                .unwrap()
+                .insert("proposedAgenda".to_string(), json!(agenda_json));
+
+            if let Err(e) = write_json(path, &prep) {
+                log::warn!("enrich_preps: failed to write enriched prep {}: {}", path.display(), e);
+            } else {
+                enriched_count += 1;
+            }
+        }
+    }
+
+    log::info!(
+        "enrich_preps: enriched {}/{} prep files",
+        enriched_count,
+        prep_files.len()
+    );
+    Ok(())
+}
+
 /// Build and write manifest.json.
 ///
 /// When `partial` is true, the manifest indicates that AI enrichment
@@ -1682,6 +2028,104 @@ END_NARRATIVE
         assert_eq!(result["stats"]["emailsHighPriority"], 3);
         assert_eq!(result["stats"]["emailsTotal"], 18);
         assert_eq!(result["stats"]["actionsOverdue"], 1);
+    }
+
+    #[test]
+    fn test_parse_agenda_enrichment() {
+        let response = "\
+AGENDA:mtg-acme-weekly
+ITEM:Address Team B usage decline
+WHY:25% drop threatens renewal — needs intervention plan
+SOURCE:risk
+END_ITEM
+ITEM:Celebrate Phase 1 completion
+WHY:Position as proof of execution before Phase 2 ask
+SOURCE:talking_point
+END_ITEM
+END_AGENDA
+
+AGENDA:mtg-globex-qbr
+ITEM:Renewal proposal
+WHY:90 days to renewal — need commitment
+SOURCE:talking_point
+END_ITEM
+END_AGENDA
+";
+        let enrichments = parse_agenda_enrichment(response);
+        assert_eq!(enrichments.len(), 2);
+
+        let acme = &enrichments["mtg-acme-weekly"];
+        assert_eq!(acme.len(), 2);
+        assert_eq!(acme[0].topic, "Address Team B usage decline");
+        assert_eq!(acme[0].why.as_deref(), Some("25% drop threatens renewal — needs intervention plan"));
+        assert_eq!(acme[0].source.as_deref(), Some("risk"));
+        assert_eq!(acme[1].topic, "Celebrate Phase 1 completion");
+
+        let globex = &enrichments["mtg-globex-qbr"];
+        assert_eq!(globex.len(), 1);
+        assert_eq!(globex[0].topic, "Renewal proposal");
+    }
+
+    #[test]
+    fn test_parse_agenda_enrichment_empty() {
+        let response = "Here's some random output without markers.";
+        let enrichments = parse_agenda_enrichment(response);
+        assert!(enrichments.is_empty());
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_basic() {
+        let prep = json!({
+            "openItems": [
+                {"title": "Send SOW", "isOverdue": true},
+                {"title": "Update docs", "isOverdue": false},
+            ],
+            "risks": ["Budget risk", "Timeline risk", "Staffing risk"],
+            "talkingPoints": ["Win 1", "Win 2", "Win 3", "Win 4"],
+            "questions": ["Q1?", "Q2?", "Q3?"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+
+        // Should have items: 1 overdue + 2 risks + 3 talking points + 1 non-overdue = 7
+        assert_eq!(agenda.len(), 7);
+
+        // First item should be the overdue follow-up
+        assert!(agenda[0]["topic"].as_str().unwrap().starts_with("Follow up:"));
+        assert_eq!(agenda[0]["source"], "open_item");
+
+        // Next 2 should be risks
+        assert_eq!(agenda[1]["source"], "risk");
+        assert_eq!(agenda[2]["source"], "risk");
+
+        // Next 3 should be talking points
+        assert_eq!(agenda[3]["source"], "talking_point");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_empty() {
+        let prep = json!({});
+        let agenda = generate_mechanical_agenda(&prep);
+        assert!(agenda.is_empty());
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_caps_at_seven() {
+        let prep = json!({
+            "openItems": [
+                {"title": "A", "isOverdue": true},
+                {"title": "B", "isOverdue": true},
+                {"title": "C", "isOverdue": true},
+                {"title": "D", "isOverdue": true},
+                {"title": "E", "isOverdue": true},
+                {"title": "F", "isOverdue": true},
+                {"title": "G", "isOverdue": true},
+                {"title": "H", "isOverdue": true},
+            ],
+            "risks": ["Risk 1"],
+            "talkingPoints": ["Point 1"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+        assert_eq!(agenda.len(), 7);
     }
 
     #[test]
