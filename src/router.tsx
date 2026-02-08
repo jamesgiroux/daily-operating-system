@@ -11,7 +11,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
-import { OnboardingWizard } from "@/components/OnboardingWizard";
+import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 
 // Lazy load pages for code splitting
 import { Dashboard } from "@/components/dashboard/Dashboard";
@@ -29,6 +29,8 @@ import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import EmailsPage from "@/pages/EmailsPage";
 import FocusPage from "@/pages/FocusPage";
 import HistoryPage from "@/pages/HistoryPage";
+import PeoplePage from "@/pages/PeoplePage";
+import PersonDetailPage from "@/pages/PersonDetailPage";
 import ProjectsPage from "@/pages/ProjectsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
@@ -37,6 +39,7 @@ import WeekPage from "@/pages/WeekPage";
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { WeekPlanningWizard } from "@/components/WeeklyPlanning/WeekPlanningWizard";
 import { Toaster } from "@/components/ui/sonner";
+import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -71,6 +74,7 @@ function RootLayout() {
     return (
       <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
         <div className="flex h-screen items-center justify-center bg-background" />
+        <DevToolsPanel />
       </ThemeProvider>
     );
   }
@@ -78,8 +82,9 @@ function RootLayout() {
   if (needsOnboarding) {
     return (
       <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-        <OnboardingWizard onComplete={handleOnboardingComplete} />
+        <OnboardingFlow onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
+        <DevToolsPanel />
       </ThemeProvider>
     );
   }
@@ -97,6 +102,7 @@ function RootLayout() {
       <PostMeetingPrompt />
       <WeekPlanningWizard />
       <Toaster position="bottom-right" />
+      <DevToolsPanel />
     </ThemeProvider>
   );
 }
@@ -190,6 +196,18 @@ const historyRoute = createRoute({
   component: HistoryPage,
 });
 
+const peopleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/people",
+  component: PeoplePage,
+});
+
+const personDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/people/$personId",
+  component: PersonDetailPage,
+});
+
 // Create route tree
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -200,6 +218,8 @@ const routeTree = rootRoute.addChildren([
   historyRoute,
   inboxRoute,
   meetingDetailRoute,
+  peopleRoute,
+  personDetailRoute,
   projectsRoute,
   settingsRoute,
   weekRoute,

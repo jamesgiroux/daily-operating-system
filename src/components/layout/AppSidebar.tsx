@@ -24,6 +24,7 @@ import {
   Inbox,
   LayoutDashboard,
   Settings,
+  Users,
   Zap,
 } from "lucide-react";
 import { useInboxCount } from "@/hooks/useInbox";
@@ -44,6 +45,7 @@ const todayItems: NavItem[] = [
 
 const workspaceItems: NavItem[] = [
   { title: "Actions", icon: CheckSquare, href: "/actions" },
+  { title: "People", icon: Users, href: "/people" },
   { title: "Inbox", icon: Inbox, href: "/inbox", tooltip: "Document Inbox" },
   { title: "History", icon: History, href: "/history", tooltip: "Processing History" },
 ];

@@ -476,6 +476,8 @@ export interface FullMeetingPrep {
   rawMarkdown?: string;
   /** Stakeholder relationship signals (I43) — computed live from meeting history */
   stakeholderSignals?: StakeholderSignals;
+  /** Per-attendee context from people database (I51) */
+  attendeeContext?: AttendeeContext[];
 }
 
 /** Relationship context signals computed from meeting history and account data (I43) */
@@ -488,6 +490,54 @@ export interface StakeholderSignals {
   temperature: string;
   /** "increasing", "stable", "decreasing" */
   trend: string;
+}
+
+// =============================================================================
+// People (I51)
+// =============================================================================
+
+export type PersonRelationship = "internal" | "external" | "unknown";
+
+export interface Person {
+  id: string;
+  email: string;
+  name: string;
+  organization?: string;
+  role?: string;
+  relationship: PersonRelationship;
+  notes?: string;
+  trackerPath?: string;
+  lastSeen?: string;
+  firstSeen?: string;
+  meetingCount: number;
+  updatedAt: string;
+}
+
+export interface PersonSignals {
+  meetingFrequency30d: number;
+  meetingFrequency90d: number;
+  lastMeeting?: string;
+  temperature: string;
+  trend: string;
+}
+
+export interface PersonDetail extends Person {
+  signals?: PersonSignals;
+  entities?: { id: string; name: string; entityType: string }[];
+  recentMeetings?: { id: string; title: string; startTime: string }[];
+}
+
+export interface AttendeeContext {
+  name: string;
+  email?: string;
+  role?: string;
+  organization?: string;
+  relationship?: PersonRelationship;
+  meetingCount?: number;
+  lastSeen?: string;
+  temperature?: string;
+  notes?: string;
+  personId?: string;
 }
 
 // =============================================================================
