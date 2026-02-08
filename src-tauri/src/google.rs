@@ -343,9 +343,9 @@ fn generate_preps_for_new_meetings(
         });
 
         if let Some(ref account) = event.account {
-            prep.as_object_mut()
-                .unwrap()
-                .insert("account".to_string(), serde_json::json!(account));
+            if let Some(obj) = prep.as_object_mut() {
+                obj.insert("account".to_string(), serde_json::json!(account));
+            }
 
             // Try to pull account data from SQLite
             if let Ok(db_guard) = state.db.lock() {
@@ -421,9 +421,9 @@ fn enrich_prep_from_db(
             qc.insert("Renewal".to_string(), serde_json::json!(contract_end));
         }
         if !qc.is_empty() {
-            prep.as_object_mut()
-                .unwrap()
-                .insert("quickContext".to_string(), serde_json::Value::Object(qc));
+            if let Some(obj) = prep.as_object_mut() {
+                obj.insert("quickContext".to_string(), serde_json::Value::Object(qc));
+            }
         }
     }
 
@@ -447,9 +447,9 @@ fn enrich_prep_from_db(
                 })
                 .collect();
             if !items.is_empty() {
-                prep.as_object_mut()
-                    .unwrap()
-                    .insert("openItems".to_string(), serde_json::json!(items));
+                if let Some(obj) = prep.as_object_mut() {
+                    obj.insert("openItems".to_string(), serde_json::json!(items));
+                }
             }
         }
     }

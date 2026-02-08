@@ -1072,6 +1072,72 @@ pub struct FocusBlock {
     pub selected: bool,
 }
 
+// =============================================================================
+// User Context for AI Enrichment (I58)
+// =============================================================================
+
+/// User context injected into AI enrichment prompts for personalization.
+///
+/// Built from config fields (user_name, user_company, user_title, user_focus).
+/// Returns an empty prompt fragment when no fields are set.
+#[derive(Debug, Clone, Default)]
+pub struct UserContext {
+    pub name: Option<String>,
+    pub company: Option<String>,
+    pub title: Option<String>,
+    pub focus: Option<String>,
+}
+
+impl UserContext {
+    /// Build a UserContext from the app config.
+    pub fn from_config(config: &Config) -> Self {
+        Self {
+            name: config.user_name.clone(),
+            company: config.user_company.clone(),
+            title: config.user_title.clone(),
+            focus: config.user_focus.clone(),
+        }
+    }
+
+    /// Generate a prompt fragment describing the user. Returns "" if no fields set.
+    pub fn prompt_fragment(&self) -> String {
+        let mut parts = Vec::new();
+
+        if let Some(ref name) = self.name {
+            parts.push(format!("The user is {}", name));
+        }
+
+        if let Some(ref title) = self.title {
+            if let Some(ref company) = self.company {
+                parts.push(format!("{} at {}", title, company));
+            } else {
+                parts.push(title.clone());
+            }
+        } else if let Some(ref company) = self.company {
+            parts.push(format!("working at {}", company));
+        }
+
+        if parts.is_empty() {
+            return String::new();
+        }
+
+        let mut result = parts.join(", ");
+        result.push('.');
+
+        if let Some(ref focus) = self.focus {
+            result.push_str(&format!(" Current focus: {}.", focus));
+        }
+
+        result.push('\n');
+        result
+    }
+
+    /// Get the user's title or a fallback label.
+    pub fn title_or_default(&self) -> &str {
+        self.title.as_deref().unwrap_or("a professional")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1154,5 +1220,58 @@ mod tests {
         let config: Config = serde_json::from_str(json).unwrap();
         assert!(config.features.is_empty());
         assert!(is_feature_enabled(&config, "emailTriage"));
+    }
+
+    // =========================================================================
+    // UserContext tests (I58)
+    // =========================================================================
+
+    #[test]
+    fn test_user_context_full() {
+        let ctx = UserContext {
+            name: Some("Jamie".to_string()),
+            company: Some("TestCo".to_string()),
+            title: Some("CSM".to_string()),
+            focus: Some("renewals".to_string()),
+        };
+        let frag = ctx.prompt_fragment();
+        assert!(frag.contains("Jamie"));
+        assert!(frag.contains("CSM at TestCo"));
+        assert!(frag.contains("Current focus: renewals"));
+    }
+
+    #[test]
+    fn test_user_context_empty() {
+        let ctx = UserContext::default();
+        assert_eq!(ctx.prompt_fragment(), "");
+    }
+
+    #[test]
+    fn test_user_context_name_only() {
+        let ctx = UserContext {
+            name: Some("Alex".to_string()),
+            ..Default::default()
+        };
+        let frag = ctx.prompt_fragment();
+        assert!(frag.contains("Alex"));
+        assert!(!frag.contains("at"));
+    }
+
+    #[test]
+    fn test_user_context_from_config() {
+        let mut config = test_config("customer-success");
+        config.user_name = Some("Jamie".to_string());
+        config.user_company = Some("TestCo".to_string());
+        config.user_title = Some("CSM".to_string());
+        config.user_focus = Some("renewals".to_string());
+        let ctx = UserContext::from_config(&config);
+        assert_eq!(ctx.name.as_deref(), Some("Jamie"));
+        assert_eq!(ctx.title_or_default(), "CSM");
+    }
+
+    #[test]
+    fn test_user_context_title_or_default() {
+        let ctx = UserContext::default();
+        assert_eq!(ctx.title_or_default(), "a professional");
     }
 }

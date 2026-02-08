@@ -139,7 +139,7 @@ pub fn write_account_json(
     let path = dir.join("dashboard.json");
     let content = serde_json::to_string_pretty(&json)
         .map_err(|e| format!("Serialize error: {}", e))?;
-    std::fs::write(&path, content)
+    crate::util::atomic_write_str(&path, &content)
         .map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
@@ -364,7 +364,7 @@ pub fn write_account_markdown(
     }
 
     let path = dir.join("dashboard.md");
-    std::fs::write(&path, md).map_err(|e| format!("Write error: {}", e))?;
+    crate::util::atomic_write_str(&path, &md).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
 }

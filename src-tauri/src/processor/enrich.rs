@@ -44,9 +44,13 @@ pub fn enrich_file(
     filename: &str,
     db: Option<&ActionDb>,
     profile: &str,
+    user_ctx: Option<&crate::types::UserContext>,
 ) -> EnrichResult {
-    let inbox_dir = workspace.join("_inbox");
-    let file_path = inbox_dir.join(filename);
+    // I60: validate path stays within inbox
+    let file_path = match crate::util::validate_inbox_path(workspace, filename) {
+        Ok(p) => p,
+        Err(e) => return EnrichResult::Error { message: e },
+    };
 
     // Read the file
     let content = match std::fs::read_to_string(&file_path) {
@@ -59,7 +63,7 @@ pub fn enrich_file(
     };
 
     // Build the prompt for Claude
-    let prompt = build_enrichment_prompt(filename, &content);
+    let prompt = build_enrichment_prompt(filename, &content, user_ctx);
 
     // Invoke Claude Code via PTY
     let pty = PtyManager::new().with_timeout(AI_TIMEOUT_SECS);
@@ -210,7 +214,7 @@ pub fn enrich_file(
 ///
 /// Detects transcript-like content and uses a richer prompt with DISCUSSION
 /// section for transcript summarization (I31).
-fn build_enrichment_prompt(filename: &str, content: &str) -> String {
+fn build_enrichment_prompt(filename: &str, content: &str, user_ctx: Option<&crate::types::UserContext>) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
     let truncated = if content.len() > 8000 {
@@ -231,8 +235,12 @@ fn build_enrichment_prompt(filename: &str, content: &str) -> String {
         "SUMMARY: <one-line summary>"
     };
 
+    let user_fragment = user_ctx
+        .map(|ctx| ctx.prompt_fragment())
+        .unwrap_or_default();
+
     format!(
-        r#"Analyze this inbox file and respond in exactly this format:
+        r#"{user_fragment}Analyze this inbox file and respond in exactly this format:
 
 FILE_TYPE: <one of: meeting_notes, account_update, action_items, meeting_context, general>
 ACCOUNT: <account name if relevant, or NONE>
@@ -726,6 +734,7 @@ Next renewal: March 2026
         let prompt = build_enrichment_prompt(
             "acme-transcript.md",
             "Alice: Hi\nBob: Hello\nAlice: Let's discuss the project.",
+            None,
         );
         assert!(prompt.contains("DISCUSSION:"));
         assert!(prompt.contains("END_DISCUSSION"));
@@ -734,7 +743,7 @@ Next renewal: March 2026
 
     #[test]
     fn test_non_transcript_prompt_no_discussion() {
-        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.");
+        let prompt = build_enrichment_prompt("acme-update.md", "# Account Update\nAll good.", None);
         assert!(!prompt.contains("DISCUSSION:"));
         assert!(!prompt.contains("END_DISCUSSION"));
         assert!(prompt.contains("one-line summary"));
