@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     contract_end TEXT,
     csm TEXT,
     champion TEXT,
+    nps INTEGER,
     tracker_path TEXT,
     updated_at TEXT NOT NULL
 );
