@@ -322,6 +322,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
@@ -371,6 +372,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };

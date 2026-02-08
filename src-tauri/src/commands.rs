@@ -1187,11 +1187,12 @@ pub async fn start_google_auth(
         .ok_or("No configuration loaded")?;
 
     let workspace_path = config.workspace_path.clone();
+    let app_handle_clone = app_handle.clone();
 
     // Run the blocking Python subprocess off the main thread
     let email = tauri::async_runtime::spawn_blocking(move || {
         let workspace = std::path::Path::new(&workspace_path);
-        crate::google::start_auth(workspace)
+        crate::google::start_auth(&app_handle_clone, workspace)
     })
     .await
     .map_err(|e| format!("Auth task failed: {}", e))?
@@ -1871,6 +1872,7 @@ pub fn populate_workspace(
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             updated_at: now.clone(),
         };
@@ -2251,4 +2253,377 @@ pub fn get_meeting_attendees(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_meeting_attendees(&meeting_id)
         .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// I72: Account Dashboards
+// =============================================================================
+
+/// Account list item with computed fields for the list page.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountListItem {
+    pub id: String,
+    pub name: String,
+    pub ring: Option<i32>,
+    pub arr: Option<f64>,
+    pub health: Option<String>,
+    pub nps: Option<i32>,
+    pub csm: Option<String>,
+    pub champion: Option<String>,
+    pub renewal_date: Option<String>,
+    pub open_action_count: usize,
+    pub days_since_last_meeting: Option<i64>,
+}
+
+/// Full account detail for the detail page.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDetailResult {
+    pub id: String,
+    pub name: String,
+    pub ring: Option<i32>,
+    pub arr: Option<f64>,
+    pub health: Option<String>,
+    pub nps: Option<i32>,
+    pub csm: Option<String>,
+    pub champion: Option<String>,
+    pub renewal_date: Option<String>,
+    pub contract_start: Option<String>,
+    pub company_overview: Option<crate::accounts::CompanyOverview>,
+    pub strategic_programs: Vec<crate::accounts::StrategicProgram>,
+    pub notes: Option<String>,
+    pub open_actions: Vec<crate::db::DbAction>,
+    pub recent_meetings: Vec<MeetingSummary>,
+    pub linked_people: Vec<crate::db::DbPerson>,
+    pub signals: Option<crate::db::StakeholderSignals>,
+    pub recent_captures: Vec<crate::db::DbCapture>,
+}
+
+/// Get all accounts with computed summary fields for the list page.
+#[tauri::command]
+pub fn get_accounts_list(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<AccountListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+
+    let items: Vec<AccountListItem> = accounts
+        .into_iter()
+        .map(|a| {
+            let open_action_count = db
+                .get_account_actions(&a.id)
+                .map(|actions| actions.len())
+                .unwrap_or(0);
+
+            let signals = db.get_stakeholder_signals(&a.id).ok();
+            let days_since_last_meeting = signals.as_ref().and_then(|s| {
+                s.last_meeting.as_ref().and_then(|lm| {
+                    chrono::DateTime::parse_from_rfc3339(lm)
+                        .or_else(|_| {
+                            chrono::DateTime::parse_from_rfc3339(
+                                &format!("{}+00:00", lm.trim_end_matches('Z')),
+                            )
+                        })
+                        .ok()
+                        .map(|dt| {
+                            (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days()
+                        })
+                })
+            });
+
+            AccountListItem {
+                id: a.id,
+                name: a.name,
+                ring: a.ring,
+                arr: a.arr,
+                health: a.health,
+                nps: a.nps,
+                csm: a.csm,
+                champion: a.champion,
+                renewal_date: a.contract_end,
+                open_action_count,
+                days_since_last_meeting,
+            }
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Get full detail for an account (DB fields + narrative JSON + computed data).
+#[tauri::command]
+pub fn get_account_detail(
+    account_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<AccountDetailResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    // Read narrative fields from dashboard.json if it exists
+    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let (overview, programs, notes) = if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let json_path = crate::accounts::account_dir(workspace, &account.name)
+            .join("dashboard.json");
+        if json_path.exists() {
+            match crate::accounts::read_account_json(&json_path) {
+                Ok(result) => (
+                    result.json.company_overview,
+                    result.json.strategic_programs,
+                    result.json.notes,
+                ),
+                Err(_) => (None, Vec::new(), None),
+            }
+        } else {
+            (None, Vec::new(), None)
+        }
+    } else {
+        (None, Vec::new(), None)
+    };
+    drop(config); // Release config lock before more DB queries
+
+    let open_actions = db
+        .get_account_actions(&account_id)
+        .map_err(|e| e.to_string())?;
+
+    let recent_meetings = db
+        .get_meetings_for_account(&account_id, 10)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+        })
+        .collect();
+
+    let linked_people = db
+        .get_people_for_entity(&account_id)
+        .unwrap_or_default();
+
+    let signals = db.get_stakeholder_signals(&account_id).ok();
+
+    let recent_captures = db
+        .get_captures_for_account(&account_id, 90)
+        .unwrap_or_default();
+
+    Ok(AccountDetailResult {
+        id: account.id,
+        name: account.name,
+        ring: account.ring,
+        arr: account.arr,
+        health: account.health,
+        nps: account.nps,
+        csm: account.csm,
+        champion: account.champion,
+        renewal_date: account.contract_end,
+        contract_start: account.contract_start,
+        company_overview: overview,
+        strategic_programs: programs,
+        notes,
+        open_actions,
+        recent_meetings,
+        linked_people,
+        signals,
+        recent_captures,
+    })
+}
+
+/// Update a single structured field on an account.
+/// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
+#[tauri::command]
+pub fn update_account_field(
+    account_id: String,
+    field: String,
+    value: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.update_account_field(&account_id, &field, &value)
+        .map_err(|e| e.to_string())?;
+
+    // Regenerate workspace files
+    if let Ok(Some(account)) = db.get_account(&account_id) {
+        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            // Read existing JSON to preserve narrative fields
+            let json_path = crate::accounts::account_dir(workspace, &account.name)
+                .join("dashboard.json");
+            let existing = if json_path.exists() {
+                crate::accounts::read_account_json(&json_path)
+                    .ok()
+                    .map(|r| r.json)
+            } else {
+                None
+            };
+            let _ = crate::accounts::write_account_json(
+                workspace,
+                &account,
+                existing.as_ref(),
+                db,
+            );
+            let _ = crate::accounts::write_account_markdown(
+                workspace,
+                &account,
+                existing.as_ref(),
+                db,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Update account notes (narrative field — JSON only, not SQLite).
+/// Writes dashboard.json + regenerates dashboard.md.
+#[tauri::command]
+pub fn update_account_notes(
+    account_id: String,
+    notes: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = config.as_ref().ok_or("Config not loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+
+    // Read existing JSON
+    let json_path = crate::accounts::account_dir(workspace, &account.name)
+        .join("dashboard.json");
+    let mut existing = if json_path.exists() {
+        crate::accounts::read_account_json(&json_path)
+            .map(|r| r.json)
+            .unwrap_or_else(|_| default_account_json(&account))
+    } else {
+        default_account_json(&account)
+    };
+
+    // Update notes
+    existing.notes = if notes.is_empty() { None } else { Some(notes) };
+
+    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+
+    Ok(())
+}
+
+/// Update account strategic programs (narrative field — JSON only).
+/// Writes dashboard.json + regenerates dashboard.md.
+#[tauri::command]
+pub fn update_account_programs(
+    account_id: String,
+    programs_json: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let programs: Vec<crate::accounts::StrategicProgram> =
+        serde_json::from_str(&programs_json)
+            .map_err(|e| format!("Invalid programs JSON: {}", e))?;
+
+    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = config.as_ref().ok_or("Config not loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+
+    let json_path = crate::accounts::account_dir(workspace, &account.name)
+        .join("dashboard.json");
+    let mut existing = if json_path.exists() {
+        crate::accounts::read_account_json(&json_path)
+            .map(|r| r.json)
+            .unwrap_or_else(|_| default_account_json(&account))
+    } else {
+        default_account_json(&account)
+    };
+
+    existing.strategic_programs = programs;
+
+    let _ = crate::accounts::write_account_json(workspace, &account, Some(&existing), db);
+    let _ = crate::accounts::write_account_markdown(workspace, &account, Some(&existing), db);
+
+    Ok(())
+}
+
+/// Create a new account. Creates SQLite record + workspace files.
+#[tauri::command]
+pub fn create_account(
+    name: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let id = crate::util::slugify(&name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let account = crate::db::DbAccount {
+        id: id.clone(),
+        name: name.clone(),
+        ring: None,
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: None,
+        csm: None,
+        champion: None,
+        nps: None,
+        tracker_path: Some(format!("Accounts/{}", name)),
+        updated_at: now,
+    };
+
+    db.upsert_account(&account).map_err(|e| e.to_string())?;
+
+    // Create workspace files
+    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+        let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
+    }
+
+    Ok(id)
+}
+
+/// Helper: create a default AccountJson from a DbAccount.
+fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::AccountJson {
+    crate::accounts::AccountJson {
+        version: 1,
+        entity_type: "account".to_string(),
+        structured: crate::accounts::AccountStructured {
+            arr: account.arr,
+            health: account.health.clone(),
+            ring: account.ring,
+            renewal_date: account.contract_end.clone(),
+            nps: account.nps,
+            csm: account.csm.clone(),
+            champion: account.champion.clone(),
+        },
+        company_overview: None,
+        strategic_programs: Vec::new(),
+        notes: None,
+        custom_sections: Vec::new(),
+    }
 }
