@@ -1,9 +1,10 @@
 //! Google authentication and calendar polling
 //!
-//! - OAuth flow via Python subprocess (reuses existing google_api.py patterns)
+//! - OAuth flow via native Rust (google_api::auth)
 //! - Calendar polling loop: every N minutes during work hours
 //! - Events stored in AppState, frontend notified via Tauri events
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,56 +13,21 @@ use chrono::{Timelike, Utc};
 use tauri::{AppHandle, Emitter};
 
 use crate::db::DbPerson;
+use crate::google_api;
 use crate::people;
-use crate::pty::run_python_script;
 use crate::state::{google_token_path, AppState};
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{classify_relationship, name_from_email, org_from_email, person_id_from_email};
 use crate::workflow::deliver::{make_meeting_id, write_json};
 
-/// Run the Google OAuth flow via a Python script.
+/// Run the Google OAuth flow via native Rust.
 ///
 /// Opens the user's browser, captures the redirect, saves the token.
 /// Returns the authenticated email on success.
-pub fn start_auth(app_handle: &AppHandle, workspace: &Path) -> Result<String, String> {
-    let script = find_script(app_handle, workspace, "google_auth.py")
-        .ok_or_else(|| "google_auth.py not found".to_string())?;
-
-    let output = run_python_script(&script, workspace, 120)
-        .map_err(|e| format!("Google auth failed: {}", e))?;
-
-    // The Python google-auth-oauthlib library prints auth URL and messages
-    // to stdout before our JSON result. Extract the last JSON line.
-    let result: serde_json::Value = output
-        .stdout
-        .lines()
-        .rev()
-        .find_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
-        .ok_or_else(|| {
-            format!(
-                "No valid JSON in auth output. stdout: {}",
-                output.stdout.chars().take(200).collect::<String>()
-            )
-        })?;
-
-    match result.get("status").and_then(|s| s.as_str()) {
-        Some("success") => {
-            let email = result
-                .get("email")
-                .and_then(|e| e.as_str())
-                .unwrap_or("unknown")
-                .to_string();
-            Ok(email)
-        }
-        Some("error") => {
-            let msg = result
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown error");
-            Err(msg.to_string())
-        }
-        _ => Err("Unexpected auth script output".to_string()),
-    }
+pub async fn start_auth(workspace: &Path) -> Result<String, String> {
+    google_api::auth::run_consent_flow(Some(workspace))
+        .await
+        .map_err(|e| format!("Google auth failed: {}", e))
 }
 
 /// Disconnect Google by removing the token file.
@@ -74,87 +40,74 @@ pub fn disconnect() -> Result<(), String> {
     Ok(())
 }
 
-/// Poll calendar events from Google via Python script.
+/// Poll calendar events from Google via native Rust API.
 ///
-/// Returns parsed events or an error. Exit code 2 from the script
-/// indicates an auth failure (token expired/revoked).
-fn poll_calendar(app_handle: &AppHandle, workspace: &Path) -> Result<Vec<CalendarEvent>, PollError> {
-    let script = find_script(app_handle, workspace, "calendar_poll.py")
-        .ok_or(PollError::ScriptNotFound)?;
+/// Fetches events for today, classifies them using the 10-rule algorithm,
+/// and converts to CalendarEvent for AppState storage.
+async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError> {
+    let access_token = google_api::get_valid_access_token()
+        .await
+        .map_err(|e| match e {
+            google_api::GoogleApiError::AuthExpired => PollError::AuthExpired,
+            google_api::GoogleApiError::TokenNotFound(_) => PollError::AuthExpired,
+            other => PollError::ApiError(other.to_string()),
+        })?;
 
-    let output = run_python_script(&script, workspace, 30).map_err(|e| {
-        let err_str = e.to_string();
-        if err_str.contains("exit code 2") || err_str.contains("exit code: 2") {
-            PollError::AuthExpired
-        } else {
-            PollError::ScriptError(err_str)
-        }
-    })?;
+    // Fetch today's events (same day range as the Python calendar_poll.py)
+    let today = Utc::now().date_naive();
+    let raw_events = google_api::calendar::fetch_events(&access_token, today, today)
+        .await
+        .map_err(|e| match e {
+            google_api::GoogleApiError::AuthExpired => PollError::AuthExpired,
+            other => PollError::ApiError(other.to_string()),
+        })?;
 
-    // Check exit code for auth failure
-    if output.exit_code == 2 {
-        return Err(PollError::AuthExpired);
-    }
+    // Build classification inputs from config + DB
+    let user_domain = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()))
+        .unwrap_or_default();
 
-    let raw_events: Vec<RawCalendarEvent> = serde_json::from_str(&output.stdout)
-        .map_err(|e| PollError::ParseError(format!("Failed to parse calendar JSON: {}", e)))?;
+    let account_hints = build_account_hints(state);
 
-    let events = raw_events.into_iter().map(|e| e.into()).collect();
+    // Classify and convert
+    let events: Vec<CalendarEvent> = raw_events
+        .iter()
+        .map(|raw| {
+            let classified = google_api::classify::classify_meeting(
+                raw,
+                &user_domain,
+                &account_hints,
+            );
+            classified.to_calendar_event()
+        })
+        .collect();
+
     Ok(events)
+}
+
+/// Build account domain hints from DB for meeting classification.
+fn build_account_hints(state: &AppState) -> HashSet<String> {
+    state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|db| db.get_all_accounts().ok()))
+        .map(|accounts| {
+            accounts
+                .iter()
+                .map(|a| a.id.to_lowercase())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Calendar polling errors
 enum PollError {
-    ScriptNotFound,
     AuthExpired,
-    ScriptError(String),
-    ParseError(String),
-}
-
-/// Raw event from the Python script (before classification)
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RawCalendarEvent {
-    id: String,
-    title: String,
-    start: chrono::DateTime<Utc>,
-    end: chrono::DateTime<Utc>,
-    #[serde(default)]
-    meeting_type: Option<String>,
-    account: Option<String>,
-    #[serde(default)]
-    attendees: Vec<String>,
-    #[serde(default)]
-    is_all_day: bool,
-}
-
-impl From<RawCalendarEvent> for CalendarEvent {
-    fn from(raw: RawCalendarEvent) -> Self {
-        let meeting_type = match raw.meeting_type.as_deref() {
-            Some("customer") => MeetingType::Customer,
-            Some("qbr") => MeetingType::Qbr,
-            Some("training") => MeetingType::Training,
-            Some("internal") => MeetingType::Internal,
-            Some("team_sync") => MeetingType::TeamSync,
-            Some("one_on_one") => MeetingType::OneOnOne,
-            Some("partnership") => MeetingType::Partnership,
-            Some("all_hands") => MeetingType::AllHands,
-            Some("external") => MeetingType::External,
-            Some("personal") => MeetingType::Personal,
-            _ => MeetingType::Internal,
-        };
-
-        CalendarEvent {
-            id: raw.id,
-            title: raw.title,
-            start: raw.start,
-            end: raw.end,
-            meeting_type,
-            account: raw.account,
-            attendees: raw.attendees,
-            is_all_day: raw.is_all_day,
-        }
-    }
+    ApiError(String),
 }
 
 /// Start the calendar polling loop.
@@ -178,7 +131,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         };
 
         // Poll calendar
-        match poll_calendar(&app_handle, &workspace) {
+        match poll_calendar(&state).await {
             Ok(events) => {
                 // Check for new prep-eligible meetings before storing (I41)
                 let new_preps = generate_preps_for_new_meetings(
@@ -193,7 +146,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Populate people from calendar attendees (I51)
                 populate_people_from_events(&events, &state, &workspace);
 
-                if let Ok(mut guard) = state.calendar_events.lock() {
+                if let Ok(mut guard) = state.calendar_events.write() {
                     *guard = events;
                 }
 
@@ -214,14 +167,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     GoogleAuthStatus::TokenExpired,
                 );
             }
-            Err(PollError::ScriptNotFound) => {
-                log::debug!("Calendar poll: calendar_poll.py not found, skipping");
-            }
-            Err(PollError::ScriptError(e)) => {
+            Err(PollError::ApiError(e)) => {
                 log::warn!("Calendar poll error: {}", e);
-            }
-            Err(PollError::ParseError(e)) => {
-                log::warn!("Calendar poll parse error: {}", e);
             }
         }
     }
@@ -241,7 +188,7 @@ fn should_poll(state: &AppState) -> bool {
     }
 
     // Check work hours
-    let config = state.config.lock().ok().and_then(|g| g.clone());
+    let config = state.config.read().ok().and_then(|g| g.clone());
     let (start_hour, end_hour) = match config {
         Some(cfg) => (cfg.google.work_hours_start, cfg.google.work_hours_end),
         None => (8, 18),
@@ -255,23 +202,11 @@ fn should_poll(state: &AppState) -> bool {
 fn get_poll_interval(state: &AppState) -> u64 {
     state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.clone())
         .map(|cfg| cfg.google.calendar_poll_interval_minutes as u64)
         .unwrap_or(5)
-}
-
-/// Find a script, delegating to resolve_script_path (I59).
-///
-/// Returns `None` if the resolved path doesn't exist on disk.
-fn find_script(app_handle: &AppHandle, workspace: &Path, name: &str) -> Option<PathBuf> {
-    let path = crate::util::resolve_script_path(app_handle, workspace, name);
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
 }
 
 /// Prep-eligible meeting types (same as PREP_ELIGIBLE_TYPES in deliver.rs)
@@ -477,7 +412,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
     let user_domain = state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
 
@@ -559,7 +494,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 fn get_workspace(state: &AppState) -> Option<PathBuf> {
     state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.clone())
         .map(|cfg| std::path::PathBuf::from(cfg.workspace_path))

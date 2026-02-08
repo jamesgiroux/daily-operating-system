@@ -1,9 +1,9 @@
 //! Today workflow implementation
 //!
-//! Three-phase workflow for daily briefing:
-//! 1. prepare_today.py - Fetch calendar, emails, generate directive
-//! 2. /today - Claude enriches with AI synthesis
-//! 3. deliver_today.py - Write final JSON to _today/data/
+//! Per-operation pipeline (ADR-0042, ADR-0049):
+//! 1. Rust-native prepare — fetch calendar/emails, classify, write directive
+//! 2. Rust-native mechanical delivery — schedule, actions, preps, emails
+//! 3. AI enrichment — Claude Code enriches emails + briefing narrative
 //!
 //! Post-processing:
 //! - sync_actions_to_db() - Upsert actions from JSON into SQLite
@@ -20,9 +20,7 @@ use crate::workflow::Workflow;
 /// The /today workflow configuration
 pub const TODAY_WORKFLOW: Workflow = Workflow {
     id: WorkflowId::Today,
-    prepare_script: "prepare_today.py",
     claude_command: "/today",
-    deliver_script: "deliver_today.py",
 };
 
 /// Sync actions from _today/data/actions.json into the SQLite database.
@@ -81,8 +79,6 @@ mod tests {
 
     #[test]
     fn test_today_workflow_config() {
-        assert_eq!(TODAY_WORKFLOW.prepare_script, "prepare_today.py");
         assert_eq!(TODAY_WORKFLOW.claude_command, "/today");
-        assert_eq!(TODAY_WORKFLOW.deliver_script, "deliver_today.py");
     }
 }

@@ -81,13 +81,13 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
 
     let has_config = state
         .config
-        .lock()
+        .read()
         .map(|g| g.is_some())
         .unwrap_or(false);
 
     let workspace_path = state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
 
@@ -156,7 +156,7 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     // 1. Read workspace path before deleting config
     let workspace_path = state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
 
@@ -195,7 +195,7 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     }
 
     // 4. Reset all AppState mutexes in-place
-    if let Ok(mut guard) = state.config.lock() {
+    if let Ok(mut guard) = state.config.write() {
         *guard = None;
     }
     if let Ok(mut guard) = state.db.lock() {
@@ -205,16 +205,16 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     if let Ok(mut guard) = state.google_auth.lock() {
         *guard = GoogleAuthStatus::NotConfigured;
     }
-    if let Ok(mut guard) = state.workflow_status.lock() {
+    if let Ok(mut guard) = state.workflow_status.write() {
         guard.clear();
     }
     if let Ok(mut guard) = state.execution_history.lock() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.last_scheduled_run.lock() {
+    if let Ok(mut guard) = state.last_scheduled_run.write() {
         guard.clear();
     }
-    if let Ok(mut guard) = state.calendar_events.lock() {
+    if let Ok(mut guard) = state.calendar_events.write() {
         guard.clear();
     }
     if let Ok(mut guard) = state.capture_dismissed.lock() {
@@ -628,7 +628,7 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         ),
     ];
 
-    if let Ok(mut guard) = state.calendar_events.lock() {
+    if let Ok(mut guard) = state.calendar_events.write() {
         *guard = events;
     }
 

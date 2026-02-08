@@ -12,8 +12,10 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
+use crate::accounts;
 use crate::parser::count_inbox;
 use crate::people;
+use crate::projects;
 use crate::state::AppState;
 
 /// Debounce window for file system events
@@ -30,6 +32,8 @@ pub struct InboxUpdate {
 enum WatchSource {
     Inbox,
     People(PathBuf),
+    Accounts(PathBuf),
+    Projects(PathBuf),
 }
 
 /// Start watching the _inbox/ directory for changes.
@@ -55,6 +59,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
         let inbox_dir = workspace.join("_inbox");
         let people_dir = workspace.join("People");
+        let accounts_dir = workspace.join("Accounts");
+        let projects_dir = workspace.join("Projects");
 
         // Create _inbox/ if it doesn't exist
         if !inbox_dir.exists() {
@@ -76,6 +82,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let tx = fs_tx.clone();
         let inbox_dir_clone = inbox_dir.clone();
         let people_dir_clone = people_dir.clone();
+        let accounts_dir_clone = accounts_dir.clone();
+        let projects_dir_clone = projects_dir.clone();
         let mut watcher = match RecommendedWatcher::new(
             move |result: Result<Event, notify::Error>| {
                 if let Ok(event) = result {
@@ -105,6 +113,20 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "person.json")
                         });
 
+                        let is_accounts = event.paths.iter().any(|p| {
+                            p.starts_with(&accounts_dir_clone)
+                                && p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|n| n == "dashboard.json")
+                        });
+
+                        let is_projects = event.paths.iter().any(|p| {
+                            p.starts_with(&projects_dir_clone)
+                                && p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|n| n == "dashboard.json")
+                        });
+
                         if is_people {
                             // Send the changed person.json path
                             if let Some(path) = event.paths.iter().find(|p| {
@@ -113,6 +135,24 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "person.json")
                             }) {
                                 let _ = tx.try_send(WatchSource::People(path.clone()));
+                            }
+                        } else if is_accounts {
+                            if let Some(path) = event.paths.iter().find(|p| {
+                                p.starts_with(&accounts_dir_clone)
+                                    && p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .is_some_and(|n| n == "dashboard.json")
+                            }) {
+                                let _ = tx.try_send(WatchSource::Accounts(path.clone()));
+                            }
+                        } else if is_projects {
+                            if let Some(path) = event.paths.iter().find(|p| {
+                                p.starts_with(&projects_dir_clone)
+                                    && p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .is_some_and(|n| n == "dashboard.json")
+                            }) {
+                                let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
                         } else if event
                             .paths
@@ -152,9 +192,35 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
+        // Start watching Accounts/ (recursive to catch Accounts/*/dashboard.json)
+        if accounts_dir.exists() {
+            if let Err(e) = watcher.watch(&accounts_dir, RecursiveMode::Recursive) {
+                log::warn!(
+                    "Watcher: failed to watch Accounts/: {}. Account sync disabled.",
+                    e
+                );
+            } else {
+                log::info!("Watcher: watching {} for changes", accounts_dir.display());
+            }
+        }
+
+        // Start watching Projects/ (recursive to catch Projects/*/dashboard.json)
+        if projects_dir.exists() {
+            if let Err(e) = watcher.watch(&projects_dir, RecursiveMode::Recursive) {
+                log::warn!(
+                    "Watcher: failed to watch Projects/: {}. Project sync disabled.",
+                    e
+                );
+            } else {
+                log::info!("Watcher: watching {} for changes", projects_dir.display());
+            }
+        }
+
         // Debounce loop: coalesce rapid events into a single update
         let mut inbox_dirty = false;
         let mut people_dirty: Vec<PathBuf> = Vec::new();
+        let mut accounts_dirty: Vec<PathBuf> = Vec::new();
+        let mut projects_dirty: Vec<PathBuf> = Vec::new();
         loop {
             // Wait for an event
             let source = match fs_rx.recv().await {
@@ -169,6 +235,16 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         people_dirty.push(p);
                     }
                 }
+                WatchSource::Accounts(p) => {
+                    if !accounts_dirty.contains(&p) {
+                        accounts_dirty.push(p);
+                    }
+                }
+                WatchSource::Projects(p) => {
+                    if !projects_dirty.contains(&p) {
+                        projects_dirty.push(p);
+                    }
+                }
             }
 
             // Debounce: drain any events that arrive within the window
@@ -179,6 +255,16 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     WatchSource::People(p) => {
                         if !people_dirty.contains(&p) {
                             people_dirty.push(p);
+                        }
+                    }
+                    WatchSource::Accounts(p) => {
+                        if !accounts_dirty.contains(&p) {
+                            accounts_dirty.push(p);
+                        }
+                    }
+                    WatchSource::Projects(p) => {
+                        if !projects_dirty.contains(&p) {
+                            projects_dirty.push(p);
                         }
                     }
                 }
@@ -197,6 +283,20 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 handle_people_changes(&people_dirty, &state, &workspace);
                 let _ = app_handle.emit("people-updated", ());
                 people_dirty.clear();
+            }
+
+            // Process account changes (I75: external dashboard.json edits)
+            if !accounts_dirty.is_empty() {
+                handle_account_changes(&accounts_dirty, &state, &workspace);
+                let _ = app_handle.emit("accounts-updated", ());
+                accounts_dirty.clear();
+            }
+
+            // Process project changes (I50: external dashboard.json edits)
+            if !projects_dirty.is_empty() {
+                handle_project_changes(&projects_dirty, &state, &workspace);
+                let _ = app_handle.emit("projects-updated", ());
+                projects_dirty.clear();
             }
         }
 
@@ -219,7 +319,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
 
     let user_domain = state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
 
@@ -259,9 +359,83 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
     }
 }
 
+/// Handle detected changes to Accounts/*/dashboard.json files (I75).
+///
+/// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
+fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+
+        match accounts::read_account_json(path) {
+            Ok(accounts::ReadAccountResult { account, json }) => {
+                if db.upsert_account(&account).is_ok() {
+                    let _ = accounts::write_account_markdown(
+                        workspace, &account, Some(&json), db,
+                    );
+                    log::info!(
+                        "Watcher: synced external edit to {}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("Watcher: failed to read {}: {}", path.display(), e);
+            }
+        }
+    }
+}
+
+/// Handle detected changes to Projects/*/dashboard.json files (I50).
+///
+/// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
+fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+
+        match projects::read_project_json(path) {
+            Ok(projects::ReadProjectResult { project, json }) => {
+                if db.upsert_project(&project).is_ok() {
+                    let _ = projects::write_project_markdown(
+                        workspace, &project, Some(&json), db,
+                    );
+                    log::info!(
+                        "Watcher: synced external edit to {}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("Watcher: failed to read {}: {}", path.display(), e);
+            }
+        }
+    }
+}
+
 /// Read workspace path from the config state
 fn get_workspace_from_config(state: &AppState) -> Option<PathBuf> {
-    let guard = state.config.lock().ok()?;
+    let guard = state.config.read().ok()?;
     let config = guard.as_ref()?;
     let path = PathBuf::from(&config.workspace_path);
     if path.exists() {

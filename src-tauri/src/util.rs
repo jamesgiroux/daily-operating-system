@@ -1,8 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager};
-
 /// Validates a filename resolves within the inbox directory.
 /// Returns the resolved path or an error if traversal is detected.
 pub fn validate_inbox_path(workspace: &Path, filename: &str) -> Result<PathBuf, String> {
@@ -52,53 +49,6 @@ pub fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
 /// Atomic write with string content (convenience).
 pub fn atomic_write_str(path: &Path, content: &str) -> std::io::Result<()> {
     atomic_write(path, content.as_bytes())
-}
-
-/// Resolve the path to a bundled Python script.
-///
-/// Priority chain (I59):
-/// 1. Dev mode: `CARGO_MANIFEST_DIR/../scripts/{name}` (works in tests + `pnpm tauri dev`)
-/// 2. Production: Tauri resource bundle (`$RESOURCE/scripts/{name}`)
-/// 3. Fallback: workspace `_tools/{name}` (CLI-era compatibility, ADR-0025)
-pub fn resolve_script_path(app_handle: &AppHandle, workspace: &Path, script_name: &str) -> PathBuf {
-    // 1. Dev mode — compile-time constant, always works in tests and tauri dev
-    if cfg!(debug_assertions) {
-        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap_or(Path::new("."));
-        let dev_script = repo_root.join("scripts").join(script_name);
-        if dev_script.exists() {
-            return dev_script;
-        }
-    }
-
-    // 2. Production — Tauri-bundled resource
-    if let Ok(resource_path) = app_handle
-        .path()
-        .resolve(format!("scripts/{}", script_name), BaseDirectory::Resource)
-    {
-        if resource_path.exists() {
-            return resource_path;
-        }
-    }
-
-    // 3. Fallback — workspace _tools/ (CLI-era scripts)
-    let workspace_script = workspace.join("_tools").join(script_name);
-    if workspace_script.exists() {
-        return workspace_script;
-    }
-
-    // Not found — return a descriptive path for the error message.
-    // In dev mode: repo path. In production: resource path.
-    if cfg!(debug_assertions) {
-        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap_or(Path::new("."));
-        repo_root.join("scripts").join(script_name)
-    } else {
-        // Best-effort: return the resource path even if resolve failed
-        PathBuf::from(format!("scripts/{}", script_name))
-    }
 }
 
 /// Derive a person ID from an email address.
@@ -170,6 +120,24 @@ pub fn slugify(name: &str) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-")
+}
+
+/// Sanitize a string for use as a filesystem directory or file name (I70).
+///
+/// Strips `:*?"<>|`, replaces `/\` with `-`, trims leading/trailing dots and spaces,
+/// and falls back to "unnamed" if the result is empty.
+pub fn sanitize_for_filesystem(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .filter(|c| !matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|'))
+        .map(|c| if c == '/' || c == '\\' { '-' } else { c })
+        .collect();
+    let trimmed = sanitized.trim().trim_matches('.').trim();
+    if trimmed.is_empty() {
+        "unnamed".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(test)]
@@ -277,6 +245,37 @@ mod tests {
         assert!(validate_entity_name("foo<bar").is_err());
         assert!(validate_entity_name("foo>bar").is_err());
         assert!(validate_entity_name("foo|bar").is_err());
+    }
+
+    // Filesystem sanitization tests (I70)
+
+    #[test]
+    fn test_sanitize_for_filesystem_basic() {
+        assert_eq!(sanitize_for_filesystem("Acme Corp"), "Acme Corp");
+    }
+
+    #[test]
+    fn test_sanitize_for_filesystem_strips_unsafe() {
+        assert_eq!(sanitize_for_filesystem("foo:bar*baz"), "foobarbaz");
+        assert_eq!(sanitize_for_filesystem("what?\"yes\""), "whatyes");
+        assert_eq!(sanitize_for_filesystem("<tag>|pipe"), "tagpipe");
+    }
+
+    #[test]
+    fn test_sanitize_for_filesystem_replaces_slashes() {
+        assert_eq!(sanitize_for_filesystem("foo/bar\\baz"), "foo-bar-baz");
+    }
+
+    #[test]
+    fn test_sanitize_for_filesystem_trims_dots_spaces() {
+        assert_eq!(sanitize_for_filesystem("  ..hidden..  "), "hidden");
+    }
+
+    #[test]
+    fn test_sanitize_for_filesystem_fallback() {
+        assert_eq!(sanitize_for_filesystem(""), "unnamed");
+        assert_eq!(sanitize_for_filesystem("..."), "unnamed");
+        assert_eq!(sanitize_for_filesystem(":*?"), "unnamed");
     }
 
     // Atomic write tests (I64)

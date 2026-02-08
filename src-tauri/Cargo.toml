@@ -30,9 +30,14 @@ uuid = { version = "1", features = ["v4"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "process", "rt", "fs", "macros", "rt-multi-thread"] }
 log = "0.4"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
 notify = { version = "7", features = ["macos_fsevent"] }
 regex = "1"
+
+# Sprint 8: Native Google API (ADR-0049)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+url = "2"
+open = "5"
 
 [dev-dependencies]
 tempfile = "3"

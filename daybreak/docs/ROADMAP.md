@@ -4,29 +4,32 @@
 
 ---
 
-## Where We Are (2026-02-07)
+## Where We Are (2026-02-08)
 
-**The app works end-to-end from first launch.** Onboarding wizard guides new users through entity mode selection, workspace setup, and optional Google auth. Briefing generates automatically, dashboard renders schedule/actions/emails, meeting prep provides deep context for all meeting types, post-meeting capture processes transcripts into outcomes, inbox processes files, archive cleans up at midnight. No terminal required, no manual config editing.
+**The app works end-to-end from first launch.** Onboarding teaches the philosophy (9-chapter educational flow with demo data, inbox training, Claude Code validation), workspace population gives the system entities to link against, and the briefing generates automatically. Dashboard renders schedule/actions/emails, meeting prep provides AI-synthesized agendas with people dynamics, post-meeting capture processes transcripts into outcomes, inbox processes files, archive cleans up at midnight. Security hardening (atomic writes, path validation, timeout enforcement) covers the critical paths. No terminal required, no manual config editing.
 
 ### What's Built
 
 | Capability | Status | Key ADRs |
 |------------|--------|----------|
-| **First-run onboarding wizard** | **Working** | **0046** |
-| **Entity-mode architecture (account / project / both)** | **Working** | **0046** |
-| **Workspace scaffolding (entity-mode-aware)** | **Working** | **0046** |
-| **Settings: workspace picker, entity-mode switcher, schedule editor** | **Working** | — |
-| **No-auth graceful degradation (Connect Google CTA)** | **Working** | — |
+| First-run onboarding (9-chapter educational flow, demo data, inbox training, Claude Code validation) | Working | 0046 |
+| Entity-mode architecture (account / project / both) | Working | 0046 |
+| Workspace scaffolding + population (entity-mode-aware) | Working | 0046 |
+| Settings: workspace picker, entity-mode switcher, schedule editor | Working | — |
+| No-auth graceful degradation (Connect Google CTA) | Working | — |
 | Daily briefing pipeline (prepare → enrich → deliver) | Working | 0006, 0042 |
 | Per-operation Rust-native delivery | Working | 0042 |
-| AI enrichment (emails, briefing narrative) | Working, fault-tolerant | 0042 |
-| Meeting prep for all meeting types | Working | 0043, 0046 |
+| AI enrichment (emails, briefing narrative) with user profile context | Working, fault-tolerant | 0042 |
+| Meeting prep with proposed agenda + people dynamics | Working | 0043, 0046 |
+| Copy-to-clipboard for meeting prep (full + per-section) | Working | — |
 | Post-meeting transcript intake + outcome extraction | Working | 0037, 0044 |
 | Outcome interaction UI (action completion, capture editing) | Working | 0045 |
 | Inbox processing with entity intelligence | Working | 0045 |
 | Daily impact rollup | Working | 0041 |
 | Archive with reconciliation | Working | 0040 |
 | Entity abstraction (profile-agnostic) | Working | 0045 |
+| People sub-entity (universal tracking, signals, entity links, file I/O) | Working | 0048 |
+| Account dashboards (two-file JSON+md pattern, list + detail views) | Working | 0047 |
 | Executive intelligence (decisions, delegations, portfolio alerts) | Working | 0043 |
 | Stakeholder context in meeting prep (frequency, temperature, trend) | Working | 0043 |
 | Reactive meeting prep from calendar polling | Working | — |
@@ -39,10 +42,15 @@
 | Density-aware briefing narrative | Working | — |
 | Processing history page | Working | — |
 | Google API credential caching (per-process) | Working | — |
+| Security hardening (path traversal guards, atomic writes, script timeouts) | Working | — |
+| Account enrichment via Claude Code websearch (on-demand company research) | Working | 0047 |
+| SQLite backup + rebuild-from-filesystem | Working | 0048 |
+| External edit detection for accounts (file watcher + sync) | Working | 0047, 0048 |
+| RwLock for read-heavy AppState fields (config, calendar, status) | Working | — |
+| Edge hardening (atomic preps, safe router, TOCTOU fix, scheduler widen) | Working | — |
 | macOS chrome (overlay titlebar, tray icon, app icon) | Working | — |
-| Devtools demo data (8 meeting states, 3 preps, week overview, calendar overlay, transcript outcomes) | Working | — |
 
-**176 Rust tests + 37 Python tests passing.** Sprints 1–3 complete. Next: Sprint 4 (distribution).
+**224 Rust tests + 37 Python tests passing.** Sprints 1–7 complete. Next: Sprint 8 (kill Python), then Sprint 9 (distribute).
 
 ---
 
@@ -102,20 +110,86 @@ All 155 Rust + 37 Python tests passing.
 
 ---
 
-### Sprint 4: "Ship It"
+### Sprint 4a: "Entity Intelligence" — COMPLETE
 
-**Milestone:** Someone outside the dev team can download, install, and use DailyOS.
+**Milestone:** People and account dashboards are first-class entities with full CRUD, file I/O, and UI.
 
 | Issue | What | Status |
 |-------|------|--------|
-| I8 | Distribution mechanism (DMG + notarization, or GitHub Releases) | |
-| I9 | Focus/Week stubs (make non-embarrassing — "coming soon" > broken stub) | |
-| I56 | Onboarding redesign (educational flow, demo data, dashboard tour) | In progress — OnboardingFlow.tsx + demo data fixtures complete, wiring remaining |
-| I57 | Onboarding: add accounts/projects + user domain (populate workspace for first briefing) | |
-| — | 7-day crash-free validation on test workspace | |
-| — | README / landing page for first external users | |
+| I51 | People sub-entity (tables, signals, file I/O, UI) | Done — `people.rs`, PeoplePage, PersonDetailPage |
+| I72+I73 | Account dashboards (two-file JSON+md pattern, list + detail) | Done — `accounts.rs`, AccountsPage, AccountDetailPage |
+| I59 | Runtime script path resolution for release builds | Done — `resolve_scripts_dir()` with Tauri resource resolver |
+| I56 | Onboarding redesign (80% — educational flow, demo data, dashboard tour) | Done — `OnboardingFlow.tsx`, 7 chapters |
 
-**Done when:** A DMG installs cleanly, onboarding completes, first real briefing has meeting-entity associations on a clean machine.
+189 Rust tests passing.
+
+---
+
+### Sprint 5: "Complete the App" — COMPLETE
+
+**Milestone:** Onboarding teaches the full paradigm (inbox behavior, Claude Code dependency). Security hardening covers critical paths. Meeting prep gains AI-synthesized agendas and people dynamics.
+
+| Issue | What | Status |
+|-------|------|--------|
+| I56 | Onboarding finish (wire PopulateWorkspace to Tauri commands) | Done |
+| I57 | Populate workspace (accounts/projects + userDomain) | Done — `populate_workspace` command |
+| I78 | Inbox-first behavior training (onboarding chapter) | Done — `InboxTraining.tsx` |
+| I79 | Claude Code validation/installation step | Done — `ClaudeCode.tsx`, `check_claude_status` command |
+| I58 | User profile context in enrichment prompts | Done — `UserContext` struct, injected into enrich ops |
+| I60 | Path traversal guards | Done — `validate_inbox_path()`, `validate_entity_name()` in util.rs |
+| I62 | .unwrap() panic elimination in JSON mutation paths | Done — all production paths use safe alternatives |
+| I63 | Script timeout enforcement | Done — `run_python_script()` uses spawn + recv_timeout |
+| I64 | Atomic file writes | ~90% — `atomic_write()` helper used widely; `write_json()` in deliver.rs gap carries to S6 |
+| I65 | Impact log append race | ~50% — fixed in transcript.rs; commands.rs `append_to_impact_log()` gap carries to S6 |
+| I80 | Proposed agenda in meeting prep (pulled forward from S7) | Done — `generate_mechanical_agenda()`, AI refinement via `enrich_preps()` |
+| I81 | People dynamics in meeting prep UI (pulled forward from S7) | Done — "People in the Room" component with temperature badges |
+| I82 | Copy-to-clipboard for meeting prep | Done — full + per-section copy, `useCopyToClipboard` hook |
+
+199 Rust tests passing.
+
+---
+
+### Sprint 6+7: "Harden & Enrich" (combined) — COMPLETE
+
+**Milestone:** Zero crash paths, all writes safe, account enrichment, SQLite durability, RwLock performance. Sprints combined because S6 was smaller than projected.
+
+| Track | Issues | What | Status |
+|-------|--------|------|--------|
+| Safety | I61, I64, I65, I66, I67, I69, I70, I71 | Atomic writes, safe preps, TOCTOU fix, scheduler widen, router dedup, sanitize, edge hardening | Done |
+| Polish | I19, I25 | MeetingCard badge unification + "Limited prep" indicator | Done |
+| Intelligence | I74 | Account enrichment via Claude Code websearch + Enrich button | Done |
+| Durability | I75, I76, I77 | External edit detection, SQLite backup/rebuild, writeback audit | Done |
+| Performance | I68 | Mutex → RwLock for config/calendar/status/last_scheduled_run | Done |
+
+224 Rust tests passing. I55 (Executive Intelligence) deferred to parking lot — needs prompt fragment mechanism (I27).
+
+---
+
+### Sprint 8: "Kill Python"
+
+**Milestone:** Python runtime is eliminated. The app is a single Rust binary with no external language dependencies (Claude Code CLI remains the only external tool).
+
+| Issue | What | Blocked by |
+|-------|------|------------|
+| I83 | Rust-native Google API client (`google_api.rs` — reqwest + OAuth2) | — |
+| I84 | Port Phase 1 operations (classification, email priority, action parsing, prep context) | I83 |
+| I85 | Port orchestrators + delete `scripts/` + remove `run_python_script()` | I84 |
+
+**Done when:** `scripts/` directory deleted, `run_python_script()` removed from `pty.rs`, no Python on `$PATH` required, all Rust tests pass, onboarding no longer checks for Python. ADR-0049.
+
+---
+
+### Sprint 9: "Distribute"
+
+**Milestone:** Colleagues can download, install, and use DailyOS.
+
+| Issue | What |
+|-------|------|
+| I8 | DMG build + GitHub Actions CI + GitHub Releases |
+| — | 7-day crash-free validation on clean machine |
+| — | README for colleague installs (Gatekeeper bypass, Google OAuth setup) |
+
+**Done when:** Unsigned arm64 DMG installs cleanly on a clean Mac, onboarding → first real briefing works end-to-end. No signing/notarization (no Apple Developer account). No updater (zero users, premature).
 
 ---
 
@@ -129,35 +203,13 @@ These are decided (ADRs exist) but not scheduled. Entity-mode architecture (ADR-
 |-------|------|------|------------|
 | I27 | Entity-mode architecture umbrella | — | — (Phase gate) |
 | I50 | Projects overlay table + project entity support | Foundation | I27 |
-| I51 | People sub-entity table + relationships | Foundation | I27 |
 | I52 | Meeting-entity many-to-many (replaces account_id FK) | Foundation | I50 |
 | I53 | Entity-mode config, onboarding, UI adaptation | Foundation | I50, I52 |
 | I54 | MCP client integration framework (Gong, Salesforce, Linear) | Integration | I27 |
 | I40 | CS Kit — account-mode fields, templates, vocabulary | Kit | I27 |
-| I55 | Executive Intelligence — decision framing, delegation, strategy | Intelligence | I27 |
 | I35 | ProDev Intelligence — personal impact, career narrative | Intelligence | I27 |
 | I29 | Structured document schemas | Foundation | I27 |
 | I28 | MCP server + client (I54 covers client side) | Integration | — (Phase gate) |
-
-### Entity Dashboards (ADR-0047)
-
-| Issue | What | Type | Blocked by |
-|-------|------|------|------------|
-| I72 | Entity dashboard pages — list + detail views for accounts/projects | UI | I73 |
-| I73 | Entity dashboard template system — JSON schema, markdown gen, file watching | Foundation | — (can start with existing accounts table) |
-| I74 | Account enrichment via Claude Code websearch | Enrichment | I73 |
-| I75 | External edit detection + reconciliation | Sync | I73 |
-
-Account-side I72 + I73 can begin without I27 (uses existing `accounts` table). Project-side depends on I50. I74 (enrichment) and I75 (sync) are independent enhancements on top of I73.
-
-### Data Durability (ADR-0048)
-
-| Issue | What | Type | Blocked by |
-|-------|------|------|------------|
-| I76 | SQLite backup strategy + rebuild-from-filesystem command | Safety | — |
-| I77 | Filesystem writeback audit — ensure important SQLite state reaches files | Discipline | I73 (for account fields) |
-
-ADR-0048 supersedes ADR-0018. SQLite is a working store, not a disposable cache. I76 (backup) is a pre-ship or immediately-post-ship concern.
 
 ### Deferred
 
@@ -169,7 +221,7 @@ ADR-0048 supersedes ADR-0018. SQLite is a working store, not a disposable cache.
 | I4 | Motivational quotes |
 | I10 | Shared glossary of app terms |
 
-**When to revisit:** After Sprint 4 ships and we have real usage data. ADR-0046 accepted — architecture designed, implementation sequencing TBD based on user demand.
+**When to revisit:** After Sprint 9 ships and we have real usage data. ADR-0046 accepted — architecture designed, implementation sequencing TBD based on user demand.
 
 ---
 

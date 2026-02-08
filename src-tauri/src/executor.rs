@@ -1,7 +1,7 @@
 //! Workflow execution engine
 //!
 //! Each workflow has its own execution strategy:
-//! - Today: per-operation pipeline (ADR-0042) — Phase 1 Python, then Rust-native delivery
+//! - Today: per-operation pipeline (ADR-0042) — Rust-native prepare + delivery
 //! - Week: three-phase (Prepare → Enrich → Deliver)
 //! - Archive: pure Rust reconciliation + file moves
 //! - InboxBatch: direct processor calls
@@ -16,14 +16,11 @@ use tokio::sync::mpsc;
 
 use crate::error::{ExecutionError, WorkflowError};
 use crate::notification::send_notification;
-use crate::pty::{run_python_script, PtyManager};
+use crate::pty::PtyManager;
 use crate::scheduler::SchedulerMessage;
 use crate::state::{create_execution_record, AppState};
 use crate::types::{ExecutionTrigger, WorkflowId, WorkflowPhase, WorkflowStatus};
 use crate::workflow::Workflow;
-
-/// Timeout for Python scripts (60 seconds)
-const SCRIPT_TIMEOUT_SECS: u64 = 60;
 
 /// Executor manages workflow execution
 pub struct Executor {
@@ -139,7 +136,7 @@ impl Executor {
             let impact_enabled = self
                 .state
                 .config
-                .lock()
+                .read()
                 .ok()
                 .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "impactRollup")))
                 .unwrap_or(false);
@@ -250,7 +247,7 @@ impl Executor {
         let inbox_enabled = self
             .state
             .config
-            .lock()
+            .read()
             .ok()
             .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "inboxProcessing")))
             .unwrap_or(true);
@@ -270,7 +267,7 @@ impl Executor {
         let profile = self
             .state
             .config
-            .lock()
+            .read()
             .ok()
             .and_then(|g| g.as_ref().map(|c| c.profile.clone()))
             .unwrap_or_else(|| "general".to_string());
@@ -304,7 +301,7 @@ impl Executor {
         let mut enriched_count = 0;
 
         // Build user context for AI prompts
-        let user_ctx = self.state.config.lock().ok()
+        let user_ctx = self.state.config.read().ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_default();
 
@@ -442,12 +439,12 @@ impl Executor {
     /// Execute the Today workflow using per-operation pipelines (ADR-0042).
     ///
     /// Sequence:
-    /// 1. Phase 1: prepare_today.py (unchanged — fetches APIs, writes directive)
+    /// 1. Phase 1: Rust-native prepare (fetches APIs, writes directive)
     /// 2. Load directive JSON
     /// 3. Deliver mechanical operations (schedule, actions, preps) — instant
     /// 4. Sync actions to SQLite
     /// 5. Write manifest (partial: true initially, partial: false when done)
-    /// 6. [Future: AI enrichment for emails + briefing narrative — Chunk 3]
+    /// 6. AI enrichment for emails + briefing narrative
     ///
     /// Each mechanical operation emits an `operation-delivered:{op}` event
     /// so the frontend can progressively render sections as they land.
@@ -458,16 +455,15 @@ impl Executor {
         trigger: ExecutionTrigger,
         record: &crate::types::ExecutionRecord,
     ) -> Result<(), ExecutionError> {
-        // --- Phase 1: Prepare (Python) ---
+        // --- Phase 1: Prepare (Rust-native, ADR-0049) ---
         self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
             started_at: record.started_at,
             phase: WorkflowPhase::Preparing,
             execution_id: execution_id.to_string(),
         });
 
-        let prepare_script = get_script_path(&self.app_handle, workspace, "prepare_today.py");
-        log::info!("Today pipeline Phase 1: Running {}", prepare_script.display());
-        run_python_script(&prepare_script, workspace, SCRIPT_TIMEOUT_SECS)?;
+        log::info!("Today pipeline Phase 1: Rust-native prepare");
+        crate::prepare::orchestrate::prepare_today(&self.state, workspace).await?;
 
         // --- Phase 2+3: Rust-native mechanical delivery ---
         self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
@@ -513,7 +509,7 @@ impl Executor {
         let prep_enabled = self
             .state
             .config
-            .lock()
+            .read()
             .ok()
             .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "meetingPrep")))
             .unwrap_or(true);
@@ -532,7 +528,7 @@ impl Executor {
         let email_enabled = self
             .state
             .config
-            .lock()
+            .read()
             .ok()
             .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "emailTriage")))
             .unwrap_or(true);
@@ -570,7 +566,7 @@ impl Executor {
         });
 
         // Build user context for AI enrichment prompts
-        let user_ctx = self.state.config.lock().ok()
+        let user_ctx = self.state.config.read().ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
@@ -652,7 +648,7 @@ impl Executor {
         Ok(())
     }
 
-    /// Run the three-phase workflow
+    /// Run the three-phase week workflow (Rust-native, ADR-0049)
     async fn run_three_phase(
         &self,
         workflow: &Workflow,
@@ -660,16 +656,15 @@ impl Executor {
         execution_id: &str,
         workflow_id: WorkflowId,
     ) -> Result<(), ExecutionError> {
-        // Phase 1: Prepare
+        // Phase 1: Prepare (Rust-native)
         self.emit_status_event(workflow_id, WorkflowStatus::Running {
             started_at: Utc::now(),
             phase: WorkflowPhase::Preparing,
             execution_id: execution_id.to_string(),
         });
 
-        let prepare_script = get_script_path(&self.app_handle, workspace, workflow.prepare_script());
-        log::info!("Phase 1: Running {}", prepare_script.display());
-        run_python_script(&prepare_script, workspace, SCRIPT_TIMEOUT_SECS)?;
+        log::info!("Phase 1: Rust-native prepare for {:?}", workflow_id);
+        crate::prepare::orchestrate::prepare_week(&self.state, workspace).await?;
 
         // Phase 2: Enrich with Claude
         self.emit_status_event(workflow_id, WorkflowStatus::Running {
@@ -683,16 +678,16 @@ impl Executor {
             .pty_manager
             .spawn_claude(workspace, workflow.claude_command())?;
 
-        // Phase 3: Deliver
+        // Phase 3: Deliver (Rust-native)
         self.emit_status_event(workflow_id, WorkflowStatus::Running {
             started_at: Utc::now(),
             phase: WorkflowPhase::Delivering,
             execution_id: execution_id.to_string(),
         });
 
-        let deliver_script = get_script_path(&self.app_handle, workspace, workflow.deliver_script());
-        log::info!("Phase 3: Running {}", deliver_script.display());
-        run_python_script(&deliver_script, workspace, SCRIPT_TIMEOUT_SECS)?;
+        log::info!("Phase 3: Rust-native deliver for {:?}", workflow_id);
+        crate::prepare::orchestrate::deliver_week(workspace)
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
 
         Ok(())
     }
@@ -702,7 +697,7 @@ impl Executor {
         let config = self
             .state
             .config
-            .lock()
+            .read()
             .map_err(|_| ExecutionError::ConfigurationError("Lock poisoned".to_string()))?;
 
         let config = config
@@ -717,15 +712,15 @@ impl Executor {
         Ok(path)
     }
 
-    /// Execute standalone email refresh (I20).
+    /// Execute standalone email refresh (I20, ADR-0049 Rust-native).
     ///
     /// 1. Check that /today pipeline is not currently running
-    /// 2. Run refresh_emails.py (Phase 1 email-only)
+    /// 2. Fetch emails from Gmail, classify, write directive (Rust-native)
     /// 3. Read refresh directive and deliver via deliver_emails()
     /// 4. Optionally run AI enrichment (fault-tolerant)
     /// 5. Emit operation-delivered for frontend refresh
     /// 6. Clean up refresh directive
-    pub fn execute_email_refresh(
+    pub async fn execute_email_refresh(
         &self,
         workspace: &Path,
     ) -> Result<(), String> {
@@ -735,18 +730,18 @@ impl Executor {
             return Err("Cannot refresh emails while /today pipeline is running".to_string());
         }
 
-        // Step 1: Run refresh_emails.py
-        let refresh_script = get_script_path(&self.app_handle, workspace, "refresh_emails.py");
-        log::info!("Email refresh: running {}", refresh_script.display());
-        run_python_script(&refresh_script, workspace, SCRIPT_TIMEOUT_SECS)
-            .map_err(|e| format!("Email refresh script failed: {}", e))?;
+        // Step 1: Rust-native email fetch + classify
+        log::info!("Email refresh: Rust-native fetch + classify");
+        crate::prepare::orchestrate::refresh_emails(&self.state, workspace)
+            .await
+            .map_err(|e| format!("Email refresh failed: {}", e))?;
 
         // Step 2: Read refresh directive
         let data_dir = workspace.join("_today").join("data");
         let refresh_path = data_dir.join("email-refresh-directive.json");
 
         if !refresh_path.exists() {
-            return Err("Email refresh script did not produce directive".to_string());
+            return Err("Email refresh did not produce directive".to_string());
         }
 
         let raw = std::fs::read_to_string(&refresh_path)
@@ -798,7 +793,7 @@ impl Executor {
         log::info!("Email refresh: emails.json written ({} high)", high_priority.len());
 
         // Step 4: AI enrichment (fault-tolerant)
-        let user_ctx = self.state.config.lock().ok()
+        let user_ctx = self.state.config.read().ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
         if let Err(e) = crate::workflow::deliver::enrich_emails(
@@ -837,14 +832,6 @@ impl Executor {
             let _ = self.app_handle.emit("workflow-completed", workflow);
         }
     }
-}
-
-/// Get the path to a script.
-///
-/// Priority: dev mode → bundled resource → workspace _tools/ fallback.
-/// Delegates to `util::resolve_script_path` for the actual resolution (I59).
-fn get_script_path(app_handle: &AppHandle, workspace: &Path, script_name: &str) -> PathBuf {
-    crate::util::resolve_script_path(app_handle, workspace, script_name)
 }
 
 /// Request a manual workflow execution

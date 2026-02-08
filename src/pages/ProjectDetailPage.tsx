@@ -20,9 +20,19 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import type { AccountDetail, AccountHealth } from "@/types";
+import type { ProjectDetail } from "@/types";
 
-const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
+const statusOptions = ["active", "on_hold", "completed", "archived"];
+
+const statusStyles: Record<string, string> = {
+  active:
+    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+  on_hold:
+    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
+  completed:
+    "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700",
+  archived: "bg-muted text-muted-foreground border-muted",
+};
 
 const temperatureStyles: Record<string, string> = {
   hot: "bg-destructive/15 text-destructive",
@@ -42,41 +52,35 @@ function TrendIcon({ trend }: { trend: string }) {
   }
 }
 
-export default function AccountDetailPage() {
-  const { accountId } = useParams({ strict: false });
-  const [detail, setDetail] = useState<AccountDetail | null>(null);
+export default function ProjectDetailPage() {
+  const { projectId } = useParams({ strict: false });
+  const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Editable structured fields
-  const [editHealth, setEditHealth] = useState<string>("");
-  const [editRing, setEditRing] = useState<string>("");
-  const [editArr, setEditArr] = useState<string>("");
-  const [editNps, setEditNps] = useState<string>("");
-  const [editCsm, setEditCsm] = useState<string>("");
-  const [editChampion, setEditChampion] = useState<string>("");
-  const [editRenewal, setEditRenewal] = useState<string>("");
+  const [editStatus, setEditStatus] = useState<string>("");
+  const [editMilestone, setEditMilestone] = useState<string>("");
+  const [editOwner, setEditOwner] = useState<string>("");
+  const [editTargetDate, setEditTargetDate] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [enriching, setEnriching] = useState(false);
 
   const load = useCallback(async () => {
-    if (!accountId) return;
+    if (!projectId) return;
     try {
       setLoading(true);
       setError(null);
-      const result = await invoke<AccountDetail>("get_account_detail", {
-        accountId,
+      const result = await invoke<ProjectDetail>("get_project_detail", {
+        projectId,
       });
       setDetail(result);
-      setEditHealth(result.health ?? "");
-      setEditRing(result.ring?.toString() ?? "");
-      setEditArr(result.arr?.toString() ?? "");
-      setEditNps(result.nps?.toString() ?? "");
-      setEditCsm(result.csm ?? "");
-      setEditChampion(result.champion ?? "");
-      setEditRenewal(result.renewalDate ?? "");
+      setEditStatus(result.status ?? "active");
+      setEditMilestone(result.milestone ?? "");
+      setEditOwner(result.owner ?? "");
+      setEditTargetDate(result.targetDate ?? "");
       setEditNotes(result.notes ?? "");
       setDirty(false);
     } catch (e) {
@@ -84,7 +88,7 @@ export default function AccountDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [accountId]);
+  }, [projectId]);
 
   useEffect(() => {
     load();
@@ -95,35 +99,27 @@ export default function AccountDetailPage() {
     setSaving(true);
 
     try {
-      // Save structured field changes
       const fieldUpdates: [string, string][] = [];
-      if (editHealth !== (detail.health ?? ""))
-        fieldUpdates.push(["health", editHealth]);
-      if (editRing !== (detail.ring?.toString() ?? ""))
-        fieldUpdates.push(["ring", editRing]);
-      if (editArr !== (detail.arr?.toString() ?? ""))
-        fieldUpdates.push(["arr", editArr]);
-      if (editNps !== (detail.nps?.toString() ?? ""))
-        fieldUpdates.push(["nps", editNps]);
-      if (editCsm !== (detail.csm ?? ""))
-        fieldUpdates.push(["csm", editCsm]);
-      if (editChampion !== (detail.champion ?? ""))
-        fieldUpdates.push(["champion", editChampion]);
-      if (editRenewal !== (detail.renewalDate ?? ""))
-        fieldUpdates.push(["contract_end", editRenewal]);
+      if (editStatus !== (detail.status ?? ""))
+        fieldUpdates.push(["status", editStatus]);
+      if (editMilestone !== (detail.milestone ?? ""))
+        fieldUpdates.push(["milestone", editMilestone]);
+      if (editOwner !== (detail.owner ?? ""))
+        fieldUpdates.push(["owner", editOwner]);
+      if (editTargetDate !== (detail.targetDate ?? ""))
+        fieldUpdates.push(["target_date", editTargetDate]);
 
       for (const [field, value] of fieldUpdates) {
-        await invoke("update_account_field", {
-          accountId: detail.id,
+        await invoke("update_project_field", {
+          projectId: detail.id,
           field,
           value,
         });
       }
 
-      // Save notes if changed
       if (editNotes !== (detail.notes ?? "")) {
-        await invoke("update_account_notes", {
-          accountId: detail.id,
+        await invoke("update_project_notes", {
+          projectId: detail.id,
           notes: editNotes,
         });
       }
@@ -141,7 +137,7 @@ export default function AccountDetailPage() {
     if (!detail) return;
     setEnriching(true);
     try {
-      await invoke("enrich_account", { accountId: detail.id });
+      await invoke("enrich_project", { projectId: detail.id });
       await load();
     } catch (e) {
       setError(String(e));
@@ -166,7 +162,7 @@ export default function AccountDetailPage() {
   if (error || !detail) {
     return (
       <main className="flex-1 overflow-hidden">
-        <PageError message={error ?? "Account not found"} onRetry={load} />
+        <PageError message={error ?? "Project not found"} onRetry={load} />
       </main>
     );
   }
@@ -179,11 +175,11 @@ export default function AccountDetailPage() {
         <div className="p-6">
           {/* Back + header */}
           <Link
-            to="/accounts"
+            to="/projects"
             className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
-            Accounts
+            Projects
           </Link>
 
           <div className="mb-6 flex items-start justify-between">
@@ -196,14 +192,15 @@ export default function AccountDetailPage() {
                   <h1 className="text-2xl font-semibold tracking-tight">
                     {detail.name}
                   </h1>
-                  {detail.health && (
-                    <HealthBadge health={detail.health as AccountHealth} />
-                  )}
-                  {detail.ring && (
-                    <Badge variant="outline" className="text-xs">
-                      Ring {detail.ring}
-                    </Badge>
-                  )}
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-xs",
+                      statusStyles[detail.status] ?? statusStyles.active
+                    )}
+                  >
+                    {detail.status.replace("_", " ")}
+                  </Badge>
                   {signals && (
                     <Badge
                       className={cn(
@@ -216,14 +213,11 @@ export default function AccountDetailPage() {
                     </Badge>
                   )}
                 </div>
-                {detail.arr != null && (
-                  <span className="text-sm text-muted-foreground">
-                    ARR: ${formatArr(detail.arr)}
-                    {detail.renewalDate && (
-                      <> &middot; Renews {detail.renewalDate}</>
-                    )}
-                  </span>
-                )}
+                <span className="text-sm text-muted-foreground">
+                  {detail.owner && <>Owner: {detail.owner}</>}
+                  {detail.owner && detail.targetDate && <> &middot; </>}
+                  {detail.targetDate && <>Target: {detail.targetDate}</>}
+                </span>
               </div>
             </div>
 
@@ -247,113 +241,62 @@ export default function AccountDetailPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Health
+                      Status
                     </label>
                     <select
-                      value={editHealth}
+                      value={editStatus}
                       onChange={(e) => {
-                        setEditHealth(e.target.value);
+                        setEditStatus(e.target.value);
                         setDirty(true);
                       }}
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                     >
-                      <option value="">Not set</option>
-                      {healthOptions.map((h) => (
-                        <option key={h} value={h}>
-                          {h}
+                      {statusOptions.map((s) => (
+                        <option key={s} value={s}>
+                          {s.replace("_", " ")}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Ring
-                    </label>
-                    <select
-                      value={editRing}
-                      onChange={(e) => {
-                        setEditRing(e.target.value);
-                        setDirty(true);
-                      }}
-                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="">Not set</option>
-                      {[1, 2, 3, 4].map((r) => (
-                        <option key={r} value={r}>
-                          Ring {r}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      ARR
-                    </label>
-                    <input
-                      type="number"
-                      value={editArr}
-                      onChange={(e) => {
-                        setEditArr(e.target.value);
-                        setDirty(true);
-                      }}
-                      placeholder="Annual revenue"
-                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      NPS
-                    </label>
-                    <input
-                      type="number"
-                      value={editNps}
-                      onChange={(e) => {
-                        setEditNps(e.target.value);
-                        setDirty(true);
-                      }}
-                      placeholder="NPS score"
-                      className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">
-                      CSM
+                      Owner
                     </label>
                     <input
                       type="text"
-                      value={editCsm}
+                      value={editOwner}
                       onChange={(e) => {
-                        setEditCsm(e.target.value);
+                        setEditOwner(e.target.value);
                         setDirty(true);
                       }}
-                      placeholder="CSM name"
+                      placeholder="Project owner"
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                     />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Champion
+                      Current Milestone
                     </label>
                     <input
                       type="text"
-                      value={editChampion}
+                      value={editMilestone}
                       onChange={(e) => {
-                        setEditChampion(e.target.value);
+                        setEditMilestone(e.target.value);
                         setDirty(true);
                       }}
-                      placeholder="Champion name"
+                      placeholder="Current milestone"
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <label className="text-xs font-medium text-muted-foreground">
-                      Renewal Date
+                      Target Date
                     </label>
                     <input
                       type="date"
-                      value={editRenewal}
+                      value={editTargetDate}
                       onChange={(e) => {
-                        setEditRenewal(e.target.value);
+                        setEditTargetDate(e.target.value);
                         setDirty(true);
                       }}
                       className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
@@ -363,12 +306,12 @@ export default function AccountDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Engagement Signals */}
+            {/* Activity Signals */}
             {signals && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium">
-                    Engagement Signals
+                    Activity Signals
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -410,16 +353,34 @@ export default function AccountDetailPage() {
                         </div>
                       </div>
                     )}
+                    {signals.daysUntilTarget != null && (
+                      <div>
+                        <div className="text-sm font-medium">
+                          {signals.daysUntilTarget}d
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          until target
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-sm font-medium">
+                        {signals.openActionCount}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        open actions
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {/* Company Overview */}
+            {/* Description + Enrich */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-sm font-medium">
-                  Company Overview
+                  Description
                 </CardTitle>
                 <Button
                   variant="ghost"
@@ -435,32 +396,17 @@ export default function AccountDetailPage() {
                   )}
                   {enriching
                     ? "Researching..."
-                    : detail.companyOverview
+                    : detail.description
                       ? "Refresh"
                       : "Enrich"}
                 </Button>
               </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                {detail.companyOverview ? (
-                  <>
-                    {detail.companyOverview.description && (
-                      <p>{detail.companyOverview.description}</p>
-                    )}
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                      {detail.companyOverview.industry && (
-                        <span>Industry: {detail.companyOverview.industry}</span>
-                      )}
-                      {detail.companyOverview.size && (
-                        <span>Size: {detail.companyOverview.size}</span>
-                      )}
-                      {detail.companyOverview.headquarters && (
-                        <span>HQ: {detail.companyOverview.headquarters}</span>
-                      )}
-                    </div>
-                  </>
+              <CardContent className="text-sm">
+                {detail.description ? (
+                  <p>{detail.description}</p>
                 ) : (
                   <p className="text-muted-foreground">
-                    No company data yet. Click Enrich to research this company.
+                    No description yet. Click Enrich to research this project.
                   </p>
                 )}
               </CardContent>
@@ -478,30 +424,35 @@ export default function AccountDetailPage() {
                     setEditNotes(e.target.value);
                     setDirty(true);
                   }}
-                  placeholder="Notes about this account..."
+                  placeholder="Notes about this project..."
                   rows={4}
                   className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
               </CardContent>
             </Card>
 
-            {/* Strategic Programs */}
-            {detail.strategicPrograms.length > 0 && (
+            {/* Milestones */}
+            {detail.milestones.length > 0 && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-medium">
-                    Strategic Programs
+                    Milestones
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {detail.strategicPrograms.map((p, i) => (
+                    {detail.milestones.map((m, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <ProgramStatusBadge status={p.status} />
-                        <span className="font-medium">{p.name}</span>
-                        {p.notes && (
+                        <MilestoneStatusBadge status={m.status} />
+                        <span className="font-medium">{m.name}</span>
+                        {m.targetDate && (
                           <span className="text-muted-foreground">
-                            &mdash; {p.notes}
+                            &mdash; {m.targetDate}
+                          </span>
+                        )}
+                        {m.notes && (
+                          <span className="text-muted-foreground">
+                            ({m.notes})
                           </span>
                         )}
                       </div>
@@ -583,12 +534,10 @@ export default function AccountDetailPage() {
               </CardContent>
             </Card>
 
-            {/* Stakeholder Map */}
+            {/* Team */}
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium">
-                  Stakeholder Map
-                </CardTitle>
+                <CardTitle className="text-sm font-medium">Team</CardTitle>
               </CardHeader>
               <CardContent>
                 {detail.linkedPeople.length > 0 ? (
@@ -598,7 +547,7 @@ export default function AccountDetailPage() {
                         key={p.id}
                         to="/people/$personId"
                         params={{ personId: p.id }}
-                        className="flex items-center gap-2 text-sm hover:text-primary transition-colors"
+                        className="flex items-center gap-2 text-sm transition-colors hover:text-primary"
                       >
                         <Users className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="font-medium">{p.name}</span>
@@ -653,25 +602,12 @@ export default function AccountDetailPage() {
   );
 }
 
-function HealthBadge({ health }: { health: AccountHealth }) {
-  const styles: Record<AccountHealth, string> = {
-    green:
-      "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-    yellow:
-      "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-    red: "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  };
-  return (
-    <Badge variant="outline" className={cn("text-xs", styles[health])}>
-      {health}
-    </Badge>
-  );
-}
-
-function ProgramStatusBadge({ status }: { status: string }) {
+function MilestoneStatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    completed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    in_progress: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    completed:
+      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    in_progress:
+      "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
     planned: "bg-muted text-muted-foreground",
   };
   return (
@@ -717,10 +653,4 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr.split("T")[0] ?? dateStr;
   }
-}
-
-function formatArr(arr: number): string {
-  if (arr >= 1_000_000) return `${(arr / 1_000_000).toFixed(1)}M`;
-  if (arr >= 1_000) return `${(arr / 1_000).toFixed(0)}K`;
-  return arr.toFixed(0);
 }

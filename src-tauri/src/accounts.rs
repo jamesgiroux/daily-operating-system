@@ -94,9 +94,9 @@ pub struct StrategicProgram {
 // Filesystem I/O
 // =============================================================================
 
-/// Resolve the directory for an account's workspace files.
+/// Resolve the directory for an account's workspace files (I70: sanitized name).
 pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
-    workspace.join("Accounts").join(name)
+    workspace.join("Accounts").join(crate::util::sanitize_for_filesystem(name))
 }
 
 /// Write `dashboard.json` for an account.
@@ -556,6 +556,149 @@ pub fn sync_accounts_from_workspace(
 }
 
 // =============================================================================
+// Enrichment (I74 / ADR-0047)
+// =============================================================================
+
+/// Parse Claude's enrichment response into a CompanyOverview.
+///
+/// Expected format:
+/// ```text
+/// ENRICHMENT
+/// DESCRIPTION: one-paragraph company description
+/// INDUSTRY: industry name
+/// SIZE: employee count or range
+/// HQ: headquarters location
+/// END_ENRICHMENT
+/// ```
+pub fn parse_enrichment_response(response: &str) -> Option<CompanyOverview> {
+    let mut in_block = false;
+    let mut description = None;
+    let mut industry = None;
+    let mut size = None;
+    let mut headquarters = None;
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+
+        if trimmed == "ENRICHMENT" {
+            in_block = true;
+            continue;
+        }
+        if trimmed == "END_ENRICHMENT" {
+            break;
+        }
+
+        if !in_block {
+            continue;
+        }
+
+        if let Some(val) = trimmed.strip_prefix("DESCRIPTION:") {
+            description = Some(val.trim().to_string());
+        } else if let Some(val) = trimmed.strip_prefix("INDUSTRY:") {
+            industry = Some(val.trim().to_string());
+        } else if let Some(val) = trimmed.strip_prefix("SIZE:") {
+            size = Some(val.trim().to_string());
+        } else if let Some(val) = trimmed.strip_prefix("HQ:") {
+            headquarters = Some(val.trim().to_string());
+        }
+    }
+
+    // Only return if we got at least a description
+    if description.is_some() {
+        Some(CompanyOverview {
+            description,
+            industry,
+            size,
+            headquarters,
+            enriched_at: Some(Utc::now().to_rfc3339()),
+        })
+    } else {
+        None
+    }
+}
+
+/// Build the Claude Code prompt for account enrichment.
+pub fn enrichment_prompt(account_name: &str) -> String {
+    format!(
+        "Research the company \"{name}\". Use web search to find current information. \
+         Return ONLY the structured block below — no other text.\n\n\
+         ENRICHMENT\n\
+         DESCRIPTION: <one paragraph describing what the company does, their main product/service>\n\
+         INDUSTRY: <their primary industry>\n\
+         SIZE: <approximate employee count or range, e.g. \"500-1000\">\n\
+         HQ: <headquarters city and country>\n\
+         END_ENRICHMENT",
+        name = account_name
+    )
+}
+
+/// Enrich an account via Claude Code websearch.
+///
+/// Calls Claude Code with a research prompt, parses the structured response,
+/// updates dashboard.json, SQLite, and dashboard.md.
+///
+/// Returns the enriched CompanyOverview on success.
+pub fn enrich_account(
+    workspace: &Path,
+    db: &ActionDb,
+    account_id: &str,
+    pty: &crate::pty::PtyManager,
+) -> Result<CompanyOverview, String> {
+    let account = db
+        .get_account(account_id)
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Account {} not found", account_id))?;
+
+    let prompt = enrichment_prompt(&account.name);
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude Code error: {}", e))?;
+
+    let overview = parse_enrichment_response(&output.stdout)
+        .ok_or("Could not parse enrichment response — no ENRICHMENT block found")?;
+
+    // Read existing JSON to preserve other narrative fields
+    let json_path = account_dir(workspace, &account.name).join("dashboard.json");
+    let mut json = if json_path.exists() {
+        read_account_json(&json_path)
+            .map(|r| r.json)
+            .unwrap_or_else(|_| default_account_json(&account))
+    } else {
+        default_account_json(&account)
+    };
+
+    json.company_overview = Some(overview.clone());
+
+    // Write JSON + markdown
+    write_account_json(workspace, &account, Some(&json), db)?;
+    write_account_markdown(workspace, &account, Some(&json), db)?;
+
+    log::info!("Enriched account '{}' via Claude Code websearch", account.name);
+    Ok(overview)
+}
+
+/// Create a minimal AccountJson from a DbAccount (no narrative fields).
+fn default_account_json(account: &DbAccount) -> AccountJson {
+    AccountJson {
+        version: 1,
+        entity_type: "account".to_string(),
+        structured: AccountStructured {
+            arr: account.arr,
+            health: account.health.clone(),
+            ring: account.ring,
+            renewal_date: account.contract_end.clone(),
+            nps: account.nps,
+            csm: account.csm.clone(),
+            champion: account.champion.clone(),
+        },
+        company_overview: None,
+        strategic_programs: Vec::new(),
+        notes: None,
+        custom_sections: Vec::new(),
+    }
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -756,5 +899,49 @@ mod tests {
             Some("Important context.".to_string())
         );
         assert_eq!(result.json.notes, Some("Don't lose these notes.".to_string()));
+    }
+
+    #[test]
+    fn test_parse_enrichment_response() {
+        let response = "\
+Some preamble text from Claude
+
+ENRICHMENT
+DESCRIPTION: Acme Corp builds enterprise widgets for Fortune 500 companies.
+INDUSTRY: Enterprise Software
+SIZE: 500-1000
+HQ: San Francisco, USA
+END_ENRICHMENT
+
+Some trailing text";
+
+        let overview = parse_enrichment_response(response).unwrap();
+        assert_eq!(
+            overview.description.unwrap(),
+            "Acme Corp builds enterprise widgets for Fortune 500 companies."
+        );
+        assert_eq!(overview.industry.unwrap(), "Enterprise Software");
+        assert_eq!(overview.size.unwrap(), "500-1000");
+        assert_eq!(overview.headquarters.unwrap(), "San Francisco, USA");
+        assert!(overview.enriched_at.is_some());
+    }
+
+    #[test]
+    fn test_parse_enrichment_response_missing_block() {
+        let response = "No enrichment block here, just regular text.";
+        assert!(parse_enrichment_response(response).is_none());
+    }
+
+    #[test]
+    fn test_parse_enrichment_response_partial() {
+        let response = "\
+ENRICHMENT
+DESCRIPTION: Partial data only.
+END_ENRICHMENT";
+
+        let overview = parse_enrichment_response(response).unwrap();
+        assert_eq!(overview.description.unwrap(), "Partial data only.");
+        assert!(overview.industry.is_none());
+        assert!(overview.size.is_none());
     }
 }

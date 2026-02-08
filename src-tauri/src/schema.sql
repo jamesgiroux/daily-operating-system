@@ -39,6 +39,19 @@ CREATE TABLE IF NOT EXISTS accounts (
     updated_at TEXT NOT NULL
 );
 
+-- Projects (I50 / ADR-0046)
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT DEFAULT 'active',
+    milestone TEXT,
+    owner TEXT,
+    target_date TEXT,
+    tracker_path TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+
 CREATE TABLE IF NOT EXISTS meetings_history (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -76,6 +89,7 @@ CREATE TABLE IF NOT EXISTS captures (
     meeting_id TEXT NOT NULL,
     meeting_title TEXT NOT NULL,
     account_id TEXT,
+    project_id TEXT,
     capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
     content TEXT NOT NULL,
     owner TEXT,
@@ -144,3 +158,12 @@ CREATE TABLE IF NOT EXISTS entity_people (
     PRIMARY KEY (entity_id, person_id)
 );
 CREATE INDEX IF NOT EXISTS idx_entity_people_person ON entity_people(person_id);
+
+-- Meeting ↔ entity junction (I52 — meeting to account/project)
+CREATE TABLE IF NOT EXISTS meeting_entities (
+    meeting_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT 'account',
+    PRIMARY KEY (meeting_id, entity_id)
+);
+CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);

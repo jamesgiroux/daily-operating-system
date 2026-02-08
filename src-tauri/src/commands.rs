@@ -41,7 +41,7 @@ pub enum DashboardResult {
 /// Get current configuration
 #[tauri::command]
 pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
-    let guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let guard = state.config.read().map_err(|_| "Lock poisoned")?;
     guard.clone().ok_or_else(|| {
         "No configuration loaded. Create ~/.dailyos/config.json".to_string()
     })
@@ -64,7 +64,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         .unwrap_or(GoogleAuthStatus::NotConfigured);
 
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -113,7 +113,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     // Merge briefing meetings with live calendar events (ADR-0032)
     let live_events = state
         .calendar_events
-        .lock()
+        .read()
         .map(|g| g.clone())
         .unwrap_or_default();
     let tz: chrono_tz::Tz = config
@@ -251,7 +251,7 @@ pub fn get_next_run_time(
 
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -292,7 +292,7 @@ pub fn get_meeting_prep(
     state: State<Arc<AppState>>,
 ) -> MeetingPrepResult {
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -342,7 +342,7 @@ pub fn get_meeting_prep(
 
                     // Enrich attendees with person context (I51)
                     if let Some(ref cal_id) = prep.calendar_event_id {
-                        if let Ok(events_guard) = state.calendar_events.lock() {
+                        if let Ok(events_guard) = state.calendar_events.read() {
                             if let Some(event) = events_guard.iter().find(|e| e.id == *cal_id) {
                                 let mut attendee_ctx = Vec::new();
                                 for email in &event.attendees {
@@ -419,7 +419,7 @@ pub enum WeekResult {
 #[tauri::command]
 pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -463,7 +463,7 @@ pub enum FocusResult {
 #[tauri::command]
 pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -504,7 +504,7 @@ pub enum ActionsResult {
 #[tauri::command]
 pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -566,7 +566,7 @@ pub enum InboxResult {
 /// Get files from the _inbox/ directory
 #[tauri::command]
 pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -611,7 +611,7 @@ pub async fn process_inbox_file(
 ) -> Result<crate::processor::ProcessingResult, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -643,7 +643,7 @@ pub async fn process_all_inbox(
 ) -> Result<Vec<(String, crate::processor::ProcessingResult)>, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -673,7 +673,7 @@ pub async fn enrich_inbox_file(
 ) -> Result<crate::processor::enrich::EnrichResult, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Internal error")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -706,7 +706,7 @@ pub fn get_inbox_file_content(
 ) -> Result<String, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -753,7 +753,7 @@ pub fn copy_to_inbox(
 ) -> Result<usize, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -834,7 +834,7 @@ pub enum EmailsResult {
 #[tauri::command]
 pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
     // Get config
-    let config = match state.config.lock() {
+    let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
             Some(c) => c,
             None => {
@@ -880,7 +880,7 @@ pub async fn refresh_emails(
 ) -> Result<String, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -888,10 +888,10 @@ pub async fn refresh_emails(
     let state_clone = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn(async move {
         let workspace = std::path::Path::new(&workspace_path);
         let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_email_refresh(workspace)
+        executor.execute_email_refresh(workspace).await
     })
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))?
@@ -930,13 +930,21 @@ pub fn set_entity_mode(
         config.profile = crate::types::profile_for_entity_mode(&mode);
     })?;
 
-    // If workspace exists, ensure Accounts/ dir is created for account/both
+    // If workspace exists, ensure entity dirs are created based on mode
     if !config.workspace_path.is_empty() {
         let workspace = std::path::Path::new(&config.workspace_path);
-        if workspace.exists() && (mode == "account" || mode == "both") {
-            let accounts_dir = workspace.join("Accounts");
-            if !accounts_dir.exists() {
-                let _ = std::fs::create_dir_all(&accounts_dir);
+        if workspace.exists() {
+            if mode == "account" || mode == "both" {
+                let accounts_dir = workspace.join("Accounts");
+                if !accounts_dir.exists() {
+                    let _ = std::fs::create_dir_all(&accounts_dir);
+                }
+            }
+            if mode == "project" || mode == "both" {
+                let projects_dir = workspace.join("Projects");
+                if !projects_dir.exists() {
+                    let _ = std::fs::create_dir_all(&projects_dir);
+                }
             }
         }
     }
@@ -960,7 +968,7 @@ pub fn set_workspace_path(
     // Read current entity_mode (or default)
     let entity_mode = state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.entity_mode.clone()))
         .unwrap_or_else(|| "account".to_string());
@@ -1055,7 +1063,7 @@ pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, St
     // Get config
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1186,22 +1194,16 @@ pub async fn start_google_auth(
 ) -> Result<GoogleAuthStatus, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
 
     let workspace_path = config.workspace_path.clone();
-    let app_handle_clone = app_handle.clone();
 
-    // Run the blocking Python subprocess off the main thread
-    let email = tauri::async_runtime::spawn_blocking(move || {
-        let workspace = std::path::Path::new(&workspace_path);
-        crate::google::start_auth(&app_handle_clone, workspace)
-    })
-    .await
-    .map_err(|e| format!("Auth task failed: {}", e))?
-    .map_err(|e| e)?;
+    // Run the native Rust OAuth flow
+    let workspace = std::path::Path::new(&workspace_path);
+    let email = crate::google::start_auth(workspace).await?;
 
     let new_status = GoogleAuthStatus::Authenticated {
         email: email.clone(),
@@ -1246,7 +1248,7 @@ pub fn disconnect_google(
     }
 
     // Clear calendar events
-    if let Ok(mut guard) = state.calendar_events.lock() {
+    if let Ok(mut guard) = state.calendar_events.write() {
         guard.clear();
     }
 
@@ -1265,7 +1267,7 @@ pub fn disconnect_google(
 pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
     state
         .calendar_events
-        .lock()
+        .read()
         .map(|guard| guard.clone())
         .unwrap_or_default()
 }
@@ -1276,7 +1278,7 @@ pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent>
     let now = chrono::Utc::now();
     state
         .calendar_events
-        .lock()
+        .read()
         .ok()
         .and_then(|guard| {
             guard
@@ -1292,7 +1294,7 @@ pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
     state
         .calendar_events
-        .lock()
+        .read()
         .ok()
         .and_then(|guard| {
             guard
@@ -1315,7 +1317,7 @@ pub fn capture_meeting_outcome(
 ) -> Result<(), String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1425,7 +1427,7 @@ pub fn dismiss_meeting_prompt(
 pub fn get_capture_settings(state: State<Arc<AppState>>) -> PostMeetingCaptureConfig {
     state
         .config
-        .lock()
+        .read()
         .ok()
         .and_then(|g| g.clone())
         .map(|c| c.post_meeting_capture)
@@ -1485,7 +1487,7 @@ pub fn submit_week_priorities(
 ) -> Result<(), String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1514,7 +1516,7 @@ pub fn submit_focus_blocks(
 ) -> Result<(), String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1559,9 +1561,10 @@ pub async fn attach_meeting_transcript(
     state: State<'_, Arc<AppState>>,
     app_handle: tauri::AppHandle,
 ) -> Result<crate::types::TranscriptResult, String> {
-    // Check immutability — one transcript per meeting
+    // Check immutability + insert sentinel to prevent TOCTOU race (I61).
+    // The sentinel blocks concurrent callers while async work runs below.
     {
-        let guard = state
+        let mut guard = state
             .transcript_processed
             .lock()
             .map_err(|_| "Lock poisoned")?;
@@ -1571,11 +1574,22 @@ pub async fn attach_meeting_transcript(
                 meeting.title
             ));
         }
+        // Insert a sentinel record — concurrent calls will now see a key and bail.
+        guard.insert(
+            meeting.id.clone(),
+            crate::types::TranscriptRecord {
+                meeting_id: meeting.id.clone(),
+                file_path: String::new(),
+                destination: String::new(),
+                summary: None,
+                processed_at: "processing".to_string(),
+            },
+        );
     }
 
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1587,7 +1601,7 @@ pub async fn attach_meeting_transcript(
     let meeting_clone = meeting.clone();
     let file_path_for_record = file_path.clone();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
+    let result = match tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state_clone.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
@@ -1600,9 +1614,19 @@ pub async fn attach_meeting_transcript(
         )
     })
     .await
-    .map_err(|e| format!("Transcript processing task failed: {}", e))?;
+    {
+        Ok(r) => r,
+        Err(e) => {
+            // I61: Remove sentinel on task failure so retry is possible
+            if let Ok(mut guard) = state.transcript_processed.lock() {
+                guard.remove(&meeting_id);
+            }
+            return Err(format!("Transcript processing task failed: {}", e));
+        }
+    };
 
-    // On success, record transcript and mark as captured
+    // On success, overwrite sentinel with real record.
+    // On failure, remove sentinel so retry is possible (I61).
     if result.status == "success" {
         let record = crate::types::TranscriptRecord {
             meeting_id: meeting_id.clone(),
@@ -1624,6 +1648,11 @@ pub async fn attach_meeting_transcript(
         // Build and emit outcome data for live frontend updates
         let outcome_data = build_outcome_data(&meeting_id, &result, &state);
         let _ = app_handle.emit("transcript-processed", &outcome_data);
+    } else {
+        // Processing failed — remove sentinel so the user can retry
+        if let Ok(mut guard) = state.transcript_processed.lock() {
+            guard.remove(&meeting_id);
+        }
     }
 
     Ok(result)
@@ -1751,7 +1780,7 @@ pub struct FeatureDefinition {
 pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition>, String> {
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -1763,6 +1792,7 @@ pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition
         ("weeklyPlanning", "Weekly Planning", "Weekly overview and focus block suggestions", false),
         ("inboxProcessing", "Inbox Processing", "Classify and route files from _inbox", false),
         ("accountTracking", "Account Tracking", "Track customer accounts, health, and ARR", true),
+        ("projectTracking", "Project Tracking", "Track projects, milestones, and deliverables", false),
         ("impactRollup", "Impact Rollup", "Roll up daily wins and risks to account files", true),
     ];
 
@@ -1805,7 +1835,7 @@ pub fn install_demo_data(
 ) -> Result<String, String> {
     let workspace_path = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Config lock failed")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
@@ -1841,7 +1871,7 @@ pub fn populate_workspace(
     // 1. Get workspace path
     let workspace_path = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Config lock failed")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
@@ -1896,7 +1926,7 @@ pub fn populate_workspace(
         account_count += 1;
     }
 
-    // 4. Process projects (filesystem only — I50 tracks projects table)
+    // 4. Process projects (I50: full dashboard.json + SQLite)
     let mut project_count = 0;
     for name in &projects {
         let name = match crate::util::validate_entity_name(name) {
@@ -1907,10 +1937,32 @@ pub fn populate_workspace(
             }
         };
 
-        let project_dir = workspace.join("Projects").join(name);
-        if let Err(e) = std::fs::create_dir_all(&project_dir) {
-            log::warn!("Failed to create project dir '{}': {}", name, e);
-            continue;
+        let slug = crate::util::slugify(name);
+        let db_project = crate::db::DbProject {
+            id: slug,
+            name: name.to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: Some(format!("Projects/{}", name)),
+            updated_at: now.clone(),
+        };
+
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Err(e) = db.upsert_project(&db_project) {
+                    log::warn!("Failed to upsert project '{}': {}", name, e);
+                }
+                // Write dashboard.json + dashboard.md
+                let json = crate::projects::default_project_json(&db_project);
+                let _ = crate::projects::write_project_json(
+                    workspace, &db_project, Some(&json), db,
+                );
+                let _ = crate::projects::write_project_markdown(
+                    workspace, &db_project, Some(&json), db,
+                );
+            }
         }
 
         project_count += 1;
@@ -1961,7 +2013,7 @@ pub fn install_inbox_sample(
 ) -> Result<String, String> {
     let workspace_path = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Config lock failed")?
         .as_ref()
         .map(|c| c.workspace_path.clone())
@@ -2066,7 +2118,7 @@ pub fn get_executive_intelligence(
     // Load config for profile + workspace
     let config = state
         .config
-        .lock()
+        .read()
         .map_err(|_| "Lock poisoned")?
         .clone()
         .ok_or("No configuration loaded")?;
@@ -2081,7 +2133,7 @@ pub fn get_executive_intelligence(
             .unwrap_or_default();
         let live_events = state
             .calendar_events
-            .lock()
+            .read()
             .map(|g| g.clone())
             .unwrap_or_default();
         let tz: chrono_tz::Tz = config
@@ -2242,7 +2294,7 @@ pub fn update_person(
 
     // Regenerate workspace files
     if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -2269,7 +2321,7 @@ pub fn link_person_entity(
 
     // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -2295,7 +2347,7 @@ pub fn unlink_person_entity(
 
     // Regenerate person.json so linked_entities reflects removal (ADR-0048)
     if let Ok(Some(person)) = db.get_person(&person_id) {
-        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             let _ = crate::people::write_person_json(workspace, &person, db);
@@ -2443,7 +2495,7 @@ pub fn get_account_detail(
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
     // Read narrative fields from dashboard.json if it exists
-    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let (overview, programs, notes) = if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let json_path = crate::accounts::account_dir(workspace, &account.name)
@@ -2529,7 +2581,7 @@ pub fn update_account_field(
 
     // Regenerate workspace files
     if let Ok(Some(account)) = db.get_account(&account_id) {
-        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             // Read existing JSON to preserve narrative fields
@@ -2576,7 +2628,7 @@ pub fn update_account_notes(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
@@ -2620,7 +2672,7 @@ pub fn update_account_programs(
         serde_json::from_str(&programs_json)
             .map_err(|e| format!("Invalid programs JSON: {}", e))?;
 
-    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
@@ -2675,7 +2727,7 @@ pub fn create_account(
     db.upsert_account(&account).map_err(|e| e.to_string())?;
 
     // Create workspace files
-    let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let _ = crate::accounts::write_account_json(workspace, &account, None, db);
@@ -2683,6 +2735,372 @@ pub fn create_account(
     }
 
     Ok(id)
+}
+
+// ── I74: Account Enrichment via Claude Code ─────────────────────────
+
+#[tauri::command]
+pub async fn enrich_account(
+    account_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<crate::accounts::CompanyOverview, String> {
+    let workspace_path = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = guard.as_ref().ok_or("Config not loaded")?;
+        config.workspace_path.clone()
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    crate::accounts::enrich_account(
+        std::path::Path::new(&workspace_path),
+        db,
+        &account_id,
+        &pty,
+    )
+}
+
+// =============================================================================
+// I50: Project Dashboards
+// =============================================================================
+
+/// Project list item with computed fields for the list page.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectListItem {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub milestone: Option<String>,
+    pub owner: Option<String>,
+    pub target_date: Option<String>,
+    pub open_action_count: usize,
+    pub days_since_last_meeting: Option<i64>,
+}
+
+/// Full project detail for the detail page.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDetailResult {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub milestone: Option<String>,
+    pub owner: Option<String>,
+    pub target_date: Option<String>,
+    pub description: Option<String>,
+    pub milestones: Vec<crate::projects::ProjectMilestone>,
+    pub notes: Option<String>,
+    pub open_actions: Vec<crate::db::DbAction>,
+    pub recent_meetings: Vec<MeetingSummary>,
+    pub linked_people: Vec<crate::db::DbPerson>,
+    pub signals: Option<crate::db::ProjectSignals>,
+    pub recent_captures: Vec<crate::db::DbCapture>,
+}
+
+/// Get all projects with computed summary fields for the list page.
+#[tauri::command]
+pub fn get_projects_list(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<ProjectListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let projects = db.get_all_projects().map_err(|e| e.to_string())?;
+
+    let items: Vec<ProjectListItem> = projects
+        .into_iter()
+        .map(|p| {
+            let open_action_count = db
+                .get_project_actions(&p.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            let days_since_last_meeting = db
+                .get_project_signals(&p.id)
+                .ok()
+                .and_then(|s| {
+                    s.last_meeting
+                        .as_ref()
+                        .and_then(|lm| {
+                            chrono::DateTime::parse_from_rfc3339(lm)
+                                .ok()
+                                .map(|dt| {
+                                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc))
+                                        .num_days()
+                                })
+                        })
+                });
+            ProjectListItem {
+                id: p.id,
+                name: p.name,
+                status: p.status,
+                milestone: p.milestone,
+                owner: p.owner,
+                target_date: p.target_date,
+                open_action_count,
+                days_since_last_meeting,
+            }
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Get full detail for a project.
+#[tauri::command]
+pub fn get_project_detail(
+    project_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<ProjectDetailResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let project = db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Project not found: {}", project_id))?;
+
+    // Read narrative fields from dashboard.json if it exists
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let (description, milestones, notes) = if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let json_path = crate::projects::project_dir(workspace, &project.name)
+            .join("dashboard.json");
+        if json_path.exists() {
+            match crate::projects::read_project_json(&json_path) {
+                Ok(result) => (
+                    result.json.description,
+                    result.json.milestones,
+                    result.json.notes,
+                ),
+                Err(_) => (None, Vec::new(), None),
+            }
+        } else {
+            (None, Vec::new(), None)
+        }
+    } else {
+        (None, Vec::new(), None)
+    };
+    drop(config);
+
+    let open_actions = db
+        .get_project_actions(&project_id)
+        .map_err(|e| e.to_string())?;
+
+    let recent_meetings = db
+        .get_meetings_for_project(&project_id, 10)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+        })
+        .collect();
+
+    let linked_people = db
+        .get_people_for_entity(&project_id)
+        .unwrap_or_default();
+
+    let signals = db.get_project_signals(&project_id).ok();
+
+    // Get captures linked to project meetings
+    let recent_captures = db.get_captures_for_project(&project_id, 90).unwrap_or_default();
+
+    Ok(ProjectDetailResult {
+        id: project.id,
+        name: project.name,
+        status: project.status,
+        milestone: project.milestone,
+        owner: project.owner,
+        target_date: project.target_date,
+        description,
+        milestones,
+        notes,
+        open_actions,
+        recent_meetings,
+        linked_people,
+        signals,
+        recent_captures,
+    })
+}
+
+/// Create a new project.
+#[tauri::command]
+pub fn create_project(
+    name: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let validated_name = crate::util::validate_entity_name(&name)?;
+    let id = crate::util::slugify(validated_name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Check for duplicate
+    if let Ok(Some(_)) = db.get_project(&id) {
+        return Err(format!("Project '{}' already exists", validated_name));
+    }
+
+    let project = crate::db::DbProject {
+        id: id.clone(),
+        name: validated_name.to_string(),
+        status: "active".to_string(),
+        milestone: None,
+        owner: None,
+        target_date: None,
+        tracker_path: Some(format!("Projects/{}", validated_name)),
+        updated_at: now,
+    };
+
+    db.upsert_project(&project).map_err(|e| e.to_string())?;
+
+    // Create workspace files
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let _ = crate::projects::write_project_json(workspace, &project, None, db);
+        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
+    }
+
+    Ok(id)
+}
+
+/// Update a single structured field on a project.
+#[tauri::command]
+pub fn update_project_field(
+    project_id: String,
+    field: String,
+    value: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.update_project_field(&project_id, &field, &value)
+        .map_err(|e| e.to_string())?;
+
+    // Regenerate workspace files
+    if let Ok(Some(project)) = db.get_project(&project_id) {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let json_path = crate::projects::project_dir(workspace, &project.name)
+                .join("dashboard.json");
+            let existing_json = if json_path.exists() {
+                crate::projects::read_project_json(&json_path)
+                    .ok()
+                    .map(|r| r.json)
+            } else {
+                None
+            };
+            let _ = crate::projects::write_project_json(
+                workspace,
+                &project,
+                existing_json.as_ref(),
+                db,
+            );
+            let _ = crate::projects::write_project_markdown(
+                workspace,
+                &project,
+                existing_json.as_ref(),
+                db,
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Update the notes field on a project.
+#[tauri::command]
+pub fn update_project_notes(
+    project_id: String,
+    notes: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let project = db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Project not found: {}", project_id))?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let json_path = crate::projects::project_dir(workspace, &project.name)
+            .join("dashboard.json");
+
+        let mut json = if json_path.exists() {
+            crate::projects::read_project_json(&json_path)
+                .map(|r| r.json)
+                .unwrap_or_else(|_| crate::projects::default_project_json(&project))
+        } else {
+            crate::projects::default_project_json(&project)
+        };
+
+        json.notes = if notes.is_empty() { None } else { Some(notes) };
+
+        crate::projects::write_project_json(workspace, &project, Some(&json), db)?;
+        crate::projects::write_project_markdown(workspace, &project, Some(&json), db)?;
+    }
+
+    Ok(())
+}
+
+/// Enrich a project via Claude Code websearch.
+#[tauri::command]
+pub async fn enrich_project(
+    project_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let workspace_path = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = guard.as_ref().ok_or("Config not loaded")?;
+        config.workspace_path.clone()
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    crate::projects::enrich_project(
+        std::path::Path::new(&workspace_path),
+        db,
+        &project_id,
+        &pty,
+    )
+}
+
+// ── I76: Database Backup & Rebuild ──────────────────────────────────
+
+#[tauri::command]
+pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    crate::db_backup::backup_database(db)
+}
+
+#[tauri::command]
+pub async fn rebuild_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(usize, usize, usize), String> {
+    let (workspace_path, user_domain) = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = guard.as_ref().ok_or("Config not loaded")?;
+        (config.workspace_path.clone(), config.user_domain.clone())
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    crate::db_backup::rebuild_from_filesystem(
+        std::path::Path::new(&workspace_path),
+        db,
+        user_domain.as_deref(),
+    )
 }
 
 /// Helper: create a default AccountJson from a DbAccount.
