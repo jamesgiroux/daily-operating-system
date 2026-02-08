@@ -377,7 +377,7 @@ function ReadinessSection({ checks }: { checks: ReadinessCheck[] }) {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldAlert className="size-4 text-amber-600" />
-          Readiness
+          Needs Attention
           <Badge variant="outline" className="ml-auto font-mono text-xs">
             {checks.length}
           </Badge>
