@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_actions_account ON actions(account_id);
 CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    ring INTEGER CHECK(ring BETWEEN 1 AND 4),
+    lifecycle TEXT,
     arr REAL,
     health TEXT CHECK(health IN ('green', 'yellow', 'red')),
     contract_start TEXT,
@@ -103,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);
 
 -- Profile-agnostic tracked entities (ADR-0045).
 -- CS = Account, PM = Project, Manager = Person.
--- Domain-specific fields (ring, ARR, health) stay in `accounts`.
+-- Domain-specific fields (lifecycle, ARR, health) stay in `accounts`.
 CREATE TABLE IF NOT EXISTS entities (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
