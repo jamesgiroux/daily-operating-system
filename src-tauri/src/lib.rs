@@ -219,6 +219,8 @@ pub fn run() {
             commands::install_demo_data,
             commands::populate_workspace,
             commands::set_user_profile,
+            commands::check_claude_status,
+            commands::install_inbox_sample,
             // Dev Tools
             commands::dev_apply_scenario,
             commands::dev_get_state,
