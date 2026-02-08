@@ -228,6 +228,10 @@ pub fn run() {
             // Dev Tools
             commands::dev_apply_scenario,
             commands::dev_get_state,
+            commands::dev_run_today_mechanical,
+            commands::dev_run_today_full,
+            commands::dev_run_week_mechanical,
+            commands::dev_run_week_full,
             // I51: People
             commands::get_people,
             commands::get_person_detail,

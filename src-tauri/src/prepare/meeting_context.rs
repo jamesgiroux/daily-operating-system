@@ -450,7 +450,7 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
         (r"(?i)(?:ARR|Annual Revenue|MRR)\s*[:\|]\s*\$?([\d,\.]+[KMB]?)", "arr"),
         (r"(?i)(?:Health\s*(?:Score)?)\s*[:\|]\s*(\w+)", "health"),
         (r"(?i)(?:Renewal\s*(?:Date)?)\s*[:\|]\s*([\d\-/]+)", "renewal"),
-        (r"(?i)(?:Ring|Tier)\s*[:\|]\s*(\d+)", "ring"),
+        (r"(?i)(?:Lifecycle|Stage)\s*[:\|]\s*(.+?)(?:\n|\|)", "lifecycle"),
         (r"(?i)(?:CSM|Account Manager)\s*[:\|]\s*(.+?)(?:\n|\|)", "csm"),
     ];
 
