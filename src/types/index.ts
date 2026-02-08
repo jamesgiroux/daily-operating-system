@@ -541,6 +541,66 @@ export interface AttendeeContext {
 }
 
 // =============================================================================
+// Accounts (I72)
+// =============================================================================
+
+export type AccountHealth = "green" | "yellow" | "red";
+
+/** Summary item for the accounts list page. */
+export interface AccountListItem {
+  id: string;
+  name: string;
+  ring?: number;
+  arr?: number;
+  health?: AccountHealth;
+  nps?: number;
+  csm?: string;
+  champion?: string;
+  renewalDate?: string;
+  openActionCount: number;
+  daysSinceLastMeeting?: number;
+}
+
+export interface CompanyOverview {
+  description?: string;
+  industry?: string;
+  size?: string;
+  headquarters?: string;
+  enrichedAt?: string;
+}
+
+export interface StrategicProgram {
+  name: string;
+  status: string;
+  notes?: string;
+}
+
+/** Full detail for the account detail page. */
+export interface AccountDetail extends AccountListItem {
+  contractStart?: string;
+  companyOverview?: CompanyOverview;
+  strategicPrograms: StrategicProgram[];
+  notes?: string;
+  recentMeetings: { id: string; title: string; startTime: string }[];
+  openActions: Action[];
+  linkedPeople: Person[];
+  signals?: {
+    meetingFrequency30d: number;
+    meetingFrequency90d: number;
+    lastMeeting?: string;
+    lastContact?: string;
+    temperature: string;
+    trend: string;
+  };
+  recentCaptures: {
+    id: string;
+    captureType: string;
+    content: string;
+    meetingTitle: string;
+  }[];
+}
+
+// =============================================================================
 // Feature Toggles (I39)
 // =============================================================================
 
