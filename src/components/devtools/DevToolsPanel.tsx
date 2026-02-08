@@ -11,6 +11,18 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
+import { Copy } from "lucide-react";
+
+/** Toast with a copy button so messages can be pasted into CLI. */
+function devToast(type: "success" | "error", message: string) {
+  toast[type](message, {
+    duration: type === "error" ? 8000 : 5000,
+    action: {
+      label: <Copy className="h-3 w-3" />,
+      onClick: () => navigator.clipboard.writeText(message),
+    },
+  });
+}
 
 interface DevState {
   isDebugBuild: boolean;
@@ -55,11 +67,11 @@ function DevToolsPanelInner() {
     setLoading(scenario);
     try {
       const result = await invoke<string>("dev_apply_scenario", { scenario });
-      toast.success(result);
+      devToast("success", result);
       // Brief delay to let the toast show before reload
       setTimeout(() => window.location.reload(), 500);
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Scenario failed");
+      devToast("error", typeof err === "string" ? err : "Scenario failed");
       setLoading(null);
     }
   }
@@ -68,10 +80,10 @@ function DevToolsPanelInner() {
     setLoading(key);
     try {
       const result = await invoke<string>(command);
-      toast.success(result);
+      devToast("success", result);
       await refreshState();
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Command failed");
+      devToast("error", typeof err === "string" ? err : "Command failed");
     } finally {
       setLoading(null);
     }

@@ -68,7 +68,22 @@ Active issues, known risks, assumptions, and dependencies.
     Research: I26 (web search for unknown meetings)
     Low: I3, I10
     I86 (first-party integrations), I87 (in-app notifications),
-    I88 (Weekly Wrapped), I89 (personality system), I90 (telemetry)
+    I88 (Weekly Wrapped), I89 (personality system), I90 (telemetry),
+    I92 (user-configurable metadata fields — ADR-0051)
+    ~~I93 (Week page Phase 1 — mechanical redesign — ADR-0052)~~ — Closed
+    I94 (Week page Phase 2 — AI enrichment — ADR-0052)
+    I95 (Week page Phase 3 — proactive suggestions — ADR-0052)
+    ~~I96 (Retire week planning wizard — ADR-0052)~~ — Closed
+    ~~I97 (Dashboard readiness strip — ADR-0053)~~ — Closed
+    ~~I98 (Flip action/email sidebar order — ADR-0053)~~ — Closed
+    ~~I99 (Drop greeting, promote focus — ADR-0053)~~ — Closed
+    ~~I100 (Increase ActionList maxVisible to 5 — ADR-0053)~~ — Closed
+    ~~I101 (Full-width summary layout — ADR-0053)~~ — Closed
+    ~~I102 (Shared ListRow component — ADR-0054)~~ — Closed
+    ~~I103 (AccountsPage redesign — ADR-0054)~~ — Closed
+    ~~I104 (PeoplePage redesign — ADR-0054)~~ — Closed
+    ~~I105 (PeoplePage shared component consolidation)~~ — Closed
+    ~~I106 (Surface temperature/trend in Person list type)~~ — Closed
 -->
 
 ### Open — Ship Blocker
@@ -91,7 +106,7 @@ Port `prepare_today.py`, `prepare_week.py`, `deliver_week.py`, `refresh_emails.p
 ADR-0046 replaces profile-activated extensions (ADR-0026) with three-layer architecture: Core + Entity Mode + Integrations. Entity mode (account-based, project-based, or both) replaces profile as the organizing principle. Integrations (MCP data sources) are orthogonal to entity mode. Two overlay types: **Kits** (entity-mode-specific: CS Kit, Sales Kit) contribute fields + templates + vocabulary; **Intelligence** (entity-mode-agnostic: Executive, ProDev) contribute analytical perspective via enrichment prompt fragments. Sub-issues: I50 (projects table), I52 (meeting-entity M2M), I53 (entity-mode config/onboarding), I54 (MCP integration framework), I55 (Executive Intelligence). Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven. Post-Sprint 4.
 
 **I40: CS Kit — account-mode fields, templates, and vocabulary** — Blocked by I27
-ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). Remaining CS-specific items: account fields (ARR, renewal dates, health scores, ring classification), dashboard templates, success plan templates, value driver categories, ring-based cadence thresholds. The existing `accounts` table IS the CS Kit's schema contribution. Kit also contributes enrichment prompt fragments for CS vocabulary. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
+ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). Remaining CS-specific items: account fields (ARR, renewal dates, health scores, lifecycle), dashboard templates, success plan templates, value driver categories, lifecycle-based cadence thresholds. The existing `accounts` table IS the CS Kit's schema contribution. Kit also contributes enrichment prompt fragments for CS vocabulary. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
 
 **I50: Projects overlay table and project entity support** — Blocked by I27
 ADR-0046 requires a `projects` overlay table parallel to `accounts`. Fields: id, name, status, milestone, owner, target_date. Bridge pattern: `upsert_project()` auto-mirrors to `entities` table. CRUD commands + Projects page (parallel to Accounts page).
@@ -131,6 +146,47 @@ Selectable voice/tone for celebrations, delight moments, and Weekly Wrapped. Per
 
 **I90: Product telemetry and analytics**
 Usage tracking, feature adoption, and workflow completion metrics for product development. Must reconcile with Principle 5 (local-first). Opt-in, privacy-first design. Distinct from I88 (personal metrics shown to user) — this is about product development insights. Needs: event taxonomy, storage (local aggregate vs. remote), consent model, dashboard or export.
+
+**I92: User-configurable metadata fields for entities** — Blocked by I27
+ADR-0051 (Proposed). Allow users to control which metadata fields appear on entity pages (accounts, projects, people). Three-layer approach: universal core fields (always present) + Kit-contributed fields (active with entity mode) + user overrides (toggle fields on/off, add custom text fields). Replaces current hardcoded CS-biased field set. Depends on Kit implementation (I40) for field schema mechanism.
+
+**I93: Week page Phase 1 — mechanical redesign** — ADR-0052 — **Closed**
+Replaced 5-column calendar grid with consumption-first weekly briefing. New Rust types (ReadinessCheck, DayShape, WeekAction), readiness checks computed from preps/actions/contacts, day density bars, expanded action summary with full items. New WeekPage.tsx layout: header → readiness → day shapes → actions → health. 356 tests.
+
+**I94: Week page Phase 2 — AI enrichment** — ADR-0052, blocked by I93
+Add AI-generated fields to `/week` enrichment: `weekNarrative` (2-3 sentence summary of week shape + key themes) and `topPriority` (single highest-impact item with reasoning). Extend the Claude `/week` enrichment prompt to produce these. Fault-tolerant per ADR-0042 — mechanical data renders fine without narrative.
+
+**I95: Week page Phase 3 — proactive suggestions and time blocking** — ADR-0052, blocked by I94
+Proactive intelligence: draft agenda request messages for meetings missing agendas, pre-fill missing preps, suggest specific tasks for available time blocks. Time blocking proactivity setting in config: `timeBlockMode: "suggestions" | "draft_blocks" | "auto_block"`. Only "suggestions" ships initially; higher levels gated by feature toggles (ADR-0039). "Auto-block" requires Google Calendar write scope (future).
+
+**I96: Retire week planning wizard** — ADR-0052 — **Closed**
+Deleted WeeklyPlanning/ components (4 files), useWeekPlanning.ts hook, WeekPlanningState + FocusBlock types (Rust + TS), 5 wizard Tauri commands, week_planning_state from AppState, week-data-ready event. Shipped with I93.
+
+**I97: Dashboard readiness strip — replace StatsRow** — ADR-0053 — **Closed**
+New `ReadinessStrip.tsx` replaces `StatsRow.tsx`. Four contextual signal cards (prep coverage, agendas needed, overdue actions, next meeting) computed from existing `DashboardData`. `StatsRow.tsx` deleted, `DayStats` type retained.
+
+**I98: Flip ActionList above EmailList in dashboard sidebar** — ADR-0053 — **Closed**
+ActionList renders above EmailList in `Dashboard.tsx` right sidebar. Actions are user-owned obligations with higher visual priority.
+
+**I99: Drop greeting, promote Focus in dashboard overview** — ADR-0053 — **Closed**
+Removed `getTimeBasedGreeting()` and greeting text. Focus promoted from subtle hover-link to a callout card with `bg-primary/5` background and border.
+
+**I100: Increase ActionList maxVisible to 5** — ADR-0053 — **Closed**
+`maxVisible` default 3 → 5 in `ActionList.tsx`.
+
+**I101: Full-width summary layout** — ADR-0053 — **Closed**
+Overview grid changed from `lg:grid-cols-2` to stacked `space-y-4`. Summary card now full-width. DashboardSkeleton updated to match.
+
+~~**I102: Shared ListRow component — flat row pattern** — ADR-0054~~ — Closed. `src/components/ui/list-row.tsx`: `ListRow` + `ListColumn` primitives. Signal dot, name, badges, subtitle, right-aligned columns. ~70 LOC.
+
+~~**I103: AccountsPage redesign — signal-first layout** — ADR-0054~~ — Closed. Flat rows with health dot (sage/gold/peach), monospace ARR, stale-day warning (peach >14d). Card + avatar + StatusBadge removed.
+
+~~**I104: PeoplePage redesign — temperature and trend indicators** — ADR-0054~~ — Closed. Temperature dot (sage/gold/muted/peach), trend arrows, sort by temperature desc then last-seen desc. SearchInput + TabFilter shared components. Unknown tab added.
+
+~~**I105: PeoplePage — shared component consolidation**~~ — Closed. Replaced hand-rolled search input and tab filter with SearchInput and TabFilter components. Added Unknown tab.
+Replace PeoplePage's hand-built search input and tab pills with shared `SearchInput` and `TabFilter` components (already used by AccountsPage). Add "Unknown" tab option to surface people with `relationship="unknown"` who currently only appear on "All". DRY fix — no design change, just component reuse.
+
+~~**I106: Surface temperature and trend in Person list type**~~ — Closed. `PersonListItem` struct with batch `get_people_with_signals()` query (single SQL with LEFT JOIN subqueries instead of 3N individual queries). `PersonListItem` TS type extends `Person` with `temperature` + `trend`.
 
 **I26: Web search for unknown external meetings**
 When a meeting involves people/companies not in the workspace, prep is thin — violates P2 (Prepared, Not Empty). ADR-0022 specifies proactive research. Pattern exists: I74 does websearch for known accounts via `enrich_account()`. Extend to unknown meeting attendees: detect unrecognized domains in calendar events, research company + attendee context, inject into prep. Not blocked by I27 — can use existing `enrich_preps()` pipeline with a web search step.
