@@ -1428,6 +1428,7 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         raw_markdown: Some(content),
         stakeholder_signals: None,
         attendee_context: None,
+        proposed_agenda: None,
     })
 }
 

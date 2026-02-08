@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { FullMeetingPrep, Stakeholder, StakeholderSignals, ActionWithContext, SourceReference } from "@/types";
+import type { FullMeetingPrep, Stakeholder, StakeholderSignals, ActionWithContext, SourceReference, AttendeeContext, AgendaItem } from "@/types";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
@@ -155,6 +155,47 @@ export default function MeetingDetailPage() {
             </Card>
           ) : (
             <div className="space-y-6">
+              {/* Proposed Agenda (I80) — action layer, top of page */}
+              {data.proposedAgenda && data.proposedAgenda.length > 0 && (
+                <Card className="border-l-4 border-l-primary">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Target className="size-4 text-primary" />
+                      Proposed Agenda
+                      <CopyButton text={formatProposedAgenda(data.proposedAgenda)} label="agenda" className="ml-auto" />
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ol className="space-y-2">
+                      {data.proposedAgenda.map((item, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm">
+                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {i + 1}
+                          </span>
+                          <div className="flex-1">
+                            <p className="font-medium">{item.topic}</p>
+                            {item.why && (
+                              <p className="text-muted-foreground text-xs mt-0.5">{item.why}</p>
+                            )}
+                          </div>
+                          {item.source && (
+                            <span className={cn(
+                              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                              item.source === "risk" && "bg-destructive/10 text-destructive",
+                              item.source === "question" && "bg-muted text-muted-foreground",
+                              item.source === "open_item" && "bg-primary/10 text-primary",
+                              item.source === "talking_point" && "bg-success/10 text-success",
+                            )}>
+                              {item.source === "talking_point" ? "talking point" : item.source === "open_item" ? "action" : item.source}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Quick Context - metrics table */}
               {data.quickContext && data.quickContext.length > 0 && (
                 <Card className="border-l-4 border-l-primary">
@@ -201,25 +242,11 @@ export default function MeetingDetailPage() {
                 </Card>
               )}
 
-              {/* Attendees */}
-              {data.attendees && data.attendees.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Users className="size-4" />
-                      Key Attendees
-                      <CopyButton text={formatAttendees(data.attendees)} label="attendees" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {data.attendees.map((attendee, i) => (
-                        <StakeholderRow key={i} stakeholder={attendee} />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {/* People in the Room (I81) */}
+              <PeopleInTheRoom
+                attendeeContext={data.attendeeContext}
+                attendees={data.attendees}
+              />
 
               {/* Since Last Meeting */}
               {data.sinceLast && data.sinceLast.length > 0 && (
@@ -522,23 +549,146 @@ function formatRelativeDate(iso: string): string {
   return `${months} month${months !== 1 ? "s" : ""} ago`;
 }
 
-function StakeholderRow({ stakeholder }: { stakeholder: Stakeholder }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-        {stakeholder.name.charAt(0)}
+function PeopleInTheRoom({
+  attendeeContext,
+  attendees,
+}: {
+  attendeeContext?: AttendeeContext[];
+  attendees?: Stakeholder[];
+}) {
+  // Prefer rich attendeeContext; fall back to flat attendees
+  if (attendeeContext && attendeeContext.length > 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="size-4" />
+            People in the Room
+            <CopyButton text={formatAttendeeContext(attendeeContext)} label="people" className="ml-auto" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {attendeeContext.map((person, i) => (
+              <AttendeeRow key={i} person={person} />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Fallback to flat name/role/focus display
+  if (attendees && attendees.length > 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="size-4" />
+            Key Attendees
+            <CopyButton text={formatAttendees(attendees)} label="attendees" className="ml-auto" />
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {attendees.map((attendee, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  {attendee.name.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium">{attendee.name}</p>
+                  {attendee.role && (
+                    <p className="text-sm text-muted-foreground">{attendee.role}</p>
+                  )}
+                  {attendee.focus && (
+                    <p className="text-sm text-muted-foreground">{attendee.focus}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
+}
+
+function AttendeeRow({ person }: { person: AttendeeContext }) {
+  const tempColor = {
+    hot: "text-success",
+    warm: "text-primary",
+    cool: "text-muted-foreground",
+    cold: "text-destructive",
+  }[person.temperature ?? ""] ?? "text-muted-foreground";
+
+  const isNew = person.meetingCount === 0;
+  const isCold = person.temperature === "cold";
+  const lastSeenText = person.lastSeen ? formatRelativeDate(person.lastSeen) : undefined;
+
+  const inner = (
+    <div className={cn(
+      "flex items-start gap-3 rounded-md p-2 -mx-2",
+      person.personId && "hover:bg-muted/50 cursor-pointer",
+    )}>
+      <div className={cn(
+        "flex size-8 items-center justify-center rounded-full text-sm font-medium",
+        isCold ? "bg-destructive/10 text-destructive" :
+        isNew ? "bg-success/10 text-success" :
+        "bg-primary/10 text-primary",
+      )}>
+        {person.name.charAt(0)}
       </div>
-      <div>
-        <p className="font-medium">{stakeholder.name}</p>
-        {stakeholder.role && (
-          <p className="text-sm text-muted-foreground">{stakeholder.role}</p>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="font-medium">{person.name}</p>
+          {person.temperature && (
+            <span className={cn("text-xs font-medium capitalize", tempColor)}>
+              {person.temperature}
+            </span>
+          )}
+          {isNew && (
+            <span className="text-xs font-medium text-success">New contact</span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+          {person.role && (
+            <p className="text-sm text-muted-foreground">{person.role}</p>
+          )}
+          {person.organization && (
+            <p className="text-sm text-muted-foreground">{person.organization}</p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+          {person.meetingCount != null && person.meetingCount > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
+            </span>
+          )}
+          {lastSeenText && (
+            <span className={cn("text-xs", isCold ? "text-destructive" : "text-muted-foreground")}>
+              Last seen {lastSeenText}
+            </span>
+          )}
+        </div>
+        {isCold && (
+          <p className="mt-1 text-xs text-destructive">
+            Cold — hasn't been seen in 60+ days
+          </p>
         )}
-        {stakeholder.focus && (
-          <p className="text-sm text-muted-foreground">{stakeholder.focus}</p>
+        {person.notes && (
+          <p className="mt-1 text-xs text-muted-foreground italic">{person.notes}</p>
         )}
       </div>
     </div>
   );
+
+  if (person.personId) {
+    return <Link to="/people/$personId" params={{ personId: person.personId }}>{inner}</Link>;
+  }
+  return inner;
 }
 
 function ActionItem({ action }: { action: ActionWithContext }) {
@@ -626,6 +776,31 @@ function formatRelationshipContext(signals: StakeholderSignals): string {
   ].join("\n");
 }
 
+function formatProposedAgenda(items: AgendaItem[]): string {
+  return items
+    .map((a, i) => {
+      let line = `${i + 1}. ${a.topic}`;
+      if (a.why) line += ` — ${a.why}`;
+      return line;
+    })
+    .join("\n");
+}
+
+function formatAttendeeContext(people: AttendeeContext[]): string {
+  return people
+    .map((p) => {
+      const parts = [p.name];
+      if (p.role) parts.push(p.role);
+      if (p.organization) parts.push(p.organization);
+      const meta: string[] = [];
+      if (p.temperature) meta.push(p.temperature);
+      if (p.meetingCount != null) meta.push(`${p.meetingCount} meetings`);
+      if (meta.length > 0) parts.push(`(${meta.join(", ")})`);
+      return `- ${parts.join(" — ")}`;
+    })
+    .join("\n");
+}
+
 function formatAttendees(attendees: Stakeholder[]): string {
   return attendees
     .map((a) => {
@@ -666,7 +841,17 @@ function formatFullPrep(data: FullMeetingPrep): string {
     sections.push(`\n## Context\n${data.meetingContext}`);
   }
 
-  if (data.attendees && data.attendees.length > 0) {
+  if (data.proposedAgenda && data.proposedAgenda.length > 0) {
+    sections.push(`\n## Proposed Agenda\n${data.proposedAgenda.map((a, i) => {
+      let line = `${i + 1}. ${a.topic}`;
+      if (a.why) line += ` — ${a.why}`;
+      return line;
+    }).join("\n")}`);
+  }
+
+  if (data.attendeeContext && data.attendeeContext.length > 0) {
+    sections.push(`\n## People in the Room\n${formatAttendeeContext(data.attendeeContext)}`);
+  } else if (data.attendees && data.attendees.length > 0) {
     sections.push(`\n## Key Attendees\n${formatAttendees(data.attendees)}`);
   }
 
