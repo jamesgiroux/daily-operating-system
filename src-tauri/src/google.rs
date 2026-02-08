@@ -11,9 +11,12 @@ use std::time::Duration;
 use chrono::{Timelike, Utc};
 use tauri::{AppHandle, Emitter};
 
+use crate::db::DbPerson;
+use crate::people;
 use crate::pty::run_python_script;
 use crate::state::{google_token_path, AppState};
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
+use crate::util::{classify_relationship, name_from_email, org_from_email, person_id_from_email};
 use crate::workflow::deliver::{make_meeting_id, write_json};
 
 /// Run the Google OAuth flow via a Python script.
@@ -27,9 +30,19 @@ pub fn start_auth(workspace: &Path) -> Result<String, String> {
     let output = run_python_script(&script, workspace, 120)
         .map_err(|e| format!("Google auth failed: {}", e))?;
 
-    // Parse the JSON output from the script
-    let result: serde_json::Value = serde_json::from_str(&output.stdout)
-        .map_err(|e| format!("Failed to parse auth output: {}", e))?;
+    // The Python google-auth-oauthlib library prints auth URL and messages
+    // to stdout before our JSON result. Extract the last JSON line.
+    let result: serde_json::Value = output
+        .stdout
+        .lines()
+        .rev()
+        .find_map(|line| serde_json::from_str::<serde_json::Value>(line.trim()).ok())
+        .ok_or_else(|| {
+            format!(
+                "No valid JSON in auth output. stdout: {}",
+                output.stdout.chars().take(200).collect::<String>()
+            )
+        })?;
 
     match result.get("status").and_then(|s| s.as_str()) {
         Some("success") => {
@@ -177,9 +190,13 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     log::info!("Calendar poll: generated {} new preps", new_preps);
                 }
 
+                // Populate people from calendar attendees (I51)
+                populate_people_from_events(&events, &state, &workspace);
+
                 if let Ok(mut guard) = state.calendar_events.lock() {
                     *guard = events;
                 }
+
                 let _ = app_handle.emit("calendar-updated", ());
 
                 // Notify frontend about new preps
@@ -439,6 +456,106 @@ fn enrich_prep_from_db(
                     .insert("openItems".to_string(), serde_json::json!(items));
             }
         }
+    }
+}
+
+/// Populate people table from calendar event attendees (I51).
+///
+/// For each event, for each attendee email:
+/// - Skip self (match against user's Google email)
+/// - Skip all-hands (>50 attendees)
+/// - Classify internal/external using user_domain config
+/// - Upsert into people table (idempotent)
+/// - Write People/{name}/person.json + person.md if new
+/// - Auto-link to entity if meeting has an account field
+fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) {
+    // Acquire config/auth locks first (short-lived), then DB lock
+    let self_email = state
+        .google_auth
+        .lock()
+        .ok()
+        .and_then(|g| match &*g {
+            GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
+            _ => None,
+        });
+
+    let user_domain = state
+        .config
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
+
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    let mut new_people = 0;
+
+    for event in events {
+        // Skip all-hands (>50 attendees)
+        if event.attendees.len() > 50 {
+            continue;
+        }
+
+        for email in &event.attendees {
+            let email_lower = email.to_lowercase();
+
+            // Skip self
+            if self_email.as_deref() == Some(&email_lower) {
+                continue;
+            }
+
+            // Check if person already exists in DB
+            let existing = db.get_person_by_email(&email_lower).ok().flatten();
+            if existing.is_some() {
+                // Person already tracked — auto-link to entity if applicable
+                if let (Some(ref account), Some(ref person)) = (&event.account, &existing) {
+                    let _ = db.link_person_to_entity(&person.id, account, "associated");
+                }
+                continue;
+            }
+
+            // New person — create
+            let id = person_id_from_email(&email_lower);
+            let name = name_from_email(&email_lower);
+            let org = org_from_email(&email_lower);
+            let relationship = classify_relationship(&email_lower, user_domain.as_deref());
+
+            let person = DbPerson {
+                id: id.clone(),
+                email: email_lower,
+                name,
+                organization: Some(org),
+                role: None,
+                relationship,
+                notes: None,
+                tracker_path: None,
+                last_seen: Some(event.start.to_rfc3339()),
+                first_seen: Some(Utc::now().to_rfc3339()),
+                meeting_count: 0,
+                updated_at: Utc::now().to_rfc3339(),
+            };
+
+            if db.upsert_person(&person).is_ok() {
+                let _ = people::write_person_json(workspace, &person, db);
+                let _ = people::write_person_markdown(workspace, &person, db);
+                new_people += 1;
+
+                // Auto-link to entity if meeting has an account
+                if let Some(ref account) = event.account {
+                    let _ = db.link_person_to_entity(&id, account, "associated");
+                }
+            }
+        }
+    }
+
+    if new_people > 0 {
+        log::info!("People: discovered {} new people from calendar", new_people);
     }
 }
 

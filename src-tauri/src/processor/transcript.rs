@@ -441,18 +441,7 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
     }
 }
 
-/// Convert a meeting title to a URL-safe slug.
-fn slugify(title: &str) -> String {
-    title
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>()
-        .split('-')
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
-}
+use crate::util::slugify;
 
 /// Title-case and hyphenate account name for directory routing.
 fn sanitize_account_dir(name: &str) -> String {

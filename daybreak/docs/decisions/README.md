@@ -38,7 +38,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0015](0015-defer-inbox-to-phase-2.md) | Defer inbox processing to Phase 2 | Superseded by [0036](0036-inbox-processing-in-phase-1.md) |
 | [0016](0016-defer-post-meeting-to-phase-3.md) | Defer post-meeting capture to Phase 3 | Superseded by [0037](0037-post-meeting-capture-in-phase-1.md) |
 | [0017](0017-pure-rust-archive.md) | Pure Rust archive, no three-phase | Accepted |
-| [0018](0018-hybrid-storage-markdown-sqlite.md) | Hybrid storage: Markdown + SQLite | Accepted |
+| [0018](0018-hybrid-storage-markdown-sqlite.md) | Hybrid storage: Markdown + SQLite | Superseded by [0048](0048-three-tier-data-model.md) |
 | [0019](0019-reference-approach-for-directives.md) | Reference approach for directives | Accepted |
 | [0020](0020-profile-dependent-accounts.md) | Profile system — role-based configuration | Superseded by [0038](0038-cs-first-development.md) |
 | [0021](0021-multi-signal-meeting-classification.md) | Multi-signal meeting classification | Accepted |
@@ -67,6 +67,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0044](0044-meeting-scoped-transcript-intake.md) | Meeting-scoped transcript intake from dashboard | Accepted |
 | [0045](0045-entity-abstraction.md) | Profile-agnostic entity abstraction | Accepted |
 | [0046](0046-entity-mode-architecture.md) | Entity-mode architecture with orthogonal integrations | Accepted |
+| [0047](0047-entity-dashboard-architecture.md) | Entity dashboard architecture — two-file pattern with bidirectional sync | Accepted |
+| [0048](0048-three-tier-data-model.md) | Three-tier data model — filesystem, SQLite, app memory | Accepted |
 
 ---
 
