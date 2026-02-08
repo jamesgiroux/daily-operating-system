@@ -2261,6 +2261,7 @@ pub fn get_people(
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonDetailResult {
+    #[serde(flatten)]
     pub person: crate::db::DbPerson,
     pub signals: Option<crate::db::PersonSignals>,
     pub entities: Vec<EntitySummary>,
