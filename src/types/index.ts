@@ -215,7 +215,7 @@ export type AlertSeverity = "critical" | "warning" | "info";
 
 export interface HygieneAlert {
   account: string;
-  ring?: string;
+  lifecycle?: string;
   arr?: string;
   issue: string;
   severity: AlertSeverity;
@@ -559,7 +559,7 @@ export type AccountHealth = "green" | "yellow" | "red";
 export interface AccountListItem {
   id: string;
   name: string;
-  ring?: number;
+  lifecycle?: string;
   arr?: number;
   health?: AccountHealth;
   nps?: number;
