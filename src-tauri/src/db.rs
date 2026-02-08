@@ -50,7 +50,7 @@ pub struct DbAction {
 }
 
 /// A row from the `accounts` table.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbAccount {
     pub id: String,
@@ -62,6 +62,7 @@ pub struct DbAccount {
     pub contract_end: Option<String>,
     pub csm: Option<String>,
     pub champion: Option<String>,
+    pub nps: Option<i32>,
     pub tracker_path: Option<String>,
     pub updated_at: String,
 }
@@ -248,6 +249,11 @@ impl ActionDb {
         // Migration: add needs_decision flag to actions (I42 — Executive Intelligence)
         let _ = conn.execute_batch(
             "ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;",
+        );
+
+        // Migration: add nps column to accounts (I72 — Account Dashboards)
+        let _ = conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN nps INTEGER;",
         );
 
         // Migration: add 'decision' to captures.capture_type CHECK constraint.
@@ -692,8 +698,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, ring, arr, health, contract_start, contract_end,
-                csm, champion, tracker_path, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                csm, champion, nps, tracker_path, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 ring = excluded.ring,
@@ -703,6 +709,7 @@ impl ActionDb {
                 contract_end = excluded.contract_end,
                 csm = excluded.csm,
                 champion = excluded.champion,
+                nps = excluded.nps,
                 tracker_path = excluded.tracker_path,
                 updated_at = excluded.updated_at",
             params![
@@ -715,6 +722,7 @@ impl ActionDb {
                 account.contract_end,
                 account.csm,
                 account.champion,
+                account.nps,
                 account.tracker_path,
                 account.updated_at,
             ],
@@ -742,31 +750,109 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, ring, arr, health, contract_start, contract_end,
-                    csm, champion, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE id = ?1",
         )?;
 
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(DbAccount {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                ring: row.get(2)?,
-                arr: row.get(3)?,
-                health: row.get(4)?,
-                contract_start: row.get(5)?,
-                contract_end: row.get(6)?,
-                csm: row.get(7)?,
-                champion: row.get(8)?,
-                tracker_path: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id], Self::map_account_row)?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    /// Get an account by name (case-insensitive).
+    pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+                    csm, champion, nps, tracker_path, updated_at
+             FROM accounts
+             WHERE LOWER(name) = LOWER(?1)",
+        )?;
+
+        let mut rows = stmt.query_map(params![name], Self::map_account_row)?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all accounts, ordered by name.
+    pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, ring, arr, health, contract_start, contract_end,
+                    csm, champion, nps, tracker_path, updated_at
+             FROM accounts ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get meetings for an account, most recent first.
+    pub fn get_meetings_for_account(
+        &self,
+        account_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, meeting_type, start_time, end_time,
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id
+             FROM meetings_history
+             WHERE account_id = ?1
+             ORDER BY start_time DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![account_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Update a single whitelisted field on an account.
+    pub fn update_account_field(
+        &self,
+        id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let sql = match field {
+            "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
+            "ring" => "UPDATE accounts SET ring = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
+            "arr" => "UPDATE accounts SET arr = CAST(?1 AS REAL), updated_at = ?3 WHERE id = ?2",
+            "nps" => "UPDATE accounts SET nps = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
+            "csm" => "UPDATE accounts SET csm = ?1, updated_at = ?3 WHERE id = ?2",
+            "champion" => "UPDATE accounts SET champion = ?1, updated_at = ?3 WHERE id = ?2",
+            "contract_start" => {
+                "UPDATE accounts SET contract_start = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "contract_end" => {
+                "UPDATE accounts SET contract_end = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            _ => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("Field '{}' is not updatable", field),
+                )))
+            }
+        };
+        self.conn.execute(sql, params![value, id, now])?;
+        Ok(())
     }
 
     // =========================================================================
@@ -1361,7 +1447,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, ring, arr, health, contract_start, contract_end,
-                    csm, champion, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -1370,27 +1456,8 @@ impl ActionDb {
         )?;
 
         let days_param = format!("+{days_ahead}");
-        let rows = stmt.query_map(params![days_param], |row| {
-            Ok(DbAccount {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                ring: row.get(2)?,
-                arr: row.get(3)?,
-                health: row.get(4)?,
-                contract_start: row.get(5)?,
-                contract_end: row.get(6)?,
-                csm: row.get(7)?,
-                champion: row.get(8)?,
-                tracker_path: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-
-        let mut accounts = Vec::new();
-        for row in rows {
-            accounts.push(row?);
-        }
-        Ok(accounts)
+        let rows = stmt.query_map(params![days_param], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get accounts where `updated_at` is older than `stale_days`.
@@ -1400,34 +1467,15 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, ring, arr, health, contract_start, contract_end,
-                    csm, champion, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, updated_at
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
         )?;
 
         let days_param = format!("-{stale_days}");
-        let rows = stmt.query_map(params![days_param], |row| {
-            Ok(DbAccount {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                ring: row.get(2)?,
-                arr: row.get(3)?,
-                health: row.get(4)?,
-                contract_start: row.get(5)?,
-                contract_end: row.get(6)?,
-                csm: row.get(7)?,
-                champion: row.get(8)?,
-                tracker_path: row.get(9)?,
-                updated_at: row.get(10)?,
-            })
-        })?;
-
-        let mut accounts = Vec::new();
-        for row in rows {
-            accounts.push(row?);
-        }
-        Ok(accounts)
+        let rows = stmt.query_map(params![days_param], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Flag an action as needing a decision. Called by AI enrichment during
@@ -1831,6 +1879,24 @@ impl ActionDb {
         })
     }
 
+    /// Helper: map a row to `DbAccount`.
+    fn map_account_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAccount> {
+        Ok(DbAccount {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            ring: row.get(2)?,
+            arr: row.get(3)?,
+            health: row.get(4)?,
+            contract_start: row.get(5)?,
+            contract_end: row.get(6)?,
+            csm: row.get(7)?,
+            champion: row.get(8)?,
+            nps: row.get(9)?,
+            tracker_path: row.get(10)?,
+            updated_at: row.get(11)?,
+        })
+    }
+
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
     fn map_action_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAction> {
         Ok(DbAction {
@@ -2026,6 +2092,7 @@ mod tests {
             contract_end: Some("2026-01-01".to_string()),
             csm: Some("Alice".to_string()),
             champion: Some("Bob".to_string()),
+            nps: None,
             tracker_path: Some("Accounts/acme-corp".to_string()),
             updated_at: now,
         };
@@ -2348,6 +2415,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
@@ -2377,6 +2445,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
@@ -2473,6 +2542,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: Some("Accounts/beta-inc".to_string()),
             updated_at: "2025-06-01T00:00:00Z".to_string(),
         };
@@ -2702,6 +2772,7 @@ mod tests {
             ),
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
@@ -2718,6 +2789,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
@@ -2734,6 +2806,7 @@ mod tests {
             contract_end: Some("2020-01-01".to_string()),
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
@@ -2759,6 +2832,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
@@ -2775,6 +2849,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
@@ -2871,6 +2946,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
@@ -2997,6 +3073,7 @@ mod tests {
             contract_end: None,
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: Utc::now().to_rfc3339(),
         };
