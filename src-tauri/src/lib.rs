@@ -3,15 +3,19 @@ mod calendar_merge;
 mod capture;
 mod commands;
 mod db;
+mod db_backup;
 pub mod entity;
 mod error;
 pub mod intelligence;
 mod executor;
 mod google;
+pub mod google_api;
 mod json_loader;
+pub mod prepare;
 mod notification;
 mod parser;
 pub mod people;
+pub mod projects;
 mod processor;
 mod pty;
 mod scheduler;
@@ -233,6 +237,8 @@ pub fn run() {
             commands::unlink_person_entity,
             commands::get_people_for_entity,
             commands::get_meeting_attendees,
+            // I74: Account Enrichment
+            commands::enrich_account,
             // I72: Account Dashboards
             commands::get_accounts_list,
             commands::get_account_detail,
@@ -240,6 +246,16 @@ pub fn run() {
             commands::update_account_notes,
             commands::update_account_programs,
             commands::create_account,
+            // I50: Project Dashboards
+            commands::get_projects_list,
+            commands::get_project_detail,
+            commands::create_project,
+            commands::update_project_field,
+            commands::update_project_notes,
+            commands::enrich_project,
+            // I76: Database Backup & Rebuild
+            commands::backup_database,
+            commands::rebuild_database,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

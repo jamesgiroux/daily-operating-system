@@ -132,7 +132,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
         // Check if capture is enabled
-        let config = state.config.lock().ok().and_then(|g| g.clone());
+        let config = state.config.read().ok().and_then(|g| g.clone());
         let enabled = config
             .as_ref()
             .map(|c| c.post_meeting_capture.enabled)
@@ -153,7 +153,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
         // Get current events
         let current_events = state
             .calendar_events
-            .lock()
+            .read()
             .map(|guard| guard.clone())
             .unwrap_or_default();
 
