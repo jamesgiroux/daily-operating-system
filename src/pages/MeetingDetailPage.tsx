@@ -38,7 +38,7 @@ export default function MeetingDetailPage() {
   const [data, setData] = useState<FullMeetingPrep | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showRaw, setShowRaw] = useState(false);
+
 
   useEffect(() => {
     async function loadPrep() {
@@ -133,28 +133,12 @@ export default function MeetingDetailPage() {
             )}
           </div>
 
-          {/* Toggle raw markdown + Copy All */}
-          <div className="mb-6 flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowRaw(!showRaw)}
-            >
-              {showRaw ? "Show Formatted" : "Show Raw Markdown"}
-            </Button>
+          {/* Copy All */}
+          <div className="mb-6">
             <CopyAllButton data={data} />
           </div>
 
-          {showRaw && data.rawMarkdown ? (
-            <Card>
-              <CardContent className="pt-6">
-                <pre className="whitespace-pre-wrap text-sm font-mono">
-                  {data.rawMarkdown}
-                </pre>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-6">
+          <div className="space-y-6">
               {/* Proposed Agenda (I80) — action layer, top of page */}
               {data.proposedAgenda && data.proposedAgenda.length > 0 && (
                 <Card className="border-l-4 border-l-primary">
@@ -449,7 +433,6 @@ export default function MeetingDetailPage() {
                 </Card>
               )}
             </div>
-          )}
         </div>
       </ScrollArea>
     </main>

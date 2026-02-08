@@ -160,6 +160,26 @@ pub struct PersonSignals {
     pub trend: String,
 }
 
+/// Person with pre-computed signals for list pages (I106).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonListItem {
+    pub id: String,
+    pub email: String,
+    pub name: String,
+    pub organization: Option<String>,
+    pub role: Option<String>,
+    pub relationship: String,
+    pub notes: Option<String>,
+    pub tracker_path: Option<String>,
+    pub last_seen: Option<String>,
+    pub first_seen: Option<String>,
+    pub meeting_count: i32,
+    pub updated_at: String,
+    pub temperature: String,
+    pub trend: String,
+}
+
 /// A row from the `projects` table (I50).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -894,6 +914,39 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Get upcoming (future) meetings for an account, soonest first.
+    pub fn get_upcoming_meetings_for_account(
+        &self,
+        account_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, meeting_type, start_time, end_time,
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id
+             FROM meetings_history
+             WHERE account_id = ?1 AND start_time >= datetime('now')
+             ORDER BY start_time ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![account_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Update a single whitelisted field on an account.
     pub fn update_account_field(
         &self,
@@ -1426,6 +1479,39 @@ impl ActionDb {
             meetings.push(row?);
         }
         Ok(meetings)
+    }
+
+    /// Look up a single meeting by its ID.
+    pub fn get_meeting_by_id(&self, id: &str) -> Result<Option<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, meeting_type, start_time, end_time,
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id
+             FROM meetings_history
+             WHERE id = ?1",
+        )?;
+
+        let mut rows = stmt.query_map(params![id], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+
+        match rows.next() {
+            Some(Ok(meeting)) => Ok(Some(meeting)),
+            Some(Err(e)) => Err(DbError::Sqlite(e)),
+            None => Ok(None),
+        }
     }
 
     // =========================================================================
@@ -2062,6 +2148,67 @@ impl ActionDb {
             }
         };
         Ok(people)
+    }
+
+    /// Get all people with pre-computed temperature/trend signals (I106).
+    /// Uses a single batch query with LEFT JOIN subqueries instead of 3N individual queries.
+    pub fn get_people_with_signals(
+        &self,
+        relationship: Option<&str>,
+    ) -> Result<Vec<PersonListItem>, DbError> {
+        let sql = "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
+                          p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at,
+                          COALESCE(cnt30.c, 0) AS count_30d,
+                          COALESCE(cnt90.c, 0) AS count_90d,
+                          last_m.max_start
+                   FROM people p
+                   LEFT JOIN (
+                       SELECT ma.person_id, COUNT(*) AS c FROM meeting_attendees ma
+                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       WHERE m.start_time >= date('now', '-30 days') GROUP BY ma.person_id
+                   ) cnt30 ON cnt30.person_id = p.id
+                   LEFT JOIN (
+                       SELECT ma.person_id, COUNT(*) AS c FROM meeting_attendees ma
+                       JOIN meetings_history m ON m.id = ma.meeting_id
+                       WHERE m.start_time >= date('now', '-90 days') GROUP BY ma.person_id
+                   ) cnt90 ON cnt90.person_id = p.id
+                   LEFT JOIN (
+                       SELECT ma.person_id, MAX(m.start_time) AS max_start FROM meeting_attendees ma
+                       JOIN meetings_history m ON m.id = ma.meeting_id GROUP BY ma.person_id
+                   ) last_m ON last_m.person_id = p.id
+                   WHERE (?1 IS NULL OR p.relationship = ?1)
+                   ORDER BY p.name";
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(params![relationship], |row| {
+            let count_30d: i32 = row.get(12)?;
+            let count_90d: i32 = row.get(13)?;
+            let last_meeting: Option<String> = row.get(14)?;
+
+            let temperature = match &last_meeting {
+                Some(dt) => compute_temperature(dt),
+                None => "cold".to_string(),
+            };
+            let trend = compute_trend(count_30d, count_90d);
+
+            Ok(PersonListItem {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                name: row.get(2)?,
+                organization: row.get(3)?,
+                role: row.get(4)?,
+                relationship: row.get(5)?,
+                notes: row.get(6)?,
+                tracker_path: row.get(7)?,
+                last_seen: row.get(8)?,
+                first_seen: row.get(9)?,
+                meeting_count: row.get(10)?,
+                updated_at: row.get(11)?,
+                temperature,
+                trend,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get people linked to an entity (account/project).
