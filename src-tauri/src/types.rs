@@ -631,7 +631,7 @@ pub struct WeekActionSummary {
 #[serde(rename_all = "camelCase")]
 pub struct HygieneAlert {
     pub account: String,
-    pub ring: Option<String>,
+    pub lifecycle: Option<String>,
     pub arr: Option<String>,
     pub issue: String,
     pub severity: AlertSeverity,

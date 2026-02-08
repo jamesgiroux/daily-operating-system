@@ -3,7 +3,7 @@
 //! CS = Account, PM = Project, Manager = Person. The `entities` table
 //! provides a universal layer so core behaviors (last-contact tracking,
 //! capture association, action linking) work for any profile. CS-specific
-//! fields (ring, ARR, health) remain in the `accounts` table.
+//! fields (lifecycle, ARR, health) remain in the `accounts` table.
 
 use serde::{Deserialize, Serialize};
 

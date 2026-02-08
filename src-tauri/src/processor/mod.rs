@@ -7,6 +7,7 @@
 
 pub mod classifier;
 pub mod enrich;
+pub mod extract;
 pub mod hooks;
 pub mod metadata;
 pub mod router;
@@ -18,6 +19,7 @@ use chrono::Utc;
 
 use crate::db::{ActionDb, DbProcessingLog};
 use classifier::{classify_file, Classification};
+use extract::SupportedFormat;
 use router::{move_file, resolve_destination};
 
 /// Result of processing a single inbox file.
@@ -59,15 +61,26 @@ pub fn process_file(
         };
     }
 
-    // Read content for classification
-    let content = match std::fs::read_to_string(&file_path) {
+    // Detect format and extract text for classification
+    let format = extract::detect_format(&file_path);
+    if matches!(format, SupportedFormat::Unsupported) {
+        return ProcessingResult::Error {
+            message: format!(
+                "Unsupported file format: .{}",
+                file_path.extension().and_then(|e| e.to_str()).unwrap_or("unknown")
+            ),
+        };
+    }
+
+    let content = match extract::extract_text(&file_path) {
         Ok(c) => c,
         Err(e) => {
             return ProcessingResult::Error {
-                message: format!("Failed to read file: {}", e),
+                message: format!("Failed to extract text: {}", e),
             }
         }
     };
+    let is_non_md = !matches!(format, SupportedFormat::Markdown);
 
     // Classify
     let classification = classify_file(&file_path, &content);
@@ -88,6 +101,17 @@ pub fn process_file(
             match move_file(&file_path, &dest) {
                 Ok(route_result) => {
                     log::info!("Routed '{}' to '{}'", filename, route_result.destination.display());
+
+                    // Write companion .md for non-markdown files
+                    if is_non_md {
+                        let companion_path = extract::companion_md_path(&route_result.destination);
+                        let companion_content = extract::build_companion_md(filename, format, &content);
+                        if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                            log::warn!("Failed to write companion .md for '{}': {}", filename, e);
+                        } else {
+                            log::info!("Created companion .md at '{}'", companion_path.display());
+                        }
+                    }
 
                     // Extract actions if applicable
                     if matches!(classification, Classification::ActionItems { .. }) {
@@ -312,5 +336,126 @@ fn extract_and_sync_actions(
 
     if count > 0 {
         log::info!("Extracted {} actions from '{}'", count, source_filename);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_process_plaintext_file_routes_and_creates_companion() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create inbox and archive dirs
+        std::fs::create_dir_all(workspace.join("_inbox")).unwrap();
+        std::fs::create_dir_all(workspace.join("_archive")).unwrap();
+
+        // Write a .txt file with meeting-notes pattern
+        let filename = "acme-meeting-notes.txt";
+        std::fs::write(
+            workspace.join("_inbox").join(filename),
+            "Meeting with Acme about renewal.",
+        )
+        .unwrap();
+
+        let result = process_file(workspace, filename, None, "customer-success");
+
+        // Should be classified and routed
+        match &result {
+            ProcessingResult::Routed { classification, destination } => {
+                assert_eq!(classification, "meeting_notes");
+                // Companion .md should exist alongside the .txt
+                let dest_path = std::path::Path::new(destination);
+                let companion = dest_path.parent().unwrap().join("acme-meeting-notes.md");
+                assert!(companion.exists(), "Companion .md should exist at {}", companion.display());
+
+                let companion_content = std::fs::read_to_string(&companion).unwrap();
+                assert!(companion_content.contains("source: acme-meeting-notes.txt"));
+                assert!(companion_content.contains("format: plaintext"));
+                assert!(companion_content.contains("Meeting with Acme about renewal."));
+            }
+            other => panic!("Expected Routed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_process_md_file_no_companion() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        std::fs::create_dir_all(workspace.join("_inbox")).unwrap();
+        std::fs::create_dir_all(workspace.join("_archive")).unwrap();
+
+        let filename = "acme-meeting-notes.md";
+        std::fs::write(
+            workspace.join("_inbox").join(filename),
+            "# Meeting Notes\nContent here.",
+        )
+        .unwrap();
+
+        let result = process_file(workspace, filename, None, "customer-success");
+
+        match &result {
+            ProcessingResult::Routed { destination, .. } => {
+                // For .md files, no companion should be created
+                let dest_path = std::path::Path::new(destination);
+                let parent = dest_path.parent().unwrap();
+                // The only .md file in the dir should be the original
+                let md_files: Vec<_> = std::fs::read_dir(parent)
+                    .unwrap()
+                    .flatten()
+                    .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+                    .collect();
+                assert_eq!(md_files.len(), 1, "Only the original .md should exist (no companion)");
+            }
+            other => panic!("Expected Routed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_process_unsupported_format_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        std::fs::create_dir_all(workspace.join("_inbox")).unwrap();
+
+        let filename = "photo.png";
+        std::fs::write(
+            workspace.join("_inbox").join(filename),
+            &[0x89, 0x50, 0x4E, 0x47],
+        )
+        .unwrap();
+
+        let result = process_file(workspace, filename, None, "customer-success");
+        assert!(matches!(result, ProcessingResult::Error { .. }));
+    }
+
+    #[test]
+    fn test_process_csv_file_classified_by_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path();
+
+        std::fs::create_dir_all(workspace.join("_inbox")).unwrap();
+        std::fs::create_dir_all(workspace.join("_archive")).unwrap();
+
+        // CSV with action items in content — content-based classification
+        let filename = "tasks.csv";
+        let content = "# Tasks\n\n- [ ] Item one\n- [ ] Item two\n- [ ] Item three\n";
+        std::fs::write(workspace.join("_inbox").join(filename), content).unwrap();
+
+        let result = process_file(workspace, filename, None, "customer-success");
+
+        match &result {
+            ProcessingResult::Routed { classification, destination } => {
+                assert_eq!(classification, "action_items");
+                // Companion .md should exist
+                let dest_path = std::path::Path::new(destination);
+                let companion = dest_path.parent().unwrap().join("tasks.md");
+                assert!(companion.exists());
+            }
+            other => panic!("Expected Routed, got {:?}", other),
+        }
     }
 }

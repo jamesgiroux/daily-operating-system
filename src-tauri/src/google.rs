@@ -343,8 +343,8 @@ fn enrich_prep_from_db(
     // Quick context from account data
     if let Ok(Some(account)) = db.get_account(account_id) {
         let mut qc = serde_json::Map::new();
-        if let Some(ring) = account.ring {
-            qc.insert("Ring".to_string(), serde_json::json!(format!("R{}", ring)));
+        if let Some(ref lifecycle) = account.lifecycle {
+            qc.insert("Lifecycle".to_string(), serde_json::json!(lifecycle));
         }
         if let Some(arr) = account.arr {
             qc.insert("ARR".to_string(), serde_json::json!(format!("${:.0}k", arr / 1000.0)));
@@ -586,7 +586,7 @@ mod tests {
         let account = DbAccount {
             id: "acme".to_string(),
             name: "Acme Corp".to_string(),
-            ring: Some(2),
+            lifecycle: Some("ramping".to_string()),
             arr: Some(150_000.0),
             health: Some("green".to_string()),
             contract_start: None,
@@ -607,7 +607,7 @@ mod tests {
         enrich_prep_from_db(&mut prep, "acme", &db);
 
         let qc = prep.get("quickContext").expect("quickContext should exist");
-        assert_eq!(qc.get("Ring").unwrap(), "R2");
+        assert_eq!(qc.get("Lifecycle").unwrap(), "ramping");
         assert_eq!(qc.get("ARR").unwrap(), "$150k");
         assert_eq!(qc.get("Health").unwrap(), "green");
         assert_eq!(qc.get("Renewal").unwrap(), "2026-06-15");

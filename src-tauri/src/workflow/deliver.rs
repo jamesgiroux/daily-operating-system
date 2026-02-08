@@ -197,7 +197,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
     let mut at_a_glance: Vec<String> = Vec::new();
     if let Some(data) = account_data {
         for (key, label) in &[
-            ("ring", "Ring"),
+            ("lifecycle", "Lifecycle"),
             ("arr", "ARR"),
             ("renewal", "Renewal"),
             ("health", "Health"),
@@ -663,7 +663,7 @@ fn build_prep_json(
     if let Some(ctx) = ctx {
         if let Some(data) = ctx.account_data.as_ref().and_then(|v| v.as_object()) {
             let labels: &[(&str, &str)] = &[
-                ("ring", "Ring"),
+                ("lifecycle", "Lifecycle"),
                 ("arr", "ARR"),
                 ("renewal", "Renewal"),
                 ("health", "Health"),
