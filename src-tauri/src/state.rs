@@ -49,6 +49,22 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
+        // Sync people from workspace files (I51: catches external edits while app was closed)
+        if let (Some(ref db_ref), Ok(ref cfg)) = (&db, load_config()) {
+            let workspace = std::path::Path::new(&cfg.workspace_path);
+            if workspace.exists() {
+                match crate::people::sync_people_from_workspace(
+                    workspace,
+                    db_ref,
+                    cfg.user_domain.as_deref(),
+                ) {
+                    Ok(n) if n > 0 => log::info!("Startup: synced {} people from workspace", n),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("Startup: people sync failed: {}", e),
+                }
+            }
+        }
+
         Self {
             config: Mutex::new(config),
             workflow_status: Mutex::new(HashMap::new()),
@@ -183,6 +199,11 @@ pub fn create_or_update_config(
                 google: crate::types::GoogleConfig::default(),
                 post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
                 features: std::collections::HashMap::new(),
+                user_domain: None,
+                user_name: None,
+                user_company: None,
+                user_title: None,
+                user_focus: None,
             }
         }
     };

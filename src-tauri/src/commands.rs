@@ -339,6 +339,37 @@ pub fn get_meeting_prep(
                             }
                         }
                     }
+
+                    // Enrich attendees with person context (I51)
+                    if let Some(ref cal_id) = prep.calendar_event_id {
+                        if let Ok(events_guard) = state.calendar_events.lock() {
+                            if let Some(event) = events_guard.iter().find(|e| e.id == *cal_id) {
+                                let mut attendee_ctx = Vec::new();
+                                for email in &event.attendees {
+                                    if let Ok(Some(person)) = db.get_person_by_email(email) {
+                                        let signals = db.get_person_signals(&person.id).ok();
+                                        attendee_ctx.push(crate::types::AttendeeContext {
+                                            name: person.name,
+                                            email: Some(person.email),
+                                            role: person.role,
+                                            organization: person.organization,
+                                            relationship: Some(person.relationship),
+                                            meeting_count: Some(person.meeting_count),
+                                            last_seen: person.last_seen,
+                                            temperature: signals
+                                                .as_ref()
+                                                .map(|s| s.temperature.clone()),
+                                            notes: person.notes,
+                                            person_id: Some(person.id),
+                                        });
+                                    }
+                                }
+                                if !attendee_ctx.is_empty() {
+                                    prep.attendee_context = Some(attendee_ctx);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             MeetingPrepResult::Success { data: prep }
@@ -981,6 +1012,38 @@ pub fn set_schedule(
     })
 }
 
+/// Save user profile fields (name, company, title, focus, domain)
+#[tauri::command]
+pub fn set_user_profile(
+    name: Option<String>,
+    company: Option<String>,
+    title: Option<String>,
+    focus: Option<String>,
+    domain: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    crate::state::create_or_update_config(&state, |config| {
+        // Helper: trim, convert empty to None
+        fn clean(val: Option<String>) -> Option<String> {
+            val.and_then(|s| {
+                let trimmed = s.trim().to_string();
+                if trimmed.is_empty() { None } else { Some(trimmed) }
+            })
+        }
+
+        config.user_name = clean(name);
+        config.user_company = clean(company);
+        config.user_title = clean(title);
+        config.user_focus = clean(focus);
+        if let Some(d) = domain {
+            let trimmed = d.trim().to_lowercase();
+            config.user_domain = if trimmed.is_empty() { None } else { Some(trimmed) };
+        }
+    })?;
+
+    Ok("ok".to_string())
+}
+
 /// List available meeting prep files
 #[tauri::command]
 pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, String> {
@@ -1145,6 +1208,18 @@ pub async fn start_google_auth(
 
     // Emit event
     let _ = app_handle.emit("google-auth-changed", &new_status);
+
+    // Auto-extract domain from email (non-fatal, preserves manual overrides)
+    if let Some(at_pos) = email.find('@') {
+        let domain = email[at_pos + 1..].to_lowercase();
+        if !domain.is_empty() {
+            let _ = crate::state::create_or_update_config(&state, |config| {
+                if config.user_domain.is_none() {
+                    config.user_domain = Some(domain);
+                }
+            });
+        }
+    }
 
     Ok(new_status)
 }
@@ -1709,6 +1784,164 @@ pub fn set_feature_enabled(
     })
 }
 
+// =============================================================================
+// Onboarding: Demo Data
+// =============================================================================
+
+/// Install demo data into the user's workspace for the onboarding tour.
+///
+/// Writes date-patched JSON fixtures to `_today/data/` and seeds SQLite
+/// with mock accounts, actions, and meeting history. The demo data is
+/// replaced on the first real briefing run.
+#[tauri::command]
+pub fn install_demo_data(
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let workspace_path = state
+        .config
+        .lock()
+        .map_err(|_| "Config lock failed")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("No workspace configured")?;
+
+    let workspace = std::path::Path::new(&workspace_path);
+    crate::devtools::write_fixtures(workspace)?;
+
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    if let Some(db) = db_guard.as_ref() {
+        crate::devtools::seed_database(db)?;
+    }
+
+    Ok("Demo data installed".into())
+}
+
+// =============================================================================
+// Onboarding: Populate Workspace (I57)
+// =============================================================================
+
+/// Create account/project folders and save user domain during onboarding.
+///
+/// For each account: creates `Accounts/{name}/` and upserts a minimal DbAccount
+/// record (bridge pattern fires `ensure_entity_for_account` automatically).
+/// For each project: creates `Projects/{name}/` (filesystem only, no SQLite — I50).
+/// DB errors are non-fatal; folder creation is the primary value.
+#[tauri::command]
+pub fn populate_workspace(
+    accounts: Vec<String>,
+    projects: Vec<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    // 1. Get workspace path
+    let workspace_path = state
+        .config
+        .lock()
+        .map_err(|_| "Config lock failed")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("No workspace configured")?;
+
+    let workspace = std::path::Path::new(&workspace_path);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // 3. Process accounts
+    let mut account_count = 0;
+    for name in &accounts {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        // Create folder (idempotent)
+        let account_dir = workspace.join("Accounts").join(name);
+        if let Err(e) = std::fs::create_dir_all(&account_dir) {
+            log::warn!("Failed to create account dir '{}': {}", name, e);
+            continue;
+        }
+
+        // Upsert to SQLite (non-fatal)
+        let slug = crate::util::slugify(name);
+        let db_account = crate::db::DbAccount {
+            id: slug,
+            name: name.to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: Some(format!("Accounts/{}", name)),
+            updated_at: now.clone(),
+        };
+
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Err(e) = db.upsert_account(&db_account) {
+                    log::warn!("Failed to upsert account '{}': {}", name, e);
+                }
+            }
+        }
+
+        account_count += 1;
+    }
+
+    // 4. Process projects (filesystem only — I50 tracks projects table)
+    let mut project_count = 0;
+    for name in &projects {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+
+        let project_dir = workspace.join("Projects").join(name);
+        if let Err(e) = std::fs::create_dir_all(&project_dir) {
+            log::warn!("Failed to create project dir '{}': {}", name, e);
+            continue;
+        }
+
+        project_count += 1;
+    }
+
+    Ok(format!(
+        "Created {} accounts, {} projects",
+        account_count, project_count
+    ))
+}
+
+// =============================================================================
+// Dev Tools
+// =============================================================================
+
+/// Apply a dev scenario (reset, mock_full, mock_no_auth, mock_empty).
+///
+/// Returns an error in release builds. In debug builds, delegates to
+/// `devtools::apply_scenario` which orchestrates the scenario switch.
+#[tauri::command]
+pub fn dev_apply_scenario(
+    scenario: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::apply_scenario(&scenario, &state)
+}
+
+/// Get current dev state for the dev tools panel.
+///
+/// Returns an error in release builds. In debug builds, returns counts
+/// and status for config, database, today data, and Google auth.
+#[tauri::command]
+pub fn dev_get_state(
+    state: State<Arc<AppState>>,
+) -> Result<crate::devtools::DevState, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::get_dev_state(&state)
+}
+
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
 fn build_outcome_data(
     meeting_id: &str,
@@ -1814,4 +2047,208 @@ fn load_skip_today(today_dir: &std::path::Path) -> Vec<crate::intelligence::Skip
         .ok()
         .and_then(|s| serde_json::from_str::<Vec<crate::intelligence::SkipSignal>>(&s).ok())
         .unwrap_or_default()
+}
+
+// =============================================================================
+// People Commands (I51)
+// =============================================================================
+
+/// Get all people, optionally filtered by relationship.
+#[tauri::command]
+pub fn get_people(
+    relationship: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbPerson>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_people(relationship.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Person detail result including signals, linked entities, and recent meetings.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonDetailResult {
+    pub person: crate::db::DbPerson,
+    pub signals: Option<crate::db::PersonSignals>,
+    pub entities: Vec<EntitySummary>,
+    pub recent_meetings: Vec<MeetingSummary>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntitySummary {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingSummary {
+    pub id: String,
+    pub title: String,
+    pub start_time: String,
+}
+
+/// Get full detail for a person (person + signals + entities + recent meetings).
+#[tauri::command]
+pub fn get_person_detail(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<PersonDetailResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let person = db
+        .get_person(&person_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Person not found: {}", person_id))?;
+
+    let signals = db.get_person_signals(&person_id).ok();
+
+    let entities = db
+        .get_entities_for_person(&person_id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|e| EntitySummary {
+            id: e.id,
+            name: e.name,
+            entity_type: e.entity_type.as_str().to_string(),
+        })
+        .collect();
+
+    let recent_meetings = db
+        .get_person_meetings(&person_id, 10)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+        })
+        .collect();
+
+    Ok(PersonDetailResult {
+        person,
+        signals,
+        entities,
+        recent_meetings,
+    })
+}
+
+/// Search people by name, email, or organization.
+#[tauri::command]
+pub fn search_people(
+    query: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbPerson>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.search_people(&query, 50).map_err(|e| e.to_string())
+}
+
+/// Update a single field on a person (role, organization, notes, relationship).
+/// Also updates the person's workspace files.
+#[tauri::command]
+pub fn update_person(
+    person_id: String,
+    field: String,
+    value: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    db.update_person_field(&person_id, &field, &value)
+        .map_err(|e| e.to_string())?;
+
+    // Regenerate workspace files
+    if let Ok(Some(person)) = db.get_person(&person_id) {
+        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Link a person to an entity (account/project).
+/// Regenerates person.json so the link persists in the filesystem (ADR-0048).
+#[tauri::command]
+pub fn link_person_entity(
+    person_id: String,
+    entity_id: String,
+    relationship_type: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.link_person_to_entity(&person_id, &entity_id, &relationship_type)
+        .map_err(|e| e.to_string())?;
+
+    // Regenerate person.json so linked_entities persists in filesystem (ADR-0048)
+    if let Ok(Some(person)) = db.get_person(&person_id) {
+        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Unlink a person from an entity.
+/// Regenerates person.json so the removal persists in the filesystem (ADR-0048).
+#[tauri::command]
+pub fn unlink_person_entity(
+    person_id: String,
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.unlink_person_from_entity(&person_id, &entity_id)
+        .map_err(|e| e.to_string())?;
+
+    // Regenerate person.json so linked_entities reflects removal (ADR-0048)
+    if let Ok(Some(person)) = db.get_person(&person_id) {
+        let config = state.config.lock().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let workspace = Path::new(&config.workspace_path);
+            let _ = crate::people::write_person_json(workspace, &person, db);
+            let _ = crate::people::write_person_markdown(workspace, &person, db);
+        }
+    }
+
+    Ok(())
+}
+
+/// Get people linked to an entity.
+#[tauri::command]
+pub fn get_people_for_entity(
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbPerson>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_people_for_entity(&entity_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Get people who attended a specific meeting.
+#[tauri::command]
+pub fn get_meeting_attendees(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbPerson>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_meeting_attendees(&meeting_id)
+        .map_err(|e| e.to_string())
 }

@@ -13,6 +13,7 @@ use tokio::sync::mpsc;
 use tokio::time::sleep;
 
 use crate::parser::count_inbox;
+use crate::people;
 use crate::state::AppState;
 
 /// Debounce window for file system events
@@ -22,6 +23,13 @@ const DEBOUNCE_MS: u64 = 500;
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct InboxUpdate {
     pub count: usize,
+}
+
+/// Distinguishes which watched directory fired
+#[derive(Debug, Clone)]
+enum WatchSource {
+    Inbox,
+    People(PathBuf),
 }
 
 /// Start watching the _inbox/ directory for changes.
@@ -46,6 +54,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         };
 
         let inbox_dir = workspace.join("_inbox");
+        let people_dir = workspace.join("People");
 
         // Create _inbox/ if it doesn't exist
         if !inbox_dir.exists() {
@@ -61,10 +70,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let _ = app_handle.emit("inbox-updated", InboxUpdate { count: initial_count });
 
         // Channel for forwarding notify events to the async debouncer
-        let (fs_tx, mut fs_rx) = mpsc::channel::<()>(64);
+        let (fs_tx, mut fs_rx) = mpsc::channel::<WatchSource>(64);
 
         // Create the filesystem watcher
         let tx = fs_tx.clone();
+        let inbox_dir_clone = inbox_dir.clone();
+        let people_dir_clone = people_dir.clone();
         let mut watcher = match RecommendedWatcher::new(
             move |result: Result<Event, notify::Error>| {
                 if let Ok(event) = result {
@@ -73,8 +84,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         event.kind,
                         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
                     ) {
-                        // Filter out hidden/temp files, accept all others.
-                        // The inbox pipeline handles .md, .txt, .vtt, .srt, and more.
+                        // Filter out hidden/temp files
                         let dominated_by_relevant = event.paths.is_empty()
                             || event.paths.iter().any(|p| {
                                 p.file_name()
@@ -83,8 +93,33 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .unwrap_or(false)
                             });
 
-                        if dominated_by_relevant {
-                            let _ = tx.try_send(());
+                        if !dominated_by_relevant {
+                            return;
+                        }
+
+                        // Determine source based on path
+                        let is_people = event.paths.iter().any(|p| {
+                            p.starts_with(&people_dir_clone)
+                                && p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|n| n == "person.json")
+                        });
+
+                        if is_people {
+                            // Send the changed person.json path
+                            if let Some(path) = event.paths.iter().find(|p| {
+                                p.file_name()
+                                    .and_then(|n| n.to_str())
+                                    .is_some_and(|n| n == "person.json")
+                            }) {
+                                let _ = tx.try_send(WatchSource::People(path.clone()));
+                            }
+                        } else if event
+                            .paths
+                            .iter()
+                            .any(|p| p.starts_with(&inbox_dir_clone))
+                        {
+                            let _ = tx.try_send(WatchSource::Inbox);
                         }
                     }
                 }
@@ -103,28 +138,125 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             log::error!("Watcher: failed to watch {}: {}", inbox_dir.display(), e);
             return;
         }
-
         log::info!("Watcher: watching {} for changes", inbox_dir.display());
 
+        // Start watching People/ (recursive to catch People/*/person.json)
+        if people_dir.exists() {
+            if let Err(e) = watcher.watch(&people_dir, RecursiveMode::Recursive) {
+                log::warn!(
+                    "Watcher: failed to watch People/: {}. People sync disabled.",
+                    e
+                );
+            } else {
+                log::info!("Watcher: watching {} for changes", people_dir.display());
+            }
+        }
+
         // Debounce loop: coalesce rapid events into a single update
+        let mut inbox_dirty = false;
+        let mut people_dirty: Vec<PathBuf> = Vec::new();
         loop {
             // Wait for an event
-            if fs_rx.recv().await.is_none() {
-                break; // Channel closed, watcher dropped
+            let source = match fs_rx.recv().await {
+                Some(s) => s,
+                None => break, // Channel closed, watcher dropped
+            };
+
+            match source {
+                WatchSource::Inbox => inbox_dirty = true,
+                WatchSource::People(p) => {
+                    if !people_dirty.contains(&p) {
+                        people_dirty.push(p);
+                    }
+                }
             }
 
             // Debounce: drain any events that arrive within the window
             sleep(Duration::from_millis(DEBOUNCE_MS)).await;
-            while fs_rx.try_recv().is_ok() {}
+            while let Ok(src) = fs_rx.try_recv() {
+                match src {
+                    WatchSource::Inbox => inbox_dirty = true,
+                    WatchSource::People(p) => {
+                        if !people_dirty.contains(&p) {
+                            people_dirty.push(p);
+                        }
+                    }
+                }
+            }
 
-            // Count current inbox files and emit
-            let count = count_inbox(&workspace);
-            log::debug!("Watcher: inbox changed, count={}", count);
-            let _ = app_handle.emit("inbox-updated", InboxUpdate { count });
+            // Process inbox changes
+            if inbox_dirty {
+                let count = count_inbox(&workspace);
+                log::debug!("Watcher: inbox changed, count={}", count);
+                let _ = app_handle.emit("inbox-updated", InboxUpdate { count });
+                inbox_dirty = false;
+            }
+
+            // Process people changes (I51: external person.json edits)
+            if !people_dirty.is_empty() {
+                handle_people_changes(&people_dirty, &state, &workspace);
+                let _ = app_handle.emit("people-updated", ());
+                people_dirty.clear();
+            }
         }
 
         log::info!("Watcher: stopped");
     });
+}
+
+/// Handle detected changes to People/*/person.json files (I51).
+///
+/// Reads the changed JSON files, syncs to SQLite, regenerates person.md.
+fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    let user_domain = state
+        .config
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
+
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+
+        match people::read_person_json(path) {
+            Ok(people::ReadPersonResult { mut person, linked_entities }) => {
+                // Classify relationship if unknown
+                if person.relationship == "unknown" {
+                    person.relationship = crate::util::classify_relationship(
+                        &person.email,
+                        user_domain.as_deref(),
+                    );
+                }
+
+                if db.upsert_person(&person).is_ok() {
+                    // Restore entity links from JSON (ADR-0048)
+                    for entity_id in &linked_entities {
+                        let _ = db.link_person_to_entity(
+                            &person.id, entity_id, "associated",
+                        );
+                    }
+                    let _ = people::write_person_markdown(workspace, &person, db);
+                    log::info!(
+                        "Watcher: synced external edit to {}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!("Watcher: failed to read {}: {}", path.display(), e);
+            }
+        }
+    }
 }
 
 /// Read workspace path from the config state
