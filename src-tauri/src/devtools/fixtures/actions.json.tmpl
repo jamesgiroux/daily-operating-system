@@ -1,0 +1,70 @@
+{
+  "date": "{{DATE}}",
+  "summary": {
+    "overdue": 2,
+    "dueToday": 1,
+    "dueThisWeek": 2
+  },
+  "actions": [
+    {
+      "id": "act-sow-acme",
+      "title": "Send updated SOW to Acme legal team",
+      "account": "Acme Corp",
+      "priority": "P1",
+      "status": "pending",
+      "dueDate": "{{YESTERDAY}}",
+      "isOverdue": true,
+      "daysOverdue": 1,
+      "context": "Legal team needs revised pricing by EOW",
+      "source": "Email from Sarah Chen"
+    },
+    {
+      "id": "act-qbr-deck-globex",
+      "title": "Review Globex QBR deck with AE",
+      "account": "Globex Industries",
+      "priority": "P1",
+      "status": "pending",
+      "dueDate": "{{DATE}}",
+      "isOverdue": false,
+      "daysOverdue": null,
+      "context": "QBR at 2 PM today — deck needs final review",
+      "source": "Weekly planning"
+    },
+    {
+      "id": "act-kickoff-initech",
+      "title": "Schedule Phase 2 kickoff with Initech",
+      "account": "Initech",
+      "priority": "P2",
+      "status": "pending",
+      "dueDate": "{{TOMORROW}}",
+      "isOverdue": false,
+      "daysOverdue": null,
+      "context": "Phase 1 wrapped last week, need to keep momentum",
+      "source": "Post-meeting capture"
+    },
+    {
+      "id": "act-nps-acme",
+      "title": "Follow up on NPS survey responses",
+      "account": "Acme Corp",
+      "priority": "P2",
+      "status": "pending",
+      "dueDate": "{{LAST_WEEK}}",
+      "isOverdue": true,
+      "daysOverdue": 7,
+      "context": "3 detractors identified in latest survey",
+      "source": "Gainsight alert"
+    },
+    {
+      "id": "act-quarterly-summary",
+      "title": "Draft quarterly impact summary",
+      "account": null,
+      "priority": "P3",
+      "status": "pending",
+      "dueDate": "{{NEXT_WEEK}}",
+      "isOverdue": false,
+      "daysOverdue": null,
+      "context": "Leadership wants Q1 impact report",
+      "source": "1:1 with Sarah"
+    }
+  ]
+}
