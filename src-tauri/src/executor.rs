@@ -303,9 +303,14 @@ impl Executor {
         let to_enrich = &needs_enrichment[..needs_enrichment.len().min(MAX_ENRICHMENTS_PER_BATCH)];
         let mut enriched_count = 0;
 
+        // Build user context for AI prompts
+        let user_ctx = self.state.config.lock().ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or_default();
+
         for filename in to_enrich {
             log::info!("AI enriching '{}'", filename);
-            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile);
+            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile, Some(&user_ctx));
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
                     log::info!("Enriched '{}' → routed as {}", filename, classification);
@@ -564,12 +569,18 @@ impl Executor {
             execution_id: execution_id.to_string(),
         });
 
+        // Build user context for AI enrichment prompts
+        let user_ctx = self.state.config.lock().ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+
         // AI: Enrich emails (high-priority only, feature-gated I39)
         if email_enabled {
             if let Err(e) = crate::workflow::deliver::enrich_emails(
                 &data_dir,
                 &self.pty_manager,
                 &workspace,
+                &user_ctx,
             ) {
                 log::warn!("Email enrichment failed (non-fatal): {}", e);
             }
@@ -593,6 +604,7 @@ impl Executor {
             &data_dir,
             &self.pty_manager,
             &workspace,
+            &user_ctx,
         ) {
             log::warn!("Briefing narrative failed (non-fatal): {}", e);
         }
@@ -786,10 +798,14 @@ impl Executor {
         log::info!("Email refresh: emails.json written ({} high)", high_priority.len());
 
         // Step 4: AI enrichment (fault-tolerant)
+        let user_ctx = self.state.config.lock().ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
         if let Err(e) = crate::workflow::deliver::enrich_emails(
             &data_dir,
             &self.pty_manager,
             workspace,
+            &user_ctx,
         ) {
             log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
         }

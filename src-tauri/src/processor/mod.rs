@@ -47,8 +47,11 @@ pub fn process_file(
     db: Option<&ActionDb>,
     profile: &str,
 ) -> ProcessingResult {
-    let inbox_dir = workspace.join("_inbox");
-    let file_path = inbox_dir.join(filename);
+    // I60: validate path stays within inbox
+    let file_path = match crate::util::validate_inbox_path(workspace, filename) {
+        Ok(p) => p,
+        Err(e) => return ProcessingResult::Error { message: e },
+    };
 
     if !file_path.exists() {
         return ProcessingResult::Error {
