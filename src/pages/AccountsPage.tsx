@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,10 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
-import { StatusBadge, healthStyles } from "@/components/ui/status-badge";
+import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError } from "@/components/PageState";
-import { Badge } from "@/components/ui/badge";
 import { Building2, Plus, RefreshCw } from "lucide-react";
+import { cn, formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
 
 type HealthTab = "all" | "green" | "yellow" | "red";
@@ -198,7 +197,7 @@ export default function AccountsPage() {
           />
 
           {/* Accounts list */}
-          <div className="space-y-2">
+          <div>
             {filtered.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -222,68 +221,52 @@ export default function AccountsPage() {
 }
 
 function AccountRow({ account }: { account: AccountListItem }) {
+  const healthDot: Record<string, string> = {
+    green: "bg-success",
+    yellow: "bg-primary",
+    red: "bg-destructive",
+  };
+
+  const daysSince = account.daysSinceLastMeeting;
+  const isStale = daysSince != null && daysSince > 14;
+
   return (
-    <Link to="/accounts/$accountId" params={{ accountId: account.id }}>
-      <Card className="cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md">
-        <CardContent className="flex items-center gap-4 p-4">
-          {/* Avatar initial */}
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-            {account.name.charAt(0).toUpperCase()}
-          </div>
-
-          {/* Name + badges */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium">{account.name}</span>
-              {account.health && (
-                <StatusBadge value={account.health} styles={healthStyles} />
-              )}
-              {account.lifecycle && (
-                <Badge variant="outline" className="text-xs capitalize">
-                  {account.lifecycle}
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {account.csm && <span>CSM: {account.csm}</span>}
-              {account.csm && account.arr != null && (
-                <span className="text-muted-foreground/40">&middot;</span>
-              )}
-              {account.arr != null && (
-                <span>${formatArr(account.arr)}</span>
-              )}
-            </div>
-          </div>
-
-          {/* Open actions count */}
+    <ListRow
+      to="/accounts/$accountId"
+      params={{ accountId: account.id }}
+      signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
+      name={account.name}
+      subtitle={account.csm ? `CSM: ${account.csm}` : undefined}
+      columns={
+        <>
+          {account.arr != null && (
+            <ListColumn
+              value={<span className="font-mono">${formatArr(account.arr)}</span>}
+              className="w-20"
+            />
+          )}
           {account.openActionCount > 0 && (
-            <div className="shrink-0 text-right">
-              <div className="text-sm font-medium">
-                {account.openActionCount}
-              </div>
-              <div className="text-xs text-muted-foreground">actions</div>
-            </div>
+            <ListColumn
+              value={account.openActionCount}
+              label="actions"
+              className="w-14"
+            />
           )}
-
-          {/* Days since last meeting */}
-          {account.daysSinceLastMeeting != null && (
-            <div className="w-16 shrink-0 text-right">
-              <div className="text-xs text-muted-foreground">
-                {account.daysSinceLastMeeting === 0
-                  ? "Today"
-                  : `${account.daysSinceLastMeeting}d ago`}
-              </div>
-            </div>
+          {daysSince != null && (
+            <ListColumn
+              value={
+                <span className={cn(isStale && "text-destructive")}>
+                  {daysSince === 0 ? "Today" : `${daysSince}d`}
+                </span>
+              }
+              label="last mtg"
+              className="w-14"
+            />
           )}
-        </CardContent>
-      </Card>
-    </Link>
+        </>
+      }
+    />
   );
 }
 
 
-function formatArr(arr: number): string {
-  if (arr >= 1_000_000) return `${(arr / 1_000_000).toFixed(1)}M`;
-  if (arr >= 1_000) return `${(arr / 1_000).toFixed(0)}K`;
-  return arr.toFixed(0);
-}

@@ -581,6 +581,18 @@ pub struct WeekOverview {
     pub focus_areas: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available_time_blocks: Option<Vec<TimeBlock>>,
+    /// AI-generated narrative overview of the week (I94 — null until AI enrichment)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub week_narrative: Option<String>,
+    /// AI-identified top priority (I94 — null until AI enrichment)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_priority: Option<serde_json::Value>,
+    /// Proactive readiness checks surfacing prep gaps (I93)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readiness_checks: Option<Vec<ReadinessCheck>>,
+    /// Per-day density and meeting shape (I93)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub day_shapes: Option<Vec<DayShape>>,
 }
 
 /// A single day in the week overview
@@ -624,6 +636,55 @@ pub struct WeekActionSummary {
     pub overdue_count: usize,
     pub due_this_week: usize,
     pub critical_items: Vec<String>,
+    /// Actual overdue action items (I93)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overdue: Option<Vec<WeekAction>>,
+    /// Actual due-this-week action items (I93)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_this_week_items: Option<Vec<WeekAction>>,
+}
+
+/// A single action item for week view (I93)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekAction {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
+    pub priority: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub days_overdue: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// Proactive readiness check for the week (I93)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadinessCheck {
+    pub check_type: String,
+    pub message: String,
+    pub severity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+}
+
+/// Per-day density shape for the week view (I93)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayShape {
+    pub day_name: String,
+    pub date: String,
+    pub meeting_count: usize,
+    pub meeting_minutes: u32,
+    pub density: String,
+    pub meetings: Vec<WeekMeeting>,
+    pub available_blocks: Vec<TimeBlock>,
 }
 
 /// Account hygiene alert
@@ -1048,40 +1109,6 @@ pub struct TranscriptRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     pub processed_at: String,
-}
-
-// =============================================================================
-// Weekly Planning Types (Phase 3C)
-// =============================================================================
-
-/// State of the weekly planning wizard
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WeekPlanningState {
-    NotReady,
-    DataReady,
-    InProgress,
-    Completed,
-    DefaultsApplied,
-}
-
-impl Default for WeekPlanningState {
-    fn default() -> Self {
-        WeekPlanningState::NotReady
-    }
-}
-
-/// A focus block suggestion from the weekly planner
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FocusBlock {
-    pub day: String,
-    pub start: String,
-    pub end: String,
-    pub duration_minutes: u32,
-    pub suggested_activity: String,
-    #[serde(default)]
-    pub selected: bool,
 }
 
 // =============================================================================

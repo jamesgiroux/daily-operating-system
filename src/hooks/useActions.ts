@@ -27,13 +27,13 @@ interface UseActionsReturn {
  * Replaces the old JSON-based `get_all_actions` approach with persistent
  * cross-day action tracking.
  */
-export function useActions(): UseActionsReturn {
+export function useActions(initialSearch?: string): UseActionsReturn {
   const [allActions, setAllActions] = useState<DbAction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialSearch ?? "");
 
   const loadActions = useCallback(async () => {
     try {

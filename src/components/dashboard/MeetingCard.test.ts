@@ -90,6 +90,16 @@ describe("computeMeetingDisplayState", () => {
       expect(state.actions.map(a => a.key)).toEqual(["attach-transcript", "capture-outcomes"]);
       expect(state.badges).toHaveLength(0);
     });
+
+    it("past + no outcomes + has prep → View Prep + attach + outcomes", () => {
+      const meeting = makeMeeting({ type: "customer", hasPrep: true, prepFile: "prep.md" });
+      const state = computeMeetingDisplayState(meeting, ctx({ isPast: true, outcomesStatus: "none" }));
+
+      expect(state.primaryStatus).toBe("past-unprocessed");
+      expect(state.actions).toHaveLength(3);
+      expect(state.actions.map(a => a.key)).toEqual(["view-prep", "attach-transcript", "capture-outcomes"]);
+      expect(state.actions[0].linkTo).toBe("prep.md");
+    });
   });
 
   describe("live meetings", () => {
