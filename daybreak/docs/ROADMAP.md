@@ -40,8 +40,9 @@
 | Processing history page | Working | — |
 | Google API credential caching (per-process) | Working | — |
 | macOS chrome (overlay titlebar, tray icon, app icon) | Working | — |
+| Devtools demo data (8 meeting states, 3 preps, week overview, calendar overlay, transcript outcomes) | Working | — |
 
-**155 Rust tests + 37 Python tests passing.** Sprints 1–3 complete. Next: Sprint 4 (distribution).
+**176 Rust tests + 37 Python tests passing.** Sprints 1–3 complete. Next: Sprint 4 (distribution).
 
 ---
 
@@ -105,14 +106,16 @@ All 155 Rust + 37 Python tests passing.
 
 **Milestone:** Someone outside the dev team can download, install, and use DailyOS.
 
-| Issue | What |
-|-------|------|
-| I8 | Distribution mechanism (DMG + notarization, or GitHub Releases) |
-| I9 | Focus/Week stubs (make non-embarrassing — "coming soon" > broken stub) |
-| — | 7-day crash-free validation on test workspace |
-| — | README / landing page for first external users |
+| Issue | What | Status |
+|-------|------|--------|
+| I8 | Distribution mechanism (DMG + notarization, or GitHub Releases) | |
+| I9 | Focus/Week stubs (make non-embarrassing — "coming soon" > broken stub) | |
+| I56 | Onboarding redesign (educational flow, demo data, dashboard tour) | In progress — OnboardingFlow.tsx + demo data fixtures complete, wiring remaining |
+| I57 | Onboarding: add accounts/projects + user domain (populate workspace for first briefing) | |
+| — | 7-day crash-free validation on test workspace | |
+| — | README / landing page for first external users | |
 
-**Done when:** A DMG installs cleanly, onboarding completes, briefing works for 7 consecutive days on a clean machine.
+**Done when:** A DMG installs cleanly, onboarding completes, first real briefing has meeting-entity associations on a clean machine.
 
 ---
 
