@@ -15,7 +15,7 @@
         "title": "DailyOS",
         "titleBarStyle": "Transparent",
         "hiddenTitle": true,
-        "width": 1180,
+        "width": 1280,
         "height": 768,
         "center": true,
         "resizable": true,
