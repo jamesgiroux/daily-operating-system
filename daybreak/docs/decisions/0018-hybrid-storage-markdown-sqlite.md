@@ -1,7 +1,7 @@
 # ADR-0018: Hybrid storage: Markdown + SQLite
 
 **Date:** 2026-02
-**Status:** Accepted
+**Status:** Superseded by [ADR-0048](0048-three-tier-data-model.md)
 
 ## Context
 
