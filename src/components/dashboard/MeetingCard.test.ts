@@ -65,15 +65,14 @@ describe("computeMeetingDisplayState", () => {
       const state = computeMeetingDisplayState(meeting, ctx({ isPast: true, outcomesStatus: "loaded" }));
 
       expect(state.primaryStatus).toBe("processed");
-      expect(state.badges).toHaveLength(1);
-      expect(state.badges[0].key).toBe("processed");
-      expect(state.badges[0].icon).toBe("check");
+      expect(state.badges.some(b => b.key === "processed")).toBe(true);
+      expect(state.badges.find(b => b.key === "processed")?.icon).toBe("check");
       expect(state.actions).toHaveLength(0);
       expect(state.showExpander).toBe(true);
     });
 
-    it("past + loading → neither badge nor buttons (prevents flash)", () => {
-      const meeting = makeMeeting();
+    it("past + loading → no primary badges, no buttons (prevents flash)", () => {
+      const meeting = makeMeeting({ type: "customer" });
       const state = computeMeetingDisplayState(meeting, ctx({ isPast: true, outcomesStatus: "loading" }));
 
       expect(state.primaryStatus).toBe("past-loading");
@@ -82,7 +81,7 @@ describe("computeMeetingDisplayState", () => {
     });
 
     it("past + no outcomes → attach and outcomes buttons", () => {
-      const meeting = makeMeeting();
+      const meeting = makeMeeting({ type: "customer" });
       const state = computeMeetingDisplayState(meeting, ctx({ isPast: true, outcomesStatus: "none" }));
 
       expect(state.primaryStatus).toBe("past-unprocessed");
@@ -179,23 +178,35 @@ describe("computeMeetingDisplayState", () => {
       expect(state.badges[0].label).toBe("No prep");
     });
 
-    it("internal without prep → default (no 'No prep' badge)", () => {
+    it("internal without prep → default + cancelable badge (no 'No prep' badge)", () => {
       const meeting = makeMeeting({ type: "internal", hasPrep: false });
       const state = computeMeetingDisplayState(meeting, ctx());
 
       expect(state.primaryStatus).toBe("default");
-      expect(state.badges).toHaveLength(0);
+      expect(state.badges.some(b => b.key === "no-prep")).toBe(false);
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(true);
       expect(state.actions).toHaveLength(0);
     });
   });
 
   describe("default", () => {
-    it("default meeting → empty badges, empty actions", () => {
-      const meeting = makeMeeting();
+    it("default non-cancelable meeting → empty badges, empty actions", () => {
+      const meeting = makeMeeting({ type: "customer", hasPrep: false });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      // customer without prep gets "no-prep" badge, not cancelable
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(false);
+      expect(state.title.lineThrough).toBe(false);
+      expect(state.card.hoverEnabled).toBe(true);
+    });
+
+    it("default internal meeting → cancelable badge only", () => {
+      const meeting = makeMeeting({ type: "internal", hasPrep: false });
       const state = computeMeetingDisplayState(meeting, ctx());
 
       expect(state.primaryStatus).toBe("default");
-      expect(state.badges).toHaveLength(0);
+      expect(state.badges).toHaveLength(1);
+      expect(state.badges[0].key).toBe("cancelable");
       expect(state.actions).toHaveLength(0);
       expect(state.title.lineThrough).toBe(false);
       expect(state.card.hoverEnabled).toBe(true);
@@ -252,6 +263,44 @@ describe("computeMeetingDisplayState", () => {
       const meeting = makeMeeting({ overlayStatus: "cancelled" });
       const state = computeMeetingDisplayState(meeting, ctx({ hasInlinePrep: true }));
       expect(state.showExpander).toBe(false);
+    });
+  });
+
+  describe("cancelable badge", () => {
+    it("internal + no prep + not cancelled → cancelable badge", () => {
+      const meeting = makeMeeting({ type: "internal", hasPrep: false });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(true);
+      expect(state.badges.find(b => b.key === "cancelable")?.label).toBe("Cancelable");
+    });
+
+    it("team_sync + no prep + not cancelled → cancelable badge", () => {
+      const meeting = makeMeeting({ type: "team_sync", hasPrep: false });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(true);
+    });
+
+    it("internal + has prep → no cancelable badge", () => {
+      const meeting = makeMeeting({ type: "internal", hasPrep: true, prepFile: "prep.md" });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(false);
+    });
+
+    it("customer + no prep → no cancelable badge", () => {
+      const meeting = makeMeeting({ type: "customer", hasPrep: false });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(false);
+    });
+
+    it("cancelled + internal → no cancelable badge", () => {
+      const meeting = makeMeeting({ type: "internal", hasPrep: false, overlayStatus: "cancelled" });
+      const state = computeMeetingDisplayState(meeting, ctx());
+
+      expect(state.badges.some(b => b.key === "cancelable")).toBe(false);
     });
   });
 
