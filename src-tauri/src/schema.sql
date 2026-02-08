@@ -107,3 +107,39 @@ CREATE TABLE IF NOT EXISTS meeting_prep_state (
     title TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prep_state_event ON meeting_prep_state(calendar_event_id);
+
+-- People sub-entity (I51 / ADR-0046)
+CREATE TABLE IF NOT EXISTS people (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    organization TEXT,
+    role TEXT,
+    relationship TEXT CHECK(relationship IN ('internal', 'external', 'unknown'))
+        DEFAULT 'unknown',
+    notes TEXT,
+    tracker_path TEXT,
+    last_seen TEXT,
+    first_seen TEXT,
+    meeting_count INTEGER DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_people_email ON people(email);
+CREATE INDEX IF NOT EXISTS idx_people_relationship ON people(relationship);
+
+-- Meeting attendees junction (replaces always-NULL attendees TEXT column)
+CREATE TABLE IF NOT EXISTS meeting_attendees (
+    meeting_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, person_id)
+);
+CREATE INDEX IF NOT EXISTS idx_attendees_person ON meeting_attendees(person_id);
+
+-- Person ↔ entity junction (person to account/project)
+CREATE TABLE IF NOT EXISTS entity_people (
+    entity_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    relationship_type TEXT DEFAULT 'associated',
+    PRIMARY KEY (entity_id, person_id)
+);
+CREATE INDEX IF NOT EXISTS idx_entity_people_person ON entity_people(person_id);

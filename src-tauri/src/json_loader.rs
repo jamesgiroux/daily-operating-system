@@ -469,6 +469,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         references,
         raw_markdown: None,
         stakeholder_signals: None,
+        attendee_context: None,
     })
 }
 

@@ -78,12 +78,29 @@ pub struct SkipSignal {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PersonAlert {
+    pub person_id: String,
+    pub name: String,
+    pub signal: PersonSignalType,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PersonSignalType {
+    StaleRelationship,
+    NewFace,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SignalCounts {
     pub decisions: usize,
     pub delegations: usize,
     pub portfolio_alerts: usize,
     pub cancelable: usize,
     pub skip_today: usize,
+    pub person_alerts: usize,
 }
 
 /// Top-level intelligence result returned to the frontend.
@@ -95,6 +112,7 @@ pub struct ExecutiveIntelligence {
     pub portfolio_alerts: Vec<PortfolioAlert>,
     pub cancelable_meetings: Vec<CancelableSignal>,
     pub skip_today: Vec<SkipSignal>,
+    pub person_alerts: Vec<PersonAlert>,
     pub signal_counts: SignalCounts,
 }
 
@@ -117,6 +135,7 @@ pub fn compute_executive_intelligence(
     let delegations = compute_delegations(db);
     let portfolio_alerts = compute_portfolio_alerts(db, profile);
     let cancelable_meetings = compute_cancelable(schedule_meetings);
+    let person_alerts = compute_person_alerts(db);
 
     let signal_counts = SignalCounts {
         decisions: decisions.len(),
@@ -124,6 +143,7 @@ pub fn compute_executive_intelligence(
         portfolio_alerts: portfolio_alerts.len(),
         cancelable: cancelable_meetings.len(),
         skip_today: skip_today.len(),
+        person_alerts: person_alerts.len(),
     };
 
     ExecutiveIntelligence {
@@ -132,6 +152,7 @@ pub fn compute_executive_intelligence(
         portfolio_alerts,
         cancelable_meetings,
         skip_today,
+        person_alerts,
         signal_counts,
     }
 }
@@ -236,6 +257,62 @@ fn is_cancelable_candidate(m: &Meeting) -> bool {
     let not_cancelled = m.overlay_status.as_ref() != Some(&OverlayStatus::Cancelled);
 
     is_internal && no_prep && not_cancelled
+}
+
+/// Person-level alerts: stale relationships and new faces (I51).
+fn compute_person_alerts(db: &ActionDb) -> Vec<PersonAlert> {
+    let mut alerts = Vec::new();
+    let now = chrono::Utc::now();
+
+    // Get all external people
+    let people = db.get_people(Some("external")).unwrap_or_default();
+
+    for person in &people {
+        // Stale relationship: cold external contact linked to an entity
+        if let Ok(signals) = db.get_person_signals(&person.id) {
+            if signals.temperature == "cold" {
+                // Only alert if linked to at least one entity
+                if let Ok(entities) = db.get_entities_for_person(&person.id) {
+                    if !entities.is_empty() {
+                        let entity_names: Vec<String> =
+                            entities.iter().map(|e| e.name.clone()).collect();
+                        alerts.push(PersonAlert {
+                            person_id: person.id.clone(),
+                            name: person.name.clone(),
+                            signal: PersonSignalType::StaleRelationship,
+                            detail: format!(
+                                "No contact in 60+ days (linked to {})",
+                                entity_names.join(", ")
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // New faces: people first seen in the last 7 days
+    let all_people = db.get_people(None).unwrap_or_default();
+    for person in &all_people {
+        if let Some(ref first_seen) = person.first_seen {
+            if let Ok(fs) = chrono::DateTime::parse_from_rfc3339(first_seen) {
+                let days = (now - fs.with_timezone(&chrono::Utc)).num_days();
+                if days <= 7 {
+                    alerts.push(PersonAlert {
+                        person_id: person.id.clone(),
+                        name: person.name.clone(),
+                        signal: PersonSignalType::NewFace,
+                        detail: format!(
+                            "New contact ({})",
+                            person.organization.as_deref().unwrap_or("unknown org")
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    alerts
 }
 
 // ─────────────────────────────────────────────────────────────────────

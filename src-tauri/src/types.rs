@@ -28,6 +28,16 @@ pub struct Config {
     pub post_meeting_capture: PostMeetingCaptureConfig,
     #[serde(default)]
     pub features: HashMap<String, bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_company: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_focus: Option<String>,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -768,6 +778,34 @@ pub struct FullMeetingPrep {
     /// Stakeholder relationship signals computed from meeting history (I43)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_signals: Option<crate::db::StakeholderSignals>,
+    /// Per-attendee context enriched from people DB (I51)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attendee_context: Option<Vec<AttendeeContext>>,
+}
+
+/// Attendee context for meeting prep enrichment (I51).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendeeContext {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relationship: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_count: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person_id: Option<String>,
 }
 
 /// Action item with context (for prep files)
@@ -1034,6 +1072,11 @@ mod tests {
             google: GoogleConfig::default(),
             post_meeting_capture: PostMeetingCaptureConfig::default(),
             features: HashMap::new(),
+            user_domain: None,
+            user_name: None,
+            user_company: None,
+            user_title: None,
+            user_focus: None,
         }
     }
 
