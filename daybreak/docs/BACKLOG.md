@@ -24,11 +24,13 @@ Active issues, known risks, assumptions, and dependencies.
 
   SPRINT 3: "Make it Reliable" — COMPLETE
     I39 (feature toggles), I18 (API caching), I20 (email refresh), I21 (FYI classification),
-    I37 (density-aware overview), I6 (processing history). 155 Rust + 37 Python tests passing.
+    I37 (density-aware overview), I6 (processing history). 176 Rust + 37 Python tests passing.
 
   SPRINT 4: "Ship It"
     I8 (distribution — DMG, notarization)
     I9 (focus/week stubs — non-embarrassing)
+    I56 (onboarding redesign — teach the philosophy)
+    I57 (onboarding: add accounts/projects — populate workspace for first briefing)
     7-day crash-free validation on test-workspace
     Done when:       DMG installs cleanly, onboarding→briefing works 7 days on clean machine
 
@@ -55,6 +57,43 @@ ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay).
 
 **I25: Unify meeting badge/status rendering**
 MeetingCard has 5 independent status signals (isCurrent, hasPrep, isPast, overlayStatus, type) each with their own conditional. Consolidate into a computed MeetingDisplayState. Relates to ADR-0033.
+
+**I56: Onboarding redesign — teach the philosophy, not just configure settings**
+Current I13 onboarding wizard is a config flow (entity mode → workspace → Google → generate briefing). "Generate First Briefing" is broken by design: a new user has no files, no transcripts, no data — there's nothing for AI to process. More fundamentally, the wizard treats onboarding as setup when it should be education and delight. A first-timer doesn't know what they don't know — this is our opportunity to teach the *why*, not just the *what*. Required content: calendar connection context (what DailyOS does with your calendar), email connection context (how triage works), anatomy of the dashboard (what each section means), where actions are sourced and how they flow, how emails are presented and prioritized, the meeting card lifecycle (prep → current → outcomes), best practices for enabling prep, workspace folder structure rationale (`_today/`, `_inbox/`, `_archive/`, `Accounts/`, `Projects/`), how to use inbox (drop files in, system processes them). Should replace the current "Generate First Briefing" step with something meaningful — either seed content to demonstrate with, or guided walkthrough of a mock dashboard. Supersedes I13's implementation (I13 remains Closed as the config mechanics are correct; this issue addresses the UX layer above them).
+
+**Progress:** OnboardingFlow.tsx with 7-chapter educational flow created (replaces OnboardingWizard.tsx). Demo data fixtures expanded for full UI coverage — 8 meetings (past with transcript outcomes, cancelled, new/calendar-only, QBR with prep, all_hands, etc.), 3 prep fixtures (Acme, Globex, Initech), week overview with 5 days + hygiene alerts + focus areas, calendar event seeding for overlay statuses, transcript record seeding for meeting outcomes. `install_demo_data` command + devtools scenarios working. 176 Rust tests passing. Remaining: wire PopulateWorkspace Tauri commands (I57 dependency), final onboarding chapter integration.
+
+**I57: Onboarding: add accounts/projects — populate workspace before first briefing**
+The first real briefing is only as good as the data in the workspace. Without account/project folders, meeting-entity association fails — meetings appear but with zero context (no talking points, no risks, no history). This step sits between the Dashboard Tour and the Ready screen in the onboarding flow.
+
+**What it collects (entity-mode-aware):**
+- Account-based: "Add your key accounts" — name + optional notes. Creates `Accounts/<Name>/` folders.
+- Project-based: "Add your active projects" — name + optional notes. Creates `Projects/<Name>/` folders.
+- Both: both inputs.
+- All modes: user's own email domain (e.g. `@mycompany.com`) to distinguish internal vs external attendees.
+
+**Domain inference:** Instead of asking users to manually enter customer domains, AI infers domains from account names (e.g. "Acme Corp" → `acme.com`, `acmecorp.com`) and confirms. This aligns with Principle 6 (AI-native, not AI-assisted). The user's own domain is the only required manual input — everything else can be inferred and corrected.
+
+**What it creates:**
+- Workspace folders: `Accounts/<Name>/` or `Projects/<Name>/`
+- SQLite entity records (via `upsert_account` / future `upsert_project`)
+- Domain hints for meeting-entity association
+- Config: `userDomain` field in `~/.dailyos/config.json`
+
+**Why it matters:** With even 3-5 account/project folders, the first briefing shows "Acme Corp Quarterly Sync → *Acme Corp*" instead of a disconnected meeting. That association is the minimum bar for the briefing to feel intelligent. Without it, the product fails Principle 2 (Prepared, Not Empty).
+
+**Copy for the chapter:**
+- h2 (account): "Add your accounts"
+- h2 (project): "Add your projects"
+- h2 (both): "Add your accounts and projects"
+- Subhead: "These are the companies, clients, or initiatives you work with most. DailyOS uses them to connect your meetings to the right context."
+- Input: simple name field + "Add" button, list of added items with remove
+- Domain section: "Your email domain" — single field, e.g. `mycompany.com`. "This helps DailyOS distinguish your internal meetings from external ones."
+- Minimum: 1 entry required (soft gate — "Add at least one to get started, you can always add more in Settings")
+- Maximum: no limit, but prompt suggests "start with 3-5"
+- Footer: "You can add more anytime from Settings."
+
+Sprint 4 (ship blocker — without this, first briefing is empty).
 
 **I26: Web search for unknown external meetings not implemented**
 ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `ops/meeting_prep.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
@@ -88,6 +127,9 @@ ADR-0046 classifies ProDev as an Intelligence layer (entity-mode-agnostic). Work
 
 **I55: Executive Intelligence — decision framing, delegation tracking, and strategic analysis**
 ADR-0046 classifies Executive as an Intelligence layer (entity-mode-agnostic). Works with any entity mode — a CS leader, engineering director, or consultant all benefit. Contributes enrichment prompt fragments: decision quality assessment (SCQA framing, reversibility/stakes), delegation tracking ("WAITING ON" with staleness detection), time protection (cancelable meeting identification), political dynamics (stakeholder alignment, power shifts), noise filtering (what doesn't need attention today). Draws from `/cos` (decision surfacing, delegation tracking), `strategy-consulting` (analytical frameworks: SCQA, WWHTBT, options analysis), and `/veep` (political intelligence, relationship temperature). Manifests as: dashboard intelligence signals, meeting prep with political context, post-meeting decision quality assessment, delegation staleness alerts. Blocked by I27 umbrella + prompt fragment mechanism.
+
+**I58: Feed user profile context into AI enrichment prompts**
+User profile (name, company, title, focus) collected during onboarding should be injected into AI enrichment operations to personalize output. Scope: enrich_emails(), enrich_briefing(), meeting prep directives. The profile fields live in config.json (user_name, user_company, user_title, user_focus) and are set via the "About You" onboarding chapter or future Settings page. Depends on I57 (profile collection UI).
 
 ### Open — Low Priority
 
@@ -188,6 +230,11 @@ When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet
 | R2 | Google API token expiry mid-workflow | Medium | High | Detect early, prompt re-auth | Open |
 | R3 | File watcher unreliability on macOS | Medium | Low | Periodic polling backup | Open |
 | R4 | Scheduler drift after sleep/wake | Medium | Medium | Re-sync on wake events | Open |
+| R5 | **Open format = no switching cost.** Markdown portability means users can leave as easily as they arrive. The moat (archive quality) only works if DailyOS maintains the archive better than users could themselves — and better than a competitor wrapping the same open files. | High | Medium | Archive must be demonstrably better than DIY. Enrichment quality is the lock-in, not format. | Open |
+| R6 | **N=1 validation.** All architecture designed from one user in one role (CS leader). Entity modes, Kits, Intelligence untested with actual project-based, sales, or engineering users. Assumptions about "how work is organized" may not survive contact with diverse roles. | High | High | Recruit 3-5 beta users across different roles before implementing I27. Validate entity-mode assumptions with real workflows. | Open |
+| R7 | **Org cascade needs adoption density.** Organizational intelligence (Thursday Updates, cascading contributions) requires multiple DailyOS users on the same team. Single-user value must stand alone — org features are years away from being testable. | Medium | High | Ship individual product first. Don't invest in org features until adoption density exists. Keep it in Vision, not Roadmap. | Open |
+| R8 | **AI reliability gap.** "Zero discipline" promise depends on AI enrichment being consistently good. Current fault-tolerant design (mechanical data survives AI failure) mitigates data loss but not quality — a bad briefing erodes trust faster than no briefing. | High | Medium | Invest in enrichment quality metrics. Surface confidence signals to users. Make AI outputs editable/correctable. | Open |
+| R9 | **Composability untested at scale.** Kit + Intelligence + Integration composition is designed on paper (ADR-0046) but never built. Enrichment prompt fragment ordering, conflicts between multiple Intelligence layers, and "both" entity mode UX are all theoretical. | Medium | Medium | Build one Kit (CS) + one Intelligence (Executive) first. Validate composition with two overlays before designing more. | Open |
 
 ---
 
