@@ -7,10 +7,12 @@ import { Welcome } from "./chapters/Welcome";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
 import { Workspace } from "./chapters/Workspace";
 import { GoogleConnect } from "./chapters/GoogleConnect";
+import { ClaudeCode } from "./chapters/ClaudeCode";
 import { AboutYou } from "./chapters/AboutYou";
+import { PopulateWorkspace } from "./chapters/PopulateWorkspace";
+import { InboxTraining, type InboxProcessingState } from "./chapters/InboxTraining";
 import { DashboardTour } from "./chapters/DashboardTour";
 import { MeetingDeepDive } from "./chapters/MeetingDeepDive";
-import { PopulateWorkspace } from "./chapters/PopulateWorkspace";
 import { Ready } from "./chapters/Ready";
 
 interface OnboardingFlowProps {
@@ -22,10 +24,12 @@ const CHAPTERS = [
   "entity-mode",
   "workspace",
   "google",
+  "claude-code",
   "about-you",
+  "populate",
+  "inbox-training",
   "dashboard-tour",
   "meeting-deep-dive",
-  "populate",
   "ready",
 ] as const;
 
@@ -36,10 +40,12 @@ const CHAPTER_LABELS = [
   "Work Style",
   "Workspace",
   "Google",
+  "Claude",
   "About You",
+  "Your Work",
+  "Inbox",
   "Dashboard",
   "Meeting Prep",
-  "Your Work",
   "Ready",
 ];
 
@@ -48,6 +54,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [entityMode, setEntityMode] = useState<EntityMode>("account");
   const [workspacePath, setWorkspacePath] = useState("");
   const [quickSetup, setQuickSetup] = useState(false);
+  const [claudeCodeInstalled, setClaudeCodeInstalled] = useState(false);
+  const [inboxProcessing, setInboxProcessing] = useState<InboxProcessingState | undefined>();
 
   const { status: googleStatus } = useGoogleAuth();
 
@@ -116,15 +124,38 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "google" && (
           <GoogleConnect
-            onNext={() => goToChapter("about-you")}
+            onNext={() => goToChapter("claude-code")}
+          />
+        )}
+
+        {chapter === "claude-code" && (
+          <ClaudeCode
+            onNext={(installed) => {
+              setClaudeCodeInstalled(installed);
+              goToChapter("about-you");
+            }}
           />
         )}
 
         {chapter === "about-you" && (
           <AboutYou
-            onNext={() => {
+            onNext={() => goToChapter("populate")}
+          />
+        )}
+
+        {chapter === "populate" && (
+          <PopulateWorkspace
+            entityMode={entityMode}
+            onNext={() => goToChapter("inbox-training")}
+          />
+        )}
+
+        {chapter === "inbox-training" && (
+          <InboxTraining
+            onNext={(state) => {
+              setInboxProcessing(state);
               if (quickSetup) {
-                goToChapter("populate");
+                goToChapter("ready");
               } else {
                 goToChapter("dashboard-tour");
               }
@@ -135,19 +166,12 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {chapter === "dashboard-tour" && (
           <DashboardTour
             onNext={() => goToChapter("meeting-deep-dive")}
-            onSkipTour={() => goToChapter("populate")}
+            onSkipTour={() => goToChapter("ready")}
           />
         )}
 
         {chapter === "meeting-deep-dive" && (
-          <MeetingDeepDive onNext={() => goToChapter("populate")} />
-        )}
-
-        {chapter === "populate" && (
-          <PopulateWorkspace
-            entityMode={entityMode}
-            onNext={() => goToChapter("ready")}
-          />
+          <MeetingDeepDive onNext={() => goToChapter("ready")} />
         )}
 
         {chapter === "ready" && (
@@ -155,6 +179,8 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
             entityMode={entityMode}
             workspacePath={workspacePath}
             googleStatus={googleStatus}
+            claudeCodeInstalled={claudeCodeInstalled}
+            inboxProcessing={inboxProcessing}
             onComplete={onComplete}
           />
         )}
