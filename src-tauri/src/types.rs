@@ -781,6 +781,9 @@ pub struct FullMeetingPrep {
     /// Per-attendee context enriched from people DB (I51)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attendee_context: Option<Vec<AttendeeContext>>,
+    /// Proposed agenda synthesized from prep data (I80)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposed_agenda: Option<Vec<AgendaItem>>,
 }
 
 /// Attendee context for meeting prep enrichment (I51).
@@ -806,6 +809,17 @@ pub struct AttendeeContext {
     pub notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub person_id: Option<String>,
+}
+
+/// Proposed agenda item for meeting prep (I80)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgendaItem {
+    pub topic: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// Action item with context (for prep files)
