@@ -576,6 +576,18 @@ impl Executor {
             let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
         }
 
+        // AI: Enrich prep agendas (feature-gated I39)
+        if prep_enabled {
+            if let Err(e) = crate::workflow::deliver::enrich_preps(
+                &data_dir,
+                &self.pty_manager,
+                &workspace,
+            ) {
+                log::warn!("Prep enrichment failed (non-fatal): {}", e);
+            }
+            let _ = self.app_handle.emit("operation-delivered", "preps-enriched");
+        }
+
         // AI: Generate briefing narrative
         if let Err(e) = crate::workflow::deliver::enrich_briefing(
             &data_dir,

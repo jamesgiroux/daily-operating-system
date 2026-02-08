@@ -294,6 +294,13 @@ export interface ActionWithContext {
   isOverdue: boolean;
 }
 
+/** Proposed agenda item synthesized from prep data (I80) */
+export interface AgendaItem {
+  topic: string;
+  why?: string;
+  source?: string;
+}
+
 // =============================================================================
 // Google & Calendar Types (Phase 3.0 / 3A)
 // =============================================================================
@@ -478,6 +485,8 @@ export interface FullMeetingPrep {
   stakeholderSignals?: StakeholderSignals;
   /** Per-attendee context from people database (I51) */
   attendeeContext?: AttendeeContext[];
+  /** Proposed agenda synthesized from prep data (I80) */
+  proposedAgenda?: AgendaItem[];
 }
 
 /** Relationship context signals computed from meeting history and account data (I43) */

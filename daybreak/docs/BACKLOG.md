@@ -179,27 +179,11 @@ Claude Code is the AI engine — without it installed and authenticated, enrichm
 
 Relates to I56. **Ship blocker** — without Claude Code, the product's core promise ("AI-native daily productivity") doesn't work.
 
-**I80: Proposed Agenda in meeting prep — AI-synthesized agenda from prep data**
-The prep page currently shows ingredients (talking points, risks, open items, questions) and expects the user to produce an agenda. This violates Principle 7 (Consumption Over Production) and Principle 6 (AI-Native, Not AI-Assisted). The CLI had a dedicated agent for "generate agenda from prep" — the app should do this automatically.
+**I80: Proposed Agenda in meeting prep — Resolved.**
+Mechanical agenda generation in `generate_mechanical_agenda()` (deliver.rs) assembles structured agenda from prep data: overdue items first, then risks (limit 2), talking points (limit 3), questions (limit 2), non-overdue open items (limit 2), capped at 7 items. AI enrichment via `enrich_preps()` refines ordering, adds "why" rationale, and incorporates people dynamics — follows `enrich_emails()` fault-tolerant pattern (AI failure leaves mechanical agenda intact). `AgendaItem` type added across Rust (`types.rs`), JSON loader (`json_loader.rs`), and TypeScript (`types/index.ts`). "Proposed Agenda" card renders as first card on prep page with numbered items, source badges, and copy button. Demo data updated for all 3 fixtures. Prep page restructured: Agenda → Quick Context → People → Reference Material (pyramid principle). 199 tests passing.
 
-**Scope:** Phase 2 AI enrichment generates a `proposedAgenda` field alongside existing meeting context enrichment. The agenda synthesizes across all available data: talking points, open items (especially overdue), risks, relationship signals (from `attendeeContext`/`stakeholderSignals`), strategic programs, recent wins. Each agenda item has: topic, estimated minutes, priority tier (must-cover vs if-time-permits), and a brief "why" note. The agenda is opinionated about ordering (e.g., open with a win, address overdue items early, relationship touchpoints for cold attendees).
-
-**Data flow:** `DirectiveMeetingContext` gains `proposed_agenda: Option<Vec<Value>>`. `build_prep_json` serializes it. `FullMeetingPrep` gains `proposed_agenda: Option<Vec<AgendaItem>>`. Frontend renders a "Proposed Agenda" card at the top of the prep page (below Quick Context, above reference material). Copy-to-clipboard button for pasting into calendar invite or Slack (depends on holistic copy button work in separate session).
-
-**New types:** `AgendaItem { topic, duration_minutes, priority: "must_cover" | "if_time_permits", notes, related_action_id? }`.
-
-**Mechanical fallback:** If AI enrichment fails, a mechanical agenda can be assembled: overdue items → must-cover, active risks → must-cover, talking points → if-time-permits. This follows the ADR-0042 pattern (AI failure leaves mechanical data intact).
-
-Relates to I43 (stakeholder signals), I51 (people dynamics inform agenda). Prep page restructure: Agenda → People → Reference Material.
-
-**I81: People dynamics in meeting prep UI — render attendeeContext, replace flat attendee list**
-`attendeeContext` is computed server-side in `get_meeting_prep` (I51 enrichment: person DB lookup, temperature, meeting count, relationship type, notes) but **never rendered** in `MeetingDetailPage.tsx`. The current "Key Attendees" card shows only name/role/focus from the directive — no relationship signals.
-
-**Scope:** Replace the flat "Key Attendees" card with a richer "People in the Room" section. Per attendee: name, role, organization, relationship badge (internal/external), temperature indicator (hot/warm/cool/cold), meeting count, last seen, notes excerpt. Link to `/people/$personId` when `personId` is present. Surface relationship warnings inline: "Haven't met in 45 days — cooling off", "New contact — first meeting", "High meeting frequency — strong relationship."
-
-**No backend changes needed** — `AttendeeContext` is already computed and serialized. This is a pure frontend enhancement. The import for `AttendeeContext` already exists in `src/types/index.ts` but `MeetingDetailPage.tsx` doesn't reference `data.attendeeContext`.
-
-Relates to I80 (people dynamics inform proposed agenda), I51 (people sub-entity).
+**I81: People dynamics in meeting prep UI — Resolved.**
+Replaced flat "Key Attendees" card with rich "People in the Room" component in `MeetingDetailPage.tsx`. Renders `attendeeContext` data (already computed server-side) with: temperature badges (hot/warm/cool/cold with color coding), meeting count, last seen date, organization, notes excerpt, "New contact" flags, cold-contact warnings, and links to `/people/$personId`. Falls back gracefully to simple name/role/focus display when no `attendeeContext` exists (internal meetings). Copy button with `formatAttendeeContext()` formatter. Pure frontend — no backend changes needed.
 
 **I82: Copy-to-clipboard for meeting prep page** — Resolved.
 Added copy-to-clipboard support to `MeetingDetailPage.tsx`. "Copy All" outline button in the header bar exports the full prep as clean markdown (title, time, all sections with `## Heading` separators). Per-section `<CopyButton>` in each `CardHeader` copies individual sections. Output uses light markdown (bullets, numbered lists, key-value lines) that renders well in Slack and reads cleanly as plaintext in email/docs. Icon transitions from clipboard to green check on copy (2s auto-reset), no toast. Reusable `useCopyToClipboard` hook (`src/hooks/useCopyToClipboard.ts`) and `CopyButton` component (`src/components/ui/copy-button.tsx`) available for future extension to Overview, Outcomes, etc. No backend changes, no new dependencies.
