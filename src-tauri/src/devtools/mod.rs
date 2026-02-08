@@ -664,18 +664,44 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     ).map_err(|e| e.to_string())?;
 
     // --- Actions (matching actions.json IDs) ---
-    let action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>)> = vec![
-        ("act-sow-acme", "Send updated SOW to Acme legal team", "P1", "pending", Some("acme-corp"), Some(date_only(-1))),
-        ("act-qbr-deck-globex", "Review Globex QBR deck with AE", "P1", "pending", Some("globex-industries"), Some(date_only(0))),
-        ("act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", "P2", "pending", Some("initech"), Some(date_only(1))),
-        ("act-nps-acme", "Follow up on NPS survey responses", "P2", "pending", Some("acme-corp"), Some(date_only(-7))),
-        ("act-quarterly-summary", "Draft quarterly impact summary", "P3", "pending", None, Some(date_only(7))),
+    // Each action includes context (why it matters) and source tracing (where it came from).
+    let action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, Option<&str>, Option<&str>, Option<&str>)> = vec![
+        (
+            "act-sow-acme", "Send updated SOW to Acme legal team", "P1", "pending",
+            Some("acme-corp"), Some(date_only(-1)),
+            Some("briefing"), Some("mh-acme-7d"),
+            Some("Sarah Chen confirmed Phase 2 executive sponsorship during last week's sync. Legal needs the updated SOW before scoping can proceed. Alex Torres flagged that the current contract terms don't cover APAC — legal review needed.")
+        ),
+        (
+            "act-qbr-deck-globex", "Review Globex QBR deck with AE", "P1", "pending",
+            Some("globex-industries"), Some(date_only(0)),
+            Some("briefing"), Some("mh-globex-3d"),
+            Some("QBR is the highest-stakes meeting this quarter. Renewal decision expected. Need to address Team B usage decline and Pat Reynolds' departure. AE wants to align on competitive positioning before the meeting — Contoso is actively pitching.")
+        ),
+        (
+            "act-kickoff-initech", "Schedule Phase 2 kickoff with Initech", "P2", "pending",
+            Some("initech"), Some(date_only(1)),
+            Some("briefing"), Some("mh-initech-10d"),
+            Some("Phase 1 wrapped successfully. Dana Patel expressed interest in Phase 2 but budget approval is still pending from finance. Priya Sharma confirmed team bandwidth concerns for Q2 — schedule early to give them time to plan.")
+        ),
+        (
+            "act-nps-acme", "Follow up on NPS survey responses", "P2", "pending",
+            Some("acme-corp"), Some(date_only(-7)),
+            Some("briefing"), None,
+            Some("3 detractors identified in the latest NPS survey. Scores trending down across the engineering team. Need to schedule individual calls to understand concerns before the quarterly review.")
+        ),
+        (
+            "act-quarterly-summary", "Draft quarterly impact summary", "P3", "pending",
+            None, Some(date_only(7)),
+            Some("briefing"), None,
+            Some("End-of-quarter impact summary for leadership. Should cover Acme Phase 1 completion, Globex expansion to 3 teams, Initech onboarding success, and Team B recovery progress.")
+        ),
     ];
 
-    for (id, title, priority, status, account_id, due_date) in &action_rows {
+    for (id, title, priority, status, account_id, due_date, source_type, source_id, context) in &action_rows {
         conn.execute(
-            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![id, title, priority, status, &today, due_date, account_id, &today],
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, context, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![id, title, priority, status, &today, due_date, account_id, source_type, source_id, context, &today],
         ).map_err(|e| e.to_string())?;
     }
 
