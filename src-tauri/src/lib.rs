@@ -10,13 +10,16 @@ mod google;
 mod json_loader;
 mod notification;
 mod parser;
+pub mod people;
 mod processor;
 mod pty;
 mod scheduler;
 mod state;
 mod types;
+pub mod util;
 mod watcher;
 mod workflow;
+mod devtools;
 
 use std::sync::Arc;
 
@@ -211,6 +214,22 @@ pub fn run() {
             // I39: Feature Toggles
             commands::get_features,
             commands::set_feature_enabled,
+            // Onboarding
+            commands::install_demo_data,
+            commands::populate_workspace,
+            commands::set_user_profile,
+            // Dev Tools
+            commands::dev_apply_scenario,
+            commands::dev_get_state,
+            // I51: People
+            commands::get_people,
+            commands::get_person_detail,
+            commands::search_people,
+            commands::update_person,
+            commands::link_person_entity,
+            commands::unlink_person_entity,
+            commands::get_people_for_entity,
+            commands::get_meeting_attendees,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

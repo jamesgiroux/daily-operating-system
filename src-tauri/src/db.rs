@@ -1,8 +1,10 @@
 //! SQLite-based local state management for actions, accounts, and meeting history.
 //!
-//! The database lives at `~/.dailyos/actions.db` and serves as a disposable cache.
-//! Markdown files remain the source of truth; this DB enables fast queries and
-//! state tracking (e.g., action completion) that markdown cannot provide.
+//! The database lives at `~/.dailyos/actions.db` and serves as the working store
+//! for operational data (ADR-0048). The filesystem (markdown + JSON) is the durable
+//! layer; SQLite enables fast queries, state tracking, and cross-entity intelligence.
+//! SQLite is not disposable — important state lives here and is written back to the
+//! filesystem at natural synchronization points (archive, dashboard regeneration).
 
 use std::path::PathBuf;
 
@@ -127,6 +129,35 @@ pub struct StakeholderSignals {
     pub trend: String,
 }
 
+/// A row from the `people` table (I51).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbPerson {
+    pub id: String,
+    pub email: String,
+    pub name: String,
+    pub organization: Option<String>,
+    pub role: Option<String>,
+    pub relationship: String, // "internal" | "external" | "unknown"
+    pub notes: Option<String>,
+    pub tracker_path: Option<String>,
+    pub last_seen: Option<String>,
+    pub first_seen: Option<String>,
+    pub meeting_count: i32,
+    pub updated_at: String,
+}
+
+/// Person-level relationship signals (parallel to StakeholderSignals).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonSignals {
+    pub meeting_frequency_30d: i32,
+    pub meeting_frequency_90d: i32,
+    pub last_meeting: Option<String>,
+    pub temperature: String,
+    pub trend: String,
+}
+
 /// Compute relationship temperature from last meeting date.
 fn compute_temperature(last_meeting_iso: &str) -> String {
     let days = days_since_iso(last_meeting_iso);
@@ -221,7 +252,8 @@ impl ActionDb {
 
         // Migration: add 'decision' to captures.capture_type CHECK constraint.
         // SQLite can't ALTER CHECK constraints, so we recreate the table if needed.
-        // The captures table is a disposable cache (ADR-0018), so this is safe.
+        // Recreating captures is safe — the table schema changes but data is
+        // rebuilt from transcript processing and post-meeting capture.
         Self::migrate_captures_decision(&conn)?;
 
         Ok(Self { conn })
@@ -1418,6 +1450,387 @@ impl ActionDb {
         Ok(())
     }
 
+    // =========================================================================
+    // People (I51)
+    // =========================================================================
+
+    /// Insert or update a person. Idempotent — won't overwrite manually-set fields
+    /// unless the incoming data explicitly provides them.
+    pub fn upsert_person(&self, person: &DbPerson) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO people (
+                id, email, name, organization, role, relationship, notes,
+                tracker_path, last_seen, first_seen, meeting_count, updated_at
+             ) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+                name = COALESCE(excluded.name, people.name),
+                organization = COALESCE(excluded.organization, people.organization),
+                role = COALESCE(excluded.role, people.role),
+                relationship = CASE
+                    WHEN people.relationship = 'unknown' THEN excluded.relationship
+                    ELSE people.relationship
+                END,
+                notes = COALESCE(excluded.notes, people.notes),
+                tracker_path = COALESCE(excluded.tracker_path, people.tracker_path),
+                last_seen = CASE
+                    WHEN excluded.last_seen > COALESCE(people.last_seen, '') THEN excluded.last_seen
+                    ELSE people.last_seen
+                END,
+                updated_at = excluded.updated_at",
+            params![
+                person.id,
+                person.email,
+                person.name,
+                person.organization,
+                person.role,
+                person.relationship,
+                person.notes,
+                person.tracker_path,
+                person.last_seen,
+                person.first_seen,
+                person.meeting_count,
+                person.updated_at,
+            ],
+        )?;
+        // Mirror to entities table (bridge pattern, like ensure_entity_for_account)
+        self.ensure_entity_for_person(person)?;
+        Ok(())
+    }
+
+    /// Mirror a person to the entities table.
+    fn ensure_entity_for_person(&self, person: &DbPerson) -> Result<(), DbError> {
+        let entity = crate::entity::DbEntity {
+            id: person.id.clone(),
+            name: person.name.clone(),
+            entity_type: crate::entity::EntityType::Person,
+            tracker_path: person.tracker_path.clone(),
+            updated_at: person.updated_at.clone(),
+        };
+        self.upsert_entity(&entity)
+    }
+
+    /// Look up a person by email (case-insensitive).
+    pub fn get_person_by_email(&self, email: &str) -> Result<Option<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+             FROM people WHERE email = LOWER(?1)",
+        )?;
+        let mut rows = stmt.query_map(params![email], Self::map_person_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get a person by ID.
+    pub fn get_person(&self, id: &str) -> Result<Option<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+             FROM people WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], Self::map_person_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all people, optionally filtered by relationship.
+    pub fn get_people(&self, relationship: Option<&str>) -> Result<Vec<DbPerson>, DbError> {
+        let people = match relationship {
+            Some(rel) => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, email, name, organization, role, relationship, notes,
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at
+                     FROM people WHERE relationship = ?1 ORDER BY name",
+                )?;
+                let rows = stmt.query_map(params![rel], Self::map_person_row)?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            }
+            None => {
+                let mut stmt = self.conn.prepare(
+                    "SELECT id, email, name, organization, role, relationship, notes,
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at
+                     FROM people ORDER BY name",
+                )?;
+                let rows = stmt.query_map([], Self::map_person_row)?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            }
+        };
+        Ok(people)
+    }
+
+    /// Get people linked to an entity (account/project).
+    pub fn get_people_for_entity(&self, entity_id: &str) -> Result<Vec<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at
+             FROM people p
+             JOIN entity_people ep ON p.id = ep.person_id
+             WHERE ep.entity_id = ?1
+             ORDER BY p.name",
+        )?;
+        let rows = stmt.query_map(params![entity_id], Self::map_person_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get entities linked to a person.
+    pub fn get_entities_for_person(
+        &self,
+        person_id: &str,
+    ) -> Result<Vec<crate::entity::DbEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, e.entity_type, e.tracker_path, e.updated_at
+             FROM entities e
+             JOIN entity_people ep ON e.id = ep.entity_id
+             WHERE ep.person_id = ?1
+             ORDER BY e.name",
+        )?;
+        let rows = stmt.query_map(params![person_id], |row| {
+            let et: String = row.get(2)?;
+            Ok(crate::entity::DbEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: crate::entity::EntityType::from_str_lossy(&et),
+                tracker_path: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Link a person to an entity (account/project). Idempotent.
+    pub fn link_person_to_entity(
+        &self,
+        person_id: &str,
+        entity_id: &str,
+        rel: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+             VALUES (?1, ?2, ?3)",
+            params![entity_id, person_id, rel],
+        )?;
+        Ok(())
+    }
+
+    /// Unlink a person from an entity.
+    pub fn unlink_person_from_entity(
+        &self,
+        person_id: &str,
+        entity_id: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM entity_people WHERE entity_id = ?1 AND person_id = ?2",
+            params![entity_id, person_id],
+        )?;
+        Ok(())
+    }
+
+    /// Record that a person attended a meeting. Idempotent.
+    /// Also updates `people.meeting_count` and `people.last_seen`.
+    pub fn record_meeting_attendance(
+        &self,
+        meeting_id: &str,
+        person_id: &str,
+    ) -> Result<(), DbError> {
+        // Insert attendance record (idempotent)
+        let inserted = self.conn.execute(
+            "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id)
+             VALUES (?1, ?2)",
+            params![meeting_id, person_id],
+        )?;
+
+        // Only update meeting_count if we actually inserted a new row
+        if inserted > 0 {
+            // Get the meeting's start_time to update last_seen
+            let start_time: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT start_time FROM meetings_history WHERE id = ?1",
+                    params![meeting_id],
+                    |row| row.get(0),
+                )
+                .ok();
+
+            if let Some(ref st) = start_time {
+                self.conn.execute(
+                    "UPDATE people SET
+                        meeting_count = meeting_count + 1,
+                        last_seen = CASE
+                            WHEN ?1 > COALESCE(last_seen, '') THEN ?1
+                            ELSE last_seen
+                        END,
+                        updated_at = ?2
+                     WHERE id = ?3",
+                    params![st, Utc::now().to_rfc3339(), person_id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Get people who attended a meeting.
+    pub fn get_meeting_attendees(&self, meeting_id: &str) -> Result<Vec<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at
+             FROM people p
+             JOIN meeting_attendees ma ON p.id = ma.person_id
+             WHERE ma.meeting_id = ?1
+             ORDER BY p.name",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], Self::map_person_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get meetings a person attended, most recent first.
+    pub fn get_person_meetings(
+        &self,
+        person_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             WHERE ma.person_id = ?1
+             ORDER BY m.start_time DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![person_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Compute person-level signals (meeting frequency, temperature, trend).
+    pub fn get_person_signals(&self, person_id: &str) -> Result<PersonSignals, DbError> {
+        let count_30d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history m
+                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                 WHERE ma.person_id = ?1
+                   AND m.start_time >= date('now', '-30 days')",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let count_90d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history m
+                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                 WHERE ma.person_id = ?1
+                   AND m.start_time >= date('now', '-90 days')",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let last_meeting: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MAX(m.start_time) FROM meetings_history m
+                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
+                 WHERE ma.person_id = ?1",
+                params![person_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+
+        let temperature = match &last_meeting {
+            Some(dt) => compute_temperature(dt),
+            None => "cold".to_string(),
+        };
+        let trend = compute_trend(count_30d, count_90d);
+
+        Ok(PersonSignals {
+            meeting_frequency_30d: count_30d,
+            meeting_frequency_90d: count_90d,
+            last_meeting,
+            temperature,
+            trend,
+        })
+    }
+
+    /// Search people by name, email, or organization.
+    pub fn search_people(&self, query: &str, limit: i32) -> Result<Vec<DbPerson>, DbError> {
+        let pattern = format!("%{query}%");
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+             FROM people
+             WHERE name LIKE ?1 OR email LIKE ?1 OR organization LIKE ?1
+             ORDER BY name
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit], Self::map_person_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Update a single whitelisted field on a person.
+    pub fn update_person_field(
+        &self,
+        id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        // Whitelist fields to prevent SQL injection
+        let sql = match field {
+            "notes" => "UPDATE people SET notes = ?1, updated_at = ?3 WHERE id = ?2",
+            "role" => "UPDATE people SET role = ?1, updated_at = ?3 WHERE id = ?2",
+            "organization" => {
+                "UPDATE people SET organization = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            "relationship" => {
+                "UPDATE people SET relationship = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            _ => return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                format!("Field '{}' is not updatable", field),
+            ))),
+        };
+        self.conn.execute(sql, params![value, id, now])?;
+        Ok(())
+    }
+
+    /// Helper: map a row to `DbPerson`.
+    fn map_person_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbPerson> {
+        Ok(DbPerson {
+            id: row.get(0)?,
+            email: row.get(1)?,
+            name: row.get(2)?,
+            organization: row.get(3)?,
+            role: row.get(4)?,
+            relationship: row.get::<_, String>(5)?,
+            notes: row.get(6)?,
+            tracker_path: row.get(7)?,
+            last_seen: row.get(8)?,
+            first_seen: row.get(9)?,
+            meeting_count: row.get(10)?,
+            updated_at: row.get(11)?,
+        })
+    }
+
     /// Helper: map a row to `DbAction`. Reduces repetition across queries.
     fn map_action_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbAction> {
         Ok(DbAction {
@@ -2496,5 +2909,220 @@ mod tests {
 
         // No data: should be stable
         assert_eq!(super::compute_trend(0, 0), "stable");
+    }
+
+    // =========================================================================
+    // People Tests (I51)
+    // =========================================================================
+
+    fn sample_person(email: &str) -> DbPerson {
+        let now = Utc::now().to_rfc3339();
+        DbPerson {
+            id: crate::util::person_id_from_email(email),
+            email: email.to_lowercase(),
+            name: crate::util::name_from_email(email),
+            organization: Some(crate::util::org_from_email(email)),
+            role: None,
+            relationship: "unknown".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: Some(now.clone()),
+            meeting_count: 0,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn test_upsert_and_get_person() {
+        let db = test_db();
+        let person = sample_person("sarah.chen@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+
+        let result = db.get_person(&person.id).expect("get person");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.name, "Sarah Chen");
+        assert_eq!(p.email, "sarah.chen@acme.com");
+        assert_eq!(p.organization, Some("Acme".to_string()));
+    }
+
+    #[test]
+    fn test_get_person_by_email() {
+        let db = test_db();
+        let person = sample_person("bob@example.com");
+        db.upsert_person(&person).expect("upsert");
+
+        let result = db.get_person_by_email("BOB@EXAMPLE.COM").expect("get by email");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, person.id);
+    }
+
+    #[test]
+    fn test_get_people_with_filter() {
+        let db = test_db();
+        let mut p1 = sample_person("alice@myco.com");
+        p1.relationship = "internal".to_string();
+        let mut p2 = sample_person("bob@other.com");
+        p2.relationship = "external".to_string();
+
+        db.upsert_person(&p1).expect("upsert p1");
+        db.upsert_person(&p2).expect("upsert p2");
+
+        let all = db.get_people(None).expect("get all");
+        assert_eq!(all.len(), 2);
+
+        let internal = db.get_people(Some("internal")).expect("get internal");
+        assert_eq!(internal.len(), 1);
+        assert_eq!(internal[0].name, "Alice");
+
+        let external = db.get_people(Some("external")).expect("get external");
+        assert_eq!(external.len(), 1);
+        assert_eq!(external[0].name, "Bob");
+    }
+
+    #[test]
+    fn test_person_entity_linking() {
+        let db = test_db();
+        let person = sample_person("jane@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+
+        let account = DbAccount {
+            id: "acme-corp".to_string(),
+            name: "Acme Corp".to_string(),
+            ring: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            tracker_path: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&account).expect("upsert account");
+
+        db.link_person_to_entity(&person.id, "acme-corp", "associated")
+            .expect("link");
+
+        let people = db.get_people_for_entity("acme-corp").expect("people for entity");
+        assert_eq!(people.len(), 1);
+        assert_eq!(people[0].id, person.id);
+
+        let entities = db.get_entities_for_person(&person.id).expect("entities for person");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "acme-corp");
+
+        // Unlink
+        db.unlink_person_from_entity(&person.id, "acme-corp").expect("unlink");
+        let people_after = db.get_people_for_entity("acme-corp").expect("after unlink");
+        assert_eq!(people_after.len(), 0);
+    }
+
+    #[test]
+    fn test_meeting_attendance() {
+        let db = test_db();
+        let person = sample_person("attendee@test.com");
+        db.upsert_person(&person).expect("upsert person");
+
+        let now = Utc::now().to_rfc3339();
+        let meeting = DbMeeting {
+            id: "mtg-attend-001".to_string(),
+            title: "Test Meeting".to_string(),
+            meeting_type: "internal".to_string(),
+            start_time: now.clone(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+        db.record_meeting_attendance("mtg-attend-001", &person.id)
+            .expect("record attendance");
+
+        // Check attendees for meeting
+        let attendees = db.get_meeting_attendees("mtg-attend-001").expect("get attendees");
+        assert_eq!(attendees.len(), 1);
+        assert_eq!(attendees[0].id, person.id);
+
+        // Check meetings for person
+        let meetings = db.get_person_meetings(&person.id, 10).expect("person meetings");
+        assert_eq!(meetings.len(), 1);
+        assert_eq!(meetings[0].id, "mtg-attend-001");
+
+        // Check meeting_count was incremented
+        let updated = db.get_person(&person.id).expect("get updated").unwrap();
+        assert_eq!(updated.meeting_count, 1);
+
+        // Idempotent: recording again should not increment
+        db.record_meeting_attendance("mtg-attend-001", &person.id).expect("re-record");
+        let same = db.get_person(&person.id).expect("get same").unwrap();
+        assert_eq!(same.meeting_count, 1);
+    }
+
+    #[test]
+    fn test_search_people() {
+        let db = test_db();
+        db.upsert_person(&sample_person("alice@acme.com")).expect("upsert");
+        db.upsert_person(&sample_person("bob@bigcorp.io")).expect("upsert");
+
+        let results = db.search_people("acme", 10).expect("search");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "Alice");
+
+        let results = db.search_people("bob", 10).expect("search");
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_update_person_field() {
+        let db = test_db();
+        let person = sample_person("field@test.com");
+        db.upsert_person(&person).expect("upsert");
+
+        db.update_person_field(&person.id, "role", "VP Engineering").expect("update role");
+        let updated = db.get_person(&person.id).expect("get").unwrap();
+        assert_eq!(updated.role, Some("VP Engineering".to_string()));
+
+        // Invalid field should error
+        let err = db.update_person_field(&person.id, "invalid_field", "val");
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_person_signals_empty() {
+        let db = test_db();
+        let person = sample_person("nobody@test.com");
+        db.upsert_person(&person).expect("upsert");
+
+        let signals = db.get_person_signals(&person.id).expect("signals");
+        assert_eq!(signals.meeting_frequency_30d, 0);
+        assert_eq!(signals.temperature, "cold");
+        assert_eq!(signals.trend, "stable");
+    }
+
+    #[test]
+    fn test_people_table_created() {
+        let db = test_db();
+        let count: i32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM people", [], |row| row.get(0))
+            .expect("people table should exist");
+        assert_eq!(count, 0);
+
+        let count: i32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM meeting_attendees", [], |row| row.get(0))
+            .expect("meeting_attendees table should exist");
+        assert_eq!(count, 0);
+
+        let count: i32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM entity_people", [], |row| row.get(0))
+            .expect("entity_people table should exist");
+        assert_eq!(count, 0);
     }
 }
