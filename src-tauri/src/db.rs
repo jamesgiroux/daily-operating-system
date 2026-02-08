@@ -107,6 +107,7 @@ pub struct DbCapture {
     pub meeting_id: String,
     pub meeting_title: String,
     pub account_id: Option<String>,
+    pub project_id: Option<String>,
     pub capture_type: String,
     pub content: String,
     pub captured_at: String,
@@ -155,6 +156,33 @@ pub struct PersonSignals {
     pub meeting_frequency_30d: i32,
     pub meeting_frequency_90d: i32,
     pub last_meeting: Option<String>,
+    pub temperature: String,
+    pub trend: String,
+}
+
+/// A row from the `projects` table (I50).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbProject {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub milestone: Option<String>,
+    pub owner: Option<String>,
+    pub target_date: Option<String>,
+    pub tracker_path: Option<String>,
+    pub updated_at: String,
+}
+
+/// Activity signals for a project (parallel to StakeholderSignals).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSignals {
+    pub meeting_frequency_30d: i32,
+    pub meeting_frequency_90d: i32,
+    pub last_meeting: Option<String>,
+    pub days_until_target: Option<i64>,
+    pub open_action_count: i32,
     pub temperature: String,
     pub trend: String,
 }
@@ -261,6 +289,38 @@ impl ActionDb {
         // Recreating captures is safe — the table schema changes but data is
         // rebuilt from transcript processing and post-meeting capture.
         Self::migrate_captures_decision(&conn)?;
+
+        // Migration: create meeting_entities junction table (I52)
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meeting_entities (
+                meeting_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                PRIMARY KEY (meeting_id, entity_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);",
+        );
+
+        // Migration: backfill entities from projects (I50, parallel to account backfill)
+        let _ = conn.execute_batch(
+            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
+             SELECT id, name, 'project', tracker_path, updated_at FROM projects;",
+        );
+
+        // Migration: backfill meeting_entities junction from meetings_history.account_id (I52)
+        let _ = conn.execute_batch(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
+             SELECT id, account_id, 'account' FROM meetings_history
+             WHERE account_id IS NOT NULL AND account_id != '';",
+        );
+
+        // Migration: add project_id column to captures (I52)
+        let has_project_id: bool = conn
+            .prepare("SELECT project_id FROM captures LIMIT 0")
+            .is_ok();
+        if !has_project_id {
+            let _ = conn.execute_batch("ALTER TABLE captures ADD COLUMN project_id TEXT;");
+        }
 
         Ok(Self { conn })
     }
@@ -856,6 +916,360 @@ impl ActionDb {
     }
 
     // =========================================================================
+    // Projects (I50)
+    // =========================================================================
+
+    /// Helper: map a row to `DbProject`.
+    fn map_project_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DbProject> {
+        Ok(DbProject {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            status: row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "active".to_string()),
+            milestone: row.get(3)?,
+            owner: row.get(4)?,
+            target_date: row.get(5)?,
+            tracker_path: row.get(6)?,
+            updated_at: row.get(7)?,
+        })
+    }
+
+    /// Insert or update a project. Also mirrors to the `entities` table.
+    pub fn upsert_project(&self, project: &DbProject) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO projects (
+                id, name, status, milestone, owner, target_date,
+                tracker_path, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                status = excluded.status,
+                milestone = excluded.milestone,
+                owner = excluded.owner,
+                target_date = excluded.target_date,
+                tracker_path = excluded.tracker_path,
+                updated_at = excluded.updated_at",
+            params![
+                project.id,
+                project.name,
+                project.status,
+                project.milestone,
+                project.owner,
+                project.target_date,
+                project.tracker_path,
+                project.updated_at,
+            ],
+        )?;
+        self.ensure_entity_for_project(project)?;
+        Ok(())
+    }
+
+    /// Mirror a project to the entities table (bridge pattern).
+    pub fn ensure_entity_for_project(&self, project: &DbProject) -> Result<(), DbError> {
+        let entity = DbEntity {
+            id: project.id.clone(),
+            name: project.name.clone(),
+            entity_type: EntityType::Project,
+            tracker_path: project.tracker_path.clone(),
+            updated_at: project.updated_at.clone(),
+        };
+        self.upsert_entity(&entity)
+    }
+
+    /// Get a project by ID.
+    pub fn get_project(&self, id: &str) -> Result<Option<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date,
+                    tracker_path, updated_at
+             FROM projects WHERE id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get a project by name (case-insensitive).
+    pub fn get_project_by_name(&self, name: &str) -> Result<Option<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date,
+                    tracker_path, updated_at
+             FROM projects WHERE LOWER(name) = LOWER(?1)",
+        )?;
+        let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all projects, ordered by name.
+    pub fn get_all_projects(&self) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date,
+                    tracker_path, updated_at
+             FROM projects ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Update a single whitelisted field on a project.
+    pub fn update_project_field(
+        &self,
+        id: &str,
+        field: &str,
+        value: &str,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let sql = match field {
+            "status" => "UPDATE projects SET status = ?1, updated_at = ?3 WHERE id = ?2",
+            "milestone" => "UPDATE projects SET milestone = ?1, updated_at = ?3 WHERE id = ?2",
+            "owner" => "UPDATE projects SET owner = ?1, updated_at = ?3 WHERE id = ?2",
+            "target_date" => {
+                "UPDATE projects SET target_date = ?1, updated_at = ?3 WHERE id = ?2"
+            }
+            _ => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("Field '{}' is not updatable", field),
+                )))
+            }
+        };
+        self.conn.execute(sql, params![value, id, now])?;
+        Ok(())
+    }
+
+    /// Get pending/waiting actions for a project.
+    pub fn get_project_actions(&self, project_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at
+             FROM actions
+             WHERE project_id = ?1
+               AND status IN ('pending', 'waiting')
+             ORDER BY priority, due_date",
+        )?;
+        let rows = stmt.query_map(params![project_id], Self::map_action_row)?;
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get meetings linked to a project via the meeting_entities junction table.
+    pub fn get_meetings_for_project(
+        &self,
+        project_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'project'
+             ORDER BY m.start_time DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![project_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Link a meeting to a project in the meeting_entities junction table.
+    pub fn link_meeting_to_project(
+        &self,
+        meeting_id: &str,
+        project_id: &str,
+    ) -> Result<(), DbError> {
+        self.link_meeting_entity(meeting_id, project_id, "project")
+    }
+
+    /// Link a meeting to any entity in the junction table (I52 generic).
+    pub fn link_meeting_entity(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+        entity_type: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
+             VALUES (?1, ?2, ?3)",
+            params![meeting_id, entity_id, entity_type],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a meeting-entity link from the junction table.
+    pub fn unlink_meeting_entity(
+        &self,
+        meeting_id: &str,
+        entity_id: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2",
+            params![meeting_id, entity_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get all entities linked to a meeting via the junction table.
+    pub fn get_meeting_entities(&self, meeting_id: &str) -> Result<Vec<DbEntity>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT e.id, e.name, e.entity_type, e.tracker_path, e.updated_at
+             FROM entities e
+             JOIN meeting_entities me ON me.entity_id = e.id
+             WHERE me.meeting_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![meeting_id], |row| {
+            let et: String = row.get(2)?;
+            Ok(DbEntity {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                entity_type: EntityType::from_str_lossy(&et),
+                tracker_path: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get meetings for any entity (generic, via junction table).
+    pub fn get_meetings_for_entity(
+        &self,
+        entity_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             JOIN meeting_entities me ON me.meeting_id = m.id
+             WHERE me.entity_id = ?1
+             ORDER BY m.start_time DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![entity_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Compute activity signals for a project.
+    pub fn get_project_signals(&self, project_id: &str) -> Result<ProjectSignals, DbError> {
+        // Meeting counts via junction table
+        let count_30d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history m
+                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 WHERE me.entity_id = ?1 AND me.entity_type = 'project'
+                   AND m.start_time >= date('now', '-30 days')",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let count_90d: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meetings_history m
+                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 WHERE me.entity_id = ?1 AND me.entity_type = 'project'
+                   AND m.start_time >= date('now', '-90 days')",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let last_meeting: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT MAX(m.start_time) FROM meetings_history m
+                 JOIN meeting_entities me ON me.meeting_id = m.id
+                 WHERE me.entity_id = ?1 AND me.entity_type = 'project'",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+
+        // Days until target date
+        let target_date: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT target_date FROM projects WHERE id = ?1",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(None);
+
+        let days_until_target = target_date.as_ref().and_then(|td| {
+            chrono::NaiveDate::parse_from_str(td, "%Y-%m-%d")
+                .ok()
+                .map(|date| {
+                    let today = Utc::now().date_naive();
+                    (date - today).num_days()
+                })
+        });
+
+        // Open action count
+        let open_action_count: i32 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM actions
+                 WHERE project_id = ?1 AND status IN ('pending', 'waiting')",
+                params![project_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        let temperature = match &last_meeting {
+            Some(dt) => compute_temperature(dt),
+            None => "cold".to_string(),
+        };
+        let trend = compute_trend(count_30d, count_90d);
+
+        Ok(ProjectSignals {
+            meeting_frequency_30d: count_30d,
+            meeting_frequency_90d: count_90d,
+            last_meeting,
+            days_until_target,
+            open_action_count,
+            temperature,
+            trend,
+        })
+    }
+
+    // =========================================================================
     // Entities (ADR-0045)
     // =========================================================================
 
@@ -1132,6 +1546,21 @@ impl ActionDb {
     // Captures (post-meeting wins/risks)
     // =========================================================================
 
+    /// Map a row to DbCapture. Expects columns:
+    /// id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at
+    fn map_capture_row(row: &rusqlite::Row) -> rusqlite::Result<DbCapture> {
+        Ok(DbCapture {
+            id: row.get(0)?,
+            meeting_id: row.get(1)?,
+            meeting_title: row.get(2)?,
+            account_id: row.get(3)?,
+            project_id: row.get(4)?,
+            capture_type: row.get(5)?,
+            content: row.get(6)?,
+            captured_at: row.get(7)?,
+        })
+    }
+
     /// Insert a capture (win, risk, or action) from a post-meeting prompt.
     pub fn insert_capture(
         &self,
@@ -1141,12 +1570,25 @@ impl ActionDb {
         capture_type: &str,
         content: &str,
     ) -> Result<(), DbError> {
+        self.insert_capture_with_project(meeting_id, meeting_title, account_id, None, capture_type, content)
+    }
+
+    /// Insert a capture with optional project_id (I52).
+    pub fn insert_capture_with_project(
+        &self,
+        meeting_id: &str,
+        meeting_title: &str,
+        account_id: Option<&str>,
+        project_id: Option<&str>,
+        capture_type: &str,
+        content: &str,
+    ) -> Result<(), DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO captures (id, meeting_id, meeting_title, account_id, capture_type, content, captured_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, meeting_id, meeting_title, account_id, capture_type, content, now],
+            "INSERT INTO captures (id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, meeting_id, meeting_title, account_id, project_id, capture_type, content, now],
         )?;
         Ok(())
     }
@@ -1161,7 +1603,7 @@ impl ActionDb {
         days_back: i32,
     ) -> Result<Vec<DbCapture>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+            "SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at
              FROM captures
              WHERE account_id = ?1
                AND captured_at >= date('now', ?2 || ' days')
@@ -1169,17 +1611,31 @@ impl ActionDb {
         )?;
 
         let days_param = format!("-{days_back}");
-        let rows = stmt.query_map(params![account_id, days_param], |row| {
-            Ok(DbCapture {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                meeting_title: row.get(2)?,
-                account_id: row.get(3)?,
-                capture_type: row.get(4)?,
-                content: row.get(5)?,
-                captured_at: row.get(6)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![account_id, days_param], Self::map_capture_row)?;
+
+        let mut captures = Vec::new();
+        for row in rows {
+            captures.push(row?);
+        }
+        Ok(captures)
+    }
+
+    /// Query recent captures for a project within `days_back` days (I52).
+    pub fn get_captures_for_project(
+        &self,
+        project_id: &str,
+        days_back: i32,
+    ) -> Result<Vec<DbCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at
+             FROM captures
+             WHERE project_id = ?1
+               AND captured_at >= date('now', ?2 || ' days')
+             ORDER BY captured_at DESC",
+        )?;
+
+        let days_param = format!("-{days_back}");
+        let rows = stmt.query_map(params![project_id, days_param], Self::map_capture_row)?;
 
         let mut captures = Vec::new();
         for row in rows {
@@ -1191,23 +1647,13 @@ impl ActionDb {
     /// Query all captures (wins, risks, decisions) for a specific meeting.
     pub fn get_captures_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbCapture>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+            "SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at
              FROM captures
              WHERE meeting_id = ?1
              ORDER BY captured_at",
         )?;
 
-        let rows = stmt.query_map(params![meeting_id], |row| {
-            Ok(DbCapture {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                meeting_title: row.get(2)?,
-                account_id: row.get(3)?,
-                capture_type: row.get(4)?,
-                content: row.get(5)?,
-                captured_at: row.get(6)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![meeting_id], Self::map_capture_row)?;
 
         let mut captures = Vec::new();
         for row in rows {
@@ -1260,23 +1706,13 @@ impl ActionDb {
     /// the weekly impact file during the archive workflow.
     pub fn get_captures_for_date(&self, date: &str) -> Result<Vec<DbCapture>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, meeting_id, meeting_title, account_id, capture_type, content, captured_at
+            "SELECT id, meeting_id, meeting_title, account_id, project_id, capture_type, content, captured_at
              FROM captures
              WHERE date(captured_at) = ?1
              ORDER BY account_id, captured_at",
         )?;
 
-        let rows = stmt.query_map(params![date], |row| {
-            Ok(DbCapture {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                meeting_title: row.get(2)?,
-                account_id: row.get(3)?,
-                capture_type: row.get(4)?,
-                content: row.get(5)?,
-                captured_at: row.get(6)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![date], Self::map_capture_row)?;
 
         let mut captures = Vec::new();
         for row in rows {
@@ -1340,6 +1776,14 @@ impl ActionDb {
                 meeting.calendar_event_id,
             ],
         )?;
+
+        // Auto-link junction when account_id is present (I52)
+        if let Some(ref aid) = meeting.account_id {
+            if !aid.is_empty() {
+                let _ = self.link_meeting_entity(&meeting.id, aid, "account");
+            }
+        }
+
         Ok(())
     }
 
@@ -3201,5 +3645,437 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM entity_people", [], |row| row.get(0))
             .expect("entity_people table should exist");
         assert_eq!(count, 0);
+
+        let count: i32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM meeting_entities", [], |row| row.get(0))
+            .expect("meeting_entities table should exist");
+        assert_eq!(count, 0);
+    }
+
+    // =========================================================================
+    // Projects (I50)
+    // =========================================================================
+
+    #[test]
+    fn test_upsert_and_get_project() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "widget-v2".to_string(),
+            name: "Widget v2".to_string(),
+            status: "active".to_string(),
+            milestone: Some("Beta Launch".to_string()),
+            owner: Some("Alice".to_string()),
+            target_date: Some("2026-06-01".to_string()),
+            tracker_path: Some("Projects/Widget v2".to_string()),
+            updated_at: now,
+        };
+
+        db.upsert_project(&project).expect("upsert");
+
+        let fetched = db.get_project("widget-v2").expect("get").unwrap();
+        assert_eq!(fetched.name, "Widget v2");
+        assert_eq!(fetched.status, "active");
+        assert_eq!(fetched.milestone, Some("Beta Launch".to_string()));
+    }
+
+    #[test]
+    fn test_get_project_by_name() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "gadget".to_string(),
+            name: "Gadget".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now,
+        };
+
+        db.upsert_project(&project).expect("upsert");
+
+        let fetched = db.get_project_by_name("gadget").expect("get").unwrap();
+        assert_eq!(fetched.id, "gadget");
+
+        // Case-insensitive
+        let fetched = db.get_project_by_name("GADGET").expect("get").unwrap();
+        assert_eq!(fetched.id, "gadget");
+    }
+
+    #[test]
+    fn test_get_all_projects() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        for name in &["Alpha", "Beta", "Gamma"] {
+            let project = DbProject {
+                id: name.to_lowercase(),
+                name: name.to_string(),
+                status: "active".to_string(),
+                milestone: None,
+                owner: None,
+                target_date: None,
+                tracker_path: None,
+                updated_at: now.clone(),
+            };
+            db.upsert_project(&project).expect("upsert");
+        }
+
+        let all = db.get_all_projects().expect("get all");
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].name, "Alpha"); // Sorted by name
+    }
+
+    #[test]
+    fn test_update_project_field() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "proj-1".to_string(),
+            name: "Proj 1".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now,
+        };
+        db.upsert_project(&project).expect("upsert");
+
+        db.update_project_field("proj-1", "status", "on_hold")
+            .expect("update");
+
+        let fetched = db.get_project("proj-1").expect("get").unwrap();
+        assert_eq!(fetched.status, "on_hold");
+    }
+
+    #[test]
+    fn test_update_project_field_rejects_invalid() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "proj-1".to_string(),
+            name: "Proj 1".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now,
+        };
+        db.upsert_project(&project).expect("upsert");
+
+        let result = db.update_project_field("proj-1", "name", "Hacked");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ensure_entity_for_project() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "widget-v2".to_string(),
+            name: "Widget v2".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: Some("Projects/Widget v2".to_string()),
+            updated_at: now,
+        };
+
+        db.upsert_project(&project).expect("upsert");
+
+        let entity = db.get_entity("widget-v2").expect("get").unwrap();
+        assert_eq!(entity.name, "Widget v2");
+        assert_eq!(entity.entity_type, EntityType::Project);
+    }
+
+    #[test]
+    fn test_get_project_actions() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "proj-actions".to_string(),
+            name: "Action Test".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now.clone(),
+        };
+        db.upsert_project(&project).expect("upsert");
+
+        // Insert an action linked to project
+        let action = DbAction {
+            id: "act-proj-1".to_string(),
+            title: "Fix the widget".to_string(),
+            priority: "P1".to_string(),
+            status: "pending".to_string(),
+            created_at: now.clone(),
+            due_date: None,
+            completed_at: None,
+            account_id: None,
+            project_id: Some("proj-actions".to_string()),
+            source_type: None,
+            source_id: None,
+            source_label: None,
+            context: None,
+            waiting_on: None,
+            updated_at: now,
+        };
+        db.upsert_action(&action).expect("upsert action");
+
+        let actions = db.get_project_actions("proj-actions").expect("get");
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].title, "Fix the widget");
+    }
+
+    #[test]
+    fn test_project_signals_empty() {
+        let db = test_db();
+        let signals = db.get_project_signals("nonexistent").expect("signals");
+        assert_eq!(signals.meeting_frequency_30d, 0);
+        assert_eq!(signals.meeting_frequency_90d, 0);
+        assert_eq!(signals.open_action_count, 0);
+        assert_eq!(signals.temperature, "cold");
+    }
+
+    #[test]
+    fn test_link_meeting_to_project_and_query() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let project = DbProject {
+            id: "proj-mtg".to_string(),
+            name: "Meeting Project".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now.clone(),
+        };
+        db.upsert_project(&project).expect("upsert project");
+
+        // Insert a meeting directly
+        db.conn
+            .execute(
+                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["mtg-proj-001", "Sprint Review", "internal", &now, &now],
+            )
+            .expect("insert meeting");
+
+        // Link it
+        db.link_meeting_to_project("mtg-proj-001", "proj-mtg")
+            .expect("link");
+
+        // Query via project
+        let meetings = db
+            .get_meetings_for_project("proj-mtg", 10)
+            .expect("get meetings");
+        assert_eq!(meetings.len(), 1);
+        assert_eq!(meetings[0].title, "Sprint Review");
+
+        // Idempotent
+        db.link_meeting_to_project("mtg-proj-001", "proj-mtg")
+            .expect("re-link should not fail");
+        let meetings = db
+            .get_meetings_for_project("proj-mtg", 10)
+            .expect("still 1");
+        assert_eq!(meetings.len(), 1);
+    }
+
+    // =========================================================================
+    // I52: Meeting-entity M2M junction tests
+    // =========================================================================
+
+    #[test]
+    fn test_generic_link_unlink_meeting_entity() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Create an entity (account)
+        db.conn
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["acme-ent", "Acme", "account", &now],
+            )
+            .expect("insert entity");
+
+        db.conn
+            .execute(
+                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["mtg-j1", "Acme QBR", "customer", &now, &now],
+            )
+            .expect("insert meeting");
+
+        // Link
+        db.link_meeting_entity("mtg-j1", "acme-ent", "account")
+            .expect("link");
+        let entities = db.get_meeting_entities("mtg-j1").expect("get entities");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].name, "Acme");
+
+        // Unlink
+        db.unlink_meeting_entity("mtg-j1", "acme-ent")
+            .expect("unlink");
+        let entities = db.get_meeting_entities("mtg-j1").expect("empty now");
+        assert_eq!(entities.len(), 0);
+    }
+
+    #[test]
+    fn test_meeting_multi_entity_link() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Create an account entity and a project entity
+        db.conn
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["acme-m2m", "Acme", "account", &now],
+            )
+            .expect("insert account entity");
+
+        let project = DbProject {
+            id: "proj-m2m".to_string(),
+            name: "Migration".to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: None,
+            updated_at: now.clone(),
+        };
+        db.upsert_project(&project).expect("upsert project");
+
+        db.conn
+            .execute(
+                "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["mtg-m2m", "Migration Review", "customer", &now, &now],
+            )
+            .expect("insert meeting");
+
+        // Link to both account and project
+        db.link_meeting_entity("mtg-m2m", "acme-m2m", "account")
+            .expect("link account");
+        db.link_meeting_entity("mtg-m2m", "proj-m2m", "project")
+            .expect("link project");
+
+        let entities = db.get_meeting_entities("mtg-m2m").expect("get entities");
+        assert_eq!(entities.len(), 2);
+
+        // Generic get_meetings_for_entity works for both
+        let acme_meetings = db.get_meetings_for_entity("acme-m2m", 10).expect("acme meetings");
+        assert_eq!(acme_meetings.len(), 1);
+        let proj_meetings = db.get_meetings_for_entity("proj-m2m", 10).expect("proj meetings");
+        assert_eq!(proj_meetings.len(), 1);
+    }
+
+    #[test]
+    fn test_upsert_meeting_auto_links_junction() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Create account entity for the junction lookup
+        db.conn
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["acme-auto", "Acme Auto", "account", &now],
+            )
+            .expect("insert entity");
+
+        let meeting = DbMeeting {
+            id: "mtg-auto".to_string(),
+            title: "Auto-link Test".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: now.clone(),
+            end_time: None,
+            account_id: Some("acme-auto".to_string()),
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now.clone(),
+            calendar_event_id: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert");
+
+        // Junction should be auto-populated
+        let count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2",
+                params!["mtg-auto", "acme-auto"],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_captures_with_project_id() {
+        let db = test_db();
+
+        db.insert_capture_with_project("mtg-p1", "Sprint Review", None, Some("proj-cap"), "win", "Feature shipped")
+            .expect("insert");
+
+        let captures = db.get_captures_for_project("proj-cap", 30).expect("query");
+        assert_eq!(captures.len(), 1);
+        assert_eq!(captures[0].project_id.as_deref(), Some("proj-cap"));
+        assert_eq!(captures[0].content, "Feature shipped");
+
+        // Regular insert_capture still works (project_id = None)
+        db.insert_capture("mtg-p2", "Acme QBR", Some("acme"), "risk", "Budget freeze")
+            .expect("insert without project");
+        let proj_captures = db.get_captures_for_project("acme", 30).expect("query");
+        assert_eq!(proj_captures.len(), 0); // acme is account_id, not project_id
+    }
+
+    #[test]
+    fn test_backfill_junction_from_account_id() {
+        // Simulate what the migration does: meetings with account_id get junction entries
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Insert a meeting with account_id directly (simulating pre-junction data)
+        db.conn
+            .execute(
+                "INSERT INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params!["mtg-bf", "Backfill Test", "customer", &now, "acme-bf", &now],
+            )
+            .expect("insert");
+
+        // Run the backfill SQL
+        db.conn
+            .execute_batch(
+                "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
+                 SELECT id, account_id, 'account' FROM meetings_history
+                 WHERE account_id IS NOT NULL AND account_id != '';",
+            )
+            .expect("backfill");
+
+        let count: i32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = 'mtg-bf' AND entity_id = 'acme-bf'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count");
+        assert_eq!(count, 1);
     }
 }

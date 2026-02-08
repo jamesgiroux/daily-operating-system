@@ -76,7 +76,7 @@ impl Scheduler {
 
     /// Check for jobs that should run now
     async fn check_and_run_due_jobs(&self, now: DateTime<Utc>) {
-        let config = match self.state.config.lock() {
+        let config = match self.state.config.read() {
             Ok(guard) => guard.clone(),
             Err(_) => return,
         };
@@ -149,8 +149,8 @@ impl Scheduler {
             let next_utc = next_time.with_timezone(&Utc);
             let diff = (now - next_utc).num_seconds().abs();
 
-            // Within 1 minute of scheduled time
-            if diff < 60 {
+            // Within 2 minutes of scheduled time (I67: wider window for sleep/wake)
+            if diff < 120 {
                 // Check if we already ran this scheduled time
                 if let Some(last) = last_run {
                     if (last - next_utc).num_seconds().abs() < 60 {
@@ -166,7 +166,7 @@ impl Scheduler {
 
     /// Check for jobs that were missed during sleep
     async fn check_missed_jobs(&self, now: DateTime<Utc>) {
-        let config = match self.state.config.lock() {
+        let config = match self.state.config.read() {
             Ok(guard) => guard.clone(),
             Err(_) => return,
         };

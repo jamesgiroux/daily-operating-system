@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, RwLock};
 
 use chrono::{DateTime, Utc};
 
@@ -15,14 +15,14 @@ const MAX_HISTORY_SIZE: usize = 100;
 
 /// Application state managed by Tauri
 pub struct AppState {
-    pub config: Mutex<Option<Config>>,
-    pub workflow_status: Mutex<HashMap<WorkflowId, WorkflowStatus>>,
+    pub config: RwLock<Option<Config>>,
+    pub workflow_status: RwLock<HashMap<WorkflowId, WorkflowStatus>>,
     pub execution_history: Mutex<Vec<ExecutionRecord>>,
-    pub last_scheduled_run: Mutex<HashMap<WorkflowId, DateTime<Utc>>>,
+    pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
     pub db: Mutex<Option<crate::db::ActionDb>>,
     // Phase 3: Google + Calendar + Capture + Week Planning
     pub google_auth: Mutex<GoogleAuthStatus>,
-    pub calendar_events: Mutex<Vec<CalendarEvent>>,
+    pub calendar_events: RwLock<Vec<CalendarEvent>>,
     pub capture_dismissed: Mutex<std::collections::HashSet<String>>,
     pub capture_captured: Mutex<std::collections::HashSet<String>>,
     pub week_planning_state: Mutex<WeekPlanningState>,
@@ -69,17 +69,24 @@ impl AppState {
                     Ok(_) => {}
                     Err(e) => log::warn!("Startup: accounts sync failed: {}", e),
                 }
+
+                // Sync projects from workspace files (I50: catches external edits)
+                match crate::projects::sync_projects_from_workspace(workspace, db_ref) {
+                    Ok(n) if n > 0 => log::info!("Startup: synced {} projects from workspace", n),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("Startup: projects sync failed: {}", e),
+                }
             }
         }
 
         Self {
-            config: Mutex::new(config),
-            workflow_status: Mutex::new(HashMap::new()),
+            config: RwLock::new(config),
+            workflow_status: RwLock::new(HashMap::new()),
             execution_history: Mutex::new(history),
-            last_scheduled_run: Mutex::new(HashMap::new()),
+            last_scheduled_run: RwLock::new(HashMap::new()),
             db: Mutex::new(db),
             google_auth: Mutex::new(google_auth),
-            calendar_events: Mutex::new(Vec::new()),
+            calendar_events: RwLock::new(Vec::new()),
             capture_dismissed: Mutex::new(std::collections::HashSet::new()),
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             week_planning_state: Mutex::new(WeekPlanningState::default()),
@@ -90,14 +97,14 @@ impl AppState {
     /// Get current status of a workflow
     pub fn get_workflow_status(&self, workflow: WorkflowId) -> WorkflowStatus {
         self.workflow_status
-            .lock()
+            .read()
             .map(|guard| guard.get(&workflow).cloned().unwrap_or_default())
             .unwrap_or_default()
     }
 
     /// Update workflow status
     pub fn set_workflow_status(&self, workflow: WorkflowId, status: WorkflowStatus) {
-        if let Ok(mut guard) = self.workflow_status.lock() {
+        if let Ok(mut guard) = self.workflow_status.write() {
             guard.insert(workflow, status);
         }
     }
@@ -139,7 +146,7 @@ impl AppState {
 
     /// Record when a scheduled run last occurred
     pub fn set_last_scheduled_run(&self, workflow: WorkflowId, time: DateTime<Utc>) {
-        if let Ok(mut guard) = self.last_scheduled_run.lock() {
+        if let Ok(mut guard) = self.last_scheduled_run.write() {
             guard.insert(workflow, time);
         }
     }
@@ -147,7 +154,7 @@ impl AppState {
     /// Get when a workflow last ran on schedule
     pub fn get_last_scheduled_run(&self, workflow: WorkflowId) -> Option<DateTime<Utc>> {
         self.last_scheduled_run
-            .lock()
+            .read()
             .ok()
             .and_then(|guard| guard.get(&workflow).cloned())
     }
@@ -191,7 +198,7 @@ pub fn create_or_update_config(
     state: &AppState,
     mutator: impl FnOnce(&mut Config),
 ) -> Result<Config, String> {
-    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let mut guard = state.config.write().map_err(|_| "Lock poisoned")?;
 
     let mut config = match guard.clone() {
         Some(c) => c,
@@ -240,8 +247,9 @@ pub fn create_or_update_config(
 
 /// Initialize workspace directory structure.
 ///
-/// Always creates: _today/, _today/data/, _inbox/, _archive/, Projects/
+/// Always creates: _today/, _today/data/, _inbox/, _archive/
 /// Conditionally creates: Accounts/ if entity_mode is "account" or "both"
+/// Conditionally creates: Projects/ if entity_mode is "project" or "both"
 /// Idempotent: skips existing dirs, never overwrites files.
 pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result<(), String> {
     // Validate parent exists
@@ -260,7 +268,6 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
         path.join("_today").join("data"),
         path.join("_inbox"),
         path.join("_archive"),
-        path.join("Projects"),
     ];
 
     for dir in &dirs {
@@ -276,6 +283,15 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
         if !accounts_dir.exists() {
             fs::create_dir_all(&accounts_dir)
                 .map_err(|e| format!("Failed to create Accounts: {}", e))?;
+        }
+    }
+
+    // Conditionally create Projects/
+    if entity_mode == "project" || entity_mode == "both" {
+        let projects_dir = path.join("Projects");
+        if !projects_dir.exists() {
+            fs::create_dir_all(&projects_dir)
+                .map_err(|e| format!("Failed to create Projects: {}", e))?;
         }
     }
 
@@ -364,7 +380,7 @@ pub fn save_transcript_records(
 /// Reload configuration from disk
 pub fn reload_config(state: &AppState) -> Result<Config, String> {
     let config = load_config()?;
-    let mut guard = state.config.lock().map_err(|_| "Lock poisoned")?;
+    let mut guard = state.config.write().map_err(|_| "Lock poisoned")?;
     *guard = Some(config.clone());
     Ok(config)
 }

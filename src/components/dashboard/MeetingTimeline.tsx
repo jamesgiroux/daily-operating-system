@@ -80,6 +80,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
               outcomesStatus: "unknown",
               isLive: live || (meeting.isCurrent ?? false),
               hasInlinePrep: false,
+              hasEnrichedPrep: false,
             });
             return (
               <div
