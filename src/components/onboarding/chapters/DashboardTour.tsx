@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, ArrowRight, ArrowLeft } from "lucide-react";
+import { Target, ChevronRight, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Overview } from "@/components/dashboard/Overview";
 import { MeetingTimeline } from "@/components/dashboard/MeetingTimeline";
 import { EmailList } from "@/components/dashboard/EmailList";
 import { ActionList } from "@/components/dashboard/ActionList";
@@ -17,24 +16,24 @@ interface DashboardTourProps {
 
 const TOUR_STOPS = [
   {
-    key: "overview",
-    title: "Your day at a glance",
-    body: "AI writes a morning summary and picks your focus based on today's priorities.",
+    key: "schedule",
+    title: "Your schedule, front and center",
+    body: "Meetings appear immediately. Highlighted ones have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
   },
   {
-    key: "meetings",
-    title: "Your schedule, chronological",
-    body: "Highlighted meetings have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
-  },
-  {
-    key: "emails",
-    title: "Priority-sorted email triage",
-    body: "AI reads each email, writes a summary, and recommends an action.",
+    key: "focus",
+    title: "Today's focus",
+    body: "AI picks your focus based on today's priorities. Click to see full detail.",
   },
   {
     key: "actions",
     title: "Actions sourced from everywhere",
     body: "Meetings, emails, manual entry — sorted by priority and due date.",
+  },
+  {
+    key: "emails",
+    title: "Priority-sorted email triage",
+    body: "AI reads each email, writes a summary, and recommends an action.",
   },
 ] as const;
 
@@ -111,10 +110,6 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
   }
 
   const stop = TOUR_STOPS[currentStop];
-  const freshness: DataFreshness = {
-    freshness: "fresh",
-    generatedAt: new Date().toISOString(),
-  };
   const emails = data.emails ?? [];
 
   return (
@@ -130,31 +125,46 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           </p>
         </div>
 
-        {/* Overview */}
-        <TourHighlight ref={setStopRef(0)} active={stop.key === "overview"}>
-          <Overview
-            overview={data.overview}
-            meetings={data.meetings}
-            actions={data.actions}
-            freshness={freshness}
-          />
-        </TourHighlight>
-
-        {/* Main content grid */}
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          {/* Meeting timeline */}
-          <TourHighlight ref={setStopRef(1)} active={stop.key === "meetings"}>
-            <MeetingTimeline meetings={data.meetings} />
-          </TourHighlight>
-
-          {/* Right sidebar: Emails + Actions */}
-          <div className="space-y-6">
-            <TourHighlight ref={setStopRef(2)} active={stop.key === "emails"}>
-              <EmailList emails={emails} />
+        {/* Two-column layout matching the actual dashboard */}
+        <div className="grid gap-8 lg:grid-cols-[5fr_2fr]">
+          {/* Left: Schedule */}
+          <div className="min-w-0 space-y-6">
+            <div className="space-y-1">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </h1>
+            </div>
+            <TourHighlight ref={setStopRef(0)} active={stop.key === "schedule"}>
+              <MeetingTimeline meetings={data.meetings} />
             </TourHighlight>
+          </div>
 
-            <TourHighlight ref={setStopRef(3)} active={stop.key === "actions"}>
+          {/* Right: Context sidebar */}
+          <div className="min-w-0 space-y-5">
+            {data.overview.focus && (
+              <TourHighlight ref={setStopRef(1)} active={stop.key === "focus"}>
+                <div className="rounded-lg bg-primary/5 border border-primary/10 px-3.5 py-3">
+                  <div className="flex items-start gap-2.5">
+                    <Target className="size-4 shrink-0 text-primary mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Focus</span>
+                      <p className="mt-1 text-sm font-medium text-primary leading-relaxed">{data.overview.focus}</p>
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground mt-0.5" />
+                  </div>
+                </div>
+              </TourHighlight>
+            )}
+            <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
               <ActionList actions={data.actions} />
+            </TourHighlight>
+            <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
+              <EmailList emails={emails} />
             </TourHighlight>
           </div>
         </div>

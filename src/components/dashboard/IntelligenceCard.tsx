@@ -5,7 +5,6 @@ import {
   Clock,
   Lightbulb,
   Scale,
-  XCircle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +15,6 @@ import {
 } from "@/components/ui/collapsible";
 import { useExecutiveIntelligence } from "@/hooks/useExecutiveIntelligence";
 import type {
-  CancelableSignal,
   DecisionSignal,
   DelegationSignal,
   PortfolioAlert,
@@ -58,14 +56,6 @@ export function IntelligenceCard() {
               className="bg-destructive/15 text-destructive border-destructive/20"
             />
           )}
-          {data.signalCounts.cancelable > 0 && (
-            <SignalBadge
-              icon={<XCircle className="size-3" />}
-              count={data.signalCounts.cancelable}
-              label="cancelable"
-              className="bg-muted text-muted-foreground border-border"
-            />
-          )}
           {data.signalCounts.skipToday > 0 && (
             <SignalBadge
               icon={<Lightbulb className="size-3" />}
@@ -100,14 +90,6 @@ export function IntelligenceCard() {
             <SignalSection title="Portfolio Alerts" icon={<AlertTriangle className="size-4 text-destructive" />}>
               {data.portfolioAlerts.map((a, i) => (
                 <PortfolioRow key={`${a.accountId}-${i}`} alert={a} />
-              ))}
-            </SignalSection>
-          )}
-
-          {data.cancelableMeetings.length > 0 && (
-            <SignalSection title="Cancel / Protect" icon={<XCircle className="size-4 text-muted-foreground" />}>
-              {data.cancelableMeetings.map((c) => (
-                <CancelableRow key={c.meetingId} signal={c} />
               ))}
             </SignalSection>
           )}
@@ -222,17 +204,6 @@ function PortfolioRow({ alert }: { alert: PortfolioAlert }) {
       <span className="flex-1 text-xs text-muted-foreground truncate">
         {alert.detail}
       </span>
-    </div>
-  );
-}
-
-function CancelableRow({ signal }: { signal: CancelableSignal }) {
-  return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-        {signal.time}
-      </span>
-      <span className="flex-1 truncate">{signal.title}</span>
     </div>
   );
 }
