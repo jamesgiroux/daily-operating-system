@@ -139,6 +139,26 @@ These are decided (ADRs exist) but not scheduled. Entity-mode architecture (ADR-
 | I29 | Structured document schemas | Foundation | I27 |
 | I28 | MCP server + client (I54 covers client side) | Integration | — (Phase gate) |
 
+### Entity Dashboards (ADR-0047)
+
+| Issue | What | Type | Blocked by |
+|-------|------|------|------------|
+| I72 | Entity dashboard pages — list + detail views for accounts/projects | UI | I73 |
+| I73 | Entity dashboard template system — JSON schema, markdown gen, file watching | Foundation | — (can start with existing accounts table) |
+| I74 | Account enrichment via Claude Code websearch | Enrichment | I73 |
+| I75 | External edit detection + reconciliation | Sync | I73 |
+
+Account-side I72 + I73 can begin without I27 (uses existing `accounts` table). Project-side depends on I50. I74 (enrichment) and I75 (sync) are independent enhancements on top of I73.
+
+### Data Durability (ADR-0048)
+
+| Issue | What | Type | Blocked by |
+|-------|------|------|------------|
+| I76 | SQLite backup strategy + rebuild-from-filesystem command | Safety | — |
+| I77 | Filesystem writeback audit — ensure important SQLite state reaches files | Discipline | I73 (for account fields) |
+
+ADR-0048 supersedes ADR-0018. SQLite is a working store, not a disposable cache. I76 (backup) is a pre-ship or immediately-post-ship concern.
+
 ### Deferred
 
 | Issue | What |

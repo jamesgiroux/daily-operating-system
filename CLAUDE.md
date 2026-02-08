@@ -261,7 +261,7 @@ See `daybreak/docs/decisions/` for full ADRs. Summary of foundational choices:
 | App framework | Tauri v2 (Rust + React) | [0001](daybreak/docs/decisions/0001-use-tauri-over-electron.md) |
 | Data architecture | JSON for machines, markdown for humans | [0004](daybreak/docs/decisions/0004-hybrid-json-markdown-architecture.md) |
 | Determinism boundary | Python phases wrap AI phase | [0006](daybreak/docs/decisions/0006-determinism-boundary.md) |
-| Storage | Markdown (source of truth) + SQLite (disposable cache) | [0018](daybreak/docs/decisions/0018-hybrid-storage-markdown-sqlite.md) |
+| Storage | Filesystem (durable) + SQLite (working store) + app memory (ephemeral) | [0048](daybreak/docs/decisions/0048-three-tier-data-model.md) |
 | Governance | App-native Rust, not ported CLI scripts | [0025](daybreak/docs/decisions/0025-app-native-governance.md) |
 | Extensions | Profile-activated modules, not monolith | [0026](daybreak/docs/decisions/0026-extension-architecture.md) |
 
