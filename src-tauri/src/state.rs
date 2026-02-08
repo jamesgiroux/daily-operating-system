@@ -164,7 +164,7 @@ impl AppState {
         let content =
             serde_json::to_string_pretty(&history).map_err(|e| format!("Serialize error: {}", e))?;
 
-        fs::write(&path, content).map_err(|e| format!("Write error: {}", e))?;
+        crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
 
         Ok(())
     }
@@ -226,10 +226,10 @@ pub fn create_or_update_config(
         }
     }
 
-    // Write to disk
+    // Write to disk (I64: atomic write to prevent corruption on crash)
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-    fs::write(&path, content)
+    crate::util::atomic_write_str(&path, &content)
         .map_err(|e| format!("Failed to write config: {}", e))?;
 
     // Update in-memory state
@@ -357,7 +357,7 @@ pub fn save_transcript_records(
     let path = get_state_dir()?.join("transcript_records.json");
     let content = serde_json::to_string_pretty(records)
         .map_err(|e| format!("Serialize error: {}", e))?;
-    fs::write(&path, content).map_err(|e| format!("Write error: {}", e))?;
+    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
     Ok(())
 }
 
