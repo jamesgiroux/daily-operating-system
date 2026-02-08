@@ -26,12 +26,9 @@ import {
   CheckCircle2,
   ExternalLink,
   Loader2,
-  Minus,
   Pencil,
   Save,
   Sparkles,
-  TrendingDown,
-  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -45,24 +42,6 @@ const temperatureStyles: Record<string, string> = {
   cool: "bg-muted text-muted-foreground",
   cold: "bg-muted text-muted-foreground/60",
 };
-
-const temperatureDotStyles: Record<string, string> = {
-  hot: "bg-destructive",
-  warm: "bg-primary",
-  cool: "bg-muted-foreground/40",
-  cold: "bg-muted-foreground/20",
-};
-
-function TrendIcon({ trend }: { trend: string }) {
-  switch (trend) {
-    case "increasing":
-      return <TrendingUp className="size-4 text-green-600" />;
-    case "decreasing":
-      return <TrendingDown className="size-4 text-destructive" />;
-    default:
-      return <Minus className="size-4 text-muted-foreground" />;
-  }
-}
 
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
@@ -231,10 +210,16 @@ export default function AccountDetailPage() {
       label: "Meetings (30d)",
       value: `${signals.meetingFrequency30d}${trendLabel}`,
     });
+    if (signals.meetingFrequency90d > 0) {
+      metrics.push({
+        label: "Meetings (90d)",
+        value: String(signals.meetingFrequency90d),
+      });
+    }
   }
   if (signals?.temperature) {
     metrics.push({
-      label: "Temperature",
+      label: "Engagement",
       value: signals.temperature,
       color: temperatureStyles[signals.temperature],
     });
@@ -247,6 +232,12 @@ export default function AccountDetailPage() {
   }
   if (detail.nps != null) {
     metrics.push({ label: "NPS", value: String(detail.nps) });
+  }
+  if (signals?.lastMeeting) {
+    metrics.push({
+      label: "Last Meeting",
+      value: formatDate(signals.lastMeeting),
+    });
   }
 
   return (
@@ -461,77 +452,6 @@ export default function AccountDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Engagement Signals */}
-              {signals && (
-                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">
-                      Engagement Signals
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <div className="text-3xl font-semibold">
-                          {signals.meetingFrequency30d}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          meetings (30d)
-                        </div>
-                      </div>
-                      <div>
-                        <div className="text-3xl font-semibold">
-                          {signals.meetingFrequency90d}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          meetings (90d)
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <TrendIcon trend={signals.trend} />
-                        <div>
-                          <div className="text-sm font-medium capitalize">
-                            {signals.trend}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            engagement trend
-                          </div>
-                        </div>
-                      </div>
-                      {signals.temperature && (
-                        <div className="flex items-center gap-3">
-                          <span
-                            className={cn(
-                              "inline-block size-3 rounded-full",
-                              temperatureDotStyles[signals.temperature] ??
-                                temperatureDotStyles.cool
-                            )}
-                          />
-                          <div>
-                            <div className="text-sm font-medium capitalize">
-                              {signals.temperature}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              temperature
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      {signals.lastMeeting && (
-                        <div>
-                          <div className="text-sm font-medium">
-                            {formatDate(signals.lastMeeting)}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            last meeting
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
               {/* Company Overview */}
               <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <CardHeader className="pb-3">
@@ -569,39 +489,6 @@ export default function AccountDetailPage() {
                   )}
                 </CardContent>
               </Card>
-
-              {/* Strategic Programs */}
-              {detail.strategicPrograms.length > 0 && (
-                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">
-                      Strategic Programs
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {detail.strategicPrograms.map((p, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 text-sm"
-                        >
-                          <StatusBadge
-                            value={p.status}
-                            styles={progressStyles}
-                            fallback={progressStyles.planned}
-                          />
-                          <span className="font-medium">{p.name}</span>
-                          {p.notes && (
-                            <span className="text-muted-foreground">
-                              &mdash; {p.notes}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
 
               {/* Recent Meetings */}
               <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
@@ -671,6 +558,39 @@ export default function AccountDetailPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Strategic Programs */}
+              {detail.strategicPrograms.length > 0 && (
+                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Strategic Programs
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {detail.strategicPrograms.map((p, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <StatusBadge
+                            value={p.status}
+                            styles={progressStyles}
+                            fallback={progressStyles.planned}
+                          />
+                          <span className="font-medium">{p.name}</span>
+                          {p.notes && (
+                            <span className="text-muted-foreground">
+                              &mdash; {p.notes}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* ═══ Sidebar Column ═══ */}
@@ -727,10 +647,21 @@ export default function AccountDetailPage() {
 
               {/* Notes */}
               <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="pb-3">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-base font-semibold">
                     Notes
                   </CardTitle>
+                  {dirty && (
+                    <Button
+                      size="sm"
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="h-7 text-xs"
+                    >
+                      <Save className="mr-1 size-3" />
+                      {saving ? "Saving..." : "Save"}
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent>
                   <textarea
