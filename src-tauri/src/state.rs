@@ -62,6 +62,13 @@ impl AppState {
                     Ok(_) => {}
                     Err(e) => log::warn!("Startup: people sync failed: {}", e),
                 }
+
+                // Sync accounts from workspace files (I72: catches external edits)
+                match crate::accounts::sync_accounts_from_workspace(workspace, db_ref) {
+                    Ok(n) if n > 0 => log::info!("Startup: synced {} accounts from workspace", n),
+                    Ok(_) => {}
+                    Err(e) => log::warn!("Startup: accounts sync failed: {}", e),
+                }
             }
         }
 

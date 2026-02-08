@@ -1,3 +1,4 @@
+pub mod accounts;
 mod calendar_merge;
 mod capture;
 mod commands;
@@ -230,6 +231,13 @@ pub fn run() {
             commands::unlink_person_entity,
             commands::get_people_for_entity,
             commands::get_meeting_attendees,
+            // I72: Account Dashboards
+            commands::get_accounts_list,
+            commands::get_account_detail,
+            commands::update_account_field,
+            commands::update_account_notes,
+            commands::update_account_programs,
+            commands::create_account,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
