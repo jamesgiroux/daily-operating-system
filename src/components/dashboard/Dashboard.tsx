@@ -19,7 +19,7 @@ export function Dashboard({ data, freshness }: DashboardProps) {
       <div className="p-8">
         <div className="mx-auto max-w-6xl space-y-8">
           {/* Overview section */}
-          <Overview overview={data.overview} stats={data.stats} freshness={freshness} />
+          <Overview overview={data.overview} meetings={data.meetings} actions={data.actions} freshness={freshness} />
 
           {/* Executive Intelligence (I42) — auto-hides when no signals */}
           <IntelligenceCard />
@@ -31,13 +31,13 @@ export function Dashboard({ data, freshness }: DashboardProps) {
               <MeetingTimeline meetings={data.meetings} />
             </div>
 
-            {/* Right sidebar: Emails + Actions */}
+            {/* Right sidebar: Actions + Emails */}
             <div className="min-w-0 space-y-6">
               <div className="animate-fade-in-up opacity-0 animate-delay-3">
-                <EmailList emails={emails} />
+                <ActionList actions={data.actions} />
               </div>
               <div className="animate-fade-in-up opacity-0 animate-delay-4">
-                <ActionList actions={data.actions} />
+                <EmailList emails={emails} />
               </div>
             </div>
           </div>
