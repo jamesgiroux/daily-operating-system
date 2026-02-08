@@ -373,7 +373,7 @@ function ReadinessSection({ checks }: { checks: ReadinessCheck[] }) {
   const sorted = [...actionNeeded, ...headsUp];
 
   return (
-    <Card className="border-amber-200 dark:border-amber-800">
+    <Card>
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldAlert className="size-4 text-amber-600" />
