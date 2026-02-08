@@ -1,3 +1,55 @@
+use std::path::{Path, PathBuf};
+
+use tauri::path::BaseDirectory;
+use tauri::{AppHandle, Manager};
+
+/// Resolve the path to a bundled Python script.
+///
+/// Priority chain (I59):
+/// 1. Dev mode: `CARGO_MANIFEST_DIR/../scripts/{name}` (works in tests + `pnpm tauri dev`)
+/// 2. Production: Tauri resource bundle (`$RESOURCE/scripts/{name}`)
+/// 3. Fallback: workspace `_tools/{name}` (CLI-era compatibility, ADR-0025)
+pub fn resolve_script_path(app_handle: &AppHandle, workspace: &Path, script_name: &str) -> PathBuf {
+    // 1. Dev mode — compile-time constant, always works in tests and tauri dev
+    if cfg!(debug_assertions) {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or(Path::new("."));
+        let dev_script = repo_root.join("scripts").join(script_name);
+        if dev_script.exists() {
+            return dev_script;
+        }
+    }
+
+    // 2. Production — Tauri-bundled resource
+    if let Ok(resource_path) = app_handle
+        .path()
+        .resolve(format!("scripts/{}", script_name), BaseDirectory::Resource)
+    {
+        if resource_path.exists() {
+            return resource_path;
+        }
+    }
+
+    // 3. Fallback — workspace _tools/ (CLI-era scripts)
+    let workspace_script = workspace.join("_tools").join(script_name);
+    if workspace_script.exists() {
+        return workspace_script;
+    }
+
+    // Not found — return a descriptive path for the error message.
+    // In dev mode: repo path. In production: resource path.
+    if cfg!(debug_assertions) {
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap_or(Path::new("."));
+        repo_root.join("scripts").join(script_name)
+    } else {
+        // Best-effort: return the resource path even if resolve failed
+        PathBuf::from(format!("scripts/{}", script_name))
+    }
+}
+
 /// Derive a person ID from an email address.
 ///
 /// Example: "sarah.chen@acme.com" → "sarah-chen-acme-com"
