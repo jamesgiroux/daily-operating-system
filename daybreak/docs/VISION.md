@@ -243,27 +243,57 @@ DailyOS is for the alone part of knowledge work. The boundary is where individua
 
 ---
 
+## The Ecosystem, Not Just the App
+
+DailyOS doesn't need to do everything. It needs to maintain the best archive and let the rest of your tools consume it.
+
+**The three-layer ecosystem:**
+
+| Layer | What | Examples |
+|-------|------|---------|
+| Operational intelligence | DailyOS maintains the archive — briefings, preps, outcomes, actions, entities | The app |
+| Creative/analytical work | AI tools consume the archive to create reports, strategies, content | Claude Desktop, ChatGPT |
+| Bridge | MCP connects DailyOS to other tools and data sources | Integrations (Gong, Salesforce, Linear) |
+
+Strategy consulting? Claude Desktop skill that reads your PARA workspace. Monthly impact report? Any AI tool can synthesize the weekly captures DailyOS archived. GTM plan? Claude reads your account files, your meeting history, your competitive intelligence.
+
+DailyOS's job is to keep the archive excellent. Everything else builds on top.
+
 ## Extensibility Vision
 
 Out of the box, DailyOS is opinionated. It makes decisions so you don't have to.
 
-But knowledge work varies. Automattic's quarterly review cycle isn't everyone's. Customer Success workflows aren't engineering workflows.
+But knowledge work varies. A CS leader needs different intelligence than a VP of Engineering. Account-based work needs different signals than project-based work.
 
-**The extension model:**
+**The customization model (ADR-0046):**
 
-**Level 1: Configuration**
-Adjust timing, working hours, what surfaces and what doesn't. No code required.
+**Entity Mode:** How you organize your work — account-based, project-based, or both. Determines what you track and how meetings associate with entities.
 
-**Level 2: Plugins**
-Install community-built extensions for specific workflows, integrations, or industries. Like Obsidian plugins or WordPress themes.
+**Kits:** Domain-specific fields, templates, and vocabulary for your role. CS Kit adds account health and renewal tracking. Sales Kit adds pipeline stages. Requires a compatible entity mode.
 
-**Level 3: Custom Skills**
-Power users can write their own skills and agents. Drop into Claude Code, create what you need, have it work in DailyOS.
+**Intelligence:** Analytical perspectives that change how the system interprets your data. Executive Intelligence adds decision framing and delegation tracking. ProDev Intelligence captures personal impact and career narrative. Works with any entity mode.
 
-**Level 4: Fork and Own**
-It's open source. Take the whole thing and make it yours.
+**Integrations:** MCP data source connectors. Gong for transcripts. Salesforce for CRM data. Linear for project tracking. Any combination, any entity mode.
 
-The goal: 80% of users never leave Level 1. The other 20% have full control.
+**Configuration:** Timing, working hours, what surfaces and what doesn't. No code required.
+
+**Fork and Own:** It's open source. Your data is markdown. Take it all and go.
+
+The goal: 80% of users pick an entity mode and one or two Kits/Intelligence layers during onboarding. The other 20% compose exactly what they need.
+
+---
+
+## Beyond Individual: Organizational Intelligence
+
+DailyOS is a personal tool. But when every person on a team maintains excellent operational intelligence, something emerges: the raw material for organizational intelligence that's better than anything a top-down system can produce.
+
+Consider the biweekly status update. Today, every IC scrambles to remember what they did. A manager synthesizes six hastily-assembled summaries. A director aggregates four managers. By the time it reaches the division report, it's a lossy summary of lossy summaries — and it took the ELT EA a full day to coordinate.
+
+Now imagine each IC's DailyOS has been capturing wins, customer stories, project milestones, and risk signals in real-time for two weeks. The contribution practically assembles itself. The IC picks 1-3 highlights from what DailyOS already knows. The manager's tool synthesizes the team's contributions into a narrative. At each layer, the human curates — confirming, swapping, elevating. The report cascades from individual to team to group to department to division, with a human touch at every level and clear accountability for every story.
+
+This is contribution, not surveillance. Each person controls what they publish. The organization gets signal quality that's impossible to achieve top-down, because it's grounded in the richest possible individual context — actual meetings, actual outcomes, actual relationship signals.
+
+**This is future state.** The individual product must work beautifully first. But the architecture enables it: the markdown archive is the contribution mechanism, Kits provide domain-appropriate templates, and Intelligence layers identify what's worth elevating. When individual DailyOS users produce excellent signal, organizational intelligence becomes a consumption problem — and consumption is what AI does best.
 
 ---
 
