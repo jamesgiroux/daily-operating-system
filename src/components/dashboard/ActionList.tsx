@@ -11,7 +11,7 @@ interface ActionListProps {
   maxVisible?: number;
 }
 
-export function ActionList({ actions, maxVisible = 3 }: ActionListProps) {
+export function ActionList({ actions, maxVisible = 5 }: ActionListProps) {
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
   const handleComplete = useCallback((id: string) => {
@@ -68,6 +68,7 @@ export function ActionList({ actions, maxVisible = 3 }: ActionListProps) {
             {hasMore && (
               <Link
                 to="/actions"
+                search={{ search: undefined }}
                 className="flex w-full items-center justify-center gap-1 py-2 text-sm text-primary hover:text-primary/80 transition-colors"
               >
                 View all {pendingCount} actions
