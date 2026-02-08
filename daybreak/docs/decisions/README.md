@@ -69,6 +69,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0046](0046-entity-mode-architecture.md) | Entity-mode architecture with orthogonal integrations | Accepted |
 | [0047](0047-entity-dashboard-architecture.md) | Entity dashboard architecture — two-file pattern with bidirectional sync | Accepted |
 | [0048](0048-three-tier-data-model.md) | Three-tier data model — filesystem, SQLite, app memory | Accepted |
+| [0049](0049-eliminate-python-runtime.md) | Eliminate Python runtime dependency | Accepted |
 
 ---
 

@@ -22,6 +22,7 @@ const defaultCtx: DisplayStateContext = {
   outcomesStatus: "none",
   isLive: false,
   hasInlinePrep: false,
+  hasEnrichedPrep: false,
 };
 
 function ctx(overrides: Partial<DisplayStateContext> = {}): DisplayStateContext {
@@ -140,6 +141,23 @@ describe("computeMeetingDisplayState", () => {
       expect(state.actions).toHaveLength(1);
       expect(state.actions[0].key).toBe("view-prep");
       expect(state.actions[0].linkTo).toBe("01-customer-acme.md");
+    });
+
+    it("has prep file without enrichment → 'Limited prep' badge", () => {
+      const meeting = makeMeeting({ type: "customer", hasPrep: true, prepFile: "prep.md" });
+      const state = computeMeetingDisplayState(meeting, ctx({ hasEnrichedPrep: false }));
+
+      expect(state.primaryStatus).toBe("has-prep");
+      expect(state.badges.some(b => b.key === "limited-prep")).toBe(true);
+      expect(state.badges.find(b => b.key === "limited-prep")?.label).toBe("Limited prep");
+    });
+
+    it("has prep file with enrichment → no 'Limited prep' badge", () => {
+      const meeting = makeMeeting({ type: "customer", hasPrep: true, prepFile: "prep.md" });
+      const state = computeMeetingDisplayState(meeting, ctx({ hasEnrichedPrep: true }));
+
+      expect(state.primaryStatus).toBe("has-prep");
+      expect(state.badges.some(b => b.key === "limited-prep")).toBe(false);
     });
 
     it("customer without prep → 'No prep' badge", () => {
