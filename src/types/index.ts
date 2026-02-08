@@ -610,6 +610,56 @@ export interface AccountDetail extends AccountListItem {
 }
 
 // =============================================================================
+// Projects (I50)
+// =============================================================================
+
+export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
+
+/** Summary item for the projects list page. */
+export interface ProjectListItem {
+  id: string;
+  name: string;
+  status: string;
+  milestone?: string;
+  owner?: string;
+  targetDate?: string;
+  openActionCount: number;
+  daysSinceLastMeeting?: number;
+}
+
+export interface ProjectMilestone {
+  name: string;
+  status: string;
+  targetDate?: string;
+  notes?: string;
+}
+
+/** Full detail for the project detail page. */
+export interface ProjectDetail extends ProjectListItem {
+  description?: string;
+  milestones: ProjectMilestone[];
+  notes?: string;
+  openActions: Action[];
+  recentMeetings: { id: string; title: string; startTime: string }[];
+  linkedPeople: Person[];
+  signals?: {
+    meetingFrequency30d: number;
+    meetingFrequency90d: number;
+    lastMeeting?: string;
+    daysUntilTarget?: number;
+    openActionCount: number;
+    temperature: string;
+    trend: string;
+  };
+  recentCaptures: {
+    id: string;
+    captureType: string;
+    content: string;
+    meetingTitle: string;
+  }[];
+}
+
+// =============================================================================
 // Feature Toggles (I39)
 // =============================================================================
 
