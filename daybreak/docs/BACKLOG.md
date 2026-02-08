@@ -8,65 +8,96 @@ Active issues, known risks, assumptions, and dependencies.
 
 ## Issues
 
-<!-- Sprint-oriented grouping (2026-02-07 PM analysis, revised after code audit):
+<!-- Sprint-oriented grouping (2026-02-08, revised after I51/I72/I73/I59 completion):
 
   TEST BED: ~/Documents/test-workspace/ — clean workspace for end-to-end validation.
   Every sprint milestone is tested here, not in VIP/. See ROADMAP.md for full sprint plan.
 
-  SPRINT 1: "First Run to Working Briefing" — COMPLETE (Phase A+B; Phase C deferred to Sprint 3)
-    I48 (workspace scaffolding), I49 (no-auth degradation), I7 (workspace path),
-    I15 (entity-mode switcher), I16 (schedule UI), I13 (onboarding wizard).
-    155 Rust tests passing.
+  COMPLETED:
+    Sprint 1: "First Run to Working Briefing" — I48, I49, I7, I15, I16, I13. 155 tests.
+    Sprint 2: "Make it Smarter" — I42, I43, I41, I31. 168 tests.
+    Sprint 3: "Make it Reliable" — I39, I18, I20, I21, I37, I6. 176 tests.
+    Sprint 4a: "Entity Intelligence" — I51 (people), I72+I73 (account dashboards),
+      I59 (script paths), I56 (onboarding 80%), demo data expansion. 189 tests.
 
-  SPRINT 2: "Make it Smarter" — COMPLETE
-    I42 (executive intelligence), I43 (stakeholder context), I41 (reactive prep), I31 (transcript enrichment)
-    168 Rust tests passing.
+  ═══════════════════════════════════════════════════════════════════
+  SPRINT 5: "Ship It" — 4 parallel tracks
+  ═══════════════════════════════════════════════════════════════════
 
-  SPRINT 3: "Make it Reliable" — COMPLETE
-    I39 (feature toggles), I18 (API caching), I20 (email refresh), I21 (FYI classification),
-    I37 (density-aware overview), I6 (processing history). 176 Rust + 37 Python tests passing.
+    Track A — Onboarding (sequential):
+      I56 finish (wire PopulateWorkspace chapter to Tauri commands)
+      I57 (populate workspace — accounts/projects + userDomain, ship blocker)
+      I78 (inbox-first behavior training — inbox drop chapter between I57 and dashboard tour, ship blocker)
+      I79 (Claude Code validation/installation step, ship blocker)
+      I58 (user profile context into enrichment prompts, depends on I57 profile fields)
 
-  SPRINT 4: "Ship It"
-    I8 (distribution — DMG, notarization)
-    I9 (focus/week stubs — non-embarrassing)
-    I56 (onboarding redesign — teach the philosophy)
-    I57 (onboarding: add accounts/projects — populate workspace for first briefing)
-    I59 (CARGO_MANIFEST_DIR — scripts unfindable in release builds) — SHIP BLOCKER
-    I60 (path traversal in inbox/workspace commands) — SHIP BLOCKER
-    I62 (.unwrap() panics crash background tasks) — SHIP BLOCKER
-    I79 (Claude Code validation/installation in onboarding) — SHIP BLOCKER
-    7-day crash-free validation on test-workspace
-    Done when:       DMG installs cleanly, onboarding→briefing works 7 days on clean machine
+    Track B — Security & Stability (parallel, independent fixes):
+      I60 (path traversal in inbox/workspace commands, ship blocker)
+      I62 (.unwrap() panics crash background tasks, ship blocker)
+      I64 (non-atomic file writes — config corruption on force quit, ship blocker)
+      I63 (script timeout enforcement — hangs forever)
+      I65 (impact log append race condition)
 
-  PARKING LOT (post-ship, entity-mode architecture — ADR-0046):
-    I27 (umbrella) → I50, I51, I52, I53 (entity-mode foundation)
-    I54 (MCP integration framework), I28 (MCP server + client)
+    Track C — Distribution (independent, ship blocker):
+      I8 (DMG, notarization, updater — ship blocker, no update path without it)
+
+    Track D — Polish (independent, small):
+      I25 (meeting badge/status unification)
+
+    Done when: DMG installs cleanly, onboarding → first briefing works,
+    7-day crash-free validation on test-workspace.
+
+  ═══════════════════════════════════════════════════════════════════
+  SPRINT 6: "Harden" — All parallel, small independent fixes
+  ═══════════════════════════════════════════════════════════════════
+
+    I66 (deliver_preps safe writes — don't clear before writing)
+    I67 (scheduler boundary miss — widen window)
+    I69 (file router overwrites duplicates — append suffix)
+    I70 (sanitize_account_dir unsafe chars)
+    I61 (TOCTOU race in transcript immutability)
+    I71 (assorted edge hardening batch — 9 items)
+    I19 (AI enrichment failure badge)
+
+  ═══════════════════════════════════════════════════════════════════
+  SPRINT 7: "Enrich & Protect" — 3 parallel tracks
+  ═══════════════════════════════════════════════════════════════════
+
+    Track A — Intelligence:
+      I80 (proposed agenda in meeting prep — AI-synthesized agenda from prep data)
+      I81 (people dynamics in meeting prep UI — render attendeeContext)
+      I74 (account enrichment via Claude Code websearch)
+      I55 (Executive Intelligence — decision framing, delegation tracking)
+
+    Track B — Durability (ADR-0048):
+      I76 (SQLite backup + rebuild-from-filesystem)
+      I77 (filesystem writeback audit)
+      I75 (external edit detection + reconciliation)
+
+    Track C — Performance:
+      I68 (Mutex → RwLock for read-heavy AppState fields)
+
+  ═══════════════════════════════════════════════════════════════════
+  PARKING LOT (post-ship, needs real usage data)
+  ═══════════════════════════════════════════════════════════════════
+
+    Entity-mode architecture (ADR-0046, I27 umbrella):
+      I50 (projects table), I52 (meeting-entity M2M), I53 (entity-mode config)
+      I54 (MCP integration framework), I28 (MCP server + client)
+      I29 (non-entity structured document schemas)
     Kits: I40 (CS Kit)
-    Intelligence: I55 (Executive Intelligence), I35 (ProDev Intelligence)
-    Foundation: I29 (doc schemas)
-    Deferred: I26 | I2, I3, I4, I10
-    Revisit after Sprint 4 ships with real usage data.
-
-  ENTITY DASHBOARDS (ADR-0047, can start account-side without I27):
-    I73 (template system — JSON schema, markdown gen, file watching)
-    I72 (entity dashboard pages — list + detail UI, depends on I73)
-    I74 (account enrichment via Claude Code websearch, depends on I73)
-    I75 (external edit detection + reconciliation, depends on I73)
-    Account-side I72+I73 unblocked now. Project-side depends on I50.
-
-  DATA DURABILITY (ADR-0048 — SQLite is working store, not disposable):
-    I76 (SQLite backup + rebuild-from-filesystem command)
-    I77 (filesystem writeback audit — ensure important state reaches files)
-    I76 should land before ship (Sprint 4 or immediately after).
+    Intelligence: I35 (ProDev Intelligence)
+    Research: I26 (web search for unknown meetings)
+    Low: I2, I3, I4, I10
 -->
 
 ### Open — Medium Priority
 
-**I8: No app update/distribution mechanism**
-Options: Tauri's built-in updater, GitHub Releases + Sparkle, manual DMG, Mac App Store. Needs Apple Developer ID for notarization. Not blocking MVP — can ship as manual DMG.
+**I8: No app update/distribution mechanism** — Ship blocker
+Options: Tauri's built-in updater, GitHub Releases + Sparkle, manual DMG, Mac App Store. Needs Apple Developer ID for notarization. Without this, no update path to users — ship blocker.
 
-**I9: Focus page and Week priorities are disconnected stubs**
-`focus.json` returns "not yet implemented." Weekly priorities from `week-overview.json` don't flow into daily focus. `/week` should set weekly priorities; `/today` should derive daily focus from those + today's schedule.
+**I9: Focus page and Week priorities are disconnected stubs** — Closed
+Both `FocusPage.tsx` and `WeekPage.tsx` are fully implemented: data loading, workflow execution with progress tracking, meeting cards, time blocks, action summaries, priority rendering. Not stubs anymore. Closed Sprint 4a.
 
 **I40: CS Kit — account-mode fields, templates, and vocabulary**
 ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). What remains CS-specific after ADR-0043 narrowed extensions: CS account fields (ARR, renewal dates, health scores, ring classification), account dashboard templates, success plan templates, value driver categories, ring-based cadence thresholds, Google Sheets sync (Last Engagement Date writeback). CRM data sources (Clay, Gainsight, Salesforce) are now integrations (I54), not Kit responsibilities. The existing `accounts` table IS the CS Kit's schema contribution — it carries CS-specific fields on top of the universal `entities` table. Kit also contributes enrichment prompt fragments for CS vocabulary (value delivery moments, renewal signals, health indicators). Remaining work: formalize Kit registration, schema contribution mechanism, template system, prompt fragment composition. ADR-0047 defines the entity dashboard architecture — the CS Kit contributes the `structured` fields (ARR, health, ring, renewal, csm, champion) to the account `dashboard.json` schema, and CS-specific sections (commercial summary, renewal strategy) as `customSections` entries. Without the CS Kit enabled, account dashboards show generic company overview + stakeholders + activity. With the Kit, they add the commercial lens. Blocked by I27 umbrella. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
@@ -125,7 +156,7 @@ The number one way DailyOS becomes useful is when users feed it context about th
 
 **Key tension:** Inbox processing quality depends on having entities to link against (chicken-and-egg). Sequencing accounts *before* the inbox drop solves this — the system has context, so the first drop produces a good result, not a cold one.
 
-**What this changes:** Doesn't replace I56/I57 — refines the sequencing and adds an inbox training chapter between I57 (populate workspace) and the dashboard tour. Extends the Ready chapter with a processing summary. Demo data remains the primary teaching tool for the dashboard.
+**What this changes:** Doesn't replace I56/I57 — refines the sequencing and adds an inbox training chapter between I57 (populate workspace) and the dashboard tour. Extends the Ready chapter with a processing summary. Demo data remains the primary teaching tool for the dashboard. **Ship blocker** — without this, users don't learn the core AI-native behavior that makes DailyOS useful.
 
 Relates to I56, I57. Post-ship refinement (current onboarding flow ships first, this improves it).
 
@@ -147,6 +178,31 @@ Claude Code is the AI engine — without it installed and authenticated, enrichm
 **Existing code:** `PtyManager::is_claude_authenticated()` in `pty.rs` already checks auth status. `pty.rs` spawns Claude Code subprocesses for enrichment. Detection logic exists but isn't surfaced to the user.
 
 Relates to I56. **Ship blocker** — without Claude Code, the product's core promise ("AI-native daily productivity") doesn't work.
+
+**I80: Proposed Agenda in meeting prep — AI-synthesized agenda from prep data**
+The prep page currently shows ingredients (talking points, risks, open items, questions) and expects the user to produce an agenda. This violates Principle 7 (Consumption Over Production) and Principle 6 (AI-Native, Not AI-Assisted). The CLI had a dedicated agent for "generate agenda from prep" — the app should do this automatically.
+
+**Scope:** Phase 2 AI enrichment generates a `proposedAgenda` field alongside existing meeting context enrichment. The agenda synthesizes across all available data: talking points, open items (especially overdue), risks, relationship signals (from `attendeeContext`/`stakeholderSignals`), strategic programs, recent wins. Each agenda item has: topic, estimated minutes, priority tier (must-cover vs if-time-permits), and a brief "why" note. The agenda is opinionated about ordering (e.g., open with a win, address overdue items early, relationship touchpoints for cold attendees).
+
+**Data flow:** `DirectiveMeetingContext` gains `proposed_agenda: Option<Vec<Value>>`. `build_prep_json` serializes it. `FullMeetingPrep` gains `proposed_agenda: Option<Vec<AgendaItem>>`. Frontend renders a "Proposed Agenda" card at the top of the prep page (below Quick Context, above reference material). Copy-to-clipboard button for pasting into calendar invite or Slack (depends on holistic copy button work in separate session).
+
+**New types:** `AgendaItem { topic, duration_minutes, priority: "must_cover" | "if_time_permits", notes, related_action_id? }`.
+
+**Mechanical fallback:** If AI enrichment fails, a mechanical agenda can be assembled: overdue items → must-cover, active risks → must-cover, talking points → if-time-permits. This follows the ADR-0042 pattern (AI failure leaves mechanical data intact).
+
+Relates to I43 (stakeholder signals), I51 (people dynamics inform agenda). Prep page restructure: Agenda → People → Reference Material.
+
+**I81: People dynamics in meeting prep UI — render attendeeContext, replace flat attendee list**
+`attendeeContext` is computed server-side in `get_meeting_prep` (I51 enrichment: person DB lookup, temperature, meeting count, relationship type, notes) but **never rendered** in `MeetingDetailPage.tsx`. The current "Key Attendees" card shows only name/role/focus from the directive — no relationship signals.
+
+**Scope:** Replace the flat "Key Attendees" card with a richer "People in the Room" section. Per attendee: name, role, organization, relationship badge (internal/external), temperature indicator (hot/warm/cool/cold), meeting count, last seen, notes excerpt. Link to `/people/$personId` when `personId` is present. Surface relationship warnings inline: "Haven't met in 45 days — cooling off", "New contact — first meeting", "High meeting frequency — strong relationship."
+
+**No backend changes needed** — `AttendeeContext` is already computed and serialized. This is a pure frontend enhancement. The import for `AttendeeContext` already exists in `src/types/index.ts` but `MeetingDetailPage.tsx` doesn't reference `data.attendeeContext`.
+
+Relates to I80 (people dynamics inform proposed agenda), I51 (people sub-entity).
+
+**I82: Copy-to-clipboard for meeting prep page** — Resolved.
+Added copy-to-clipboard support to `MeetingDetailPage.tsx`. "Copy All" outline button in the header bar exports the full prep as clean markdown (title, time, all sections with `## Heading` separators). Per-section `<CopyButton>` in each `CardHeader` copies individual sections. Output uses light markdown (bullets, numbered lists, key-value lines) that renders well in Slack and reads cleanly as plaintext in email/docs. Icon transitions from clipboard to green check on copy (2s auto-reset), no toast. Reusable `useCopyToClipboard` hook (`src/hooks/useCopyToClipboard.ts`) and `CopyButton` component (`src/components/ui/copy-button.tsx`) available for future extension to Overview, Outcomes, etc. No backend changes, no new dependencies.
 
 **I26: Web search for unknown external meetings not implemented**
 ADR-0022 specifies proactive research via local archive + web for unknown meetings. Local archive search works in `ops/meeting_prep.py`. Web search does not exist. Likely a Phase 2 task — Claude can invoke web search during enrichment (Phase 2). Low urgency since archive search provides some coverage.
@@ -203,13 +259,13 @@ ADR-0048 requires that important data eventually reaches the filesystem. Audit a
 |-------|------------------|------|-----|
 | `actions` | Yes | `hooks.rs` `sync_completion_to_markdown` | Covers completion markers; priority/edit state not written back |
 | `captures` | Partial | `impact_rollup.rs` writes weekly impact file | Only wins/risks; decisions not included. Individual capture edits (I45) are SQLite-only |
-| `accounts` | Planned | ADR-0047 `dashboard.json` (I73) | Not yet implemented |
-| `entities` | Planned | ADR-0047 `dashboard.json` (I73) | Not yet implemented |
+| `accounts` | Yes | `accounts.rs` `write_json` + `write_markdown` (I73) | Full ADR-0047 two-file pattern with three-way sync |
+| `entities` | Yes | Mirrored via account/people bridge pattern | Entity table is derived from overlay tables |
 | `meetings_history` | Partial | `reconcile.rs` writes `day-summary.json` | Outcomes included; full meeting record not archived |
 | `processing_log` | No | — | Low priority — operational metadata, acceptable loss |
-| `people` (planned) | No | — | Needs filesystem representation designed with I51 |
+| `people` | Yes | `people.rs` `write_person_json` + `write_person_markdown` | Full ADR-0047 two-file pattern with entity link durability (ADR-0048) |
 
-Priority gaps to close: (1) Account/entity fields → dashboard.json (blocked by I73). (2) Action priority/edit state → extend `sync_completion_to_markdown` or add a separate writeback hook. (3) Capture edits → decide if inline edits should write back to transcript source or only live in SQLite. (4) People data → include filesystem representation in I51 design.
+Priority gaps to close: (1) Action priority/edit state → extend `sync_completion_to_markdown` or add a separate writeback hook. (2) Capture edits → decide if inline edits should write back to transcript source or only live in SQLite.
 
 **I75: Entity dashboard external edit detection and reconciliation**
 ADR-0047 specifies that external tools should write to `dashboard.json` (the write interface), but some will edit `dashboard.md` directly. This issue implements: (1) Change detection: track `last_generated_at` timestamp per entity dashboard. On entity access, compare markdown file mtime — if newer, show "externally modified" indicator. (2) JSON change detection: if `dashboard.json` mtime is newer than app's last read, re-read JSON, sync structured fields to SQLite, regenerate markdown. This is the happy path (external tool followed the protocol). (3) Markdown reconciliation (future/stretch): when markdown was edited directly, user can trigger AI-powered reconciliation — Claude reads the markdown diff, extracts changes, applies to JSON, regenerates markdown. Without reconciliation, next regeneration overwrites external markdown changes (with warning). (4) Conflict resolution UI: when both JSON and markdown have external changes, show diff and let user choose. Depends on I73 (template system). The JSON detection path (step 2) is the priority — it handles the recommended external write flow. Markdown reconciliation (step 3) is a stretch goal.
@@ -339,6 +395,14 @@ When Phase 2 fails, briefing renders thin with no indication. Recommended: quiet
 **I15: Entity-mode switcher in Settings** — Resolved. `set_entity_mode` Tauri command validates mode, sets `entity_mode` + derives `profile` for backend compat. `EntityModeCard` component in SettingsPage with three radio-style options (account-based, project-based, both). App reloads on change. Supersedes profile switching per ADR-0046.
 
 **I16: Schedule editing UI** — Resolved. `set_schedule` Tauri command generates cron from hour/minute/timezone. `cronToHumanTime()` helper replaces raw cron display with "6:00 AM" format. `ScheduleRow` in SettingsPage now shows human-readable time.
+
+**I51: People sub-entity** — Resolved. Universal person tracking with ADR-0048 compliance. 3 new tables (`people`, `meeting_attendees`, `entity_people`), ~15 DB functions, `people.rs` file I/O module (ADR-0047 two-file pattern with entity link durability), `util.rs` helpers, 8 Tauri commands, calendar auto-population, file watcher extension, startup sync, person signals, executive intelligence alerts. Frontend: PeoplePage (filterable list), PersonDetailPage (editable detail + signals). 189 Rust tests.
+
+**I72: Entity dashboard pages** — Resolved. Account list page (`AccountsPage.tsx`) with sortable table (health, ARR, ring, renewal, last contact, open actions) + account detail page (`AccountDetailPage.tsx`) with card-based layout (quick context, company overview, programs, notes, recent meetings, people). 6 Tauri commands. Route at `/accounts` and `/accounts/$accountId`.
+
+**I73: Entity dashboard template system** — Resolved. ADR-0047 two-file pattern: `dashboard.json` (canonical write interface) + `dashboard.md` (generated artifact). `accounts.rs` module with `AccountJson` schema, read/write/sync functions, markdown generation from JSON + SQLite live data. Three-way sync: JSON ↔ SQLite ↔ markdown. File watching via mtime comparison on entity access. `sync_from_workspace()` startup scan for offline edits.
+
+**I59: `CARGO_MANIFEST_DIR` runtime resolution** — Resolved. `resolve_scripts_dir()` uses Tauri resource resolver in release builds, falls back to `CARGO_MANIFEST_DIR` in debug. Scripts bundled via `tauri.conf.json` resources array.
 
 **I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. `meeting_prep.py` only gathered rich context (SQLite history, captures, open actions) for customer meetings with account-based queries. Internal syncs, 1:1s, and partnership meetings got at most a single archive ref. Per ADR-0043 (meeting intelligence is core), expanded with title-based SQLite queries (`_get_meeting_history_by_title`, `_get_captures_by_meeting_title`, `_get_all_pending_actions`) so all non-personal/non-all-hands types get meeting history, captures, and actions context. 1:1s get deeper lookback (60-day history, 3 archive refs). Partnership meetings try account match first, fall back to title-based. No schema or orchestrator changes.
 
