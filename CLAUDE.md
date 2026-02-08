@@ -70,6 +70,34 @@ Push back if:
 
 ---
 
+## Code Discipline
+
+**DRY is non-negotiable.** If a pattern exists, use it. If it doesn't, extract it before duplicating.
+
+### Rules
+
+1. **shadcn/ui is the component foundation.** Every UI element starts from a shadcn primitive. If shadcn has it, use it. If it doesn't, build on top of it — never from scratch. Check `src/components/ui/` before writing any UI component.
+
+2. **Extract before you duplicate.** If you're about to copy a component, pattern, or function to adapt it for a second use case, stop. Extract the shared part into a reusable component/function first, then use it in both places. Two consumers is the threshold.
+
+3. **Search before you build.** Before creating any UI pattern (search inputs, tab filters, badges, inline forms, empty states), grep the codebase. If it exists, import it. If it almost exists, generalize it.
+
+4. **Shared components live in `src/components/ui/`.** Page-specific components live in their page file or `src/components/{domain}/`. If a component is used by 2+ pages, it belongs in `ui/` or a shared `entities/` directory.
+
+5. **Rust follows the same principle.** Shared logic goes in utility functions or trait implementations. If two entity types (accounts, projects) need the same operation, extract a generic version. Don't maintain parallel implementations.
+
+### Anti-Patterns to Enforce
+
+| Anti-Pattern | What to Do Instead |
+|--------------|-------------------|
+| Copy-pasting a component and changing names | Extract a generic component with config/props |
+| Inline styled badges/inputs in page files | Use or create a shared `ui/` component |
+| Parallel functions that differ only in column/table name | Extract a generic with a parameter |
+| Building a custom widget that shadcn already provides | Install and use the shadcn component |
+| "I'll extract it later" | Extract it now — later never comes |
+
+---
+
 ## Specialist Skills
 
 Call these skills when their expertise is needed:

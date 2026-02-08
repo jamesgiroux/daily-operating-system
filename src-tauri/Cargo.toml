@@ -39,6 +39,14 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 url = "2"
 open = "5"
 
+# Document text extraction (ADR-0050)
+pdf-extract = "0.10"
+quick-xml = "0.37"
+zip = "2"
+calamine = "0.33"
+html2text = "0.16"
+rtf-parser = "0.4"
+
 [dev-dependencies]
 tempfile = "3"
 

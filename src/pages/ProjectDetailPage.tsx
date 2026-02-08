@@ -6,6 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  StatusBadge,
+  projectStatusStyles,
+  progressStyles,
+} from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
@@ -24,15 +29,6 @@ import type { ProjectDetail } from "@/types";
 
 const statusOptions = ["active", "on_hold", "completed", "archived"];
 
-const statusStyles: Record<string, string> = {
-  active:
-    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  on_hold:
-    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-  completed:
-    "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700",
-  archived: "bg-muted text-muted-foreground border-muted",
-};
 
 const temperatureStyles: Record<string, string> = {
   hot: "bg-destructive/15 text-destructive",
@@ -192,15 +188,11 @@ export default function ProjectDetailPage() {
                   <h1 className="text-2xl font-semibold tracking-tight">
                     {detail.name}
                   </h1>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "text-xs",
-                      statusStyles[detail.status] ?? statusStyles.active
-                    )}
-                  >
-                    {detail.status.replace("_", " ")}
-                  </Badge>
+                  <StatusBadge
+                    value={detail.status}
+                    styles={projectStatusStyles}
+                    fallback={projectStatusStyles.active}
+                  />
                   {signals && (
                     <Badge
                       className={cn(
@@ -443,7 +435,11 @@ export default function ProjectDetailPage() {
                   <div className="space-y-2">
                     {detail.milestones.map((m, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
-                        <MilestoneStatusBadge status={m.status} />
+                        <StatusBadge
+                          value={m.status}
+                          styles={progressStyles}
+                          fallback={progressStyles.planned}
+                        />
                         <span className="font-medium">{m.name}</span>
                         {m.targetDate && (
                           <span className="text-muted-foreground">
@@ -602,23 +598,6 @@ export default function ProjectDetailPage() {
   );
 }
 
-function MilestoneStatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    completed:
-      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    in_progress:
-      "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    planned: "bg-muted text-muted-foreground",
-  };
-  return (
-    <Badge
-      variant="outline"
-      className={cn("text-xs", styles[status] ?? styles.planned)}
-    >
-      {status.replace("_", " ")}
-    </Badge>
-  );
-}
 
 function CaptureIcon({ type }: { type: string }) {
   const styles: Record<string, string> = {

@@ -315,7 +315,7 @@ mod tests {
         let account = DbAccount {
             id: "acme".to_string(),
             name: "Acme".to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,
@@ -365,7 +365,7 @@ mod tests {
         let account = DbAccount {
             id: "acme".to_string(),
             name: "Acme".to_string(),
-            ring: None,
+            lifecycle: None,
             arr: None,
             health: None,
             contract_start: None,
