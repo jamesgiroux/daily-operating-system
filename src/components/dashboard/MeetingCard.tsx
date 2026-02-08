@@ -56,6 +56,197 @@ const badgeLabels: Partial<Record<MeetingType, string>> = {
   personal: "Personal",
 };
 
+export const dotColors: Partial<Record<MeetingType, string>> = {
+  customer: "bg-primary",
+  qbr: "bg-primary",
+  partnership: "bg-primary",
+  external: "bg-primary",
+  personal: "bg-success",
+};
+
+// --- Display state types and pure function ---
+
+export interface DisplayStateContext {
+  isPast: boolean;
+  outcomesStatus: "loaded" | "none" | "loading" | "unknown";
+  isLive: boolean;
+  hasInlinePrep: boolean;
+  hasEnrichedPrep: boolean;
+}
+
+interface BadgeState {
+  key: string;
+  label: string;
+  variant: "outline" | "secondary";
+  className: string;
+  icon?: "check";
+}
+
+interface ActionState {
+  key: "view-prep" | "attach-transcript" | "capture-outcomes";
+  label: string;
+  linkTo?: string;
+}
+
+export interface MeetingDisplayState {
+  primaryStatus:
+    | "cancelled"
+    | "live"
+    | "processed"
+    | "past-unprocessed"
+    | "past-loading"
+    | "new"
+    | "has-prep"
+    | "no-prep"
+    | "default";
+  card: { className: string; hoverEnabled: boolean };
+  title: { lineThrough: boolean };
+  badges: BadgeState[];
+  actions: ActionState[];
+  showExpander: boolean;
+  dot: { bgClass: string; ringClass: string; animate: boolean };
+}
+
+export function computeMeetingDisplayState(
+  meeting: Meeting,
+  ctx: DisplayStateContext,
+): MeetingDisplayState {
+  const isCancelled = meeting.overlayStatus === "cancelled";
+  const isNew = meeting.overlayStatus === "new";
+  const hasPrepFile = meeting.hasPrep && meeting.prepFile;
+
+  // Dot styling (always computed — used by MeetingTimeline)
+  const dotBg = isCancelled
+    ? "bg-muted-foreground/30"
+    : (dotColors[meeting.type] ?? "bg-muted-foreground/50");
+  const dotRing =
+    !isCancelled && ctx.isLive ? "ring-2 ring-primary/50" : "";
+  const dotAnimate = !isCancelled && ctx.isLive;
+
+  // --- Priority chain ---
+
+  // 1. Cancelled gates everything
+  if (isCancelled) {
+    return {
+      primaryStatus: "cancelled",
+      card: {
+        className: cn(
+          "rounded-lg border bg-card shadow-sm transition-all duration-150",
+          borderStyles[meeting.type],
+          "opacity-50",
+        ),
+        hoverEnabled: false,
+      },
+      title: { lineThrough: true },
+      badges: [
+        {
+          key: "cancelled",
+          label: "Cancelled",
+          variant: "outline",
+          className: "text-destructive border-destructive/30",
+        },
+      ],
+      actions: [],
+      showExpander: false,
+      dot: { bgClass: dotBg, ringClass: dotRing, animate: dotAnimate },
+    };
+  }
+
+  const badges: BadgeState[] = [];
+  const actions: ActionState[] = [];
+  let primaryStatus: MeetingDisplayState["primaryStatus"] = "default";
+
+  // Live ring is additive — computed via card className, not a primaryStatus
+  const liveRing =
+    ctx.isLive ? "animate-pulse-gold ring-2 ring-primary/50" : "";
+
+  const cardClassName = cn(
+    "rounded-lg border bg-card shadow-sm transition-all duration-150",
+    "hover:-translate-y-0.5 hover:shadow-md",
+    borderStyles[meeting.type],
+    liveRing,
+  );
+
+  // 2. Past + outcomes loaded → "processed"
+  if (ctx.isPast && ctx.outcomesStatus === "loaded") {
+    primaryStatus = "processed";
+    badges.push({
+      key: "processed",
+      label: "Processed",
+      variant: "outline",
+      className: "text-success border-success/30",
+      icon: "check",
+    });
+  }
+  // 3. Past + outcomes loading → no badge, no buttons (prevents flash)
+  else if (ctx.isPast && ctx.outcomesStatus === "loading") {
+    primaryStatus = "past-loading";
+  }
+  // 4. Past + no outcomes → Attach/Outcomes buttons
+  else if (ctx.isPast && ctx.outcomesStatus === "none") {
+    primaryStatus = "past-unprocessed";
+    actions.push(
+      { key: "attach-transcript", label: "Attach" },
+      { key: "capture-outcomes", label: "Outcomes" },
+    );
+  }
+  // 5. New → "No prep available" badge
+  else if (isNew) {
+    primaryStatus = "new";
+    badges.push({
+      key: "new",
+      label: "No prep available",
+      variant: "outline",
+      className: "text-muted-foreground",
+    });
+  }
+  // 6. Has prep file → "View Prep" action + optional "Limited prep" badge
+  else if (hasPrepFile) {
+    primaryStatus = "has-prep";
+    actions.push({
+      key: "view-prep",
+      label: "View Prep",
+      linkTo: meeting.prepFile!,
+    });
+    if (!ctx.hasEnrichedPrep) {
+      badges.push({
+        key: "limited-prep",
+        label: "Limited prep",
+        variant: "outline",
+        className: "text-destructive/70 border-destructive/30",
+      });
+    }
+  }
+  // 7. Customer without prep → "No prep" badge
+  else if (!meeting.hasPrep && meeting.type === "customer") {
+    primaryStatus = "no-prep";
+    badges.push({
+      key: "no-prep",
+      label: "No prep",
+      variant: "outline",
+      className: "text-muted-foreground",
+    });
+  }
+
+  // If live was the only signal, mark it
+  if (primaryStatus === "default" && ctx.isLive) {
+    primaryStatus = "live";
+  }
+
+  const showExpander =
+    ctx.hasInlinePrep || ctx.outcomesStatus === "loaded";
+
+  return {
+    primaryStatus,
+    card: { className: cardClassName, hoverEnabled: true },
+    title: { lineThrough: false },
+    badges,
+    actions,
+    showExpander,
+    dot: { bgClass: dotBg, ringClass: dotRing, animate: dotAnimate },
+  };
+}
+
 /** Check if a meeting's end time has passed today. */
 function isPastMeeting(meeting: Meeting): boolean {
   const timeStr = meeting.endTime || meeting.time;
@@ -79,16 +270,23 @@ function isPastMeeting(meeting: Meeting): boolean {
 export function MeetingCard({ meeting }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [attaching, setAttaching] = React.useState(false);
-  const hasInlinePrep = meeting.prep && Object.keys(meeting.prep).length > 0;
-  const hasPrepFile = meeting.hasPrep && meeting.prepFile;
-  const isPast = isPastMeeting(meeting);
-  const isCancelled = meeting.overlayStatus === "cancelled";
-  const isNew = meeting.overlayStatus === "new";
 
-  // Load outcomes for past meetings
-  const { outcomes, refresh: refreshOutcomes } =
+  const { outcomes, loading, refresh: refreshOutcomes } =
     useMeetingOutcomes(meeting.id);
-  const hasOutcomes = outcomes !== null;
+  const outcomesStatus = loading ? "loading" as const : outcomes !== null ? "loaded" as const : "none" as const;
+
+  const hasEnrichedPrep = !!(
+    meeting.prep &&
+    (meeting.prep.context || (meeting.prep.metrics && meeting.prep.metrics.length > 0))
+  );
+
+  const displayState = computeMeetingDisplayState(meeting, {
+    isPast: isPastMeeting(meeting),
+    outcomesStatus,
+    isLive: meeting.isCurrent ?? false,
+    hasInlinePrep: !!(meeting.prep && Object.keys(meeting.prep).length > 0),
+    hasEnrichedPrep,
+  });
 
   const handleAttachTranscript = React.useCallback(async () => {
     const selected = await open({
@@ -103,7 +301,6 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
     if (!selected) return;
 
     setAttaching(true);
-    // Build ISO timestamps from display times
     const toIso = (timeStr?: string): string => {
       if (!timeStr) return new Date().toISOString();
       const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -143,8 +340,6 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
   }, [meeting, refreshOutcomes]);
 
   const handleCaptureOutcomes = React.useCallback(() => {
-    // Build ISO timestamps from the meeting's display times (e.g., "09:00 AM").
-    // These are used by the capture backend; fallback to current time if unparseable.
     const toIso = (timeStr?: string): string => {
       if (!timeStr) return new Date().toISOString();
       const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -173,15 +368,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
   }, [meeting]);
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border bg-card shadow-sm transition-all duration-150",
-        !isCancelled && "hover:-translate-y-0.5 hover:shadow-md",
-        borderStyles[meeting.type],
-        meeting.isCurrent && !isCancelled && "animate-pulse-gold ring-2 ring-primary/50",
-        isCancelled && "opacity-50"
-      )}
-    >
+    <div className={displayState.card.className}>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="flex items-start justify-between p-5">
           <div className="space-y-1">
@@ -198,98 +385,38 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
                 </>
               )}
             </div>
-            <h3 className={cn("font-semibold", isCancelled && "line-through")}>{meeting.title}</h3>
+            <h3 className={cn("font-semibold", displayState.title.lineThrough && "line-through")}>
+              {meeting.title}
+            </h3>
             {meeting.account && (
               <p className="text-sm text-primary">{meeting.account}</p>
             )}
           </div>
 
           <div className="flex items-center gap-2">
-            {isCancelled && (
-              <Badge variant="outline" className="text-destructive border-destructive/30">
-                Cancelled
+            {displayState.badges.map((badge) => (
+              <Badge key={badge.key} variant={badge.variant} className={badge.className}>
+                {badge.icon === "check" && <Check className="mr-1 size-3" />}
+                {badge.label}
               </Badge>
-            )}
-
-            {isNew && (
-              <Badge variant="outline" className="text-muted-foreground">
-                No prep available
-              </Badge>
-            )}
+            ))}
 
             <Badge className={badgeStyles[meeting.type]} variant="secondary">
               {badgeLabels[meeting.type]}
             </Badge>
 
-            {/* View Prep button for meetings with prep files (hidden for cancelled) */}
-            {hasPrepFile && !isCancelled && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-primary hover:text-primary"
-                asChild
-              >
-                <Link
-                  to="/meeting/$prepFile"
-                  params={{ prepFile: meeting.prepFile! }}
-                >
-                  {meeting.prepReviewed ? (
-                    <Check className="mr-1 size-3.5 text-success" />
-                  ) : (
-                    <FileText className="mr-1 size-3.5" />
-                  )}
-                  View Prep
-                </Link>
-              </Button>
-            )}
+            {displayState.actions.map((action) => (
+              <ActionButton
+                key={action.key}
+                action={action}
+                meeting={meeting}
+                attaching={attaching}
+                onAttach={handleAttachTranscript}
+                onCapture={handleCaptureOutcomes}
+              />
+            ))}
 
-            {/* No prep badge for customer meetings without prep */}
-            {!meeting.hasPrep && !isNew && meeting.type === "customer" && (
-              <Badge variant="outline" className="text-muted-foreground">
-                No prep
-              </Badge>
-            )}
-
-            {/* Past meeting actions: outcomes display or attach/capture (hidden for cancelled) */}
-            {isPast && !isCancelled && (
-              <>
-                {hasOutcomes ? (
-                  <Badge variant="outline" className="text-success border-success/30">
-                    <Check className="mr-1 size-3" />
-                    Processed
-                  </Badge>
-                ) : (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={handleAttachTranscript}
-                      disabled={attaching}
-                    >
-                      {attaching ? (
-                        <Loader2 className="mr-1 size-3.5 animate-spin" />
-                      ) : (
-                        <Paperclip className="mr-1 size-3.5" />
-                      )}
-                      Attach
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={handleCaptureOutcomes}
-                    >
-                      <Trophy className="mr-1 size-3.5" />
-                      Outcomes
-                    </Button>
-                  </>
-                )}
-              </>
-            )}
-
-            {/* Expand button for inline prep or outcomes */}
-            {(hasInlinePrep || hasOutcomes) && (
+            {displayState.showExpander && (
               <CollapsibleTrigger asChild>
                 <button
                   className={cn(
@@ -309,17 +436,17 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
           </div>
         </div>
 
-        {(hasInlinePrep || hasOutcomes) && (
+        {displayState.showExpander && (
           <CollapsibleContent>
             <div className="border-t bg-muted/30 p-5">
-              {hasOutcomes && (
+              {outcomes !== null && (
                 <MeetingOutcomes
                   outcomes={outcomes}
                   onRefresh={refreshOutcomes}
                 />
               )}
-              {hasInlinePrep && !hasOutcomes && (
-                <MeetingPrepContent prep={meeting.prep!} />
+              {outcomes === null && meeting.prep && Object.keys(meeting.prep).length > 0 && (
+                <MeetingPrepContent prep={meeting.prep} />
               )}
             </div>
           </CollapsibleContent>
@@ -327,6 +454,65 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
       </Collapsible>
     </div>
   );
+}
+
+function ActionButton({
+  action,
+  meeting,
+  attaching,
+  onAttach,
+  onCapture,
+}: {
+  action: ActionState;
+  meeting: Meeting;
+  attaching: boolean;
+  onAttach: () => void;
+  onCapture: () => void;
+}) {
+  switch (action.key) {
+    case "view-prep":
+      return (
+        <Button variant="ghost" size="sm" className="text-primary hover:text-primary" asChild>
+          <Link to="/meeting/$prepFile" params={{ prepFile: action.linkTo! }}>
+            {meeting.prepReviewed ? (
+              <Check className="mr-1 size-3.5 text-success" />
+            ) : (
+              <FileText className="mr-1 size-3.5" />
+            )}
+            {action.label}
+          </Link>
+        </Button>
+      );
+    case "attach-transcript":
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={onAttach}
+          disabled={attaching}
+        >
+          {attaching ? (
+            <Loader2 className="mr-1 size-3.5 animate-spin" />
+          ) : (
+            <Paperclip className="mr-1 size-3.5" />
+          )}
+          {action.label}
+        </Button>
+      );
+    case "capture-outcomes":
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={onCapture}
+        >
+          <Trophy className="mr-1 size-3.5" />
+          {action.label}
+        </Button>
+      );
+  }
 }
 
 function MeetingPrepContent({ prep }: { prep: NonNullable<Meeting["prep"]> }) {
