@@ -273,7 +273,7 @@ fn make_action_id(title: &str, account: &str, due: &str) -> String {
     format!("action-{:010x}", hasher.finish() & 0xFF_FFFF_FFFF)
 }
 
-/// Write JSON to a file with pretty printing.
+/// Write JSON to a file with pretty printing (I64: atomic write).
 pub fn write_json(path: &Path, data: &Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
@@ -281,7 +281,7 @@ pub fn write_json(path: &Path, data: &Value) -> Result<(), String> {
     }
     let content = serde_json::to_string_pretty(data)
         .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
-    fs::write(path, format!("{}\n", content))
+    crate::util::atomic_write_str(path, &format!("{}\n", content))
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
 }
 
@@ -561,19 +561,6 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
     fs::create_dir_all(&preps_dir)
         .map_err(|e| format!("Failed to create preps dir: {}", e))?;
 
-    // Clear stale prep files
-    if let Ok(entries) = fs::read_dir(&preps_dir) {
-        for entry in entries.flatten() {
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|n| n.ends_with(".json"))
-            {
-                let _ = fs::remove_file(entry.path());
-            }
-        }
-    }
-
     let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
@@ -638,6 +625,23 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
 
             write_json(&data_dir.join(&rel_path), &prep_data)?;
             prep_paths.push(rel_path);
+        }
+    }
+
+    // I66: Clean stale prep files AFTER new writes succeed.
+    // Only remove .json files not in the new set.
+    let new_filenames: std::collections::HashSet<String> = prep_paths
+        .iter()
+        .filter_map(|p| p.strip_prefix("preps/").map(String::from))
+        .collect();
+    if let Ok(entries) = fs::read_dir(&preps_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if let Some(name_str) = name.to_str() {
+                if name_str.ends_with(".json") && !new_filenames.contains(name_str) {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
         }
     }
 

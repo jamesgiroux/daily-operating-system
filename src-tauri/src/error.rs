@@ -28,13 +28,10 @@ pub enum ExecutionError {
     #[error("Workspace not found: {0}")]
     WorkspaceNotFound(PathBuf),
 
-    #[error("Script failed with exit code {code}: {stderr}")]
+    #[error("Operation failed with code {code}: {stderr}")]
     ScriptFailed { code: i32, stderr: String },
 
-    #[error("Script not found: {0}")]
-    ScriptNotFound(PathBuf),
-
-    #[error("Failed to parse script output: {0}")]
+    #[error("Failed to parse output: {0}")]
     ParseError(String),
 
     #[error("IO error: {0}")]
@@ -49,9 +46,6 @@ pub enum ExecutionError {
 
     #[error("Claude subscription limit reached. Try again later")]
     ClaudeSubscriptionLimit,
-
-    #[error("Python not found. Install Python 3.8+")]
-    PythonNotFound,
 }
 
 impl ExecutionError {
@@ -72,7 +66,6 @@ impl ExecutionError {
             ExecutionError::ClaudeCodeNotFound
                 | ExecutionError::ClaudeCodeNotAuthenticated
                 | ExecutionError::ClaudeSubscriptionLimit
-                | ExecutionError::PythonNotFound
         )
     }
 
@@ -88,8 +81,7 @@ impl ExecutionError {
             ExecutionError::WorkspaceNotFound(_) => {
                 "Verify your workspace path in ~/.dailyos/config.json"
             }
-            ExecutionError::ScriptFailed { .. } => "Check the script logs for details.",
-            ExecutionError::ScriptNotFound(_) => "Ensure the required scripts are installed.",
+            ExecutionError::ScriptFailed { .. } => "Check the logs for details.",
             ExecutionError::ParseError(_) => "Check the file format is correct.",
             ExecutionError::IoError(_) => "Check file permissions and disk space.",
             ExecutionError::ClaudeCodeNotFound => {
@@ -101,7 +93,6 @@ impl ExecutionError {
             ExecutionError::ClaudeSubscriptionLimit => {
                 "Your Claude subscription limit was reached. Wait or upgrade your plan."
             }
-            ExecutionError::PythonNotFound => "Install Python 3.8+ from https://python.org",
         }
     }
 }
