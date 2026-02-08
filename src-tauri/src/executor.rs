@@ -460,7 +460,7 @@ impl Executor {
             execution_id: execution_id.to_string(),
         });
 
-        let prepare_script = get_script_path(workspace, "prepare_today.py");
+        let prepare_script = get_script_path(&self.app_handle, workspace, "prepare_today.py");
         log::info!("Today pipeline Phase 1: Running {}", prepare_script.display());
         run_python_script(&prepare_script, workspace, SCRIPT_TIMEOUT_SECS)?;
 
@@ -643,7 +643,7 @@ impl Executor {
             execution_id: execution_id.to_string(),
         });
 
-        let prepare_script = get_script_path(workspace, workflow.prepare_script());
+        let prepare_script = get_script_path(&self.app_handle, workspace, workflow.prepare_script());
         log::info!("Phase 1: Running {}", prepare_script.display());
         run_python_script(&prepare_script, workspace, SCRIPT_TIMEOUT_SECS)?;
 
@@ -666,7 +666,7 @@ impl Executor {
             execution_id: execution_id.to_string(),
         });
 
-        let deliver_script = get_script_path(workspace, workflow.deliver_script());
+        let deliver_script = get_script_path(&self.app_handle, workspace, workflow.deliver_script());
         log::info!("Phase 3: Running {}", deliver_script.display());
         run_python_script(&deliver_script, workspace, SCRIPT_TIMEOUT_SECS)?;
 
@@ -712,7 +712,7 @@ impl Executor {
         }
 
         // Step 1: Run refresh_emails.py
-        let refresh_script = get_script_path(workspace, "refresh_emails.py");
+        let refresh_script = get_script_path(&self.app_handle, workspace, "refresh_emails.py");
         log::info!("Email refresh: running {}", refresh_script.display());
         run_python_script(&refresh_script, workspace, SCRIPT_TIMEOUT_SECS)
             .map_err(|e| format!("Email refresh script failed: {}", e))?;
@@ -813,26 +813,10 @@ impl Executor {
 
 /// Get the path to a script.
 ///
-/// Priority: app-bundled scripts first (DEC25: app-native governance),
-/// then workspace _tools/ as fallback for scripts the app doesn't ship.
-fn get_script_path(workspace: &Path, script_name: &str) -> PathBuf {
-    // App-bundled scripts take priority (repo scripts/ in dev mode)
-    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap_or(std::path::Path::new("."));
-    let repo_script = repo_root.join("scripts").join(script_name);
-    if repo_script.exists() {
-        return repo_script;
-    }
-
-    // Fall back to workspace _tools/ (CLI-era scripts)
-    let workspace_script = workspace.join("_tools").join(script_name);
-    if workspace_script.exists() {
-        return workspace_script;
-    }
-
-    // Not found — return repo path for a clear error message
-    repo_script
+/// Priority: dev mode → bundled resource → workspace _tools/ fallback.
+/// Delegates to `util::resolve_script_path` for the actual resolution (I59).
+fn get_script_path(app_handle: &AppHandle, workspace: &Path, script_name: &str) -> PathBuf {
+    crate::util::resolve_script_path(app_handle, workspace, script_name)
 }
 
 /// Request a manual workflow execution
