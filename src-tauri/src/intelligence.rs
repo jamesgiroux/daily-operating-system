@@ -456,6 +456,7 @@ mod tests {
             ),
             csm: None,
             champion: None,
+            nps: None,
             tracker_path: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
