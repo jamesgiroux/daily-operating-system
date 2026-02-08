@@ -1,20 +1,12 @@
 import { CalendarDays, Clock } from "lucide-react";
-import { MeetingCard } from "./MeetingCard";
-import type { Meeting, MeetingType } from "@/types";
+import { MeetingCard, computeMeetingDisplayState } from "./MeetingCard";
+import type { Meeting } from "@/types";
 import { useCalendar } from "@/hooks/useCalendar";
 import { cn } from "@/lib/utils";
 
 interface MeetingTimelineProps {
   meetings: Meeting[];
 }
-
-const dotColors: Partial<Record<MeetingType, string>> = {
-  customer: "bg-primary",
-  qbr: "bg-primary",
-  partnership: "bg-primary",
-  external: "bg-primary",
-  personal: "bg-success",
-};
 
 /** Format a timestamp to a short time like "10:30 AM" */
 function formatNowTime(ts: number): string {
@@ -83,7 +75,12 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
         <div className="space-y-6">
           {meetings.map((meeting, index) => {
             const live = isLive(meeting);
-            const isCancelled = meeting.overlayStatus === "cancelled";
+            const dotState = computeMeetingDisplayState(meeting, {
+              isPast: false,
+              outcomesStatus: "unknown",
+              isLive: live || (meeting.isCurrent ?? false),
+              hasInlinePrep: false,
+            });
             return (
               <div
                 key={meeting.id}
@@ -103,11 +100,9 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
                 <div
                   className={cn(
                     "absolute left-0 top-5 size-3.5 rounded-full border-2 border-background",
-                    isCancelled
-                      ? "bg-muted-foreground/30"
-                      : (dotColors[meeting.type] ?? "bg-muted-foreground/50"),
-                    !isCancelled && (live || meeting.isCurrent) && "ring-2 ring-primary/50",
-                    !isCancelled && live && "animate-pulse"
+                    dotState.dot.bgClass,
+                    dotState.dot.ringClass,
+                    dotState.dot.animate && "animate-pulse",
                   )}
                 />
 
