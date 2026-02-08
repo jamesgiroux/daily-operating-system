@@ -187,12 +187,18 @@ def get_user_domain(config: dict[str, Any]) -> str:
     """Derive the user's email domain for internal/external classification.
 
     Resolution chain:
-        1. config.json  -> userEmail field
-        2. config.json  -> email field
-        3. token.json   -> client_email (rare, but some tokens carry it)
-        4. Empty string (classification degrades gracefully)
+        1. config.json  -> userDomain field (set during onboarding, I57)
+        2. config.json  -> userEmail field
+        3. config.json  -> email field
+        4. token.json   -> client_email (rare, but some tokens carry it)
+        5. Empty string (classification degrades gracefully)
     """
-    # Try config fields
+    # Explicit domain from onboarding (I57)
+    domain = config.get("userDomain", "")
+    if domain:
+        return domain.lower().strip()
+
+    # Try config email fields
     for key in ("userEmail", "email"):
         email = config.get(key, "")
         if email and "@" in email:
