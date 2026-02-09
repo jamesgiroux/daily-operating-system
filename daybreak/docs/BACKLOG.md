@@ -4,11 +4,32 @@ Active issues, known risks, assumptions, and dependencies.
 
 **Convention:** Issues use `I` prefix. When an issue is resolved, mark it `Closed` with a one-line resolution. Don't delete — future you wants to know what was considered.
 
-**Current state:** 439 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Entity intelligence architecture complete (ADR-0057, I130-I138). Active work: ship-path bugs + distribution.
+**Current state:** 439 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Entity intelligence architecture complete (ADR-0057, I130-I138). Active work: Sprint 9 (entity relationship graph) + ship-path bugs.
 
 ---
 
 ## Issues
+
+### Sprint 9 — Entity Relationship Graph (Ship Blocker)
+
+Entities exist but live in isolation. Meetings don't know which accounts they serve. People can't be linked to accounts from the UI. Projects don't exist as entities. The user is doing the synthesis work that the system should be doing — violates P6 (AI-Native) and P7 (Consumption Over Production). Without M2M, meeting intelligence can't connect to entity intelligence, and the core promise ("your day is ready") falls short.
+
+**Scope:** Build the relationship graph between meetings, people, accounts, and projects. Three issues, in dependency order:
+
+**I50: Projects overlay table and project entity support**
+Projects as first-class entities alongside accounts. `projects` overlay table, CRUD commands, ProjectsPage + ProjectDetailPage (mirror account patterns). Content indexing + intelligence enrichment reuse entity_intel.rs shared module. Unblocks I52 (meetings need entities to link to).
+
+**I52: Meeting-entity many-to-many association**
+Junction table linking meetings to entities (accounts, projects, people). Auto-association from attendee domains + manual override. Meeting prep consumes all linked entity intelligence. Schedule view shows entity badges on meeting cards. This is the architectural keystone — once meetings know their entities, every surface gets smarter.
+
+**I129: People entity editability — name, account link, and user contributions**
+Already on ship path. People are auto-created from calendar attendees but key fields (name, account link) have no edit path. Entity picker for account linking, editable names, manual person creation, promoted notes. The "last mile" for people as useful nodes in the relationship graph.
+
+**Sequence:** I50 (projects exist) → I52 (M2M links everything) → I129 (people become editable nodes). I129 can start in parallel with I50 since it doesn't depend on projects.
+
+**Not in scope for Sprint 9:** Entity-mode config UI (I53), MCP integrations (I54), kits (I40), intelligence layers (I35/I55). Those build on top of the relationship graph but don't block it.
+
+---
 
 ### Planned — Ship Path
 
@@ -22,14 +43,16 @@ Unsigned DMG for colleague distribution. GitHub Actions builds arm64 DMG on push
 App requires users to supply their own `credentials.json` from Google Cloud Console. For distribution, DailyOS needs its own registered OAuth client. Client ID/secret embedded in Rust binary (compile-time `include_str!` or build-time env var). Steps: (1) Create Google Cloud project. (2) Configure OAuth consent screen (external, limited scope: Calendar read, Gmail read). (3) Create Desktop app OAuth client. (4) Embed in `google_api/auth.rs`. (5) Remove `credentials.json` file requirement. Dev override via env var for local testing.
 
 
-**I129: People entity editability — name, account link, and user contributions**
-People are auto-created from calendar attendees, which bootstraps ~80% of the data. The remaining 20% requires user contribution, but key fields have no edit path. The `name` field is derived from email via `name_from_email()` (e.g. `schen@acme.com` → "Schen") and is not in the `update_person_field` whitelist — so bad auto-names are permanent. Account/entity associations are auto-inferred from email domains and can be wrong, with no way to correct them from the UI (linking commands exist but aren't wired to PersonDetailPage). The system does the heavy lift; the user needs to do the finishing work.
-Scope:
-(a) **Add `name` to the editable whitelist** in `db.rs` `update_person_field()`. Display as click-to-edit on PersonDetailPage header (currently a static `<h1>`). Auto-derived names become the default, user override sticks.
-(b) **Entity link management on PersonDetailPage.** Show current linked entities with unlink affordance. Add entity picker (accounts combobox) to link a person to an account. Commands exist (`link_person_entity`, `unlink_person_entity`) — this is frontend wiring.
-(c) **Manual person creation.** "Add person" entry point on PeoplePage. Minimum fields: name + email. Auto-derives organization, relationship from email. Pre-links to account if triggered from AccountDetailPage.
-(d) **Notes as first-class contribution.** Notes field exists and is editable, but it's buried in edit mode. Promote to always-visible section with inline editing — this is the user's primary way to contribute knowledge (context, preferences, history, working style).
-Does NOT include: merge/dedup of duplicate people, bulk import, or contact sync from external sources.
+*I129 moved to Sprint 9 (Entity Relationship Graph).*
+
+### Planned — Intelligence Quality
+
+**I139: File summary indexing + enrichment payload optimization**
+Intelligence enrichment times out on accounts with 15+ content files because the prompt sends up to 50K chars of raw file text plus a web search instruction. Three changes:
+(a) **Sort files by recency.** `get_entity_files` returns `modified_at DESC` so newest files get priority within the char budget. 90-day recency filter already applied (I138 hotfix).
+(b) **Mechanical file summaries.** On content index sync, extract a summary per file (headings + first paragraph, ~500 chars). Store in the existing `content_index.summary` column (already in schema, always NULL). Zero AI cost — purely mechanical text extraction.
+(c) **Enrichment sends summaries, not full text.** Prompt includes file summaries (50 files in 3K chars) instead of raw contents (3 files in 12K chars). Dramatically better signal density per token. Full text available on demand if a future multi-turn enrichment needs it.
+Also: removed web search from initial enrichment prompt, reduced char caps (50K→12K initial, 20K→8K incremental), bumped PTY timeout to 180s. These hotfixes are already shipped; I139 completes the architectural fix.
 
 ### Open
 
@@ -60,21 +83,33 @@ When a meeting involves people/companies not in the workspace, prep is thin. Pat
 **I95: Week page Phase 3 — proactive suggestions** — ADR-0052, blocked by I94
 Draft agenda requests, pre-fill preps, suggest tasks for open blocks. Time blocking proactivity setting. Only "suggestions" ships initially.
 
+**I140: Branded Google OAuth success page**
+After Google authentication completes, the browser lands on a localhost callback that currently has no UI. Replace with an on-brand landing page that (a) confirms auth succeeded, (b) reinforces the DailyOS value prop, and (c) teaches the user what happens next (e.g. "Your calendar and email are now connected — open DailyOS and your day will be ready"). Design tokens from UI-SPEC.md (cream bg, charcoal text, gold accent). Page is static HTML served by the Tauri localhost callback handler — no React, no build step. Inspiration: [Google Antigravity auth-success](https://antigravity.google/auth-success).
+
+**I141: AI content tagging during entity enrichment**
+When entity intelligence runs, the enrichment prompt already reads file summaries but discards its assessment of them. Add an optional output field where the AI rates which files it found most relevant and classifies them (e.g. "people-oriented", "meeting-oriented", "commercial", "technical"). Store tags in the existing `content_index` table (new `tags` TEXT column, JSON array). Zero extra AI cost — piggybacks on the enrichment call that already reads the files. Enables future filtering/surfacing of high-signal files on entity detail pages.
+
+**I142: Account Plan — leadership-facing generated artifact**
+Intelligence assessments serve the CSM's daily situational awareness. Leadership needs a different artifact: a structured Account Plan with executive summary (verdict + top risk + biggest opportunity), 90-day focus areas, customer context, risk mitigation table, and products/adoption status. Separate generated document that consumes `intelligence.json` + `dashboard.json` and produces a templated output. Not a refinement of enrichment — a distinct artifact with its own generation command. Scope: (a) Account Plan template definition (structured sections, not prose). (b) Generation command that reads intelligence + dashboard + captures and fills the template. (c) UI entry point on AccountDetailPage ("Generate Account Plan"). (d) Output as markdown in account directory (consumable by Claude Desktop, exportable). Data gaps: Products & Adoption and Consumption metrics require CRM/product telemetry (I54) — initially those sections render as "Not available."
+
+**I143: Renewal lifecycle tracking — auto-rollover, churn/expansion markers**
+Renewal date is currently a static field with no concept of outcome. When a renewal passes, the stat bar shows "Xd overdue" indefinitely — even if the renewal was successful. Three parts:
+(a) **Auto-rollover.** When a renewal date passes and the account hasn't churned, automatically advance the renewal date by 1 year (or contract term length if known). The "overdue" state should be temporary, not permanent.
+(b) **Lifecycle event markers.** Capture churn, downsell, expansion, and renewal as historical events on an account — not current-state fields. Likely a new `account_events` table (event_type, date, notes, arr_delta). These are the "what happened" record, distinct from the account's current health/lifecycle fields.
+(c) **UI for recording events.** Entry point on AccountDetailPage to log a renewal outcome, expansion, downsell, or churn. Events surface in Evidence & History section. Churn event sets lifecycle to "churned" and suppresses renewal countdown.
+Design question: where do historical events live in the filesystem? Appended to dashboard.json? Separate events.json? Needs an ADR if the pattern is reusable beyond renewals.
+
 **I3: Low-friction web capture to _inbox/**
 Reduce friction for feeding external context into the system. Form factor TBD — browser extension, macOS share sheet, bookmarklet, "paste URL" in-app. Inbox already works via drag-and-drop.
 
 ### Parking Lot (post-ship, blocked by I27 or needs usage data)
 
 **I27: Entity-mode architecture — umbrella issue**
-ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues: I50, I52, I53, I54, I55. Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven.
+ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues: I53, I54, I55. I50 and I52 promoted to Sprint 9 (ship blocker). Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven. Remaining scope: entity-mode config (I53), MCP integration framework (I54), intelligence layers (I35/I55), entity mention extraction, cross-entity content linking.
 
 **I40: CS Kit — account-mode fields, templates, and vocabulary** — Blocked by I27
 
-**I50: Projects overlay table and project entity support** — Blocked by I27
-
-**I52: Meeting-entity many-to-many association** — Blocked by I50
-
-**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I50, I52
+**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I52 (Sprint 9)
 
 **I54: MCP client integration framework** — Blocked by I27
 

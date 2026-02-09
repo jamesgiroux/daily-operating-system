@@ -486,15 +486,15 @@ impl Executor {
             ExecutionError::ParseError(format!("Failed to load directive: {}", e))
         })?;
 
-        // Deliver schedule
-        let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)
-            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
-        let _ = self.app_handle.emit("operation-delivered", "schedule");
-        log::info!("Today pipeline: schedule delivered");
-
-        // Deliver actions (with DB for dedup)
+        // Deliver schedule + actions (with DB for entity ID resolution + dedup)
         let db_guard = self.state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+
+        let schedule_data =
+            crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
+                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let _ = self.app_handle.emit("operation-delivered", "schedule");
+        log::info!("Today pipeline: schedule delivered");
         let actions_data =
             crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
@@ -716,36 +716,50 @@ impl Executor {
         // Step 3: Build emails data matching deliver_emails output shape
         let emails_section = refresh_data.get("emails").cloned().unwrap_or(json!({}));
 
-        let high_priority = emails_section
+        let map_email = |e: &serde_json::Value, default_priority: &str| -> serde_json::Value {
+            json!({
+                "id": e.get("id").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "sender": e.get("from").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "senderEmail": e.get("from_email").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "subject": e.get("subject").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "snippet": e.get("snippet").and_then(serde_json::Value::as_str).unwrap_or(""),
+                "priority": e.get("priority").and_then(serde_json::Value::as_str).unwrap_or(default_priority),
+            })
+        };
+
+        let high_priority: Vec<serde_json::Value> = emails_section
             .get("highPriority")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().map(|e| map_email(e, "high")).collect())
+            .unwrap_or_default();
+
+        // Classified contains medium + low emails
+        let classified = emails_section
+            .get("classified")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let medium_count = emails_section
-            .get("mediumCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let low_count = emails_section
-            .get("lowCount")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+
+        let mut medium_priority: Vec<serde_json::Value> = Vec::new();
+        let mut low_priority: Vec<serde_json::Value> = Vec::new();
+        for e in &classified {
+            let prio = e.get("priority").and_then(serde_json::Value::as_str).unwrap_or("medium");
+            let mapped = map_email(e, prio);
+            match prio {
+                "low" => low_priority.push(mapped),
+                _ => medium_priority.push(mapped),
+            }
+        }
 
         let emails_json = json!({
-            "highPriority": high_priority.iter().map(|e| {
-                json!({
-                    "id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                    "sender": e.get("from").and_then(|v| v.as_str()).unwrap_or(""),
-                    "senderEmail": e.get("from_email").and_then(|v| v.as_str()).unwrap_or(""),
-                    "subject": e.get("subject").and_then(|v| v.as_str()).unwrap_or(""),
-                    "snippet": e.get("snippet").and_then(|v| v.as_str()).unwrap_or(""),
-                    "priority": "high",
-                })
-            }).collect::<Vec<_>>(),
+            "highPriority": high_priority,
+            "mediumPriority": medium_priority,
+            "lowPriority": low_priority,
             "stats": {
                 "highCount": high_priority.len(),
-                "mediumCount": medium_count,
-                "lowCount": low_count,
-                "total": high_priority.len() as u64 + medium_count + low_count,
+                "mediumCount": medium_priority.len(),
+                "lowCount": low_priority.len(),
+                "total": high_priority.len() + medium_priority.len() + low_priority.len(),
             }
         });
 
@@ -754,7 +768,8 @@ impl Executor {
             &emails_json,
         )?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
-        log::info!("Email refresh: emails.json written ({} high)", high_priority.len());
+        log::info!("Email refresh: emails.json written ({} high, {} medium, {} low)",
+            high_priority.len(), medium_priority.len(), low_priority.len());
 
         // Step 4: AI enrichment (fault-tolerant)
         let user_ctx = self.state.config.read().ok()

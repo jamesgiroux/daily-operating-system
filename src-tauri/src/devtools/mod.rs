@@ -422,10 +422,12 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     let directive = crate::json_loader::load_directive(&today_dir)
         .map_err(|e| format!("Failed to load directive: {}", e))?;
 
-    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)?;
-
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
     let db_ref = db_guard.as_ref();
+
+    let schedule_data =
+        crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
+
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
     if let Some(db) = db_ref {
         let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);
@@ -466,10 +468,12 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .map_err(|e| format!("Failed to load directive: {}", e))?;
 
     // --- Mechanical delivery ---
-    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir)?;
-
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
     let db_ref = db_guard.as_ref();
+
+    let schedule_data =
+        crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
+
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
     if let Some(db) = db_ref {
         let _ = crate::workflow::today::sync_actions_to_db(&workspace, db);

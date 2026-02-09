@@ -55,6 +55,7 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Editable structured fields
+  const [editName, setEditName] = useState<string>("");
   const [editStatus, setEditStatus] = useState<string>("");
   const [editMilestone, setEditMilestone] = useState<string>("");
   const [editOwner, setEditOwner] = useState<string>("");
@@ -73,6 +74,7 @@ export default function ProjectDetailPage() {
         projectId,
       });
       setDetail(result);
+      setEditName(result.name);
       setEditStatus(result.status ?? "active");
       setEditMilestone(result.milestone ?? "");
       setEditOwner(result.owner ?? "");
@@ -96,6 +98,8 @@ export default function ProjectDetailPage() {
 
     try {
       const fieldUpdates: [string, string][] = [];
+      if (editName !== detail.name)
+        fieldUpdates.push(["name", editName]);
       if (editStatus !== (detail.status ?? ""))
         fieldUpdates.push(["status", editStatus]);
       if (editMilestone !== (detail.milestone ?? ""))
@@ -230,6 +234,21 @@ export default function ProjectDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => {
+                      setEditName(e.target.value);
+                      setDirty(true);
+                    }}
+                    placeholder="Project name"
+                    className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">

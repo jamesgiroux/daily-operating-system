@@ -5,16 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EntityPicker } from "@/components/ui/entity-picker";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
+  Building2,
   Calendar,
   CheckCircle2,
   Clock,
+  FolderKanban,
   Users,
+  X,
 } from "lucide-react";
-import type { MeetingHistoryDetail } from "@/types";
+import type { MeetingHistoryDetail, LinkedEntity } from "@/types";
 
 const meetingTypeLabels: Record<string, string> = {
   customer: "Customer",
@@ -52,6 +56,49 @@ export default function MeetingHistoryDetailPage() {
   const [detail, setDetail] = useState<MeetingHistoryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+
+  const loadLinkedEntities = useCallback(async () => {
+    if (!meetingId) return;
+    try {
+      const entities = await invoke<LinkedEntity[]>("get_meeting_entities", {
+        meetingId,
+      });
+      setLinkedEntities(entities);
+    } catch {
+      // Non-fatal — entities just won't show
+    }
+  }, [meetingId]);
+
+  const handleLinkEntity = useCallback(
+    async (entityId: string | null) => {
+      if (!meetingId || !entityId) return;
+      try {
+        await invoke("link_meeting_entity", {
+          meetingId,
+          entityId,
+          entityType: "account", // EntityPicker returns id, we detect type below
+        });
+        loadLinkedEntities();
+      } catch (e) {
+        console.error("Failed to link entity:", e);
+      }
+    },
+    [meetingId, loadLinkedEntities],
+  );
+
+  const handleUnlinkEntity = useCallback(
+    async (entityId: string) => {
+      if (!meetingId) return;
+      try {
+        await invoke("unlink_meeting_entity", { meetingId, entityId });
+        loadLinkedEntities();
+      } catch (e) {
+        console.error("Failed to unlink entity:", e);
+      }
+    },
+    [meetingId, loadLinkedEntities],
+  );
 
   const load = useCallback(async () => {
     if (!meetingId) return;
@@ -72,7 +119,8 @@ export default function MeetingHistoryDetailPage() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadLinkedEntities();
+  }, [load, loadLinkedEntities]);
 
   if (loading) {
     return (
@@ -280,6 +328,51 @@ export default function MeetingHistoryDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Linked Entities (I52 M2M) */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium">
+                Linked Entities
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {linkedEntities.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {linkedEntities.map((entity) => (
+                    <div
+                      key={entity.id}
+                      className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm"
+                    >
+                      {entity.entityType === "project" ? (
+                        <FolderKanban className="size-3.5 text-muted-foreground" />
+                      ) : (
+                        <Building2 className="size-3.5 text-muted-foreground" />
+                      )}
+                      <Link
+                        to={entity.entityType === "project" ? "/projects/$projectId" : "/accounts/$accountId"}
+                        params={entity.entityType === "project" ? { projectId: entity.id } : { accountId: entity.id }}
+                        className="text-foreground hover:underline"
+                      >
+                        {entity.name}
+                      </Link>
+                      <button
+                        onClick={() => handleUnlinkEntity(entity.id)}
+                        className="ml-0.5 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <EntityPicker
+                value={null}
+                onChange={(id) => handleLinkEntity(id)}
+                placeholder="Link account or project..."
+              />
+            </CardContent>
+          </Card>
 
           {/* Empty state: no outcomes at all */}
           {detail.captures.length === 0 &&

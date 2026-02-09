@@ -924,12 +924,13 @@ pub fn sync_all_content_indexes(
     Ok(total)
 }
 
-/// Build file context string for enrichment prompts (I126).
+/// Build file context string for enrichment prompts (I126, updated I139).
 ///
-/// Extracts text from up to 5 most recent content files, capped at 8000 chars total.
-/// Updates `extracted_at` on each file as a side effect.
+/// Uses pre-computed summaries from SQLite when available, falling back to
+/// text extraction for files without summaries. Priority-ordered (highest first).
+/// Capped at 10K chars total.
 pub fn build_file_context(
-    workspace: &Path,
+    _workspace: &Path,
     db: &ActionDb,
     account_id: &str,
 ) -> String {
@@ -942,28 +943,34 @@ pub fn build_file_context(
         return String::new();
     }
 
-    let max_files = 5;
-    let max_chars = 8000;
+    let max_chars: usize = 10_000;
     let mut context_parts: Vec<String> = Vec::new();
-    let mut total_chars = 0;
-    let now = Utc::now().to_rfc3339();
+    let mut total_chars: usize = 0;
 
-    for file in files.iter().take(max_files) {
-        let path = std::path::Path::new(&file.absolute_path);
-        if !path.exists() {
-            continue;
-        }
-
-        let text = match crate::processor::extract::extract_text(path) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-
-        // Cap this file's contribution
-        let remaining = max_chars - total_chars;
-        if remaining == 0 {
+    for file in &files {
+        if total_chars >= max_chars {
             break;
         }
+
+        // Prefer pre-computed summary; fall back to extraction
+        let text = if let Some(ref summary) = file.summary {
+            summary.clone()
+        } else {
+            let path = std::path::Path::new(&file.absolute_path);
+            if !path.exists() {
+                continue;
+            }
+            match crate::processor::extract::extract_text(path) {
+                Ok(t) => {
+                    let summary = crate::entity_intel::mechanical_summary(&t, 500);
+                    if summary.is_empty() { continue; }
+                    summary
+                }
+                Err(_) => continue,
+            }
+        };
+
+        let remaining = max_chars.saturating_sub(total_chars);
         let truncated = if text.len() > remaining {
             &text[..remaining]
         } else {
@@ -971,13 +978,10 @@ pub fn build_file_context(
         };
 
         context_parts.push(format!(
-            "--- File: {} ---\n{}",
-            file.filename, truncated
+            "--- {} [{}] ---\n{}",
+            file.filename, file.content_type, truncated
         ));
         total_chars += truncated.len();
-
-        // Mark as extracted
-        let _ = db.update_content_extraction(&file.id, &now, None);
     }
 
     if context_parts.is_empty() {
@@ -985,8 +989,7 @@ pub fn build_file_context(
     }
 
     format!(
-        "\n\nThe following files exist in this account's workspace directory. \
-         Use them as additional context:\n\n{}",
+        "\n\nThe following file summaries exist in this account's workspace (by priority):\n\n{}",
         context_parts.join("\n\n")
     )
 }

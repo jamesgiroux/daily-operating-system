@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useNavigate } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import { TabFilter } from "@/components/ui/tab-filter";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError, PageEmpty } from "@/components/PageState";
 import { cn, formatRelativeDate } from "@/lib/utils";
-import { RefreshCw, Users } from "lucide-react";
+import { Plus, RefreshCw, Users } from "lucide-react";
 import type { PersonListItem, PersonRelationship } from "@/types";
 
 type RelationshipTab = "all" | "external" | "internal" | "unknown";
@@ -31,11 +32,35 @@ const tempOrder: Record<string, number> = {
 };
 
 export default function PeoplePage() {
+  const navigate = useNavigate();
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<RelationshipTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const handleCreatePerson = useCallback(async () => {
+    if (!newEmail.trim() || !newName.trim()) return;
+    try {
+      setCreating(true);
+      const personId = await invoke<string>("create_person", {
+        email: newEmail.trim(),
+        name: newName.trim(),
+      });
+      setShowAddForm(false);
+      setNewEmail("");
+      setNewName("");
+      navigate({ to: "/people/$personId", params: { personId } });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
+  }, [newEmail, newName, navigate]);
 
   const loadPeople = useCallback(async () => {
     try {
@@ -147,10 +172,75 @@ export default function PeoplePage() {
                 People discovered from your calendar and meetings
               </p>
             </div>
-            <Button variant="ghost" size="icon" className="size-8" onClick={loadPeople}>
-              <RefreshCw className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAddForm(true)}
+              >
+                <Plus className="mr-1 size-4" />
+                Add Person
+              </Button>
+              <Button variant="ghost" size="icon" className="size-8" onClick={loadPeople}>
+                <RefreshCw className="size-4" />
+              </Button>
+            </div>
           </div>
+
+          {showAddForm && (
+            <Card className="mb-4">
+              <CardContent className="flex items-center gap-2 py-3">
+                <input
+                  type="email"
+                  autoFocus
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="Email"
+                  className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setShowAddForm(false);
+                      setNewEmail("");
+                      setNewName("");
+                    }
+                  }}
+                />
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Name"
+                  className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleCreatePerson();
+                    if (e.key === "Escape") {
+                      setShowAddForm(false);
+                      setNewEmail("");
+                      setNewName("");
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  onClick={handleCreatePerson}
+                  disabled={creating || !newEmail.trim() || !newName.trim()}
+                >
+                  {creating ? "Creating..." : "Create"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setNewEmail("");
+                    setNewName("");
+                  }}
+                >
+                  Cancel
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           <SearchInput
             value={searchQuery}
