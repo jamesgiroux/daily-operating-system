@@ -262,24 +262,27 @@ pub fn load_actions_json(today_dir: &Path) -> Result<Vec<Action>, String> {
     Ok(actions)
 }
 
-/// JSON emails format
+/// JSON emails format — matches what `deliver_emails()` writes:
+/// `{ "highPriority": [...], "mediumPriority": [...], "lowPriority": [...], "stats": { ... } }`
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsonEmails {
-    pub date: String,
+    #[serde(default)]
+    pub high_priority: Vec<JsonEmail>,
+    #[serde(default)]
+    pub medium_priority: Vec<JsonEmail>,
+    #[serde(default)]
+    pub low_priority: Vec<JsonEmail>,
     pub stats: Option<JsonEmailStats>,
-    pub emails: Vec<JsonEmail>,
 }
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsonEmailStats {
-    pub high_priority: Option<u32>,
-    pub medium_priority: Option<u32>,
-    pub low_priority: Option<u32>,
-    /// Legacy field — mapped from older two-tier format
-    pub normal_priority: Option<u32>,
-    pub needs_action: Option<u32>,
+    pub high_count: Option<u32>,
+    pub medium_count: Option<u32>,
+    pub low_count: Option<u32>,
+    pub total: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -309,7 +312,11 @@ pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
     let data: JsonEmails = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse emails: {}", e))?;
 
-    let emails = data.emails.into_iter().map(|e| {
+    let all_emails = data.high_priority.into_iter()
+        .chain(data.medium_priority)
+        .chain(data.low_priority);
+
+    let emails = all_emails.map(|e| {
         let priority = match e.priority.as_str() {
             "high" => crate::types::EmailPriority::High,
             "medium" => crate::types::EmailPriority::Medium,

@@ -324,7 +324,7 @@ fn gather_enrichment_input(
 
 /// Phase 2: Run PTY enrichment (no DB lock held).
 fn run_enrichment(input: &EnrichmentInput) -> Result<IntelligenceJson, String> {
-    let pty = PtyManager::new().with_timeout(120);
+    let pty = PtyManager::new().with_timeout(180);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;

@@ -4,9 +4,11 @@ import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  Building2,
   Check,
   ChevronDown,
   FileText,
+  FolderKanban,
   Loader2,
   Paperclip,
   Trophy,
@@ -409,6 +411,25 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
             </h3>
             {meeting.account && (
               <p className="text-sm text-primary">{meeting.account}</p>
+            )}
+            {meeting.linkedEntities && meeting.linkedEntities.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {meeting.linkedEntities.map((entity) => (
+                  <Link
+                    key={entity.id}
+                    to={entity.entityType === "project" ? "/projects/$projectId" : "/accounts/$accountId"}
+                    params={entity.entityType === "project" ? { projectId: entity.id } : { accountId: entity.id }}
+                    className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
+                  >
+                    {entity.entityType === "project" ? (
+                      <FolderKanban className="size-3" />
+                    ) : (
+                      <Building2 className="size-3" />
+                    )}
+                    {entity.name}
+                  </Link>
+                ))}
+              </div>
             )}
           </div>
 
