@@ -21,10 +21,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  AlertTriangle,
   ArrowLeft,
-  Calendar,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   File,
   FileText,
@@ -34,14 +36,20 @@ import {
   Save,
   Plus,
   Sparkles,
+  Trophy,
   Users,
   X,
+  HelpCircle,
+  Target,
 } from "lucide-react";
 import type {
   AccountDetail,
   AccountHealth,
   AccountChildSummary,
   ContentFile,
+  IntelRisk,
+  IntelWin,
+  StakeholderInsight,
   ParentAggregate,
 } from "@/types";
 
@@ -73,6 +81,7 @@ export default function AccountDetailPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [enrichSeconds, setEnrichSeconds] = useState(0);
 
   // I127: Inline action creation
   const [addingAction, setAddingAction] = useState(false);
@@ -85,6 +94,11 @@ export default function AccountDetailPage() {
   const [newFileCount, setNewFileCount] = useState(0);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
+
+  // Evidence section collapse state
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+
+  const intelligence = detail?.intelligence ?? null;
 
   const load = useCallback(async () => {
     if (!accountId) return;
@@ -124,6 +138,21 @@ export default function AccountDetailPage() {
     load();
   }, [load]);
 
+  // Listen for intelligence-updated events
+  useEffect(() => {
+    const unlisten = listen<{ entityId: string }>(
+      "intelligence-updated",
+      (event) => {
+        if (accountId && event.payload.entityId === accountId) {
+          load();
+        }
+      }
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [accountId, load]);
+
   // I125: Listen for content-changed events from watcher
   useEffect(() => {
     const unlisten = listen<{ entityIds: string[]; count: number }>(
@@ -139,6 +168,18 @@ export default function AccountDetailPage() {
       unlisten.then((fn) => fn());
     };
   }, [accountId]);
+
+  // Timer for enrichment progress
+  useEffect(() => {
+    if (!enriching) {
+      setEnrichSeconds(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setEnrichSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [enriching]);
 
   async function handleSave() {
     if (!detail) return;
@@ -211,7 +252,6 @@ export default function AccountDetailPage() {
       setFiles(updated);
       setNewFileCount(0);
       setBannerDismissed(true);
-      // Show brief feedback
       if (diff > 0) {
         setIndexFeedback(`${diff} new file${diff !== 1 ? "s" : ""} found`);
       } else {
@@ -284,12 +324,6 @@ export default function AccountDetailPage() {
       label: "Meetings (30d)",
       value: `${signals.meetingFrequency30d}${trendLabel}`,
     });
-    if (signals.meetingFrequency90d > 0) {
-      metrics.push({
-        label: "Meetings (90d)",
-        value: String(signals.meetingFrequency90d),
-      });
-    }
   }
   if (signals?.temperature) {
     metrics.push({
@@ -403,20 +437,16 @@ export default function AccountDetailPage() {
                         <Sparkles className="mr-1 size-3" />
                       )}
                       {enriching
-                        ? "Researching..."
-                        : detail.companyOverview
-                          ? "Refresh"
-                          : "Enrich"}
+                        ? `Building... ${enrichSeconds}s`
+                        : intelligence
+                          ? "Refresh Intelligence"
+                          : "Build Intelligence"}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {detail.companyOverview
-                      ? files.length > 0
-                        ? `Refresh using AI — includes ${files.length} workspace file${files.length !== 1 ? "s" : ""}`
-                        : "Refresh company data using AI"
-                      : files.length > 0
-                        ? `Research this company using AI — includes ${files.length} workspace file${files.length !== 1 ? "s" : ""}`
-                        : "Research this company using AI"}
+                    {intelligence
+                      ? `Re-synthesize from ${files.length} file${files.length !== 1 ? "s" : ""}, meetings, and captures`
+                      : "Synthesize intelligence from workspace files, meetings, and web search"}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -450,12 +480,102 @@ export default function AccountDetailPage() {
             <PortfolioRow aggregate={detail.parentAggregate} />
           )}
 
+          {/* ═══ Executive Assessment (intelligence hero) ═══ */}
+          {intelligence?.executiveAssessment ? (
+            <div className="space-y-1">
+              <p className="text-base leading-relaxed text-foreground">
+                {intelligence.executiveAssessment}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Intelligence last updated{" "}
+                {formatRelativeDateShort(intelligence.enrichedAt)}
+                {intelligence.sourceFileCount > 0 &&
+                  ` from ${intelligence.sourceFileCount} file${intelligence.sourceFileCount !== 1 ? "s" : ""}`}
+              </p>
+            </div>
+          ) : (
+            !intelligence && (
+              <div className="rounded-lg border border-dashed bg-muted/30 px-6 py-8 text-center">
+                <Sparkles className="mx-auto mb-3 size-8 text-muted-foreground/40" />
+                <p className="mb-1 text-sm font-medium text-muted-foreground">
+                  No intelligence yet
+                </p>
+                <p className="mb-4 text-xs text-muted-foreground/80">
+                  Build intelligence to synthesize your workspace files,
+                  meetings, and captures into an actionable assessment.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={handleEnrich}
+                  disabled={enriching}
+                >
+                  {enriching ? (
+                    <Loader2 className="mr-1 size-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1 size-3" />
+                  )}
+                  {enriching ? `Building... ${enrichSeconds}s` : "Build Intelligence"}
+                </Button>
+              </div>
+            )
+          )}
+
           {/* Asymmetric Grid: Main (3fr) + Sidebar (2fr) */}
           <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
             {/* ═══ Main Column ═══ */}
             <div className="space-y-6">
+              {/* Attention Items: Risks + Wins + Unknowns */}
+              {intelligence && (intelligence.risks.length > 0 || intelligence.recentWins.length > 0 || intelligence.currentState?.unknowns?.length) && (
+                <div className="space-y-3">
+                  {intelligence.risks.map((risk, i) => (
+                    <AttentionRisk key={`risk-${i}`} risk={risk} />
+                  ))}
+                  {intelligence.recentWins.map((win, i) => (
+                    <AttentionWin key={`win-${i}`} win={win} />
+                  ))}
+                  {intelligence.currentState?.unknowns?.map((unknown, i) => (
+                    <div
+                      key={`unknown-${i}`}
+                      className="flex items-start gap-3 rounded-lg bg-primary/8 px-4 py-3"
+                    >
+                      <HelpCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+                      <span className="text-sm">{unknown}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Meeting Readiness */}
+              {intelligence?.nextMeetingReadiness && intelligence.nextMeetingReadiness.prepItems.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      <Target className="mr-1.5 inline-block size-4" />
+                      Next Meeting Readiness
+                    </CardTitle>
+                    {intelligence.nextMeetingReadiness.meetingTitle && (
+                      <p className="text-sm text-muted-foreground">
+                        {intelligence.nextMeetingReadiness.meetingTitle}
+                        {intelligence.nextMeetingReadiness.meetingDate &&
+                          ` — ${formatDate(intelligence.nextMeetingReadiness.meetingDate)}`}
+                      </p>
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {intelligence.nextMeetingReadiness.prepItems.map((item, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm">
+                          <span className="mt-1 size-1.5 shrink-0 rounded-full bg-primary" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Upcoming Meetings */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base font-semibold">
                     Upcoming Meetings
@@ -495,32 +615,11 @@ export default function AccountDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Business Units (I114 — parent accounts only) */}
-              {detail.children.length > 0 && (
-                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">
-                      Business Units
-                      <span className="ml-1 text-muted-foreground">
-                        ({detail.children.length})
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {detail.children.map((child) => (
-                        <ChildAccountRow key={child.id} child={child} />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Open Actions */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+              {/* Open Actions (Commitments) */}
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-base font-semibold">
-                    Open Actions
+                    Commitments
                     {detail.openActions.length > 0 && (
                       <span className="ml-1 text-muted-foreground">
                         ({detail.openActions.length})
@@ -627,249 +726,351 @@ export default function AccountDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Company Overview */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold">
-                    Company Overview
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm">
-                  {detail.companyOverview ? (
-                    <>
-                      {detail.companyOverview.description && (
-                        <p>{detail.companyOverview.description}</p>
-                      )}
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                        {detail.companyOverview.industry && (
-                          <span>
-                            Industry: {detail.companyOverview.industry}
-                          </span>
-                        )}
-                        {detail.companyOverview.size && (
-                          <span>Size: {detail.companyOverview.size}</span>
-                        )}
-                        {detail.companyOverview.headquarters && (
-                          <span>
-                            HQ: {detail.companyOverview.headquarters}
-                          </span>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      No company data yet. Click Enrich to research this
-                      company.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Recent Meetings */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold">
-                    Recent Meetings
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {detail.recentMeetings.length > 0 ? (
-                    <div className="space-y-2">
-                      {detail.recentMeetings.map((m) => (
-                        <Link
-                          key={m.id}
-                          to="/meeting/history/$meetingId"
-                          params={{ meetingId: m.id }}
-                          className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-muted"
-                        >
-                          <Badge variant="outline" className="shrink-0 text-xs">
-                            {formatMeetingType(m.meetingType)}
-                          </Badge>
-                          <span className="flex-1 truncate font-medium">
-                            {m.title}
-                          </span>
-                          <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatRelativeDate(m.startTime)}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={Calendar}
-                      message="No meetings recorded yet"
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Recent Captures */}
-              {detail.recentCaptures.length > 0 && (
-                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+              {/* Stakeholder Intelligence */}
+              {(intelligence?.stakeholderInsights?.length ?? 0) > 0 && (
+                <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base font-semibold">
-                      Recent Captures
+                      Stakeholder Intelligence
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      {detail.recentCaptures.map((c) => (
-                        <Link
-                          key={c.id}
-                          to="/meeting/history/$meetingId"
-                          params={{ meetingId: c.meetingId }}
-                          className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
-                        >
-                          <CaptureIcon type={c.captureType} />
-                          <div className="min-w-0">
-                            <span className="truncate">{c.content}</span>
-                            <div className="text-xs text-muted-foreground">
-                              {c.meetingTitle}
-                            </div>
-                          </div>
-                        </Link>
+                    <div className="space-y-4">
+                      {intelligence!.stakeholderInsights.map((s, i) => (
+                        <StakeholderCard key={i} insight={s} linkedPeople={detail.linkedPeople} />
                       ))}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Files (I124) */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between pb-3">
-                  <CardTitle className="text-base font-semibold">
-                    Files
-                    {files.length > 0 && (
+              {/* Current State — What's working / Not working */}
+              {intelligence?.currentState && (intelligence.currentState.working.length > 0 || intelligence.currentState.notWorking.length > 0) && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Current State
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {intelligence.currentState.working.length > 0 && (
+                        <div>
+                          <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Working
+                          </h4>
+                          <ul className="space-y-1.5">
+                            {intelligence.currentState.working.map((item, i) => (
+                              <li
+                                key={i}
+                                className="flex items-start gap-2 text-sm"
+                              >
+                                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-green-500" />
+                                {item}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {intelligence.currentState.notWorking.length > 0 && (
+                        <div>
+                          <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Not Working
+                          </h4>
+                          <ul className="space-y-1.5">
+                            {intelligence.currentState.notWorking.map(
+                              (item, i) => (
+                                <li
+                                  key={i}
+                                  className="flex items-start gap-2 text-sm"
+                                >
+                                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
+                                  {item}
+                                </li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Business Units (I114 — parent accounts only) */}
+              {detail.children.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Business Units
                       <span className="ml-1 text-muted-foreground">
-                        ({files.length})
+                        ({detail.children.length})
                       </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {detail.children.map((child) => (
+                        <ChildAccountRow key={child.id} child={child} />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Evidence History (collapsed) */}
+              <div className="rounded-lg border">
+                <button
+                  onClick={() => setEvidenceOpen(!evidenceOpen)}
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  {evidenceOpen ? (
+                    <ChevronDown className="size-4" />
+                  ) : (
+                    <ChevronRight className="size-4" />
+                  )}
+                  Evidence &amp; History
+                  <span className="text-xs font-normal">
+                    {[
+                      detail.recentMeetings.length > 0 &&
+                        `${detail.recentMeetings.length} meetings`,
+                      detail.recentCaptures.length > 0 &&
+                        `${detail.recentCaptures.length} captures`,
+                      files.length > 0 && `${files.length} files`,
+                      intelligence?.valueDelivered?.length &&
+                        `${intelligence.valueDelivered.length} value items`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                </button>
+                {evidenceOpen && (
+                  <div className="space-y-6 border-t px-4 py-4">
+                    {/* Value Delivered */}
+                    {(intelligence?.valueDelivered?.length ?? 0) > 0 && (
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Value Delivered
+                        </h4>
+                        <div className="space-y-2">
+                          {intelligence!.valueDelivered.map((v, i) => (
+                            <div
+                              key={i}
+                              className="flex items-start gap-2 text-sm"
+                            >
+                              {v.date && (
+                                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                                  {v.date}
+                                </span>
+                              )}
+                              <span>{v.statement}</span>
+                              {v.source && (
+                                <span className="shrink-0 text-xs text-muted-foreground">
+                                  ({v.source})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    {indexFeedback && (
-                      <span className="text-xs text-muted-foreground animate-in fade-in">
-                        {indexFeedback}
-                      </span>
+
+                    {/* Recent Meetings */}
+                    {detail.recentMeetings.length > 0 && (
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Recent Meetings
+                        </h4>
+                        <div className="space-y-2">
+                          {detail.recentMeetings.map((m) => (
+                            <Link
+                              key={m.id}
+                              to="/meeting/history/$meetingId"
+                              params={{ meetingId: m.id }}
+                              className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-muted"
+                            >
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 text-xs"
+                              >
+                                {formatMeetingType(m.meetingType)}
+                              </Badge>
+                              <span className="flex-1 truncate font-medium">
+                                {m.title}
+                              </span>
+                              <span className="shrink-0 text-sm text-muted-foreground">
+                                {formatRelativeDate(m.startTime)}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
+
+                    {/* Recent Captures */}
+                    {detail.recentCaptures.length > 0 && (
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Recent Captures
+                        </h4>
+                        <div className="space-y-2">
+                          {detail.recentCaptures.map((c) => (
+                            <Link
+                              key={c.id}
+                              to="/meeting/history/$meetingId"
+                              params={{ meetingId: c.meetingId }}
+                              className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                            >
+                              <CaptureIcon type={c.captureType} />
+                              <div className="min-w-0">
+                                <span className="truncate">{c.content}</span>
+                                <div className="text-xs text-muted-foreground">
+                                  {c.meetingTitle}
+                                </div>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Files (I124) */}
+                    <div>
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Files
+                          {files.length > 0 && (
+                            <span className="ml-1">({files.length})</span>
+                          )}
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          {indexFeedback && (
+                            <span className="text-xs text-muted-foreground animate-in fade-in">
+                              {indexFeedback}
+                            </span>
+                          )}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-6"
+                                  onClick={handleIndexFiles}
+                                  disabled={indexing}
+                                >
+                                  <RefreshCw
+                                    className={cn(
+                                      "size-3",
+                                      indexing && "animate-spin"
+                                    )}
+                                  />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                Re-scan directory for files
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      </div>
+
+                      {/* I125: New files banner */}
+                      {newFileCount > 0 && !bannerDismissed && (
+                        <div className="mb-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm">
+                          <FileText className="size-4 shrink-0 text-primary" />
+                          <span className="flex-1">
+                            {newFileCount} new file
+                            {newFileCount !== 1 ? "s" : ""} detected
+                          </span>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="size-7"
+                            size="sm"
+                            className="h-6 text-xs"
                             onClick={handleIndexFiles}
                             disabled={indexing}
                           >
-                            <RefreshCw
-                              className={cn(
-                                "size-4",
-                                indexing && "animate-spin"
-                              )}
-                            />
+                            Index now
                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Re-scan directory for files
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                          <button
+                            onClick={() => setBannerDismissed(true)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      {files.length > 0 ? (
+                        <div className="space-y-1">
+                          {files.map((f) => (
+                            <div
+                              key={f.id}
+                              className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
+                              onClick={() =>
+                                invoke("reveal_in_finder", {
+                                  path: f.absolutePath,
+                                })
+                              }
+                            >
+                              <File className="size-3.5 shrink-0 text-muted-foreground" />
+                              <span className="flex-1 truncate">
+                                {f.filename}
+                              </span>
+                              <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                                {formatFileSize(f.fileSize)}
+                              </span>
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {formatRelativeDateShort(f.modifiedAt)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <EmptyState
+                          icon={FileText}
+                          message="No files indexed"
+                        />
+                      )}
+                    </div>
+
+                    {/* Strategic Programs */}
+                    {detail.strategicPrograms.length > 0 && (
+                      <div>
+                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          Strategic Programs
+                        </h4>
+                        <div className="space-y-2">
+                          {detail.strategicPrograms.map((p, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center gap-2 text-sm"
+                            >
+                              <StatusBadge
+                                value={p.status}
+                                styles={progressStyles}
+                                fallback={progressStyles.planned}
+                              />
+                              <span className="font-medium">{p.name}</span>
+                              {p.notes && (
+                                <span className="text-muted-foreground">
+                                  &mdash; {p.notes}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {/* I125: New files banner */}
-                  {newFileCount > 0 && !bannerDismissed && (
-                    <div className="mb-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm">
-                      <FileText className="size-4 shrink-0 text-primary" />
-                      <span className="flex-1">
-                        {newFileCount} new file{newFileCount !== 1 ? "s" : ""}{" "}
-                        detected
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs"
-                        onClick={handleIndexFiles}
-                        disabled={indexing}
-                      >
-                        Index now
-                      </Button>
-                      <button
-                        onClick={() => setBannerDismissed(true)}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {files.length > 0 ? (
-                    <div className="space-y-1">
-                      {files.map((f) => (
-                        <div
-                          key={f.id}
-                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted cursor-default"
-                          onClick={() =>
-                            invoke("reveal_in_finder", {
-                              path: f.absolutePath,
-                            })
-                          }
-                        >
-                          <File className="size-3.5 shrink-0 text-muted-foreground" />
-                          <span className="flex-1 truncate">{f.filename}</span>
-                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                            {formatFileSize(f.fileSize)}
-                          </span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
-                            {formatRelativeDateShort(f.modifiedAt)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState icon={FileText} message="No files indexed" />
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Strategic Programs */}
-              {detail.strategicPrograms.length > 0 && (
-                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base font-semibold">
-                      Strategic Programs
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {detail.strategicPrograms.map((p, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 text-sm"
-                        >
-                          <StatusBadge
-                            value={p.status}
-                            styles={progressStyles}
-                            fallback={progressStyles.planned}
-                          />
-                          <span className="font-medium">{p.name}</span>
-                          {p.notes && (
-                            <span className="text-muted-foreground">
-                              &mdash; {p.notes}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                )}
+              </div>
             </div>
 
             {/* ═══ Sidebar Column ═══ */}
             <div className="space-y-6">
               {/* Account Details (read-first with edit toggle) */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-base font-semibold">
                     Account Details
@@ -919,7 +1120,7 @@ export default function AccountDetailPage() {
               </Card>
 
               {/* Notes */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+              <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
                   <CardTitle className="text-base font-semibold">
                     Notes
@@ -950,46 +1151,111 @@ export default function AccountDetailPage() {
                 </CardContent>
               </Card>
 
-              {/* Stakeholder Map */}
-              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-semibold">
-                    Stakeholder Map
-                    {detail.linkedPeople.length > 0 && (
-                      <span className="ml-1 text-muted-foreground">
-                        ({detail.linkedPeople.length})
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {detail.linkedPeople.length > 0 ? (
-                    <div className="space-y-2">
-                      {detail.linkedPeople.map((p) => (
-                        <Link
-                          key={p.id}
-                          to="/people/$personId"
-                          params={{ personId: p.id }}
-                          className="flex items-center gap-2 text-sm transition-colors hover:text-primary"
-                        >
-                          <Users className="size-3.5 shrink-0 text-muted-foreground" />
-                          <span className="font-medium">{p.name}</span>
-                          {p.role && (
-                            <span className="text-muted-foreground">
-                              {p.role}
+              {/* Company Context (demoted from main, from intelligence) */}
+              {(intelligence?.companyContext || detail.companyOverview) && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Company Context
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {intelligence?.companyContext ? (
+                      <>
+                        {intelligence.companyContext.description && (
+                          <p>{intelligence.companyContext.description}</p>
+                        )}
+                        {intelligence.companyContext.additionalContext && (
+                          <p className="text-muted-foreground">
+                            {intelligence.companyContext.additionalContext}
+                          </p>
+                        )}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                          {intelligence.companyContext.industry && (
+                            <span>
+                              Industry: {intelligence.companyContext.industry}
                             </span>
                           )}
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={Users}
-                      message="No people linked yet"
-                    />
-                  )}
-                </CardContent>
-              </Card>
+                          {intelligence.companyContext.size && (
+                            <span>
+                              Size: {intelligence.companyContext.size}
+                            </span>
+                          )}
+                          {intelligence.companyContext.headquarters && (
+                            <span>
+                              HQ: {intelligence.companyContext.headquarters}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : detail.companyOverview ? (
+                      <>
+                        {detail.companyOverview.description && (
+                          <p>{detail.companyOverview.description}</p>
+                        )}
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                          {detail.companyOverview.industry && (
+                            <span>
+                              Industry: {detail.companyOverview.industry}
+                            </span>
+                          )}
+                          {detail.companyOverview.size && (
+                            <span>Size: {detail.companyOverview.size}</span>
+                          )}
+                          {detail.companyOverview.headquarters && (
+                            <span>
+                              HQ: {detail.companyOverview.headquarters}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Stakeholder Map (when no intelligence stakeholders) */}
+              {(!intelligence || intelligence.stakeholderInsights.length === 0) && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Stakeholder Map
+                      {detail.linkedPeople.length > 0 && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({detail.linkedPeople.length})
+                        </span>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {detail.linkedPeople.length > 0 ? (
+                      <div className="space-y-2">
+                        {detail.linkedPeople.map((p) => (
+                          <Link
+                            key={p.id}
+                            to="/people/$personId"
+                            params={{ personId: p.id }}
+                            className="flex items-center gap-2 text-sm transition-colors hover:text-primary"
+                          >
+                            <Users className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="font-medium">{p.name}</span>
+                            {p.role && (
+                              <span className="text-muted-foreground">
+                                {p.role}
+                              </span>
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        icon={Users}
+                        message="No people linked yet"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         </div>
@@ -998,7 +1264,123 @@ export default function AccountDetailPage() {
   );
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Intelligence Sub-components ─────────────────────────────────────────────
+
+function AttentionRisk({ risk }: { risk: IntelRisk }) {
+  const urgencyStyles: Record<string, string> = {
+    critical: "bg-destructive/10 text-destructive",
+    watch: "bg-[hsl(var(--peach))]/10 text-[hsl(var(--peach))]",
+    low: "bg-muted text-muted-foreground",
+  };
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg bg-destructive/8 px-4 py-3">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm">{risk.text}</span>
+        <div className="mt-1 flex items-center gap-2">
+          {risk.urgency && (
+            <Badge
+              className={cn(
+                "text-[10px]",
+                urgencyStyles[risk.urgency] ?? urgencyStyles.low
+              )}
+            >
+              {risk.urgency}
+            </Badge>
+          )}
+          {risk.source && (
+            <span className="text-xs text-muted-foreground">
+              {risk.source}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttentionWin({ win }: { win: IntelWin }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg bg-green-500/8 px-4 py-3">
+      <Trophy className="mt-0.5 size-4 shrink-0 text-green-600" />
+      <div className="min-w-0 flex-1">
+        <span className="text-sm">{win.text}</span>
+        {(win.impact || win.source) && (
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            {win.impact && <span>{win.impact}</span>}
+            {win.source && <span>{win.source}</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StakeholderCard({
+  insight,
+  linkedPeople,
+}: {
+  insight: StakeholderInsight;
+  linkedPeople: { id: string; name: string; role?: string }[];
+}) {
+  // Try to match to a linked person for navigation
+  const matchedPerson = linkedPeople.find(
+    (p) => p.name.toLowerCase() === insight.name.toLowerCase()
+  );
+
+  const engagementStyles: Record<string, string> = {
+    high: "text-green-600",
+    medium: "text-primary",
+    low: "text-muted-foreground",
+    champion: "text-green-600",
+    neutral: "text-muted-foreground",
+    detractor: "text-destructive",
+  };
+
+  const content = (
+    <div className="rounded-lg border px-4 py-3">
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-sm">{insight.name}</span>
+        {insight.role && (
+          <span className="text-xs text-muted-foreground">{insight.role}</span>
+        )}
+        {insight.engagement && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "ml-auto text-[10px]",
+              engagementStyles[insight.engagement.toLowerCase()] ?? ""
+            )}
+          >
+            {insight.engagement}
+          </Badge>
+        )}
+      </div>
+      {insight.assessment && (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {insight.assessment}
+        </p>
+      )}
+    </div>
+  );
+
+  if (matchedPerson) {
+    return (
+      <Link
+        to="/people/$personId"
+        params={{ personId: matchedPerson.id }}
+        className="block transition-colors hover:bg-muted/30 rounded-lg"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return content;
+}
+
+// ─── Existing Sub-components ─────────────────────────────────────────────────
 
 function EmptyState({
   icon: Icon,
