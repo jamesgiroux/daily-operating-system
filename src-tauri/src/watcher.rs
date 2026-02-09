@@ -43,6 +43,7 @@ enum WatchSource {
     Accounts(PathBuf),
     AccountContent(PathBuf),
     Projects(PathBuf),
+    ProjectContent(PathBuf),
 }
 
 /// Start watching the _inbox/ directory for changes.
@@ -151,6 +152,22 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "dashboard.json")
                         });
 
+                        // I138: Non-dashboard files in Projects/ dirs
+                        let is_project_content = !is_projects
+                            && event.paths.iter().any(|p| {
+                                p.starts_with(&projects_dir_clone)
+                                    && p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .is_some_and(|n| {
+                                            n != "dashboard.json"
+                                                && n != "dashboard.md"
+                                                && n != "intelligence.json"
+                                                && !n.starts_with('.')
+                                                && !n.starts_with('_')
+                                        })
+                                    && p.is_file()
+                            });
+
                         if is_people {
                             // Send the changed person.json path
                             if let Some(path) = event.paths.iter().find(|p| {
@@ -175,6 +192,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                         .is_some_and(|n| n == "dashboard.json")
                             }) {
                                 let _ = tx.try_send(WatchSource::Accounts(path.clone()));
+                            }
+                        } else if is_project_content {
+                            // I138: Content file changed in a project dir
+                            for path in &event.paths {
+                                if path.starts_with(&projects_dir_clone) {
+                                    let _ = tx.try_send(WatchSource::ProjectContent(path.clone()));
+                                }
                             }
                         } else if is_projects {
                             if let Some(path) = event.paths.iter().find(|p| {
@@ -253,6 +277,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let mut accounts_dirty: Vec<PathBuf> = Vec::new();
         let mut account_content_dirty: Vec<PathBuf> = Vec::new();
         let mut projects_dirty: Vec<PathBuf> = Vec::new();
+        let mut project_content_dirty: Vec<PathBuf> = Vec::new();
         loop {
             // Wait for an event
             let source = match fs_rx.recv().await {
@@ -282,6 +307,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         projects_dirty.push(p);
                     }
                 }
+                WatchSource::ProjectContent(p) => {
+                    if !project_content_dirty.contains(&p) {
+                        project_content_dirty.push(p);
+                    }
+                }
             }
 
             // Debounce: drain any events that arrive within the window
@@ -307,6 +337,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     WatchSource::Projects(p) => {
                         if !projects_dirty.contains(&p) {
                             projects_dirty.push(p);
+                        }
+                    }
+                    WatchSource::ProjectContent(p) => {
+                        if !project_content_dirty.contains(&p) {
+                            project_content_dirty.push(p);
                         }
                     }
                 }
@@ -363,6 +398,30 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 handle_project_changes(&projects_dirty, &state, &workspace);
                 let _ = app_handle.emit("projects-updated", ());
                 projects_dirty.clear();
+            }
+
+            // Process project content changes (I138: non-dashboard files in Projects/)
+            if !project_content_dirty.is_empty() {
+                let payload = handle_project_content_changes(
+                    &project_content_dirty,
+                    &state,
+                    &workspace,
+                );
+                if let Some(ref payload) = payload {
+                    // Queue intelligence refresh for affected project entities
+                    for entity_id in &payload.entity_ids {
+                        state.intel_queue.enqueue(
+                            crate::intel_queue::IntelRequest {
+                                entity_id: entity_id.clone(),
+                                entity_type: "project".to_string(),
+                                priority: crate::intel_queue::IntelPriority::ContentChange,
+                                requested_at: std::time::Instant::now(),
+                            },
+                        );
+                    }
+                    let _ = app_handle.emit("content-changed", payload.clone());
+                }
+                project_content_dirty.clear();
             }
         }
 
@@ -547,6 +606,69 @@ fn handle_account_content_changes(
                 }
                 Err(e) => {
                     log::warn!("Watcher: content index sync failed for {}: {}", entity_id, e);
+                }
+            }
+        }
+    }
+
+    if total_changes > 0 {
+        Some(ContentChangePayload {
+            entity_ids: affected_entity_ids.into_iter().collect(),
+            count: total_changes,
+        })
+    } else {
+        None
+    }
+}
+
+/// Handle detected changes to non-dashboard files in Projects/ dirs (I138).
+///
+/// Parallel to `handle_account_content_changes` — extracts affected project IDs,
+/// syncs their content index, and returns a payload for the frontend event.
+fn handle_project_content_changes(
+    paths: &[PathBuf],
+    state: &AppState,
+    workspace: &Path,
+) -> Option<ContentChangePayload> {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return None,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return None,
+    };
+
+    let projects_dir = workspace.join("Projects");
+    let mut affected_entity_ids = std::collections::HashSet::new();
+
+    for path in paths {
+        // Extract project dir name from path: Projects/{name}/somefile.txt
+        if let Ok(relative) = path.strip_prefix(&projects_dir) {
+            if let Some(project_dir_name) = relative.iter().next() {
+                let name = project_dir_name.to_string_lossy();
+                let id = crate::util::slugify(&name);
+                affected_entity_ids.insert(id);
+            }
+        }
+    }
+
+    let mut total_changes = 0;
+    for entity_id in &affected_entity_ids {
+        if let Ok(Some(project)) = db.get_project(entity_id) {
+            match projects::sync_content_index_for_project(workspace, db, &project) {
+                Ok((added, updated, removed)) => {
+                    total_changes += added + updated + removed;
+                    log::debug!(
+                        "Watcher: content index for project '{}': +{} ~{} -{}",
+                        project.name,
+                        added,
+                        updated,
+                        removed
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Watcher: content index sync failed for project {}: {}", entity_id, e);
                 }
             }
         }
