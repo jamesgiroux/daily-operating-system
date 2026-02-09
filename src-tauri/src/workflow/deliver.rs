@@ -1347,6 +1347,76 @@ fn classify_meeting_density(count: usize) -> &'static str {
     }
 }
 
+/// I137: Build entity intelligence context for meetings in a schedule.
+///
+/// Extracts unique account IDs from schedule meetings, looks up cached
+/// intelligence from the DB, returns a formatted context block for the prompt.
+fn build_entity_intel_for_briefing(
+    schedule: &Value,
+    db: &crate::db::ActionDb,
+) -> String {
+
+    let meetings = match schedule.get("meetings").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return String::new(),
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let mut parts = Vec::new();
+
+    for meeting in meetings {
+        let account_id = match meeting.get("accountId").and_then(|v| v.as_str()) {
+            Some(id) if !id.is_empty() => id,
+            _ => continue,
+        };
+
+        if !seen.insert(account_id.to_string()) {
+            continue;
+        }
+
+        let intel = match db.get_entity_intelligence(account_id) {
+            Ok(Some(intel)) => intel,
+            _ => continue,
+        };
+
+        let account_name = meeting
+            .get("account")
+            .and_then(|v| v.as_str())
+            .unwrap_or(account_id);
+
+        let mut block = format!("### {}\n", account_name);
+
+        if let Some(ref assessment) = intel.executive_assessment {
+            let truncated = if assessment.len() > 300 {
+                format!("{}...", &assessment[..300])
+            } else {
+                assessment.clone()
+            };
+            block.push_str(&truncated);
+            block.push('\n');
+        }
+
+        if !intel.risks.is_empty() {
+            block.push_str("Risks: ");
+            let risk_texts: Vec<&str> = intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+            block.push_str(&risk_texts.join("; "));
+            block.push('\n');
+        }
+
+        if let Some(ref readiness) = intel.next_meeting_readiness {
+            if !readiness.prep_items.is_empty() {
+                block.push_str("Readiness: ");
+                block.push_str(&readiness.prep_items.join("; "));
+                block.push('\n');
+            }
+        }
+
+        parts.push(block);
+    }
+
+    parts.join("\n")
+}
+
 /// AI-generate a briefing narrative via PTY-spawned Claude.
 ///
 /// Reads schedule.json + actions.json + emails.json to build context,
@@ -1357,6 +1427,7 @@ pub fn enrich_briefing(
     pty: &crate::pty::PtyManager,
     workspace: &Path,
     user_ctx: &crate::types::UserContext,
+    state: &crate::state::AppState,
 ) -> Result<(), String> {
     // Read context files
     let schedule_raw = fs::read_to_string(data_dir.join("schedule.json"))
@@ -1455,9 +1526,18 @@ pub fn enrich_briefing(
         _ => "",
     };
 
+    // I137: Gather entity intelligence for accounts with meetings today (brief DB lock)
+    let intel_context = {
+        let db_guard = state.db.lock().ok();
+        match db_guard.as_ref().and_then(|g| g.as_ref()) {
+            Some(db) => build_entity_intel_for_briefing(&schedule, db),
+            None => String::new(),
+        }
+    }; // DB lock released here, before PTY call
+
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
-    let prompt = format!(
+    let mut prompt = format!(
         "You are writing a morning briefing narrative for {role_label}.\n\
          {user_fragment}\n\
          Today's context:\n\
@@ -1467,13 +1547,7 @@ pub fn enrich_briefing(
          - Key meetings: {}\n\
          - Actions: {} overdue, {} due today\n\
          - Emails: {} high-priority\n\n\
-         {}\n\n\
-         Write a 2-3 sentence narrative that helps them understand the shape of their day.\n\
-         Focus on what matters most — customer calls, overdue items, important emails.\n\
-         Be direct, not chatty.\n\n\
-         NARRATIVE:\n\
-         <your narrative here>\n\
-         END_NARRATIVE",
+         {}\n",
         date,
         meetings,
         customer_count,
@@ -1484,6 +1558,25 @@ pub fn enrich_briefing(
         due_today,
         high_count,
         density_guidance,
+    );
+
+    if !intel_context.is_empty() {
+        prompt.push_str(&format!(
+            "\n## Entity Intelligence (for today's accounts)\n\
+             Use this context to make the narrative account-aware. \
+             Reference specific risks, readiness, or stakeholder dynamics when relevant.\n\n\
+             {}\n",
+            intel_context
+        ));
+    }
+
+    prompt.push_str(
+        "\nWrite a 2-3 sentence narrative that helps them understand the shape of their day.\n\
+         Focus on what matters most — customer calls, overdue items, important emails.\n\
+         Be direct, not chatty.\n\n\
+         NARRATIVE:\n\
+         <your narrative here>\n\
+         END_NARRATIVE",
     );
 
     let output = pty
@@ -1978,6 +2071,84 @@ pub fn parse_time_suggestions(response: &str) -> Vec<TimeSuggestion> {
     serde_json::from_str(&json_str).unwrap_or_default()
 }
 
+/// I137: Build entity intelligence context for accounts with meetings this week.
+///
+/// Walks dayShapes[].meetings[] to find unique account IDs, looks up cached
+/// intelligence from the DB. Same pattern as daily but over the whole week.
+fn build_entity_intel_for_week(
+    overview: &Value,
+    db: &crate::db::ActionDb,
+) -> String {
+
+    let day_shapes = match overview.get("dayShapes").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return String::new(),
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let mut parts = Vec::new();
+
+    for shape in day_shapes {
+        let meetings = match shape.get("meetings").and_then(|v| v.as_array()) {
+            Some(arr) => arr,
+            None => continue,
+        };
+
+        for meeting in meetings {
+            let account_id = match meeting.get("accountId").and_then(|v| v.as_str()) {
+                Some(id) if !id.is_empty() => id,
+                _ => continue,
+            };
+
+            if !seen.insert(account_id.to_string()) {
+                continue;
+            }
+
+            let intel = match db.get_entity_intelligence(account_id) {
+                Ok(Some(intel)) => intel,
+                _ => continue,
+            };
+
+            let account_name = meeting
+                .get("account")
+                .and_then(|v| v.as_str())
+                .unwrap_or(account_id);
+
+            let mut block = format!("### {}\n", account_name);
+
+            if let Some(ref assessment) = intel.executive_assessment {
+                let truncated = if assessment.len() > 300 {
+                    format!("{}...", &assessment[..300])
+                } else {
+                    assessment.clone()
+                };
+                block.push_str(&truncated);
+                block.push('\n');
+            }
+
+            if !intel.risks.is_empty() {
+                block.push_str("Risks: ");
+                let risk_texts: Vec<&str> =
+                    intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+                block.push_str(&risk_texts.join("; "));
+                block.push('\n');
+            }
+
+            if let Some(ref readiness) = intel.next_meeting_readiness {
+                if !readiness.prep_items.is_empty() {
+                    block.push_str("Readiness: ");
+                    block.push_str(&readiness.prep_items.join("; "));
+                    block.push('\n');
+                }
+            }
+
+            parts.push(block);
+        }
+    }
+
+    parts.join("\n")
+}
+
 /// AI-generate a week narrative, top priority, and time-block suggestions (I94 + I95).
 ///
 /// Reads week-overview.json, builds context, asks Claude for structured output,
@@ -1988,6 +2159,7 @@ pub fn enrich_week(
     pty: &crate::pty::PtyManager,
     workspace: &Path,
     user_ctx: &crate::types::UserContext,
+    state: &crate::state::AppState,
 ) -> Result<(), String> {
     // Read week-overview.json
     let overview_path = data_dir.join("week-overview.json");
@@ -2110,8 +2282,29 @@ pub fn enrich_week(
         })
         .unwrap_or_default();
 
+    // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
+    let week_intel_context = {
+        let db_guard = state.db.lock().ok();
+        match db_guard.as_ref().and_then(|g| g.as_ref()) {
+            Some(db) => build_entity_intel_for_week(&overview, db),
+            None => String::new(),
+        }
+    }; // DB lock released here, before PTY call
+
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
+
+    let intel_section = if week_intel_context.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n## Entity Intelligence (for this week's accounts)\n\
+             Use this for cross-entity synthesis: which account needs most attention? \
+             Where should time be shifted? Reference specific risks or readiness items.\n\n\
+             {}\n",
+            week_intel_context
+        )
+    };
 
     let prompt = format!(
         "You are writing a weekly briefing for {role_label}.\n\
@@ -2124,7 +2317,8 @@ pub fn enrich_week(
          - Readiness checks: {readiness_checks} items needing attention\n\
          - Actions: {overdue_count} overdue, {due_this_week} due this week\n\
          - Account health alerts: {hygiene_count}\n\
-         - Available focus blocks: {available_blocks}\n\n\
+         - Available focus blocks: {available_blocks}\n\
+         {intel_section}\n\
          Provide three sections in your response:\n\n\
          1. A 2-3 sentence narrative framing the week. Focus on what makes this week \
          distinct — customer commitments, deadlines, risks. Be direct, not chatty.\n\n\
