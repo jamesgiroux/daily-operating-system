@@ -221,23 +221,34 @@ pub fn write_account_markdown(
     }
     md.push('\n');
 
-    // Company Overview (from JSON)
-    if let Some(ref overview) = json.and_then(|j| j.company_overview.as_ref()) {
-        md.push_str("## Company Overview\n\n");
-        if let Some(ref desc) = overview.description {
-            md.push_str(desc);
-            md.push_str("\n\n");
+    // Read intelligence.json once (used for Company Overview skip + intelligence sections)
+    let intel_data = crate::entity_intel::read_intelligence_json(
+        &resolve_account_dir(workspace, account),
+    ).ok();
+
+    // Company Overview (from JSON — skipped when intelligence.json has company_context)
+    let intel_has_company = intel_data
+        .as_ref()
+        .and_then(|i| i.company_context.as_ref())
+        .is_some();
+    if !intel_has_company {
+        if let Some(ref overview) = json.and_then(|j| j.company_overview.as_ref()) {
+            md.push_str("## Company Overview\n\n");
+            if let Some(ref desc) = overview.description {
+                md.push_str(desc);
+                md.push_str("\n\n");
+            }
+            if let Some(ref industry) = overview.industry {
+                md.push_str(&format!("**Industry:** {}  \n", industry));
+            }
+            if let Some(ref size) = overview.size {
+                md.push_str(&format!("**Size:** {}  \n", size));
+            }
+            if let Some(ref hq) = overview.headquarters {
+                md.push_str(&format!("**Headquarters:** {}  \n", hq));
+            }
+            md.push('\n');
         }
-        if let Some(ref industry) = overview.industry {
-            md.push_str(&format!("**Industry:** {}  \n", industry));
-        }
-        if let Some(ref size) = overview.size {
-            md.push_str(&format!("**Size:** {}  \n", size));
-        }
-        if let Some(ref hq) = overview.headquarters {
-            md.push_str(&format!("**Headquarters:** {}  \n", hq));
-        }
-        md.push('\n');
     }
 
     // Strategic Programs (from JSON)
@@ -267,6 +278,15 @@ pub fn write_account_markdown(
             md.push_str("## Notes\n\n");
             md.push_str(notes);
             md.push_str("\n\n");
+        }
+    }
+
+    // === Intelligence sections (I134 — from intelligence.json) ===
+
+    if let Some(ref intel) = intel_data {
+        let intel_md = crate::entity_intel::format_intelligence_markdown(intel);
+        if !intel_md.is_empty() {
+            md.push_str(&intel_md);
         }
     }
 

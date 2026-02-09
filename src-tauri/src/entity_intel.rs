@@ -1128,6 +1128,184 @@ pub fn enrich_entity_intelligence(
 }
 
 // =============================================================================
+// Markdown Generation (I134 — three-file dashboard.md)
+// =============================================================================
+
+/// Format intelligence sections as markdown for inclusion in dashboard.md.
+///
+/// Used by both `write_account_markdown()` and `write_project_markdown()` to
+/// inject synthesized intelligence into the generated artifact. Returns empty
+/// string if there's nothing meaningful to render.
+pub fn format_intelligence_markdown(intel: &IntelligenceJson) -> String {
+    let mut md = String::new();
+
+    // Executive Assessment — the most important section
+    if let Some(ref assessment) = intel.executive_assessment {
+        if !assessment.is_empty() {
+            md.push_str("## Executive Assessment\n\n");
+            md.push_str(assessment);
+            md.push_str("\n\n");
+            if !intel.enriched_at.is_empty() {
+                md.push_str(&format!(
+                    "_Last enriched: {}_\n\n",
+                    intel.enriched_at.split('T').next().unwrap_or(&intel.enriched_at)
+                ));
+            }
+        }
+    }
+
+    // Risks
+    if !intel.risks.is_empty() {
+        md.push_str("## Risks\n\n");
+        for r in &intel.risks {
+            md.push_str(&format!("- **{}** {}", r.urgency, r.text));
+            if let Some(ref source) = r.source {
+                md.push_str(&format!(" _(source: {})_", source));
+            }
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Recent Wins
+    if !intel.recent_wins.is_empty() {
+        md.push_str("## Recent Wins\n\n");
+        for w in &intel.recent_wins {
+            md.push_str(&format!("- {}", w.text));
+            if let Some(ref impact) = w.impact {
+                md.push_str(&format!(" \u{2014} {}", impact));
+            }
+            if let Some(ref source) = w.source {
+                md.push_str(&format!(" _(source: {})_", source));
+            }
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Current State
+    if let Some(ref state) = intel.current_state {
+        let has_content =
+            !state.working.is_empty() || !state.not_working.is_empty() || !state.unknowns.is_empty();
+        if has_content {
+            md.push_str("## Current State\n\n");
+            if !state.working.is_empty() {
+                md.push_str("### What's Working\n\n");
+                for item in &state.working {
+                    md.push_str(&format!("- {}\n", item));
+                }
+                md.push('\n');
+            }
+            if !state.not_working.is_empty() {
+                md.push_str("### What's Not Working\n\n");
+                for item in &state.not_working {
+                    md.push_str(&format!("- {}\n", item));
+                }
+                md.push('\n');
+            }
+            if !state.unknowns.is_empty() {
+                md.push_str("### Unknowns\n\n");
+                for item in &state.unknowns {
+                    md.push_str(&format!("- {}\n", item));
+                }
+                md.push('\n');
+            }
+        }
+    }
+
+    // Next Meeting Readiness
+    if let Some(ref readiness) = intel.next_meeting_readiness {
+        if !readiness.prep_items.is_empty() {
+            md.push_str("## Next Meeting Readiness\n\n");
+            if let Some(ref title) = readiness.meeting_title {
+                md.push_str(&format!("**{}**", title));
+                if let Some(ref date) = readiness.meeting_date {
+                    md.push_str(&format!(" on {}", date));
+                }
+                md.push_str("\n\n");
+            }
+            for item in &readiness.prep_items {
+                md.push_str(&format!("- {}\n", item));
+            }
+            md.push('\n');
+        }
+    }
+
+    // Stakeholder Insights
+    if !intel.stakeholder_insights.is_empty() {
+        md.push_str("## Stakeholder Insights\n\n");
+        for s in &intel.stakeholder_insights {
+            md.push_str(&format!("### {}", s.name));
+            if let Some(ref role) = s.role {
+                md.push_str(&format!(" \u{2014} {}", role));
+            }
+            md.push('\n');
+            if let Some(ref assessment) = s.assessment {
+                md.push_str(assessment);
+            }
+            if let Some(ref engagement) = s.engagement {
+                md.push_str(&format!(" Engagement: {}.", engagement));
+            }
+            if let Some(ref source) = s.source {
+                md.push_str(&format!(" _(source: {})_", source));
+            }
+            md.push_str("\n\n");
+        }
+    }
+
+    // Value Delivered
+    if !intel.value_delivered.is_empty() {
+        md.push_str("## Value Delivered\n\n");
+        for v in &intel.value_delivered {
+            md.push_str("- ");
+            if let Some(ref date) = v.date {
+                md.push_str(&format!("**{}** ", date));
+            }
+            md.push_str(&v.statement);
+            if let Some(ref impact) = v.impact {
+                md.push_str(&format!(" \u{2014} {}", impact));
+            }
+            if let Some(ref source) = v.source {
+                md.push_str(&format!(" _(source: {})_", source));
+            }
+            md.push('\n');
+        }
+        md.push('\n');
+    }
+
+    // Company / Project Context (from web search or overview)
+    if let Some(ref ctx) = intel.company_context {
+        let has_content = ctx.description.is_some()
+            || ctx.industry.is_some()
+            || ctx.size.is_some()
+            || ctx.headquarters.is_some()
+            || ctx.additional_context.is_some();
+        if has_content {
+            md.push_str("## Company Context\n\n");
+            if let Some(ref desc) = ctx.description {
+                md.push_str(desc);
+                md.push_str("\n\n");
+            }
+            if let Some(ref industry) = ctx.industry {
+                md.push_str(&format!("**Industry:** {}  \n", industry));
+            }
+            if let Some(ref size) = ctx.size {
+                md.push_str(&format!("**Size:** {}  \n", size));
+            }
+            if let Some(ref hq) = ctx.headquarters {
+                md.push_str(&format!("**Headquarters:** {}  \n", hq));
+            }
+            if let Some(ref additional) = ctx.additional_context {
+                md.push_str(&format!("\n{}\n", additional));
+            }
+            md.push('\n');
+        }
+    }
+
+    md
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -1626,5 +1804,121 @@ Some trailing text"#;
         assert!(ctx.facts_block.contains("ARR: $100000"));
         assert!(ctx.facts_block.contains("Renewal: 2026-12-31"));
         assert!(ctx.prior_intelligence.is_none()); // initial mode
+    }
+
+    // =========================================================================
+    // I134: format_intelligence_markdown
+    // =========================================================================
+
+    #[test]
+    fn test_format_intelligence_markdown_full() {
+        let intel = IntelligenceJson {
+            version: 1,
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-02-09T10:00:00Z".to_string(),
+            source_file_count: 3,
+            source_manifest: vec![],
+            executive_assessment: Some("Acme is in strong position for renewal.".to_string()),
+            risks: vec![IntelRisk {
+                text: "Budget uncertainty for Q3".to_string(),
+                source: Some("QBR notes".to_string()),
+                urgency: "critical".to_string(),
+            }],
+            recent_wins: vec![IntelWin {
+                text: "Expanded to 3 teams".to_string(),
+                source: Some("capture".to_string()),
+                impact: Some("20% seat growth".to_string()),
+            }],
+            current_state: Some(CurrentState {
+                working: vec!["Onboarding flow".to_string()],
+                not_working: vec!["Reporting delayed".to_string()],
+                unknowns: vec!["FY budget".to_string()],
+            }),
+            stakeholder_insights: vec![StakeholderInsight {
+                name: "Alice Chen".to_string(),
+                role: Some("VP Engineering".to_string()),
+                assessment: Some("Strong advocate.".to_string()),
+                engagement: Some("high".to_string()),
+                source: None,
+            }],
+            value_delivered: vec![ValueItem {
+                date: Some("2026-01-15".to_string()),
+                statement: "Reduced onboarding time by 40%".to_string(),
+                source: Some("QBR".to_string()),
+                impact: Some("$50k savings".to_string()),
+            }],
+            next_meeting_readiness: Some(MeetingReadiness {
+                meeting_title: Some("Acme QBR".to_string()),
+                meeting_date: Some("2026-02-15".to_string()),
+                prep_items: vec![
+                    "Review blockers".to_string(),
+                    "Bring ROI metrics".to_string(),
+                ],
+            }),
+            company_context: Some(CompanyContext {
+                description: Some("Enterprise SaaS platform".to_string()),
+                industry: Some("Technology".to_string()),
+                size: Some("500-1000".to_string()),
+                headquarters: Some("San Francisco".to_string()),
+                additional_context: None,
+            }),
+        };
+
+        let md = format_intelligence_markdown(&intel);
+
+        // All sections present
+        assert!(md.contains("## Executive Assessment"));
+        assert!(md.contains("Acme is in strong position"));
+        assert!(md.contains("_Last enriched: 2026-02-09_"));
+
+        assert!(md.contains("## Risks"));
+        assert!(md.contains("**critical** Budget uncertainty"));
+        assert!(md.contains("_(source: QBR notes)_"));
+
+        assert!(md.contains("## Recent Wins"));
+        assert!(md.contains("Expanded to 3 teams"));
+
+        assert!(md.contains("## Current State"));
+        assert!(md.contains("### What's Working"));
+        assert!(md.contains("### What's Not Working"));
+        assert!(md.contains("### Unknowns"));
+
+        assert!(md.contains("## Next Meeting Readiness"));
+        assert!(md.contains("**Acme QBR** on 2026-02-15"));
+        assert!(md.contains("Review blockers"));
+
+        assert!(md.contains("## Stakeholder Insights"));
+        assert!(md.contains("### Alice Chen"));
+
+        assert!(md.contains("## Value Delivered"));
+        assert!(md.contains("**2026-01-15** Reduced onboarding"));
+
+        assert!(md.contains("## Company Context"));
+        assert!(md.contains("Enterprise SaaS platform"));
+        assert!(md.contains("**Industry:** Technology"));
+    }
+
+    #[test]
+    fn test_format_intelligence_markdown_empty() {
+        let intel = IntelligenceJson::default();
+        let md = format_intelligence_markdown(&intel);
+        assert!(md.is_empty(), "Empty intelligence should produce empty markdown");
+    }
+
+    #[test]
+    fn test_format_intelligence_markdown_partial() {
+        let intel = IntelligenceJson {
+            executive_assessment: Some("Situation looks good.".to_string()),
+            enriched_at: "2026-02-09T10:00:00Z".to_string(),
+            ..Default::default()
+        };
+        let md = format_intelligence_markdown(&intel);
+        assert!(md.contains("## Executive Assessment"));
+        assert!(md.contains("Situation looks good."));
+        // No other sections
+        assert!(!md.contains("## Risks"));
+        assert!(!md.contains("## Recent Wins"));
+        assert!(!md.contains("## Current State"));
     }
 }
