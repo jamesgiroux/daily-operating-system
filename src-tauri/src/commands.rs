@@ -2845,6 +2845,88 @@ pub fn get_meeting_attendees(
         .map_err(|e| e.to_string())
 }
 
+// =========================================================================
+// Meeting-Entity M2M (I52)
+// =========================================================================
+
+/// Link a meeting to an entity (account/project) via the junction table.
+#[tauri::command]
+pub fn link_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a meeting-entity link from the junction table.
+#[tauri::command]
+pub fn unlink_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.unlink_meeting_entity(&meeting_id, &entity_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Get all entities linked to a meeting via the junction table.
+#[tauri::command]
+pub fn get_meeting_entities(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::entity::DbEntity>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_meeting_entities(&meeting_id)
+        .map_err(|e| e.to_string())
+}
+
+// =========================================================================
+// Person Creation (I129)
+// =========================================================================
+
+/// Create a new person manually. Returns the generated person ID.
+#[tauri::command]
+pub fn create_person(
+    email: String,
+    name: String,
+    organization: Option<String>,
+    role: Option<String>,
+    relationship: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let id = crate::util::slugify(&email);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let person = crate::db::DbPerson {
+        id: id.clone(),
+        email,
+        name,
+        organization,
+        role,
+        relationship: relationship.unwrap_or_else(|| "unknown".to_string()),
+        notes: None,
+        tracker_path: None,
+        last_seen: None,
+        first_seen: Some(now.clone()),
+        meeting_count: 0,
+        updated_at: now,
+    };
+
+    db.upsert_person(&person).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
 /// Enrich a person with intelligence assessment (relationship intelligence).
 #[tauri::command]
 pub async fn enrich_person(
@@ -2865,7 +2947,7 @@ pub async fn enrich_person(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Person not found: {}", person_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    let pty = crate::pty::PtyManager::new().with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
@@ -2968,6 +3050,46 @@ pub fn get_accounts_list(
                 .unwrap_or(0);
 
             account_to_list_item(&a, db, child_count)
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Lightweight list of ALL accounts (parents + children) for entity pickers.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickerAccount {
+    pub id: String,
+    pub name: String,
+    pub parent_name: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_accounts_for_picker(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<PickerAccount>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let all = db.get_all_accounts().map_err(|e| e.to_string())?;
+
+    // Build a parent name lookup from the same list
+    let parent_names: std::collections::HashMap<String, String> = all
+        .iter()
+        .filter(|a| a.parent_id.is_none())
+        .map(|a| (a.id.clone(), a.name.clone()))
+        .collect();
+
+    let items: Vec<PickerAccount> = all
+        .into_iter()
+        .map(|a| {
+            let parent_name = a.parent_id.as_ref().and_then(|pid| parent_names.get(pid).cloned());
+            PickerAccount {
+                id: a.id,
+                name: a.name,
+                parent_name,
+            }
         })
         .collect();
 
@@ -3454,7 +3576,7 @@ pub async fn enrich_account(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    let pty = crate::pty::PtyManager::new().with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
@@ -3785,7 +3907,7 @@ pub async fn enrich_project(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Project not found: {}", project_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    let pty = crate::pty::PtyManager::new().with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
