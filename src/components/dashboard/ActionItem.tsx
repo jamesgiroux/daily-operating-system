@@ -21,8 +21,8 @@ export function ActionItem({ action, isLocallyCompleted, onComplete }: ActionIte
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-lg border p-4 transition-all duration-150",
-        "hover:bg-muted/30",
+        "flex items-start gap-3 rounded-md p-3 transition-all duration-150",
+        "hover:bg-muted/50",
         isCompleted && "bg-muted/20 opacity-60"
       )}
     >

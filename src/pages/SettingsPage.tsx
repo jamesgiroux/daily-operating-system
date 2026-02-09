@@ -33,6 +33,7 @@ import type { PostMeetingCaptureConfig, FeatureDefinition, EntityMode } from "@/
 interface Config {
   workspacePath: string;
   entityMode: EntityMode;
+  developerMode: boolean;
   schedules: {
     today: ScheduleEntry;
     archive: ScheduleEntry;
@@ -187,6 +188,44 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* Developer Mode */}
+            {import.meta.env.DEV && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <ToggleRight className="size-4" />
+                    Developer
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm">Developer Tools</span>
+                      <p className="text-xs text-muted-foreground">
+                        Show the devtools panel (wrench icon)
+                      </p>
+                    </div>
+                    <Button
+                      variant={config?.developerMode ? "default" : "outline"}
+                      size="sm"
+                      onClick={async () => {
+                        const next = !config?.developerMode;
+                        try {
+                          const updated = await invoke<Config>("set_developer_mode", { enabled: next });
+                          setConfig(updated);
+                          toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
+                        } catch (e) {
+                          toast.error(String(e));
+                        }
+                      }}
+                    >
+                      {config?.developerMode ? "On" : "Off"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Schedules */}
             <Card>
               <CardHeader>
@@ -257,7 +296,7 @@ export default function SettingsPage() {
                   ) : (
                     <Play className="mr-2 size-4" />
                   )}
-                  Run /today
+                  Run Daily Briefing
                 </Button>
                 <Button
                   variant="outline"
@@ -269,7 +308,7 @@ export default function SettingsPage() {
                   ) : (
                     <Play className="mr-2 size-4" />
                   )}
-                  Run /week
+                  Run Weekly Briefing
                 </Button>
                 <Button
                   variant="outline"
@@ -694,7 +733,8 @@ function WorkspaceCard({
     try {
       await invoke("set_workspace_path", { path: selected });
       onPathChange(selected);
-      toast.success("Workspace updated");
+      toast.success("Workspace updated — reloading...");
+      setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to set workspace");
     } finally {

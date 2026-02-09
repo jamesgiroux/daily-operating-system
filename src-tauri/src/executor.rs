@@ -1,8 +1,8 @@
 //! Workflow execution engine
 //!
 //! Each workflow has its own execution strategy:
-//! - Today: per-operation pipeline (ADR-0042) — Rust-native prepare + delivery
-//! - Week: three-phase (Prepare → Enrich → Deliver)
+//! - Today: per-operation pipeline (ADR-0042) — Rust-native prepare + delivery + AI enrichment
+//! - Week: per-operation pipeline (I94) — Rust-native prepare + delivery + AI enrichment
 //! - Archive: pure Rust reconciliation + file moves
 //! - InboxBatch: direct processor calls
 
@@ -14,13 +14,12 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
-use crate::error::{ExecutionError, WorkflowError};
+use crate::error::ExecutionError;
 use crate::notification::send_notification;
 use crate::pty::PtyManager;
 use crate::scheduler::SchedulerMessage;
 use crate::state::{create_execution_record, AppState};
 use crate::types::{ExecutionTrigger, WorkflowId, WorkflowPhase, WorkflowStatus};
-use crate::workflow::Workflow;
 
 /// Executor manages workflow execution
 pub struct Executor {
@@ -83,7 +82,7 @@ impl Executor {
                 .await;
         }
 
-        // Week workflow: three-phase
+        // Week workflow: per-operation pipeline (I94)
         if workflow_id == WorkflowId::Week {
             return self
                 .execute_week(&workspace, &execution_id, trigger, &record)
@@ -355,7 +354,12 @@ impl Executor {
         Ok(())
     }
 
-    /// Execute week workflow (three-phase)
+    /// Execute the Week workflow using per-operation pipeline (matches Today pattern).
+    ///
+    /// Sequence:
+    /// 1. Phase 1: Rust-native prepare (fetches APIs, writes directive)
+    /// 2. Mechanical delivery: deliver_week() — instant, data visible immediately
+    /// 3. AI enrichment: enrich_week() — progressive, fault-tolerant
     async fn execute_week(
         &self,
         workspace: &Path,
@@ -363,69 +367,78 @@ impl Executor {
         trigger: ExecutionTrigger,
         record: &crate::types::ExecutionRecord,
     ) -> Result<(), ExecutionError> {
-        let workflow = Workflow::from_id(WorkflowId::Week);
-
-        // Emit started event
+        // --- Phase 1: Prepare (Rust-native) ---
         self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
             started_at: record.started_at,
             phase: WorkflowPhase::Preparing,
             execution_id: execution_id.to_string(),
         });
 
-        let result = self
-            .run_three_phase(&workflow, workspace, execution_id, WorkflowId::Week)
-            .await;
+        log::info!("Week pipeline Phase 1: Rust-native prepare");
+        crate::prepare::orchestrate::prepare_week(&self.state, workspace).await?;
 
+        // --- Phase 2: Mechanical delivery (instant) ---
+        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
+            started_at: Utc::now(),
+            phase: WorkflowPhase::Delivering,
+            execution_id: execution_id.to_string(),
+        });
+
+        log::info!("Week pipeline Phase 2: mechanical delivery");
+        crate::prepare::orchestrate::deliver_week(workspace)
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let _ = self.app_handle.emit("operation-delivered", "week-overview");
+
+        // --- Phase 3: AI enrichment (fault-tolerant) ---
+        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
+            started_at: Utc::now(),
+            phase: WorkflowPhase::Enriching,
+            execution_id: execution_id.to_string(),
+        });
+
+        let data_dir = workspace.join("_today").join("data");
+        let user_ctx = self.state.config.read().ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+
+        if let Err(e) = crate::workflow::deliver::enrich_week(
+            &data_dir,
+            &self.pty_manager,
+            workspace,
+            &user_ctx,
+        ) {
+            log::warn!("Week enrichment failed (non-fatal): {}", e);
+        }
+        let _ = self.app_handle.emit("operation-delivered", "week-enriched");
+
+        // --- Completion ---
         let finished_at = Utc::now();
         let duration_secs = (finished_at - record.started_at).num_seconds() as u64;
 
-        match &result {
-            Ok(_) => {
-                self.state.update_execution_record(execution_id, |r| {
-                    r.finished_at = Some(finished_at);
-                    r.duration_secs = Some(duration_secs);
-                    r.success = true;
-                });
+        self.state.update_execution_record(execution_id, |r| {
+            r.finished_at = Some(finished_at);
+            r.duration_secs = Some(duration_secs);
+            r.success = true;
+        });
 
-                if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
-                    self.state
-                        .set_last_scheduled_run(WorkflowId::Week, record.started_at);
-                }
-
-                self.emit_status_event(WorkflowId::Week, WorkflowStatus::Completed {
-                    finished_at,
-                    duration_secs,
-                    execution_id: execution_id.to_string(),
-                });
-
-                let _ = send_notification(
-                    &self.app_handle,
-                    "Your week is ready",
-                    "DailyOS has prepared your weekly overview",
-                );
-            }
-            Err(e) => {
-                self.state.update_execution_record(execution_id, |r| {
-                    r.finished_at = Some(finished_at);
-                    r.duration_secs = Some(duration_secs);
-                    r.success = false;
-                    r.error_message = Some(e.to_string());
-                });
-
-                self.emit_status_event(WorkflowId::Week, WorkflowStatus::Failed {
-                    error: WorkflowError::from(e),
-                    execution_id: execution_id.to_string(),
-                });
-
-                let _ = send_notification(
-                    &self.app_handle,
-                    "Week workflow failed",
-                    &e.to_string(),
-                );
-            }
+        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+            self.state
+                .set_last_scheduled_run(WorkflowId::Week, record.started_at);
         }
 
-        result
+        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Completed {
+            finished_at,
+            duration_secs,
+            execution_id: execution_id.to_string(),
+        });
+
+        let _ = send_notification(
+            &self.app_handle,
+            "Your week is ready",
+            "DailyOS has prepared your weekly overview",
+        );
+
+        Ok(())
     }
 
     /// Execute the Today workflow using per-operation pipelines (ADR-0042).
@@ -641,49 +654,6 @@ impl Executor {
     }
 
     /// Run the three-phase week workflow (Rust-native, ADR-0049)
-    async fn run_three_phase(
-        &self,
-        workflow: &Workflow,
-        workspace: &Path,
-        execution_id: &str,
-        workflow_id: WorkflowId,
-    ) -> Result<(), ExecutionError> {
-        // Phase 1: Prepare (Rust-native)
-        self.emit_status_event(workflow_id, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Preparing,
-            execution_id: execution_id.to_string(),
-        });
-
-        log::info!("Phase 1: Rust-native prepare for {:?}", workflow_id);
-        crate::prepare::orchestrate::prepare_week(&self.state, workspace).await?;
-
-        // Phase 2: Enrich with Claude
-        self.emit_status_event(workflow_id, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Enriching,
-            execution_id: execution_id.to_string(),
-        });
-
-        log::info!("Phase 2: Running Claude with command '{}'", workflow.claude_command());
-        let _output = self
-            .pty_manager
-            .spawn_claude(workspace, workflow.claude_command())?;
-
-        // Phase 3: Deliver (Rust-native)
-        self.emit_status_event(workflow_id, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Delivering,
-            execution_id: execution_id.to_string(),
-        });
-
-        log::info!("Phase 3: Rust-native deliver for {:?}", workflow_id);
-        crate::prepare::orchestrate::deliver_week(workspace)
-            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
-
-        Ok(())
-    }
-
     /// Get workspace path from config
     fn get_workspace_path(&self) -> Result<PathBuf, ExecutionError> {
         let config = self

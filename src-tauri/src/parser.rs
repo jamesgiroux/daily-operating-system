@@ -3,8 +3,8 @@ use std::path::Path;
 
 use crate::types::{
     Action, ActionStatus, ActionWithContext, AlertSeverity, DayOverview, DayStats, Email,
-    EmailDetail, EmailPriority, EmailStats, EmailSummaryData, EnergyNotes, FocusData,
-    FocusPriority, FullMeetingPrep, HygieneAlert, InboxFile, InboxFileType, Meeting, MeetingPrep,
+    EmailDetail, EmailPriority, EmailStats, EmailSummaryData,
+    FullMeetingPrep, HygieneAlert, InboxFile, InboxFileType, Meeting, MeetingPrep,
     MeetingType, PrepStatus, Priority, SourceReference, Stakeholder, TimeBlock, WeekActionSummary,
     WeekDay, WeekMeeting, WeekOverview,
 };
@@ -1652,135 +1652,6 @@ impl EmailDetailBuilder {
             action_priority: self.action_priority,
         }
     }
-}
-
-/// Parse the 81-suggested-focus.md file into FocusData
-pub fn parse_focus(path: &Path) -> Result<FocusData, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read focus file: {}", e))?;
-
-    let mut priorities: Vec<FocusPriority> = Vec::new();
-    let mut time_blocks: Vec<TimeBlock> = Vec::new();
-    let mut quick_wins: Vec<String> = Vec::new();
-    let mut energy_notes = EnergyNotes {
-        morning: None,
-        afternoon: None,
-    };
-
-    let mut current_section = String::new();
-    let mut current_priority: Option<FocusPriority> = None;
-
-    for line in content.lines() {
-        let line_trimmed = line.trim();
-
-        // Section headers
-        if line_trimmed.starts_with("## ") {
-            // Save current priority
-            if let Some(p) = current_priority.take() {
-                priorities.push(p);
-            }
-
-            current_section = line_trimmed.strip_prefix("## ").unwrap_or("").to_lowercase();
-
-            // Check for priority sections
-            if current_section.starts_with("priority") {
-                let parts: Vec<&str> = current_section.split(':').collect();
-                let level = parts.get(0).unwrap_or(&"").trim().to_string();
-                let label = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
-                current_priority = Some(FocusPriority {
-                    level,
-                    label,
-                    items: Vec::new(),
-                });
-            }
-            continue;
-        }
-
-        // List items
-        if line_trimmed.starts_with("- ") {
-            let item = line_trimmed.strip_prefix("- ").unwrap_or("").to_string();
-            // Remove checkbox if present
-            let item = item.strip_prefix("[ ] ").unwrap_or(&item).to_string();
-            let item = item.strip_prefix("[x] ").unwrap_or(&item).to_string();
-
-            if let Some(ref mut p) = current_priority {
-                p.items.push(item);
-            } else if current_section.contains("quick win") || current_section.contains("downtime") {
-                quick_wins.push(item);
-            } else if current_section.contains("time block") || current_section.contains("available") {
-                // Parse time block: "09:30 - 12:00 (150 min available)"
-                if let Some(block) = parse_time_block_line(&item) {
-                    time_blocks.push(block);
-                }
-            }
-            continue;
-        }
-
-        // Energy notes
-        if current_section.contains("energy") {
-            if line_trimmed.starts_with("**Morning") || line_trimmed.to_lowercase().contains("morning") {
-                let note = line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string();
-                if !note.is_empty() {
-                    energy_notes.morning = Some(note);
-                }
-            } else if line_trimmed.starts_with("**Afternoon") || line_trimmed.to_lowercase().contains("afternoon") {
-                let note = line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string();
-                if !note.is_empty() {
-                    energy_notes.afternoon = Some(note);
-                }
-            }
-        }
-    }
-
-    // Don't forget the last priority
-    if let Some(p) = current_priority {
-        priorities.push(p);
-    }
-
-    Ok(FocusData {
-        priorities,
-        time_blocks: if time_blocks.is_empty() { None } else { Some(time_blocks) },
-        quick_wins: if quick_wins.is_empty() { None } else { Some(quick_wins) },
-        energy_notes: if energy_notes.morning.is_some() || energy_notes.afternoon.is_some() {
-            Some(energy_notes)
-        } else {
-            None
-        },
-    })
-}
-
-/// Parse a time block line like "09:30 - 12:00 (150 min available)"
-fn parse_time_block_line(line: &str) -> Option<TimeBlock> {
-    // Pattern: HH:MM - HH:MM (duration)
-    let parts: Vec<&str> = line.split(" - ").collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let start = parts[0].trim();
-    let rest = parts[1..].join(" - ");
-
-    // Extract end time and duration
-    let (end, duration_str) = if let Some(paren_pos) = rest.find('(') {
-        (rest[..paren_pos].trim(), &rest[paren_pos..])
-    } else {
-        (rest.trim(), "")
-    };
-
-    // Parse duration
-    let duration_minutes = duration_str
-        .trim_matches(|c| c == '(' || c == ')')
-        .split(|c: char| !c.is_ascii_digit())
-        .find_map(|s| s.parse::<u32>().ok())
-        .unwrap_or(0);
-
-    Some(TimeBlock {
-        day: String::new(), // Will be filled in by caller if needed
-        start: start.to_string(),
-        end: end.to_string(),
-        duration_minutes,
-        suggested_use: None,
-    })
 }
 
 /// Parse the week-00-overview.md file into WeekOverview

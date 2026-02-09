@@ -472,15 +472,46 @@ pub fn sync_accounts_from_workspace(
             continue;
         }
 
+        // Skip system/hidden folders (e.g. _Uncategorized, .DS_Store)
+        let dir_name = entry.file_name();
+        let name_str = dir_name.to_string_lossy();
+        if name_str.starts_with('_') || name_str.starts_with('.') {
+            continue;
+        }
+
         let json_path = entry.path().join("dashboard.json");
         if !json_path.exists() {
-            // Account dir exists but no JSON file — generate from SQLite if we have data
-            let dir_name = entry.file_name();
-            let name = dir_name.to_string_lossy();
+            // Account dir exists but no JSON file
+            let name = name_str;
             if let Ok(Some(db_account)) = db.get_account_by_name(&name) {
+                // Already in SQLite — generate files from DB
                 let _ = write_account_json(workspace, &db_account, None, db);
                 let _ = write_account_markdown(workspace, &db_account, None, db);
                 synced += 1;
+            } else {
+                // New folder discovery — bootstrap minimal record from folder name
+                let now = Utc::now().to_rfc3339();
+                let id = slugify(&name);
+                let new_account = DbAccount {
+                    id,
+                    name: name.to_string(),
+                    lifecycle: None,
+                    arr: None,
+                    health: None,
+                    contract_start: None,
+                    contract_end: None,
+                    csm: None,
+                    champion: None,
+                    nps: None,
+                    tracker_path: Some(format!("Accounts/{}", name)),
+                    updated_at: now,
+                };
+                if db.upsert_account(&new_account).is_ok() {
+                    let _ = write_account_json(workspace, &new_account, None, db);
+                    let _ = write_account_markdown(workspace, &new_account, None, db);
+                    log::info!("Bootstrapped account '{}' from existing folder", name);
+                    synced += 1;
+                }
             }
             continue;
         }
@@ -943,5 +974,71 @@ END_ENRICHMENT";
         assert_eq!(overview.description.unwrap(), "Partial data only.");
         assert!(overview.industry.is_none());
         assert!(overview.size.is_none());
+    }
+
+    #[test]
+    fn test_sync_bootstraps_from_folder_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        // Create account directories with NO dashboard.json and NO SQLite record
+        let acct1 = workspace.join("Accounts/Acme Corp");
+        let acct2 = workspace.join("Accounts/Beta Industries");
+        std::fs::create_dir_all(&acct1).unwrap();
+        std::fs::create_dir_all(&acct2).unwrap();
+
+        // Drop a random file in one to simulate existing user content
+        std::fs::write(acct1.join("notes.md"), "# Meeting notes\nSome content").unwrap();
+
+        let synced = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced, 2);
+
+        // Verify SQLite records were created
+        let acme = db.get_account("acme-corp").unwrap();
+        assert!(acme.is_some());
+        let acme = acme.unwrap();
+        assert_eq!(acme.name, "Acme Corp");
+        assert_eq!(acme.tracker_path, Some("Accounts/Acme Corp".to_string()));
+
+        let beta = db.get_account("beta-industries").unwrap();
+        assert!(beta.is_some());
+
+        // Verify dashboard.json was created
+        assert!(acct1.join("dashboard.json").exists());
+        assert!(acct2.join("dashboard.json").exists());
+
+        // Verify dashboard.md was created
+        assert!(acct1.join("dashboard.md").exists());
+
+        // Verify existing files were NOT touched
+        let notes = std::fs::read_to_string(acct1.join("notes.md")).unwrap();
+        assert!(notes.contains("Meeting notes"));
+
+        // Verify entity bridge fired (entity record exists)
+        let entity = db.get_entity("acme-corp").unwrap();
+        assert!(entity.is_some());
+    }
+
+    #[test]
+    fn test_sync_bootstrap_no_duplicates() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        // Create a bare folder
+        std::fs::create_dir_all(workspace.join("Accounts/Delta Co")).unwrap();
+
+        // First sync: bootstraps
+        let synced1 = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced1, 1);
+
+        // Second sync: may re-sync due to timestamp harmonization, but must not duplicate
+        let _synced2 = sync_accounts_from_workspace(workspace, &db).unwrap();
+
+        // Critical invariant: exactly one record, not two
+        let all = db.get_all_accounts().unwrap();
+        let delta_count = all.iter().filter(|a| a.name == "Delta Co").count();
+        assert_eq!(delta_count, 1, "bootstrap must not create duplicates on re-sync");
     }
 }
