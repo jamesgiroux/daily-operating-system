@@ -20,7 +20,6 @@ import {
   Calendar,
   CheckSquare,
   FolderKanban,
-  History,
   Inbox,
   LayoutDashboard,
   Settings,
@@ -41,13 +40,12 @@ interface NavItem {
 const todayItems: NavItem[] = [
   { title: "Today", icon: LayoutDashboard, href: "/" },
   { title: "This Week", icon: Calendar, href: "/week" },
+  { title: "Inbox", icon: Inbox, href: "/inbox", tooltip: "Document Inbox" },
 ];
 
 const workspaceItems: NavItem[] = [
   { title: "Actions", icon: CheckSquare, href: "/actions" },
   { title: "People", icon: Users, href: "/people" },
-  { title: "Inbox", icon: Inbox, href: "/inbox", tooltip: "Document Inbox" },
-  { title: "History", icon: History, href: "/history", tooltip: "Processing History" },
 ];
 
 const accountsItem: NavItem = { title: "Accounts", icon: Building2, href: "/accounts" };
@@ -127,7 +125,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     isActive={currentPath === item.href}
-                    tooltip={item.title}
+                    tooltip={item.tooltip ?? item.title}
                     asChild
                   >
                     <Link to={item.href}>
@@ -135,6 +133,9 @@ export function AppSidebar() {
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
+                  {item.title === "Inbox" && inboxCount > 0 && (
+                    <SidebarMenuBadge>{inboxCount}</SidebarMenuBadge>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -157,9 +158,6 @@ export function AppSidebar() {
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
-                  {item.title === "Inbox" && inboxCount > 0 && (
-                    <SidebarMenuBadge>{inboxCount}</SidebarMenuBadge>
-                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

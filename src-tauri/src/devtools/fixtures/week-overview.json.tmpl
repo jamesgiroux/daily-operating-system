@@ -1,6 +1,11 @@
 {
   "weekNumber": "W06",
   "dateRange": "{{MON}} – {{FRI}}",
+  "weekNarrative": "This is a customer-heavy week with 5 external meetings across 3 accounts. The Globex QBR on Wednesday is the highest-stakes meeting — their renewal is in 90 days and Team B usage is declining. Two overdue actions need attention before Monday's Acme sync.",
+  "topPriority": {
+    "title": "Nail the Globex QBR",
+    "reason": "Globex is at-risk with declining usage and a renewal in 90 days. Wednesday's QBR is your best chance to reset the narrative and demonstrate value."
+  },
   "days": [
     {
       "date": "{{MON}}",
@@ -88,8 +93,8 @@
         { "time": "2:00 PM", "title": "1:1 with Sarah (Manager)", "type": "one_on_one", "account": null, "prepStatus": "done" }
       ],
       "availableBlocks": [
-        { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120 },
-        { "day": "Monday", "start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120 }
+        { "day": "Monday", "start": "11:00 AM", "end": "1:00 PM", "durationMinutes": 120, "suggestedUse": "Prep Globex QBR deck — review usage metrics and draft narrative" },
+        { "day": "Monday", "start": "3:00 PM", "end": "5:00 PM", "durationMinutes": 120, "suggestedUse": "Clear overdue actions — SOW and NPS follow-up" }
       ]
     },
     {
@@ -105,7 +110,7 @@
         { "time": "3:00 PM", "title": "Initech Phase 2 Status", "type": "customer", "account": "Initech", "prepStatus": "prep_needed" }
       ],
       "availableBlocks": [
-        { "day": "Tuesday", "start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90 }
+        { "day": "Tuesday", "start": "11:00 AM", "end": "12:30 PM", "durationMinutes": 90, "suggestedUse": "Initech Phase 2 pre-read — review scope doc before Thursday" }
       ]
     },
     {
@@ -134,7 +139,7 @@
         { "time": "1:00 PM", "title": "Initech Onboarding Call", "type": "training", "account": "Initech", "prepStatus": "done" }
       ],
       "availableBlocks": [
-        { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180 }
+        { "day": "Thursday", "start": "2:00 PM", "end": "5:00 PM", "durationMinutes": 180, "suggestedUse": "Deep work — knowledge transfer plan for Alex Torres departure" }
       ]
     },
     {
@@ -149,7 +154,7 @@
         { "time": "3:00 PM", "title": "Company All Hands", "type": "all_hands", "account": null, "prepStatus": "done" }
       ],
       "availableBlocks": [
-        { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90 }
+        { "day": "Friday", "start": "1:00 PM", "end": "2:30 PM", "durationMinutes": 90, "suggestedUse": "Weekly wrap-up — review outcomes and prep next week" }
       ]
     }
   ],
@@ -162,7 +167,7 @@
     ],
     "overdue": [
       {
-        "id": "overdue-0",
+        "id": "act-sow-acme",
         "title": "Send updated SOW to Acme legal team",
         "account": "Acme Corp",
         "dueDate": "{{YESTERDAY}}",
@@ -170,7 +175,7 @@
         "daysOverdue": 1
       },
       {
-        "id": "overdue-1",
+        "id": "act-nps-acme",
         "title": "Follow up on NPS survey responses",
         "account": "Acme Corp",
         "dueDate": "{{LAST_WEEK}}",
@@ -180,14 +185,14 @@
     ],
     "dueThisWeekItems": [
       {
-        "id": "week-0",
+        "id": "act-qbr-deck-globex",
         "title": "Review Globex QBR deck with AE",
         "account": "Globex Industries",
         "dueDate": "{{WED}}",
         "priority": "P1"
       },
       {
-        "id": "week-1",
+        "id": "act-kickoff-initech",
         "title": "Schedule Phase 2 kickoff with Initech",
         "account": "Initech",
         "dueDate": "{{THU}}",

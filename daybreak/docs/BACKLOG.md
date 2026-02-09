@@ -103,6 +103,9 @@ Port `ops/` Python modules: meeting classification (`classify_meetings()`), emai
 **I85: Port orchestrators and delete Python** — Sprint 8, blocked by I84
 Port `prepare_today.py`, `prepare_week.py`, `deliver_week.py`, `refresh_emails.py`, `calendar_poll.py`, `prepare_meeting_prep.py` as Rust functions composed from I83 + I84 operations. Delete `scripts/` directory. Remove `run_python_script()` from `pty.rs`. Remove script resources from `tauri.conf.json`. Remove Python check from onboarding. ADR-0049.
 
+**I114: Parent-child accounts (enterprise BU hierarchy)** — Ship blocker
+Add `parent_id` self-referential FK on accounts table. Enterprise accounts (Cox, Hilton, Salesforce, Intuit) contain business units as child accounts, each with independent contracts, renewal dates, health, and lifecycle. Nested workspace directories (`Accounts/Cox/Consumer-Brands/`). UI: expandable parent rows on AccountsPage, BU detail with breadcrumb navigation. Intelligence aggregation rolls up child signals to parent. Migration: non-breaking (`parent_id` nullable, existing flat accounts unaffected).
+
 ### Open — Parking Lot (blocked by I27, post-ship)
 
 **I27: Entity-mode architecture — umbrella issue**
@@ -156,8 +159,10 @@ ADR-0051 (Proposed). Allow users to control which metadata fields appear on enti
 **I93: Week page Phase 1 — mechanical redesign** — ADR-0052 — **Closed**
 Replaced 5-column calendar grid with consumption-first weekly briefing. New Rust types (ReadinessCheck, DayShape, WeekAction), readiness checks computed from preps/actions/contacts, day density bars, expanded action summary with full items. New WeekPage.tsx layout: header → readiness → day shapes → actions → health. 356 tests.
 
-**I94: Week page Phase 2 — AI enrichment** — ADR-0052, blocked by I93
-Add AI-generated fields to `/week` enrichment: `weekNarrative` (2-3 sentence summary of week shape + key themes) and `topPriority` (single highest-impact item with reasoning). Extend the Claude `/week` enrichment prompt to produce these. Fault-tolerant per ADR-0042 — mechanical data renders fine without narrative.
+**I94: Week page Phase 2 — AI enrichment + briefing layout** — ADR-0052, blocked by I93
+Two coupled changes that must land together (research: `docs/research/2026-02-08-weekly-briefing-ux-research.md`):
+**(a) AI enrichment:** Add `weekNarrative` (2-3 sentence opening paragraph framing the week) and `topPriority` (single highest-impact item with "why now?" reasoning) to `/week` enrichment prompt. Fault-tolerant per ADR-0042 — mechanical data renders fine without narrative.
+**(b) Layout restructure:** Current Card-grid rendering feels like a dashboard, not a briefing. Remove Card wrappers from narrative/readiness sections. Full-width narrative prose as opening paragraph (no border, no icon). Taper visual density top-to-bottom (prose → compact lists). Readiness as synthesized inline text. Week shape keeps density bars but loses Card wrapper. Page has explicit end. Follows patterns: Finite Briefing (PDB), Tapering Word Count (Morning Brew), Conclusions Before Evidence (CQC board formula). The narrative is the emotional anchor — without it, the page opens with warnings. The layout needs the narrative to not feel empty at the top.
 
 **I95: Week page Phase 3 — proactive suggestions and time blocking** — ADR-0052, blocked by I94
 Proactive intelligence: draft agenda request messages for meetings missing agendas, pre-fill missing preps, suggest specific tasks for available time blocks. Time blocking proactivity setting in config: `timeBlockMode: "suggestions" | "draft_blocks" | "auto_block"`. Only "suggestions" ships initially; higher levels gated by feature toggles (ADR-0039). "Auto-block" requires Google Calendar write scope (future).
@@ -194,11 +199,42 @@ Replace PeoplePage's hand-built search input and tab pills with shared `SearchIn
 **I26: Web search for unknown external meetings**
 When a meeting involves people/companies not in the workspace, prep is thin — violates P2 (Prepared, Not Empty). ADR-0022 specifies proactive research. Pattern exists: I74 does websearch for known accounts via `enrich_account()`. Extend to unknown meeting attendees: detect unrecognized domains in calendar events, research company + attendee context, inject into prep. Not blocked by I27 — can use existing `enrich_preps()` pipeline with a web search step.
 
-**I107: Action detail page**
-No `/actions/$actionId` route or detail page exists. Users can view actions in the list (ActionsPage) and as sub-items on entity detail pages, but can't drill into a single action. An action detail page should show: title, priority, status, source meeting (linked), related account/project (linked), creation date, completion date, context/notes, and edit capability. Mirrors the pattern of MeetingHistoryDetailPage for meetings. Low priority — the filtered actions list is sufficient for now.
+**I107: Action detail page** — Resolved. `ActionDetailPage.tsx` at `/actions/$actionId`. Shows context card (AI reasoning), source meeting link, account link, due date, complete/reopen toggle. `get_action_detail` Rust command resolves account name + source meeting title. Wired from AccountDetailPage, ActionsPage, and MeetingHistoryDetailPage action rows.
 
 **I109: Focus page implementation** — ADR-0055
 The `/focus` route links from the dashboard Focus callout but `get_focus_data` in `commands.rs` is a stub returning `NotFound`. The `FocusData` type exists (priorities, timeBlocks, quickWins, energyNotes) but no data source is wired. Options: (a) construct `FocusData` from existing directive data (schedule.json `focus` field + actions + calendar gaps), (b) add a dedicated focus enrichment step in the AI pipeline, or (c) both — mechanical base with AI enhancement. The focus string on the dashboard is a one-liner from `overview.focus`; the FocusPage expects richer structured data. Not a ship blocker — the link works, the page just shows an empty state.
+
+**I111: Daily briefing visual rhythm — remove chrome, add breathing room** — ADR-0055
+The ADR-0055 layout restructure is correct but the rendering is dense — functional, not beautiful. Everything consolidated into the sidebar without compensating whitespace. Research (`docs/research/2026-02-08-weekly-briefing-ux-research.md`) identifies the patterns: Morning Brew's tapering density, PDB's "short items don't need heavy containers," Oura's "don't narrate the interface."
+Changes:
+(a) **Kill "Schedule" subheading** in MeetingTimeline — the date heading IS the schedule. Remove clock, meeting count, "In meeting" indicator (the pulsing dot on the timeline already shows this). Reclaims ~40px of chrome.
+(b) **Remove Card wrappers from sidebar sections.** ActionList and EmailList become lightweight lists with subtle section labels (`text-xs uppercase tracking-wider`), not full Card > CardHeader > CardContent containers. Reclaims ~40px per section in borders + header padding.
+(c) **Taper sidebar spacing.** Focus gets the most room. Actions get moderate spacing. Emails are the most compact — the "quick hits" at the bottom of the briefing.
+(d) **More breathing room at the top.** Increase gap between date heading zone and first content. The top of the page should be the most spacious.
+(e) **Soften the timeline.** Evaluate removing the vertical timeline line — the stagger animation and card borders already create sequence. Keep the colored dots (they carry meeting type info).
+Pure frontend. No data model or Rust changes.
+
+**I110: Portfolio alerts on accounts sidebar/list**
+IntelligenceCard removed from dashboard (redundant — decisions/delegations are filtered action views, skip-today rarely populated). One signal type has no other home: portfolio alerts (renewal approaching within 60d, stale contact 30d+). The `intelligence.rs` computation still exists. Surface these as warning indicators on the Accounts sidebar item (badge count) and/or as visual signals on AccountsPage list rows (e.g. peach dot for renewal approaching, stale-day warning already exists via I103). CS-profile gated. The Rust layer is done — this is purely a frontend wiring task.
+
+**I112: Graceful empty state when briefing data missing** — Ship blocker
+Dashboard shows raw OS error ("Failed to read schedule: No such file or directory (os error 2)") when `_today/data/` exists but `schedule.json` doesn't — e.g. after pointing to a new workspace that has been initialized but never briefed. `get_dashboard_data()` in `commands.rs:104` guards for missing `_today/` and `_today/data/` dirs (returns `Empty`), but doesn't guard for the file inside the existing dir. The fix: `load_schedule_json()` failure on a missing file should return `DashboardResult::Empty` (not `Error`). Also audit other pages that read from `_today/data/` (WeekPage, FocusPage, ActionsPage) for the same pattern. Ship blocker because every new user hits this between onboarding completion and first briefing run.
+
+**I113: Workspace transition detection and setup UX**
+When a user changes `workspacePath` in config (either via Settings or onboarding), the app should detect it's a new/different workspace and handle gracefully. Three cases: (1) directory exists with content but no DailyOS scaffolding — run `initialize_workspace()` + entity bootstrap automatically. (2) Directory is empty — scaffold and show "workspace ready" confirmation. (3) Directory has prior DailyOS data — just switch, no setup needed. UX: transient notification ("Setting up your workspace...") rather than an error page. Also: skip `_`-prefixed folders during entity bootstrap (`_Uncategorized`, `_archive`, `_inbox`, `_today` should not become account/project entities). Currently `_Uncategorized` gets bootstrapped as an account, which is wrong.
+
+**I114: Parent-child accounts (enterprise BU hierarchy)** — Ship blocker
+Enterprise accounts have business units (BUs) that operate as semi-independent entities with their own contracts, renewal dates, health scores, stakeholders, and meeting cadences — but are commercially and organizationally related under a parent company. Real-world examples from current workspace: Cox (Consumer-Brands, Corporate-Services-B2B, Diversification, Enterprises), Hilton (B2B-Engagement, Careers, Corporate, Domestic, Newsroom), Salesforce (AppExchange, Engineering, Ventures, Talent-Experience, etc.), Intuit (Credit-Karma, Intuit). CSMs land in one BU and expand to others — if accounts can't capture this hierarchy, the tool can't model an enterprise portfolio.
+
+**Approach: parent-child accounts.**
+- **Data model:** Add `parent_id TEXT REFERENCES accounts(id)` to `accounts` table. NULL = top-level account. BUs have `parent_id` pointing to the parent account row. Self-referential, one level deep (no grandchildren — BU is the leaf).
+- **Workspace structure:** `Accounts/Salesforce/Engineering/dashboard.json` — nested directory. Parent has its own `dashboard.json` at `Accounts/Salesforce/dashboard.json`. `sync_accounts_from_workspace()` detects two-level nesting: if a subdirectory contains `dashboard.json` OR doesn't match the numbered `\d+-` pattern, it's a BU child.
+- **UI — list page:** Parent accounts show as expandable rows. Child BUs indent underneath. Health/ARR can aggregate (parent shows worst-child health, sum ARR) or display independently. Filter/search applies across both levels.
+- **UI — detail page:** Parent detail shows child BU cards with summary signals. BU detail shows parent breadcrumb. Navigation between parent and children is one-click.
+- **Intelligence:** Parent-level signals aggregate from children (e.g. "2 of 4 BUs renewing in 60d"). Meeting classification links to the BU (not parent) when attendee domains match. Actions can be BU-specific or parent-level.
+- **Migration:** Existing flat accounts remain flat (`parent_id = NULL`). No breaking change. Users add hierarchy by creating subdirectories in the workspace.
+
+Scope: schema migration + sync logic + UI (list + detail) + intelligence aggregation. Does NOT require I27 (entity-mode architecture) — this is account-internal hierarchy, orthogonal to the entity-mode/kit system.
 
 ### Open — Low Priority
 

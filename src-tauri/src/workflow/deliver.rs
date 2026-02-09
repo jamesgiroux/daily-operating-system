@@ -10,6 +10,7 @@
 //! AI enrichment (progressive, fault-tolerant):
 //! - `enrich_emails()` → updates emails.json with summaries/actions/arcs
 //! - `enrich_briefing()` → updates schedule.json with day narrative
+//! - `enrich_week()` → updates week-overview.json with narrative, priority, suggestions (I94/I95)
 
 use std::collections::HashMap;
 use std::fs;
@@ -1729,6 +1730,379 @@ pub fn deliver_manifest(
 }
 
 // ============================================================================
+// Week AI Enrichment (I94 + I95)
+// ============================================================================
+
+/// Parse a week narrative from Claude output.
+///
+/// Expected format:
+/// ```text
+/// WEEK_NARRATIVE:
+/// 2-3 sentence narrative here.
+/// END_WEEK_NARRATIVE
+/// ```
+pub fn parse_week_narrative(response: &str) -> Option<String> {
+    let mut in_block = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("WEEK_NARRATIVE:") {
+            in_block = true;
+            let after = trimmed.strip_prefix("WEEK_NARRATIVE:").unwrap().trim();
+            if !after.is_empty() {
+                lines.push(after);
+            }
+        } else if trimmed == "END_WEEK_NARRATIVE" {
+            break;
+        } else if in_block {
+            lines.push(trimmed);
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let narrative = lines.join(" ").trim().to_string();
+    if narrative.is_empty() {
+        None
+    } else {
+        Some(narrative)
+    }
+}
+
+/// Parse a top priority from Claude output.
+///
+/// Expected format:
+/// ```text
+/// TOP_PRIORITY:
+/// { "title": "...", "reason": "...", "meetingId": "...", "actionId": "..." }
+/// END_TOP_PRIORITY
+/// ```
+pub fn parse_top_priority(response: &str) -> Option<crate::types::TopPriority> {
+    let mut in_block = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("TOP_PRIORITY:") {
+            in_block = true;
+            let after = trimmed.strip_prefix("TOP_PRIORITY:").unwrap().trim();
+            if !after.is_empty() {
+                lines.push(after);
+            }
+        } else if trimmed == "END_TOP_PRIORITY" {
+            break;
+        } else if in_block {
+            lines.push(trimmed);
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let json_str = lines.join(" ");
+    serde_json::from_str(&json_str).ok()
+}
+
+/// A time-block suggestion from AI enrichment (I95).
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeSuggestion {
+    pub block_day: String,
+    pub block_start: String,
+    pub suggested_use: String,
+}
+
+/// Parse time-block suggestions from Claude output.
+///
+/// Expected format:
+/// ```text
+/// SUGGESTIONS:
+/// [{ "blockDay": "Monday", "blockStart": "11:00 AM", "suggestedUse": "..." }, ...]
+/// END_SUGGESTIONS
+/// ```
+pub fn parse_time_suggestions(response: &str) -> Vec<TimeSuggestion> {
+    let mut in_block = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("SUGGESTIONS:") {
+            in_block = true;
+            let after = trimmed.strip_prefix("SUGGESTIONS:").unwrap().trim();
+            if !after.is_empty() {
+                lines.push(after);
+            }
+        } else if trimmed == "END_SUGGESTIONS" {
+            break;
+        } else if in_block {
+            lines.push(trimmed);
+        }
+    }
+
+    if lines.is_empty() {
+        return Vec::new();
+    }
+
+    let json_str = lines.join(" ");
+    serde_json::from_str(&json_str).unwrap_or_default()
+}
+
+/// AI-generate a week narrative, top priority, and time-block suggestions (I94 + I95).
+///
+/// Reads week-overview.json, builds context, asks Claude for structured output,
+/// patches the fields back into week-overview.json.
+/// Fault-tolerant: returns Ok(()) even if parsing fails — mechanical data stays intact.
+pub fn enrich_week(
+    data_dir: &Path,
+    pty: &crate::pty::PtyManager,
+    workspace: &Path,
+    user_ctx: &crate::types::UserContext,
+) -> Result<(), String> {
+    // Read week-overview.json
+    let overview_path = data_dir.join("week-overview.json");
+    let raw = fs::read_to_string(&overview_path)
+        .map_err(|e| format!("Failed to read week-overview.json: {}", e))?;
+    let mut overview: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("Failed to parse week-overview.json: {}", e))?;
+
+    // Extract context for prompt
+    let week_number = overview
+        .get("weekNumber")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let date_range = overview
+        .get("dateRange")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    let day_shapes = overview
+        .get("dayShapes")
+        .and_then(|v| v.as_array());
+    let total_meetings: usize = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .filter_map(|s| s.get("meetingCount").and_then(|v| v.as_u64()))
+                .sum::<u64>() as usize
+        })
+        .unwrap_or(0);
+
+    let day_summary: Vec<String> = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .filter_map(|s| {
+                    let day = s.get("dayName").and_then(|v| v.as_str()).unwrap_or("?");
+                    let count = s.get("meetingCount").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let density = s.get("density").and_then(|v| v.as_str()).unwrap_or("?");
+                    Some(format!("{}: {} meetings ({})", day, count, density))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let readiness_checks = overview
+        .get("readinessChecks")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let overdue_count = overview
+        .get("actionSummary")
+        .and_then(|s| s.get("overdueCount"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let due_this_week = overview
+        .get("actionSummary")
+        .and_then(|s| s.get("dueThisWeek"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let hygiene_count = overview
+        .get("hygieneAlerts")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+
+    // Collect available time blocks for suggestion context
+    let available_blocks: Vec<String> = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .flat_map(|s| {
+                    let day = s.get("dayName").and_then(|v| v.as_str()).unwrap_or("?");
+                    s.get("availableBlocks")
+                        .and_then(|v| v.as_array())
+                        .map(|blocks| {
+                            blocks
+                                .iter()
+                                .filter_map(|b| {
+                                    let start = b.get("start").and_then(|v| v.as_str())?;
+                                    let mins = b.get("durationMinutes").and_then(|v| v.as_u64())?;
+                                    Some(format!("{} {} ({}min)", day, start, mins))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Collect key meetings (customer/qbr) for priority context
+    let key_meetings: Vec<String> = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .flat_map(|s| {
+                    let day = s.get("dayName").and_then(|v| v.as_str()).unwrap_or("?");
+                    s.get("meetings")
+                        .and_then(|v| v.as_array())
+                        .map(|meetings| {
+                            meetings
+                                .iter()
+                                .filter(|m| {
+                                    let t = m.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                                    t == "customer" || t == "qbr"
+                                })
+                                .filter_map(|m| {
+                                    let title = m.get("title").and_then(|v| v.as_str())?;
+                                    let acct = m
+                                        .get("account")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    Some(format!("{} — {} ({})", day, title, acct))
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let user_fragment = user_ctx.prompt_fragment();
+    let role_label = user_ctx.title_or_default();
+
+    let prompt = format!(
+        "You are writing a weekly briefing for {role_label}.\n\
+         {user_fragment}\n\
+         Week context:\n\
+         - Week: {week_number} ({date_range})\n\
+         - Total meetings: {total_meetings}\n\
+         - Day breakdown: {day_breakdown}\n\
+         - Key customer meetings: {key_meetings}\n\
+         - Readiness checks: {readiness_checks} items needing attention\n\
+         - Actions: {overdue_count} overdue, {due_this_week} due this week\n\
+         - Account health alerts: {hygiene_count}\n\
+         - Available focus blocks: {available_blocks}\n\n\
+         Provide three sections in your response:\n\n\
+         1. A 2-3 sentence narrative framing the week. Focus on what makes this week \
+         distinct — customer commitments, deadlines, risks. Be direct, not chatty.\n\n\
+         2. The single top priority for the week. Pick the one thing that, if handled well, \
+         has the biggest impact. Return as a JSON object with title, reason, and optionally \
+         meetingId or actionId if it maps to a specific item.\n\n\
+         3. Suggestions for how to use the available time blocks. Return as a JSON array \
+         with blockDay, blockStart, and suggestedUse fields.\n\n\
+         Format your response EXACTLY as:\n\n\
+         WEEK_NARRATIVE:\n\
+         <your 2-3 sentence narrative>\n\
+         END_WEEK_NARRATIVE\n\n\
+         TOP_PRIORITY:\n\
+         {{\"title\": \"...\", \"reason\": \"...\"}}\n\
+         END_TOP_PRIORITY\n\n\
+         SUGGESTIONS:\n\
+         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\"}}]\n\
+         END_SUGGESTIONS",
+        role_label = role_label,
+        user_fragment = user_fragment,
+        week_number = week_number,
+        date_range = date_range,
+        total_meetings = total_meetings,
+        day_breakdown = day_summary.join("; "),
+        key_meetings = if key_meetings.is_empty() {
+            "none".to_string()
+        } else {
+            key_meetings.join("; ")
+        },
+        readiness_checks = readiness_checks,
+        overdue_count = overdue_count,
+        due_this_week = due_this_week,
+        hygiene_count = hygiene_count,
+        available_blocks = if available_blocks.is_empty() {
+            "none".to_string()
+        } else {
+            available_blocks.join("; ")
+        },
+    );
+
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
+
+    let response = &output.stdout;
+
+    // Parse narrative
+    let narrative = parse_week_narrative(response);
+    if let Some(ref text) = narrative {
+        overview
+            .as_object_mut()
+            .unwrap()
+            .insert("weekNarrative".to_string(), json!(text));
+        log::info!("enrich_week: narrative written ({} chars)", text.len());
+    } else {
+        log::warn!("enrich_week: no narrative parsed from Claude output");
+    }
+
+    // Parse top priority
+    let priority = parse_top_priority(response);
+    if let Some(ref p) = priority {
+        let priority_json = serde_json::to_value(p)
+            .unwrap_or(json!(null));
+        overview
+            .as_object_mut()
+            .unwrap()
+            .insert("topPriority".to_string(), priority_json);
+        log::info!("enrich_week: top priority set — {}", p.title);
+    } else {
+        log::warn!("enrich_week: no top priority parsed from Claude output");
+    }
+
+    // Parse time suggestions and apply to matching blocks
+    let suggestions = parse_time_suggestions(response);
+    if !suggestions.is_empty() {
+        if let Some(shapes) = overview.get_mut("dayShapes").and_then(|v| v.as_array_mut()) {
+            for suggestion in &suggestions {
+                for shape in shapes.iter_mut() {
+                    let day = shape.get("dayName").and_then(|v| v.as_str()).unwrap_or("");
+                    if day != suggestion.block_day {
+                        continue;
+                    }
+                    if let Some(blocks) = shape.get_mut("availableBlocks").and_then(|v| v.as_array_mut()) {
+                        for block in blocks.iter_mut() {
+                            let start = block.get("start").and_then(|v| v.as_str()).unwrap_or("");
+                            if start == suggestion.block_start {
+                                block.as_object_mut().unwrap().insert(
+                                    "suggestedUse".to_string(),
+                                    json!(suggestion.suggested_use),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        log::info!("enrich_week: applied {} time-block suggestions", suggestions.len());
+    }
+
+    // Write back
+    write_json(&overview_path, &overview)?;
+    Ok(())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -2159,5 +2533,162 @@ END_AGENDA
         assert_eq!(classify_meeting_density(9), "packed");
         assert_eq!(classify_meeting_density(10), "packed");
         assert_eq!(classify_meeting_density(15), "packed");
+    }
+
+    // ================================================================
+    // Week enrichment parser tests (I94 + I95)
+    // ================================================================
+
+    #[test]
+    fn test_parse_week_narrative() {
+        let response = "\
+WEEK_NARRATIVE:
+This is a customer-heavy week with 5 external meetings across 3 accounts.
+The Globex QBR on Wednesday is the highest-stakes meeting.
+END_WEEK_NARRATIVE
+";
+        let narrative = parse_week_narrative(response);
+        assert!(narrative.is_some());
+        let text = narrative.unwrap();
+        assert!(text.contains("customer-heavy week"));
+        assert!(text.contains("Globex QBR"));
+    }
+
+    #[test]
+    fn test_parse_week_narrative_inline() {
+        let response = "WEEK_NARRATIVE: Busy week ahead.\nEND_WEEK_NARRATIVE";
+        let narrative = parse_week_narrative(response);
+        assert_eq!(narrative, Some("Busy week ahead.".to_string()));
+    }
+
+    #[test]
+    fn test_parse_week_narrative_missing() {
+        let response = "Here's some random output without markers.";
+        let narrative = parse_week_narrative(response);
+        assert!(narrative.is_none());
+    }
+
+    #[test]
+    fn test_parse_top_priority() {
+        let response = r#"
+TOP_PRIORITY:
+{"title": "Nail the Globex QBR", "reason": "Renewal in 90 days, usage declining"}
+END_TOP_PRIORITY
+"#;
+        let priority = parse_top_priority(response);
+        assert!(priority.is_some());
+        let p = priority.unwrap();
+        assert_eq!(p.title, "Nail the Globex QBR");
+        assert!(p.reason.contains("Renewal"));
+        assert!(p.meeting_id.is_none());
+        assert!(p.action_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_top_priority_with_ids() {
+        let response = r#"
+TOP_PRIORITY:
+{"title": "Clear SOW", "reason": "Blocking legal", "meetingId": "mtg-1", "actionId": "act-1"}
+END_TOP_PRIORITY
+"#;
+        let priority = parse_top_priority(response);
+        assert!(priority.is_some());
+        let p = priority.unwrap();
+        assert_eq!(p.meeting_id, Some("mtg-1".to_string()));
+        assert_eq!(p.action_id, Some("act-1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_top_priority_missing() {
+        let response = "No priority markers here.";
+        let priority = parse_top_priority(response);
+        assert!(priority.is_none());
+    }
+
+    #[test]
+    fn test_parse_top_priority_invalid_json() {
+        let response = "TOP_PRIORITY:\nnot valid json\nEND_TOP_PRIORITY";
+        let priority = parse_top_priority(response);
+        assert!(priority.is_none()); // Graceful failure
+    }
+
+    #[test]
+    fn test_parse_time_suggestions() {
+        let response = r#"
+SUGGESTIONS:
+[{"blockDay": "Monday", "blockStart": "11:00 AM", "suggestedUse": "Globex QBR prep"}, {"blockDay": "Thursday", "blockStart": "2:00 PM", "suggestedUse": "Deep work"}]
+END_SUGGESTIONS
+"#;
+        let suggestions = parse_time_suggestions(response);
+        assert_eq!(suggestions.len(), 2);
+        assert_eq!(suggestions[0].block_day, "Monday");
+        assert_eq!(suggestions[0].block_start, "11:00 AM");
+        assert_eq!(suggestions[0].suggested_use, "Globex QBR prep");
+        assert_eq!(suggestions[1].block_day, "Thursday");
+    }
+
+    #[test]
+    fn test_parse_time_suggestions_empty() {
+        let response = "No suggestions here.";
+        let suggestions = parse_time_suggestions(response);
+        assert!(suggestions.is_empty());
+    }
+
+    #[test]
+    fn test_parse_time_suggestions_invalid_json() {
+        let response = "SUGGESTIONS:\nnot valid json\nEND_SUGGESTIONS";
+        let suggestions = parse_time_suggestions(response);
+        assert!(suggestions.is_empty()); // Graceful failure
+    }
+
+    #[test]
+    fn test_week_overview_roundtrip_with_narrative() {
+        // Verify the fixture template deserializes correctly with narrative + topPriority
+        let json = r#"{
+            "weekNumber": "W06",
+            "dateRange": "2026-02-09 – 2026-02-13",
+            "weekNarrative": "Test narrative about the week.",
+            "topPriority": {
+                "title": "Ship the feature",
+                "reason": "Deadline is Friday."
+            },
+            "days": [],
+            "readinessChecks": [
+                { "checkType": "no_prep", "message": "Meeting X has no prep", "severity": "action_needed" }
+            ],
+            "dayShapes": [
+                { "dayName": "Monday", "date": "2026-02-09", "meetingCount": 3, "meetingMinutes": 120, "density": "moderate", "meetings": [], "availableBlocks": [] }
+            ],
+            "actionSummary": {
+                "overdueCount": 1,
+                "dueThisWeek": 2,
+                "criticalItems": ["Do the thing"],
+                "overdue": [{ "id": "a1", "title": "Overdue task", "account": "Acme", "dueDate": "2026-02-07", "priority": "P1", "daysOverdue": 2 }],
+                "dueThisWeekItems": [{ "id": "a2", "title": "Due task", "account": "Globex", "dueDate": "2026-02-12", "priority": "P2" }]
+            },
+            "hygieneAlerts": [
+                { "account": "Globex", "lifecycle": "at-risk", "arr": "$800K", "issue": "Usage declining.", "severity": "warning" }
+            ]
+        }"#;
+
+        let overview: crate::types::WeekOverview = serde_json::from_str(json).expect("Failed to deserialize WeekOverview");
+        assert_eq!(overview.week_narrative.as_deref(), Some("Test narrative about the week."));
+        assert!(overview.top_priority.is_some());
+        let tp = overview.top_priority.clone().unwrap();
+        assert_eq!(tp.title, "Ship the feature");
+        assert_eq!(tp.reason, "Deadline is Friday.");
+        assert!(tp.meeting_id.is_none());
+        assert!(tp.action_id.is_none());
+
+        // Verify readiness checks, day shapes, actions, and hygiene also roundtrip
+        assert_eq!(overview.readiness_checks.as_ref().unwrap().len(), 1);
+        assert_eq!(overview.day_shapes.as_ref().unwrap().len(), 1);
+        assert_eq!(overview.action_summary.as_ref().unwrap().overdue_count, 1);
+        assert_eq!(overview.hygiene_alerts.as_ref().unwrap().len(), 1);
+
+        // Re-serialize and verify fields survive
+        let reserialized = serde_json::to_string(&overview).unwrap();
+        assert!(reserialized.contains("weekNarrative"));
+        assert!(reserialized.contains("topPriority"));
     }
 }
