@@ -876,171 +876,23 @@ pub fn parse_enrichment_response(response: &str) -> Option<CompanyOverview> {
 // Content Index (I124)
 // =============================================================================
 
-/// Files to skip during content indexing (managed by the app).
-const CONTENT_SKIP_FILES: &[&str] = &["dashboard.json", "dashboard.md", "intelligence.json", ".DS_Store"];
-
-/// Recursively collect content files from an account directory.
-/// Skips hidden files/dirs, underscore-prefixed dirs, managed files,
-/// and child account boundaries (subdirs containing dashboard.json).
-fn collect_content_files(dir: &Path, account_root: &Path, out: &mut Vec<std::path::PathBuf>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip hidden and underscore-prefixed entries at every level
-        if name.starts_with('.') || name.starts_with('_') {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Stop at child account boundaries — subdirs with their own dashboard.json
-            // are separate entities and indexed independently
-            if path.join("dashboard.json").exists() {
-                continue;
-            }
-            collect_content_files(&path, account_root, out);
-        } else {
-            if CONTENT_SKIP_FILES.contains(&name.as_str()) {
-                continue;
-            }
-            out.push(path);
-        }
-    }
-}
-
 /// Sync the content index for a single account. Compares filesystem against DB,
 /// adds new files, updates changed files, removes deleted files.
 ///
+/// Delegates to the entity-generic `sync_content_index_for_entity()`.
 /// Returns `(added, updated, removed)` counts.
 pub fn sync_content_index_for_account(
     workspace: &Path,
     db: &ActionDb,
     account: &crate::db::DbAccount,
 ) -> Result<(usize, usize, usize), String> {
-    use std::collections::HashMap;
-
     let account_dir = resolve_account_dir(workspace, account);
-    if !account_dir.exists() {
-        return Ok((0, 0, 0));
-    }
-
-    let now = Utc::now().to_rfc3339();
-    let mut added = 0usize;
-    let mut updated = 0usize;
-    let mut removed = 0usize;
-
-    // Build a HashMap of existing DB records for this entity (O(1) lookup)
-    let existing = db
-        .get_entity_files(&account.id)
-        .map_err(|e| format!("DB error: {}", e))?;
-    let mut db_map: HashMap<String, crate::db::DbContentFile> = existing
-        .into_iter()
-        .map(|f| (f.id.clone(), f))
-        .collect();
-
-    // Scan the filesystem recursively
-    let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
-    collect_content_files(&account_dir, &account_dir, &mut file_paths);
-
-    for path in &file_paths {
-        let filename = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Detect format via existing extract module
-        let format = crate::processor::extract::detect_format(path);
-        let format_label = format!("{:?}", format);
-
-        // Get file metadata
-        let metadata = match std::fs::metadata(path) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        let file_size = metadata.len() as i64;
-        let modified_at = metadata
-            .modified()
-            .ok()
-            .and_then(|t| {
-                let dt: chrono::DateTime<Utc> = t.into();
-                Some(dt.to_rfc3339())
-            })
-            .unwrap_or_else(|| now.clone());
-
-        // Compute relative path from workspace root
-        let relative_path = path
-            .strip_prefix(workspace)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| filename.clone());
-
-        // Use path relative to account dir for stable, collision-free IDs
-        let rel_from_account = path
-            .strip_prefix(&account_dir)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| filename.clone());
-
-        let id = slugify(&format!("{}/{}", account.id, rel_from_account));
-
-        // Check if record exists in DB
-        if let Some(existing_record) = db_map.remove(&id) {
-            // File exists in DB — check if it changed (compare modified_at)
-            if existing_record.modified_at != modified_at || existing_record.file_size != file_size {
-                let record = crate::db::DbContentFile {
-                    id,
-                    entity_id: account.id.clone(),
-                    entity_type: "account".to_string(),
-                    filename,
-                    relative_path,
-                    absolute_path: path.to_string_lossy().to_string(),
-                    format: format_label,
-                    file_size,
-                    modified_at,
-                    indexed_at: now.clone(),
-                    extracted_at: None, // COALESCE preserves existing
-                    summary: None,      // COALESCE preserves existing
-                };
-                let _ = db.upsert_content_file(&record);
-                updated += 1;
-            }
-            // Unchanged — skip
-        } else {
-            // New file — insert
-            let record = crate::db::DbContentFile {
-                id,
-                entity_id: account.id.clone(),
-                entity_type: "account".to_string(),
-                filename,
-                relative_path,
-                absolute_path: path.to_string_lossy().to_string(),
-                format: format_label,
-                file_size,
-                modified_at,
-                indexed_at: now.clone(),
-                extracted_at: None,
-                summary: None,
-            };
-            let _ = db.upsert_content_file(&record);
-            added += 1;
-        }
-    }
-
-    // Any records left in db_map no longer have matching files — remove them
-    for (id, _) in &db_map {
-        let _ = db.delete_content_file(id);
-        removed += 1;
-    }
-
-    Ok((added, updated, removed))
+    crate::entity_intel::sync_content_index_for_entity(
+        &account_dir, &account.id, "account", workspace, db,
+    )
 }
 
-/// Sync content indexes for all accounts. Returns total files indexed.
+/// Sync content indexes for all accounts and projects. Returns total files indexed.
 pub fn sync_all_content_indexes(
     workspace: &Path,
     db: &ActionDb,
@@ -1064,6 +916,10 @@ pub fn sync_all_content_indexes(
             }
         }
     }
+
+    // I138: Also sync project content indexes
+    total += crate::projects::sync_all_project_content_indexes(workspace, db)
+        .unwrap_or(0);
 
     Ok(total)
 }
