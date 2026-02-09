@@ -133,6 +133,14 @@ pub fn write_person_markdown(
         }
     }
 
+    // === Intelligence sections (I136 — from intelligence.json) ===
+    if let Ok(intel) = crate::entity_intel::read_intelligence_json(&dir) {
+        let intel_md = crate::entity_intel::format_intelligence_markdown(&intel);
+        if !intel_md.is_empty() {
+            md.push_str(&intel_md);
+        }
+    }
+
     // Recent Meetings (auto-generated)
     md.push_str("<!-- auto-generated -->\n");
     md.push_str("## Recent Meetings\n\n");

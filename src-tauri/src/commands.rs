@@ -2647,6 +2647,7 @@ pub struct PersonDetailResult {
     pub signals: Option<crate::db::PersonSignals>,
     pub entities: Vec<EntitySummary>,
     pub recent_meetings: Vec<MeetingSummary>,
+    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -2705,11 +2706,26 @@ pub fn get_person_detail(
         })
         .collect();
 
+    // Load intelligence from person dir (if exists)
+    let intelligence = {
+        let config = state.config.read().map_err(|_| "Lock poisoned")?;
+        if let Some(ref config) = *config {
+            let person_dir = crate::people::person_dir(
+                Path::new(&config.workspace_path),
+                &person.name,
+            );
+            crate::entity_intel::read_intelligence_json(&person_dir).ok()
+        } else {
+            None
+        }
+    };
+
     Ok(PersonDetailResult {
         person,
         signals,
         entities,
         recent_meetings,
+        intelligence,
     })
 }
 
@@ -2827,6 +2843,39 @@ pub fn get_meeting_attendees(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_meeting_attendees(&meeting_id)
         .map_err(|e| e.to_string())
+}
+
+/// Enrich a person with intelligence assessment (relationship intelligence).
+#[tauri::command]
+pub async fn enrich_person(
+    person_id: String,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<crate::entity_intel::IntelligenceJson, String> {
+    let workspace_path = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        let config = guard.as_ref().ok_or("Config not loaded")?;
+        config.workspace_path.clone()
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let person = db
+        .get_person(&person_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Person not found: {}", person_id))?;
+
+    let pty = crate::pty::PtyManager::new().with_timeout(120);
+    crate::entity_intel::enrich_entity_intelligence(
+        std::path::Path::new(&workspace_path),
+        db,
+        &person_id,
+        &person.name,
+        "person",
+        None,
+        None,
+        &pty,
+    )
 }
 
 // =============================================================================
