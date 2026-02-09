@@ -16,6 +16,7 @@ interface EntityOption {
   id: string;
   name: string;
   type: "account" | "project";
+  parentName?: string;
 }
 
 interface EntityPickerProps {
@@ -46,14 +47,15 @@ export function EntityPicker({
       const items: EntityOption[] = [];
       if (entityType !== "project") {
         try {
-          const accounts = await invoke<{ id: string; name: string }[]>(
-            "get_accounts_list"
-          );
+          const accounts = await invoke<
+            { id: string; name: string; parentName?: string }[]
+          >("get_accounts_for_picker");
           items.push(
             ...accounts.map((a) => ({
               id: a.id,
               name: a.name,
               type: "account" as const,
+              parentName: a.parentName ?? undefined,
             }))
           );
         } catch {
@@ -102,7 +104,12 @@ export function EntityPicker({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
-  const accounts = entities.filter((e) => e.type === "account");
+  const parentAccounts = entities.filter(
+    (e) => e.type === "account" && !e.parentName
+  );
+  const childAccounts = entities.filter(
+    (e) => e.type === "account" && e.parentName
+  );
   const projects = entities.filter((e) => e.type === "project");
 
   if (value && selectedName) {
@@ -149,22 +156,42 @@ export function EntityPicker({
             <CommandInput placeholder="Search..." />
             <CommandList>
               <CommandEmpty>No entities found.</CommandEmpty>
-              {accounts.length > 0 && (
+              {parentAccounts.length > 0 && (
                 <CommandGroup heading="Accounts">
-                  {accounts.map((a) => (
-                    <CommandItem
-                      key={a.id}
-                      value={a.name}
-                      onSelect={() => {
-                        onChange(a.id, a.name);
-                        setSelectedName(a.name);
-                        setOpen(false);
-                      }}
-                    >
-                      <Building2 className="mr-2 size-3.5 text-muted-foreground" />
-                      {a.name}
-                    </CommandItem>
-                  ))}
+                  {parentAccounts.map((a) => {
+                    const children = childAccounts.filter(
+                      (c) => c.parentName === a.name
+                    );
+                    return (
+                      <div key={a.id}>
+                        <CommandItem
+                          value={a.name}
+                          onSelect={() => {
+                            onChange(a.id, a.name);
+                            setSelectedName(a.name);
+                            setOpen(false);
+                          }}
+                        >
+                          <Building2 className="mr-2 size-3.5 text-muted-foreground" />
+                          {a.name}
+                        </CommandItem>
+                        {children.map((c) => (
+                          <CommandItem
+                            key={c.id}
+                            value={`${a.name} ${c.name}`}
+                            onSelect={() => {
+                              onChange(c.id, c.name);
+                              setSelectedName(c.name);
+                              setOpen(false);
+                            }}
+                          >
+                            <Building2 className="ml-4 mr-2 size-3.5 text-muted-foreground/60" />
+                            <span className="text-muted-foreground">{c.name}</span>
+                          </CommandItem>
+                        ))}
+                      </div>
+                    );
+                  })}
                 </CommandGroup>
               )}
               {projects.length > 0 && (
