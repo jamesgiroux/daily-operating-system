@@ -14,7 +14,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::CompanyOverview;
-use crate::db::{ActionDb, DbAccount};
+use crate::db::{ActionDb, DbAccount, DbPerson};
 use crate::util::atomic_write_str;
 
 // =============================================================================
@@ -467,6 +467,35 @@ pub fn build_intelligence_context(
                 ctx.facts_block = facts.join("\n");
             }
         }
+        "person" => {
+            if let Ok(Some(person)) = db.get_person(entity_id) {
+                let mut facts = Vec::new();
+                if let Some(ref org) = person.organization {
+                    facts.push(format!("Organization: {}", org));
+                }
+                if let Some(ref role) = person.role {
+                    facts.push(format!("Role: {}", role));
+                }
+                facts.push(format!("Relationship: {}", person.relationship));
+                if let Some(ref first) = person.first_seen {
+                    facts.push(format!("First seen: {}", first));
+                }
+                if let Some(ref last) = person.last_seen {
+                    facts.push(format!("Last seen: {}", last));
+                }
+                facts.push(format!("Total meetings: {}", person.meeting_count));
+
+                // Signals
+                if let Ok(signals) = db.get_person_signals(entity_id) {
+                    facts.push(format!("30d meetings: {}", signals.meeting_frequency_30d));
+                    facts.push(format!("90d meetings: {}", signals.meeting_frequency_90d));
+                    facts.push(format!("Temperature: {}", signals.temperature));
+                    facts.push(format!("Trend: {}", signals.trend));
+                }
+
+                ctx.facts_block = facts.join("\n");
+            }
+        }
         _ => {}
     }
 
@@ -474,6 +503,7 @@ pub fn build_intelligence_context(
     let meetings = match entity_type {
         "account" => db.get_meetings_for_account(entity_id, 20).unwrap_or_default(),
         "project" => db.get_meetings_for_project(entity_id, 20).unwrap_or_default(),
+        "person" => db.get_person_meetings(entity_id, 20).unwrap_or_default(),
         _ => Vec::new(),
     };
     if !meetings.is_empty() {
@@ -547,6 +577,48 @@ pub fn build_intelligence_context(
             })
             .collect();
         ctx.stakeholders = lines.join("\n");
+    }
+
+    // --- Entity connections (people only) ---
+    if entity_type == "person" {
+        let entities = db.get_entities_for_person(entity_id).unwrap_or_default();
+        if !entities.is_empty() {
+            let mut lines: Vec<String> = Vec::new();
+            for ent in &entities {
+                // Look up account/project details for health/status
+                let ent_type_str = ent.entity_type.as_str();
+                let detail = match ent_type_str {
+                    "account" => {
+                        if let Ok(Some(acct)) = db.get_account(&ent.id) {
+                            let health = acct.health.as_deref().unwrap_or("unknown");
+                            let lifecycle = acct.lifecycle.as_deref().unwrap_or("");
+                            format!("health: {}, lifecycle: {}", health, lifecycle)
+                        } else {
+                            "no details".to_string()
+                        }
+                    }
+                    "project" => {
+                        if let Ok(Some(proj)) = db.get_project(&ent.id) {
+                            format!("status: {}", proj.status)
+                        } else {
+                            "no details".to_string()
+                        }
+                    }
+                    _ => String::new(),
+                };
+                lines.push(format!(
+                    "- {} ({}) — {}",
+                    ent.name, ent_type_str, detail
+                ));
+            }
+            // Store in stakeholders field (repurposed for person context)
+            if ctx.stakeholders.is_empty() {
+                ctx.stakeholders = format!("Entity Connections:\n{}", lines.join("\n"));
+            } else {
+                ctx.stakeholders
+                    .push_str(&format!("\n\nEntity Connections:\n{}", lines.join("\n")));
+            }
+        }
     }
 
     // --- File manifest + contents ---
@@ -1075,6 +1147,7 @@ pub fn enrich_entity_intelligence(
             }
         }
         "project" => crate::projects::project_dir(workspace, entity_name),
+        "person" => crate::people::person_dir(workspace, entity_name),
         _ => return Err(format!("Unsupported entity type: {}", entity_type)),
     };
 
