@@ -632,19 +632,47 @@ pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
     let workspace = Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    match load_actions_json(&today_dir) {
-        Ok(actions) => {
-            if actions.is_empty() {
-                ActionsResult::Empty {
-                    message: "No actions found.".to_string(),
+    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
+
+    // Merge non-briefing actions from SQLite (same logic as dashboard)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
+                let json_titles: HashSet<String> = actions
+                    .iter()
+                    .map(|a| a.title.to_lowercase().trim().to_string())
+                    .collect();
+                for dba in db_actions {
+                    if !json_titles.contains(&dba.title.to_lowercase().trim().to_string()) {
+                        let priority = match dba.priority.as_str() {
+                            "P1" => Priority::P1,
+                            "P3" => Priority::P3,
+                            _ => Priority::P2,
+                        };
+                        actions.push(Action {
+                            id: dba.id,
+                            title: dba.title,
+                            account: dba.account_id,
+                            due_date: dba.due_date,
+                            priority,
+                            status: crate::types::ActionStatus::Pending,
+                            is_overdue: None,
+                            context: dba.context,
+                            source: dba.source_label,
+                            days_overdue: None,
+                        });
+                    }
                 }
-            } else {
-                ActionsResult::Success { data: actions }
             }
         }
-        Err(_) => ActionsResult::Empty {
+    }
+
+    if actions.is_empty() {
+        ActionsResult::Empty {
             message: "No actions yet. Actions appear after your first briefing.".to_string(),
-        },
+        }
+    } else {
+        ActionsResult::Success { data: actions }
     }
 }
 
@@ -1246,16 +1274,25 @@ pub fn list_meeting_preps(state: State<Arc<AppState>>) -> Result<Vec<String>, St
 // SQLite Database Commands
 // =============================================================================
 
+/// Action with resolved account name for list display.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionListItem {
+    #[serde(flatten)]
+    pub action: crate::db::DbAction,
+    pub account_name: Option<String>,
+}
+
 /// Get actions from the SQLite database for display.
 ///
 /// Returns pending actions (within `days_ahead` window, default 7) combined
 /// with recently completed actions (last 48 hours) so the UI can show both
-/// active and done states.
+/// active and done states. Account names are resolved from the accounts table.
 #[tauri::command]
 pub fn get_actions_from_db(
     days_ahead: Option<i32>,
     state: State<Arc<AppState>>,
-) -> Result<Vec<crate::db::DbAction>, String> {
+) -> Result<Vec<ActionListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     let mut actions = db
@@ -1265,7 +1302,35 @@ pub fn get_actions_from_db(
         .get_completed_actions(48)
         .map_err(|e| e.to_string())?;
     actions.extend(completed);
-    Ok(actions)
+
+    // Batch-resolve account names: collect unique IDs, single query each
+    let mut name_cache: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for a in &actions {
+        if let Some(ref aid) = a.account_id {
+            if !name_cache.contains_key(aid) {
+                if let Ok(Some(account)) = db.get_account(aid) {
+                    name_cache.insert(aid.clone(), account.name);
+                }
+            }
+        }
+    }
+
+    let items = actions
+        .into_iter()
+        .map(|a| {
+            let account_name = a
+                .account_id
+                .as_ref()
+                .and_then(|aid| name_cache.get(aid).cloned());
+            ActionListItem {
+                action: a,
+                account_name,
+            }
+        })
+        .collect();
+
+    Ok(items)
 }
 
 /// Mark an action as completed in the SQLite database.
@@ -1630,6 +1695,7 @@ pub fn capture_meeting_outcome(
                 context: action.owner.clone(),
                 waiting_on: None,
                 updated_at: now,
+                person_id: None,
             };
             if let Err(e) = db.upsert_action(&db_action) {
                 log::warn!("Failed to save captured action: {}", e);
@@ -1934,6 +2000,136 @@ pub fn update_action_priority(
 }
 
 // =============================================================================
+// Manual Action CRUD (I127 / I128)
+// =============================================================================
+
+/// Create a new action manually (not from briefing/transcript/inbox).
+///
+/// Returns the new action's UUID. Priority defaults to P2 if not provided.
+#[tauri::command]
+pub fn create_action(
+    title: String,
+    priority: Option<String>,
+    due_date: Option<String>,
+    account_id: Option<String>,
+    project_id: Option<String>,
+    person_id: Option<String>,
+    context: Option<String>,
+    source_label: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let priority = priority.unwrap_or_else(|| "P2".to_string());
+    if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
+        return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", priority));
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let action = crate::db::DbAction {
+        id: id.clone(),
+        title,
+        priority,
+        status: "pending".to_string(),
+        created_at: now.clone(),
+        due_date,
+        completed_at: None,
+        account_id,
+        project_id,
+        source_type: Some("manual".to_string()),
+        source_id: None,
+        source_label,
+        context,
+        waiting_on: None,
+        updated_at: now,
+        person_id,
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.upsert_action(&action).map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+/// Update arbitrary fields on an existing action (I128).
+///
+/// Only provided fields are updated; `None` means "don't touch".
+/// To clear a nullable field, pass the corresponding `clear_*` flag.
+#[tauri::command]
+pub fn update_action(
+    id: String,
+    title: Option<String>,
+    due_date: Option<String>,
+    clear_due_date: Option<bool>,
+    context: Option<String>,
+    clear_context: Option<bool>,
+    source_label: Option<String>,
+    clear_source_label: Option<bool>,
+    account_id: Option<String>,
+    clear_account: Option<bool>,
+    project_id: Option<String>,
+    clear_project: Option<bool>,
+    person_id: Option<String>,
+    clear_person: Option<bool>,
+    priority: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if let Some(ref p) = priority {
+        if !matches!(p.as_str(), "P1" | "P2" | "P3") {
+            return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", p));
+        }
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut action = db
+        .get_action_by_id(&id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {id}"))?;
+
+    if let Some(t) = title {
+        action.title = t;
+    }
+    if let Some(p) = priority {
+        action.priority = p;
+    }
+    if clear_due_date == Some(true) {
+        action.due_date = None;
+    } else if let Some(d) = due_date {
+        action.due_date = Some(d);
+    }
+    if clear_context == Some(true) {
+        action.context = None;
+    } else if let Some(c) = context {
+        action.context = Some(c);
+    }
+    if clear_source_label == Some(true) {
+        action.source_label = None;
+    } else if let Some(s) = source_label {
+        action.source_label = Some(s);
+    }
+    if clear_account == Some(true) {
+        action.account_id = None;
+    } else if let Some(a) = account_id {
+        action.account_id = Some(a);
+    }
+    if clear_project == Some(true) {
+        action.project_id = None;
+    } else if let Some(p) = project_id {
+        action.project_id = Some(p);
+    }
+    if clear_person == Some(true) {
+        action.person_id = None;
+    } else if let Some(p) = person_id {
+        action.person_id = Some(p);
+    }
+
+    action.updated_at = chrono::Utc::now().to_rfc3339();
+    db.upsert_action(&action).map_err(|e| e.to_string())
+}
+
+// =============================================================================
 // Processing History (I6)
 // =============================================================================
 
@@ -2103,6 +2299,7 @@ pub fn populate_workspace(
             champion: None,
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
+            parent_id: None,
             updated_at: now.clone(),
         };
 
@@ -2651,6 +2848,10 @@ pub struct AccountListItem {
     pub renewal_date: Option<String>,
     pub open_action_count: usize,
     pub days_since_last_meeting: Option<i64>,
+    pub parent_id: Option<String>,
+    pub parent_name: Option<String>,
+    pub child_count: usize,
+    pub is_parent: bool,
 }
 
 /// Full account detail for the detail page.
@@ -2676,9 +2877,30 @@ pub struct AccountDetailResult {
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::StakeholderSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    pub parent_id: Option<String>,
+    pub parent_name: Option<String>,
+    pub children: Vec<AccountChildSummary>,
+    pub parent_aggregate: Option<crate::db::ParentAggregate>,
+    /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
 }
 
-/// Get all accounts with computed summary fields for the list page.
+/// Compact child account summary for parent detail pages (I114).
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountChildSummary {
+    pub id: String,
+    pub name: String,
+    pub health: Option<String>,
+    pub arr: Option<f64>,
+    pub open_action_count: usize,
+}
+
+/// Get top-level accounts with computed summary fields for the list page (I114).
+///
+/// Returns only accounts where `parent_id IS NULL`. Each parent account
+/// includes a `child_count` so the UI can show an expand chevron.
 #[tauri::command]
 pub fn get_accounts_list(
     state: State<Arc<AppState>>,
@@ -2686,49 +2908,97 @@ pub fn get_accounts_list(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+    let accounts = db.get_top_level_accounts().map_err(|e| e.to_string())?;
 
     let items: Vec<AccountListItem> = accounts
         .into_iter()
         .map(|a| {
-            let open_action_count = db
-                .get_account_actions(&a.id)
-                .map(|actions| actions.len())
+            let child_count = db
+                .get_child_accounts(&a.id)
+                .map(|c| c.len())
                 .unwrap_or(0);
 
-            let signals = db.get_stakeholder_signals(&a.id).ok();
-            let days_since_last_meeting = signals.as_ref().and_then(|s| {
-                s.last_meeting.as_ref().and_then(|lm| {
-                    chrono::DateTime::parse_from_rfc3339(lm)
-                        .or_else(|_| {
-                            chrono::DateTime::parse_from_rfc3339(
-                                &format!("{}+00:00", lm.trim_end_matches('Z')),
-                            )
-                        })
-                        .ok()
-                        .map(|dt| {
-                            (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days()
-                        })
-                })
-            });
-
-            AccountListItem {
-                id: a.id,
-                name: a.name,
-                lifecycle: a.lifecycle,
-                arr: a.arr,
-                health: a.health,
-                nps: a.nps,
-                csm: a.csm,
-                champion: a.champion,
-                renewal_date: a.contract_end,
-                open_action_count,
-                days_since_last_meeting,
-            }
+            account_to_list_item(&a, db, child_count)
         })
         .collect();
 
     Ok(items)
+}
+
+/// Get child accounts for a parent (I114).
+#[tauri::command]
+pub fn get_child_accounts_list(
+    parent_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<AccountListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let children = db.get_child_accounts(&parent_id).map_err(|e| e.to_string())?;
+
+    // Look up parent name for breadcrumb context
+    let parent_name = db
+        .get_account(&parent_id)
+        .ok()
+        .flatten()
+        .map(|a| a.name);
+
+    let items: Vec<AccountListItem> = children
+        .into_iter()
+        .map(|a| {
+            let mut item = account_to_list_item(&a, db, 0);
+            item.parent_name = parent_name.clone();
+            item
+        })
+        .collect();
+
+    Ok(items)
+}
+
+/// Convert a DbAccount to an AccountListItem with computed signals.
+fn account_to_list_item(
+    a: &crate::db::DbAccount,
+    db: &crate::db::ActionDb,
+    child_count: usize,
+) -> AccountListItem {
+    let open_action_count = db
+        .get_account_actions(&a.id)
+        .map(|actions| actions.len())
+        .unwrap_or(0);
+
+    let signals = db.get_stakeholder_signals(&a.id).ok();
+    let days_since_last_meeting = signals.as_ref().and_then(|s| {
+        s.last_meeting.as_ref().and_then(|lm| {
+            chrono::DateTime::parse_from_rfc3339(lm)
+                .or_else(|_| {
+                    chrono::DateTime::parse_from_rfc3339(
+                        &format!("{}+00:00", lm.trim_end_matches('Z')),
+                    )
+                })
+                .ok()
+                .map(|dt| {
+                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days()
+                })
+        })
+    });
+
+    AccountListItem {
+        id: a.id.clone(),
+        name: a.name.clone(),
+        lifecycle: a.lifecycle.clone(),
+        arr: a.arr,
+        health: a.health.clone(),
+        nps: a.nps,
+        csm: a.csm.clone(),
+        champion: a.champion.clone(),
+        renewal_date: a.contract_end.clone(),
+        open_action_count,
+        days_since_last_meeting,
+        parent_id: a.parent_id.clone(),
+        parent_name: None,
+        child_count,
+        is_parent: child_count > 0,
+    }
 }
 
 /// Get full detail for an account (DB fields + narrative JSON + computed data).
@@ -2745,13 +3015,13 @@ pub fn get_account_detail(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    // Read narrative fields from dashboard.json if it exists
+    // Read narrative fields from dashboard.json + intelligence.json if they exist
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let (overview, programs, notes) = if let Some(ref config) = *config {
+    let (overview, programs, notes, intelligence) = if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
-        let json_path = crate::accounts::account_dir(workspace, &account.name)
-            .join("dashboard.json");
-        if json_path.exists() {
+        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+        let json_path = account_dir.join("dashboard.json");
+        let (ov, prg, nt) = if json_path.exists() {
             match crate::accounts::read_account_json(&json_path) {
                 Ok(result) => (
                     result.json.company_overview,
@@ -2762,9 +3032,19 @@ pub fn get_account_detail(
             }
         } else {
             (None, Vec::new(), None)
-        }
+        };
+        // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
+        let intel = crate::entity_intel::read_intelligence_json(&account_dir).ok().or_else(|| {
+            // Auto-migrate from legacy CompanyOverview on first access
+            ov.as_ref().and_then(|overview| {
+                crate::entity_intel::migrate_company_overview_to_intelligence(
+                    workspace, &account, overview,
+                )
+            })
+        });
+        (ov, prg, nt, intel)
     } else {
-        (None, Vec::new(), None)
+        (None, Vec::new(), None, None)
     };
     drop(config); // Release config lock before more DB queries
 
@@ -2806,6 +3086,34 @@ pub fn get_account_detail(
         .get_captures_for_account(&account_id, 90)
         .unwrap_or_default();
 
+    // I114: Resolve parent name for child accounts, children for parent accounts
+    let parent_name = account.parent_id.as_ref().and_then(|pid| {
+        db.get_account(pid).ok().flatten().map(|a| a.name)
+    });
+
+    let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
+    let parent_aggregate = if !child_accounts.is_empty() {
+        db.get_parent_aggregate(&account.id).ok()
+    } else {
+        None
+    };
+    let children: Vec<AccountChildSummary> = child_accounts
+        .iter()
+        .map(|child| {
+            let open_action_count = db
+                .get_account_actions(&child.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            AccountChildSummary {
+                id: child.id.clone(),
+                name: child.name.clone(),
+                health: child.health.clone(),
+                arr: child.arr,
+                open_action_count,
+            }
+        })
+        .collect();
+
     Ok(AccountDetailResult {
         id: account.id,
         name: account.name,
@@ -2826,6 +3134,11 @@ pub fn get_account_detail(
         linked_people,
         signals,
         recent_captures,
+        parent_id: account.parent_id,
+        parent_name,
+        children,
+        parent_aggregate,
+        intelligence,
     })
 }
 
@@ -2850,7 +3163,7 @@ pub fn update_account_field(
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             // Read existing JSON to preserve narrative fields
-            let json_path = crate::accounts::account_dir(workspace, &account.name)
+            let json_path = crate::accounts::resolve_account_dir(workspace, &account)
                 .join("dashboard.json");
             let existing = if json_path.exists() {
                 crate::accounts::read_account_json(&json_path)
@@ -2898,7 +3211,7 @@ pub fn update_account_notes(
     let workspace = Path::new(&config.workspace_path);
 
     // Read existing JSON
-    let json_path = crate::accounts::account_dir(workspace, &account.name)
+    let json_path = crate::accounts::resolve_account_dir(workspace, &account)
         .join("dashboard.json");
     let mut existing = if json_path.exists() {
         crate::accounts::read_account_json(&json_path)
@@ -2941,7 +3254,7 @@ pub fn update_account_programs(
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path = crate::accounts::account_dir(workspace, &account.name)
+    let json_path = crate::accounts::resolve_account_dir(workspace, &account)
         .join("dashboard.json");
     let mut existing = if json_path.exists() {
         crate::accounts::read_account_json(&json_path)
@@ -2960,9 +3273,11 @@ pub fn update_account_programs(
 }
 
 /// Create a new account. Creates SQLite record + workspace files.
+/// If `parent_id` is provided, creates a child (BU) account under that parent.
 #[tauri::command]
 pub fn create_account(
     name: String,
+    parent_id: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     // I60: validate name before using as directory
@@ -2971,7 +3286,21 @@ pub fn create_account(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let id = crate::util::slugify(&name);
+    // Derive ID and tracker_path based on whether this is a child account
+    let (id, tracker_path) = if let Some(ref pid) = parent_id {
+        let parent = db
+            .get_account(pid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Parent account not found: {}", pid))?;
+        let child_id = format!("{}--{}", pid, crate::util::slugify(&name));
+        let parent_dir = parent.tracker_path.unwrap_or_else(|| format!("Accounts/{}", parent.name));
+        let tp = format!("{}/{}", parent_dir, name);
+        (child_id, tp)
+    } else {
+        let id = crate::util::slugify(&name);
+        (id, format!("Accounts/{}", name))
+    };
+
     let now = chrono::Utc::now().to_rfc3339();
 
     let account = crate::db::DbAccount {
@@ -2985,7 +3314,8 @@ pub fn create_account(
         csm: None,
         champion: None,
         nps: None,
-        tracker_path: Some(format!("Accounts/{}", name)),
+        tracker_path: Some(tracker_path),
+        parent_id,
         updated_at: now,
     };
 
@@ -3000,6 +3330,58 @@ pub fn create_account(
     }
 
     Ok(id)
+}
+
+// =============================================================================
+// I124: Content Index
+// =============================================================================
+
+/// Get indexed files for an entity.
+#[tauri::command]
+pub fn get_entity_files(
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbContentFile>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_entity_files(&entity_id).map_err(|e| e.to_string())
+}
+
+/// Re-scan an entity's directory and return the updated file list.
+#[tauri::command]
+pub fn index_entity_files(
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbContentFile>, String> {
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let workspace_path = config
+        .as_ref()
+        .ok_or("Config not loaded")?
+        .workspace_path
+        .clone();
+    let workspace = Path::new(&workspace_path);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = db
+        .get_account(&entity_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", entity_id))?;
+
+    crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+    db.get_entity_files(&entity_id).map_err(|e| e.to_string())
+}
+
+/// Reveal a file in macOS Finder.
+#[tauri::command]
+pub fn reveal_in_finder(path: String) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .spawn()
+        .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    Ok(())
 }
 
 // ── I74: Account Enrichment via Claude Code ─────────────────────────
@@ -3063,6 +3445,9 @@ pub struct ProjectDetailResult {
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::ProjectSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
 }
 
 /// Get all projects with computed summary fields for the list page.
@@ -3127,13 +3512,13 @@ pub fn get_project_detail(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Project not found: {}", project_id))?;
 
-    // Read narrative fields from dashboard.json if it exists
+    // Read narrative fields from dashboard.json + intelligence.json if they exist
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
-    let (description, milestones, notes) = if let Some(ref config) = *config {
+    let (description, milestones, notes, intelligence) = if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
-        let json_path = crate::projects::project_dir(workspace, &project.name)
-            .join("dashboard.json");
-        if json_path.exists() {
+        let project_dir = crate::projects::project_dir(workspace, &project.name);
+        let json_path = project_dir.join("dashboard.json");
+        let (desc, ms, nt) = if json_path.exists() {
             match crate::projects::read_project_json(&json_path) {
                 Ok(result) => (
                     result.json.description,
@@ -3144,9 +3529,11 @@ pub fn get_project_detail(
             }
         } else {
             (None, Vec::new(), None)
-        }
+        };
+        let intel = crate::entity_intel::read_intelligence_json(&project_dir).ok();
+        (desc, ms, nt, intel)
     } else {
-        (None, Vec::new(), None)
+        (None, Vec::new(), None, None)
     };
     drop(config);
 
@@ -3190,6 +3577,7 @@ pub fn get_project_detail(
         linked_people,
         signals,
         recent_captures,
+        intelligence,
     })
 }
 
@@ -3387,5 +3775,6 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
         strategic_programs: Vec::new(),
         notes: None,
         custom_sections: Vec::new(),
+        parent_id: account.parent_id.clone(),
     }
 }

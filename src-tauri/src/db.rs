@@ -47,6 +47,7 @@ pub struct DbAction {
     pub context: Option<String>,
     pub waiting_on: Option<String>,
     pub updated_at: String,
+    pub person_id: Option<String>,
 }
 
 /// A row from the `accounts` table.
@@ -64,7 +65,18 @@ pub struct DbAccount {
     pub champion: Option<String>,
     pub nps: Option<i32>,
     pub tracker_path: Option<String>,
+    pub parent_id: Option<String>,
     pub updated_at: String,
+}
+
+/// Aggregated signals for a parent account's children (I114).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParentAggregate {
+    pub bu_count: usize,
+    pub total_arr: Option<f64>,
+    pub worst_health: Option<String>,
+    pub nearest_renewal: Option<String>,
 }
 
 /// A row from the `meetings_history` table.
@@ -207,6 +219,24 @@ pub struct ProjectSignals {
     pub trend: String,
 }
 
+/// A row from the `content_index` table (I124).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbContentFile {
+    pub id: String,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub filename: String,
+    pub relative_path: String,
+    pub absolute_path: String,
+    pub format: String,
+    pub file_size: i64,
+    pub modified_at: String,
+    pub indexed_at: String,
+    pub extracted_at: Option<String>,
+    pub summary: Option<String>,
+}
+
 /// Compute relationship temperature from last meeting date.
 fn compute_temperature(last_meeting_iso: &str) -> String {
     let days = days_since_iso(last_meeting_iso);
@@ -304,6 +334,11 @@ impl ActionDb {
             "ALTER TABLE accounts ADD COLUMN nps INTEGER;",
         );
 
+        // Migration: add parent_id to accounts (I114 — Parent-Child Accounts)
+        let _ = conn.execute_batch(
+            "ALTER TABLE accounts ADD COLUMN parent_id TEXT;",
+        );
+
         // Migration: ring → lifecycle (ring was INTEGER 1-4, lifecycle is TEXT)
         let has_lifecycle: bool = conn
             .prepare("SELECT lifecycle FROM accounts LIMIT 0")
@@ -351,6 +386,9 @@ impl ActionDb {
         if !has_project_id {
             let _ = conn.execute_batch("ALTER TABLE captures ADD COLUMN project_id TEXT;");
         }
+
+        // Migration: add person_id column to actions (I127 — Manual Action Creation)
+        let _ = conn.execute_batch("ALTER TABLE actions ADD COLUMN person_id TEXT;");
 
         Ok(Self { conn })
     }
@@ -417,7 +455,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE status = 'pending'
                AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
@@ -445,6 +483,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -460,7 +499,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE account_id = ?1
                AND status IN ('pending', 'waiting')
@@ -484,6 +523,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -521,7 +561,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE id = ?1",
         )?;
@@ -543,6 +583,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -557,7 +598,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
@@ -582,6 +623,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -598,7 +640,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE status = 'completed'
                AND completed_at >= datetime('now', ?1)
@@ -624,6 +666,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -686,8 +729,8 @@ impl ActionDb {
             "INSERT INTO actions (
                 id, title, priority, status, created_at, due_date, completed_at,
                 account_id, project_id, source_type, source_id, source_label,
-                context, waiting_on, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                context, waiting_on, updated_at, person_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 priority = excluded.priority,
@@ -701,7 +744,8 @@ impl ActionDb {
                 source_label = excluded.source_label,
                 context = excluded.context,
                 waiting_on = excluded.waiting_on,
-                updated_at = excluded.updated_at",
+                updated_at = excluded.updated_at,
+                person_id = excluded.person_id",
             params![
                 action.id,
                 action.title,
@@ -718,6 +762,7 @@ impl ActionDb {
                 action.context,
                 action.waiting_on,
                 action.updated_at,
+                action.person_id,
             ],
         )?;
         Ok(())
@@ -732,10 +777,10 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE status IN ('pending', 'waiting')
-               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript')
+               AND source_type IN ('post_meeting', 'inbox', 'ai-inbox', 'transcript', 'import', 'manual')
              ORDER BY priority, created_at DESC",
         )?;
 
@@ -756,6 +801,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -788,8 +834,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, lifecycle, arr, health, contract_start, contract_end,
-                csm, champion, nps, tracker_path, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                csm, champion, nps, tracker_path, parent_id, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 lifecycle = excluded.lifecycle,
@@ -801,6 +847,7 @@ impl ActionDb {
                 champion = excluded.champion,
                 nps = excluded.nps,
                 tracker_path = excluded.tracker_path,
+                parent_id = excluded.parent_id,
                 updated_at = excluded.updated_at",
             params![
                 account.id,
@@ -814,6 +861,7 @@ impl ActionDb {
                 account.champion,
                 account.nps,
                 account.tracker_path,
+                account.parent_id,
                 account.updated_at,
             ],
         )?;
@@ -840,7 +888,7 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -857,7 +905,7 @@ impl ActionDb {
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -874,11 +922,66 @@ impl ActionDb {
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at
              FROM accounts ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get top-level accounts (no parent), ordered by name.
+    pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                    csm, champion, nps, tracker_path, parent_id, updated_at
+             FROM accounts WHERE parent_id IS NULL ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get child accounts for a parent, ordered by name.
+    pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                    csm, champion, nps, tracker_path, parent_id, updated_at
+             FROM accounts WHERE parent_id = ?1 ORDER BY name",
+        )?;
+        let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Aggregate child account signals for a parent account (I114).
+    ///
+    /// Returns total ARR, worst health, nearest renewal, and BU count.
+    pub fn get_parent_aggregate(
+        &self,
+        parent_id: &str,
+    ) -> Result<ParentAggregate, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT COUNT(*), COALESCE(SUM(arr), 0),
+                    MIN(CASE health WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green' THEN 2 ELSE 3 END),
+                    MIN(contract_end)
+             FROM accounts WHERE parent_id = ?1",
+        )?;
+        let row = stmt.query_row(params![parent_id], |row| {
+            let bu_count: usize = row.get(0)?;
+            let total_arr: f64 = row.get(1)?;
+            let worst_health_int: i32 = row.get(2)?;
+            let nearest_renewal: Option<String> = row.get(3)?;
+            Ok(ParentAggregate {
+                bu_count,
+                total_arr: if total_arr > 0.0 { Some(total_arr) } else { None },
+                worst_health: match worst_health_int {
+                    0 => Some("red".to_string()),
+                    1 => Some("yellow".to_string()),
+                    2 => Some("green".to_string()),
+                    _ => None,
+                },
+                nearest_renewal,
+            })
+        })?;
+        Ok(row)
     }
 
     /// Get meetings for an account, most recent first.
@@ -975,6 +1078,103 @@ impl ActionDb {
             }
         };
         self.conn.execute(sql, params![value, id, now])?;
+        Ok(())
+    }
+
+    // =========================================================================
+    // Content Index (I124)
+    // =========================================================================
+
+    /// Upsert a content file record. Preserves existing `extracted_at` / `summary`
+    /// when the incoming record has `None` for those fields (COALESCE pattern).
+    pub fn upsert_content_file(&self, file: &DbContentFile) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT INTO content_index (
+                id, entity_id, entity_type, filename, relative_path, absolute_path,
+                format, file_size, modified_at, indexed_at, extracted_at, summary
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(id) DO UPDATE SET
+                filename = excluded.filename,
+                relative_path = excluded.relative_path,
+                absolute_path = excluded.absolute_path,
+                format = excluded.format,
+                file_size = excluded.file_size,
+                modified_at = excluded.modified_at,
+                indexed_at = excluded.indexed_at,
+                extracted_at = COALESCE(excluded.extracted_at, content_index.extracted_at),
+                summary = COALESCE(excluded.summary, content_index.summary)",
+            params![
+                file.id,
+                file.entity_id,
+                file.entity_type,
+                file.filename,
+                file.relative_path,
+                file.absolute_path,
+                file.format,
+                file.file_size,
+                file.modified_at,
+                file.indexed_at,
+                file.extracted_at,
+                file.summary,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get all indexed files for an entity, most recently modified first.
+    pub fn get_entity_files(&self, entity_id: &str) -> Result<Vec<DbContentFile>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, entity_id, entity_type, filename, relative_path, absolute_path,
+                    format, file_size, modified_at, indexed_at, extracted_at, summary
+             FROM content_index WHERE entity_id = ?1
+             ORDER BY modified_at DESC",
+        )?;
+        let rows = stmt.query_map(params![entity_id], |row| {
+            Ok(DbContentFile {
+                id: row.get(0)?,
+                entity_id: row.get(1)?,
+                entity_type: row.get(2)?,
+                filename: row.get(3)?,
+                relative_path: row.get(4)?,
+                absolute_path: row.get(5)?,
+                format: row.get(6)?,
+                file_size: row.get(7)?,
+                modified_at: row.get(8)?,
+                indexed_at: row.get(9)?,
+                extracted_at: row.get(10)?,
+                summary: row.get(11)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Delete a single content file record by ID.
+    pub fn delete_content_file(&self, id: &str) -> Result<(), DbError> {
+        self.conn
+            .execute("DELETE FROM content_index WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// Delete all content file records for an entity.
+    pub fn delete_entity_files(&self, entity_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM content_index WHERE entity_id = ?1",
+            params![entity_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update extracted_at and summary for a content file after text extraction.
+    pub fn update_content_extraction(
+        &self,
+        id: &str,
+        extracted_at: &str,
+        summary: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
+            params![extracted_at, summary, id],
+        )?;
         Ok(())
     }
 
@@ -1107,7 +1307,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE project_id = ?1
                AND status IN ('pending', 'waiting')
@@ -1763,7 +1963,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE source_id = ?1 AND source_type = 'transcript'
              ORDER BY priority, created_at",
@@ -1786,6 +1986,7 @@ impl ActionDb {
                 context: row.get(12)?,
                 waiting_on: row.get(13)?,
                 updated_at: row.get(14)?,
+                person_id: row.get(15)?,
             })
         })?;
 
@@ -1935,7 +2136,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE status = 'waiting'
                AND created_at <= datetime('now', ?1 || ' days')
@@ -1960,7 +2161,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
-                    context, waiting_on, updated_at
+                    context, waiting_on, updated_at, person_id
              FROM actions
              WHERE needs_decision = 1
                AND status = 'pending'
@@ -1987,7 +2188,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -2007,7 +2208,7 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -2494,7 +2695,8 @@ impl ActionDb {
             champion: row.get(8)?,
             nps: row.get(9)?,
             tracker_path: row.get(10)?,
-            updated_at: row.get(11)?,
+            parent_id: row.get(11)?,
+            updated_at: row.get(12)?,
         })
     }
 
@@ -2516,6 +2718,7 @@ impl ActionDb {
             context: row.get(12)?,
             waiting_on: row.get(13)?,
             updated_at: row.get(14)?,
+            person_id: row.get(15)?,
         })
     }
 }
@@ -2558,6 +2761,7 @@ mod tests {
             context: None,
             waiting_on: None,
             updated_at: now,
+            person_id: None,
         }
     }
 
@@ -2695,6 +2899,7 @@ mod tests {
             champion: Some("Bob".to_string()),
             nps: None,
             tracker_path: Some("Accounts/acme-corp".to_string()),
+            parent_id: None,
             updated_at: now,
         };
 
@@ -3018,6 +3223,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&account).expect("upsert");
@@ -3048,6 +3254,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&account).expect("upsert");
@@ -3145,6 +3352,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: Some("Accounts/beta-inc".to_string()),
+            parent_id: None,
             updated_at: "2025-06-01T00:00:00Z".to_string(),
         };
 
@@ -3375,6 +3583,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&soon).expect("insert");
@@ -3392,6 +3601,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&no_end).expect("insert");
@@ -3409,6 +3619,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&expired).expect("insert");
@@ -3435,6 +3646,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&stale).expect("insert");
@@ -3452,6 +3664,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&fresh).expect("insert");
@@ -3549,6 +3762,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&account).expect("insert account");
@@ -3676,6 +3890,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&account).expect("upsert account");
@@ -3990,6 +4205,7 @@ mod tests {
             context: None,
             waiting_on: None,
             updated_at: now,
+            person_id: None,
         };
         db.upsert_action(&action).expect("upsert action");
 
@@ -4234,5 +4450,339 @@ mod tests {
             )
             .expect("count");
         assert_eq!(count, 1);
+    }
+
+    // =========================================================================
+    // I124: Content Index tests
+    // =========================================================================
+
+    #[test]
+    fn test_upsert_and_get_content_files() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let file = DbContentFile {
+            id: "acme/notes-md".to_string(),
+            entity_id: "acme".to_string(),
+            entity_type: "account".to_string(),
+            filename: "notes.md".to_string(),
+            relative_path: "Accounts/Acme/notes.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Acme/notes.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 1234,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None,
+            summary: None,
+        };
+
+        db.upsert_content_file(&file).unwrap();
+
+        let files = db.get_entity_files("acme").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "notes.md");
+        assert_eq!(files[0].file_size, 1234);
+        assert_eq!(files[0].format, "Markdown");
+    }
+
+    #[test]
+    fn test_delete_content_file() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let file = DbContentFile {
+            id: "beta/report-pdf".to_string(),
+            entity_id: "beta".to_string(),
+            entity_type: "account".to_string(),
+            filename: "report.pdf".to_string(),
+            relative_path: "Accounts/Beta/report.pdf".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Beta/report.pdf".to_string(),
+            format: "Pdf".to_string(),
+            file_size: 50000,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None,
+            summary: None,
+        };
+
+        db.upsert_content_file(&file).unwrap();
+        assert_eq!(db.get_entity_files("beta").unwrap().len(), 1);
+
+        db.delete_content_file("beta/report-pdf").unwrap();
+        assert_eq!(db.get_entity_files("beta").unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_coalesce_preserves_extraction() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Insert with extraction data
+        let file = DbContentFile {
+            id: "gamma/doc-md".to_string(),
+            entity_id: "gamma".to_string(),
+            entity_type: "account".to_string(),
+            filename: "doc.md".to_string(),
+            relative_path: "Accounts/Gamma/doc.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Gamma/doc.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 500,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: Some(now.clone()),
+            summary: Some("Important document about things.".to_string()),
+        };
+        db.upsert_content_file(&file).unwrap();
+
+        // Upsert again without extraction data (simulating a re-scan)
+        let file_rescan = DbContentFile {
+            id: "gamma/doc-md".to_string(),
+            entity_id: "gamma".to_string(),
+            entity_type: "account".to_string(),
+            filename: "doc.md".to_string(),
+            relative_path: "Accounts/Gamma/doc.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Gamma/doc.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 600, // size changed
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None, // Not re-extracted
+            summary: None,     // Not re-extracted
+        };
+        db.upsert_content_file(&file_rescan).unwrap();
+
+        // Extraction data should be preserved via COALESCE
+        let files = db.get_entity_files("gamma").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].file_size, 600); // Size updated
+        assert!(files[0].extracted_at.is_some()); // Preserved
+        assert_eq!(
+            files[0].summary.as_deref(),
+            Some("Important document about things.")
+        ); // Preserved
+    }
+
+    // === I127/I128: Manual action creation & editing tests ===
+
+    #[test]
+    fn test_create_action_all_fields() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let action = DbAction {
+            id: "manual-001".to_string(),
+            title: "Call Jane about renewal".to_string(),
+            priority: "P1".to_string(),
+            status: "pending".to_string(),
+            created_at: now.clone(),
+            due_date: Some("2026-02-15".to_string()),
+            completed_at: None,
+            account_id: Some("acme-corp".to_string()),
+            project_id: Some("proj-q1".to_string()),
+            source_type: Some("manual".to_string()),
+            source_id: None,
+            source_label: Some("Slack #cs-team".to_string()),
+            context: Some("Jane mentioned churn risk in standup".to_string()),
+            waiting_on: None,
+            updated_at: now.clone(),
+            person_id: Some("person-jane".to_string()),
+        };
+        db.upsert_action(&action).unwrap();
+
+        let fetched = db.get_action_by_id("manual-001").unwrap().unwrap();
+        assert_eq!(fetched.title, "Call Jane about renewal");
+        assert_eq!(fetched.priority, "P1");
+        assert_eq!(fetched.status, "pending");
+        assert_eq!(fetched.due_date.as_deref(), Some("2026-02-15"));
+        assert_eq!(fetched.account_id.as_deref(), Some("acme-corp"));
+        assert_eq!(fetched.project_id.as_deref(), Some("proj-q1"));
+        assert_eq!(fetched.source_type.as_deref(), Some("manual"));
+        assert_eq!(fetched.source_label.as_deref(), Some("Slack #cs-team"));
+        assert_eq!(
+            fetched.context.as_deref(),
+            Some("Jane mentioned churn risk in standup")
+        );
+        assert_eq!(fetched.person_id.as_deref(), Some("person-jane"));
+    }
+
+    #[test]
+    fn test_create_action_defaults() {
+        let db = test_db();
+
+        // Simulate creating with title only — mirroring the create_action command defaults
+        let now = Utc::now().to_rfc3339();
+        let action = DbAction {
+            id: "manual-002".to_string(),
+            title: "Quick follow-up".to_string(),
+            priority: "P2".to_string(),
+            status: "pending".to_string(),
+            created_at: now.clone(),
+            due_date: None,
+            completed_at: None,
+            account_id: None,
+            project_id: None,
+            source_type: Some("manual".to_string()),
+            source_id: None,
+            source_label: None,
+            context: None,
+            waiting_on: None,
+            updated_at: now,
+            person_id: None,
+        };
+        db.upsert_action(&action).unwrap();
+
+        let fetched = db.get_action_by_id("manual-002").unwrap().unwrap();
+        assert_eq!(fetched.priority, "P2");
+        assert_eq!(fetched.status, "pending");
+        assert_eq!(fetched.source_type.as_deref(), Some("manual"));
+        assert!(fetched.due_date.is_none());
+        assert!(fetched.account_id.is_none());
+        assert!(fetched.person_id.is_none());
+        assert!(fetched.context.is_none());
+    }
+
+    #[test]
+    fn test_update_action_fields() {
+        let db = test_db();
+
+        // Create initial action
+        let action = sample_action("update-001", "Original title");
+        db.upsert_action(&action).unwrap();
+
+        // Update specific fields (mirroring update_action command logic)
+        let mut updated = db.get_action_by_id("update-001").unwrap().unwrap();
+        updated.title = "Updated title".to_string();
+        updated.due_date = Some("2026-03-01".to_string());
+        updated.context = Some("New context added".to_string());
+        updated.account_id = Some("acme".to_string());
+        updated.person_id = Some("person-bob".to_string());
+        updated.updated_at = Utc::now().to_rfc3339();
+        db.upsert_action(&updated).unwrap();
+
+        // Verify updates applied and other fields preserved
+        let fetched = db.get_action_by_id("update-001").unwrap().unwrap();
+        assert_eq!(fetched.title, "Updated title");
+        assert_eq!(fetched.due_date.as_deref(), Some("2026-03-01"));
+        assert_eq!(fetched.context.as_deref(), Some("New context added"));
+        assert_eq!(fetched.account_id.as_deref(), Some("acme"));
+        assert_eq!(fetched.person_id.as_deref(), Some("person-bob"));
+        // Unchanged fields preserved
+        assert_eq!(fetched.priority, "P2");
+        assert_eq!(fetched.status, "pending");
+    }
+
+    #[test]
+    fn test_update_action_clear_fields() {
+        let db = test_db();
+
+        // Create action with fields populated
+        let now = Utc::now().to_rfc3339();
+        let action = DbAction {
+            id: "clear-001".to_string(),
+            title: "Action with fields".to_string(),
+            priority: "P1".to_string(),
+            status: "pending".to_string(),
+            created_at: now.clone(),
+            due_date: Some("2026-02-20".to_string()),
+            completed_at: None,
+            account_id: Some("acme".to_string()),
+            project_id: Some("proj-1".to_string()),
+            source_type: Some("manual".to_string()),
+            source_id: None,
+            source_label: Some("Call".to_string()),
+            context: Some("Some context".to_string()),
+            waiting_on: None,
+            updated_at: now,
+            person_id: Some("person-alice".to_string()),
+        };
+        db.upsert_action(&action).unwrap();
+
+        // Clear specific fields (mirroring clear_* flags in update_action command)
+        let mut cleared = db.get_action_by_id("clear-001").unwrap().unwrap();
+        cleared.due_date = None;
+        cleared.account_id = None;
+        cleared.person_id = None;
+        cleared.updated_at = Utc::now().to_rfc3339();
+        db.upsert_action(&cleared).unwrap();
+
+        let fetched = db.get_action_by_id("clear-001").unwrap().unwrap();
+        assert!(fetched.due_date.is_none(), "due_date should be cleared");
+        assert!(fetched.account_id.is_none(), "account_id should be cleared");
+        assert!(fetched.person_id.is_none(), "person_id should be cleared");
+        // Non-cleared fields preserved
+        assert_eq!(fetched.title, "Action with fields");
+        assert_eq!(fetched.priority, "P1");
+        assert_eq!(fetched.context.as_deref(), Some("Some context"));
+        assert_eq!(fetched.source_label.as_deref(), Some("Call"));
+        assert_eq!(fetched.project_id.as_deref(), Some("proj-1"));
+    }
+
+    #[test]
+    fn test_person_id_column() {
+        let db = test_db();
+
+        // Insert without person_id
+        let action = sample_action("pid-001", "No person");
+        db.upsert_action(&action).unwrap();
+
+        let fetched = db.get_action_by_id("pid-001").unwrap().unwrap();
+        assert!(fetched.person_id.is_none());
+
+        // Update to add person_id
+        let mut with_person = fetched;
+        with_person.person_id = Some("person-charlie".to_string());
+        with_person.updated_at = Utc::now().to_rfc3339();
+        db.upsert_action(&with_person).unwrap();
+
+        let fetched2 = db.get_action_by_id("pid-001").unwrap().unwrap();
+        assert_eq!(fetched2.person_id.as_deref(), Some("person-charlie"));
+
+        // Verify person_id appears in get_due_actions results too
+        let due = db.get_due_actions(90).unwrap();
+        let found = due.iter().find(|a| a.id == "pid-001").unwrap();
+        assert_eq!(found.person_id.as_deref(), Some("person-charlie"));
+
+        // Clear person_id
+        let mut cleared = fetched2;
+        cleared.person_id = None;
+        cleared.updated_at = Utc::now().to_rfc3339();
+        db.upsert_action(&cleared).unwrap();
+
+        let fetched3 = db.get_action_by_id("pid-001").unwrap().unwrap();
+        assert!(fetched3.person_id.is_none());
+    }
+
+    #[test]
+    fn test_manual_actions_in_non_briefing_query() {
+        let db = test_db();
+
+        // Manual action should appear in get_non_briefing_pending_actions
+        let now = Utc::now().to_rfc3339();
+        let action = DbAction {
+            id: "manual-nbp".to_string(),
+            title: "Manual task".to_string(),
+            priority: "P2".to_string(),
+            status: "pending".to_string(),
+            created_at: now.clone(),
+            due_date: None,
+            completed_at: None,
+            account_id: None,
+            project_id: None,
+            source_type: Some("manual".to_string()),
+            source_id: None,
+            source_label: None,
+            context: None,
+            waiting_on: None,
+            updated_at: now,
+            person_id: None,
+        };
+        db.upsert_action(&action).unwrap();
+
+        let non_briefing = db.get_non_briefing_pending_actions().unwrap();
+        let found = non_briefing.iter().find(|a| a.id == "manual-nbp");
+        assert!(
+            found.is_some(),
+            "Manual actions should appear in non-briefing pending query"
+        );
     }
 }
