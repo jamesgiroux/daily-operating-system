@@ -116,6 +116,9 @@ fn gather_meeting_context(
                         ctx["meeting_history"] =
                             get_meeting_history(db, &matched.name, 30, 3);
                     }
+
+                    // I135: Persistent entity prep from intelligence.json
+                    inject_entity_intelligence(&account_path, &mut ctx);
                 }
             }
         }
@@ -205,6 +208,9 @@ fn gather_meeting_context(
                         ctx["meeting_history"] =
                             get_meeting_history(db, &matched.name, 30, 3);
                     }
+
+                    // I135: Persistent entity prep from intelligence.json
+                    inject_entity_intelligence(&account_path, &mut ctx);
                 }
             }
 
@@ -234,6 +240,50 @@ fn gather_meeting_context(
     }
 
     ctx
+}
+
+// ---------------------------------------------------------------------------
+// Entity intelligence injection (I135)
+// ---------------------------------------------------------------------------
+
+/// Read intelligence.json from an entity directory and inject relevant
+/// fields into the meeting context for prep enrichment.
+fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
+    let intel = match crate::entity_intel::read_intelligence_json(entity_dir) {
+        Ok(intel) => intel,
+        Err(_) => return,
+    };
+
+    if let Some(ref assessment) = intel.executive_assessment {
+        ctx["executive_assessment"] = json!(assessment);
+    }
+
+    if !intel.risks.is_empty() {
+        ctx["entity_risks"] = json!(intel.risks.iter().map(|r| {
+            json!({
+                "text": r.text,
+                "urgency": r.urgency,
+                "source": r.source,
+            })
+        }).collect::<Vec<_>>());
+    }
+
+    if let Some(ref readiness) = intel.next_meeting_readiness {
+        if !readiness.prep_items.is_empty() {
+            ctx["entity_readiness"] = json!(&readiness.prep_items);
+        }
+    }
+
+    if !intel.stakeholder_insights.is_empty() {
+        ctx["stakeholder_insights"] = json!(intel.stakeholder_insights.iter().map(|s| {
+            json!({
+                "name": s.name,
+                "role": s.role,
+                "assessment": s.assessment,
+                "engagement": s.engagement,
+            })
+        }).collect::<Vec<_>>());
+    }
 }
 
 // ---------------------------------------------------------------------------
