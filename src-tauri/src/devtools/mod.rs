@@ -504,7 +504,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         Err(e) => log::warn!("Prep enrichment failed (non-fatal): {}", e),
     }
 
-    match crate::workflow::deliver::enrich_briefing(&data_dir, &pty, &workspace, &user_ctx) {
+    match crate::workflow::deliver::enrich_briefing(&data_dir, &pty, &workspace, &user_ctx, state) {
         Ok(()) => enriched.push("briefing"),
         Err(e) => log::warn!("Briefing enrichment failed (non-fatal): {}", e),
     }
@@ -559,7 +559,7 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
         .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
-    match crate::workflow::deliver::enrich_week(&data_dir, &pty, &workspace, &user_ctx) {
+    match crate::workflow::deliver::enrich_week(&data_dir, &pty, &workspace, &user_ctx, state) {
         Ok(()) => Ok("Week (full): week-overview.json + AI enrichment delivered".into()),
         Err(e) => {
             log::warn!("Week AI enrichment failed (non-fatal): {}", e);
