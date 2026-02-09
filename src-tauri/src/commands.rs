@@ -140,6 +140,25 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
     }
 
+    // Annotate meetings with linked entities from junction table (I52)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+            if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
+                for m in &mut meetings {
+                    if let Some(entities) = entity_map.get(&m.id) {
+                        m.linked_entities = Some(entities.clone());
+                        // First account entity also populates account_id + account name
+                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
+                            m.account_id = Some(acct.id.clone());
+                            m.account = Some(acct.name.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut actions = load_actions_json(&today_dir).unwrap_or_default();
 
     // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
@@ -1051,6 +1070,75 @@ pub async fn refresh_emails(
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))?
     .map(|_| "Email refresh complete".to_string())
+}
+
+/// Archive low-priority emails in Gmail and remove them from local data (I144).
+///
+/// Reads emails.json, collects IDs of low-priority emails, calls Gmail
+/// batchModify to remove the INBOX label, then rewrites emails.json
+/// without the archived entries.
+#[tauri::command]
+pub async fn archive_low_priority_emails(
+    state: State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let emails_path = workspace.join("_today").join("data").join("emails.json");
+
+    // Read current emails.json
+    let content = std::fs::read_to_string(&emails_path)
+        .map_err(|e| format!("Failed to read emails.json: {}", e))?;
+    let mut data: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse emails.json: {}", e))?;
+
+    // Collect low-priority email IDs
+    let low_emails = data["lowPriority"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let ids: Vec<String> = low_emails
+        .iter()
+        .filter_map(|e| e["id"].as_str().map(String::from))
+        .collect();
+
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    // Archive in Gmail
+    let access_token = crate::google_api::get_valid_access_token()
+        .await
+        .map_err(|e| format!("Gmail auth failed: {}", e))?;
+
+    let archived = crate::google_api::gmail::archive_emails(&access_token, &ids)
+        .await
+        .map_err(|e| format!("Gmail archive failed: {}", e))?;
+
+    // Remove low-priority from local JSON and update stats
+    data["lowPriority"] = serde_json::json!([]);
+    if let Some(stats) = data.get_mut("stats") {
+        let high = stats["highCount"].as_u64().unwrap_or(0);
+        let medium = stats["mediumCount"].as_u64().unwrap_or(0);
+        stats["lowCount"] = serde_json::json!(0);
+        stats["total"] = serde_json::json!(high + medium);
+    }
+
+    crate::util::atomic_write_str(
+        &emails_path,
+        &serde_json::to_string_pretty(&data)
+            .map_err(|e| format!("Failed to serialize emails: {}", e))?,
+    )
+    .map_err(|e| format!("Failed to write emails.json: {}", e))?;
+
+    log::info!("Archived {} low-priority emails in Gmail", archived);
+    Ok(archived)
 }
 
 /// Set user profile (customer-success or general)
@@ -2886,6 +2974,98 @@ pub fn get_meeting_entities(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_meeting_entities(&meeting_id)
         .map_err(|e| e.to_string())
+}
+
+/// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
+/// Clears existing entity links, sets the new one, and cascades to related tables.
+#[tauri::command]
+pub fn update_meeting_entity(
+    meeting_id: String,
+    entity_id: Option<String>,
+    entity_type: String,
+    meeting_title: String,
+    start_time: String,
+    meeting_type_str: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    // Collect old entity IDs before modifying (for intelligence queue)
+    let old_entity_ids: Vec<(String, String)>;
+
+    {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        old_entity_ids = db
+            .get_meeting_entities(&meeting_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|e| (e.id, e.entity_type.as_str().to_string()))
+            .collect();
+
+        // Ensure meeting exists in meetings_history (may not exist for today's unreconciled meetings)
+        let now = chrono::Utc::now().to_rfc3339();
+        let meeting = crate::db::DbMeeting {
+            id: meeting_id.clone(),
+            title: meeting_title,
+            meeting_type: meeting_type_str,
+            start_time,
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+        };
+        db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
+
+        // Clear all existing entity links
+        db.clear_meeting_entities(&meeting_id)
+            .map_err(|e| e.to_string())?;
+
+        // Determine account_id and project_id for cascade
+        let (cascade_account, cascade_project) = match entity_type.as_str() {
+            "account" => (entity_id.as_deref(), None),
+            "project" => (None, entity_id.as_deref()),
+            _ => (entity_id.as_deref(), None),
+        };
+
+        // Link new entity if provided
+        if let Some(ref eid) = entity_id {
+            db.link_meeting_entity(&meeting_id, eid, &entity_type)
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Update legacy account_id on meetings_history
+        db.update_meeting_account(&meeting_id, cascade_account)
+            .map_err(|e| e.to_string())?;
+
+        // Cascade to actions and captures
+        db.cascade_meeting_entity_to_actions(&meeting_id, cascade_account, cascade_project)
+            .map_err(|e| e.to_string())?;
+        db.cascade_meeting_entity_to_captures(&meeting_id, cascade_account, cascade_project)
+            .map_err(|e| e.to_string())?;
+    }
+    // DB lock released
+
+    // Queue intelligence refresh for old and new entities
+    let mut entities_to_refresh: Vec<(String, String)> = old_entity_ids;
+    if let Some(ref eid) = entity_id {
+        entities_to_refresh.push((eid.clone(), entity_type.clone()));
+    }
+    // Dedup
+    entities_to_refresh.sort();
+    entities_to_refresh.dedup();
+    for (eid, etype) in entities_to_refresh {
+        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+            entity_id: eid,
+            entity_type: etype,
+            priority: crate::intel_queue::IntelPriority::CalendarChange,
+            requested_at: std::time::Instant::now(),
+        });
+    }
+
+    Ok(())
 }
 
 // =========================================================================
