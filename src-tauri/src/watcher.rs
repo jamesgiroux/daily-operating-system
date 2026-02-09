@@ -27,12 +27,21 @@ pub struct InboxUpdate {
     pub count: usize,
 }
 
+/// Payload emitted to the frontend when content files change in entity dirs (I125).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentChangePayload {
+    pub entity_ids: Vec<String>,
+    pub count: usize,
+}
+
 /// Distinguishes which watched directory fired
 #[derive(Debug, Clone)]
 enum WatchSource {
     Inbox,
     People(PathBuf),
     Accounts(PathBuf),
+    AccountContent(PathBuf),
     Projects(PathBuf),
 }
 
@@ -120,6 +129,21 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "dashboard.json")
                         });
 
+                        // I125: Non-dashboard files in Accounts/ dirs
+                        let is_account_content = !is_accounts
+                            && event.paths.iter().any(|p| {
+                                p.starts_with(&accounts_dir_clone)
+                                    && p.file_name()
+                                        .and_then(|n| n.to_str())
+                                        .is_some_and(|n| {
+                                            n != "dashboard.json"
+                                                && n != "dashboard.md"
+                                                && !n.starts_with('.')
+                                                && !n.starts_with('_')
+                                        })
+                                    && p.is_file()
+                            });
+
                         let is_projects = event.paths.iter().any(|p| {
                             p.starts_with(&projects_dir_clone)
                                 && p.file_name()
@@ -135,6 +159,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "person.json")
                             }) {
                                 let _ = tx.try_send(WatchSource::People(path.clone()));
+                            }
+                        } else if is_account_content {
+                            // I125: Content file changed in an account dir
+                            for path in &event.paths {
+                                if path.starts_with(&accounts_dir_clone) {
+                                    let _ = tx.try_send(WatchSource::AccountContent(path.clone()));
+                                }
                             }
                         } else if is_accounts {
                             if let Some(path) = event.paths.iter().find(|p| {
@@ -220,6 +251,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
         let mut inbox_dirty = false;
         let mut people_dirty: Vec<PathBuf> = Vec::new();
         let mut accounts_dirty: Vec<PathBuf> = Vec::new();
+        let mut account_content_dirty: Vec<PathBuf> = Vec::new();
         let mut projects_dirty: Vec<PathBuf> = Vec::new();
         loop {
             // Wait for an event
@@ -238,6 +270,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 WatchSource::Accounts(p) => {
                     if !accounts_dirty.contains(&p) {
                         accounts_dirty.push(p);
+                    }
+                }
+                WatchSource::AccountContent(p) => {
+                    if !account_content_dirty.contains(&p) {
+                        account_content_dirty.push(p);
                     }
                 }
                 WatchSource::Projects(p) => {
@@ -260,6 +297,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     WatchSource::Accounts(p) => {
                         if !accounts_dirty.contains(&p) {
                             accounts_dirty.push(p);
+                        }
+                    }
+                    WatchSource::AccountContent(p) => {
+                        if !account_content_dirty.contains(&p) {
+                            account_content_dirty.push(p);
                         }
                     }
                     WatchSource::Projects(p) => {
@@ -290,6 +332,19 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 handle_account_changes(&accounts_dirty, &state, &workspace);
                 let _ = app_handle.emit("accounts-updated", ());
                 accounts_dirty.clear();
+            }
+
+            // Process account content changes (I125: non-dashboard files)
+            if !account_content_dirty.is_empty() {
+                let payload = handle_account_content_changes(
+                    &account_content_dirty,
+                    &state,
+                    &workspace,
+                );
+                if let Some(payload) = payload {
+                    let _ = app_handle.emit("content-changed", payload);
+                }
+                account_content_dirty.clear();
             }
 
             // Process project changes (I50: external dashboard.json edits)
@@ -430,6 +485,69 @@ fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
                 log::warn!("Watcher: failed to read {}: {}", path.display(), e);
             }
         }
+    }
+}
+
+/// Handle detected changes to non-dashboard files in Accounts/ dirs (I125).
+///
+/// Extracts affected account IDs from the file paths, syncs their content index,
+/// and returns a payload for the frontend event.
+fn handle_account_content_changes(
+    paths: &[PathBuf],
+    state: &AppState,
+    workspace: &Path,
+) -> Option<ContentChangePayload> {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return None,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return None,
+    };
+
+    let accounts_dir = workspace.join("Accounts");
+    let mut affected_entity_ids = std::collections::HashSet::new();
+
+    for path in paths {
+        // Extract account dir name from path: Accounts/{name}/somefile.txt
+        if let Ok(relative) = path.strip_prefix(&accounts_dir) {
+            if let Some(account_dir_name) = relative.iter().next() {
+                let name = account_dir_name.to_string_lossy();
+                let id = crate::util::slugify(&name);
+                affected_entity_ids.insert(id);
+            }
+        }
+    }
+
+    let mut total_changes = 0;
+    for entity_id in &affected_entity_ids {
+        if let Ok(Some(account)) = db.get_account(entity_id) {
+            match accounts::sync_content_index_for_account(workspace, db, &account) {
+                Ok((added, updated, removed)) => {
+                    total_changes += added + updated + removed;
+                    log::debug!(
+                        "Watcher: content index for '{}': +{} ~{} -{}",
+                        account.name,
+                        added,
+                        updated,
+                        removed
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Watcher: content index sync failed for {}: {}", entity_id, e);
+                }
+            }
+        }
+    }
+
+    if total_changes > 0 {
+        Some(ContentChangePayload {
+            entity_ids: affected_entity_ids.into_iter().collect(),
+            count: total_changes,
+        })
+    } else {
+        None
     }
 }
 
