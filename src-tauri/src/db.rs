@@ -235,6 +235,8 @@ pub struct DbContentFile {
     pub indexed_at: String,
     pub extracted_at: Option<String>,
     pub summary: Option<String>,
+    pub content_type: String,
+    pub priority: i32,
 }
 
 /// Compute relationship temperature from last meeting date.
@@ -373,10 +375,18 @@ impl ActionDb {
         );
 
         // Migration: backfill meeting_entities junction from meetings_history.account_id (I52)
+        // Join through accounts table to resolve slugified entity IDs (Sprint 9 fix)
         let _ = conn.execute_batch(
             "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
-             SELECT id, account_id, 'account' FROM meetings_history
-             WHERE account_id IS NOT NULL AND account_id != '';",
+             SELECT mh.id, a.id, 'account' FROM meetings_history mh
+             JOIN accounts a ON LOWER(a.name) = LOWER(mh.account_id)
+             WHERE mh.account_id IS NOT NULL AND mh.account_id != '';",
+        );
+
+        // Repair migration: clean orphaned junction rows where entity_id doesn't exist
+        // in entities table (from pre-fix backfill that used raw names instead of slugified IDs)
+        let _ = conn.execute_batch(
+            "DELETE FROM meeting_entities WHERE entity_id NOT IN (SELECT id FROM entities);",
         );
 
         // Migration: add project_id column to captures (I52)
@@ -389,6 +399,14 @@ impl ActionDb {
 
         // Migration: add person_id column to actions (I127 — Manual Action Creation)
         let _ = conn.execute_batch("ALTER TABLE actions ADD COLUMN person_id TEXT;");
+
+        // Migration: add content_type + priority to content_index (I139)
+        let _ = conn.execute_batch(
+            "ALTER TABLE content_index ADD COLUMN content_type TEXT NOT NULL DEFAULT 'general';",
+        );
+        let _ = conn.execute_batch(
+            "ALTER TABLE content_index ADD COLUMN priority INTEGER NOT NULL DEFAULT 5;",
+        );
 
         Ok(Self { conn })
     }
@@ -1059,6 +1077,7 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let sql = match field {
+            "name" => "UPDATE accounts SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
             "lifecycle" => "UPDATE accounts SET lifecycle = ?1, updated_at = ?3 WHERE id = ?2",
             "arr" => "UPDATE accounts SET arr = CAST(?1 AS REAL), updated_at = ?3 WHERE id = ?2",
@@ -1091,8 +1110,9 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO content_index (
                 id, entity_id, entity_type, filename, relative_path, absolute_path,
-                format, file_size, modified_at, indexed_at, extracted_at, summary
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                format, file_size, modified_at, indexed_at, extracted_at, summary,
+                content_type, priority
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                 filename = excluded.filename,
                 relative_path = excluded.relative_path,
@@ -1102,7 +1122,9 @@ impl ActionDb {
                 modified_at = excluded.modified_at,
                 indexed_at = excluded.indexed_at,
                 extracted_at = COALESCE(excluded.extracted_at, content_index.extracted_at),
-                summary = COALESCE(excluded.summary, content_index.summary)",
+                summary = COALESCE(excluded.summary, content_index.summary),
+                content_type = excluded.content_type,
+                priority = excluded.priority",
             params![
                 file.id,
                 file.entity_id,
@@ -1116,18 +1138,21 @@ impl ActionDb {
                 file.indexed_at,
                 file.extracted_at,
                 file.summary,
+                file.content_type,
+                file.priority,
             ],
         )?;
         Ok(())
     }
 
-    /// Get all indexed files for an entity, most recently modified first.
+    /// Get all indexed files for an entity, highest priority first, then most recently modified.
     pub fn get_entity_files(&self, entity_id: &str) -> Result<Vec<DbContentFile>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, entity_id, entity_type, filename, relative_path, absolute_path,
-                    format, file_size, modified_at, indexed_at, extracted_at, summary
+                    format, file_size, modified_at, indexed_at, extracted_at, summary,
+                    content_type, priority
              FROM content_index WHERE entity_id = ?1
-             ORDER BY modified_at DESC",
+             ORDER BY priority DESC, modified_at DESC",
         )?;
         let rows = stmt.query_map(params![entity_id], |row| {
             Ok(DbContentFile {
@@ -1143,6 +1168,8 @@ impl ActionDb {
                 indexed_at: row.get(9)?,
                 extracted_at: row.get(10)?,
                 summary: row.get(11)?,
+                content_type: row.get(12)?,
+                priority: row.get(13)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1164,16 +1191,21 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Update extracted_at and summary for a content file after text extraction.
+    /// Update extraction results for a content file: summary, content_type, and priority.
     pub fn update_content_extraction(
         &self,
         id: &str,
         extracted_at: &str,
         summary: Option<&str>,
+        content_type: Option<&str>,
+        priority: Option<i32>,
     ) -> Result<(), DbError> {
         self.conn.execute(
-            "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-            params![extracted_at, summary, id],
+            "UPDATE content_index SET extracted_at = ?1, summary = ?2,
+                    content_type = COALESCE(?3, content_type),
+                    priority = COALESCE(?4, priority)
+             WHERE id = ?5",
+            params![extracted_at, summary, content_type, priority, id],
         )?;
         Ok(())
     }
@@ -1286,6 +1318,7 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let sql = match field {
+            "name" => "UPDATE projects SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "status" => "UPDATE projects SET status = ?1, updated_at = ?3 WHERE id = ?2",
             "milestone" => "UPDATE projects SET milestone = ?1, updated_at = ?3 WHERE id = ?2",
             "owner" => "UPDATE projects SET owner = ?1, updated_at = ?3 WHERE id = ?2",
@@ -2075,9 +2108,12 @@ impl ActionDb {
         )?;
 
         // Auto-link junction when account_id is present (I52)
-        if let Some(ref aid) = meeting.account_id {
-            if !aid.is_empty() {
-                let _ = self.link_meeting_entity(&meeting.id, aid, "account");
+        // Resolve account name → slugified entity ID via accounts table
+        if let Some(ref account_name) = meeting.account_id {
+            if !account_name.is_empty() {
+                if let Ok(Some(account)) = self.get_account_by_name(account_name) {
+                    let _ = self.link_meeting_entity(&meeting.id, &account.id, "account");
+                }
             }
         }
 
@@ -2647,6 +2683,7 @@ impl ActionDb {
         let now = Utc::now().to_rfc3339();
         // Whitelist fields to prevent SQL injection
         let sql = match field {
+            "name" => "UPDATE people SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "notes" => "UPDATE people SET notes = ?1, updated_at = ?3 WHERE id = ?2",
             "role" => "UPDATE people SET role = ?1, updated_at = ?3 WHERE id = ?2",
             "organization" => {
@@ -4144,7 +4181,7 @@ mod tests {
         };
         db.upsert_project(&project).expect("upsert");
 
-        let result = db.update_project_field("proj-1", "name", "Hacked");
+        let result = db.update_project_field("proj-1", "id", "Hacked");
         assert!(result.is_err());
     }
 
@@ -4363,7 +4400,15 @@ mod tests {
         let db = test_db();
         let now = Utc::now().to_rfc3339();
 
-        // Create account entity for the junction lookup
+        // Create account (required: upsert_meeting now resolves name → ID via accounts table)
+        db.conn
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acme-auto", "Acme Auto", &now],
+            )
+            .expect("insert account");
+
+        // Create entity row (mirrors account, as ensure_entity_for_account would)
         db.conn
             .execute(
                 "INSERT INTO entities (id, name, entity_type, updated_at) VALUES (?1, ?2, ?3, ?4)",
@@ -4371,13 +4416,14 @@ mod tests {
             )
             .expect("insert entity");
 
+        // account_id is the display name (as passed from directive), not the slugified ID
         let meeting = DbMeeting {
             id: "mtg-auto".to_string(),
             title: "Auto-link Test".to_string(),
             meeting_type: "customer".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: Some("acme-auto".to_string()),
+            account_id: Some("Acme Auto".to_string()),
             attendees: None,
             notes_path: None,
             summary: None,
@@ -4386,7 +4432,7 @@ mod tests {
         };
         db.upsert_meeting(&meeting).expect("upsert");
 
-        // Junction should be auto-populated
+        // Junction should be auto-populated with the slugified entity ID
         let count: i32 = db
             .conn
             .query_row(
@@ -4474,6 +4520,8 @@ mod tests {
             indexed_at: now.clone(),
             extracted_at: None,
             summary: None,
+            content_type: "notes".to_string(),
+            priority: 7,
         };
 
         db.upsert_content_file(&file).unwrap();
@@ -4503,6 +4551,8 @@ mod tests {
             indexed_at: now.clone(),
             extracted_at: None,
             summary: None,
+            content_type: "general".to_string(),
+            priority: 5,
         };
 
         db.upsert_content_file(&file).unwrap();
@@ -4531,6 +4581,8 @@ mod tests {
             indexed_at: now.clone(),
             extracted_at: Some(now.clone()),
             summary: Some("Important document about things.".to_string()),
+            content_type: "general".to_string(),
+            priority: 5,
         };
         db.upsert_content_file(&file).unwrap();
 
@@ -4548,6 +4600,8 @@ mod tests {
             indexed_at: now.clone(),
             extracted_at: None, // Not re-extracted
             summary: None,     // Not re-extracted
+            content_type: "general".to_string(),
+            priority: 5,
         };
         db.upsert_content_file(&file_rescan).unwrap();
 

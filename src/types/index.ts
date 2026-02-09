@@ -46,6 +46,12 @@ export interface SourceReference {
 
 export type OverlayStatus = "enriched" | "cancelled" | "new" | "briefing_only";
 
+export interface LinkedEntity {
+  id: string;
+  name: string;
+  entityType: "account" | "project";
+}
+
 export interface Meeting {
   id: string;
   calendarEventId?: string;
@@ -54,6 +60,7 @@ export interface Meeting {
   title: string;
   type: MeetingType;
   account?: string;
+  accountId?: string;
   prep?: MeetingPrep;
   isCurrent?: boolean;
   /** Path to the prep file (e.g., "01-1630-customer-acme-prep.md") */
@@ -64,6 +71,8 @@ export interface Meeting {
   overlayStatus?: OverlayStatus;
   /** Whether the user has reviewed this prep (ADR-0033) */
   prepReviewed?: boolean;
+  /** Entities linked via M2M junction table (I52) */
+  linkedEntities?: LinkedEntity[];
 }
 
 export interface MeetingPrep {
@@ -708,6 +717,8 @@ export interface ContentFile {
   indexedAt: string;
   extractedAt?: string;
   summary?: string;
+  contentType: string;
+  priority: number;
 }
 
 // =============================================================================
