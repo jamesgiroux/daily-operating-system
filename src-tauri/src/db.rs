@@ -6,6 +6,7 @@
 //! SQLite is not disposable — important state lives here and is written back to the
 //! filesystem at natural synchronization points (archive, dashboard regeneration).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -14,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::entity::{DbEntity, EntityType};
+use crate::types::LinkedEntity;
 
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
@@ -1444,6 +1446,106 @@ impl ActionDb {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Batch query: get linked entities for multiple meetings at once.
+    /// Returns a map from meeting_id → Vec<LinkedEntity>.
+    pub fn get_meeting_entity_map(
+        &self,
+        meeting_ids: &[String],
+    ) -> Result<HashMap<String, Vec<LinkedEntity>>, DbError> {
+        if meeting_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let placeholders: Vec<String> = (0..meeting_ids.len()).map(|i| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT me.meeting_id, e.id, e.name, me.entity_type
+             FROM meeting_entities me
+             JOIN entities e ON e.id = me.entity_id
+             WHERE me.meeting_id IN ({})",
+            placeholders.join(", ")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = meeting_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(params.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                LinkedEntity {
+                    id: row.get(1)?,
+                    name: row.get(2)?,
+                    entity_type: row.get(3)?,
+                },
+            ))
+        })?;
+        let mut map: HashMap<String, Vec<LinkedEntity>> = HashMap::new();
+        for row in rows {
+            let (meeting_id, entity) = row?;
+            map.entry(meeting_id).or_default().push(entity);
+        }
+        Ok(map)
+    }
+
+    /// Clear all entity links for a given meeting.
+    pub fn clear_meeting_entities(&self, meeting_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM meeting_entities WHERE meeting_id = ?1",
+            params![meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Update the legacy `account_id` column on `meetings_history`.
+    pub fn update_meeting_account(
+        &self,
+        meeting_id: &str,
+        account_id: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history SET account_id = ?1 WHERE id = ?2",
+            params![account_id, meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Cascade entity reassignment to actions linked to this meeting.
+    pub fn cascade_meeting_entity_to_actions(
+        &self,
+        meeting_id: &str,
+        account_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<usize, DbError> {
+        let mut total = 0;
+        total += self.conn.execute(
+            "UPDATE actions SET account_id = ?1 WHERE source_id = ?2",
+            params![account_id, meeting_id],
+        )?;
+        total += self.conn.execute(
+            "UPDATE actions SET project_id = ?1 WHERE source_id = ?2",
+            params![project_id, meeting_id],
+        )?;
+        Ok(total)
+    }
+
+    /// Cascade entity reassignment to captures linked to this meeting.
+    pub fn cascade_meeting_entity_to_captures(
+        &self,
+        meeting_id: &str,
+        account_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<usize, DbError> {
+        let mut total = 0;
+        total += self.conn.execute(
+            "UPDATE captures SET account_id = ?1 WHERE meeting_id = ?2",
+            params![account_id, meeting_id],
+        )?;
+        total += self.conn.execute(
+            "UPDATE captures SET project_id = ?1 WHERE meeting_id = ?2",
+            params![project_id, meeting_id],
+        )?;
+        Ok(total)
     }
 
     /// Get meetings for any entity (generic, via junction table).

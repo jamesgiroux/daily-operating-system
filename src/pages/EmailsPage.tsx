@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  Loader2,
   Mail,
 } from "lucide-react";
 import type { Email } from "@/types";
@@ -27,6 +29,8 @@ export default function EmailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archivedExpanded, setArchivedExpanded] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const loadEmails = useCallback(async () => {
     try {
@@ -52,6 +56,22 @@ export default function EmailsPage() {
   const highPriority = emails.filter((e) => e.priority === "high");
   const mediumPriority = emails.filter((e) => e.priority === "medium");
   const lowPriority = emails.filter((e) => e.priority === "low");
+
+  async function handleArchiveLow() {
+    setArchiving(true);
+    try {
+      const count = await invoke<number>("archive_low_priority_emails");
+      // Optimistic removal from local state
+      setEmails((prev) => prev.filter((e) => e.priority !== "low"));
+      setConfirmArchive(false);
+      setArchivedExpanded(false);
+      console.log(`Archived ${count} emails`);
+    } catch (err) {
+      console.error("Archive failed:", err);
+    } finally {
+      setArchiving(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -136,20 +156,65 @@ export default function EmailsPage() {
               {/* Low priority — FYI */}
               {lowPriority.length > 0 && (
                 <section>
-                  <button
-                    onClick={() => setArchivedExpanded(!archivedExpanded)}
-                    className="mb-3 flex w-full items-center gap-2 text-sm font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-                  >
-                    <Archive className="size-3.5" />
-                    FYI ({lowPriority.length})
-                    {archivedExpanded ? (
-                      <ChevronDown className="size-3.5" />
-                    ) : (
-                      <ChevronRight className="size-3.5" />
-                    )}
-                  </button>
+                  <div className="mb-3 flex items-center gap-2">
+                    <button
+                      onClick={() => setArchivedExpanded(!archivedExpanded)}
+                      className="flex items-center gap-2 text-sm font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
+                    >
+                      <Archive className="size-3.5" />
+                      FYI ({lowPriority.length})
+                      {archivedExpanded ? (
+                        <ChevronDown className="size-3.5" />
+                      ) : (
+                        <ChevronRight className="size-3.5" />
+                      )}
+                    </button>
 
-                  {!archivedExpanded && (
+                    <div className="ml-auto flex items-center gap-2">
+                      {confirmArchive ? (
+                        <>
+                          <span className="text-xs text-muted-foreground">
+                            Archive {lowPriority.length} in Gmail?
+                          </span>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={handleArchiveLow}
+                            disabled={archiving}
+                          >
+                            {archiving ? (
+                              <Loader2 className="mr-1.5 size-3 animate-spin" />
+                            ) : (
+                              <Archive className="mr-1.5 size-3" />
+                            )}
+                            {archiving ? "Archiving..." : "Confirm"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => setConfirmArchive(false)}
+                            disabled={archiving}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-muted-foreground"
+                          onClick={() => setConfirmArchive(true)}
+                        >
+                          <Archive className="mr-1.5 size-3" />
+                          Archive all
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {!archivedExpanded && !confirmArchive && (
                     <p className="text-sm text-muted-foreground">
                       {lowPriority.length} emails reviewed and deprioritized.
                       Click to expand.

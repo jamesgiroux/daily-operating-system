@@ -74,6 +74,13 @@ No path to create an action from scratch — every action enters via briefing pi
 **I128: Action field editing after creation** — Blocked by I127
 Most action fields are immutable after creation. Only priority and status can be changed. Title, due_date, context, source_label, entity connections are write-once. New `update_action` command accepting partial field set. Editable fields inline on ActionDetailPage. Guard: warn before editing briefing-generated actions (would be overwritten on next briefing run).
 
+**I144: Batch archive low-priority emails via Gmail API**
+AI triages emails into high/medium/low priority. Low-priority emails are already collapsed under "FYI" on EmailsPage. Add a one-click "Archive all" action that removes the INBOX label from all low-priority emails via Gmail `batchModify` API. Three parts:
+(a) **gmail.rs** — `archive_emails(access_token, message_ids)` using `POST /gmail/v1/users/me/messages/batchModify` with `removeLabelIds: ["INBOX"]`.
+(b) **commands.rs** — `archive_low_priority_emails` Tauri command that reads current emails.json, collects low-priority IDs, calls Gmail archive, then removes them from the local JSON.
+(c) **EmailsPage.tsx** — "Archive all" button in the FYI section header. Confirmation step before executing. Optimistic removal from UI on success.
+Gmail archive is soft (emails stay in All Mail, not deleted). Aligns with P6 (AI-Native: AI triaged, one button to act) and P3 (Buttons, Not Commands).
+
 **I26: Web search for unknown external meetings**
 When a meeting involves people/companies not in the workspace, prep is thin. Pattern exists: I74 does websearch for known accounts. Extend to unknown meeting attendees: detect unrecognized domains, research company + attendee context, inject into prep. Not blocked by I27.
 

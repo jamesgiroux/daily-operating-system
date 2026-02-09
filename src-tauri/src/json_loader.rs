@@ -186,6 +186,8 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
             has_prep: m.has_prep,
             overlay_status: None,
             prep_reviewed: None,
+            account_id: None,
+            linked_entities: None,
         }
     }).collect();
 
