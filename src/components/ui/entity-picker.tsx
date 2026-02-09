@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Command,
@@ -8,7 +8,11 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Building2, FolderKanban, X, ChevronsUpDown } from "lucide-react";
 
@@ -40,7 +44,6 @@ export function EntityPicker({
   const [open, setOpen] = useState(false);
   const [entities, setEntities] = useState<EntityOption[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
@@ -89,21 +92,6 @@ export function EntityPicker({
     load();
   }, [entityType, value]);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    if (!open) return;
-    function handleClick(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
-
   const parentAccounts = entities.filter(
     (e) => e.type === "account" && !e.parentName
   );
@@ -123,7 +111,8 @@ export function EntityPicker({
           {!locked && (
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 onChange(null);
                 setSelectedName(null);
               }}
@@ -138,84 +127,87 @@ export function EntityPicker({
   }
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 gap-1 text-xs text-muted-foreground"
-        onClick={() => setOpen(!open)}
+    <Popover open={open} onOpenChange={setOpen}>
+      {/* No asChild — PopoverTrigger renders its own <button> so Radix can
+          attach the ref it needs (React 18 Button lacks forwardRef). */}
+      <PopoverTrigger
+        className={cn(
+          "inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-md border bg-background px-2.5 h-7 text-xs text-muted-foreground shadow-xs hover:bg-accent hover:text-accent-foreground transition-all",
+          className
+        )}
+        onClick={(e) => e.stopPropagation()}
       >
         <ChevronsUpDown className="size-3" />
         {placeholder}
-      </Button>
-
-      {open && (
-        <div className="absolute top-8 left-0 z-50 w-64 rounded-md border bg-popover shadow-md">
-          <Command>
-            <CommandInput placeholder="Search..." />
-            <CommandList>
-              <CommandEmpty>No entities found.</CommandEmpty>
-              {parentAccounts.length > 0 && (
-                <CommandGroup heading="Accounts">
-                  {parentAccounts.map((a) => {
-                    const children = childAccounts.filter(
-                      (c) => c.parentName === a.name
-                    );
-                    return (
-                      <div key={a.id}>
+      </PopoverTrigger>
+      <PopoverContent
+        className="w-64 p-0"
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <Command>
+          <CommandInput placeholder="Search..." />
+          <CommandList>
+            <CommandEmpty>No entities found.</CommandEmpty>
+            {parentAccounts.length > 0 && (
+              <CommandGroup heading="Accounts">
+                {parentAccounts.map((a) => {
+                  const children = childAccounts.filter(
+                    (c) => c.parentName === a.name
+                  );
+                  return (
+                    <div key={a.id}>
+                      <CommandItem
+                        value={a.name}
+                        onSelect={() => {
+                          onChange(a.id, a.name);
+                          setSelectedName(a.name);
+                          setOpen(false);
+                        }}
+                      >
+                        <Building2 className="mr-2 size-3.5 text-muted-foreground" />
+                        {a.name}
+                      </CommandItem>
+                      {children.map((c) => (
                         <CommandItem
-                          value={a.name}
+                          key={c.id}
+                          value={`${a.name} ${c.name}`}
                           onSelect={() => {
-                            onChange(a.id, a.name);
-                            setSelectedName(a.name);
+                            onChange(c.id, c.name);
+                            setSelectedName(c.name);
                             setOpen(false);
                           }}
                         >
-                          <Building2 className="mr-2 size-3.5 text-muted-foreground" />
-                          {a.name}
+                          <Building2 className="ml-4 mr-2 size-3.5 text-muted-foreground/60" />
+                          <span className="text-muted-foreground">{c.name}</span>
                         </CommandItem>
-                        {children.map((c) => (
-                          <CommandItem
-                            key={c.id}
-                            value={`${a.name} ${c.name}`}
-                            onSelect={() => {
-                              onChange(c.id, c.name);
-                              setSelectedName(c.name);
-                              setOpen(false);
-                            }}
-                          >
-                            <Building2 className="ml-4 mr-2 size-3.5 text-muted-foreground/60" />
-                            <span className="text-muted-foreground">{c.name}</span>
-                          </CommandItem>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </CommandGroup>
-              )}
-              {projects.length > 0 && (
-                <CommandGroup heading="Projects">
-                  {projects.map((p) => (
-                    <CommandItem
-                      key={p.id}
-                      value={p.name}
-                      onSelect={() => {
-                        onChange(p.id, p.name);
-                        setSelectedName(p.name);
-                        setOpen(false);
-                      }}
-                    >
-                      <FolderKanban className="mr-2 size-3.5 text-muted-foreground" />
-                      {p.name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-            </CommandList>
-          </Command>
-        </div>
-      )}
-    </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </CommandGroup>
+            )}
+            {projects.length > 0 && (
+              <CommandGroup heading="Projects">
+                {projects.map((p) => (
+                  <CommandItem
+                    key={p.id}
+                    value={p.name}
+                    onSelect={() => {
+                      onChange(p.id, p.name);
+                      setSelectedName(p.name);
+                      setOpen(false);
+                    }}
+                  >
+                    <FolderKanban className="mr-2 size-3.5 text-muted-foreground" />
+                    {p.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

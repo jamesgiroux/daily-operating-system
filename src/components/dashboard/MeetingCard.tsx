@@ -4,11 +4,9 @@ import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  Building2,
   Check,
   ChevronDown,
   FileText,
-  FolderKanban,
   Loader2,
   Paperclip,
   Trophy,
@@ -22,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useMeetingOutcomes } from "@/hooks/useMeetingOutcomes";
 import { MeetingOutcomes } from "./MeetingOutcomes";
+import { EntityPicker } from "@/components/ui/entity-picker";
 import type { Meeting, MeetingType, CalendarEvent } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -292,6 +291,44 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [attaching, setAttaching] = React.useState(false);
 
+  // Local entity state for optimistic updates after reassignment
+  const linkedEntity = meeting.linkedEntities?.[0] ?? null;
+  const [entityId, setEntityId] = React.useState<string | null>(
+    linkedEntity?.id ?? meeting.accountId ?? null
+  );
+
+  // Sync from props when meeting data refreshes (e.g., dashboard reload)
+  React.useEffect(() => {
+    const le = meeting.linkedEntities?.[0] ?? null;
+    setEntityId(le?.id ?? meeting.accountId ?? null);
+  }, [meeting.linkedEntities, meeting.accountId]);
+
+  const handleEntityChange = React.useCallback(
+    async (newId: string | null) => {
+      // Optimistic update
+      setEntityId(newId);
+
+      try {
+        await invoke("update_meeting_entity", {
+          meetingId: meeting.id,
+          entityId: newId,
+          entityType: "account",
+          meetingTitle: meeting.title,
+          startTime: meeting.time,
+          meetingTypeStr: meeting.type,
+        });
+        // Trigger silent dashboard refresh so actions list reflects the cascade
+        emit("entity-updated");
+      } catch (err) {
+        // Revert on failure
+        const le = meeting.linkedEntities?.[0] ?? null;
+        setEntityId(le?.id ?? meeting.accountId ?? null);
+        console.error("Failed to update meeting entity:", err);
+      }
+    },
+    [meeting.id, meeting.title, meeting.time, meeting.type, meeting.linkedEntities, meeting.accountId]
+  );
+
   const { outcomes, loading, refresh: refreshOutcomes } =
     useMeetingOutcomes(meeting.id);
   const outcomesStatus = loading ? "loading" as const : outcomes !== null ? "loaded" as const : "none" as const;
@@ -409,28 +446,12 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
             <h3 className={cn("font-semibold", displayState.title.lineThrough && "line-through")}>
               {meeting.title}
             </h3>
-            {meeting.account && (
-              <p className="text-sm text-primary">{meeting.account}</p>
-            )}
-            {meeting.linkedEntities && meeting.linkedEntities.length > 0 && (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {meeting.linkedEntities.map((entity) => (
-                  <Link
-                    key={entity.id}
-                    to={entity.entityType === "project" ? "/projects/$projectId" : "/accounts/$accountId"}
-                    params={entity.entityType === "project" ? { projectId: entity.id } : { accountId: entity.id }}
-                    className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted/80 transition-colors"
-                  >
-                    {entity.entityType === "project" ? (
-                      <FolderKanban className="size-3" />
-                    ) : (
-                      <Building2 className="size-3" />
-                    )}
-                    {entity.name}
-                  </Link>
-                ))}
-              </div>
-            )}
+            <EntityPicker
+              value={entityId}
+              onChange={handleEntityChange}
+              entityType="account"
+              placeholder="Link account..."
+            />
           </div>
 
           <div className="flex items-center gap-2">
