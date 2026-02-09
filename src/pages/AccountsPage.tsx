@@ -9,7 +9,7 @@ import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError } from "@/components/PageState";
-import { Building2, Plus, RefreshCw } from "lucide-react";
+import { Building2, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import { cn, formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
 
@@ -30,6 +30,9 @@ export default function AccountsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // I114: expanded parent tracking + cached children
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+  const [childrenCache, setChildrenCache] = useState<Record<string, AccountListItem[]>>({});
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -60,8 +63,41 @@ export default function AccountsPage() {
     }
   }
 
+  async function toggleExpand(parentId: string) {
+    const next = new Set(expandedParents);
+    if (next.has(parentId)) {
+      next.delete(parentId);
+    } else {
+      next.add(parentId);
+      // Fetch children if not cached
+      if (!childrenCache[parentId]) {
+        try {
+          const children = await invoke<AccountListItem[]>(
+            "get_child_accounts_list",
+            { parentId }
+          );
+          setChildrenCache((prev) => ({ ...prev, [parentId]: children }));
+        } catch (e) {
+          setError(String(e));
+          return;
+        }
+      }
+    }
+    setExpandedParents(next);
+  }
+
   const healthFiltered =
-    tab === "all" ? accounts : accounts.filter((a) => a.health === tab);
+    tab === "all"
+      ? accounts
+      : accounts.filter((a) => {
+          // Show parent if it matches OR if any cached child matches
+          if (a.health === tab) return true;
+          if (a.isParent) {
+            const children = childrenCache[a.id];
+            if (children?.some((c) => c.health === tab)) return true;
+          }
+          return false;
+        });
 
   const filtered = searchQuery
     ? healthFiltered.filter(
@@ -210,7 +246,27 @@ export default function AccountsPage() {
               </Card>
             ) : (
               filtered.map((account) => (
-                <AccountRow key={account.id} account={account} />
+                <div key={account.id}>
+                  <AccountRow
+                    account={account}
+                    isExpanded={expandedParents.has(account.id)}
+                    onToggleExpand={
+                      account.isParent
+                        ? () => toggleExpand(account.id)
+                        : undefined
+                    }
+                  />
+                  {/* Render children when expanded */}
+                  {account.isParent &&
+                    expandedParents.has(account.id) &&
+                    childrenCache[account.id]?.map((child) => (
+                      <AccountRow
+                        key={child.id}
+                        account={child}
+                        isChild
+                      />
+                    ))}
+                </div>
               ))
             )}
           </div>
@@ -220,7 +276,17 @@ export default function AccountsPage() {
   );
 }
 
-function AccountRow({ account }: { account: AccountListItem }) {
+function AccountRow({
+  account,
+  isExpanded,
+  onToggleExpand,
+  isChild,
+}: {
+  account: AccountListItem;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  isChild?: boolean;
+}) {
   const healthDot: Record<string, string> = {
     green: "bg-success",
     yellow: "bg-primary",
@@ -230,6 +296,8 @@ function AccountRow({ account }: { account: AccountListItem }) {
   const daysSince = account.daysSinceLastMeeting;
   const isStale = daysSince != null && daysSince > 14;
 
+  const Chevron = isExpanded ? ChevronDown : ChevronRight;
+
   return (
     <ListRow
       to="/accounts/$accountId"
@@ -237,6 +305,22 @@ function AccountRow({ account }: { account: AccountListItem }) {
       signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
       name={account.name}
       subtitle={account.csm ? `CSM: ${account.csm}` : undefined}
+      className={isChild ? "pl-8" : undefined}
+      badges={
+        onToggleExpand ? (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+          >
+            <Chevron className="size-3.5" />
+            <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
+          </button>
+        ) : undefined
+      }
       columns={
         <>
           {account.arr != null && (
@@ -268,5 +352,3 @@ function AccountRow({ account }: { account: AccountListItem }) {
     />
   );
 }
-
-

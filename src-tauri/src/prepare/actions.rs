@@ -182,6 +182,155 @@ fn load_existing_titles(db: &crate::db::ActionDb) -> HashSet<String> {
     titles
 }
 
+/// Collect all actions for the today directive from both sources:
+/// 1. Workspace markdown (`actions.md`)
+/// 2. SQLite actions table (with due dates)
+///
+/// Deduplicates by title (lowercase). SQLite actions take precedence.
+pub fn collect_all_actions(workspace: &Path, db: Option<&crate::db::ActionDb>) -> ActionResult {
+    let markdown_result = parse_workspace_actions(workspace, db);
+
+    let db_result = match db {
+        Some(db) => fetch_categorized_actions(db),
+        None => return markdown_result,
+    };
+
+    // Merge: start with SQLite actions, add markdown-only actions
+    let mut merged = db_result;
+    let seen_titles: HashSet<String> = merged
+        .overdue
+        .iter()
+        .chain(merged.due_today.iter())
+        .chain(merged.due_this_week.iter())
+        .chain(merged.waiting_on.iter())
+        .filter_map(|a| a.get("title").and_then(|t| t.as_str()))
+        .map(|t| t.to_lowercase())
+        .collect();
+
+    for action in markdown_result.overdue {
+        if let Some(title) = action.get("title").and_then(|t| t.as_str()) {
+            if !seen_titles.contains(&title.to_lowercase()) {
+                merged.overdue.push(action);
+            }
+        }
+    }
+    for action in markdown_result.due_today {
+        if let Some(title) = action.get("title").and_then(|t| t.as_str()) {
+            if !seen_titles.contains(&title.to_lowercase()) {
+                merged.due_today.push(action);
+            }
+        }
+    }
+    for action in markdown_result.due_this_week {
+        if let Some(title) = action.get("title").and_then(|t| t.as_str()) {
+            if !seen_titles.contains(&title.to_lowercase()) {
+                merged.due_this_week.push(action);
+            }
+        }
+    }
+    for action in markdown_result.waiting_on {
+        if let Some(title) = action.get("title").and_then(|t| t.as_str()) {
+            if !seen_titles.contains(&title.to_lowercase()) {
+                merged.waiting_on.push(action);
+            }
+        }
+    }
+
+    merged
+}
+
+/// Fetch categorized actions from SQLite with today/this-week/overdue/waiting buckets.
+fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
+    let mut result = ActionResult::new();
+    let today = Utc::now().date_naive();
+    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    let friday = monday + chrono::Duration::days(4);
+
+    let conn = db.conn_ref();
+
+    // Fetch all non-completed actions with due dates
+    let mut stmt = match conn.prepare(
+        "SELECT id, title, priority, status, due_date, account_id, source_context
+         FROM actions
+         WHERE status != 'completed'
+           AND due_date IS NOT NULL
+         ORDER BY due_date ASC",
+    ) {
+        Ok(s) => s,
+        Err(_) => return result,
+    };
+
+    let rows = stmt.query_map([], |row: &rusqlite::Row| {
+        Ok((
+            row.get::<_, Option<String>>(0)?,
+            row.get::<_, Option<String>>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<String>>(6)?,
+        ))
+    });
+
+    if let Ok(rows) = rows {
+        for row in rows.flatten() {
+            let (id, title, priority, status, due_str, account_id, source_context) = row;
+            let title = title.unwrap_or_default();
+            if title.is_empty() {
+                continue;
+            }
+
+            let due_date = due_str
+                .as_ref()
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+
+            let priority = priority.unwrap_or_else(|| "P3".to_string());
+            let status = status.unwrap_or_else(|| "open".to_string());
+
+            // Check for waiting status
+            if status == "waiting" || status == "blocked" {
+                result.waiting_on.push(json!({
+                    "id": id,
+                    "title": title,
+                    "priority": priority,
+                    "due_date": due_str,
+                    "account": account_id,
+                    "context": source_context,
+                }));
+                continue;
+            }
+
+            let mut action = json!({
+                "id": id,
+                "title": title,
+                "priority": priority,
+                "due_date": due_str,
+                "account": account_id,
+                "context": source_context,
+            });
+
+            match due_date {
+                Some(d) if d < today => {
+                    let days_overdue = (today - d).num_days();
+                    action["days_overdue"] = json!(days_overdue);
+                    result.overdue.push(action);
+                }
+                Some(d) if d == today => {
+                    result.due_today.push(action);
+                }
+                Some(d) if d >= monday && d <= friday => {
+                    result.due_this_week.push(action);
+                }
+                _ => {
+                    // Future beyond this week — skip
+                }
+            }
+        }
+    }
+
+    result
+}
+
 /// Read overdue and this-week actions directly from SQLite.
 ///
 /// Used by the /week orchestrator which reads from SQLite rather than

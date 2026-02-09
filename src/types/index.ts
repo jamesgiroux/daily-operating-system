@@ -105,6 +105,7 @@ export interface DbAction {
   dueDate?: string;
   completedAt?: string;
   accountId?: string;
+  accountName?: string;
   projectId?: string;
   sourceType?: string;
   sourceId?: string;
@@ -112,6 +113,7 @@ export interface DbAction {
   context?: string;
   waitingOn?: string;
   updatedAt: string;
+  personId?: string;
 }
 
 export interface DayStats {
@@ -610,6 +612,11 @@ export interface AccountListItem {
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
+  /** I114: Parent-child hierarchy fields */
+  parentId?: string;
+  parentName?: string;
+  childCount: number;
+  isParent: boolean;
 }
 
 export interface CompanyOverview {
@@ -632,6 +639,23 @@ export interface MeetingSummary {
   title: string;
   startTime: string;
   meetingType: string;
+}
+
+/** Aggregated signals for parent account's children (I114). */
+export interface ParentAggregate {
+  buCount: number;
+  totalArr?: number;
+  worstHealth?: AccountHealth;
+  nearestRenewal?: string;
+}
+
+/** Compact child account summary for parent detail pages (I114). */
+export interface AccountChildSummary {
+  id: string;
+  name: string;
+  health?: AccountHealth;
+  arr?: number;
+  openActionCount: number;
 }
 
 /** Full detail for the account detail page. */
@@ -659,6 +683,105 @@ export interface AccountDetail extends AccountListItem {
     content: string;
     meetingTitle: string;
   }[];
+  /** I114: Parent-child hierarchy */
+  children: AccountChildSummary[];
+  parentAggregate?: ParentAggregate;
+  /** ADR-0057: Synthesized entity intelligence */
+  intelligence?: EntityIntelligence;
+}
+
+// =============================================================================
+// Content Index (I124)
+// =============================================================================
+
+export interface ContentFile {
+  id: string;
+  entityId: string;
+  entityType: string;
+  filename: string;
+  relativePath: string;
+  absolutePath: string;
+  format: string;
+  fileSize: number;
+  modifiedAt: string;
+  indexedAt: string;
+  extractedAt?: string;
+  summary?: string;
+}
+
+// =============================================================================
+// Entity Intelligence (I130 / ADR-0057)
+// =============================================================================
+
+/** Synthesized intelligence for an entity (account, project, or person). */
+export interface EntityIntelligence {
+  version: number;
+  entityId: string;
+  entityType: string;
+  enrichedAt: string;
+  sourceFileCount: number;
+  sourceManifest: SourceManifestEntry[];
+  executiveAssessment?: string;
+  risks: IntelRisk[];
+  recentWins: IntelWin[];
+  currentState?: IntelCurrentState;
+  stakeholderInsights: StakeholderInsight[];
+  valueDelivered: ValueItem[];
+  nextMeetingReadiness?: IntelMeetingReadiness;
+  companyContext?: IntelCompanyContext;
+}
+
+export interface SourceManifestEntry {
+  filename: string;
+  modifiedAt: string;
+  format?: string;
+}
+
+export interface IntelRisk {
+  text: string;
+  source?: string;
+  urgency: string;
+}
+
+export interface IntelWin {
+  text: string;
+  source?: string;
+  impact?: string;
+}
+
+export interface IntelCurrentState {
+  working: string[];
+  notWorking: string[];
+  unknowns: string[];
+}
+
+export interface StakeholderInsight {
+  name: string;
+  role?: string;
+  assessment?: string;
+  engagement?: string;
+  source?: string;
+}
+
+export interface ValueItem {
+  date?: string;
+  statement: string;
+  source?: string;
+  impact?: string;
+}
+
+export interface IntelMeetingReadiness {
+  meetingTitle?: string;
+  meetingDate?: string;
+  prepItems: string[];
+}
+
+export interface IntelCompanyContext {
+  description?: string;
+  industry?: string;
+  size?: string;
+  headquarters?: string;
+  additionalContext?: string;
 }
 
 // =============================================================================
@@ -709,6 +832,8 @@ export interface ProjectDetail extends ProjectListItem {
     content: string;
     meetingTitle: string;
   }[];
+  /** ADR-0057: Synthesized entity intelligence */
+  intelligence?: EntityIntelligence;
 }
 
 // =============================================================================

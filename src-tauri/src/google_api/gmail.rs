@@ -150,10 +150,11 @@ async fn fetch_message_metadata(
         .bearer_auth(access_token)
         .query(&[
             ("format", "metadata"),
-            (
-                "metadataHeaders",
-                "From,Subject,Date,List-Unsubscribe,Precedence",
-            ),
+            ("metadataHeaders", "From"),
+            ("metadataHeaders", "Subject"),
+            ("metadataHeaders", "Date"),
+            ("metadataHeaders", "List-Unsubscribe"),
+            ("metadataHeaders", "Precedence"),
         ])
         .send()
         .await?;
