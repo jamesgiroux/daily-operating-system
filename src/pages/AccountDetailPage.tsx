@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import type { ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,56 @@ const temperatureStyles: Record<string, string> = {
   cold: "bg-muted text-muted-foreground/60",
 };
 
+/** Render inline text with [N] citation markers as superscript. */
+function renderCitations(text: string): ReactNode[] {
+  return text.split(/(\[\d+\])/).map((part, i) => {
+    if (/^\[\d+\]$/.test(part)) {
+      return (
+        <sup key={i} className="text-muted-foreground text-[0.65em] ml-px font-medium">
+          {part}
+        </sup>
+      );
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+/** Render an executive assessment with paragraph spacing, superscript citations, and a sources footer. */
+function AssessmentBody({ text }: { text: string }) {
+  // Split body from SOURCES: block
+  const sourcesMatch = text.match(/\nSOURCES:\s*\n/i);
+  const body = sourcesMatch ? text.slice(0, sourcesMatch.index!) : text;
+  const sourcesRaw = sourcesMatch
+    ? text.slice(sourcesMatch.index! + sourcesMatch[0].length).trim()
+    : null;
+
+  const paragraphs = body.split(/\n+/).filter((p) => p.trim());
+
+  return (
+    <>
+      <div className="flex flex-col gap-6">
+        {paragraphs.map((para, i) => (
+          <p key={i} className="text-sm leading-[1.75] text-foreground m-0">
+            {renderCitations(para.trim())}
+          </p>
+        ))}
+      </div>
+      {sourcesRaw && (
+        <div className="text-[11px] text-muted-foreground/70 border-t border-border/40 pt-3 mt-4 space-y-0.5">
+          {sourcesRaw
+            .split("\n")
+            .filter((l) => l.trim())
+            .map((line, i) => (
+              <p key={i} className="m-0">
+                {line.trim()}
+              </p>
+            ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
   const [detail, setDetail] = useState<AccountDetail | null>(null);
@@ -70,6 +121,7 @@ export default function AccountDetailPage() {
   const [editing, setEditing] = useState(false);
 
   // Editable structured fields
+  const [editName, setEditName] = useState<string>("");
   const [editHealth, setEditHealth] = useState<string>("");
   const [editLifecycle, setEditLifecycle] = useState<string>("");
   const [editArr, setEditArr] = useState<string>("");
@@ -109,6 +161,7 @@ export default function AccountDetailPage() {
         accountId,
       });
       setDetail(result);
+      setEditName(result.name);
       setEditHealth(result.health ?? "");
       setEditLifecycle(result.lifecycle ?? "");
       setEditArr(result.arr?.toString() ?? "");
@@ -187,6 +240,8 @@ export default function AccountDetailPage() {
 
     try {
       const fieldUpdates: [string, string][] = [];
+      if (editName !== detail.name)
+        fieldUpdates.push(["name", editName]);
       if (editHealth !== (detail.health ?? ""))
         fieldUpdates.push(["health", editHealth]);
       if (editLifecycle !== (detail.lifecycle ?? ""))
@@ -229,6 +284,7 @@ export default function AccountDetailPage() {
 
   function handleCancelEdit() {
     if (!detail) return;
+    setEditName(detail.name);
     setEditHealth(detail.health ?? "");
     setEditLifecycle(detail.lifecycle ?? "");
     setEditArr(detail.arr?.toString() ?? "");
@@ -483,9 +539,7 @@ export default function AccountDetailPage() {
           {/* ═══ Executive Assessment (intelligence hero) ═══ */}
           {intelligence?.executiveAssessment ? (
             <div className="space-y-1">
-              <p className="text-base leading-relaxed text-foreground">
-                {intelligence.executiveAssessment}
-              </p>
+              <AssessmentBody text={intelligence.executiveAssessment} />
               <p className="text-xs text-muted-foreground">
                 Intelligence last updated{" "}
                 {formatRelativeDateShort(intelligence.enrichedAt)}
@@ -525,12 +579,12 @@ export default function AccountDetailPage() {
             {/* ═══ Main Column ═══ */}
             <div className="space-y-6">
               {/* Attention Items: Risks + Wins + Unknowns */}
-              {intelligence && (intelligence.risks.length > 0 || intelligence.recentWins.length > 0 || intelligence.currentState?.unknowns?.length) && (
+              {intelligence && (intelligence.risks?.length || intelligence.recentWins?.length || intelligence.currentState?.unknowns?.length) && (
                 <div className="space-y-3">
-                  {intelligence.risks.map((risk, i) => (
+                  {intelligence.risks?.map((risk, i) => (
                     <AttentionRisk key={`risk-${i}`} risk={risk} />
                   ))}
-                  {intelligence.recentWins.map((win, i) => (
+                  {intelligence.recentWins?.map((win, i) => (
                     <AttentionWin key={`win-${i}`} win={win} />
                   ))}
                   {intelligence.currentState?.unknowns?.map((unknown, i) => (
@@ -745,7 +799,7 @@ export default function AccountDetailPage() {
               )}
 
               {/* Current State — What's working / Not working */}
-              {intelligence?.currentState && (intelligence.currentState.working.length > 0 || intelligence.currentState.notWorking.length > 0) && (
+              {intelligence?.currentState && (intelligence.currentState.working?.length || intelligence.currentState.notWorking?.length) && (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base font-semibold">
@@ -754,7 +808,7 @@ export default function AccountDetailPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid gap-4 sm:grid-cols-2">
-                      {intelligence.currentState.working.length > 0 && (
+                      {intelligence.currentState.working?.length ? (
                         <div>
                           <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                             Working
@@ -771,8 +825,8 @@ export default function AccountDetailPage() {
                             ))}
                           </ul>
                         </div>
-                      )}
-                      {intelligence.currentState.notWorking.length > 0 && (
+                      ) : null}
+                      {intelligence.currentState.notWorking?.length ? (
                         <div>
                           <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                             Not Working
@@ -791,7 +845,7 @@ export default function AccountDetailPage() {
                             )}
                           </ul>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </CardContent>
                 </Card>
@@ -1093,6 +1147,8 @@ export default function AccountDetailPage() {
                 <CardContent>
                   {editing ? (
                     <AccountDetailsEditForm
+                      editName={editName}
+                      setEditName={setEditName}
                       editHealth={editHealth}
                       setEditHealth={setEditHealth}
                       editLifecycle={editLifecycle}
@@ -1215,7 +1271,7 @@ export default function AccountDetailPage() {
               )}
 
               {/* Stakeholder Map (when no intelligence stakeholders) */}
-              {(!intelligence || intelligence.stakeholderInsights.length === 0) && (
+              {(!intelligence?.stakeholderInsights?.length) && (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base font-semibold">
@@ -1481,6 +1537,8 @@ function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
 }
 
 function AccountDetailsEditForm({
+  editName,
+  setEditName,
   editHealth,
   setEditHealth,
   editLifecycle,
@@ -1501,6 +1559,8 @@ function AccountDetailsEditForm({
   saving,
   dirty,
 }: {
+  editName: string;
+  setEditName: (v: string) => void;
   editHealth: string;
   setEditHealth: (v: string) => void;
   editLifecycle: string;
@@ -1526,6 +1586,21 @@ function AccountDetailsEditForm({
 
   return (
     <div className="space-y-4">
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">
+          Name
+        </label>
+        <input
+          type="text"
+          value={editName}
+          onChange={(e) => {
+            setEditName(e.target.value);
+            setDirty(true);
+          }}
+          placeholder="Account name"
+          className={inputClass}
+        />
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-xs font-medium text-muted-foreground">
@@ -1838,6 +1913,7 @@ function formatRenewalCountdown(dateStr: string): string {
     return renewal.toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
+      year: "numeric",
     });
   } catch {
     return dateStr;

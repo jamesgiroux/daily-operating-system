@@ -312,7 +312,11 @@ pub fn write_json(path: &Path, data: &Value) -> Result<(), String> {
 /// Build and write schedule.json from directive data.
 ///
 /// Returns the schedule JSON value (needed by manifest builder).
-pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value, String> {
+pub fn deliver_schedule(
+    directive: &Directive,
+    data_dir: &Path,
+    db: Option<&crate::db::ActionDb>,
+) -> Result<Value, String> {
     let now = Utc::now();
     let date = directive
         .context
@@ -371,12 +375,37 @@ pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value,
             }
             if let Some(ref acct) = account {
                 obj.insert("account".to_string(), json!(acct));
+                // Resolve account name → slugified entity ID for intelligence lookup
+                if let Some(db) = db {
+                    if let Ok(Some(account_row)) = db.get_account_by_name(acct) {
+                        obj.insert("accountId".to_string(), json!(account_row.id));
+                    }
+                }
             }
             if let Some(ref pf) = prep_file {
                 obj.insert("prepFile".to_string(), json!(pf));
             }
             if let Some(ref ps) = prep_summary {
                 obj.insert("prepSummary".to_string(), ps.clone());
+            }
+
+            // Embed linked entities from junction table (I52)
+            if let Some(db) = db {
+                if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
+                    if !entities.is_empty() {
+                        let entity_arr: Vec<Value> = entities
+                            .iter()
+                            .map(|e| {
+                                json!({
+                                    "id": e.id,
+                                    "name": e.name,
+                                    "entityType": e.entity_type.as_str(),
+                                })
+                            })
+                            .collect();
+                        obj.insert("linkedEntities".to_string(), json!(entity_arr));
+                    }
+                }
             }
         }
 
@@ -1061,58 +1090,60 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
 pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, String> {
     let emails = &directive.emails;
 
-    // Build high-priority email objects from both sources, deduplicating by ID
+    // Build email objects from both sources, deduplicating by ID
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut high_priority: Vec<Value> = Vec::new();
+    let mut medium_priority: Vec<Value> = Vec::new();
+    let mut low_priority: Vec<Value> = Vec::new();
 
-    let mut add_email = |email: &DirectiveEmail, priority: &str| {
+    let add_email = |email: &DirectiveEmail, priority: &str,
+                         seen: &mut std::collections::HashSet<String>,
+                         high: &mut Vec<Value>, medium: &mut Vec<Value>, low: &mut Vec<Value>| {
         let id = email
             .id
             .clone()
-            .unwrap_or_else(|| format!("email-{}", seen_ids.len()));
-        if seen_ids.contains(&id) {
+            .unwrap_or_else(|| format!("email-{}", seen.len()));
+        if seen.contains(&id) {
             return;
         }
-        seen_ids.insert(id.clone());
+        seen.insert(id.clone());
 
-        high_priority.push(json!({
+        let obj = json!({
             "id": id,
             "sender": email.from.as_deref().unwrap_or("Unknown"),
             "senderEmail": email.from_email.as_deref().unwrap_or(""),
             "subject": email.subject.as_deref().unwrap_or("(no subject)"),
             "snippet": email.snippet,
             "priority": priority,
-        }));
+        });
+
+        match priority {
+            "high" => high.push(obj),
+            "medium" => medium.push(obj),
+            _ => low.push(obj),
+        }
     };
 
-    // High-priority emails first
+    // High-priority emails from dedicated list
     for email in &emails.high_priority {
-        add_email(email, "high");
+        add_email(email, "high", &mut seen_ids, &mut high_priority, &mut medium_priority, &mut low_priority);
     }
 
-    // Classified emails that are high priority (avoid duplicating)
+    // All classified emails (high deduped, medium + low added)
     for email in &emails.classified {
         let prio = email.priority.as_deref().unwrap_or("medium");
-        if prio == "high" {
-            add_email(email, "high");
-        }
+        add_email(email, prio, &mut seen_ids, &mut high_priority, &mut medium_priority, &mut low_priority);
     }
 
     let high_count = high_priority.len();
-
-    // Count medium emails from classified list
-    let medium_from_classified = emails
-        .classified
-        .iter()
-        .filter(|e| e.priority.as_deref() == Some("medium"))
-        .count() as u32;
-    let medium_count = emails.medium_count.max(medium_from_classified);
-
-    let low_count = emails.low_count;
-    let total = high_count as u32 + medium_count + low_count;
+    let medium_count = medium_priority.len();
+    let low_count = low_priority.len();
+    let total = high_count + medium_count + low_count;
 
     let emails_data = json!({
         "highPriority": high_priority,
+        "mediumPriority": medium_priority,
+        "lowPriority": low_priority,
         "stats": {
             "highCount": high_count,
             "mediumCount": medium_count,
@@ -1123,8 +1154,10 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
 
     write_json(&data_dir.join("emails.json"), &emails_data)?;
     log::info!(
-        "deliver_emails: {} high-priority, {} total",
+        "deliver_emails: {} high, {} medium, {} low ({} total)",
         high_count,
+        medium_count,
+        low_count,
         total
     );
     Ok(emails_data)
@@ -1347,10 +1380,11 @@ fn classify_meeting_density(count: usize) -> &'static str {
     }
 }
 
-/// I137: Build entity intelligence context for meetings in a schedule.
+/// I137/I52: Build entity intelligence context for meetings in a schedule.
 ///
-/// Extracts unique account IDs from schedule meetings, looks up cached
-/// intelligence from the DB, returns a formatted context block for the prompt.
+/// Extracts unique entity IDs from schedule meetings (via linkedEntities + accountId
+/// fallback), looks up cached intelligence from the DB, returns a formatted context
+/// block for the prompt. Handles both accounts and projects.
 fn build_entity_intel_for_briefing(
     schedule: &Value,
     db: &crate::db::ActionDb,
@@ -1365,53 +1399,71 @@ fn build_entity_intel_for_briefing(
     let mut parts = Vec::new();
 
     for meeting in meetings {
-        let account_id = match meeting.get("accountId").and_then(|v| v.as_str()) {
-            Some(id) if !id.is_empty() => id,
-            _ => continue,
-        };
+        // Collect entity IDs: prefer linkedEntities array, fallback to accountId
+        let mut entity_ids: Vec<(String, String)> = Vec::new(); // (id, display_name)
 
-        if !seen.insert(account_id.to_string()) {
-            continue;
-        }
-
-        let intel = match db.get_entity_intelligence(account_id) {
-            Ok(Some(intel)) => intel,
-            _ => continue,
-        };
-
-        let account_name = meeting
-            .get("account")
-            .and_then(|v| v.as_str())
-            .unwrap_or(account_id);
-
-        let mut block = format!("### {}\n", account_name);
-
-        if let Some(ref assessment) = intel.executive_assessment {
-            let truncated = if assessment.len() > 300 {
-                format!("{}...", &assessment[..300])
-            } else {
-                assessment.clone()
-            };
-            block.push_str(&truncated);
-            block.push('\n');
-        }
-
-        if !intel.risks.is_empty() {
-            block.push_str("Risks: ");
-            let risk_texts: Vec<&str> = intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
-            block.push_str(&risk_texts.join("; "));
-            block.push('\n');
-        }
-
-        if let Some(ref readiness) = intel.next_meeting_readiness {
-            if !readiness.prep_items.is_empty() {
-                block.push_str("Readiness: ");
-                block.push_str(&readiness.prep_items.join("; "));
-                block.push('\n');
+        if let Some(linked) = meeting.get("linkedEntities").and_then(|v| v.as_array()) {
+            for le in linked {
+                let id = le.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let name = le.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                if !id.is_empty() {
+                    entity_ids.push((id.to_string(), name.to_string()));
+                }
             }
         }
 
-        parts.push(block);
+        // Fallback: accountId (for meetings without linkedEntities)
+        if entity_ids.is_empty() {
+            if let Some(aid) = meeting.get("accountId").and_then(|v| v.as_str()) {
+                if !aid.is_empty() {
+                    let name = meeting
+                        .get("account")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(aid);
+                    entity_ids.push((aid.to_string(), name.to_string()));
+                }
+            }
+        }
+
+        for (entity_id, entity_name) in entity_ids {
+            if !seen.insert(entity_id.clone()) {
+                continue;
+            }
+
+            let intel = match db.get_entity_intelligence(&entity_id) {
+                Ok(Some(intel)) => intel,
+                _ => continue,
+            };
+
+            let mut block = format!("### {}\n", entity_name);
+
+            if let Some(ref assessment) = intel.executive_assessment {
+                let truncated = if assessment.len() > 300 {
+                    format!("{}...", &assessment[..300])
+                } else {
+                    assessment.clone()
+                };
+                block.push_str(&truncated);
+                block.push('\n');
+            }
+
+            if !intel.risks.is_empty() {
+                block.push_str("Risks: ");
+                let risk_texts: Vec<&str> = intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+                block.push_str(&risk_texts.join("; "));
+                block.push('\n');
+            }
+
+            if let Some(ref readiness) = intel.next_meeting_readiness {
+                if !readiness.prep_items.is_empty() {
+                    block.push_str("Readiness: ");
+                    block.push_str(&readiness.prep_items.join("; "));
+                    block.push('\n');
+                }
+            }
+
+            parts.push(block);
+        }
     }
 
     parts.join("\n")
@@ -2095,54 +2147,79 @@ fn build_entity_intel_for_week(
         };
 
         for meeting in meetings {
-            let account_id = match meeting.get("accountId").and_then(|v| v.as_str()) {
-                Some(id) if !id.is_empty() => id,
-                _ => continue,
-            };
+            // Collect entity IDs: prefer linkedEntities, then accountId, then resolve account name
+            let mut entity_ids: Vec<(String, String)> = Vec::new();
 
-            if !seen.insert(account_id.to_string()) {
-                continue;
-            }
-
-            let intel = match db.get_entity_intelligence(account_id) {
-                Ok(Some(intel)) => intel,
-                _ => continue,
-            };
-
-            let account_name = meeting
-                .get("account")
-                .and_then(|v| v.as_str())
-                .unwrap_or(account_id);
-
-            let mut block = format!("### {}\n", account_name);
-
-            if let Some(ref assessment) = intel.executive_assessment {
-                let truncated = if assessment.len() > 300 {
-                    format!("{}...", &assessment[..300])
-                } else {
-                    assessment.clone()
-                };
-                block.push_str(&truncated);
-                block.push('\n');
-            }
-
-            if !intel.risks.is_empty() {
-                block.push_str("Risks: ");
-                let risk_texts: Vec<&str> =
-                    intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
-                block.push_str(&risk_texts.join("; "));
-                block.push('\n');
-            }
-
-            if let Some(ref readiness) = intel.next_meeting_readiness {
-                if !readiness.prep_items.is_empty() {
-                    block.push_str("Readiness: ");
-                    block.push_str(&readiness.prep_items.join("; "));
-                    block.push('\n');
+            if let Some(linked) = meeting.get("linkedEntities").and_then(|v| v.as_array()) {
+                for le in linked {
+                    let id = le.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let name = le.get("name").and_then(|v| v.as_str()).unwrap_or(id);
+                    if !id.is_empty() {
+                        entity_ids.push((id.to_string(), name.to_string()));
+                    }
                 }
             }
 
-            parts.push(block);
+            if entity_ids.is_empty() {
+                if let Some(aid) = meeting.get("accountId").and_then(|v| v.as_str()) {
+                    if !aid.is_empty() {
+                        let name = meeting.get("account").and_then(|v| v.as_str()).unwrap_or(aid);
+                        entity_ids.push((aid.to_string(), name.to_string()));
+                    }
+                }
+            }
+
+            // Last resort: resolve account display name → entity ID via DB
+            if entity_ids.is_empty() {
+                if let Some(acct_name) = meeting.get("account").and_then(|v| v.as_str()) {
+                    if !acct_name.is_empty() {
+                        if let Ok(Some(account)) = db.get_account_by_name(acct_name) {
+                            entity_ids.push((account.id, acct_name.to_string()));
+                        }
+                    }
+                }
+            }
+
+            for (entity_id, entity_name) in entity_ids {
+                if !seen.insert(entity_id.clone()) {
+                    continue;
+                }
+
+                let intel = match db.get_entity_intelligence(&entity_id) {
+                    Ok(Some(intel)) => intel,
+                    _ => continue,
+                };
+
+                let mut block = format!("### {}\n", entity_name);
+
+                if let Some(ref assessment) = intel.executive_assessment {
+                    let truncated = if assessment.len() > 300 {
+                        format!("{}...", &assessment[..300])
+                    } else {
+                        assessment.clone()
+                    };
+                    block.push_str(&truncated);
+                    block.push('\n');
+                }
+
+                if !intel.risks.is_empty() {
+                    block.push_str("Risks: ");
+                    let risk_texts: Vec<&str> =
+                        intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+                    block.push_str(&risk_texts.join("; "));
+                    block.push('\n');
+                }
+
+                if let Some(ref readiness) = intel.next_meeting_readiness {
+                    if !readiness.prep_items.is_empty() {
+                        block.push_str("Readiness: ");
+                        block.push_str(&readiness.prep_items.join("; "));
+                        block.push('\n');
+                    }
+                }
+
+                parts.push(block);
+            }
         }
     }
 
@@ -2527,7 +2604,7 @@ mod tests {
             emails: Default::default(),
         };
 
-        let result = deliver_schedule(&directive, &data_dir).unwrap();
+        let result = deliver_schedule(&directive, &data_dir, None).unwrap();
         assert_eq!(result["date"], "2025-02-07");
         assert_eq!(result["meetings"].as_array().unwrap().len(), 1);
         assert!(data_dir.join("schedule.json").exists());
@@ -2617,6 +2694,14 @@ mod tests {
                         snippet: None,
                         priority: Some("medium".to_string()),
                     },
+                    crate::json_loader::DirectiveEmail {
+                        id: Some("e3".to_string()),
+                        from: Some("Carol".to_string()),
+                        from_email: Some("carol@example.com".to_string()),
+                        subject: Some("Newsletter".to_string()),
+                        snippet: Some("Weekly digest...".to_string()),
+                        priority: Some("low".to_string()),
+                    },
                 ],
                 medium_count: 3,
                 low_count: 5,
@@ -2629,10 +2714,19 @@ mod tests {
         assert_eq!(hp.len(), 1);
         assert_eq!(hp[0]["sender"], "Alice");
         assert_eq!(hp[0]["priority"], "high");
+
+        let mp = result["mediumPriority"].as_array().unwrap();
+        assert_eq!(mp.len(), 1);
+        assert_eq!(mp[0]["sender"], "Bob");
+
+        let lp = result["lowPriority"].as_array().unwrap();
+        assert_eq!(lp.len(), 1);
+        assert_eq!(lp[0]["sender"], "Carol");
+
         assert_eq!(result["stats"]["highCount"], 1);
-        assert_eq!(result["stats"]["mediumCount"], 3);
-        assert_eq!(result["stats"]["lowCount"], 5);
-        assert_eq!(result["stats"]["total"], 9);
+        assert_eq!(result["stats"]["mediumCount"], 1);
+        assert_eq!(result["stats"]["lowCount"], 1);
+        assert_eq!(result["stats"]["total"], 3);
         assert!(data_dir.join("emails.json").exists());
     }
 

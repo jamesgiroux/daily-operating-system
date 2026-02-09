@@ -185,7 +185,9 @@ CREATE TABLE IF NOT EXISTS content_index (
     modified_at TEXT NOT NULL,
     indexed_at TEXT NOT NULL,
     extracted_at TEXT,
-    summary TEXT
+    summary TEXT,
+    content_type TEXT NOT NULL DEFAULT 'general',
+    priority INTEGER NOT NULL DEFAULT 5
 );
 CREATE INDEX IF NOT EXISTS idx_content_entity ON content_index(entity_id);
 CREATE INDEX IF NOT EXISTS idx_content_modified ON content_index(modified_at);

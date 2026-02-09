@@ -242,6 +242,12 @@ pub fn run() {
             commands::dev_run_today_full,
             commands::dev_run_week_mechanical,
             commands::dev_run_week_full,
+            // I52: Meeting-Entity M2M
+            commands::link_meeting_entity,
+            commands::unlink_meeting_entity,
+            commands::get_meeting_entities,
+            // I129: Person Creation
+            commands::create_person,
             // I51: People
             commands::get_people,
             commands::get_person_detail,
@@ -260,6 +266,7 @@ pub fn run() {
             commands::reveal_in_finder,
             // I72: Account Dashboards
             commands::get_accounts_list,
+            commands::get_accounts_for_picker,
             commands::get_child_accounts_list,
             commands::get_account_detail,
             commands::update_account_field,
