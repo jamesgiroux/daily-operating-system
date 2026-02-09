@@ -897,6 +897,26 @@ fn build_prep_json(
                     .collect();
                 obj.insert("references".to_string(), json!(refs_json));
             }
+
+            // I135: Entity intelligence fields (from intelligence.json via meeting context)
+            if let Some(ref assessment) = ctx.executive_assessment {
+                obj.insert("intelligenceSummary".to_string(), json!(assessment));
+            }
+            if let Some(ref risks) = ctx.entity_risks {
+                if !risks.is_empty() {
+                    obj.insert("entityRisks".to_string(), json!(risks));
+                }
+            }
+            if let Some(ref readiness) = ctx.entity_readiness {
+                if !readiness.is_empty() {
+                    obj.insert("entityReadiness".to_string(), json!(readiness));
+                }
+            }
+            if let Some(ref insights) = ctx.stakeholder_insights {
+                if !insights.is_empty() {
+                    obj.insert("stakeholderInsights".to_string(), json!(insights));
+                }
+            }
         }
     }
 
