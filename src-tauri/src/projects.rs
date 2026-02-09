@@ -537,7 +537,55 @@ pub fn sync_projects_from_workspace(
 }
 
 // =============================================================================
-// Enrichment (I50 / ADR-0047)
+// Content Indexing (I138 — parallel to account content index)
+// =============================================================================
+
+/// Sync the content index for a single project. Compares filesystem against DB,
+/// adds new files, updates changed files, removes deleted files.
+///
+/// Delegates to the entity-generic `sync_content_index_for_entity()`.
+/// Returns `(added, updated, removed)` counts.
+pub fn sync_content_index_for_project(
+    workspace: &Path,
+    db: &ActionDb,
+    project: &DbProject,
+) -> Result<(usize, usize, usize), String> {
+    let dir = project_dir(workspace, &project.name);
+    crate::entity_intel::sync_content_index_for_entity(
+        &dir, &project.id, "project", workspace, db,
+    )
+}
+
+/// Sync content indexes for all projects. Returns total files indexed.
+pub fn sync_all_project_content_indexes(
+    workspace: &Path,
+    db: &ActionDb,
+) -> Result<usize, String> {
+    let projects = db
+        .get_all_projects()
+        .map_err(|e| format!("DB error: {}", e))?;
+    let mut total = 0;
+
+    for project in &projects {
+        match sync_content_index_for_project(workspace, db, project) {
+            Ok((added, updated, _removed)) => {
+                total += added + updated;
+            }
+            Err(e) => {
+                log::warn!(
+                    "Content index sync failed for project '{}': {}",
+                    project.name,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+// =============================================================================
+// Enrichment (I50 / ADR-0047) — LEGACY, superseded by entity_intel for I138
 // =============================================================================
 
 /// Parse Claude's enrichment response into a description string.
