@@ -406,6 +406,7 @@ impl Executor {
             &self.pty_manager,
             workspace,
             &user_ctx,
+            &*self.state,
         ) {
             log::warn!("Week enrichment failed (non-fatal): {}", e);
         }
@@ -606,6 +607,7 @@ impl Executor {
             &self.pty_manager,
             &workspace,
             &user_ctx,
+            &*self.state,
         ) {
             log::warn!("Briefing narrative failed (non-fatal): {}", e);
         }
