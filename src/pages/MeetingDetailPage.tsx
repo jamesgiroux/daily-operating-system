@@ -100,7 +100,7 @@ export default function MeetingDetailPage() {
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
               This meeting doesn't have a prep file yet. The system generates prep
-              files for customer meetings when running /today.
+              files for customer meetings when running the Daily Briefing.
             </p>
           </CardContent>
         </Card>

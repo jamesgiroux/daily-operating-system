@@ -1,44 +1,27 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 
 import type {
   WeekOverview,
-  WeekMeeting,
-  DayShape,
   ReadinessCheck,
   WeekAction,
-  AlertSeverity,
-  PrepStatus,
 } from "@/types";
-import { cn, stripMarkdown } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   Calendar,
-  CheckCircle,
   Check,
-  ChevronDown,
-  Clock,
-  FileText,
+  ChevronRight,
   Play,
   RefreshCw,
-  Users,
   AlertTriangle,
   Sparkles,
   Database,
   Wand2,
   Package,
-  ShieldAlert,
-  CircleAlert,
-  Info,
 } from "lucide-react";
 
 interface WeekResult {
@@ -47,62 +30,16 @@ interface WeekResult {
   message?: string;
 }
 
-const prepStatusConfig: Record<
-  PrepStatus,
-  { label: string; icon: typeof CheckCircle; color: string }
-> = {
-  prep_needed: {
-    label: "Prep needed",
-    icon: FileText,
-    color: "text-destructive",
-  },
-  agenda_needed: {
-    label: "Agenda needed",
-    icon: Calendar,
-    color: "text-primary",
-  },
-  bring_updates: {
-    label: "Bring updates",
-    icon: Clock,
-    color: "text-primary",
-  },
-  context_needed: {
-    label: "Context needed",
-    icon: Users,
-    color: "text-muted-foreground",
-  },
-  prep_ready: {
-    label: "Prep ready",
-    icon: CheckCircle,
-    color: "text-success",
-  },
-  draft_ready: {
-    label: "Draft ready",
-    icon: FileText,
-    color: "text-success",
-  },
-  done: { label: "Done", icon: CheckCircle, color: "text-success" },
-};
-
-const severityStyles: Record<AlertSeverity, string> = {
-  critical: "border-l-destructive bg-destructive/5",
-  warning: "border-l-primary bg-primary/5",
-  info: "border-l-muted-foreground",
-};
-
-const densityConfig: Record<string, { label: string; color: string; barColor: string }> = {
-  light: { label: "Light", color: "text-success", barColor: "bg-success/60" },
-  moderate: { label: "Moderate", color: "text-primary", barColor: "bg-primary/60" },
-  busy: { label: "Busy", color: "text-amber-600", barColor: "bg-amber-500/60" },
-  packed: { label: "Packed", color: "text-destructive", barColor: "bg-destructive/60" },
-};
-
 type WorkflowPhase = "preparing" | "enriching" | "delivering";
 
-const phaseSteps: { key: WorkflowPhase; label: string; icon: typeof Database }[] = [
+const phaseSteps: {
+  key: WorkflowPhase;
+  label: string;
+  icon: typeof Database;
+}[] = [
   { key: "preparing", label: "Prepare", icon: Database },
-  { key: "enriching", label: "Enrich", icon: Wand2 },
   { key: "delivering", label: "Deliver", icon: Package },
+  { key: "enriching", label: "Enrich", icon: Wand2 },
 ];
 
 const waitingMessages = [
@@ -127,6 +64,77 @@ const waitingMessages = [
   `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
   "Polishing the details...",
 ];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Format a due date as a relative phrase: "due Wednesday", "1 day overdue" */
+function formatDueContext(
+  dueDate?: string,
+  daysOverdue?: number
+): string | null {
+  if (!dueDate) return null;
+
+  if (daysOverdue != null && daysOverdue > 0) {
+    return daysOverdue === 1 ? "1 day overdue" : `${daysOverdue} days overdue`;
+  }
+
+  try {
+    const date = new Date(dueDate + "T00:00:00");
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const diffMs = date.getTime() - now.getTime();
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0)
+      return `${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""} overdue`;
+    if (diffDays === 0) return "due today";
+    if (diffDays === 1) return "due tomorrow";
+    if (diffDays <= 6)
+      return `due ${date.toLocaleDateString("en-US", { weekday: "long" })}`;
+    return `due ${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Synthesize readiness checks into a one-line summary */
+function synthesizeReadiness(checks: ReadinessCheck[]): string {
+  const prepNeeded = checks.filter(
+    (c) =>
+      c.checkType === "no_prep" ||
+      c.checkType === "prep_needed" ||
+      c.checkType === "agenda_needed"
+  ).length;
+  const overdueActions = checks.filter(
+    (c) => c.checkType === "overdue_action"
+  );
+  const staleContacts = checks.filter(
+    (c) => c.checkType === "stale_contact"
+  ).length;
+
+  const parts: string[] = [];
+  if (prepNeeded > 0)
+    parts.push(
+      `${prepNeeded} meeting${prepNeeded !== 1 ? "s" : ""} need prep`
+    );
+  if (overdueActions.length > 0) {
+    const msg = overdueActions[0].message;
+    const match = msg.match(/^(\d+)/);
+    const count = match ? match[1] : overdueActions.length.toString();
+    parts.push(`${count} overdue action${count !== "1" ? "s" : ""}`);
+  }
+  if (staleContacts > 0)
+    parts.push(
+      `${staleContacts} stale contact${staleContacts !== 1 ? "s" : ""}`
+    );
+  return parts.join(" · ");
+}
+
+// ---------------------------------------------------------------------------
+// Page Component
+// ---------------------------------------------------------------------------
 
 export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
@@ -182,6 +190,7 @@ export default function WeekPage() {
         if (status.status === "running") {
           sawRunning = true;
           if (status.phase) setPhase(status.phase);
+          loadWeek();
         } else if (status.status === "completed" && sawRunning) {
           clearInterval(interval);
           setRunning(false);
@@ -231,19 +240,29 @@ export default function WeekPage() {
     }
   }, []);
 
+  // Loading skeleton — briefing-shaped
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden">
-        <div className="p-8">
-          <div className="mx-auto max-w-6xl space-y-8">
+        <div className="px-8 pt-10 pb-8">
+          <div className="mx-auto max-w-2xl space-y-8">
             <div className="space-y-2">
-              <Skeleton className="h-8 w-64" />
-              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-8 w-40" />
+              <Skeleton className="h-4 w-32" />
             </div>
-            <Skeleton className="h-24" />
             <div className="space-y-3">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-16" />
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-5 w-3/4" />
+            </div>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-px w-full" />
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="space-y-1">
+                  <Skeleton className="h-4 w-3/5" />
+                  <Skeleton className="h-3 w-2/5" />
+                </div>
               ))}
             </div>
           </div>
@@ -252,6 +271,7 @@ export default function WeekPage() {
     );
   }
 
+  // Empty state
   if (!data) {
     return (
       <main className="flex-1 overflow-hidden">
@@ -261,14 +281,13 @@ export default function WeekPage() {
           ) : (
             <>
               <Calendar className="mb-4 size-12 text-muted-foreground/30" />
-              <p className="text-lg font-medium">No week overview yet</p>
+              <p className="text-lg font-medium">No weekly briefing yet</p>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Run the week workflow to generate your weekly briefing with
-                readiness checks, day shapes, and actions.
+                Generate your weekly briefing to see what matters this week.
               </p>
               <Button className="mt-4 gap-1.5" onClick={handleRunWeek}>
                 <Play className="size-3.5" />
-                Run /week
+                Run Weekly Briefing
               </Button>
             </>
           )}
@@ -278,43 +297,234 @@ export default function WeekPage() {
     );
   }
 
+  const hasNarrative = !!data.weekNarrative;
+  const readinessLine =
+    data.readinessChecks && data.readinessChecks.length > 0
+      ? synthesizeReadiness(data.readinessChecks)
+      : null;
+
+  // Merge all commitments: overdue first, then due this week
+  const commitments: (WeekAction & { isOverdue: boolean })[] = [];
+  if (data.actionSummary) {
+    if (data.actionSummary.overdue) {
+      for (const a of data.actionSummary.overdue) {
+        commitments.push({ ...a, isOverdue: true });
+      }
+    }
+    if (data.actionSummary.dueThisWeekItems) {
+      for (const a of data.actionSummary.dueThisWeekItems) {
+        commitments.push({ ...a, isOverdue: false });
+      }
+    }
+  }
+
+  const hasPortfolio = data.hygieneAlerts && data.hygieneAlerts.length > 0;
+
   return (
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
-        <div className="p-8">
-          <div className="mx-auto max-w-6xl space-y-8">
+        <div className="px-8 pt-10 pb-8">
+          <div className="mx-auto max-w-2xl">
             {/* Header */}
-            <WeekHeader
-              data={data}
-              running={running}
-              phase={phase}
-              onRunWeek={handleRunWeek}
-            />
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  Week {data.weekNumber}
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {data.dateRange}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={handleRunWeek}
+                disabled={running}
+              >
+                {running ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    <span>
+                      {phase
+                        ? (phaseSteps.find((s) => s.key === phase)?.label ??
+                          "Running...")
+                        : "Running..."}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="size-3.5" />
+                    <span>Refresh</span>
+                  </>
+                )}
+              </Button>
+            </div>
 
-            {/* Running state overlay */}
-            {running && <WorkflowProgress phase={phase ?? "preparing"} />}
-
-            {/* Readiness checks */}
-            {data.readinessChecks && data.readinessChecks.length > 0 && (
-              <ReadinessSection checks={data.readinessChecks} />
+            {/* Progress stepper — only when no data yet */}
+            {running && !hasNarrative && commitments.length === 0 && (
+              <div className="mt-6">
+                <WorkflowProgress phase={phase ?? "preparing"} />
+              </div>
             )}
 
-            {/* Week shape */}
-            {data.dayShapes && data.dayShapes.length > 0 && (
-              <WeekShapeSection shapes={data.dayShapes} />
+            {/* The Briefing — narrative, priority, readiness */}
+            <div className="mt-8 space-y-6">
+              {data.weekNarrative && (
+                <p className="text-[1.075rem] leading-[1.8] text-foreground">
+                  {data.weekNarrative}
+                </p>
+              )}
+
+              {data.topPriority && (
+                <div className="rounded-lg bg-success/10 border border-success/15 px-4 py-3.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles className="size-4 shrink-0 text-success" />
+                    <span className="text-sm font-semibold text-success">
+                      Top Priority
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium text-foreground">
+                    {data.topPriority.title}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                    {data.topPriority.reason}
+                  </p>
+                </div>
+              )}
+
+              {/* Readiness — synthesized one-liner when narrative exists */}
+              {readinessLine && hasNarrative && (
+                <p className="text-sm text-muted-foreground">
+                  {readinessLine}
+                </p>
+              )}
+
+              {/* Readiness — enumerated fallback when no narrative */}
+              {!hasNarrative &&
+                data.readinessChecks &&
+                data.readinessChecks.length > 0 && (
+                  <div className="space-y-1.5">
+                    {[
+                      ...data.readinessChecks.filter(
+                        (c) => c.severity === "action_needed"
+                      ),
+                      ...data.readinessChecks.filter(
+                        (c) => c.severity === "heads_up"
+                      ),
+                    ].map((check, i) => (
+                      <p
+                        key={i}
+                        className={cn(
+                          "text-sm",
+                          check.severity === "action_needed"
+                            ? "text-destructive"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {check.message}
+                      </p>
+                    ))}
+                  </div>
+                )}
+            </div>
+
+            {/* Divider — transition from briefing to commitments */}
+            {commitments.length > 0 && (
+              <div className="my-10">
+                <div className="h-px bg-border/40" />
+              </div>
             )}
 
-            {/* Actions */}
-            {data.actionSummary && (
-              <ActionsSection summary={data.actionSummary} />
+            {/* Commitments — unified list, no section header */}
+            {commitments.length > 0 && (
+              <div className="space-y-1">
+                {commitments.map((action) => {
+                  const dueContext = formatDueContext(
+                    action.dueDate,
+                    action.daysOverdue
+                  );
+                  return (
+                    <Link
+                      key={action.id}
+                      to="/actions/$actionId"
+                      params={{ actionId: action.id }}
+                      className="group flex items-center gap-3 rounded-md px-3 py-3 transition-colors hover:bg-muted/50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium leading-snug">
+                          {action.title}
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {action.account && <span>{action.account}</span>}
+                          {action.account && dueContext && <span> · </span>}
+                          {dueContext && (
+                            <span
+                              className={cn(
+                                action.isOverdue && "text-destructive"
+                              )}
+                            >
+                              {dueContext}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/0 group-hover:text-muted-foreground transition-colors" />
+                    </Link>
+                  );
+                })}
+              </div>
             )}
 
-            {/* Hygiene alerts */}
-            {data.hygieneAlerts && data.hygieneAlerts.length > 0 && (
-              <AccountHealthSection alerts={data.hygieneAlerts} />
+            {/* Divider — transition from commitments to portfolio */}
+            {hasPortfolio && (
+              <div className="my-10">
+                <div className="h-px bg-border/40" />
+              </div>
+            )}
+
+            {/* Portfolio watch — prose, no widget chrome */}
+            {hasPortfolio && (
+              <div className="space-y-4">
+                {data.hygieneAlerts!.map((alert, i) => (
+                  <div key={i} className="text-sm leading-relaxed">
+                    <span className="font-medium">{alert.account}</span>
+                    {alert.lifecycle && (
+                      <span
+                        className={cn(
+                          "ml-1.5",
+                          alert.severity === "critical"
+                            ? "text-destructive"
+                            : alert.severity === "warning"
+                              ? "text-primary"
+                              : "text-muted-foreground"
+                        )}
+                      >
+                        · {alert.lifecycle}
+                      </span>
+                    )}
+                    {alert.arr && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {alert.arr}
+                      </span>
+                    )}
+                    <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
+                      {alert.issue}
+                    </p>
+                  </div>
+                ))}
+              </div>
             )}
 
             {error && <ErrorCard error={error} />}
+
+            {/* Page end — the briefing is finite */}
+            <div className="mt-12 flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="h-px flex-1 bg-border/50" />
+              <span>End of weekly briefing</span>
+              <div className="h-px flex-1 bg-border/50" />
+            </div>
           </div>
         </div>
       </ScrollArea>
@@ -323,390 +533,29 @@ export default function WeekPage() {
 }
 
 // ---------------------------------------------------------------------------
-// Section Components
+// Chrome
 // ---------------------------------------------------------------------------
-
-function WeekHeader({
-  data,
-  running,
-  phase,
-  onRunWeek,
-}: {
-  data: WeekOverview;
-  running: boolean;
-  phase: WorkflowPhase | null;
-  onRunWeek: () => void;
-}) {
-  return (
-    <div className="flex items-start justify-between">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Week {data.weekNumber}
-        </h1>
-        <p className="text-sm text-muted-foreground">{data.dateRange}</p>
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1.5"
-        onClick={onRunWeek}
-        disabled={running}
-      >
-        {running ? (
-          <RefreshCw className="size-3.5 animate-spin" />
-        ) : (
-          <RefreshCw className="size-3.5" />
-        )}
-        {running
-          ? phase
-            ? (phaseSteps.find((s) => s.key === phase)?.label ?? "Running...")
-            : "Running..."
-          : "Refresh"}
-      </Button>
-    </div>
-  );
-}
-
-function ReadinessSection({ checks }: { checks: ReadinessCheck[] }) {
-  const actionNeeded = checks.filter((c) => c.severity === "action_needed");
-  const headsUp = checks.filter((c) => c.severity === "heads_up");
-  const sorted = [...actionNeeded, ...headsUp];
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldAlert className="size-4 text-amber-600" />
-          Needs Attention
-          <Badge variant="outline" className="ml-auto font-mono text-xs">
-            {checks.length}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {sorted.map((check, i) => (
-          <div
-            key={i}
-            className={cn(
-              "flex items-start gap-2.5 rounded-md p-2.5 text-sm",
-              check.severity === "action_needed"
-                ? "bg-destructive/5"
-                : "bg-muted/50"
-            )}
-          >
-            {check.severity === "action_needed" ? (
-              <CircleAlert className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-            ) : (
-              <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-            )}
-            <span className="text-muted-foreground">
-              {check.message}
-            </span>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WeekShapeSection({ shapes }: { shapes: DayShape[] }) {
-  const todayStr = new Date().toISOString().split("T")[0];
-  const maxMinutes = Math.max(...shapes.map((s) => s.meetingMinutes), 1);
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Week Shape</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-1">
-        {shapes.map((shape) => {
-          const isToday = shape.date === todayStr;
-          const config = densityConfig[shape.density] ?? densityConfig.light;
-          const barWidth = Math.max(
-            (shape.meetingMinutes / maxMinutes) * 100,
-            shape.meetingMinutes > 0 ? 8 : 0
-          );
-
-          const focusMinutes = shape.availableBlocks.reduce(
-            (sum, b) => sum + (b.durationMinutes ?? 0),
-            0
-          );
-
-          return (
-            <Collapsible key={shape.dayName}>
-              <CollapsibleTrigger className="w-full">
-                <div
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-muted/50",
-                    isToday && "ring-1 ring-primary/30 bg-primary/5"
-                  )}
-                >
-                  {/* Day label */}
-                  <div className="w-12 shrink-0 text-left">
-                    <span
-                      className={cn(
-                        "text-sm font-medium",
-                        isToday && "text-primary"
-                      )}
-                    >
-                      {shape.dayName.slice(0, 3)}
-                    </span>
-                  </div>
-
-                  {/* Density bar */}
-                  <div className="flex-1">
-                    <div className="h-5 w-full rounded-sm bg-muted/30">
-                      {barWidth > 0 && (
-                        <div
-                          className={cn("h-full rounded-sm transition-all", config.barColor)}
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex w-40 shrink-0 items-center gap-3 text-xs text-muted-foreground">
-                    <span className="w-16 text-right">
-                      {shape.meetingCount === 0
-                        ? "No meetings"
-                        : `${shape.meetingCount} mtg${shape.meetingCount !== 1 ? "s" : ""}`}
-                    </span>
-                    {focusMinutes > 0 && (
-                      <span className="text-success">
-                        {Math.round(focusMinutes / 60)}h focus
-                      </span>
-                    )}
-                  </div>
-
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]_&]:rotate-180" />
-                </div>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                {shape.meetings.length > 0 && (
-                  <div className="ml-[3.75rem] space-y-1 pb-2 pr-3">
-                    {shape.meetings.map((meeting, i) => (
-                      <DayMeetingRow key={i} meeting={meeting} />
-                    ))}
-                  </div>
-                )}
-              </CollapsibleContent>
-            </Collapsible>
-          );
-        })}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DayMeetingRow({ meeting }: { meeting: WeekMeeting }) {
-  const config =
-    prepStatusConfig[meeting.prepStatus] ?? {
-      label: "Unknown",
-      icon: Clock,
-      color: "text-muted-foreground",
-    };
-  const Icon = config.icon;
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-md border px-3 py-2 text-xs",
-        meeting.type === "customer" && "border-l-2 border-l-primary"
-      )}
-    >
-      <span className="w-16 shrink-0 font-mono text-muted-foreground">
-        {meeting.time}
-      </span>
-      <span className="flex-1 truncate font-medium">{meeting.title}</span>
-      {meeting.account && (
-        <Badge variant="secondary" className="shrink-0 text-[0.65rem]">
-          {meeting.account}
-        </Badge>
-      )}
-      <div className={cn("flex items-center gap-1 shrink-0", config.color)}>
-        <Icon className="size-3" />
-        <span className="hidden sm:inline">{config.label}</span>
-      </div>
-    </div>
-  );
-}
-
-function ActionsSection({
-  summary,
-}: {
-  summary: NonNullable<WeekOverview["actionSummary"]>;
-}) {
-  const hasOverdueItems = summary.overdue && summary.overdue.length > 0;
-  const hasDueItems =
-    summary.dueThisWeekItems && summary.dueThisWeekItems.length > 0;
-
-  if (summary.overdueCount === 0 && summary.dueThisWeek === 0) return null;
-
-  return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      {/* Overdue */}
-      {summary.overdueCount > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <AlertTriangle className="size-4 text-destructive" />
-              Overdue
-              <Badge variant="destructive" className="ml-auto">
-                {summary.overdueCount}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {hasOverdueItems ? (
-              <div className="space-y-2">
-                {summary.overdue!.map((action) => (
-                  <ActionRow key={action.id} action={action} showOverdue />
-                ))}
-              </div>
-            ) : (
-              <ul className="space-y-1">
-                {summary.criticalItems.map((item, i) => (
-                  <li key={i} className="text-sm text-muted-foreground">
-                    {stripMarkdown(item)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Due this week */}
-      {summary.dueThisWeek > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Clock className="size-4" />
-              Due This Week
-              <Badge variant="secondary" className="ml-auto">
-                {summary.dueThisWeek}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {hasDueItems ? (
-              <div className="space-y-2">
-                {summary.dueThisWeekItems!.map((action) => (
-                  <ActionRow key={action.id} action={action} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {summary.dueThisWeek} action
-                {summary.dueThisWeek !== 1 ? "s" : ""} due this week
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function ActionRow({
-  action,
-  showOverdue,
-}: {
-  action: WeekAction;
-  showOverdue?: boolean;
-}) {
-  return (
-    <div className="flex items-start gap-2 rounded-md border p-2.5 text-sm">
-      <div className="flex-1 min-w-0">
-        <p className="font-medium leading-tight">{action.title}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          {action.account && (
-            <Badge variant="secondary" className="text-[0.65rem]">
-              {action.account}
-            </Badge>
-          )}
-          {action.priority && action.priority !== "P3" && (
-            <span
-              className={cn(
-                "font-mono",
-                action.priority === "P1" && "text-destructive"
-              )}
-            >
-              {action.priority}
-            </span>
-          )}
-          {showOverdue && action.daysOverdue != null && action.daysOverdue > 0 && (
-            <span className="text-destructive">
-              {action.daysOverdue}d overdue
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AccountHealthSection({
-  alerts,
-}: {
-  alerts: NonNullable<WeekOverview["hygieneAlerts"]>;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="size-4 text-destructive" />
-          Account Health
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {alerts.map((alert, i) => (
-          <div
-            key={i}
-            className={cn(
-              "rounded-md border-l-4 p-3",
-              severityStyles[alert.severity]
-            )}
-          >
-            <p className="font-medium">{alert.account}</p>
-            {(alert.lifecycle || alert.arr) && (
-              <p className="text-xs text-muted-foreground capitalize">
-                {alert.lifecycle}
-                {alert.lifecycle && alert.arr && " \u2022 "}
-                {alert.arr && `ARR: ${alert.arr}`}
-              </p>
-            )}
-            <p className="mt-1 text-sm text-muted-foreground">{alert.issue}</p>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
 
 function ErrorCard({ error }: { error: string }) {
   return (
-    <Card className="mt-6 max-w-md border-destructive text-left">
-      <CardContent className="pt-4">
-        <div className="flex items-start gap-2">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <div className="min-w-0 space-y-1">
-            {error.split("\n").map((line, i) => (
-              <p
-                key={i}
-                className={cn(
-                  "text-sm",
-                  i === 0 ? "text-destructive" : "text-muted-foreground"
-                )}
-              >
-                {line}
-              </p>
-            ))}
-          </div>
+    <div className="mt-6 max-w-md rounded-lg border border-destructive p-4 text-left">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+        <div className="min-w-0 space-y-1">
+          {error.split("\n").map((line, i) => (
+            <p
+              key={i}
+              className={cn(
+                "text-sm",
+                i === 0 ? "text-destructive" : "text-muted-foreground"
+              )}
+            >
+              {line}
+            </p>
+          ))}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

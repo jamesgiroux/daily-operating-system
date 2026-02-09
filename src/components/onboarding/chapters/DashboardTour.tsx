@@ -16,14 +16,14 @@ interface DashboardTourProps {
 
 const TOUR_STOPS = [
   {
-    key: "schedule",
-    title: "Your schedule, front and center",
-    body: "Meetings appear immediately. Highlighted ones have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
-  },
-  {
     key: "focus",
     title: "Today's focus",
     body: "AI picks your focus based on today's priorities. Click to see full detail.",
+  },
+  {
+    key: "schedule",
+    title: "Your schedule, front and center",
+    body: "Meetings appear immediately. Highlighted ones have full prep ready. Click 'View Prep' to see context, talking points, and risks.",
   },
   {
     key: "actions",
@@ -125,48 +125,45 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           </p>
         </div>
 
-        {/* Two-column layout matching the actual dashboard */}
-        <div className="grid gap-8 lg:grid-cols-[5fr_2fr]">
-          {/* Left: Schedule */}
-          <div className="min-w-0 space-y-6">
-            <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {new Date().toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </h1>
-            </div>
-            <TourHighlight ref={setStopRef(0)} active={stop.key === "schedule"}>
-              <MeetingTimeline meetings={data.meetings} />
-            </TourHighlight>
+        {/* Single-column layout matching the actual dashboard */}
+        <div className="space-y-8">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </h1>
           </div>
 
-          {/* Right: Context sidebar */}
-          <div className="min-w-0 space-y-5">
-            {data.overview.focus && (
-              <TourHighlight ref={setStopRef(1)} active={stop.key === "focus"}>
-                <div className="rounded-lg bg-primary/5 border border-primary/10 px-3.5 py-3">
-                  <div className="flex items-start gap-2.5">
-                    <Target className="size-4 shrink-0 text-primary mt-0.5" />
-                    <div className="min-w-0 flex-1">
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Focus</span>
-                      <p className="mt-1 text-sm font-medium text-primary leading-relaxed">{data.overview.focus}</p>
-                    </div>
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground mt-0.5" />
+          {data.overview.focus && (
+            <TourHighlight ref={setStopRef(0)} active={stop.key === "focus"}>
+              <div className="rounded-lg bg-success/5 border border-success/10 px-4 py-3.5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="size-5 shrink-0 text-success" />
+                    <span className="text-sm font-semibold text-success">Focus</span>
                   </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </div>
-              </TourHighlight>
-            )}
-            <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
-              <ActionList actions={data.actions} />
+                <p className="text-sm font-medium text-success/80 leading-relaxed">{data.overview.focus}</p>
+              </div>
             </TourHighlight>
-            <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
-              <EmailList emails={emails} />
-            </TourHighlight>
-          </div>
+          )}
+
+          <TourHighlight ref={setStopRef(1)} active={stop.key === "schedule"}>
+            <MeetingTimeline meetings={data.meetings} />
+          </TourHighlight>
+
+          <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
+            <ActionList actions={data.actions} />
+          </TourHighlight>
+
+          <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
+            <EmailList emails={emails} />
+          </TourHighlight>
         </div>
       </div>
 

@@ -14,8 +14,8 @@ use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
-    FocusData, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, Priority, WeekOverview,
+    FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
+    OverlayStatus, PostMeetingCaptureConfig, Priority, TimeBlock, WeekOverview,
     WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
@@ -103,9 +103,10 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     // Load from JSON
     let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
         Ok(data) => data,
-        Err(e) => {
-            return DashboardResult::Error {
-                message: format!("Failed to load schedule: {}", e),
+        Err(_) => {
+            return DashboardResult::Empty {
+                message: "Your daily briefing will appear here once generated.".to_string(),
+                google_auth,
             }
         }
     };
@@ -459,7 +460,7 @@ pub enum FocusResult {
     Error { message: String },
 }
 
-/// Get focus/priority data
+/// Get focus/priority data — assembled from schedule.json + SQLite actions + gap analysis
 #[tauri::command]
 pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
     // Get config
@@ -479,11 +480,119 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
         }
     };
 
-    let _workspace = Path::new(&config.workspace_path);
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
 
-    // TODO: Implement focus JSON loading
-    FocusResult::NotFound {
-        message: "Focus data not yet implemented for JSON format.".to_string(),
+    // 1. Load schedule.json — if missing, nothing to show
+    let (overview, meetings) = match load_schedule_json(&today_dir) {
+        Ok(data) => data,
+        Err(_) => {
+            return FocusResult::NotFound {
+                message: "No briefing data available. Run a briefing first.".to_string(),
+            }
+        }
+    };
+
+    // 2. Focus statement from schedule
+    let focus_statement = overview.focus;
+
+    // 3. Filter meetings to "key" types (where prep matters)
+    let key_meetings: Vec<FocusMeeting> = meetings
+        .iter()
+        .filter(|m| matches!(
+            m.meeting_type,
+            MeetingType::Customer
+                | MeetingType::Qbr
+                | MeetingType::Partnership
+                | MeetingType::External
+                | MeetingType::OneOnOne
+        ))
+        .map(|m| {
+            let type_str = match m.meeting_type {
+                MeetingType::Customer => "customer",
+                MeetingType::Qbr => "qbr",
+                MeetingType::Partnership => "partnership",
+                MeetingType::External => "external",
+                MeetingType::OneOnOne => "one_on_one",
+                MeetingType::Training => "training",
+                MeetingType::Internal => "internal",
+                MeetingType::TeamSync => "team_sync",
+                MeetingType::AllHands => "all_hands",
+                MeetingType::Personal => "personal",
+            };
+            FocusMeeting {
+                id: m.id.clone(),
+                title: m.title.clone(),
+                time: m.time.clone(),
+                end_time: m.end_time.clone(),
+                meeting_type: type_str.to_string(),
+                has_prep: m.has_prep,
+                account: m.account.clone(),
+                prep_file: m.prep_file.clone(),
+            }
+        })
+        .collect();
+
+    // 4. Priority actions from SQLite (due today or overdue)
+    let priorities = if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            db.get_due_actions(1).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    // 5. Compute available time blocks from today's meetings
+    let today_date = chrono::Local::now().date_naive();
+    let meeting_events: Vec<serde_json::Value> = meetings
+        .iter()
+        .filter_map(|m| {
+            // Need start + end times for gap computation
+            let end = m.end_time.as_ref()?;
+            Some(serde_json::json!({
+                "start": m.time,
+                "end": end,
+            }))
+        })
+        .collect();
+    let gaps = crate::prepare::gaps::compute_gaps(&meeting_events, today_date);
+    let available_blocks: Vec<TimeBlock> = gaps
+        .iter()
+        .filter_map(|g| {
+            let start = g.get("start")?.as_str()?;
+            let end = g.get("end")?.as_str()?;
+            let duration = g.get("duration_minutes")?.as_u64()? as u32;
+            let hour: u32 = start
+                .find('T')
+                .and_then(|t| start[t + 1..].split(':').next())
+                .and_then(|h| h.parse().ok())
+                .unwrap_or(12);
+            let suggested_use = if hour < 12 {
+                "Deep Work"
+            } else {
+                "Admin / Follow-up"
+            };
+            Some(TimeBlock {
+                day: String::new(),
+                start: start.to_string(),
+                end: end.to_string(),
+                duration_minutes: duration,
+                suggested_use: Some(suggested_use.to_string()),
+            })
+        })
+        .collect();
+    let total_focus_minutes: u32 = available_blocks.iter().map(|b| b.duration_minutes).sum();
+
+    FocusResult::Success {
+        data: FocusData {
+            focus_statement,
+            priorities,
+            key_meetings,
+            available_blocks,
+            total_focus_minutes,
+        },
     }
 }
 
@@ -533,8 +642,8 @@ pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
                 ActionsResult::Success { data: actions }
             }
         }
-        Err(e) => ActionsResult::Error {
-            message: format!("Failed to load actions: {}", e),
+        Err(_) => ActionsResult::Empty {
+            message: "No actions yet. Actions appear after your first briefing.".to_string(),
         },
     }
 }
@@ -994,8 +1103,34 @@ pub fn set_workspace_path(
     // Scaffold workspace dirs
     crate::state::initialize_workspace(workspace, &entity_mode)?;
 
-    crate::state::create_or_update_config(&state, |config| {
+    let config = crate::state::create_or_update_config(&state, |config| {
         config.workspace_path = path.clone();
+    })?;
+
+    // Sync entities from the new workspace
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            let _ = crate::people::sync_people_from_workspace(
+                workspace,
+                db,
+                config.user_domain.as_deref(),
+            );
+            let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
+            let _ = crate::projects::sync_projects_from_workspace(workspace, db);
+        }
+    }
+
+    Ok(config)
+}
+
+/// Toggle developer mode (shows/hides devtools panel)
+#[tauri::command]
+pub fn set_developer_mode(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.developer_mode = enabled;
     })
 }
 
@@ -1246,6 +1381,55 @@ pub fn get_meeting_history_detail(
         attendees,
         captures,
         actions,
+    })
+}
+
+// =============================================================================
+// Action Detail
+// =============================================================================
+
+/// Enriched action with resolved account name and source meeting title.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionDetail {
+    #[serde(flatten)]
+    pub action: crate::db::DbAction,
+    pub account_name: Option<String>,
+    pub source_meeting_title: Option<String>,
+}
+
+/// Get full detail for a single action, with resolved relationships.
+#[tauri::command]
+pub fn get_action_detail(
+    action_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<ActionDetail, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let action = db
+        .get_action_by_id(&action_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {action_id}"))?;
+
+    // Resolve account name
+    let account_name = if let Some(ref aid) = action.account_id {
+        db.get_account(aid).ok().flatten().map(|a| a.name)
+    } else {
+        None
+    };
+
+    // Resolve source meeting title
+    let source_meeting_title = if let Some(ref sid) = action.source_id {
+        db.get_meeting_by_id(sid).ok().flatten().map(|m| m.title)
+    } else {
+        None
+    };
+
+    Ok(ActionDetail {
+        action,
+        account_name,
+        source_meeting_title,
     })
 }
 
