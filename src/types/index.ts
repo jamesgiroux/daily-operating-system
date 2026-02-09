@@ -192,7 +192,7 @@ export interface WeekOverview {
   /** AI-generated narrative overview of the week (I94) */
   weekNarrative?: string;
   /** AI-identified top priority (I94) */
-  topPriority?: unknown;
+  topPriority?: TopPriority;
   /** Proactive readiness checks surfacing prep gaps (I93) */
   readinessChecks?: ReadinessCheck[];
   /** Per-day density and meeting shape (I93) */
@@ -272,26 +272,35 @@ export interface TimeBlock {
   suggestedUse?: string;
 }
 
+/** AI-identified top priority for the week (I94) */
+export interface TopPriority {
+  title: string;
+  reason: string;
+  meetingId?: string;
+  actionId?: string;
+}
+
 // =============================================================================
 // Focus Data Types
 // =============================================================================
 
 export interface FocusData {
-  priorities: FocusPriority[];
-  timeBlocks?: TimeBlock[];
-  quickWins?: string[];
-  energyNotes?: EnergyNotes;
+  focusStatement?: string;
+  priorities: DbAction[];
+  keyMeetings: FocusMeeting[];
+  availableBlocks: TimeBlock[];
+  totalFocusMinutes: number;
 }
 
-export interface FocusPriority {
-  level: string;
-  label: string;
-  items: string[];
-}
-
-export interface EnergyNotes {
-  morning?: string;
-  afternoon?: string;
+export interface FocusMeeting {
+  id: string;
+  title: string;
+  time: string;
+  endTime?: string;
+  meetingType: string;
+  hasPrep: boolean;
+  account?: string;
+  prepFile?: string;
 }
 
 // =============================================================================
@@ -745,6 +754,12 @@ export interface DbCapture {
   captureType: string;
   content: string;
   capturedAt: string;
+}
+
+/** Enriched action with resolved relationships. */
+export interface ActionDetail extends DbAction {
+  accountName?: string;
+  sourceMeetingTitle?: string;
 }
 
 /** Full detail for a historical meeting. */
