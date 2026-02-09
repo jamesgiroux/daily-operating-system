@@ -603,6 +603,13 @@ pub struct DirectiveMeetingContext {
     pub open_items: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub references: Option<Vec<serde_json::Value>>,
+    // Raw data from meeting_context.rs (SQLite queries) — used to synthesize prep content
+    #[serde(default)]
+    pub open_actions: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub recent_captures: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub meeting_history: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]

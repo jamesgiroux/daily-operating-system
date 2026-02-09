@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import {
   progressStyles,
 } from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
-import { cn, formatArr } from "@/lib/utils";
+import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -25,14 +26,24 @@ import {
   CalendarClock,
   CheckCircle2,
   ExternalLink,
+  File,
+  FileText,
   Loader2,
   Pencil,
+  RefreshCw,
   Save,
+  Plus,
   Sparkles,
   Users,
   X,
 } from "lucide-react";
-import type { AccountDetail, AccountHealth } from "@/types";
+import type {
+  AccountDetail,
+  AccountHealth,
+  AccountChildSummary,
+  ContentFile,
+  ParentAggregate,
+} from "@/types";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
 
@@ -63,6 +74,18 @@ export default function AccountDetailPage() {
   const [saving, setSaving] = useState(false);
   const [enriching, setEnriching] = useState(false);
 
+  // I127: Inline action creation
+  const [addingAction, setAddingAction] = useState(false);
+  const [newActionTitle, setNewActionTitle] = useState("");
+  const [creatingAction, setCreatingAction] = useState(false);
+
+  // I124: Content index state
+  const [files, setFiles] = useState<ContentFile[]>([]);
+  const [indexing, setIndexing] = useState(false);
+  const [newFileCount, setNewFileCount] = useState(0);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (!accountId) return;
     try {
@@ -81,6 +104,15 @@ export default function AccountDetailPage() {
       setEditRenewal(result.renewalDate ?? "");
       setEditNotes(result.notes ?? "");
       setDirty(false);
+      // I124: Load content files
+      try {
+        const contentFiles = await invoke<ContentFile[]>("get_entity_files", {
+          entityId: accountId,
+        });
+        setFiles(contentFiles);
+      } catch {
+        // Non-critical — don't block page load
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -91,6 +123,22 @@ export default function AccountDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // I125: Listen for content-changed events from watcher
+  useEffect(() => {
+    const unlisten = listen<{ entityIds: string[]; count: number }>(
+      "content-changed",
+      (event) => {
+        if (accountId && event.payload.entityIds.includes(accountId)) {
+          setNewFileCount(event.payload.count);
+          setBannerDismissed(false);
+        }
+      }
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [accountId]);
 
   async function handleSave() {
     if (!detail) return;
@@ -149,6 +197,32 @@ export default function AccountDetailPage() {
     setEditRenewal(detail.renewalDate ?? "");
     setDirty(false);
     setEditing(false);
+  }
+
+  async function handleIndexFiles() {
+    if (!detail) return;
+    setIndexing(true);
+    setIndexFeedback(null);
+    try {
+      const updated = await invoke<ContentFile[]>("index_entity_files", {
+        entityId: detail.id,
+      });
+      const diff = updated.length - files.length;
+      setFiles(updated);
+      setNewFileCount(0);
+      setBannerDismissed(true);
+      // Show brief feedback
+      if (diff > 0) {
+        setIndexFeedback(`${diff} new file${diff !== 1 ? "s" : ""} found`);
+      } else {
+        setIndexFeedback("Up to date");
+      }
+      setTimeout(() => setIndexFeedback(null), 3000);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIndexing(false);
+    }
   }
 
   async function handleEnrich() {
@@ -244,14 +318,28 @@ export default function AccountDetailPage() {
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
         <div className="space-y-8 p-8">
-          {/* Back link */}
-          <Link
-            to="/accounts"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            Accounts
-          </Link>
+          {/* Back link / Breadcrumb */}
+          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+            <Link
+              to="/accounts"
+              className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="size-4" />
+              Accounts
+            </Link>
+            {detail.parentId && detail.parentName && (
+              <>
+                <span className="mx-1">/</span>
+                <Link
+                  to="/accounts/$accountId"
+                  params={{ accountId: detail.parentId }}
+                  className="transition-colors hover:text-foreground"
+                >
+                  {detail.parentName}
+                </Link>
+              </>
+            )}
+          </div>
 
           {/* Hero Section */}
           <div className="flex items-start justify-between">
@@ -323,8 +411,12 @@ export default function AccountDetailPage() {
                   </TooltipTrigger>
                   <TooltipContent>
                     {detail.companyOverview
-                      ? "Refresh company data using AI"
-                      : "Research this company using AI"}
+                      ? files.length > 0
+                        ? `Refresh using AI — includes ${files.length} workspace file${files.length !== 1 ? "s" : ""}`
+                        : "Refresh company data using AI"
+                      : files.length > 0
+                        ? `Research this company using AI — includes ${files.length} workspace file${files.length !== 1 ? "s" : ""}`
+                        : "Research this company using AI"}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -351,6 +443,11 @@ export default function AccountDetailPage() {
                 </div>
               ))}
             </div>
+          )}
+
+          {/* I114: Portfolio Aggregate for parent accounts */}
+          {detail.parentAggregate && (
+            <PortfolioRow aggregate={detail.parentAggregate} />
           )}
 
           {/* Asymmetric Grid: Main (3fr) + Sidebar (2fr) */}
@@ -398,6 +495,27 @@ export default function AccountDetailPage() {
                 </CardContent>
               </Card>
 
+              {/* Business Units (I114 — parent accounts only) */}
+              {detail.children.length > 0 && (
+                <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Business Units
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.children.length})
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {detail.children.map((child) => (
+                        <ChildAccountRow key={child.id} child={child} />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Open Actions */}
               <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -409,18 +527,73 @@ export default function AccountDetailPage() {
                       </span>
                     )}
                   </CardTitle>
-                  {detail.openActions.length > 0 && (
-                    <Link
-                      to="/actions"
-                      search={{ search: detail.id }}
-                      className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      View all
-                      <ExternalLink className="size-3" />
-                    </Link>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!addingAction && (
+                      <button
+                        onClick={() => setAddingAction(true)}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <Plus className="size-3" />
+                        Add action
+                      </button>
+                    )}
+                    {detail.openActions.length > 0 && (
+                      <Link
+                        to="/actions"
+                        search={{ search: detail.id }}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        View all
+                        <ExternalLink className="size-3" />
+                      </Link>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
+                  {addingAction && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={newActionTitle}
+                        onChange={(e) => setNewActionTitle(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter" && newActionTitle.trim()) {
+                            setCreatingAction(true);
+                            try {
+                              await invoke("create_action", {
+                                title: newActionTitle.trim(),
+                                accountId: detail.id,
+                              });
+                              setNewActionTitle("");
+                              setAddingAction(false);
+                              load();
+                            } finally {
+                              setCreatingAction(false);
+                            }
+                          }
+                          if (e.key === "Escape") {
+                            setAddingAction(false);
+                            setNewActionTitle("");
+                          }
+                        }}
+                        placeholder="Action title... (Enter to create)"
+                        disabled={creatingAction}
+                        className="flex-1 rounded-md border bg-background px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setAddingAction(false);
+                          setNewActionTitle("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
                   {detail.openActions.length > 0 ? (
                     <div className="space-y-2">
                       {detail.openActions.map((a) => (
@@ -444,10 +617,12 @@ export default function AccountDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <EmptyState
-                      icon={CheckCircle2}
-                      message="No open actions"
-                    />
+                    !addingAction && (
+                      <EmptyState
+                        icon={CheckCircle2}
+                        message="No open actions"
+                      />
+                    )
                   )}
                 </CardContent>
               </Card>
@@ -558,6 +733,104 @@ export default function AccountDetailPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Files (I124) */}
+              <Card className="transition-all hover:-translate-y-0.5 hover:shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Files
+                    {files.length > 0 && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({files.length})
+                      </span>
+                    )}
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    {indexFeedback && (
+                      <span className="text-xs text-muted-foreground animate-in fade-in">
+                        {indexFeedback}
+                      </span>
+                    )}
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            onClick={handleIndexFiles}
+                            disabled={indexing}
+                          >
+                            <RefreshCw
+                              className={cn(
+                                "size-4",
+                                indexing && "animate-spin"
+                              )}
+                            />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Re-scan directory for files
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {/* I125: New files banner */}
+                  {newFileCount > 0 && !bannerDismissed && (
+                    <div className="mb-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm">
+                      <FileText className="size-4 shrink-0 text-primary" />
+                      <span className="flex-1">
+                        {newFileCount} new file{newFileCount !== 1 ? "s" : ""}{" "}
+                        detected
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={handleIndexFiles}
+                        disabled={indexing}
+                      >
+                        Index now
+                      </Button>
+                      <button
+                        onClick={() => setBannerDismissed(true)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {files.length > 0 ? (
+                    <div className="space-y-1">
+                      {files.map((f) => (
+                        <div
+                          key={f.id}
+                          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted cursor-default"
+                          onClick={() =>
+                            invoke("reveal_in_finder", {
+                              path: f.absolutePath,
+                            })
+                          }
+                        >
+                          <File className="size-3.5 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate">{f.filename}</span>
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                            {formatFileSize(f.fileSize)}
+                          </span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {formatRelativeDateShort(f.modifiedAt)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState icon={FileText} message="No files indexed" />
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Strategic Programs */}
               {detail.strategicPrograms.length > 0 && (
@@ -1003,6 +1276,92 @@ function AccountDetailsEditForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+function PortfolioRow({ aggregate }: { aggregate: ParentAggregate }) {
+  const healthDot: Record<string, string> = {
+    green: "bg-green-500",
+    yellow: "bg-yellow-500",
+    red: "bg-destructive",
+  };
+
+  const items: { label: string; value: string }[] = [
+    { label: "Business Units", value: String(aggregate.buCount) },
+  ];
+  if (aggregate.totalArr != null) {
+    items.push({ label: "Total ARR", value: `$${formatArr(aggregate.totalArr)}` });
+  }
+  if (aggregate.worstHealth) {
+    items.push({ label: "Worst Health", value: aggregate.worstHealth });
+  }
+  if (aggregate.nearestRenewal) {
+    items.push({
+      label: "Nearest Renewal",
+      value: formatRenewalCountdown(aggregate.nearestRenewal),
+    });
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="rounded-lg border border-dashed bg-muted/30 px-4 py-3"
+        >
+          <div className="flex items-center gap-2">
+            {item.label === "Worst Health" && aggregate.worstHealth && (
+              <span
+                className={cn(
+                  "size-2.5 rounded-full",
+                  healthDot[aggregate.worstHealth] ?? "bg-muted-foreground/30"
+                )}
+              />
+            )}
+            <span className="text-xl font-semibold capitalize">
+              {item.value}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground">{item.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChildAccountRow({ child }: { child: AccountChildSummary }) {
+  const healthDot: Record<string, string> = {
+    green: "bg-green-500",
+    yellow: "bg-yellow-500",
+    red: "bg-destructive",
+  };
+
+  return (
+    <Link
+      to="/accounts/$accountId"
+      params={{ accountId: child.id }}
+      className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-muted"
+    >
+      {child.health && (
+        <span
+          className={cn(
+            "size-2.5 shrink-0 rounded-full",
+            healthDot[child.health] ?? "bg-muted-foreground/30"
+          )}
+        />
+      )}
+      <span className="flex-1 truncate font-medium">{child.name}</span>
+      {child.arr != null && (
+        <span className="shrink-0 font-mono text-sm text-muted-foreground">
+          ${formatArr(child.arr)}
+        </span>
+      )}
+      {child.openActionCount > 0 && (
+        <Badge variant="outline" className="shrink-0 text-xs">
+          {child.openActionCount} action{child.openActionCount !== 1 ? "s" : ""}
+        </Badge>
+      )}
+    </Link>
   );
 }
 
