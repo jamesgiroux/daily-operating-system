@@ -4,7 +4,7 @@ Active issues, known risks, assumptions, and dependencies.
 
 **Convention:** Issues use `I` prefix. When an issue is resolved, mark it `Closed` with a one-line resolution. Don't delete — future you wants to know what was considered.
 
-**Current state:** 409 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Active work: entity intelligence architecture (ADR-0057) + ship-path bugs + distribution.
+**Current state:** 439 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Entity intelligence architecture complete (ADR-0057, I130-I138). Active work: ship-path bugs + distribution.
 
 ---
 
@@ -30,35 +30,6 @@ Scope:
 (c) **Manual person creation.** "Add person" entry point on PeoplePage. Minimum fields: name + email. Auto-derives organization, relationship from email. Pre-links to account if triggered from AccountDetailPage.
 (d) **Notes as first-class contribution.** Notes field exists and is editable, but it's buried in edit mode. Promote to always-visible section with inline editing — this is the user's primary way to contribute knowledge (context, preferences, history, working style).
 Does NOT include: merge/dedup of duplicate people, bulk import, or contact sync from external sources.
-
-### Planned — Entity Intelligence (ADR-0057, ship blocker)
-
-**I130: intelligence.json schema + DB columns + CRUD**
-Define the canonical intelligence.json schema (executiveAssessment, risks[], recentWins[], currentState{}, stakeholderInsights[], valueDelivered[], nextMeetingReadiness{}, companyContext{}). Add intelligence columns or dedicated table to SQLite. Implement `upsert_intelligence()`, `get_intelligence()` in db.rs. Add `Intelligence` struct to types.rs. TypeScript `EntityIntelligence` type. `CONTENT_SKIP_FILES` updated to include `intelligence.json`. Foundation for everything else.
-
-**I131: Intelligence enrichment prompt + parser** — Blocked by I130
-Replace the 4-field web-search enrichment prompt with the full intelligence prompt. Input: existing intelligence.json (if any) + new/changed content + SQLite signals (meeting frequency, actions, captures, stakeholder engagement) + file manifest. Output: structured intelligence.json. Parse response into Intelligence struct. Incremental mode: reads prior intelligence + delta. First-run mode: reads all indexed files + web search. Raw file access: prompt includes file manifest; model can request specific files in follow-up turn.
-
-**I132: Auto-trigger intelligence on content change** — Blocked by I131
-Wire watcher content-changed events to intelligence refresh pipeline. Debounce: multiple file changes within 30s window produce one refresh. Queue: intelligence refreshes are async, non-blocking. Rate limit: max 1 refresh per entity per 5 minutes. Error handling: failed refresh leaves prior intelligence.json intact. Emit `intelligence-updated` event for frontend reactivity.
-
-**I133: Account detail page redesign — intelligence-first layout** — Blocked by I130
-Redesign AccountDetailPage per ADR-0057 page structure: (1) Hero + metrics (tighter). (2) Executive Assessment — full-width prose, no card wrapper. (3) Attention Items — risks/wins/action-needed with signal dots and temporal context. (4) Next Meeting Readiness — "your next meeting is in 3 weeks, here are 3 things to consider." (5) Commitments — actions grouped by urgency with "why this matters" context. (6) Stakeholder Intelligence — promoted to main column. (7) Evidence & History — collapsed, progressive disclosure (value delivered, meetings, captures, files). Sidebar: metadata + notes + company context.
-
-**I134: dashboard.md generation from three-file pattern** — Blocked by I130
-Rewrite `write_dashboard_md()` to compose from dashboard.json + intelligence.json + SQLite live queries. The markdown artifact should be a comprehensive intelligence document — executive summary, risks, wins, stakeholder map, meeting history, actions, value tracking. Replaces the current thin metadata-only markdown. This is what Claude Desktop and external tools consume.
-
-**I135: Persistent entity prep — nextMeetingReadiness** — Blocked by I131, I132
-Replace per-meeting prep (meeting_prep_state table) with persistent entity prep. Intelligence pipeline populates nextMeetingReadiness in intelligence.json: next meeting date/title + N prep items with "why now" framing. Updates when: calendar changes (next meeting shifts), new content arrives, actions complete/become overdue. Meeting prep surfaces in AccountDetailPage (I133) and daily briefing (I137).
-
-**I136: People intelligence** — Blocked by I131
-Apply intelligence pattern to people. Synthesize relationship intelligence from meeting_attendees + captures + transcripts mentioning this person. Output: relationship assessment, cross-entity connections, interaction patterns, intelligence gaps. PersonDetailPage redesign to surface relationship intelligence. Person intelligence.json in person directory (if tracker_path exists) or SQLite-only.
-
-**I137: Briefings consume entity intelligence** — Blocked by I131, I135
-Daily and weekly briefing enrichment pulls from per-entity intelligence.json as input. Meeting prep context comes from entity nextMeetingReadiness. Cross-entity synthesis is the briefing layer's job: "your busiest account this week is Nielsen, but Heroku's renewal is closer." Refactor briefing enrichment prompts to consume intelligence rather than regenerating it.
-
-**I138: Project intelligence** — Blocked by I130, I136
-Apply same three-file intelligence pattern to projects. intelligence.json for projects: project assessment, blockers, progress signals, stakeholder roles, milestone readiness. ProjectDetailPage redesign parallel to I133. Depends on project entity mode having sufficient content to enrich.
 
 ### Open
 
@@ -126,6 +97,24 @@ ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues
 **I92: User-configurable metadata fields** — Blocked by I27, ADR-0051
 
 ### Closed
+
+**I130:** Resolved. intelligence.json schema, entity_intelligence DB table, CRUD in db.rs, TypeScript EntityIntelligence type. CompanyOverview migration. Foundation for ADR-0057.
+
+**I131:** Resolved. Full intelligence enrichment engine — context builder (meetings, actions, captures, people, file contents), entity-parameterized prompt (initial + incremental modes), structured response parser, PTY orchestrator. Web search on initial, delta-only on incremental.
+
+**I132:** Resolved. IntelligenceQueue with priority-based dedup and debounce. Background processor in lib.rs. Watcher enqueues ContentChange on account/project file changes. Inbox pipeline enqueues after capture ingestion.
+
+**I133:** Resolved. AccountDetailPage intelligence-first redesign — executive assessment, attention items (risks/wins/unknowns), meeting readiness, stakeholder intelligence, evidence history. Graceful degradation when no intelligence exists.
+
+**I134:** Resolved. Shared `format_intelligence_markdown()` in entity_intel.rs generates intelligence sections for dashboard.md. Used by accounts, projects, and people. Company Overview skipped when intelligence.json has company_context.
+
+**I135:** Resolved. meeting_context.rs reads intelligence.json for entity prep. deliver.rs includes intelligence summary + risks + readiness in prep files. Calendar-triggered readiness refresh queued after schedule delivery.
+
+**I136:** Resolved. People intelligence enrichment from SQLite signals (meetings, entity connections, captures). `enrich_person` command. PersonDetailResult includes intelligence. write_person_markdown includes intelligence sections.
+
+**I137:** Resolved. Daily and weekly briefing enrichment prompts include cached entity intelligence for accounts with meetings. Brief DB lock pattern (microsecond read, release before PTY). Cross-entity synthesis instructions in weekly prompt.
+
+**I138:** Resolved. Project content indexing (sync_content_index_for_project delegates to shared sync_content_index_for_entity). ProjectContent watcher variant with intel queue integration. sync_all_content_indexes covers both accounts and projects.
 
 **I1:** Resolved. Config directory renamed `.daybreak` → `.dailyos`.
 
