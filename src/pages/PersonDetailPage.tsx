@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EntityPicker } from "@/components/ui/entity-picker";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   Building2,
   Calendar,
+  FolderKanban,
   Mail,
   Pencil,
   Save,
@@ -34,6 +36,7 @@ export default function PersonDetailPage() {
   const [editing, setEditing] = useState(false);
 
   // Editable fields
+  const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("");
   const [editOrg, setEditOrg] = useState("");
   const [editNotes, setEditNotes] = useState("");
@@ -49,6 +52,7 @@ export default function PersonDetailPage() {
         personId,
       });
       setDetail(result);
+      setEditName(result.name);
       setEditRole(result.role ?? "");
       setEditOrg(result.organization ?? "");
       setEditNotes(result.notes ?? "");
@@ -83,6 +87,7 @@ export default function PersonDetailPage() {
   async function handleSave() {
     if (!detail) return;
     const updates: [string, string][] = [];
+    if (editName !== detail.name) updates.push(["name", editName]);
     if (editRole !== (detail.role ?? "")) updates.push(["role", editRole]);
     if (editOrg !== (detail.organization ?? "")) updates.push(["organization", editOrg]);
     if (editNotes !== (detail.notes ?? "")) updates.push(["notes", editNotes]);
@@ -97,6 +102,7 @@ export default function PersonDetailPage() {
 
   function handleCancelEdit() {
     if (!detail) return;
+    setEditName(detail.name);
     setEditRole(detail.role ?? "");
     setEditOrg(detail.organization ?? "");
     setEditNotes(detail.notes ?? "");
@@ -199,9 +205,30 @@ export default function PersonDetailPage() {
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h1 className="text-3xl font-semibold tracking-tight">
-                    {detail.name}
-                  </h1>
+                  {editing ? (
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => {
+                        setEditName(e.target.value);
+                        setDirty(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSave();
+                        if (e.key === "Escape") handleCancelEdit();
+                      }}
+                      className="text-3xl font-semibold tracking-tight bg-transparent border-b border-primary/50 outline-none focus:border-primary"
+                      autoFocus
+                    />
+                  ) : (
+                    <h1
+                      className="text-3xl font-semibold tracking-tight cursor-pointer hover:text-primary/80 transition-colors"
+                      onClick={() => setEditing(true)}
+                      title="Click to edit"
+                    >
+                      {detail.name}
+                    </h1>
+                  )}
                   <Badge
                     variant="outline"
                     className={cn(
@@ -314,7 +341,7 @@ export default function PersonDetailPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {detail.entities && detail.entities.length > 0 ? (
+                  {detail.entities && detail.entities.length > 0 && (
                     <div className="space-y-2">
                       {detail.entities.map((e) => (
                         <div
@@ -322,11 +349,15 @@ export default function PersonDetailPage() {
                           className="flex items-center justify-between gap-2 text-sm"
                         >
                           <Link
-                            to="/accounts/$accountId"
-                            params={{ accountId: e.id }}
+                            to={e.entityType === "project" ? "/projects/$projectId" : "/accounts/$accountId"}
+                            params={e.entityType === "project" ? { projectId: e.id } : { accountId: e.id }}
                             className="flex items-center gap-2 transition-colors hover:text-primary"
                           >
-                            <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
+                            {e.entityType === "project" ? (
+                              <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <Building2 className="size-3.5 shrink-0 text-muted-foreground" />
+                            )}
                             <span className="font-medium">{e.name}</span>
                             <Badge variant="outline" className="text-xs capitalize">
                               {e.entityType}
@@ -341,9 +372,24 @@ export default function PersonDetailPage() {
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <EmptyState icon={Building2} message="No linked accounts or projects" />
                   )}
+                  <EntityPicker
+                    value={null}
+                    onChange={async (entityId) => {
+                      if (!entityId || !detail) return;
+                      try {
+                        await invoke("link_person_entity", {
+                          personId: detail.id,
+                          entityId,
+                          relationshipType: "associated",
+                        });
+                        await load();
+                      } catch (e) {
+                        setError(String(e));
+                      }
+                    }}
+                    placeholder="Link account or project..."
+                  />
                 </CardContent>
               </Card>
             </div>
@@ -374,6 +420,8 @@ export default function PersonDetailPage() {
                 <CardContent>
                   {editing ? (
                     <PersonDetailsEditForm
+                      editName={editName}
+                      setEditName={setEditName}
                       editOrg={editOrg}
                       setEditOrg={setEditOrg}
                       editRole={editRole}
@@ -476,6 +524,8 @@ function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
 }
 
 function PersonDetailsEditForm({
+  editName,
+  setEditName,
   editOrg,
   setEditOrg,
   editRole,
@@ -488,6 +538,8 @@ function PersonDetailsEditForm({
   saving,
   dirty,
 }: {
+  editName: string;
+  setEditName: (v: string) => void;
   editOrg: string;
   setEditOrg: (v: string) => void;
   editRole: string;
@@ -505,6 +557,21 @@ function PersonDetailsEditForm({
 
   return (
     <div className="space-y-4">
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">
+          Name
+        </label>
+        <input
+          type="text"
+          value={editName}
+          onChange={(e) => {
+            setEditName(e.target.value);
+            setDirty(true);
+          }}
+          placeholder="Full name"
+          className={inputClass}
+        />
+      </div>
       <div>
         <label className="text-xs font-medium text-muted-foreground">
           Organization

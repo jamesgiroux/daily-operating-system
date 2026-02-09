@@ -83,6 +83,8 @@ pub struct SourceManifestEntry {
     pub modified_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -621,18 +623,25 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- File manifest + contents ---
+    // --- File manifest + summaries (I139: summary-based, priority-ordered) ---
     let files = db.get_entity_files(entity_id).unwrap_or_default();
     let is_incremental = prior.is_some();
-    let max_chars: usize = if is_incremental { 20_000 } else { 50_000 };
+    // Summaries are much denser than raw text — raise char caps.
+    // Initial: 25K (~50 file summaries at 500 chars each). Incremental: 15K.
+    let max_chars: usize = if is_incremental { 15_000 } else { 25_000 };
     let enriched_at = prior.map(|p| p.enriched_at.as_str()).unwrap_or("");
+
+    // Only consider files modified within the last 90 days
+    let cutoff_90d = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
 
     ctx.file_manifest = files
         .iter()
+        .filter(|f| f.modified_at >= cutoff_90d)
         .map(|f| SourceManifestEntry {
             filename: f.filename.clone(),
             modified_at: f.modified_at.clone(),
             format: Some(f.format.clone()),
+            content_type: Some(f.content_type.clone()),
         })
         .collect();
 
@@ -640,34 +649,28 @@ pub fn build_intelligence_context(
     let mut total_chars = 0;
 
     for file in &files {
+        // Skip files older than 90 days
+        if file.modified_at < cutoff_90d {
+            continue;
+        }
+
         // In incremental mode, only include files modified since last enrichment
         if is_incremental && !enriched_at.is_empty() && file.modified_at <= enriched_at.to_string()
         {
             continue;
         }
 
-        let path = std::path::Path::new(&file.absolute_path);
-        if !path.exists() {
-            continue;
+        // Use pre-computed summary from SQLite — no filesystem I/O on hot path
+        if let Some(ref summary) = file.summary {
+            file_parts.push(format!(
+                "--- {} [{}] ({}) ---\n{}",
+                file.filename, file.content_type, file.modified_at, summary
+            ));
+            total_chars += summary.len();
+            if total_chars >= max_chars {
+                break;
+            }
         }
-
-        let text = match crate::processor::extract::extract_text(path) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-
-        let remaining = max_chars.saturating_sub(total_chars);
-        if remaining == 0 {
-            break;
-        }
-        let truncated = if text.len() > remaining {
-            &text[..remaining]
-        } else {
-            &text
-        };
-
-        file_parts.push(format!("--- File: {} ---\n{}", file.filename, truncated));
-        total_chars += truncated.len();
     }
 
     if !file_parts.is_empty() {
@@ -730,7 +733,7 @@ pub fn build_intelligence_prompt(
     } else {
         prompt.push_str(
             "This is an INITIAL intelligence build. Use all available context below. \
-             Use web search to find current company/project information if relevant.\n\n",
+             Do NOT use web search — work only with the provided signals and file contents.\n\n",
         );
     }
 
@@ -784,44 +787,64 @@ pub fn build_intelligence_prompt(
     if !ctx.file_manifest.is_empty() {
         prompt.push_str("## Workspace Files\n");
         for f in &ctx.file_manifest {
+            let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(
-                "- {} ({})\n",
+                "- {} [{}] ({}, {})\n",
                 f.filename,
-                f.format.as_deref().unwrap_or("unknown")
+                ct,
+                f.format.as_deref().unwrap_or("unknown"),
+                f.modified_at
             ));
         }
         prompt.push_str("\n");
     }
 
-    // File contents (full for initial, delta for incremental)
+    // File summaries (pre-computed, priority-ordered)
     if !ctx.file_contents.is_empty() {
         if is_incremental {
-            prompt.push_str("## New/Modified File Contents (since last enrichment)\n");
+            prompt.push_str("## New/Modified File Summaries (since last enrichment)\n");
         } else {
-            prompt.push_str("## File Contents\n");
+            prompt.push_str("## File Summaries (by priority)\n");
         }
         prompt.push_str(&ctx.file_contents);
         prompt.push_str("\n\n");
     }
+
+    // Writing style instructions
+    prompt.push_str(
+        "WRITING RULES:\n\
+         - Lead with conclusions, not evidence. State the \"so what\" first.\n\
+         - Be concise. Every sentence must earn its place.\n\
+         - Use numbered footnote references [1], [2] etc. List sources at the end.\n\
+         - Do NOT embed filenames or source references inline in prose.\n\
+         - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
+         - Write for a busy executive who has 60 seconds to understand this account.\n\n",
+    );
 
     // Output format instructions
     prompt.push_str(
         "Return ONLY the structured block below — no other text before or after.\n\n\
          INTELLIGENCE\n\
          EXECUTIVE_ASSESSMENT:\n\
-         <1-3 paragraphs: overall situation, trajectory, key themes. Cite sources.>\n\
+         <2-4 paragraphs separated by blank lines (\\n\\n), structured as follows:\n\
+         Paragraph 1: One-sentence verdict — account trajectory in plain language. Then 2-3 sentences on why.\n\
+         Paragraph 2: Top risk or blocker — what could go wrong and what depends on it.\n\
+         Paragraph 3: Biggest opportunity — where upside exists and what unlocks it.\n\
+         Paragraph 4 (optional): Key unknowns or intelligence gaps that need resolution.\n\
+         IMPORTANT: Separate each paragraph with a blank line. Do NOT run paragraphs together.\n\
+         Use [1] [2] footnote references. Max 250 words total.>\n\
+         SOURCES:\n\
+         [1] <filename>\n\
+         [2] <filename>\n\
          END_EXECUTIVE_ASSESSMENT\n\
-         RISK: <risk text> | SOURCE: <where you found this> | URGENCY: <critical|watch|low>\n\
-         RISK: <another risk> | SOURCE: <source> | URGENCY: <urgency>\n\
-         WIN: <win text> | SOURCE: <source> | IMPACT: <business impact>\n\
+         RISK: <risk text> | SOURCE: <filename> | URGENCY: <critical|watch|low>\n\
+         WIN: <win text> | SOURCE: <filename> | IMPACT: <business impact>\n\
          WORKING: <what's going well>\n\
-         WORKING: <another thing working>\n\
          NOT_WORKING: <what needs attention>\n\
          UNKNOWN: <knowledge gap that should be resolved>\n\
          STAKEHOLDER: <name> | ROLE: <role> | ASSESSMENT: <1-2 sentences> | ENGAGEMENT: <high|medium|low|unknown>\n\
-         VALUE: <date> | <value statement> | SOURCE: <source> | IMPACT: <impact>\n\
-         NEXT_MEETING_PREP: <preparation item for next meeting>\n\
-         NEXT_MEETING_PREP: <another prep item>\n",
+         VALUE: <date> | <value statement> | SOURCE: <filename> | IMPACT: <impact>\n\
+         NEXT_MEETING_PREP: <preparation item for next meeting>\n",
     );
 
     // Company context (initial only)
@@ -1432,6 +1455,153 @@ pub(crate) fn collect_content_files(
     }
 }
 
+// =============================================================================
+// Content Classification + Mechanical Summary (I139)
+// =============================================================================
+
+/// Classify content type from filename and format. Returns `(content_type, priority)`.
+///
+/// Pure mechanical — no AI cost, deterministic. First pattern match wins.
+/// Priority scale: 5 (general) to 10 (dashboard).
+pub(crate) fn classify_content(filename: &str, format: &str) -> (&'static str, i32) {
+    let lower = filename.to_lowercase();
+
+    if lower.contains("dashboard") {
+        return ("dashboard", 10);
+    }
+    if lower.contains("transcript")
+        || lower.contains("recording")
+        || lower.contains("call-notes")
+        || lower.contains("call_notes")
+    {
+        return ("transcript", 9);
+    }
+    if lower.contains("stakeholder") || lower.contains("org-chart") || lower.contains("relationship")
+    {
+        return ("stakeholder-map", 9);
+    }
+    if lower.contains("success-plan") || lower.contains("success_plan") || lower.contains("strategy")
+    {
+        return ("success-plan", 8);
+    }
+    if lower.contains("qbr")
+        || (lower.contains("quarterly") && lower.contains("review"))
+        || lower.contains("business-review")
+    {
+        return ("qbr", 8);
+    }
+    if lower.contains("contract")
+        || lower.contains("agreement")
+        || lower.contains("sow")
+        || lower.contains("msa")
+    {
+        return ("contract", 7);
+    }
+    if lower.contains("notes") || lower.contains("memo") || lower.contains("minutes") {
+        return ("notes", 7);
+    }
+    if format == "Pptx" {
+        return ("presentation", 6);
+    }
+    if format == "Xlsx" {
+        return ("spreadsheet", 6);
+    }
+
+    ("general", 5)
+}
+
+/// Apply a recency boost: files modified in the last 30 days get +1 priority (capped at 10).
+pub(crate) fn apply_recency_boost(base_priority: i32, modified_at: &str) -> i32 {
+    let cutoff_30d = (Utc::now() - chrono::Duration::days(30)).to_rfc3339();
+    if modified_at >= cutoff_30d.as_str() {
+        (base_priority + 1).min(10)
+    } else {
+        base_priority
+    }
+}
+
+/// Generate a mechanical summary from extracted text.
+///
+/// Extracts markdown headings as table of contents + first non-heading paragraph
+/// as context. Target: ~`max_chars` chars per file. Zero AI cost.
+pub(crate) fn mechanical_summary(text: &str, max_chars: usize) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+
+    let mut headings: Vec<&str> = Vec::new();
+    let mut first_paragraph: Option<&str> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if trimmed.starts_with('#') {
+            // Strip the leading '#' characters and whitespace for cleaner output
+            let heading_text = trimmed.trim_start_matches('#').trim();
+            if !heading_text.is_empty() {
+                headings.push(heading_text);
+            }
+        } else if first_paragraph.is_none() {
+            // First non-empty, non-heading line is the context paragraph
+            first_paragraph = Some(trimmed);
+        }
+    }
+
+    let mut result = String::new();
+
+    if let Some(para) = first_paragraph {
+        result.push_str(para);
+    }
+
+    if !headings.is_empty() {
+        if !result.is_empty() {
+            result.push_str("\n\nSections: ");
+        } else {
+            result.push_str("Sections: ");
+        }
+        result.push_str(&headings.join(", "));
+    }
+
+    if result.is_empty() {
+        // Fallback: take first max_chars of raw text
+        let truncated = &text[..text.len().min(max_chars)];
+        return truncated.to_string();
+    }
+
+    if result.len() > max_chars {
+        // Truncate to max_chars at a word boundary if possible
+        let truncated = &result[..max_chars];
+        if let Some(last_space) = truncated.rfind(' ') {
+            return result[..last_space].to_string();
+        }
+        return truncated.to_string();
+    }
+
+    result
+}
+
+/// Extract text from a file and produce a mechanical summary.
+/// Returns `(extracted_at, summary)`. Both are `None` if extraction fails.
+fn extract_and_summarize(path: &std::path::Path) -> (Option<String>, Option<String>) {
+    match crate::processor::extract::extract_text(path) {
+        Ok(text) if !text.is_empty() => {
+            let summary = mechanical_summary(&text, 500);
+            let extracted_at = Utc::now().to_rfc3339();
+            (
+                Some(extracted_at),
+                if summary.is_empty() {
+                    None
+                } else {
+                    Some(summary)
+                },
+            )
+        }
+        _ => (None, None),
+    }
+}
+
 /// Sync the content index for any entity. Compares filesystem against DB,
 /// adds new files, updates changed files, removes deleted files.
 ///
@@ -1507,10 +1677,16 @@ pub(crate) fn sync_content_index_for_entity(
 
         let id = crate::util::slugify(&format!("{}/{}", entity_id, rel_from_entity));
 
+        // Classify content type + priority from filename and format
+        let (content_type, base_priority) = classify_content(&filename, &format_label);
+        let priority = apply_recency_boost(base_priority, &modified_at);
+
         // Check if record exists in DB
         if let Some(existing_record) = db_map.remove(&id) {
             // File exists in DB — check if it changed (compare modified_at)
             if existing_record.modified_at != modified_at || existing_record.file_size != file_size {
+                // File changed — extract summary for new content
+                let (extracted_at_val, summary_val) = extract_and_summarize(path);
                 let record = crate::db::DbContentFile {
                     id,
                     entity_id: entity_id.to_string(),
@@ -1522,15 +1698,30 @@ pub(crate) fn sync_content_index_for_entity(
                     file_size,
                     modified_at,
                     indexed_at: now.clone(),
-                    extracted_at: None, // COALESCE preserves existing
-                    summary: None,      // COALESCE preserves existing
+                    extracted_at: extracted_at_val,
+                    summary: summary_val,
+                    content_type: content_type.to_string(),
+                    priority,
                 };
                 let _ = db.upsert_content_file(&record);
                 updated += 1;
+            } else if existing_record.summary.is_none() {
+                // Unchanged but never summarized — backfill summary
+                let (extracted_at_val, summary_val) = extract_and_summarize(path);
+                if summary_val.is_some() {
+                    let _ = db.update_content_extraction(
+                        &existing_record.id,
+                        &extracted_at_val.unwrap_or_else(|| now.clone()),
+                        summary_val.as_deref(),
+                        Some(content_type),
+                        Some(priority),
+                    );
+                }
             }
-            // Unchanged — skip
+            // Unchanged with existing summary — skip
         } else {
-            // New file — insert
+            // New file — extract summary + insert
+            let (extracted_at_val, summary_val) = extract_and_summarize(path);
             let record = crate::db::DbContentFile {
                 id,
                 entity_id: entity_id.to_string(),
@@ -1542,8 +1733,10 @@ pub(crate) fn sync_content_index_for_entity(
                 file_size,
                 modified_at,
                 indexed_at: now.clone(),
-                extracted_at: None,
-                summary: None,
+                extracted_at: extracted_at_val,
+                summary: summary_val,
+                content_type: content_type.to_string(),
+                priority,
             };
             let _ = db.upsert_content_file(&record);
             added += 1;
@@ -1585,6 +1778,7 @@ mod tests {
                 filename: "qbr-notes.md".to_string(),
                 modified_at: "2026-01-30T10:00:00Z".to_string(),
                 format: Some("markdown".to_string()),
+                content_type: Some("qbr".to_string()),
             }],
             executive_assessment: Some(
                 "Acme is in a strong position with steady renewal trajectory.".to_string(),
@@ -1855,8 +2049,9 @@ mod tests {
                 filename: "qbr.md".to_string(),
                 modified_at: "2026-01-30".to_string(),
                 format: Some("markdown".to_string()),
+                content_type: Some("qbr".to_string()),
             }],
-            file_contents: "--- File: qbr.md ---\nContent here".to_string(),
+            file_contents: "--- qbr.md [qbr] (2026-01-30) ---\nContent here".to_string(),
             prior_intelligence: None, // Initial mode
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
         };
@@ -1871,6 +2066,11 @@ mod tests {
         assert!(prompt.contains("COMPANY_DESCRIPTION:"));
         assert!(prompt.contains("INTELLIGENCE"));
         assert!(prompt.contains("END_INTELLIGENCE"));
+        // I139: prompt refinements
+        assert!(prompt.contains("Lead with conclusions"));
+        assert!(prompt.contains("footnote references"));
+        assert!(prompt.contains("Max 250 words"));
+        assert!(prompt.contains("SOURCES:"));
     }
 
     #[test]
@@ -1924,6 +2124,7 @@ Some trailing text"#;
             filename: "qbr-notes.md".to_string(),
             modified_at: "2026-01-30".to_string(),
             format: Some("markdown".to_string()),
+            content_type: Some("qbr".to_string()),
         }];
 
         let intel = parse_intelligence_response(response, "acme-corp", "account", 1, manifest)
@@ -2174,5 +2375,229 @@ Some trailing text"#;
         assert!(!md.contains("## Risks"));
         assert!(!md.contains("## Recent Wins"));
         assert!(!md.contains("## Current State"));
+    }
+
+    // =========================================================================
+    // I139: Content classification + mechanical summary tests
+    // =========================================================================
+
+    #[test]
+    fn test_classify_content_dashboard() {
+        let (ct, p) = classify_content("Acme-dashboard.md", "Markdown");
+        assert_eq!(ct, "dashboard");
+        assert_eq!(p, 10);
+    }
+
+    #[test]
+    fn test_classify_content_transcript() {
+        let (ct, p) = classify_content("call-transcript-2025-01-28.md", "Markdown");
+        assert_eq!(ct, "transcript");
+        assert_eq!(p, 9);
+
+        let (ct2, _) = classify_content("Weekly-Recording-Notes.md", "Markdown");
+        assert_eq!(ct2, "transcript");
+
+        let (ct3, _) = classify_content("customer-call_notes-q4.md", "Markdown");
+        assert_eq!(ct3, "transcript");
+    }
+
+    #[test]
+    fn test_classify_content_stakeholder() {
+        let (ct, p) = classify_content("stakeholder-map.md", "Markdown");
+        assert_eq!(ct, "stakeholder-map");
+        assert_eq!(p, 9);
+
+        let (ct2, _) = classify_content("org-chart-acme.xlsx", "Xlsx");
+        assert_eq!(ct2, "stakeholder-map");
+    }
+
+    #[test]
+    fn test_classify_content_success_plan() {
+        let (ct, p) = classify_content("success-plan-2026.md", "Markdown");
+        assert_eq!(ct, "success-plan");
+        assert_eq!(p, 8);
+
+        let (ct2, _) = classify_content("account_strategy.md", "Markdown");
+        assert_eq!(ct2, "success-plan");
+    }
+
+    #[test]
+    fn test_classify_content_qbr() {
+        let (ct, p) = classify_content("Q4-QBR.pptx", "Pptx");
+        assert_eq!(ct, "qbr");
+        assert_eq!(p, 8);
+
+        let (ct2, _) = classify_content("quarterly-business-review-2025.md", "Markdown");
+        assert_eq!(ct2, "qbr");
+    }
+
+    #[test]
+    fn test_classify_content_contract() {
+        let (ct, p) = classify_content("master-agreement-v2.pdf", "Pdf");
+        assert_eq!(ct, "contract");
+        assert_eq!(p, 7);
+
+        let (ct2, _) = classify_content("sow-phase2.docx", "Docx");
+        assert_eq!(ct2, "contract");
+    }
+
+    #[test]
+    fn test_classify_content_notes() {
+        let (ct, p) = classify_content("meeting-notes-jan.md", "Markdown");
+        assert_eq!(ct, "notes");
+        assert_eq!(p, 7);
+    }
+
+    #[test]
+    fn test_classify_content_format_fallback_pptx() {
+        let (ct, p) = classify_content("slide-deck.pptx", "Pptx");
+        assert_eq!(ct, "presentation");
+        assert_eq!(p, 6);
+    }
+
+    #[test]
+    fn test_classify_content_format_fallback_xlsx() {
+        let (ct, p) = classify_content("data.xlsx", "Xlsx");
+        assert_eq!(ct, "spreadsheet");
+        assert_eq!(p, 6);
+    }
+
+    #[test]
+    fn test_classify_content_default() {
+        let (ct, p) = classify_content("random-file.md", "Markdown");
+        assert_eq!(ct, "general");
+        assert_eq!(p, 5);
+    }
+
+    #[test]
+    fn test_classify_content_case_insensitive() {
+        let (ct, _) = classify_content("ACME-DASHBOARD.MD", "Markdown");
+        assert_eq!(ct, "dashboard");
+
+        let (ct2, _) = classify_content("Call-Transcript-Feb.md", "Markdown");
+        assert_eq!(ct2, "transcript");
+    }
+
+    #[test]
+    fn test_recency_boost() {
+        let recent = Utc::now().to_rfc3339();
+        assert_eq!(apply_recency_boost(5, &recent), 6);
+        assert_eq!(apply_recency_boost(10, &recent), 10); // capped at 10
+
+        let old = "2020-01-01T00:00:00+00:00";
+        assert_eq!(apply_recency_boost(5, old), 5); // no boost
+    }
+
+    #[test]
+    fn test_mechanical_summary_markdown() {
+        let text = "# Account Overview\n\nAcme Corp is a leading SaaS provider.\n\n## Health\n\nCurrently green.\n\n## Risks\n\nBudget uncertainty.\n";
+        let summary = mechanical_summary(text, 500);
+
+        assert!(summary.contains("Acme Corp is a leading SaaS provider."));
+        assert!(summary.contains("Sections:"));
+        assert!(summary.contains("Account Overview"));
+        assert!(summary.contains("Health"));
+        assert!(summary.contains("Risks"));
+    }
+
+    #[test]
+    fn test_mechanical_summary_plain_text() {
+        let text = "This is a plain text document without any markdown headings. It has some content that should be captured as the first paragraph.";
+        let summary = mechanical_summary(text, 500);
+
+        assert!(summary.starts_with("This is a plain text"));
+        assert!(!summary.contains("Sections:"));
+    }
+
+    #[test]
+    fn test_mechanical_summary_empty() {
+        let summary = mechanical_summary("", 500);
+        assert!(summary.is_empty());
+    }
+
+    #[test]
+    fn test_mechanical_summary_truncation() {
+        let text = "# Header\n\nA very long paragraph that goes on and on. ".repeat(20);
+        let summary = mechanical_summary(&text, 100);
+        assert!(summary.len() <= 100);
+    }
+
+    #[test]
+    fn test_mechanical_summary_headings_only() {
+        let text = "# Overview\n## Details\n## Timeline\n";
+        let summary = mechanical_summary(text, 500);
+        assert!(summary.starts_with("Sections:"));
+        assert!(summary.contains("Overview"));
+        assert!(summary.contains("Details"));
+        assert!(summary.contains("Timeline"));
+    }
+
+    #[test]
+    fn test_entity_files_sorted_by_priority() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        // Insert a low-priority file
+        let low = crate::db::DbContentFile {
+            id: "sort-test/general".to_string(),
+            entity_id: "sort-test".to_string(),
+            entity_type: "account".to_string(),
+            filename: "random.md".to_string(),
+            relative_path: "Accounts/Sort/random.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Sort/random.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 100,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None,
+            summary: None,
+            content_type: "general".to_string(),
+            priority: 5,
+        };
+        db.upsert_content_file(&low).unwrap();
+
+        // Insert a high-priority file
+        let high = crate::db::DbContentFile {
+            id: "sort-test/dashboard".to_string(),
+            entity_id: "sort-test".to_string(),
+            entity_type: "account".to_string(),
+            filename: "dashboard.md".to_string(),
+            relative_path: "Accounts/Sort/dashboard.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Sort/dashboard.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 200,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None,
+            summary: None,
+            content_type: "dashboard".to_string(),
+            priority: 10,
+        };
+        db.upsert_content_file(&high).unwrap();
+
+        // Insert a mid-priority file
+        let mid = crate::db::DbContentFile {
+            id: "sort-test/notes".to_string(),
+            entity_id: "sort-test".to_string(),
+            entity_type: "account".to_string(),
+            filename: "notes.md".to_string(),
+            relative_path: "Accounts/Sort/notes.md".to_string(),
+            absolute_path: "/tmp/workspace/Accounts/Sort/notes.md".to_string(),
+            format: "Markdown".to_string(),
+            file_size: 150,
+            modified_at: now.clone(),
+            indexed_at: now.clone(),
+            extracted_at: None,
+            summary: None,
+            content_type: "notes".to_string(),
+            priority: 7,
+        };
+        db.upsert_content_file(&mid).unwrap();
+
+        let files = db.get_entity_files("sort-test").unwrap();
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].content_type, "dashboard"); // priority 10
+        assert_eq!(files[1].content_type, "notes");     // priority 7
+        assert_eq!(files[2].content_type, "general");   // priority 5
     }
 }
