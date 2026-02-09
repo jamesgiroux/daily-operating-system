@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS actions (
     source_label TEXT,
     context TEXT,
     waiting_on TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    person_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
@@ -36,8 +37,11 @@ CREATE TABLE IF NOT EXISTS accounts (
     champion TEXT,
     nps INTEGER,
     tracker_path TEXT,
+    parent_id TEXT,
     updated_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 
 -- Projects (I50 / ADR-0046)
 CREATE TABLE IF NOT EXISTS projects (
@@ -167,3 +171,37 @@ CREATE TABLE IF NOT EXISTS meeting_entities (
     PRIMARY KEY (meeting_id, entity_id)
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);
+
+-- Content file index (I124 / ADR-0056): tracks all non-dashboard files in entity dirs.
+CREATE TABLE IF NOT EXISTS content_index (
+    id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT 'account',
+    filename TEXT NOT NULL,
+    relative_path TEXT NOT NULL,
+    absolute_path TEXT NOT NULL,
+    format TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    modified_at TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    extracted_at TEXT,
+    summary TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_content_entity ON content_index(entity_id);
+CREATE INDEX IF NOT EXISTS idx_content_modified ON content_index(modified_at);
+
+-- Entity intelligence cache (I130 / ADR-0057): synthesized assessment from enrichment.
+-- File (intelligence.json) is source of truth; this table is a read-through cache.
+CREATE TABLE IF NOT EXISTS entity_intelligence (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL DEFAULT 'account',
+    enriched_at TEXT,
+    source_file_count INTEGER DEFAULT 0,
+    executive_assessment TEXT,
+    risks_json TEXT,
+    recent_wins_json TEXT,
+    current_state_json TEXT,
+    stakeholder_insights_json TEXT,
+    next_meeting_readiness_json TEXT,
+    company_context_json TEXT
+);

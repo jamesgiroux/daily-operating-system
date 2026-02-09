@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useSearch, Link } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,14 +7,20 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
+import { PriorityPicker } from "@/components/ui/priority-picker";
+import { EntityPicker } from "@/components/ui/entity-picker";
 import { useActions } from "@/hooks/useActions";
+import type { CreateActionParams } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import { cn, stripMarkdown } from "@/lib/utils";
 import { PageError } from "@/components/PageState";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Circle,
   Clock,
+  Plus,
   RefreshCw,
 } from "lucide-react";
 
@@ -54,6 +61,7 @@ export default function ActionsPage() {
     loading,
     error,
     refresh,
+    createAction,
     toggleAction,
     statusFilter,
     setStatusFilter,
@@ -62,6 +70,8 @@ export default function ActionsPage() {
     searchQuery,
     setSearchQuery,
   } = useActions(initialSearch as string | undefined);
+
+  const [showCreate, setShowCreate] = useState(false);
 
   const statusCounts: Record<StatusTab, number> = {
     all: allActions.length,
@@ -105,10 +115,33 @@ export default function ActionsPage() {
                 Track, complete, and manage action items across days
               </p>
             </div>
-            <Button variant="ghost" size="icon" className="size-8" onClick={refresh}>
-              <RefreshCw className="size-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {!showCreate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={() => setShowCreate(true)}
+                >
+                  <Plus className="size-3.5" />
+                  Add action
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" className="size-8" onClick={refresh}>
+                <RefreshCw className="size-4" />
+              </Button>
+            </div>
           </div>
+
+          {showCreate && (
+            <ActionCreateForm
+              onSubmit={async (params) => {
+                await createAction(params);
+                setShowCreate(false);
+              }}
+              onCancel={() => setShowCreate(false)}
+            />
+          )}
 
           <SearchInput
             value={searchQuery}
@@ -250,8 +283,10 @@ function ActionCard({
               )}
             </div>
 
-            {action.accountId && (
-              <p className="text-sm text-primary">{action.accountId}</p>
+            {(action.accountName || action.accountId) && (
+              <p className="text-sm text-primary">
+                {action.accountName || action.accountId}
+              </p>
             )}
 
             {action.context && (
@@ -283,6 +318,164 @@ function ActionCard({
             )}
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActionCreateForm({
+  onSubmit,
+  onCancel,
+  defaultAccountId,
+}: {
+  onSubmit: (params: CreateActionParams) => Promise<void>;
+  onCancel: () => void;
+  defaultAccountId?: string;
+}) {
+  const [title, setTitle] = useState("");
+  const [showDetails, setShowDetails] = useState(false);
+  const [priority, setPriority] = useState("P2");
+  const [dueDate, setDueDate] = useState("");
+  const [accountId, setAccountId] = useState<string | null>(
+    defaultAccountId ?? null
+  );
+  const [sourceLabel, setSourceLabel] = useState("");
+  const [context, setContext] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit() {
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        title: title.trim(),
+        priority,
+        dueDate: dueDate || undefined,
+        accountId: accountId ?? undefined,
+        context: context.trim() || undefined,
+        sourceLabel: sourceLabel.trim() || undefined,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="mb-4">
+      <CardContent className="space-y-3 p-4">
+        {/* Stage 1: Title */}
+        <div className="flex items-center gap-3">
+          <Circle className="size-5 shrink-0 text-muted-foreground/30" />
+          <input
+            type="text"
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !showDetails) handleSubmit();
+              if (e.key === "Escape") onCancel();
+            }}
+            placeholder="What needs to be done?"
+            className="flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/60"
+          />
+        </div>
+
+        {/* Toggle details */}
+        {!showDetails ? (
+          <div className="flex items-center gap-2 pl-8">
+            <button
+              type="button"
+              onClick={() => setShowDetails(true)}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <ChevronDown className="size-3" />
+              Add details
+            </button>
+            <div className="flex-1" />
+            <Button
+              size="sm"
+              variant="default"
+              className="h-7 text-xs"
+              disabled={!title.trim() || submitting}
+              onClick={handleSubmit}
+            >
+              Create
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* Stage 2: Details */}
+            <div className="space-y-3 pl-8">
+              <button
+                type="button"
+                onClick={() => setShowDetails(false)}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <ChevronUp className="size-3" />
+                Hide details
+              </button>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <PriorityPicker value={priority} onChange={setPriority} />
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="h-7 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+                />
+                <EntityPicker
+                  value={accountId}
+                  onChange={(id) => setAccountId(id)}
+                  locked={!!defaultAccountId}
+                />
+              </div>
+
+              <input
+                type="text"
+                value={sourceLabel}
+                onChange={(e) => setSourceLabel(e.target.value)}
+                placeholder="Source (e.g., Slack, call with Jane)"
+                className="w-full rounded-md border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              />
+
+              <textarea
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                placeholder="Additional context..."
+                rows={2}
+                className="w-full resize-none rounded-md border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pl-8">
+              <Button
+                size="sm"
+                variant="default"
+                className="h-7 text-xs"
+                disabled={!title.trim() || submitting}
+                onClick={handleSubmit}
+              >
+                Create
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={onCancel}
+              >
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

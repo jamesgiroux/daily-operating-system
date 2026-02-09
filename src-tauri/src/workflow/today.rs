@@ -56,6 +56,7 @@ pub fn sync_actions_to_db(workspace: &Path, db: &ActionDb) -> Result<usize, Stri
             context: action.context.clone(),
             waiting_on: None,
             updated_at: now.clone(),
+            person_id: None,
         };
 
         // Use upsert — this preserves user-set completed status because the

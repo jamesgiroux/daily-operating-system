@@ -32,6 +32,15 @@ export function formatArr(arr: number): string {
   return arr.toFixed(0);
 }
 
+/** Format bytes as human-readable file size (1.2 KB, 3.4 MB, etc.). */
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024)
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 export function stripMarkdown(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, "$1")   // **bold**
