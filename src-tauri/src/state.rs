@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Utc};
 
@@ -27,6 +27,8 @@ pub struct AppState {
     pub capture_captured: Mutex<std::collections::HashSet<String>>,
     /// Tracks processed transcripts by meeting_id for immutability (one transcript per meeting)
     pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
+    /// Background intelligence enrichment queue (I132)
+    pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
 }
 
 impl AppState {
@@ -99,6 +101,7 @@ impl AppState {
             capture_dismissed: Mutex::new(std::collections::HashSet::new()),
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             transcript_processed: Mutex::new(transcript_processed),
+            intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
         }
     }
 
