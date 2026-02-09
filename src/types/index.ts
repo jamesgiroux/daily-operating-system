@@ -578,6 +578,7 @@ export interface PersonDetail extends Person {
     startTime: string;
     meetingType: string;
   }[];
+  intelligence?: EntityIntelligence;
 }
 
 export interface AttendeeContext {

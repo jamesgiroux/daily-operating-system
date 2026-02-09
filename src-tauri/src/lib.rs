@@ -251,8 +251,9 @@ pub fn run() {
             commands::unlink_person_entity,
             commands::get_people_for_entity,
             commands::get_meeting_attendees,
-            // I74: Account Enrichment
+            // I74/I136: Entity Enrichment
             commands::enrich_account,
+            commands::enrich_person,
             // I124: Content Index
             commands::get_entity_files,
             commands::index_entity_files,
