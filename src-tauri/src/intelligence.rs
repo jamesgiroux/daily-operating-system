@@ -458,6 +458,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
         db.upsert_account(&acct).expect("upsert");
@@ -512,6 +513,7 @@ mod tests {
             context: None,
             waiting_on: Some("Legal".to_string()),
             updated_at: now,
+            person_id: None,
         };
         db.upsert_action(&stale_action).expect("insert");
 

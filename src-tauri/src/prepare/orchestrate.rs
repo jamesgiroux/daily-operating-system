@@ -30,7 +30,9 @@ pub async fn prepare_today(
     workspace: &Path,
 ) -> Result<(), ExecutionError> {
     let now = Utc::now();
-    let today = now.date_naive();
+    // Use local date — not UTC — to determine "today" from the user's perspective.
+    // Without this, a Sunday 8pm EST user gets Monday's briefing (UTC is already Monday).
+    let today = chrono::Local::now().date_naive();
 
     // Load config
     let (profile, user_domain) = get_config(state);
@@ -79,10 +81,10 @@ pub async fn prepare_today(
         email_result.low_count,
     );
 
-    // Step 5: Parse actions
+    // Step 5: Collect actions (workspace markdown + SQLite)
     let db_guard = state.db.lock().ok();
     let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-    let action_result = actions::parse_workspace_actions(workspace, db_ref);
+    let action_result = actions::collect_all_actions(workspace, db_ref);
     let actions_dict = action_result.to_value();
 
     // Step 6: Meeting contexts
@@ -162,7 +164,7 @@ pub async fn prepare_week(
     workspace: &Path,
 ) -> Result<(), ExecutionError> {
     let now = Utc::now();
-    let today = now.date_naive();
+    let today = chrono::Local::now().date_naive();
 
     let (profile, user_domain) = get_config(state);
 
@@ -1753,8 +1755,10 @@ fn format_time_display(iso_string: &str) -> String {
         .ok()
         .or_else(|| chrono::DateTime::parse_from_rfc3339(iso_string).ok())
         .map(|dt| {
-            let h = dt.format("%I:%M %p").to_string();
-            h.trim_start_matches('0').to_string()
+            // Convert to system local time for display
+            let local = dt.with_timezone(&chrono::Local);
+            let h = local.format("%-I:%M %p").to_string();
+            h
         })
         .unwrap_or_default()
 }

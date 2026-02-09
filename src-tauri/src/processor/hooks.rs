@@ -324,6 +324,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&account).expect("upsert account");
@@ -374,6 +375,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&account).expect("upsert");

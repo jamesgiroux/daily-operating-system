@@ -77,9 +77,9 @@ fn gather_meeting_context(
     match meeting_type {
         "customer" | "qbr" | "training" => {
             if accounts_dir.is_dir() {
-                if let Some(account_name) = guess_account_name(meeting, &accounts_dir) {
-                    ctx["account"] = json!(account_name);
-                    let account_path = accounts_dir.join(&account_name);
+                if let Some(matched) = guess_account_name(meeting, &accounts_dir) {
+                    ctx["account"] = json!(&matched.name);
+                    let account_path = accounts_dir.join(&matched.relative_path);
 
                     // File references
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
@@ -100,7 +100,7 @@ fn gather_meeting_context(
                         ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
                     }
 
-                    let recent = find_recent_summaries(&account_name, &archive_dir, 2);
+                    let recent = find_recent_summaries(&matched.name, &archive_dir, 2);
                     if !recent.is_empty() {
                         ctx["refs"]["meeting_history"] = json!(recent
                             .iter()
@@ -111,10 +111,10 @@ fn gather_meeting_context(
                     // SQLite enrichment
                     if let Some(db) = db {
                         ctx["recent_captures"] =
-                            get_captures_for_account(db, &account_name, 14);
-                        ctx["open_actions"] = get_account_actions(db, &account_name);
+                            get_captures_for_account(db, &matched.name, 14);
+                        ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] =
-                            get_meeting_history(db, &account_name, 30, 3);
+                            get_meeting_history(db, &matched.name, 30, 3);
                     }
                 }
             }
@@ -188,9 +188,9 @@ fn gather_meeting_context(
 
         "partnership" => {
             if accounts_dir.is_dir() {
-                if let Some(account_name) = guess_account_name(meeting, &accounts_dir) {
-                    ctx["account"] = json!(account_name);
-                    let account_path = accounts_dir.join(&account_name);
+                if let Some(matched) = guess_account_name(meeting, &accounts_dir) {
+                    ctx["account"] = json!(&matched.name);
+                    let account_path = accounts_dir.join(&matched.relative_path);
                     for fname in &["dashboard.md", "stakeholders.md", "actions.md"] {
                         if let Some(found) = find_file_in_dir(&account_path, fname) {
                             let key = fname.replace(".md", "");
@@ -200,10 +200,10 @@ fn gather_meeting_context(
 
                     if let Some(db) = db {
                         ctx["recent_captures"] =
-                            get_captures_for_account(db, &account_name, 14);
-                        ctx["open_actions"] = get_account_actions(db, &account_name);
+                            get_captures_for_account(db, &matched.name, 14);
+                        ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] =
-                            get_meeting_history(db, &account_name, 30, 3);
+                            get_meeting_history(db, &matched.name, 30, 3);
                     }
                 }
             }
@@ -240,8 +240,21 @@ fn gather_meeting_context(
 // File search helpers
 // ---------------------------------------------------------------------------
 
+/// Result of matching a meeting to an account directory.
+struct AccountMatch {
+    /// Display name (e.g., "Consumer-Brands" for a child, "Cox" for a parent).
+    name: String,
+    /// Relative path from Accounts/ dir (e.g., "Cox/Consumer-Brands" for a child, "Cox" for flat).
+    relative_path: String,
+}
+
 /// Try to match a meeting to a known account directory.
-fn guess_account_name(meeting: &Value, accounts_dir: &Path) -> Option<String> {
+///
+/// Performs a two-level scan: first checks top-level account directories,
+/// then checks child BU subdirectories within each parent (using `is_bu_directory`).
+/// Child matches are preferred over parent matches when both exist, since child BU
+/// meetings should reference the BU-specific context files.
+fn guess_account_name(meeting: &Value, accounts_dir: &Path) -> Option<AccountMatch> {
     if !accounts_dir.is_dir() {
         return None;
     }
@@ -263,28 +276,60 @@ fn guess_account_name(meeting: &Value, accounts_dir: &Path) -> Option<String> {
         })
         .unwrap_or_default();
 
-    let account_names: Vec<String> = std::fs::read_dir(accounts_dir)
+    let top_level_dirs: Vec<String> = std::fs::read_dir(accounts_dir)
         .ok()?
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
         .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
 
-    for name in &account_names {
-        if title_lower.contains(&name.to_lowercase()) {
-            return Some(name.clone());
-        }
-        for domain in &external_domains {
-            let domain_base = domain.split('.').next().unwrap_or("").to_lowercase();
-            if domain_base == name.to_lowercase()
-                || name.to_lowercase().contains(&domain_base)
-            {
-                return Some(name.clone());
+    // Check child BU directories first (more specific match wins)
+    for parent_name in &top_level_dirs {
+        let parent_path = accounts_dir.join(parent_name);
+        if let Ok(children) = std::fs::read_dir(&parent_path) {
+            for entry in children.filter_map(|e| e.ok()) {
+                let child_name = entry.file_name().to_string_lossy().to_string();
+                if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                if !crate::accounts::is_bu_directory(&child_name) {
+                    continue;
+                }
+                if matches_meeting(&child_name, &title_lower, &external_domains) {
+                    return Some(AccountMatch {
+                        name: child_name.clone(),
+                        relative_path: format!("{parent_name}/{child_name}"),
+                    });
+                }
             }
         }
     }
 
+    // Fall back to top-level account match
+    for name in &top_level_dirs {
+        if matches_meeting(name, &title_lower, &external_domains) {
+            return Some(AccountMatch {
+                name: name.clone(),
+                relative_path: name.clone(),
+            });
+        }
+    }
+
     None
+}
+
+/// Check if an account/BU name matches a meeting by title or external domain.
+fn matches_meeting(name: &str, title_lower: &str, external_domains: &[String]) -> bool {
+    if title_lower.contains(&name.to_lowercase()) {
+        return true;
+    }
+    for domain in external_domains {
+        let domain_base = domain.split('.').next().unwrap_or("").to_lowercase();
+        if domain_base == name.to_lowercase() || name.to_lowercase().contains(&domain_base) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Find a file by name in a directory (case-insensitive).
@@ -699,10 +744,9 @@ mod tests {
             "title": "Acme QBR",
             "external_domains": [],
         });
-        assert_eq!(
-            guess_account_name(&meeting, dir.path()),
-            Some("Acme".to_string())
-        );
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "Acme");
+        assert_eq!(matched.relative_path, "Acme");
     }
 
     #[test]
@@ -714,10 +758,9 @@ mod tests {
             "title": "Weekly Sync",
             "external_domains": ["bigcorp.com"],
         });
-        assert_eq!(
-            guess_account_name(&meeting, dir.path()),
-            Some("BigCorp".to_string())
-        );
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "BigCorp");
+        assert_eq!(matched.relative_path, "BigCorp");
     }
 
     #[test]
@@ -729,7 +772,68 @@ mod tests {
             "title": "Random Meeting",
             "external_domains": ["other.com"],
         });
-        assert_eq!(guess_account_name(&meeting, dir.path()), None);
+        assert!(guess_account_name(&meeting, dir.path()).is_none());
+    }
+
+    #[test]
+    fn test_guess_account_name_child_bu() {
+        let dir = tempfile::tempdir().unwrap();
+        // Parent with numbered internal dir + BU child
+        std::fs::create_dir_all(dir.path().join("Cox/01-Customer-Information")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Cox/Consumer-Brands")).unwrap();
+
+        // Match by domain (most common for BU meetings)
+        let meeting = json!({
+            "title": "Weekly Sync",
+            "external_domains": ["consumer-brands.cox.com"],
+        });
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "Consumer-Brands");
+        assert_eq!(matched.relative_path, "Cox/Consumer-Brands");
+    }
+
+    #[test]
+    fn test_guess_account_name_child_by_title() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Cox/Enterprise")).unwrap();
+
+        // Title contains exact dir name
+        let meeting = json!({
+            "title": "Enterprise QBR",
+            "external_domains": [],
+        });
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "Enterprise");
+        assert_eq!(matched.relative_path, "Cox/Enterprise");
+    }
+
+    #[test]
+    fn test_guess_account_name_child_by_domain() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Salesforce/Engineering")).unwrap();
+
+        let meeting = json!({
+            "title": "Weekly Sync",
+            "external_domains": ["engineering.salesforce.com"],
+        });
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "Engineering");
+        assert_eq!(matched.relative_path, "Salesforce/Engineering");
+    }
+
+    #[test]
+    fn test_guess_account_name_skips_numbered_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        // Only numbered internal dirs, no BU children
+        std::fs::create_dir_all(dir.path().join("Acme/01-Customer-Information")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Acme/02-Meetings")).unwrap();
+
+        let meeting = json!({
+            "title": "Customer Information Review",
+            "external_domains": [],
+        });
+        // Should NOT match the numbered internal dir
+        assert!(guess_account_name(&meeting, dir.path()).is_none());
     }
 
     #[test]

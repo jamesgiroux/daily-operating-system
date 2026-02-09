@@ -595,6 +595,7 @@ mod tests {
             champion: None,
             nps: None,
             tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
         };
         db.upsert_account(&account).unwrap();

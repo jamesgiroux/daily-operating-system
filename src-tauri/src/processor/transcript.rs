@@ -297,6 +297,7 @@ fn extract_transcript_actions(
                 None
             },
             updated_at: now.clone(),
+            person_id: None,
         };
 
         if let Err(e) = db.upsert_action_if_not_completed(&action) {

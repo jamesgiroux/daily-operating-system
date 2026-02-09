@@ -5,6 +5,7 @@ mod commands;
 mod db;
 mod db_backup;
 pub mod entity;
+pub mod entity_intel;
 mod error;
 pub mod intelligence;
 mod executor;
@@ -208,6 +209,9 @@ pub fn run() {
             commands::get_meeting_outcomes,
             commands::update_capture,
             commands::update_action_priority,
+            // I127/I128: Manual Action CRUD
+            commands::create_action,
+            commands::update_action,
             // I42: Executive Intelligence
             commands::get_executive_intelligence,
             // I6: Processing History
@@ -241,8 +245,13 @@ pub fn run() {
             commands::get_meeting_attendees,
             // I74: Account Enrichment
             commands::enrich_account,
+            // I124: Content Index
+            commands::get_entity_files,
+            commands::index_entity_files,
+            commands::reveal_in_finder,
             // I72: Account Dashboards
             commands::get_accounts_list,
+            commands::get_child_accounts_list,
             commands::get_account_detail,
             commands::update_account_field,
             commands::update_account_notes,

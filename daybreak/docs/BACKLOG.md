@@ -4,390 +4,328 @@ Active issues, known risks, assumptions, and dependencies.
 
 **Convention:** Issues use `I` prefix. When an issue is resolved, mark it `Closed` with a one-line resolution. Don't delete — future you wants to know what was considered.
 
+**Current state:** 409 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Active work: entity intelligence architecture (ADR-0057) + ship-path bugs + distribution.
+
 ---
 
 ## Issues
 
-<!-- Sprint-oriented grouping (2026-02-08):
-
-  TEST BED: ~/Documents/test-workspace/ — clean workspace for end-to-end validation.
-  Every sprint milestone is tested here, not in VIP/. See ROADMAP.md for full sprint plan.
-
-  COMPLETED:
-    Sprint 1: "First Run to Working Briefing" — I48, I49, I7, I15, I16, I13. 155 tests.
-    Sprint 2: "Make it Smarter" — I42, I43, I41, I31. 168 tests.
-    Sprint 3: "Make it Reliable" — I39, I18, I20, I21, I37, I6. 176 tests.
-    Sprint 4a: "Entity Intelligence" — I51 (people), I72+I73 (account dashboards),
-      I59 (script paths), I56 (onboarding 80%), demo data expansion. 189 tests.
-    Sprint 5: "Complete the App" — 199 tests.
-      Track A (Onboarding): I56 finish, I57, I78, I79, I58 — all done.
-      Track B (Security): I60, I62, I63 — done. I64, I65 — ~90% done (gaps carry to S6).
-      Track C (Meeting Intelligence): I80, I81, I82 — done (pulled forward from S7).
-    Sprint 6+7: "Harden & Enrich" (combined) — 224 tests.
-      Track A (Safety): I61, I64, I65, I66, I67, I69, I70, I71 — all done.
-      Track B (Polish): I19, I25 — done.
-      Track C (Intelligence): I74 — done.
-      Track D (Durability): I75, I76, I77 — done.
-      Track E (Performance): I68 — done.
-
-  ═══════════════════════════════════════════════════════════════════
-  SPRINT 8: "Kill Python" — Eliminate Python runtime dependency
-  ═══════════════════════════════════════════════════════════════════
-
-    I83 (Rust-native Google API client — reqwest + OAuth2)
-    I84 (Port Phase 1 operations — classification, email priority, etc.)
-    I85 (Port orchestrators + delete Python scripts/)
-
-    Done when: `scripts/` deleted, `run_python_script()` removed from pty.rs,
-    no Python on $PATH required, all 224+ Rust tests still pass,
-    onboarding no longer checks for Python.
-
-  ═══════════════════════════════════════════════════════════════════
-  SPRINT 9: "Distribute" — Ship to colleagues
-  ═══════════════════════════════════════════════════════════════════
-
-    I8 (DMG build + GitHub Actions CI + GitHub Releases)
-    7-day crash-free validation on clean machine
-    README for colleague installs
-
-    Done when: DMG installs cleanly on a clean Mac (arm64),
-    onboarding → first real briefing works end-to-end.
-    No signing/notarization (no Apple Developer account — Gatekeeper
-    bypass instructions in README). No updater (zero users, premature).
-
-  ═══════════════════════════════════════════════════════════════════
-  PARKING LOT (post-ship, needs real usage data)
-  ═══════════════════════════════════════════════════════════════════
-
-    Entity-mode architecture (ADR-0046, I27 umbrella):
-      I50 (projects table), I52 (meeting-entity M2M), I53 (entity-mode config)
-      I54 (MCP integration framework), I28 (MCP server + client)
-      ~~I29 (non-entity structured document schemas)~~ — Closed, superseded by I73 + kit issues
-    Kits: I40 (CS Kit)
-    Intelligence: I35 (ProDev Intelligence), I55 (Executive Intelligence)
-    Research: I26 (web search for unknown meetings)
-    Low: I3, I10
-    I86 (first-party integrations), I87 (in-app notifications),
-    I88 (Weekly Wrapped), I89 (personality system), I90 (telemetry),
-    I92 (user-configurable metadata fields — ADR-0051)
-    ~~I93 (Week page Phase 1 — mechanical redesign — ADR-0052)~~ — Closed
-    I94 (Week page Phase 2 — AI enrichment — ADR-0052)
-    I95 (Week page Phase 3 — proactive suggestions — ADR-0052)
-    ~~I96 (Retire week planning wizard — ADR-0052)~~ — Closed
-    ~~I97 (Dashboard readiness strip — ADR-0053)~~ — Closed
-    ~~I98 (Flip action/email sidebar order — ADR-0053)~~ — Closed
-    ~~I99 (Drop greeting, promote focus — ADR-0053)~~ — Closed
-    ~~I100 (Increase ActionList maxVisible to 5 — ADR-0053)~~ — Closed
-    ~~I101 (Full-width summary layout — ADR-0053)~~ — Closed
-    ~~I102 (Shared ListRow component — ADR-0054)~~ — Closed
-    ~~I103 (AccountsPage redesign — ADR-0054)~~ — Closed
-    ~~I104 (PeoplePage redesign — ADR-0054)~~ — Closed
-    ~~I105 (PeoplePage shared component consolidation)~~ — Closed
-    ~~I106 (Surface temperature/trend in Person list type)~~ — Closed
-    ADR-0055: Schedule-first dashboard layout — Closed (Dashboard.tsx two-column,
-      Overview.tsx deleted, ReadinessStrip.tsx deleted, cancelable badge on MeetingCard,
-      cancelable removed from IntelligenceCard totalSignals)
--->
-
-### Open — Ship Blocker
+### Planned — Ship Path
 
 **I8: DMG build + GitHub Actions CI + GitHub Releases**
-Unsigned DMG for colleague distribution. GitHub Actions builds arm64 DMG on push/tag. GitHub Releases hosts the artifact. README with Gatekeeper bypass instructions (`xattr -cr`). No signing/notarization (no Apple Developer account). No updater (zero users, premature). Blocked by I85 (Python elimination must land first so DMG is self-contained).
+Unsigned DMG for colleague distribution. GitHub Actions builds arm64 DMG on push/tag. GitHub Releases hosts the artifact. README with Gatekeeper bypass instructions (`xattr -cr`). No signing/notarization (no Apple Developer account). No updater (zero users, premature).
 
-**I83: Rust-native Google API client** — Sprint 8
-New `google_api.rs` module. OAuth2 token storage/refresh using `reqwest` + `serde`. Localhost redirect server for initial auth flow (replace `google_auth.py`). Calendar v3 event listing (replace `calendar_poll.py` API calls). Gmail v1 message listing/fetching (replace `refresh_emails.py` API calls). ADR-0049.
+**I119: Gmail API returns empty metadata fields**
+`gmail.rs` fetches messages but `from`, `from_email`, `subject`, and `date` are all empty strings in the directive. Snippets are populated so the API call works — header extraction (`From`, `Subject`, `Date`) is failing silently. Likely cause: `format=metadata` or `metadataHeaders` parameter issue, or response parsing doesn't walk `payload.headers[]` correctly.
 
-**I84: Port Phase 1 operations to Rust** — Sprint 8, blocked by I83
-Port `ops/` Python modules: meeting classification (`classify_meetings()`), email priority classification, action parsing from markdown, meeting prep context gathering. These are pure logic + SQLite + file I/O — Rust already does all of this elsewhere. ~1,200 lines of Python.
+**I123: Production Google OAuth credentials**
+App requires users to supply their own `credentials.json` from Google Cloud Console. For distribution, DailyOS needs its own registered OAuth client. Client ID/secret embedded in Rust binary (compile-time `include_str!` or build-time env var). Steps: (1) Create Google Cloud project. (2) Configure OAuth consent screen (external, limited scope: Calendar read, Gmail read). (3) Create Desktop app OAuth client. (4) Embed in `google_api/auth.rs`. (5) Remove `credentials.json` file requirement. Dev override via env var for local testing.
 
-**I85: Port orchestrators and delete Python** — Sprint 8, blocked by I84
-Port `prepare_today.py`, `prepare_week.py`, `deliver_week.py`, `refresh_emails.py`, `calendar_poll.py`, `prepare_meeting_prep.py` as Rust functions composed from I83 + I84 operations. Delete `scripts/` directory. Remove `run_python_script()` from `pty.rs`. Remove script resources from `tauri.conf.json`. Remove Python check from onboarding. ADR-0049.
 
-**I114: Parent-child accounts (enterprise BU hierarchy)** — Ship blocker
-Add `parent_id` self-referential FK on accounts table. Enterprise accounts (Cox, Hilton, Salesforce, Intuit) contain business units as child accounts, each with independent contracts, renewal dates, health, and lifecycle. Nested workspace directories (`Accounts/Cox/Consumer-Brands/`). UI: expandable parent rows on AccountsPage, BU detail with breadcrumb navigation. Intelligence aggregation rolls up child signals to parent. Migration: non-breaking (`parent_id` nullable, existing flat accounts unaffected).
+**I129: People entity editability — name, account link, and user contributions**
+People are auto-created from calendar attendees, which bootstraps ~80% of the data. The remaining 20% requires user contribution, but key fields have no edit path. The `name` field is derived from email via `name_from_email()` (e.g. `schen@acme.com` → "Schen") and is not in the `update_person_field` whitelist — so bad auto-names are permanent. Account/entity associations are auto-inferred from email domains and can be wrong, with no way to correct them from the UI (linking commands exist but aren't wired to PersonDetailPage). The system does the heavy lift; the user needs to do the finishing work.
+Scope:
+(a) **Add `name` to the editable whitelist** in `db.rs` `update_person_field()`. Display as click-to-edit on PersonDetailPage header (currently a static `<h1>`). Auto-derived names become the default, user override sticks.
+(b) **Entity link management on PersonDetailPage.** Show current linked entities with unlink affordance. Add entity picker (accounts combobox) to link a person to an account. Commands exist (`link_person_entity`, `unlink_person_entity`) — this is frontend wiring.
+(c) **Manual person creation.** "Add person" entry point on PeoplePage. Minimum fields: name + email. Auto-derives organization, relationship from email. Pre-links to account if triggered from AccountDetailPage.
+(d) **Notes as first-class contribution.** Notes field exists and is editable, but it's buried in edit mode. Promote to always-visible section with inline editing — this is the user's primary way to contribute knowledge (context, preferences, history, working style).
+Does NOT include: merge/dedup of duplicate people, bulk import, or contact sync from external sources.
 
-### Open — Parking Lot (blocked by I27, post-ship)
+### Planned — Entity Intelligence (ADR-0057, ship blocker)
 
-**I27: Entity-mode architecture — umbrella issue**
-ADR-0046 replaces profile-activated extensions (ADR-0026) with three-layer architecture: Core + Entity Mode + Integrations. Entity mode (account-based, project-based, or both) replaces profile as the organizing principle. Integrations (MCP data sources) are orthogonal to entity mode. Two overlay types: **Kits** (entity-mode-specific: CS Kit, Sales Kit) contribute fields + templates + vocabulary; **Intelligence** (entity-mode-agnostic: Executive, ProDev) contribute analytical perspective via enrichment prompt fragments. Sub-issues: I50 (projects table), I52 (meeting-entity M2M), I53 (entity-mode config/onboarding), I54 (MCP integration framework), I55 (Executive Intelligence). Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven. Post-Sprint 4.
+**I130: intelligence.json schema + DB columns + CRUD**
+Define the canonical intelligence.json schema (executiveAssessment, risks[], recentWins[], currentState{}, stakeholderInsights[], valueDelivered[], nextMeetingReadiness{}, companyContext{}). Add intelligence columns or dedicated table to SQLite. Implement `upsert_intelligence()`, `get_intelligence()` in db.rs. Add `Intelligence` struct to types.rs. TypeScript `EntityIntelligence` type. `CONTENT_SKIP_FILES` updated to include `intelligence.json`. Foundation for everything else.
 
-**I40: CS Kit — account-mode fields, templates, and vocabulary** — Blocked by I27
-ADR-0046 replaces the CS extension with a CS Kit (entity-mode-specific overlay). Remaining CS-specific items: account fields (ARR, renewal dates, health scores, lifecycle), dashboard templates, success plan templates, value driver categories, lifecycle-based cadence thresholds. The existing `accounts` table IS the CS Kit's schema contribution. Kit also contributes enrichment prompt fragments for CS vocabulary. Reference: `~/Documents/VIP/.claude/skills/daily-csm/`.
+**I131: Intelligence enrichment prompt + parser** — Blocked by I130
+Replace the 4-field web-search enrichment prompt with the full intelligence prompt. Input: existing intelligence.json (if any) + new/changed content + SQLite signals (meeting frequency, actions, captures, stakeholder engagement) + file manifest. Output: structured intelligence.json. Parse response into Intelligence struct. Incremental mode: reads prior intelligence + delta. First-run mode: reads all indexed files + web search. Raw file access: prompt includes file manifest; model can request specific files in follow-up turn.
 
-**I50: Projects overlay table and project entity support** — Blocked by I27
-ADR-0046 requires a `projects` overlay table parallel to `accounts`. Fields: id, name, status, milestone, owner, target_date. Bridge pattern: `upsert_project()` auto-mirrors to `entities` table. CRUD commands + Projects page (parallel to Accounts page).
+**I132: Auto-trigger intelligence on content change** — Blocked by I131
+Wire watcher content-changed events to intelligence refresh pipeline. Debounce: multiple file changes within 30s window produce one refresh. Queue: intelligence refreshes are async, non-blocking. Rate limit: max 1 refresh per entity per 5 minutes. Error handling: failed refresh leaves prior intelligence.json intact. Emit `intelligence-updated` event for frontend reactivity.
 
-**I52: Meeting-entity many-to-many association** — Blocked by I50
-Replace `account_id` FK on `meetings_history`, `actions`, `captures` with `meeting_entities` junction table. Enables meetings to associate with multiple entities (an account AND a project).
+**I133: Account detail page redesign — intelligence-first layout** — Blocked by I130
+Redesign AccountDetailPage per ADR-0057 page structure: (1) Hero + metrics (tighter). (2) Executive Assessment — full-width prose, no card wrapper. (3) Attention Items — risks/wins/action-needed with signal dots and temporal context. (4) Next Meeting Readiness — "your next meeting is in 3 weeks, here are 3 things to consider." (5) Commitments — actions grouped by urgency with "why this matters" context. (6) Stakeholder Intelligence — promoted to main column. (7) Evidence & History — collapsed, progressive disclosure (value delivered, meetings, captures, files). Sidebar: metadata + notes + company context.
 
-**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I50, I52
-Replace `profile` config field with `entityMode` + `integrations` + `domainOverlay`. Update onboarding, sidebar, dashboard portfolio attention. Migration: `profile: "customer-success"` → `entityMode: "account"`.
+**I134: dashboard.md generation from three-file pattern** — Blocked by I130
+Rewrite `write_dashboard_md()` to compose from dashboard.json + intelligence.json + SQLite live queries. The markdown artifact should be a comprehensive intelligence document — executive summary, risks, wins, stakeholder map, meeting history, actions, value tracking. Replaces the current thin metadata-only markdown. This is what Claude Desktop and external tools consume.
 
-**I54: MCP client integration framework** — Blocked by I27
-Build MCP client infrastructure in Rust for consuming external data sources per ADR-0046 and ADR-0027. Start with one integration per category: one transcript source (Gong or Granola), one CRM (Salesforce), one task tool (Linear). Evolves I28 (MCP client side).
+**I135: Persistent entity prep — nextMeetingReadiness** — Blocked by I131, I132
+Replace per-meeting prep (meeting_prep_state table) with persistent entity prep. Intelligence pipeline populates nextMeetingReadiness in intelligence.json: next meeting date/title + N prep items with "why now" framing. Updates when: calendar changes (next meeting shifts), new content arrives, actions complete/become overdue. Meeting prep surfaces in AccountDetailPage (I133) and daily briefing (I137).
 
-**I28: MCP server and client not implemented**
-ADR-0027 accepts dual-mode MCP (server exposes workspace tools to Claude Desktop, client consumes Clay/Slack/Linear). ADR-0046 elevates MCP client to the integration protocol. No MCP protocol code exists. See I54 for client framework.
+**I136: People intelligence** — Blocked by I131
+Apply intelligence pattern to people. Synthesize relationship intelligence from meeting_attendees + captures + transcripts mentioning this person. Output: relationship assessment, cross-entity connections, interaction patterns, intelligence gaps. PersonDetailPage redesign to surface relationship intelligence. Person intelligence.json in person directory (if tracker_path exists) or SQLite-only.
 
-**I29: Structured document schemas not implemented** — Closed
-Schema pattern delivered by I73 (entity dashboard template system). Remaining non-entity documents (success plans, QBR templates) belong to kit-specific issues (I40 CS Kit, etc.). Superseded.
+**I137: Briefings consume entity intelligence** — Blocked by I131, I135
+Daily and weekly briefing enrichment pulls from per-entity intelligence.json as input. Meeting prep context comes from entity nextMeetingReadiness. Cross-entity synthesis is the briefing layer's job: "your busiest account this week is Nielsen, but Heroku's renewal is closer." Refactor briefing enrichment prompts to consume intelligence rather than regenerating it.
 
-**I35: ProDev Intelligence — personal impact capture and career narrative** — Blocked by I27
-ADR-0046 classifies ProDev as an Intelligence layer (entity-mode-agnostic). Daily reflection, weekly narrative, quarterly rollup. Contributes enrichment prompt fragments. Reference: `/wrap` "Personal Impact" section, `/month`, `/quarter`.
+**I138: Project intelligence** — Blocked by I130, I136
+Apply same three-file intelligence pattern to projects. intelligence.json for projects: project assessment, blockers, progress signals, stakeholder roles, milestone readiness. ProjectDetailPage redesign parallel to I133. Depends on project entity mode having sufficient content to enrich.
 
-**I55: Executive Intelligence — decision framing, delegation tracking, and strategic analysis** — Blocked by I27
-ADR-0046 classifies Executive as an Intelligence layer (entity-mode-agnostic). Decision quality assessment, delegation tracking, time protection, political dynamics, noise filtering. Draws from `/cos`, `strategy-consulting`, `/veep`. Blocked by prompt fragment mechanism.
-
-**I86: First-party integrations — meeting notes + task management** — Blocked by I54
-Ship v1 with integrations for two families: (1) Meeting notes/transcripts: Quill Meetings, Granola, Gong (needs API feasibility research). (2) Task management: Linear, Asana, ClickUp — connect to the task tooling people already use rather than managing tasks only inside DailyOS. Each integration needs: auth flow, data mapping to DailyOS entities, sync strategy. Depends on I54 (MCP client framework) for integration protocol. Expands I54's "one per category" target list with concrete tools.
-
-**I87: In-app notifications and feature announcements**
-Notification surface for new features, kits, overlays. No design exists. Needs: notification model (triggers), UI surface (placement), persistence (read/unread), content delivery for announcements. Includes push notification strategy. Distinct from Tauri updater (I8) which handles binary updates.
-
-**I88: Weekly Wrapped — Monday morning celebration + personal metrics**
-Spotify Wrapped for your work week, delivered Monday morning. Celebrates the prior week: wins landed, outcomes captured, meetings navigated, actions closed. Fuses reflection (the feel-good lens) with personal productivity metrics (patterns, growth signals, trends). Not a dashboard — a moment. The one place where the system says "look what you did" instead of "here's what's next." Pairs with I89 (personality) for voice/tone.
-
-**I89: Personality system — work bestie voice picker** — Supersedes I4
-Selectable voice/tone for celebrations, delight moments, and Weekly Wrapped. Personality options: OK Boomer (grumpy dad energy), Millennial, Gen Z, Gen AI (delightfully weird), or user-defined. Private and playful, never public-facing. The product's playground — the one space where we lean into personality over professionalism. Supersedes I4 (motivational quotes) which captured the seed of this idea.
-
-**I90: Product telemetry and analytics**
-Usage tracking, feature adoption, and workflow completion metrics for product development. Must reconcile with Principle 5 (local-first). Opt-in, privacy-first design. Distinct from I88 (personal metrics shown to user) — this is about product development insights. Needs: event taxonomy, storage (local aggregate vs. remote), consent model, dashboard or export.
-
-**I92: User-configurable metadata fields for entities** — Blocked by I27
-ADR-0051 (Proposed). Allow users to control which metadata fields appear on entity pages (accounts, projects, people). Three-layer approach: universal core fields (always present) + Kit-contributed fields (active with entity mode) + user overrides (toggle fields on/off, add custom text fields). Replaces current hardcoded CS-biased field set. Depends on Kit implementation (I40) for field schema mechanism.
-
-**I93: Week page Phase 1 — mechanical redesign** — ADR-0052 — **Closed**
-Replaced 5-column calendar grid with consumption-first weekly briefing. New Rust types (ReadinessCheck, DayShape, WeekAction), readiness checks computed from preps/actions/contacts, day density bars, expanded action summary with full items. New WeekPage.tsx layout: header → readiness → day shapes → actions → health. 356 tests.
-
-**I94: Week page Phase 2 — AI enrichment + briefing layout** — ADR-0052, blocked by I93
-Two coupled changes that must land together (research: `docs/research/2026-02-08-weekly-briefing-ux-research.md`):
-**(a) AI enrichment:** Add `weekNarrative` (2-3 sentence opening paragraph framing the week) and `topPriority` (single highest-impact item with "why now?" reasoning) to `/week` enrichment prompt. Fault-tolerant per ADR-0042 — mechanical data renders fine without narrative.
-**(b) Layout restructure:** Current Card-grid rendering feels like a dashboard, not a briefing. Remove Card wrappers from narrative/readiness sections. Full-width narrative prose as opening paragraph (no border, no icon). Taper visual density top-to-bottom (prose → compact lists). Readiness as synthesized inline text. Week shape keeps density bars but loses Card wrapper. Page has explicit end. Follows patterns: Finite Briefing (PDB), Tapering Word Count (Morning Brew), Conclusions Before Evidence (CQC board formula). The narrative is the emotional anchor — without it, the page opens with warnings. The layout needs the narrative to not feel empty at the top.
-
-**I95: Week page Phase 3 — proactive suggestions and time blocking** — ADR-0052, blocked by I94
-Proactive intelligence: draft agenda request messages for meetings missing agendas, pre-fill missing preps, suggest specific tasks for available time blocks. Time blocking proactivity setting in config: `timeBlockMode: "suggestions" | "draft_blocks" | "auto_block"`. Only "suggestions" ships initially; higher levels gated by feature toggles (ADR-0039). "Auto-block" requires Google Calendar write scope (future).
-
-**I96: Retire week planning wizard** — ADR-0052 — **Closed**
-Deleted WeeklyPlanning/ components (4 files), useWeekPlanning.ts hook, WeekPlanningState + FocusBlock types (Rust + TS), 5 wizard Tauri commands, week_planning_state from AppState, week-data-ready event. Shipped with I93.
-
-**I97: Dashboard readiness strip — replace StatsRow** — ADR-0053 — **Closed**
-New `ReadinessStrip.tsx` replaces `StatsRow.tsx`. Four contextual signal cards (prep coverage, agendas needed, overdue actions, next meeting) computed from existing `DashboardData`. `StatsRow.tsx` deleted, `DayStats` type retained.
-
-**I98: Flip ActionList above EmailList in dashboard sidebar** — ADR-0053 — **Closed**
-ActionList renders above EmailList in `Dashboard.tsx` right sidebar. Actions are user-owned obligations with higher visual priority.
-
-**I99: Drop greeting, promote Focus in dashboard overview** — ADR-0053 — **Closed**
-Removed `getTimeBasedGreeting()` and greeting text. Focus promoted from subtle hover-link to a callout card with `bg-primary/5` background and border.
-
-**I100: Increase ActionList maxVisible to 5** — ADR-0053 — **Closed**
-`maxVisible` default 3 → 5 in `ActionList.tsx`.
-
-**I101: Full-width summary layout** — ADR-0053 — **Closed**
-Overview grid changed from `lg:grid-cols-2` to stacked `space-y-4`. Summary card now full-width. DashboardSkeleton updated to match.
-
-~~**I102: Shared ListRow component — flat row pattern** — ADR-0054~~ — Closed. `src/components/ui/list-row.tsx`: `ListRow` + `ListColumn` primitives. Signal dot, name, badges, subtitle, right-aligned columns. ~70 LOC.
-
-~~**I103: AccountsPage redesign — signal-first layout** — ADR-0054~~ — Closed. Flat rows with health dot (sage/gold/peach), monospace ARR, stale-day warning (peach >14d). Card + avatar + StatusBadge removed.
-
-~~**I104: PeoplePage redesign — temperature and trend indicators** — ADR-0054~~ — Closed. Temperature dot (sage/gold/muted/peach), trend arrows, sort by temperature desc then last-seen desc. SearchInput + TabFilter shared components. Unknown tab added.
-
-~~**I105: PeoplePage — shared component consolidation**~~ — Closed. Replaced hand-rolled search input and tab filter with SearchInput and TabFilter components. Added Unknown tab.
-Replace PeoplePage's hand-built search input and tab pills with shared `SearchInput` and `TabFilter` components (already used by AccountsPage). Add "Unknown" tab option to surface people with `relationship="unknown"` who currently only appear on "All". DRY fix — no design change, just component reuse.
-
-~~**I106: Surface temperature and trend in Person list type**~~ — Closed. `PersonListItem` struct with batch `get_people_with_signals()` query (single SQL with LEFT JOIN subqueries instead of 3N individual queries). `PersonListItem` TS type extends `Person` with `temperature` + `trend`.
-
-**I26: Web search for unknown external meetings**
-When a meeting involves people/companies not in the workspace, prep is thin — violates P2 (Prepared, Not Empty). ADR-0022 specifies proactive research. Pattern exists: I74 does websearch for known accounts via `enrich_account()`. Extend to unknown meeting attendees: detect unrecognized domains in calendar events, research company + attendee context, inject into prep. Not blocked by I27 — can use existing `enrich_preps()` pipeline with a web search step.
-
-**I107: Action detail page** — Resolved. `ActionDetailPage.tsx` at `/actions/$actionId`. Shows context card (AI reasoning), source meeting link, account link, due date, complete/reopen toggle. `get_action_detail` Rust command resolves account name + source meeting title. Wired from AccountDetailPage, ActionsPage, and MeetingHistoryDetailPage action rows.
-
-**I109: Focus page implementation** — ADR-0055
-The `/focus` route links from the dashboard Focus callout but `get_focus_data` in `commands.rs` is a stub returning `NotFound`. The `FocusData` type exists (priorities, timeBlocks, quickWins, energyNotes) but no data source is wired. Options: (a) construct `FocusData` from existing directive data (schedule.json `focus` field + actions + calendar gaps), (b) add a dedicated focus enrichment step in the AI pipeline, or (c) both — mechanical base with AI enhancement. The focus string on the dashboard is a one-liner from `overview.focus`; the FocusPage expects richer structured data. Not a ship blocker — the link works, the page just shows an empty state.
-
-**I111: Daily briefing visual rhythm — remove chrome, add breathing room** — ADR-0055
-The ADR-0055 layout restructure is correct but the rendering is dense — functional, not beautiful. Everything consolidated into the sidebar without compensating whitespace. Research (`docs/research/2026-02-08-weekly-briefing-ux-research.md`) identifies the patterns: Morning Brew's tapering density, PDB's "short items don't need heavy containers," Oura's "don't narrate the interface."
-Changes:
-(a) **Kill "Schedule" subheading** in MeetingTimeline — the date heading IS the schedule. Remove clock, meeting count, "In meeting" indicator (the pulsing dot on the timeline already shows this). Reclaims ~40px of chrome.
-(b) **Remove Card wrappers from sidebar sections.** ActionList and EmailList become lightweight lists with subtle section labels (`text-xs uppercase tracking-wider`), not full Card > CardHeader > CardContent containers. Reclaims ~40px per section in borders + header padding.
-(c) **Taper sidebar spacing.** Focus gets the most room. Actions get moderate spacing. Emails are the most compact — the "quick hits" at the bottom of the briefing.
-(d) **More breathing room at the top.** Increase gap between date heading zone and first content. The top of the page should be the most spacious.
-(e) **Soften the timeline.** Evaluate removing the vertical timeline line — the stagger animation and card borders already create sequence. Keep the colored dots (they carry meeting type info).
-Pure frontend. No data model or Rust changes.
+### Open
 
 **I110: Portfolio alerts on accounts sidebar/list**
-IntelligenceCard removed from dashboard (redundant — decisions/delegations are filtered action views, skip-today rarely populated). One signal type has no other home: portfolio alerts (renewal approaching within 60d, stale contact 30d+). The `intelligence.rs` computation still exists. Surface these as warning indicators on the Accounts sidebar item (badge count) and/or as visual signals on AccountsPage list rows (e.g. peach dot for renewal approaching, stale-day warning already exists via I103). CS-profile gated. The Rust layer is done — this is purely a frontend wiring task.
+IntelligenceCard removed from dashboard (ADR-0055). Portfolio alerts (renewal approaching within 60d, stale contact 30d+) have no home. `intelligence.rs` computation still exists. Surface as warning indicators on Accounts sidebar (badge count) and/or AccountsPage list rows. CS-profile gated. Rust layer done — purely frontend wiring.
 
-**I112: Graceful empty state when briefing data missing** — Ship blocker
-Dashboard shows raw OS error ("Failed to read schedule: No such file or directory (os error 2)") when `_today/data/` exists but `schedule.json` doesn't — e.g. after pointing to a new workspace that has been initialized but never briefed. `get_dashboard_data()` in `commands.rs:104` guards for missing `_today/` and `_today/data/` dirs (returns `Empty`), but doesn't guard for the file inside the existing dir. The fix: `load_schedule_json()` failure on a missing file should return `DashboardResult::Empty` (not `Error`). Also audit other pages that read from `_today/data/` (WeekPage, FocusPage, ActionsPage) for the same pattern. Ship blocker because every new user hits this between onboarding completion and first briefing run.
+**I115: Multi-line action extraction in inbox processor**
+`extract_and_sync_actions()` only parses single-line actions (`- [ ]` checkbox lines). Structured multi-line formats (metadata on indented sub-lines like `- Account:`, `- Due:`) are silently ignored. Fix: after matching checkbox line, look ahead for indented `- Key: Value` sub-lines and merge into `ActionMetadata`.
 
-**I113: Workspace transition detection and setup UX**
-When a user changes `workspacePath` in config (either via Settings or onboarding), the app should detect it's a new/different workspace and handle gracefully. Three cases: (1) directory exists with content but no DailyOS scaffolding — run `initialize_workspace()` + entity bootstrap automatically. (2) Directory is empty — scaffold and show "workspace ready" confirmation. (3) Directory has prior DailyOS data — just switch, no setup needed. UX: transient notification ("Setting up your workspace...") rather than an error page. Also: skip `_`-prefixed folders during entity bootstrap (`_Uncategorized`, `_archive`, `_inbox`, `_today` should not become account/project entities). Currently `_Uncategorized` gets bootstrapped as an account, which is wrong.
+**I122: Sunday briefing fetches Monday calendar labeled as "today"**
+Running daily briefing on Sunday produces a directive with Monday's date and meetings labeled "today". Prepare phase likely targets next business day. If intentional, UI should say "Tomorrow" or "Monday." If not, fetch actual current day's calendar.
 
-**I114: Parent-child accounts (enterprise BU hierarchy)** — Ship blocker
-Enterprise accounts have business units (BUs) that operate as semi-independent entities with their own contracts, renewal dates, health scores, stakeholders, and meeting cadences — but are commercially and organizationally related under a parent company. Real-world examples from current workspace: Cox (Consumer-Brands, Corporate-Services-B2B, Diversification, Enterprises), Hilton (B2B-Engagement, Careers, Corporate, Domestic, Newsroom), Salesforce (AppExchange, Engineering, Ventures, Talent-Experience, etc.), Intuit (Credit-Karma, Intuit). CSMs land in one BU and expand to others — if accounts can't capture this hierarchy, the tool can't model an enterprise portfolio.
 
-**Approach: parent-child accounts.**
-- **Data model:** Add `parent_id TEXT REFERENCES accounts(id)` to `accounts` table. NULL = top-level account. BUs have `parent_id` pointing to the parent account row. Self-referential, one level deep (no grandchildren — BU is the leaf).
-- **Workspace structure:** `Accounts/Salesforce/Engineering/dashboard.json` — nested directory. Parent has its own `dashboard.json` at `Accounts/Salesforce/dashboard.json`. `sync_accounts_from_workspace()` detects two-level nesting: if a subdirectory contains `dashboard.json` OR doesn't match the numbered `\d+-` pattern, it's a BU child.
-- **UI — list page:** Parent accounts show as expandable rows. Child BUs indent underneath. Health/ARR can aggregate (parent shows worst-child health, sum ARR) or display independently. Filter/search applies across both levels.
-- **UI — detail page:** Parent detail shows child BU cards with summary signals. BU detail shows parent breadcrumb. Navigation between parent and children is one-click.
-- **Intelligence:** Parent-level signals aggregate from children (e.g. "2 of 4 BUs renewing in 60d"). Meeting classification links to the BU (not parent) when attendee domains match. Actions can be BU-specific or parent-level.
-- **Migration:** Existing flat accounts remain flat (`parent_id = NULL`). No breaking change. Users add hierarchy by creating subdirectories in the workspace.
 
-Scope: schema migration + sync logic + UI (list + detail) + intelligence aggregation. Does NOT require I27 (entity-mode architecture) — this is account-internal hierarchy, orthogonal to the entity-mode/kit system.
 
-### Open — Low Priority
+**I127: Manual action creation with entity connection**
+No path to create an action from scratch — every action enters via briefing pipeline, post-meeting capture, inbox processing, or transcript parsing. Violates P3 (Buttons, Not Commands). New `create_action` Tauri command + inline creation row on ActionsPage + "Add action" on entity detail pages. `person_id` FK on actions table. Does NOT include field editing after creation (see I128).
+
+**I128: Action field editing after creation** — Blocked by I127
+Most action fields are immutable after creation. Only priority and status can be changed. Title, due_date, context, source_label, entity connections are write-once. New `update_action` command accepting partial field set. Editable fields inline on ActionDetailPage. Guard: warn before editing briefing-generated actions (would be overwritten on next briefing run).
+
+**I26: Web search for unknown external meetings**
+When a meeting involves people/companies not in the workspace, prep is thin. Pattern exists: I74 does websearch for known accounts. Extend to unknown meeting attendees: detect unrecognized domains, research company + attendee context, inject into prep. Not blocked by I27.
+
+**I94: Week page Phase 2 — AI enrichment + briefing layout** — ADR-0052
+`weekNarrative` + `topPriority` AI fields. Layout restructure from dashboard feel to briefing feel. Remove Card wrappers, full-width narrative prose, taper visual density. Research: `docs/research/2026-02-08-weekly-briefing-ux-research.md`.
+
+**I95: Week page Phase 3 — proactive suggestions** — ADR-0052, blocked by I94
+Draft agenda requests, pre-fill preps, suggest tasks for open blocks. Time blocking proactivity setting. Only "suggestions" ships initially.
 
 **I3: Low-friction web capture to _inbox/**
-Job: reduce friction for feeding external context into the system (P7: Consumption Over Production). User reads something relevant, wants it in DailyOS without leaving their flow. Form factor TBD — browser extension is one option but heavy (separate tech stack, Chrome Web Store). Alternatives: macOS share sheet, bookmarklet, "paste URL" in-app with fetch+convert. Inbox already works via drag-and-drop. Solve the job, not the specific form factor.
+Reduce friction for feeding external context into the system. Form factor TBD — browser extension, macOS share sheet, bookmarklet, "paste URL" in-app. Inbox already works via drag-and-drop.
+
+### Parking Lot (post-ship, blocked by I27 or needs usage data)
+
+**I27: Entity-mode architecture — umbrella issue**
+ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues: I50, I52, I53, I54, I55. Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven.
+
+**I40: CS Kit — account-mode fields, templates, and vocabulary** — Blocked by I27
+
+**I50: Projects overlay table and project entity support** — Blocked by I27
+
+**I52: Meeting-entity many-to-many association** — Blocked by I50
+
+**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I50, I52
+
+**I54: MCP client integration framework** — Blocked by I27
+
+**I28: MCP server and client** — Blocked by I27
+
+**I35: ProDev Intelligence** — Blocked by I27
+
+**I55: Executive Intelligence** — Blocked by I27
+
+**I86: First-party integrations** — Blocked by I54
+
+**I87: In-app notifications and feature announcements**
+
+**I88: Weekly Wrapped — Monday morning celebration + personal metrics**
+
+**I89: Personality system — work bestie voice picker** — Supersedes I4
+
+**I90: Product telemetry and analytics**
+
+**I92: User-configurable metadata fields** — Blocked by I27, ADR-0051
 
 ### Closed
 
-**I1: Config directory naming** — Resolved. Renamed `.daybreak` → `.dailyos`.
+**I1:** Resolved. Config directory renamed `.daybreak` → `.dailyos`.
 
-**I2: Compact meetings.md format for dashboard dropdowns** — Closed, redundant. JSON-first meeting cards (schedule.json, preps/*.json) with MeetingCard component already render at multiple fidelity levels. The job this was solving is done by the shipped meeting prep system.
+**I2:** Closed, redundant. JSON-first meeting cards render at multiple fidelity levels.
 
-**I4: Motivational quotes as personality layer** — Superseded by I89 (personality system).
+**I4:** Superseded by I89 (personality system).
 
-**I5: Orphaned pages (Focus, Week, Emails)** — Resolved. All three now have defined roles: Focus = drill-down from dashboard, Week = sidebar item (Phase 2+), Emails = drill-down from dashboard. See ADR-0010.
+**I5:** Resolved. Focus, Week, Emails all have defined roles. ADR-0010.
 
-**I6: Processing history page** — Resolved. `get_processing_history` Tauri command (reads `processing_log` table, default limit 50). `HistoryPage.tsx` with table rendering. Route at `/history`, sidebar nav item under Workspace group.
+**I6:** Resolved. Processing history page + `get_processing_history` command.
 
-**I7: Settings page can change workspace path** — Resolved. `set_workspace_path` Tauri command with directory picker via `@tauri-apps/plugin-dialog`. Validates path, calls `initialize_workspace()`, updates config. `WorkspaceCard` component in SettingsPage.
+**I7:** Resolved. Settings workspace path change with directory picker.
 
-**I9: Focus page and Week priorities are disconnected stubs** — Resolved. Both `FocusPage.tsx` and `WeekPage.tsx` fully implemented with data loading, workflow execution, progress tracking, meeting cards, time blocks, action summaries. Closed Sprint 4a.
+**I9:** Resolved. Focus and Week pages fully implemented.
 
-**I10: No shared glossary of app terms** — Closed, won't do. Types are the data model (types.rs, types/index.ts). Per CLAUDE.md documentation discipline: "Don't document what the code already says." If terms are confusing, rename in code — don't maintain a separate glossary that drifts.
+**I10:** Closed, won't do. Types are the data model.
 
-**I11: Phase 2 email enrichment not fed to JSON** — Resolved. `deliver_today.py` gained `parse_email_enrichment()` which reads `83-email-summary.md` and merges into `emails.json`.
+**I11:** Resolved. Email enrichment parsed and merged into `emails.json`.
 
-**I12: Email page missing AI context** — Resolved. Email page shows summary, recommended action, conversation arc per priority tier. Removed fake "Scan emails" button.
+**I12:** Resolved. Email page shows AI context per priority tier.
 
-**I13: Onboarding wizard** — Resolved. `OnboardingWizard.tsx` with 5-step flow: Welcome → Entity Mode → Workspace → Google Auth (skippable) → Generate First Briefing. Replaces `ProfileSelector`. All three entity modes + both auth paths work end-to-end.
+**I13:** Resolved. Onboarding wizard with 5-step flow.
 
-**I14: Dashboard meeting cards don't link to detail page** — Resolved. MeetingCard renders "View Prep" button linking to `/meeting/$prepFile` when prep exists. Added in Phase 1.5.
+**I14:** Resolved. MeetingCard "View Prep" button.
 
-**I15: Entity-mode switcher in Settings** — Resolved. `set_entity_mode` Tauri command validates mode, sets `entity_mode` + derives `profile` for backend compat. `EntityModeCard` component in SettingsPage. Supersedes profile switching per ADR-0046.
+**I15:** Resolved. Entity-mode switcher in Settings.
 
-**I16: Schedule editing UI** — Resolved. `set_schedule` Tauri command generates cron from hour/minute/timezone. `cronToHumanTime()` helper replaces raw cron display with "6:00 AM" format.
+**I16:** Resolved. Schedule editing UI with human-readable cron.
 
-**I17: Post-meeting capture outcomes don't resurface in briefings** — Resolved (actions side). Non-briefing actions (post-meeting, inbox) now merge into dashboard via `get_non_briefing_pending_actions()` with title-based dedup. Wins/risks resurfacing split to I33.
+**I17:** Resolved. Non-briefing actions merge into dashboard.
 
-**I18: Google API credential caching** — Resolved. Module-level `_cached_credentials` and `_cached_services` dict in `ops/config.py`. Per-process only. Eliminates double token refresh within `prepare_today.py`.
+**I18:** Resolved. Google API credential caching.
 
-**I19: AI enrichment failure not communicated to user** — Resolved. "Limited prep" badge shown in MeetingCard when prep exists but enrichment fields are empty. Folded into I25 badge unification. Closed Sprint 6+7.
+**I19:** Resolved. "Limited prep" badge for AI enrichment failures.
 
-**I20: Standalone email refresh** — Resolved. `refresh_emails.py` thin orchestrator. `execute_email_refresh()` in executor.rs spawns script, calls `deliver_emails()` + optional `enrich_emails()`. Refresh button in EmailList.tsx.
+**I20:** Resolved. Standalone email refresh.
 
-**I21: FYI email classification expansion** — Resolved. Expanded `LOW_PRIORITY_SIGNALS` with marketing/promo/noreply terms. Added `BULK_SENDER_DOMAINS`, `NOREPLY_LOCAL_PARTS`. Enhanced classification: List-Unsubscribe header, Precedence bulk/list, bulk sender domain, noreply local part. 16 new Python tests.
+**I21:** Resolved. Expanded FYI email classification.
 
-**I22: Action completion doesn't write back to source markdown** — Resolved. `sync_completion_to_markdown()` in `hooks.rs` runs during post-enrichment hooks. Lazy writeback is acceptable — SQLite is working store, markdown is archive.
+**I22:** Resolved. Action completion writeback to source markdown.
 
-**I23: No cross-briefing action deduplication** — Resolved. Three layers: (1) `action_parse.py` SQLite pre-check, (2) `deliver_today.py` category-agnostic IDs + within-briefing dedup, (3) Rust-side `upsert_action_if_not_completed()` title-based dedup as final guard.
+**I23:** Resolved. Three-layer cross-briefing action deduplication.
 
-**I24: schedule.json meeting IDs are local slugs, not Google Calendar event IDs** — Resolved. Added `calendarEventId` field alongside the local slug `id` in both `schedule.json` and `preps/*.json`.
+**I24:** Resolved. `calendarEventId` field alongside local slug.
 
-**I25: Unify meeting badge/status rendering** — Resolved. Consolidated into `computeMeetingDisplayState()` pure function with badge array output. Added "Limited prep" badge when prep exists but enrichment fields are empty. Closed Sprint 6+7.
+**I25:** Resolved. `computeMeetingDisplayState()` unified badge rendering.
 
-**I30: Inbox action extraction lacks rich metadata** — Resolved. Added `processor/metadata.rs` with regex-based extraction of priority, `@Account`, `due: YYYY-MM-DD`, `#context`, and waiting/blocked status.
+**I29:** Closed. Superseded by I73 template system + kit issues.
 
-**I31: Inbox transcript summarization** — Resolved. `enrich.rs` gained `detect_transcript()` heuristic and richer enrichment prompt for transcripts. Parser handles `DISCUSSION:` / `END_DISCUSSION` markers. 12 enrich tests.
+**I30:** Resolved. Inbox action extraction with rich metadata (`processor/metadata.rs`).
 
-**I32: Inbox processor doesn't update account intelligence** — Resolved. AI enrichment prompt extracts WINS/RISKS sections. Post-enrichment `entity_intelligence` hook writes captures and touches `accounts.updated_at` as last-contact signal.
+**I31:** Resolved. Inbox transcript summarization with `detect_transcript()` heuristic.
 
-**I33: Captured wins/risks don't resurface in meeting preps** — Resolved. `meeting_prep.py` queries `captures` table via `_get_captures_for_account()` for recent wins/risks by account_id (14-day lookback).
+**I32:** Resolved. Inbox processor updates account intelligence via WINS/RISKS extraction.
 
-**I34: Archive workflow lacks end-of-day reconciliation** — Resolved. Added `workflow/reconcile.rs` with mechanical reconciliation: reads schedule.json, checks transcript status, computes action stats, writes `day-summary.json` + `next-morning-flags.json`. Pure Rust, no AI (ADR-0040).
+**I33:** Resolved. Wins/risks resurface in meeting preps via 14-day lookback.
 
-**I36: Daily impact rollup for CS extension** — Resolved. `workflow/impact_rollup.rs` with `rollup_daily_impact()`. Groups wins/risks by account, appends to `Weekly-Impact/{YYYY}-W{WW}-impact-capture.md`. Profile-gated, non-fatal, idempotent. 9 new tests.
+**I34:** Resolved. Archive reconciliation (`workflow/reconcile.rs`).
 
-**I37: Density-aware dashboard overview** — Resolved. `classify_meeting_density()` in `deliver.rs` categorizes day as light/moderate/busy/packed. Density guidance injected into `enrich_briefing()` prompt. 4 new tests.
+**I36:** Resolved. Daily impact rollup (`workflow/impact_rollup.rs`).
 
-**I38: Deliver script decomposition** — Resolved. ADR-0042 Chunk 1 replaces deliver_today.py with Rust-native per-operation delivery (`workflow/deliver.rs`). Chunk 3 adds AI enrichment ops. All AI ops are fault-tolerant — if Claude fails, mechanical data renders fine.
+**I37:** Resolved. Density-aware dashboard overview.
 
-**I39: Feature toggle runtime** — Resolved. `features: HashMap<String, bool>` on Config. `is_feature_enabled()` priority chain: explicit override → profile default → true. Executor gates + Settings UI. 7 new tests.
+**I38:** Resolved. ADR-0042. Rust-native delivery + AI enrichment ops.
 
-**I41: Reactive meeting:prep wiring** — Resolved. `google.rs` calendar poller generates lightweight prep JSON for new prep-eligible meetings. Enriches from SQLite account data. Emits `prep-ready` event. Rust-native, no Python subprocess. 8 new tests.
+**I39:** Resolved. Feature toggle runtime with `is_feature_enabled()`.
 
-**I42: CoS executive intelligence layer** — Resolved. `intelligence.rs` computes five signal types from SQLite + schedule: decisions due, stale delegations, portfolio alerts, cancelable meetings, skip-today. `IntelligenceCard.tsx` renders signal counts as badges. 13 new tests.
+**I41:** Resolved. Reactive meeting:prep wiring via calendar poller.
 
-**I43: Stakeholder context in meeting prep** — Resolved. `db.rs` gained `get_stakeholder_signals()` — meeting frequency, last contact, relationship temperature, trend. `RelationshipContext` component in `MeetingDetailPage.tsx`. 5 new tests.
+**I42:** Resolved. CoS executive intelligence layer (`intelligence.rs`).
 
-**I44: Meeting-scoped transcript intake from dashboard** — Resolved. ADR-0044. `processor/transcript.rs` handles full pipeline — frontmatter, AI enrichment, extraction, routing. Immutability enforced via `transcript_processed` state map. Frontend: `MeetingOutcomes.tsx` + `useMeetingOutcomes.ts`.
+**I43:** Resolved. Stakeholder context in meeting prep.
 
-**I45: Post-transcript outcome interaction UI** — Resolved. `MeetingOutcomes.tsx` renders AI-extracted summary, wins, risks, decisions, and actions inside MeetingCard. Action completion, priority cycling, capture inline editing. All changes write to SQLite.
+**I44:** Resolved. ADR-0044. Meeting-scoped transcript intake.
 
-**I46: Meeting prep context limited to customer/QBR/training meetings** — Resolved. Expanded per ADR-0043 with title-based SQLite queries so all non-personal/non-all-hands types get meeting history, captures, and actions context.
+**I45:** Resolved. Post-transcript outcome interaction UI.
 
-**I47: Profile-agnostic entity abstraction** — Resolved. Introduced `entities` table and `EntityType` enum (ADR-0045). Bridge pattern: `upsert_account()` auto-mirrors to entities table. `entity_intelligence()` hook replaces profile-gated `cs_account_intelligence()`.
+**I46:** Resolved. Meeting prep context expanded beyond customer/QBR/training. ADR-0043.
 
-**I48: Workspace scaffolding on initialization** — Resolved. `initialize_workspace()` in `state.rs` creates dirs conditional on entity mode. Idempotent. 4 new tests.
+**I47:** Resolved. ADR-0045. Entity abstraction with `entities` table + bridge pattern.
 
-**I49: Graceful degradation without Google authentication** — Resolved. `DashboardResult` includes `google_auth` status. `DashboardEmpty` shows "Connect Google" CTA when unauthenticated.
+**I48:** Resolved. Workspace scaffolding on initialization.
 
-**I51: People sub-entity** — Resolved. Universal person tracking with ADR-0048 compliance. 3 new tables, ~15 DB functions, `people.rs` file I/O, 8 Tauri commands, calendar auto-population, file watcher, startup sync, person signals. Frontend: PeoplePage, PersonDetailPage. 189 Rust tests.
+**I49:** Resolved. Graceful degradation without Google auth.
 
-**I56: Onboarding redesign — teach the philosophy** — Resolved. `OnboardingFlow.tsx` with 9-chapter educational flow replacing config wizard. Demo data fixtures, dashboard tour, meeting deep dive mock. All Tauri commands wired. Closed Sprint 5.
+**I51:** Resolved. People sub-entity — universal person tracking. 3 tables, 8 commands.
 
-**I57: Onboarding: populate workspace before first briefing** — Resolved. `populate_workspace` command creates folders + upserts accounts. `set_user_profile` saves userDomain. PopulateWorkspace.tsx chapter wired. Closed Sprint 5.
+**I56:** Resolved. Onboarding redesign — 9-chapter educational flow.
 
-**I58: Feed user profile context into AI enrichment prompts** — Resolved. `UserContext` struct injected into `enrich_emails()`, `enrich_briefing()`, and meeting prep directives. Profile fields from config.json. Closed Sprint 5.
+**I57:** Resolved. Onboarding: populate workspace before first briefing.
 
-**I59: `CARGO_MANIFEST_DIR` runtime resolution** — Resolved. `resolve_scripts_dir()` uses Tauri resource resolver in release builds, falls back to `CARGO_MANIFEST_DIR` in debug. Scripts bundled via `tauri.conf.json` resources array.
+**I58:** Resolved. User profile context in AI enrichment prompts.
 
-**I60: Path traversal in inbox processing and workspace population** — Resolved. `validate_inbox_path()` and `validate_entity_name()` added in `util.rs`. Applied to `process_inbox_file`, `enrich_inbox_file`, and `populate_workspace`. Closed Sprint 5.
+**I59:** Resolved. Script path resolution for production builds.
 
-**I61: TOCTOU race in transcript immutability check** — Resolved. Sentinel `TranscriptRecord` (with `processed_at: "processing"`) inserted before dropping lock. Concurrent calls blocked by sentinel check. Closed Sprint 6+7.
+**I60:** Resolved. Path traversal validation in inbox/workspace.
 
-**I62: `.unwrap()` panics in JSON mutation paths** — Resolved. All production `as_object_mut().unwrap()` calls replaced with `if let Some(obj)` or `.ok_or()` with graceful skip + warning log. Closed Sprint 5.
+**I61:** Resolved. TOCTOU sentinel for transcript immutability.
 
-**I63: `run_python_script` ignores `timeout_secs` parameter** — Resolved. Uses `spawn()` + `recv_timeout` pattern matching PTY manager's timeout handling. Closed Sprint 5.
+**I62:** Resolved. `.unwrap()` panics replaced with graceful handling.
 
-**I64: Non-atomic file writes risk corruption on crash** — Resolved. All critical writes use `crate::util::atomic_write_str()` (write .tmp then rename). Config, impact log, deliver.rs `write_json()` all covered. Closed Sprint 6+7.
+**I63:** Resolved. Python script timeout handling.
 
-**I65: Impact log append uses read-modify-write instead of atomic append** — Resolved. `append_to_impact_log()` in commands.rs uses `OpenOptions::append()`. `transcript.rs` also uses append-safe writes. Closed Sprint 6+7.
+**I64:** Resolved. Atomic file writes via `atomic_write_str()`.
 
-**I66: `deliver_preps` clears existing preps before writing new ones** — Resolved. Reversed order: new preps written first (filenames tracked in HashSet), then old files NOT in the set removed. Uses `atomic_write_str`. Closed Sprint 6+7.
+**I65:** Resolved. Impact log append safety.
 
-**I67: Scheduler `should_run_now` window can miss jobs near boundary** — Resolved. Widened time check window from 60 → 120 seconds for sleep/wake recovery. Closed Sprint 6+7.
+**I66:** Resolved. Safe prep delivery (write-first, then remove stale).
 
-**I68: `Mutex` contention on read-heavy `AppState` fields** — Resolved. `config`, `workflow_status`, `calendar_events`, `last_scheduled_run` changed from `Mutex<T>` to `RwLock<T>`. All callers updated. Closed Sprint 6+7.
+**I67:** Resolved. Scheduler boundary widened 60 → 120 seconds.
 
-**I69: File router silently overwrites duplicate destinations** — Resolved. `unique_destination()` helper in `router.rs` appends `-1`, `-2` etc. suffix before extension when destination exists. Closed Sprint 6+7.
+**I68:** Resolved. `Mutex<T>` → `RwLock<T>` for read-heavy AppState.
 
-**I70: `sanitize_account_dir` doesn't strip filesystem-unsafe characters** — Resolved. `sanitize_for_filesystem()` in `util.rs` — strips `:*?"<>|`, replaces `/\` with `-`, trims dots/spaces, falls back to "unnamed". Closed Sprint 6+7.
+**I69:** Resolved. File router duplicate destination handling.
 
-**I71: Assorted low-severity edge hardening** — Resolved. All 9 items audited and confirmed: empty meeting list, missing config, missing prep dir, no-title meetings, no-subject emails, JSON parse failures, no-extension files, empty AI briefing — all handled. Closed Sprint 6+7.
+**I70:** Resolved. `sanitize_for_filesystem()` strips unsafe characters.
 
-**I72: Entity dashboard pages** — Resolved. Account list page (`AccountsPage.tsx`) with sortable table + account detail page (`AccountDetailPage.tsx`) with card-based layout. 6 Tauri commands. Route at `/accounts` and `/accounts/$accountId`.
+**I71:** Resolved. Low-severity edge hardening (9 items).
 
-**I73: Entity dashboard template system** — Resolved. ADR-0047 two-file pattern: `dashboard.json` (canonical) + `dashboard.md` (generated). `accounts.rs` with `AccountJson` schema, read/write/sync functions, markdown generation from JSON + SQLite live data. Three-way sync. File watching via mtime comparison.
+**I72:** Resolved. AccountsPage + AccountDetailPage. 6 Tauri commands.
 
-**I74: Account enrichment via Claude Code websearch** — Resolved. `enrich_account()` in `accounts.rs` spawns Claude Code with structured websearch prompt. Parses `ENRICHMENT...END_ENRICHMENT` block into `CompanyOverview`. Updates JSON+DB+markdown. "Enrich"/"Refresh" button on AccountDetailPage. 3 new parser tests. Closed Sprint 6+7.
+**I73:** Resolved. ADR-0047. Entity dashboard template system, two-file pattern, three-way sync.
 
-**I75: Entity dashboard external edit detection** — Resolved. Extended `watcher.rs` to watch `Accounts/` directory for `dashboard.json` changes. On change: debounce 500ms, read JSON, upsert to SQLite, regenerate markdown, emit `accounts-updated` frontend event. Closed Sprint 6+7.
+**I74:** Resolved. Account enrichment via Claude Code websearch.
 
-**I76: SQLite durability — backup and rebuild-from-filesystem** — Resolved. `db_backup.rs`: `backup_database()` uses `rusqlite::backup::Backup` API for hot copy. `rebuild_from_filesystem()` scans `Accounts/` and `People/` workspace dirs. Two Tauri commands registered. 2 new tests. Closed Sprint 6+7.
+**I75:** Resolved. Entity dashboard external edit detection via watcher.
 
-**I77: Filesystem writeback audit** — Resolved. Full audit completed. Priority writeback: markdown has no priority field (not applicable). Decision writeback: intentionally excluded. Account markdown staleness: already handled by `update_account_field`. All paths verified. Closed Sprint 6+7.
+**I76:** Resolved. SQLite backup + rebuild-from-filesystem.
 
-**I78: Onboarding: teach inbox-first behavior** — Resolved. `InboxTraining.tsx` chapter teaches the paradigm shift: drop files in, intelligence comes out. Guided first inbox drop with visual progress. Closed Sprint 5.
+**I77:** Resolved. Filesystem writeback audit.
 
-**I79: Onboarding: Claude Code validation step** — Resolved. `ClaudeCode.tsx` chapter with `check_claude_status` command. Detects installation + auth. Framed as "Connect your AI" — parallel to Google Connect. Skippable with warning. Closed Sprint 5.
+**I78:** Resolved. Onboarding: inbox-first behavior chapter.
 
-**I80: Proposed Agenda in meeting prep** — Resolved. `generate_mechanical_agenda()` assembles structured agenda from prep data (overdue items, risks, talking points, questions, capped at 7). AI enrichment via `enrich_preps()` refines ordering and adds rationale. "Proposed Agenda" card renders as first card on prep page. 199 tests.
+**I79:** Resolved. Onboarding: Claude Code validation chapter.
 
-**I81: People dynamics in meeting prep UI** — Resolved. "People in the Room" component in `MeetingDetailPage.tsx` with temperature badges, meeting count, last seen, organization, notes, "New contact" flags, cold-contact warnings, and person links. Pure frontend.
+**I80:** Resolved. Proposed Agenda in meeting prep.
 
-**I82: Copy-to-clipboard for meeting prep page** — Resolved. "Copy All" button exports full prep as markdown. Per-section `<CopyButton>` for individual cards. Reusable `useCopyToClipboard` hook and `CopyButton` component.
+**I81:** Resolved. People dynamics in meeting prep UI.
 
-**I83: Rust-native Google API client** — Resolved. `google_api/` module: auth.rs (OAuth2 browser flow), calendar.rs (Calendar API v3), classify.rs (10-rule meeting classification), gmail.rs (Gmail API). Token compat with Python format. Sprint 8.
+**I82:** Resolved. Copy-to-clipboard for meeting prep.
 
-**I84: Port Phase 1 operations to Rust** — Resolved. `prepare/` module: constants.rs, email_classify.rs (3-tier), actions.rs (markdown parse + SQLite dedup), gaps.rs (calendar gap analysis), meeting_context.rs (rich meeting context), orchestrate.rs (4 orchestrators). Sprint 8.
+**I83:** Resolved. Sprint 8. Rust-native Google API client (`google_api/` module).
 
-**I85: Port orchestrators and delete Python** — Resolved. Wired Rust orchestrators into executor.rs, deleted `scripts/` (16 Python files), removed `run_python_script()` and related code. No Python on $PATH required. ADR-0049. Sprint 8. 324 tests.
+**I84:** Resolved. Sprint 8. Phase 1 operations ported to Rust (`prepare/` module).
 
-**I91: Universal file extraction for inbox pipeline** — Resolved. `processor/extract.rs` module with format-aware text extraction (PDF, DOCX, XLSX, PPTX, HTML, RTF, plaintext). Companion .md pattern: original binary + extracted .md travel together. Classifier strips all known extensions. Inbox preview shows extracted text. ADR-0050. 346 tests.
+**I85:** Resolved. Sprint 8. Orchestrators ported, `scripts/` deleted, Python eliminated. ADR-0049.
+
+**I91:** Resolved. Universal file extraction (`processor/extract.rs`). ADR-0050.
+
+**I93:** Resolved. ADR-0052. Week page mechanical redesign — consumption-first layout.
+
+**I96:** Resolved. ADR-0052. Week planning wizard retired.
+
+**I97:** Resolved. ADR-0053. Dashboard readiness strip (later removed by ADR-0055).
+
+**I98:** Resolved. ADR-0053. Action/email sidebar order flipped.
+
+**I99:** Resolved. ADR-0053. Greeting removed, Focus promoted.
+
+**I100:** Resolved. ADR-0053. ActionList maxVisible 3 → 5.
+
+**I101:** Resolved. ADR-0053. Full-width summary (later superseded by ADR-0055 two-column).
+
+**I102:** Resolved. ADR-0054. Shared `ListRow` + `ListColumn` primitives.
+
+**I103:** Resolved. ADR-0054. AccountsPage flat rows with health dot.
+
+**I104:** Resolved. ADR-0054. PeoplePage flat rows with temperature + trend.
+
+**I105:** Resolved. PeoplePage shared component consolidation (SearchInput, TabFilter).
+
+**I106:** Resolved. `PersonListItem` struct + batch `get_people_with_signals()` query.
+
+**I107:** Resolved. Action detail page at `/actions/$actionId`. Context card, source meeting, account link.
+
+**I109:** Resolved. ADR-0055. Focus page — `get_focus_data` assembles from schedule.json + SQLite + gap analysis.
+
+**I111:** Resolved. ADR-0055. Dashboard visual rhythm — removed chrome, tapered spacing, breathing room.
+
+**I112:** Resolved. Graceful empty state — `load_schedule_json()` missing file returns `Empty` not `Error`.
+
+**I113:** Resolved. Workspace transition detection. Auto-scaffold, skip `_`-prefixed folders.
+
+**I114:** Resolved. ADR-0056. Parent-child accounts — `parent_id` FK, expandable rows, breadcrumb, aggregate rollup.
+
+**I116:** Resolved. ADR-0056 downstream. ActionsPage account name resolution via `ActionListItem`.
+
+**I117:** Resolved. ADR-0056 downstream. `guess_account_name()` discovers child BU directories.
+
+**I120:** Closed, won't fix. Legacy action import from VIP workspace. Starting clean — manual action creation (I127) replaces bulk import approach.
+
+**I121:** Closed, won't fix. Legacy prep generation against pre-existing workspace data. Clean start means preps build from fresh Google Calendar + account data.
+
+**I118:** Resolved. `format_time_display_tz()` in `deliver.rs` accepts optional `Tz` and converts with `with_timezone()`. `orchestrate.rs` converts to `chrono::Local`. `calendar_merge.rs` takes `Tz` param. All three call sites handle timezone correctly.
+
+**I124:** Resolved. `content_index` table, recursive directory scanner (respects child account boundaries), startup sync, `get_entity_files` + `index_entity_files` + `reveal_in_finder` commands, Files card on AccountDetailPage with watcher integration. 409 tests. Foundation for ADR-0057.
+
+**I125:** Resolved. `AccountContent` watch source variant, debounced content change events, `content-changed` event emission, frontend listener with "new files detected" banner. Delivered with I124.
+
+**I126:** Superseded by I130. Basic `build_file_context()` delivered with I124. ADR-0057 replaces with full intelligence pipeline (I130-I138).
 
 ---
 
@@ -399,11 +337,11 @@ Job: reduce friction for feeding external context into the system (P7: Consumpti
 | R2 | Google API token expiry mid-workflow | Medium | High | Detect early, prompt re-auth | Open |
 | R3 | File watcher unreliability on macOS | Medium | Low | Periodic polling backup | Open |
 | R4 | Scheduler drift after sleep/wake | Medium | Medium | Re-sync on wake events | Open |
-| R5 | **Open format = no switching cost.** Markdown portability means users can leave as easily as they arrive. The moat (archive quality) only works if DailyOS maintains the archive better than users could themselves — and better than a competitor wrapping the same open files. | High | Medium | Archive must be demonstrably better than DIY. Enrichment quality is the lock-in, not format. | Open |
-| R6 | **N=1 validation.** All architecture designed from one user in one role (CS leader). Entity modes, Kits, Intelligence untested with actual project-based, sales, or engineering users. Assumptions about "how work is organized" may not survive contact with diverse roles. | High | High | Recruit 3-5 beta users across different roles before implementing I27. Validate entity-mode assumptions with real workflows. | Open |
-| R7 | **Org cascade needs adoption density.** Organizational intelligence (Thursday Updates, cascading contributions) requires multiple DailyOS users on the same team. Single-user value must stand alone — org features are years away from being testable. | Medium | High | Ship individual product first. Don't invest in org features until adoption density exists. Keep it in Vision, not Roadmap. | Open |
-| R8 | **AI reliability gap.** "Zero discipline" promise depends on AI enrichment being consistently good. Current fault-tolerant design (mechanical data survives AI failure) mitigates data loss but not quality — a bad briefing erodes trust faster than no briefing. | High | Medium | Invest in enrichment quality metrics. Surface confidence signals to users. Make AI outputs editable/correctable. | Open |
-| R9 | **Composability untested at scale.** Kit + Intelligence + Integration composition is designed on paper (ADR-0046) but never built. Enrichment prompt fragment ordering, conflicts between multiple Intelligence layers, and "both" entity mode UX are all theoretical. | Medium | Medium | Build one Kit (CS) + one Intelligence (Executive) first. Validate composition with two overlays before designing more. | Open |
+| R5 | Open format = no switching cost. Moat is archive quality, not format lock-in. | High | Medium | Enrichment quality is the lock-in. | Open |
+| R6 | N=1 validation. All architecture designed from one user/role. | High | High | Recruit beta users across roles before I27. | Open |
+| R7 | Org cascade needs adoption density. | Medium | High | Ship individual product first. | Open |
+| R8 | AI reliability gap. Bad briefing erodes trust faster than no briefing. | High | Medium | Quality metrics, confidence signals, editable outputs. | Open |
+| R9 | Composability untested at scale. Kit + Intelligence composition is theoretical. | Medium | Medium | Build one Kit + one Intelligence first. | Open |
 
 ---
 
@@ -411,7 +349,7 @@ Job: reduce friction for feeding external context into the system (P7: Consumpti
 
 | ID | Assumption | Validated | Notes |
 |----|------------|-----------|-------|
-| A1 | Users have Claude Code CLI installed and authenticated | No | Need onboarding check (I13) |
+| A1 | Users have Claude Code CLI installed and authenticated | Partial | Onboarding checks (I79) |
 | A2 | Workspace follows PARA structure | No | Should handle variations gracefully |
 | A3 | `_today/` files use expected markdown format | Partial | Parser handles basic cases |
 | A4 | Users have Google Workspace (Calendar + Gmail) | No | Personal Gmail, Outlook, iCloud not supported in MVP |
@@ -428,4 +366,4 @@ Job: reduce friction for feeding external context into the system (P7: Consumpti
 
 ---
 
-*Migrated from RAIDD.md on 2026-02-06. Decisions are now tracked in [docs/decisions/](decisions/README.md).*
+*Migrated from RAIDD.md on 2026-02-06. Decisions tracked in [docs/decisions/](decisions/README.md).*

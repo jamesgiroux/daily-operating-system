@@ -38,6 +38,8 @@ pub struct AccountJson {
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub custom_sections: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
 }
 
 fn default_version() -> u32 {
@@ -99,6 +101,30 @@ pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
     workspace.join("Accounts").join(crate::util::sanitize_for_filesystem(name))
 }
 
+/// Resolve the directory for an account, preferring `tracker_path` when set (I114).
+///
+/// Child accounts have `tracker_path` like `Accounts/Cox/Consumer-Brands` which
+/// correctly resolves to a nested directory. Falls back to `account_dir()` for
+/// flat accounts without a tracker_path.
+pub fn resolve_account_dir(workspace: &Path, account: &DbAccount) -> PathBuf {
+    if let Some(ref tp) = account.tracker_path {
+        workspace.join(tp)
+    } else {
+        account_dir(workspace, &account.name)
+    }
+}
+
+/// Check if a subdirectory name looks like a Business Unit (I114).
+///
+/// BU directories have human-readable names (no numeric prefix).
+/// Internal org folders start with digits (`01-Customer-Information`, `02-Meetings`).
+/// We already skip `_`/`.`-prefixed dirs elsewhere.
+pub fn is_bu_directory(name: &str) -> bool {
+    !name.starts_with(|c: char| c.is_ascii_digit())
+        && !name.starts_with('_')
+        && !name.starts_with('.')
+}
+
 /// Write `dashboard.json` for an account.
 ///
 /// Merges structured DB fields with narrative JSON fields. If a JSON file
@@ -110,7 +136,7 @@ pub fn write_account_json(
     existing_json: Option<&AccountJson>,
     _db: &ActionDb,
 ) -> Result<(), String> {
-    let dir = account_dir(workspace, &account.name);
+    let dir = resolve_account_dir(workspace, account);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
@@ -134,6 +160,7 @@ pub fn write_account_json(
         custom_sections: existing_json
             .map(|j| j.custom_sections.clone())
             .unwrap_or_default(),
+        parent_id: account.parent_id.clone(),
     };
 
     let path = dir.join("dashboard.json");
@@ -155,7 +182,7 @@ pub fn write_account_markdown(
     json: Option<&AccountJson>,
     db: &ActionDb,
 ) -> Result<(), String> {
-    let dir = account_dir(workspace, &account.name);
+    let dir = resolve_account_dir(workspace, account);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
@@ -244,6 +271,26 @@ pub fn write_account_markdown(
     }
 
     // === Auto-generated sections below ===
+
+    // Business Units (I114 — parent accounts only)
+    let children = db.get_child_accounts(&account.id).unwrap_or_default();
+    if !children.is_empty() {
+        md.push_str("## Business Units\n\n");
+        for child in &children {
+            let health_badge = match child.health.as_deref() {
+                Some("green") => "🟢",
+                Some("yellow") => "🟡",
+                Some("red") => "🔴",
+                _ => "⚪",
+            };
+            let arr_str = child
+                .arr
+                .map(|a| format!(" — ${:.0}", a))
+                .unwrap_or_default();
+            md.push_str(&format!("- {} **{}**{}\n", health_badge, child.name, arr_str));
+        }
+        md.push('\n');
+    }
 
     // Recent Meetings
     md.push_str("<!-- auto-generated -->\n");
@@ -380,20 +427,18 @@ pub struct ReadAccountResult {
 }
 
 /// Read a dashboard.json file and convert to DbAccount + narrative fields.
+///
+/// Supports both flat (`Accounts/Acme/dashboard.json`) and nested/child
+/// (`Accounts/Cox/Consumer-Brands/dashboard.json`) paths (I114).
+///
+/// Depth detection: if the grandparent of the JSON file is `Accounts`, this is
+/// a flat account. If it's deeper, the immediate parent dir is the BU name and
+/// the grandparent is the parent account name.
 pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
     let json: AccountJson =
         serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
-
-    let name = path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|n| n.to_str())
-        .unwrap_or("Unknown")
-        .to_string();
-
-    let id = slugify(&name);
 
     // Get file mtime as updated_at
     let updated_at = std::fs::metadata(path)
@@ -405,33 +450,77 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
         })
         .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-    let tracker_path = path
-        .parent()
-        .and_then(|p| {
-            // Build relative path like "Accounts/Acme Corp"
-            let accounts_parent = p.parent()?;
-            let dir_name = accounts_parent.file_name()?.to_str()?;
-            let account_name = p.file_name()?.to_str()?;
-            Some(format!("{}/{}", dir_name, account_name))
-        });
+    // Depth detection: is grandparent "Accounts"?
+    // Flat:   workspace/Accounts/{name}/dashboard.json  → parent.parent.filename == "Accounts"
+    // Child:  workspace/Accounts/{parent}/{child}/dashboard.json → parent.parent.filename != "Accounts"
+    let account_dir = path.parent().ok_or("No parent dir")?;
+    let grandparent = account_dir.parent().ok_or("No grandparent dir")?;
+    let grandparent_name = grandparent
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
 
-    Ok(ReadAccountResult {
-        account: DbAccount {
-            id,
-            name,
-            lifecycle: json.structured.lifecycle.clone(),
-            arr: json.structured.arr,
-            health: json.structured.health.clone(),
-            contract_start: None, // Not in JSON schema — DB only
-            contract_end: json.structured.renewal_date.clone(),
-            csm: json.structured.csm.clone(),
-            champion: json.structured.champion.clone(),
-            nps: json.structured.nps,
-            tracker_path,
-            updated_at,
-        },
-        json,
-    })
+    let is_child = grandparent_name != "Accounts";
+
+    if is_child {
+        // Child account: Accounts/{parent_name}/{child_name}/dashboard.json
+        let child_name = account_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let parent_name = grandparent_name.to_string();
+        let parent_id = slugify(&parent_name);
+        let child_id = format!("{}--{}", parent_id, slugify(&child_name));
+        let tracker_path = Some(format!("Accounts/{}/{}", parent_name, child_name));
+
+        Ok(ReadAccountResult {
+            account: DbAccount {
+                id: child_id,
+                name: child_name,
+                lifecycle: json.structured.lifecycle.clone(),
+                arr: json.structured.arr,
+                health: json.structured.health.clone(),
+                contract_start: None,
+                contract_end: json.structured.renewal_date.clone(),
+                csm: json.structured.csm.clone(),
+                champion: json.structured.champion.clone(),
+                nps: json.structured.nps,
+                tracker_path,
+                parent_id: Some(parent_id),
+                updated_at,
+            },
+            json,
+        })
+    } else {
+        // Flat account: Accounts/{name}/dashboard.json
+        let name = account_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Unknown")
+            .to_string();
+        let id = slugify(&name);
+        let tracker_path = Some(format!("Accounts/{}", name));
+
+        Ok(ReadAccountResult {
+            account: DbAccount {
+                id,
+                name,
+                lifecycle: json.structured.lifecycle.clone(),
+                arr: json.structured.arr,
+                health: json.structured.health.clone(),
+                contract_start: None,
+                contract_end: json.structured.renewal_date.clone(),
+                csm: json.structured.csm.clone(),
+                champion: json.structured.champion.clone(),
+                nps: json.structured.nps,
+                tracker_path,
+                parent_id: json.parent_id.clone(),
+                updated_at,
+            },
+            json,
+        })
+    }
 }
 
 // =============================================================================
@@ -504,6 +593,7 @@ pub fn sync_accounts_from_workspace(
                     champion: None,
                     nps: None,
                     tracker_path: Some(format!("Accounts/{}", name)),
+                    parent_id: None,
                     updated_at: now,
                 };
                 if db.upsert_account(&new_account).is_ok() {
@@ -571,10 +661,124 @@ pub fn sync_accounts_from_workspace(
         }
     }
 
+    // --- Nested BU scan (I114): discover child accounts under parent directories ---
+    // Re-scan each top-level Accounts/ directory for BU subdirectories.
+    let top_entries = if accounts_dir.exists() {
+        std::fs::read_dir(&accounts_dir)
+            .map_err(|e| format!("Failed to re-read Accounts/: {}", e))?
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    for entry in top_entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let parent_dir_name = entry.file_name();
+        let parent_name_str = parent_dir_name.to_string_lossy();
+        if parent_name_str.starts_with('_') || parent_name_str.starts_with('.') {
+            continue;
+        }
+
+        let parent_id = slugify(&parent_name_str);
+
+        // Scan subdirectories for BU candidates
+        let sub_entries = match std::fs::read_dir(entry.path()) {
+            Ok(rd) => rd.collect::<Vec<_>>(),
+            Err(_) => continue,
+        };
+
+        for sub_entry in sub_entries {
+            let sub_entry = match sub_entry {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if !sub_entry.path().is_dir() {
+                continue;
+            }
+            let sub_name = sub_entry.file_name();
+            let sub_name_str = sub_name.to_string_lossy();
+
+            if !is_bu_directory(&sub_name_str) {
+                continue;
+            }
+
+            let child_json_path = sub_entry.path().join("dashboard.json");
+            let child_id = format!("{}--{}", parent_id, slugify(&sub_name_str));
+
+            if child_json_path.exists() {
+                // BU has dashboard.json — use depth-aware read_account_json
+                match read_account_json(&child_json_path) {
+                    Ok(ReadAccountResult { account: file_account, json }) => {
+                        match db.get_account(&file_account.id) {
+                            Ok(Some(db_account)) => {
+                                if file_account.updated_at > db_account.updated_at {
+                                    let mut merged = file_account;
+                                    merged.contract_start = db_account.contract_start.clone();
+                                    let _ = db.upsert_account(&merged);
+                                    let _ = write_account_markdown(workspace, &merged, Some(&json), db);
+                                    synced += 1;
+                                } else if db_account.updated_at > file_account.updated_at {
+                                    let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                                    let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
+                                    synced += 1;
+                                }
+                            }
+                            Ok(None) => {
+                                let _ = db.upsert_account(&file_account);
+                                let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
+                                synced += 1;
+                            }
+                            Err(_) => continue,
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to read child {}: {}", child_json_path.display(), e);
+                        continue;
+                    }
+                }
+            } else {
+                // BU directory without dashboard.json — bootstrap child record
+                if db.get_account(&child_id).ok().flatten().is_none() {
+                    let now = Utc::now().to_rfc3339();
+                    let new_child = DbAccount {
+                        id: child_id,
+                        name: sub_name_str.to_string(),
+                        lifecycle: None,
+                        arr: None,
+                        health: None,
+                        contract_start: None,
+                        contract_end: None,
+                        csm: None,
+                        champion: None,
+                        nps: None,
+                        tracker_path: Some(format!("Accounts/{}/{}", parent_name_str, sub_name_str)),
+                        parent_id: Some(parent_id.clone()),
+                        updated_at: now,
+                    };
+                    if db.upsert_account(&new_child).is_ok() {
+                        let _ = write_account_json(workspace, &new_child, None, db);
+                        let _ = write_account_markdown(workspace, &new_child, None, db);
+                        log::info!(
+                            "Bootstrapped child account '{}/{}' from BU folder",
+                            parent_name_str, sub_name_str
+                        );
+                        synced += 1;
+                    }
+                }
+            }
+        }
+    }
+
     // Also check: SQLite accounts that have no workspace dir yet
     if let Ok(all_accounts) = db.get_all_accounts() {
         for account in &all_accounts {
-            let dir = account_dir(workspace, &account.name);
+            let dir = resolve_account_dir(workspace, account);
             if !dir.exists() {
                 let _ = write_account_json(workspace, account, None, db);
                 let _ = write_account_markdown(workspace, account, None, db);
@@ -648,6 +852,269 @@ pub fn parse_enrichment_response(response: &str) -> Option<CompanyOverview> {
     }
 }
 
+// =============================================================================
+// Content Index (I124)
+// =============================================================================
+
+/// Files to skip during content indexing (managed by the app).
+const CONTENT_SKIP_FILES: &[&str] = &["dashboard.json", "dashboard.md", "intelligence.json", ".DS_Store"];
+
+/// Recursively collect content files from an account directory.
+/// Skips hidden files/dirs, underscore-prefixed dirs, managed files,
+/// and child account boundaries (subdirs containing dashboard.json).
+fn collect_content_files(dir: &Path, account_root: &Path, out: &mut Vec<std::path::PathBuf>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Skip hidden and underscore-prefixed entries at every level
+        if name.starts_with('.') || name.starts_with('_') {
+            continue;
+        }
+
+        if path.is_dir() {
+            // Stop at child account boundaries — subdirs with their own dashboard.json
+            // are separate entities and indexed independently
+            if path.join("dashboard.json").exists() {
+                continue;
+            }
+            collect_content_files(&path, account_root, out);
+        } else {
+            if CONTENT_SKIP_FILES.contains(&name.as_str()) {
+                continue;
+            }
+            out.push(path);
+        }
+    }
+}
+
+/// Sync the content index for a single account. Compares filesystem against DB,
+/// adds new files, updates changed files, removes deleted files.
+///
+/// Returns `(added, updated, removed)` counts.
+pub fn sync_content_index_for_account(
+    workspace: &Path,
+    db: &ActionDb,
+    account: &crate::db::DbAccount,
+) -> Result<(usize, usize, usize), String> {
+    use std::collections::HashMap;
+
+    let account_dir = resolve_account_dir(workspace, account);
+    if !account_dir.exists() {
+        return Ok((0, 0, 0));
+    }
+
+    let now = Utc::now().to_rfc3339();
+    let mut added = 0usize;
+    let mut updated = 0usize;
+    let mut removed = 0usize;
+
+    // Build a HashMap of existing DB records for this entity (O(1) lookup)
+    let existing = db
+        .get_entity_files(&account.id)
+        .map_err(|e| format!("DB error: {}", e))?;
+    let mut db_map: HashMap<String, crate::db::DbContentFile> = existing
+        .into_iter()
+        .map(|f| (f.id.clone(), f))
+        .collect();
+
+    // Scan the filesystem recursively
+    let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
+    collect_content_files(&account_dir, &account_dir, &mut file_paths);
+
+    for path in &file_paths {
+        let filename = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Detect format via existing extract module
+        let format = crate::processor::extract::detect_format(path);
+        let format_label = format!("{:?}", format);
+
+        // Get file metadata
+        let metadata = match std::fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let file_size = metadata.len() as i64;
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|t| {
+                let dt: chrono::DateTime<Utc> = t.into();
+                Some(dt.to_rfc3339())
+            })
+            .unwrap_or_else(|| now.clone());
+
+        // Compute relative path from workspace root
+        let relative_path = path
+            .strip_prefix(workspace)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| filename.clone());
+
+        // Use path relative to account dir for stable, collision-free IDs
+        let rel_from_account = path
+            .strip_prefix(&account_dir)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| filename.clone());
+
+        let id = slugify(&format!("{}/{}", account.id, rel_from_account));
+
+        // Check if record exists in DB
+        if let Some(existing_record) = db_map.remove(&id) {
+            // File exists in DB — check if it changed (compare modified_at)
+            if existing_record.modified_at != modified_at || existing_record.file_size != file_size {
+                let record = crate::db::DbContentFile {
+                    id,
+                    entity_id: account.id.clone(),
+                    entity_type: "account".to_string(),
+                    filename,
+                    relative_path,
+                    absolute_path: path.to_string_lossy().to_string(),
+                    format: format_label,
+                    file_size,
+                    modified_at,
+                    indexed_at: now.clone(),
+                    extracted_at: None, // COALESCE preserves existing
+                    summary: None,      // COALESCE preserves existing
+                };
+                let _ = db.upsert_content_file(&record);
+                updated += 1;
+            }
+            // Unchanged — skip
+        } else {
+            // New file — insert
+            let record = crate::db::DbContentFile {
+                id,
+                entity_id: account.id.clone(),
+                entity_type: "account".to_string(),
+                filename,
+                relative_path,
+                absolute_path: path.to_string_lossy().to_string(),
+                format: format_label,
+                file_size,
+                modified_at,
+                indexed_at: now.clone(),
+                extracted_at: None,
+                summary: None,
+            };
+            let _ = db.upsert_content_file(&record);
+            added += 1;
+        }
+    }
+
+    // Any records left in db_map no longer have matching files — remove them
+    for (id, _) in &db_map {
+        let _ = db.delete_content_file(id);
+        removed += 1;
+    }
+
+    Ok((added, updated, removed))
+}
+
+/// Sync content indexes for all accounts. Returns total files indexed.
+pub fn sync_all_content_indexes(
+    workspace: &Path,
+    db: &ActionDb,
+) -> Result<usize, String> {
+    let accounts = db
+        .get_all_accounts()
+        .map_err(|e| format!("DB error: {}", e))?;
+    let mut total = 0;
+
+    for account in &accounts {
+        match sync_content_index_for_account(workspace, db, account) {
+            Ok((added, updated, _removed)) => {
+                total += added + updated;
+            }
+            Err(e) => {
+                log::warn!(
+                    "Content index sync failed for '{}': {}",
+                    account.name,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+/// Build file context string for enrichment prompts (I126).
+///
+/// Extracts text from up to 5 most recent content files, capped at 8000 chars total.
+/// Updates `extracted_at` on each file as a side effect.
+pub fn build_file_context(
+    workspace: &Path,
+    db: &ActionDb,
+    account_id: &str,
+) -> String {
+    let files = match db.get_entity_files(account_id) {
+        Ok(f) => f,
+        Err(_) => return String::new(),
+    };
+
+    if files.is_empty() {
+        return String::new();
+    }
+
+    let max_files = 5;
+    let max_chars = 8000;
+    let mut context_parts: Vec<String> = Vec::new();
+    let mut total_chars = 0;
+    let now = Utc::now().to_rfc3339();
+
+    for file in files.iter().take(max_files) {
+        let path = std::path::Path::new(&file.absolute_path);
+        if !path.exists() {
+            continue;
+        }
+
+        let text = match crate::processor::extract::extract_text(path) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        // Cap this file's contribution
+        let remaining = max_chars - total_chars;
+        if remaining == 0 {
+            break;
+        }
+        let truncated = if text.len() > remaining {
+            &text[..remaining]
+        } else {
+            &text
+        };
+
+        context_parts.push(format!(
+            "--- File: {} ---\n{}",
+            file.filename, truncated
+        ));
+        total_chars += truncated.len();
+
+        // Mark as extracted
+        let _ = db.update_content_extraction(&file.id, &now, None);
+    }
+
+    if context_parts.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "\n\nThe following files exist in this account's workspace directory. \
+         Use them as additional context:\n\n{}",
+        context_parts.join("\n\n")
+    )
+}
+
 /// Build the Claude Code prompt for account enrichment.
 pub fn enrichment_prompt(account_name: &str) -> String {
     format!(
@@ -680,7 +1147,9 @@ pub fn enrich_account(
         .map_err(|e| format!("DB error: {}", e))?
         .ok_or_else(|| format!("Account {} not found", account_id))?;
 
-    let prompt = enrichment_prompt(&account.name);
+    // I126: Append file context from content index to enrichment prompt
+    let file_context = build_file_context(workspace, db, account_id);
+    let prompt = format!("{}{}", enrichment_prompt(&account.name), file_context);
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
@@ -726,6 +1195,7 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
         strategic_programs: Vec::new(),
         notes: None,
         custom_sections: Vec::new(),
+        parent_id: account.parent_id.clone(),
     }
 }
 
@@ -758,6 +1228,7 @@ mod tests {
             champion: Some("Bob".to_string()),
             nps: Some(80),
             tracker_path: Some(format!("Accounts/{}", name)),
+            parent_id: None,
             updated_at: now,
         }
     }
@@ -816,6 +1287,7 @@ mod tests {
             }],
             notes: Some("Key account.".to_string()),
             custom_sections: vec![],
+            parent_id: None,
         };
 
         write_account_markdown(workspace, &account, Some(&json), &db).unwrap();
@@ -917,6 +1389,7 @@ mod tests {
             strategic_programs: vec![],
             notes: Some("Don't lose these notes.".to_string()),
             custom_sections: vec![],
+            parent_id: None,
         };
 
         // Write with existing narrative data
@@ -1040,5 +1513,483 @@ END_ENRICHMENT";
         let all = db.get_all_accounts().unwrap();
         let delta_count = all.iter().filter(|a| a.name == "Delta Co").count();
         assert_eq!(delta_count, 1, "bootstrap must not create duplicates on re-sync");
+    }
+
+    // ── I114: Parent-Child tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_is_bu_directory() {
+        assert!(is_bu_directory("Consumer-Brands"));
+        assert!(is_bu_directory("Enterprise"));
+        assert!(is_bu_directory("Diversification"));
+        assert!(!is_bu_directory("01-Customer-Information"));
+        assert!(!is_bu_directory("02-Meetings"));
+        assert!(!is_bu_directory("_archive"));
+        assert!(!is_bu_directory(".hidden"));
+    }
+
+    #[test]
+    fn test_child_id_scheme() {
+        // Verify the -- separator is unambiguous
+        assert_eq!(
+            format!("{}--{}", slugify("Cox"), slugify("Consumer Brands")),
+            "cox--consumer-brands"
+        );
+        // slugify collapses consecutive dashes so -- can't appear from slugify alone
+        assert_eq!(slugify("Some--Thing"), "some-thing");
+    }
+
+    #[test]
+    fn test_read_account_json_flat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let accounts_dir = workspace.join("Accounts/Acme");
+        std::fs::create_dir_all(&accounts_dir).unwrap();
+
+        let json = r#"{"structured":{"arr":100000}}"#;
+        std::fs::write(accounts_dir.join("dashboard.json"), json).unwrap();
+
+        let result = read_account_json(&accounts_dir.join("dashboard.json")).unwrap();
+        assert_eq!(result.account.id, "acme");
+        assert_eq!(result.account.name, "Acme");
+        assert!(result.account.parent_id.is_none());
+        assert_eq!(result.account.tracker_path, Some("Accounts/Acme".to_string()));
+    }
+
+    #[test]
+    fn test_read_account_json_nested_child() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let child_dir = workspace.join("Accounts/Cox/Consumer-Brands");
+        std::fs::create_dir_all(&child_dir).unwrap();
+
+        let json = r#"{"structured":{"arr":500000,"health":"green"}}"#;
+        std::fs::write(child_dir.join("dashboard.json"), json).unwrap();
+
+        let result = read_account_json(&child_dir.join("dashboard.json")).unwrap();
+        assert_eq!(result.account.id, "cox--consumer-brands");
+        assert_eq!(result.account.name, "Consumer-Brands");
+        assert_eq!(result.account.parent_id, Some("cox".to_string()));
+        assert_eq!(
+            result.account.tracker_path,
+            Some("Accounts/Cox/Consumer-Brands".to_string())
+        );
+        assert_eq!(result.account.arr, Some(500000.0));
+    }
+
+    #[test]
+    fn test_write_with_tracker_path_uses_correct_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        // Create a child account with tracker_path pointing to nested dir
+        let account = DbAccount {
+            id: "cox--consumer-brands".to_string(),
+            name: "Consumer-Brands".to_string(),
+            lifecycle: None,
+            arr: Some(500_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
+            parent_id: Some("cox".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+
+        write_account_json(workspace, &account, None, &db).unwrap();
+
+        // Should write to nested path, not Accounts/Consumer-Brands/
+        let nested = workspace.join("Accounts/Cox/Consumer-Brands/dashboard.json");
+        assert!(nested.exists(), "Should write to nested tracker_path");
+
+        let flat = workspace.join("Accounts/Consumer-Brands/dashboard.json");
+        assert!(!flat.exists(), "Should NOT write to flat path");
+    }
+
+    #[test]
+    fn test_sync_discovers_bu_subdirectories() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        // Create parent with dashboard.json
+        let parent_dir = workspace.join("Accounts/TestParent");
+        std::fs::create_dir_all(&parent_dir).unwrap();
+        std::fs::write(
+            parent_dir.join("dashboard.json"),
+            r#"{"structured":{"arr":1000000}}"#,
+        ).unwrap();
+
+        // Create BU child dir (no dashboard.json — should be bootstrapped)
+        let child_dir = parent_dir.join("TestChild");
+        std::fs::create_dir_all(&child_dir).unwrap();
+
+        // Create numbered internal dir (should NOT be bootstrapped)
+        let internal_dir = parent_dir.join("01-Customer-Information");
+        std::fs::create_dir_all(&internal_dir).unwrap();
+
+        let synced = sync_accounts_from_workspace(workspace, &db).unwrap();
+        assert!(synced >= 2, "Should sync at least parent + child");
+
+        // Parent should exist
+        let parent = db.get_account("testparent").unwrap();
+        assert!(parent.is_some(), "Parent account should exist");
+
+        // Child should exist with correct parent_id
+        let child = db.get_account("testparent--testchild").unwrap();
+        assert!(child.is_some(), "Child account should exist");
+        let child = child.unwrap();
+        assert_eq!(child.parent_id, Some("testparent".to_string()));
+        assert_eq!(
+            child.tracker_path,
+            Some("Accounts/TestParent/TestChild".to_string())
+        );
+
+        // Internal dir should NOT be an account
+        let internal = db.get_account("testparent--01-customer-information").unwrap();
+        assert!(internal.is_none(), "Numbered dir should not be an account");
+    }
+
+    #[test]
+    fn test_get_child_and_top_level_accounts() {
+        let db = test_db();
+
+        // Insert parent
+        let parent = DbAccount {
+            id: "cox".to_string(),
+            name: "Cox".to_string(),
+            lifecycle: None,
+            arr: Some(5_000_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some("Accounts/Cox".to_string()),
+            parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&parent).unwrap();
+
+        // Insert children
+        let child1 = DbAccount {
+            id: "cox--consumer-brands".to_string(),
+            name: "Consumer-Brands".to_string(),
+            lifecycle: None,
+            arr: Some(2_000_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
+            parent_id: Some("cox".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&child1).unwrap();
+
+        let child2 = DbAccount {
+            id: "cox--enterprise".to_string(),
+            name: "Enterprise".to_string(),
+            lifecycle: None,
+            arr: Some(3_000_000.0),
+            health: Some("yellow".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some("Accounts/Cox/Enterprise".to_string()),
+            parent_id: Some("cox".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&child2).unwrap();
+
+        // top-level should only include parent
+        let top = db.get_top_level_accounts().unwrap();
+        assert_eq!(top.len(), 1);
+        assert_eq!(top[0].id, "cox");
+
+        // children query
+        let children = db.get_child_accounts("cox").unwrap();
+        assert_eq!(children.len(), 2);
+        assert!(children.iter().any(|c| c.id == "cox--consumer-brands"));
+        assert!(children.iter().any(|c| c.id == "cox--enterprise"));
+    }
+
+    #[test]
+    fn test_parent_aggregate() {
+        let db = test_db();
+
+        // Insert parent
+        db.upsert_account(&DbAccount {
+            id: "parent".to_string(),
+            name: "Parent".to_string(),
+            lifecycle: None,
+            arr: Some(10_000_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: Some("2027-12-31".to_string()),
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+        })
+        .unwrap();
+
+        // Insert children with different health + ARR + renewal
+        db.upsert_account(&DbAccount {
+            id: "parent--a".to_string(),
+            name: "A".to_string(),
+            lifecycle: None,
+            arr: Some(3_000_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: Some("2026-09-30".to_string()),
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: Some("parent".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+        })
+        .unwrap();
+
+        db.upsert_account(&DbAccount {
+            id: "parent--b".to_string(),
+            name: "B".to_string(),
+            lifecycle: None,
+            arr: Some(1_500_000.0),
+            health: Some("red".to_string()),
+            contract_start: None,
+            contract_end: Some("2026-03-15".to_string()),
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: Some("parent".to_string()),
+            updated_at: Utc::now().to_rfc3339(),
+        })
+        .unwrap();
+
+        let agg = db.get_parent_aggregate("parent").unwrap();
+        assert_eq!(agg.bu_count, 2);
+        assert_eq!(agg.total_arr, Some(4_500_000.0));
+        assert_eq!(agg.worst_health.as_deref(), Some("red"));
+        assert_eq!(agg.nearest_renewal.as_deref(), Some("2026-03-15"));
+    }
+
+    // ── I124: Content Index tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_content_index_scan_empty_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("EmptyAccount");
+        db.upsert_account(&account).unwrap();
+
+        // Create account dir with only dashboard.json
+        let acct_dir = workspace.join("Accounts/EmptyAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        std::fs::write(acct_dir.join("dashboard.json"), "{}").unwrap();
+
+        let (added, updated, removed) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added, 0);
+        assert_eq!(updated, 0);
+        assert_eq!(removed, 0);
+
+        let files = db.get_entity_files(&account.id).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_content_index_scan_with_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("FileAccount");
+        db.upsert_account(&account).unwrap();
+
+        let acct_dir = workspace.join("Accounts/FileAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        std::fs::write(acct_dir.join("dashboard.json"), "{}").unwrap();
+        std::fs::write(acct_dir.join("notes.md"), "# Notes").unwrap();
+        std::fs::write(acct_dir.join("qbr-deck.pptx"), "fake pptx content").unwrap();
+        std::fs::write(acct_dir.join("transcript.txt"), "meeting transcript").unwrap();
+
+        let (added, _updated, _removed) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added, 3);
+
+        let files = db.get_entity_files(&account.id).unwrap();
+        assert_eq!(files.len(), 3);
+        let filenames: Vec<&str> = files.iter().map(|f| f.filename.as_str()).collect();
+        assert!(filenames.contains(&"notes.md"));
+        assert!(filenames.contains(&"qbr-deck.pptx"));
+        assert!(filenames.contains(&"transcript.txt"));
+    }
+
+    #[test]
+    fn test_content_index_skip_hidden_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("HiddenAccount");
+        db.upsert_account(&account).unwrap();
+
+        let acct_dir = workspace.join("Accounts/HiddenAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        std::fs::write(acct_dir.join(".hidden"), "hidden file").unwrap();
+        std::fs::write(acct_dir.join("_internal"), "internal file").unwrap();
+        std::fs::write(acct_dir.join(".DS_Store"), "macOS junk").unwrap();
+        std::fs::write(acct_dir.join("dashboard.md"), "generated markdown").unwrap();
+        std::fs::write(acct_dir.join("real-file.md"), "# Actual content").unwrap();
+
+        let (added, _, _) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added, 1);
+
+        let files = db.get_entity_files(&account.id).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "real-file.md");
+    }
+
+    #[test]
+    fn test_content_index_rescan_detects_removal() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("RemovalAccount");
+        db.upsert_account(&account).unwrap();
+
+        let acct_dir = workspace.join("Accounts/RemovalAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        let temp_file = acct_dir.join("temp.md");
+        std::fs::write(&temp_file, "temporary content").unwrap();
+
+        // First scan — file found
+        let (added, _, _) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added, 1);
+
+        // Delete the file
+        std::fs::remove_file(&temp_file).unwrap();
+
+        // Rescan — file removed
+        let (_, _, removed) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(removed, 1);
+
+        let files = db.get_entity_files(&account.id).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_content_index_rescan_skips_unchanged() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("UnchangedAccount");
+        db.upsert_account(&account).unwrap();
+
+        let acct_dir = workspace.join("Accounts/UnchangedAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        std::fs::write(acct_dir.join("stable.md"), "# Stable content").unwrap();
+
+        // First scan
+        let (added1, _, _) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added1, 1);
+
+        // Second scan — file unchanged
+        let (added2, updated2, removed2) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        assert_eq!(added2, 0);
+        assert_eq!(updated2, 0);
+        assert_eq!(removed2, 0);
+    }
+
+    #[test]
+    fn test_content_index_recursive_subdirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let account = sample_account("RecursiveAccount");
+        db.upsert_account(&account).unwrap();
+
+        let acct_dir = workspace.join("Accounts/RecursiveAccount");
+        std::fs::create_dir_all(&acct_dir).unwrap();
+        std::fs::write(acct_dir.join("dashboard.json"), "{}").unwrap();
+        std::fs::write(acct_dir.join("00-Index.md"), "# Index").unwrap();
+
+        // Subdir with files (like 01-Customer-Information/)
+        let sub1 = acct_dir.join("01-Customer-Information");
+        std::fs::create_dir_all(&sub1).unwrap();
+        std::fs::write(sub1.join("success-plan.md"), "# Plan").unwrap();
+        std::fs::write(sub1.join("commercial-summary.md"), "# Summary").unwrap();
+
+        // Deeper subdir (like 03-Call-Transcripts/)
+        let sub2 = acct_dir.join("03-Call-Transcripts");
+        std::fs::create_dir_all(&sub2).unwrap();
+        std::fs::write(sub2.join("2025-07-call.md"), "transcript").unwrap();
+
+        let (added, _, _) =
+            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        // 00-Index.md + success-plan.md + commercial-summary.md + 2025-07-call.md = 4
+        assert_eq!(added, 4);
+
+        let files = db.get_entity_files(&account.id).unwrap();
+        assert_eq!(files.len(), 4);
+
+        // Verify relative paths include subdir structure
+        let rel_paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
+        assert!(rel_paths.iter().any(|p| p.contains("01-Customer-Information/success-plan.md")));
+        assert!(rel_paths.iter().any(|p| p.contains("03-Call-Transcripts/2025-07-call.md")));
+    }
+
+    #[test]
+    fn test_content_index_skips_child_account_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+        let parent = sample_account("ParentCorp");
+        db.upsert_account(&parent).unwrap();
+
+        let parent_dir = workspace.join("Accounts/ParentCorp");
+        std::fs::create_dir_all(&parent_dir).unwrap();
+        std::fs::write(parent_dir.join("dashboard.json"), "{}").unwrap();
+        std::fs::write(parent_dir.join("parent-notes.md"), "# Parent notes").unwrap();
+
+        // Regular subdir (should be scanned)
+        let internal = parent_dir.join("01-Customer-Information");
+        std::fs::create_dir_all(&internal).unwrap();
+        std::fs::write(internal.join("info.md"), "# Info").unwrap();
+
+        // Child account boundary (has dashboard.json → should NOT be scanned)
+        let child_dir = parent_dir.join("ChildBU");
+        std::fs::create_dir_all(&child_dir).unwrap();
+        std::fs::write(child_dir.join("dashboard.json"), "{}").unwrap();
+        std::fs::write(child_dir.join("child-notes.md"), "# Child notes").unwrap();
+
+        let (added, _, _) =
+            sync_content_index_for_account(workspace, &db, &parent).unwrap();
+        // parent-notes.md + info.md = 2 (child-notes.md excluded)
+        assert_eq!(added, 2);
+
+        let files = db.get_entity_files(&parent.id).unwrap();
+        let filenames: Vec<&str> = files.iter().map(|f| f.filename.as_str()).collect();
+        assert!(filenames.contains(&"parent-notes.md"));
+        assert!(filenames.contains(&"info.md"));
+        assert!(!filenames.contains(&"child-notes.md"));
     }
 }
