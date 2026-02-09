@@ -636,7 +636,8 @@ pub fn build_intelligence_context(
 
     ctx.file_manifest = files
         .iter()
-        .filter(|f| f.modified_at >= cutoff_90d)
+        .filter(|f| content_date_rfc3339(&f.filename, &f.modified_at) >= cutoff_90d)
+        .take(30)
         .map(|f| SourceManifestEntry {
             filename: f.filename.clone(),
             modified_at: f.modified_at.clone(),
@@ -649,8 +650,8 @@ pub fn build_intelligence_context(
     let mut total_chars = 0;
 
     for file in &files {
-        // Skip files older than 90 days
-        if file.modified_at < cutoff_90d {
+        // Skip files older than 90 days (use filename date when available)
+        if content_date_rfc3339(&file.filename, &file.modified_at) < cutoff_90d {
             continue;
         }
 
@@ -1510,10 +1511,35 @@ pub(crate) fn classify_content(filename: &str, format: &str) -> (&'static str, i
     ("general", 5)
 }
 
-/// Apply a recency boost: files modified in the last 30 days get +1 priority (capped at 10).
-pub(crate) fn apply_recency_boost(base_priority: i32, modified_at: &str) -> i32 {
+/// Extract a semantic content date from a filename as an RFC3339 string.
+///
+/// Many workspace files follow the pattern `YYYY-MM-DD-description.ext`. The embedded date
+/// is the *content* date (when the meeting/event happened), which is more useful for filtering
+/// than the filesystem mtime (which reflects when the file was copied/synced).
+/// Returns `YYYY-MM-DDT00:00:00+00:00` if a date prefix is found, else `modified_at`.
+pub(crate) fn content_date_rfc3339(filename: &str, modified_at: &str) -> String {
+    if filename.len() >= 10 {
+        let prefix = &filename[..10];
+        if prefix.as_bytes()[4] == b'-'
+            && prefix.as_bytes()[7] == b'-'
+            && prefix[..4].chars().all(|c| c.is_ascii_digit())
+            && prefix[5..7].chars().all(|c| c.is_ascii_digit())
+            && prefix[8..10].chars().all(|c| c.is_ascii_digit())
+        {
+            return format!("{}T00:00:00+00:00", prefix);
+        }
+    }
+    modified_at.to_string()
+}
+
+/// Apply a recency boost: files from the last 30 days get +1 priority (capped at 10).
+///
+/// Uses the filename-embedded date when available (more reliable than filesystem mtime
+/// for files that have been copied/synced).
+pub(crate) fn apply_recency_boost(base_priority: i32, filename: &str, modified_at: &str) -> i32 {
     let cutoff_30d = (Utc::now() - chrono::Duration::days(30)).to_rfc3339();
-    if modified_at >= cutoff_30d.as_str() {
+    let effective_date = content_date_rfc3339(filename, modified_at);
+    if effective_date >= cutoff_30d {
         (base_priority + 1).min(10)
     } else {
         base_priority
@@ -1584,7 +1610,7 @@ pub(crate) fn mechanical_summary(text: &str, max_chars: usize) -> String {
 
 /// Extract text from a file and produce a mechanical summary.
 /// Returns `(extracted_at, summary)`. Both are `None` if extraction fails.
-fn extract_and_summarize(path: &std::path::Path) -> (Option<String>, Option<String>) {
+pub(crate) fn extract_and_summarize(path: &std::path::Path) -> (Option<String>, Option<String>) {
     match crate::processor::extract::extract_text(path) {
         Ok(text) if !text.is_empty() => {
             let summary = mechanical_summary(&text, 500);
@@ -1679,7 +1705,7 @@ pub(crate) fn sync_content_index_for_entity(
 
         // Classify content type + priority from filename and format
         let (content_type, base_priority) = classify_content(&filename, &format_label);
-        let priority = apply_recency_boost(base_priority, &modified_at);
+        let priority = apply_recency_boost(base_priority, &filename, &modified_at);
 
         // Check if record exists in DB
         if let Some(existing_record) = db_map.remove(&id) {
@@ -2481,11 +2507,40 @@ Some trailing text"#;
     #[test]
     fn test_recency_boost() {
         let recent = Utc::now().to_rfc3339();
-        assert_eq!(apply_recency_boost(5, &recent), 6);
-        assert_eq!(apply_recency_boost(10, &recent), 10); // capped at 10
+        // No date prefix → falls back to modified_at
+        assert_eq!(apply_recency_boost(5, "some-file.md", &recent), 6);
+        assert_eq!(apply_recency_boost(10, "some-file.md", &recent), 10); // capped at 10
 
         let old = "2020-01-01T00:00:00+00:00";
-        assert_eq!(apply_recency_boost(5, old), 5); // no boost
+        assert_eq!(apply_recency_boost(5, "some-file.md", old), 5); // no boost
+
+        // Filename date takes precedence over modified_at
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let dated_filename = format!("{}-meeting-notes.md", today);
+        // Even with old mtime, recent filename date gets the boost
+        assert_eq!(apply_recency_boost(5, &dated_filename, old), 6);
+
+        // Old filename date, even with recent mtime → no boost
+        assert_eq!(apply_recency_boost(5, "2020-01-15-old-notes.md", &recent), 5);
+    }
+
+    #[test]
+    fn test_content_date_rfc3339() {
+        // Filename with date prefix
+        assert_eq!(
+            content_date_rfc3339("2024-09-13-meeting.md", "2026-02-09T12:00:00+00:00"),
+            "2024-09-13T00:00:00+00:00"
+        );
+        // No date prefix → falls back to modified_at
+        assert_eq!(
+            content_date_rfc3339("notes.md", "2026-02-09T12:00:00+00:00"),
+            "2026-02-09T12:00:00+00:00"
+        );
+        // Short filename
+        assert_eq!(
+            content_date_rfc3339("a.md", "2026-02-09T12:00:00+00:00"),
+            "2026-02-09T12:00:00+00:00"
+        );
     }
 
     #[test]
