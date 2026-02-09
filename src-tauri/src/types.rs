@@ -464,6 +464,21 @@ pub struct Meeting {
     /// Whether the user has reviewed this prep (ADR-0033)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_reviewed: Option<bool>,
+    /// SQLite entity ID for the linked account (populated from junction table)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Entities linked via M2M junction table (I52)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
+}
+
+/// An entity linked to a meeting via the junction table.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedEntity {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
 }
 
 /// Action priority level

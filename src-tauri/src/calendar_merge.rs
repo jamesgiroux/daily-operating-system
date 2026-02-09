@@ -80,6 +80,8 @@ pub fn merge_meetings(
                 has_prep: false,
                 overlay_status: Some(OverlayStatus::New),
                 prep_reviewed: None,
+                account_id: None,
+                linked_entities: None,
             });
         }
     }
@@ -169,6 +171,8 @@ mod tests {
             has_prep: true,
             overlay_status: None,
             prep_reviewed: None,
+            account_id: None,
+            linked_entities: None,
         }
     }
 

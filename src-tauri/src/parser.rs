@@ -381,6 +381,8 @@ impl MeetingBuilder {
             has_prep: self.has_prep || has_inline_prep,
             overlay_status: None,
             prep_reviewed: None,
+            account_id: None,
+            linked_entities: None,
         })
     }
 }
@@ -2014,6 +2016,8 @@ pub fn parse_meetings_from_overview(
                     has_prep,
                     overlay_status: None,
                     prep_reviewed: None,
+                    account_id: None,
+                    linked_entities: None,
                 });
 
                 id_counter += 1;
