@@ -3384,13 +3384,13 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
-// ── I74: Account Enrichment via Claude Code ─────────────────────────
+// ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
 
 #[tauri::command]
 pub async fn enrich_account(
     account_id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<crate::accounts::CompanyOverview, String> {
+) -> Result<crate::entity_intel::IntelligenceJson, String> {
     let workspace_path = {
         let guard = state.config.read().map_err(|_| "Lock poisoned")?;
         let config = guard.as_ref().ok_or("Config not loaded")?;
@@ -3400,11 +3400,20 @@ pub async fn enrich_account(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
     let pty = crate::pty::PtyManager::new().with_timeout(120);
-    crate::accounts::enrich_account(
+    crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
         &account_id,
+        &account.name,
+        "account",
+        Some(&account),
+        None,
         &pty,
     )
 }
@@ -3707,12 +3716,12 @@ pub fn update_project_notes(
     Ok(())
 }
 
-/// Enrich a project via Claude Code websearch.
+/// Enrich a project via Claude Code intelligence enrichment.
 #[tauri::command]
 pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
-) -> Result<String, String> {
+) -> Result<crate::entity_intel::IntelligenceJson, String> {
     let workspace_path = {
         let guard = state.config.read().map_err(|_| "Lock poisoned")?;
         let config = guard.as_ref().ok_or("Config not loaded")?;
@@ -3722,11 +3731,20 @@ pub async fn enrich_project(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
+    let project = db
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Project not found: {}", project_id))?;
+
     let pty = crate::pty::PtyManager::new().with_timeout(120);
-    crate::projects::enrich_project(
+    crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
         &project_id,
+        &project.name,
+        "project",
+        None,
+        Some(&project),
         &pty,
     )
 }

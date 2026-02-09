@@ -384,6 +384,750 @@ impl ActionDb {
 }
 
 // =============================================================================
+// Intelligence Context Assembly (I131)
+// =============================================================================
+
+/// Assembled signals for the intelligence enrichment prompt.
+#[derive(Debug, Default)]
+pub struct IntelligenceContext {
+    /// Structured facts (ARR/health/lifecycle or status/milestone/owner).
+    pub facts_block: String,
+    /// Meeting history from last 90 days.
+    pub meeting_history: String,
+    /// Open actions for this entity.
+    pub open_actions: String,
+    /// Recent captures (wins/risks/decisions) from last 90 days.
+    pub recent_captures: String,
+    /// Linked stakeholders from entity_people + people.
+    pub stakeholders: String,
+    /// Source file manifest.
+    pub file_manifest: Vec<SourceManifestEntry>,
+    /// Extracted text from workspace files (50KB initial, 20KB incremental).
+    pub file_contents: String,
+    /// Serialized prior intelligence for incremental mode.
+    pub prior_intelligence: Option<String>,
+    /// Next upcoming meeting for this entity.
+    pub next_meeting: Option<String>,
+}
+
+/// Build intelligence context by gathering all signals from SQLite + files.
+pub fn build_intelligence_context(
+    workspace: &Path,
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    account: Option<&DbAccount>,
+    project: Option<&crate::db::DbProject>,
+    prior: Option<&IntelligenceJson>,
+) -> IntelligenceContext {
+    let mut ctx = IntelligenceContext::default();
+
+    // --- Facts block ---
+    match entity_type {
+        "account" => {
+            if let Some(acct) = account {
+                let mut facts = Vec::new();
+                if let Some(ref h) = acct.health {
+                    facts.push(format!("Health: {}", h));
+                }
+                if let Some(ref lc) = acct.lifecycle {
+                    facts.push(format!("Lifecycle: {}", lc));
+                }
+                if let Some(arr) = acct.arr {
+                    facts.push(format!("ARR: ${:.0}", arr));
+                }
+                if let Some(ref end) = acct.contract_end {
+                    facts.push(format!("Renewal: {}", end));
+                }
+                if let Some(nps) = acct.nps {
+                    facts.push(format!("NPS: {}", nps));
+                }
+                if let Some(ref csm) = acct.csm {
+                    facts.push(format!("CSM: {}", csm));
+                }
+                if let Some(ref champion) = acct.champion {
+                    facts.push(format!("Champion: {}", champion));
+                }
+                ctx.facts_block = facts.join("\n");
+            }
+        }
+        "project" => {
+            if let Some(proj) = project {
+                let mut facts = Vec::new();
+                facts.push(format!("Status: {}", proj.status));
+                if let Some(ref ms) = proj.milestone {
+                    facts.push(format!("Milestone: {}", ms));
+                }
+                if let Some(ref owner) = proj.owner {
+                    facts.push(format!("Owner: {}", owner));
+                }
+                if let Some(ref target) = proj.target_date {
+                    facts.push(format!("Target: {}", target));
+                }
+                ctx.facts_block = facts.join("\n");
+            }
+        }
+        _ => {}
+    }
+
+    // --- Meeting history (last 90 days) ---
+    let meetings = match entity_type {
+        "account" => db.get_meetings_for_account(entity_id, 20).unwrap_or_default(),
+        "project" => db.get_meetings_for_project(entity_id, 20).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    if !meetings.is_empty() {
+        let lines: Vec<String> = meetings
+            .iter()
+            .map(|m| {
+                format!(
+                    "- {} | {} | {}",
+                    m.start_time,
+                    m.title,
+                    m.summary.as_deref().unwrap_or("no summary")
+                )
+            })
+            .collect();
+        ctx.meeting_history = lines.join("\n");
+    }
+
+    // --- Open actions ---
+    let actions = match entity_type {
+        "account" => db.get_account_actions(entity_id).unwrap_or_default(),
+        "project" => db.get_project_actions(entity_id).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    if !actions.is_empty() {
+        let lines: Vec<String> = actions
+            .iter()
+            .map(|a| {
+                let due = a.due_date.as_deref().unwrap_or("no due date");
+                let ctx_str = a.context.as_deref().unwrap_or("");
+                format!("- [{}] {} (due: {}) {}", a.priority, a.title, due, ctx_str)
+            })
+            .collect();
+        ctx.open_actions = lines.join("\n");
+    }
+
+    // --- Recent captures ---
+    let captures = match entity_type {
+        "account" => db.get_captures_for_account(entity_id, 90).unwrap_or_default(),
+        "project" => db.get_captures_for_project(entity_id, 90).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    if !captures.is_empty() {
+        let lines: Vec<String> = captures
+            .iter()
+            .map(|c| {
+                format!(
+                    "- [{}] {} (from: {}, {})",
+                    c.capture_type, c.content, c.meeting_title, c.captured_at
+                )
+            })
+            .collect();
+        ctx.recent_captures = lines.join("\n");
+    }
+
+    // --- Stakeholders ---
+    let people = db.get_people_for_entity(entity_id).unwrap_or_default();
+    if !people.is_empty() {
+        let lines: Vec<String> = people
+            .iter()
+            .map(|p| {
+                let role = p.role.as_deref().unwrap_or("unknown role");
+                let org = p.organization.as_deref().unwrap_or("");
+                format!(
+                    "- {} | {} | {} | {} meetings | last seen: {}",
+                    p.name,
+                    role,
+                    org,
+                    p.meeting_count,
+                    p.last_seen.as_deref().unwrap_or("never")
+                )
+            })
+            .collect();
+        ctx.stakeholders = lines.join("\n");
+    }
+
+    // --- File manifest + contents ---
+    let files = db.get_entity_files(entity_id).unwrap_or_default();
+    let is_incremental = prior.is_some();
+    let max_chars: usize = if is_incremental { 20_000 } else { 50_000 };
+    let enriched_at = prior.map(|p| p.enriched_at.as_str()).unwrap_or("");
+
+    ctx.file_manifest = files
+        .iter()
+        .map(|f| SourceManifestEntry {
+            filename: f.filename.clone(),
+            modified_at: f.modified_at.clone(),
+            format: Some(f.format.clone()),
+        })
+        .collect();
+
+    let mut file_parts: Vec<String> = Vec::new();
+    let mut total_chars = 0;
+
+    for file in &files {
+        // In incremental mode, only include files modified since last enrichment
+        if is_incremental && !enriched_at.is_empty() && file.modified_at <= enriched_at.to_string()
+        {
+            continue;
+        }
+
+        let path = std::path::Path::new(&file.absolute_path);
+        if !path.exists() {
+            continue;
+        }
+
+        let text = match crate::processor::extract::extract_text(path) {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let remaining = max_chars.saturating_sub(total_chars);
+        if remaining == 0 {
+            break;
+        }
+        let truncated = if text.len() > remaining {
+            &text[..remaining]
+        } else {
+            &text
+        };
+
+        file_parts.push(format!("--- File: {} ---\n{}", file.filename, truncated));
+        total_chars += truncated.len();
+    }
+
+    if !file_parts.is_empty() {
+        ctx.file_contents = file_parts.join("\n\n");
+    }
+
+    // --- Prior intelligence (for incremental mode) ---
+    if let Some(p) = prior {
+        ctx.prior_intelligence = serde_json::to_string_pretty(p).ok();
+    }
+
+    // --- Next meeting ---
+    if entity_type == "account" {
+        if let Ok(upcoming) = db.get_upcoming_meetings_for_account(entity_id, 1) {
+            if let Some(m) = upcoming.first() {
+                ctx.next_meeting = Some(format!("{} — {}", m.start_time, m.title));
+            }
+        }
+    }
+
+    ctx
+}
+
+// =============================================================================
+// Prompt Builder (I131)
+// =============================================================================
+
+/// Build the Claude Code prompt for entity intelligence enrichment.
+///
+/// Two modes: initial (no prior intelligence — full context + web search) and
+/// incremental (has prior intelligence — delta context, no web search).
+pub fn build_intelligence_prompt(
+    entity_name: &str,
+    entity_type: &str,
+    ctx: &IntelligenceContext,
+) -> String {
+    let is_incremental = ctx.prior_intelligence.is_some();
+    let entity_label = match entity_type {
+        "account" => "customer account",
+        "project" => "project",
+        "person" => "professional relationship",
+        _ => "entity",
+    };
+
+    let mut prompt = String::with_capacity(4096);
+
+    // System context
+    prompt.push_str(&format!(
+        "You are building an intelligence assessment for the {label} \"{name}\".\n\n",
+        label = entity_label,
+        name = entity_name
+    ));
+
+    if is_incremental {
+        prompt.push_str(
+            "This is an INCREMENTAL update. Prior intelligence is provided below. \
+             Update fields that have new information. Preserve fields that haven't changed. \
+             Do NOT use web search.\n\n",
+        );
+    } else {
+        prompt.push_str(
+            "This is an INITIAL intelligence build. Use all available context below. \
+             Use web search to find current company/project information if relevant.\n\n",
+        );
+    }
+
+    // Facts
+    if !ctx.facts_block.is_empty() {
+        prompt.push_str("## Current Facts\n");
+        prompt.push_str(&ctx.facts_block);
+        prompt.push_str("\n\n");
+    }
+
+    // Prior intelligence (incremental only)
+    if let Some(ref prior) = ctx.prior_intelligence {
+        prompt.push_str("## Prior Intelligence (update, don't replace wholesale)\n");
+        prompt.push_str(prior);
+        prompt.push_str("\n\n");
+    }
+
+    // Next meeting
+    if let Some(ref meeting) = ctx.next_meeting {
+        prompt.push_str("## Next Meeting\n");
+        prompt.push_str(meeting);
+        prompt.push_str("\n\n");
+    }
+
+    // Signals from SQLite
+    if !ctx.meeting_history.is_empty() {
+        prompt.push_str("## Meeting History (last 90 days)\n");
+        prompt.push_str(&ctx.meeting_history);
+        prompt.push_str("\n\n");
+    }
+
+    if !ctx.open_actions.is_empty() {
+        prompt.push_str("## Open Actions\n");
+        prompt.push_str(&ctx.open_actions);
+        prompt.push_str("\n\n");
+    }
+
+    if !ctx.recent_captures.is_empty() {
+        prompt.push_str("## Recent Captures (wins/risks/decisions)\n");
+        prompt.push_str(&ctx.recent_captures);
+        prompt.push_str("\n\n");
+    }
+
+    if !ctx.stakeholders.is_empty() {
+        prompt.push_str("## Stakeholders\n");
+        prompt.push_str(&ctx.stakeholders);
+        prompt.push_str("\n\n");
+    }
+
+    // File manifest (always shown so Claude knows what exists)
+    if !ctx.file_manifest.is_empty() {
+        prompt.push_str("## Workspace Files\n");
+        for f in &ctx.file_manifest {
+            prompt.push_str(&format!(
+                "- {} ({})\n",
+                f.filename,
+                f.format.as_deref().unwrap_or("unknown")
+            ));
+        }
+        prompt.push_str("\n");
+    }
+
+    // File contents (full for initial, delta for incremental)
+    if !ctx.file_contents.is_empty() {
+        if is_incremental {
+            prompt.push_str("## New/Modified File Contents (since last enrichment)\n");
+        } else {
+            prompt.push_str("## File Contents\n");
+        }
+        prompt.push_str(&ctx.file_contents);
+        prompt.push_str("\n\n");
+    }
+
+    // Output format instructions
+    prompt.push_str(
+        "Return ONLY the structured block below — no other text before or after.\n\n\
+         INTELLIGENCE\n\
+         EXECUTIVE_ASSESSMENT:\n\
+         <1-3 paragraphs: overall situation, trajectory, key themes. Cite sources.>\n\
+         END_EXECUTIVE_ASSESSMENT\n\
+         RISK: <risk text> | SOURCE: <where you found this> | URGENCY: <critical|watch|low>\n\
+         RISK: <another risk> | SOURCE: <source> | URGENCY: <urgency>\n\
+         WIN: <win text> | SOURCE: <source> | IMPACT: <business impact>\n\
+         WORKING: <what's going well>\n\
+         WORKING: <another thing working>\n\
+         NOT_WORKING: <what needs attention>\n\
+         UNKNOWN: <knowledge gap that should be resolved>\n\
+         STAKEHOLDER: <name> | ROLE: <role> | ASSESSMENT: <1-2 sentences> | ENGAGEMENT: <high|medium|low|unknown>\n\
+         VALUE: <date> | <value statement> | SOURCE: <source> | IMPACT: <impact>\n\
+         NEXT_MEETING_PREP: <preparation item for next meeting>\n\
+         NEXT_MEETING_PREP: <another prep item>\n",
+    );
+
+    // Company context (initial only)
+    if !is_incremental && entity_type == "account" {
+        prompt.push_str(
+            "COMPANY_DESCRIPTION: <1 paragraph about what the company does>\n\
+             COMPANY_INDUSTRY: <primary industry>\n\
+             COMPANY_SIZE: <employee count or range>\n\
+             COMPANY_HQ: <headquarters city and country>\n\
+             COMPANY_CONTEXT: <any additional relevant business context>\n",
+        );
+    }
+
+    prompt.push_str("END_INTELLIGENCE\n");
+
+    prompt
+}
+
+// =============================================================================
+// Response Parser (I131)
+// =============================================================================
+
+/// Parse Claude's intelligence response into an IntelligenceJson.
+pub fn parse_intelligence_response(
+    response: &str,
+    entity_id: &str,
+    entity_type: &str,
+    source_file_count: usize,
+    manifest: Vec<SourceManifestEntry>,
+) -> Result<IntelligenceJson, String> {
+    // Find the INTELLIGENCE ... END_INTELLIGENCE block
+    let block = extract_intelligence_block(response)
+        .ok_or("No INTELLIGENCE block found in response")?;
+
+    let mut intel = IntelligenceJson {
+        version: 1,
+        entity_id: entity_id.to_string(),
+        entity_type: entity_type.to_string(),
+        enriched_at: Utc::now().to_rfc3339(),
+        source_file_count,
+        source_manifest: manifest,
+        ..Default::default()
+    };
+
+    // Parse executive assessment (multi-line between markers)
+    intel.executive_assessment = extract_multiline_field(&block, "EXECUTIVE_ASSESSMENT:");
+
+    // Parse single-line fields
+    for line in block.lines() {
+        let trimmed = line.trim();
+
+        if let Some(rest) = trimmed.strip_prefix("RISK:") {
+            if let Some(risk) = parse_risk_line(rest) {
+                intel.risks.push(risk);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("WIN:") {
+            if let Some(win) = parse_win_line(rest) {
+                intel.recent_wins.push(win);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("WORKING:") {
+            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            state.working.push(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("NOT_WORKING:") {
+            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            state.not_working.push(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("UNKNOWN:") {
+            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            state.unknowns.push(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("STAKEHOLDER:") {
+            if let Some(sh) = parse_stakeholder_line(rest) {
+                intel.stakeholder_insights.push(sh);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("VALUE:") {
+            if let Some(val) = parse_value_line(rest) {
+                intel.value_delivered.push(val);
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("NEXT_MEETING_PREP:") {
+            let readiness = intel
+                .next_meeting_readiness
+                .get_or_insert_with(|| MeetingReadiness {
+                    meeting_title: None,
+                    meeting_date: None,
+                    prep_items: Vec::new(),
+                });
+            readiness.prep_items.push(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("COMPANY_DESCRIPTION:") {
+            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+                description: None,
+                industry: None,
+                size: None,
+                headquarters: None,
+                additional_context: None,
+            });
+            ctx.description = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("COMPANY_INDUSTRY:") {
+            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+                description: None,
+                industry: None,
+                size: None,
+                headquarters: None,
+                additional_context: None,
+            });
+            ctx.industry = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("COMPANY_SIZE:") {
+            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+                description: None,
+                industry: None,
+                size: None,
+                headquarters: None,
+                additional_context: None,
+            });
+            ctx.size = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("COMPANY_HQ:") {
+            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+                description: None,
+                industry: None,
+                size: None,
+                headquarters: None,
+                additional_context: None,
+            });
+            ctx.headquarters = Some(rest.trim().to_string());
+        } else if let Some(rest) = trimmed.strip_prefix("COMPANY_CONTEXT:") {
+            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+                description: None,
+                industry: None,
+                size: None,
+                headquarters: None,
+                additional_context: None,
+            });
+            ctx.additional_context = Some(rest.trim().to_string());
+        }
+    }
+
+    Ok(intel)
+}
+
+/// Extract the INTELLIGENCE...END_INTELLIGENCE block from response text.
+fn extract_intelligence_block(text: &str) -> Option<String> {
+    let mut in_block = false;
+    let mut lines = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed == "INTELLIGENCE" {
+            in_block = true;
+            continue;
+        }
+        if trimmed == "END_INTELLIGENCE" {
+            break;
+        }
+        if in_block {
+            lines.push(line);
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
+/// Extract a multi-line field delimited by `FIELD_NAME:` and `END_FIELD_NAME`.
+fn extract_multiline_field(block: &str, start_marker: &str) -> Option<String> {
+    let end_marker = format!(
+        "END_{}",
+        start_marker.trim_end_matches(':')
+    );
+
+    let mut in_field = false;
+    let mut lines = Vec::new();
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(start_marker) {
+            in_field = true;
+            // Include any content on the same line as the marker
+            let rest = trimmed[start_marker.len()..].trim();
+            if !rest.is_empty() {
+                lines.push(rest.to_string());
+            }
+            continue;
+        }
+        if trimmed == end_marker {
+            in_field = false;
+            continue;
+        }
+        if in_field {
+            lines.push(line.to_string());
+        }
+    }
+
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n").trim().to_string())
+    }
+}
+
+/// Parse: `<text> | SOURCE: <src> | URGENCY: <urgency>`
+fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
+    let parts: Vec<&str> = rest.split('|').collect();
+    let text = parts.first()?.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let source = find_pipe_field(&parts, "SOURCE");
+    let urgency = find_pipe_field(&parts, "URGENCY").unwrap_or_else(|| "watch".to_string());
+
+    Some(IntelRisk {
+        text,
+        source,
+        urgency,
+    })
+}
+
+/// Parse: `<text> | SOURCE: <src> | IMPACT: <impact>`
+fn parse_win_line(rest: &str) -> Option<IntelWin> {
+    let parts: Vec<&str> = rest.split('|').collect();
+    let text = parts.first()?.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let source = find_pipe_field(&parts, "SOURCE");
+    let impact = find_pipe_field(&parts, "IMPACT");
+
+    Some(IntelWin {
+        text,
+        source,
+        impact,
+    })
+}
+
+/// Parse: `<name> | ROLE: <role> | ASSESSMENT: <text> | ENGAGEMENT: <level>`
+fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
+    let parts: Vec<&str> = rest.split('|').collect();
+    let name = parts.first()?.trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let role = find_pipe_field(&parts, "ROLE");
+    let assessment = find_pipe_field(&parts, "ASSESSMENT");
+    let engagement = find_pipe_field(&parts, "ENGAGEMENT");
+
+    Some(StakeholderInsight {
+        name,
+        role,
+        assessment,
+        engagement,
+        source: None,
+    })
+}
+
+/// Parse: `<date> | <statement> | SOURCE: <src> | IMPACT: <impact>`
+fn parse_value_line(rest: &str) -> Option<ValueItem> {
+    let parts: Vec<&str> = rest.split('|').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let date = Some(parts[0].trim().to_string()).filter(|s| !s.is_empty());
+    let statement = parts[1].trim().to_string();
+    if statement.is_empty() {
+        return None;
+    }
+    let source = find_pipe_field(&parts, "SOURCE");
+    let impact = find_pipe_field(&parts, "IMPACT");
+
+    Some(ValueItem {
+        date,
+        statement,
+        source,
+        impact,
+    })
+}
+
+/// Find a named field in pipe-delimited parts: `FIELD: value`.
+fn find_pipe_field(parts: &[&str], field: &str) -> Option<String> {
+    let prefix = format!("{}:", field);
+    for part in parts {
+        let trimmed = part.trim();
+        if let Some(val) = trimmed.strip_prefix(&prefix) {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+// =============================================================================
+// Enrichment Orchestrator (I131)
+// =============================================================================
+
+/// Enrich an entity's intelligence via Claude Code.
+///
+/// Flow:
+/// 1. Read prior intelligence.json (if exists) → determines initial vs incremental
+/// 2. Build IntelligenceContext from SQLite + files
+/// 3. Build prompt (entity-type parameterized)
+/// 4. Spawn Claude Code via PTY (120s timeout)
+/// 5. Parse response → IntelligenceJson
+/// 6. Write intelligence.json (atomic)
+/// 7. Update DB cache
+/// 8. Return IntelligenceJson
+pub fn enrich_entity_intelligence(
+    workspace: &Path,
+    db: &ActionDb,
+    entity_id: &str,
+    entity_name: &str,
+    entity_type: &str,
+    account: Option<&DbAccount>,
+    project: Option<&crate::db::DbProject>,
+    pty: &crate::pty::PtyManager,
+) -> Result<IntelligenceJson, String> {
+    // Resolve entity directory
+    let entity_dir = match entity_type {
+        "account" => {
+            if let Some(acct) = account {
+                crate::accounts::resolve_account_dir(workspace, acct)
+            } else {
+                crate::accounts::account_dir(workspace, entity_name)
+            }
+        }
+        "project" => crate::projects::project_dir(workspace, entity_name),
+        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+    };
+
+    // Step 1: Read prior intelligence
+    let prior = read_intelligence_json(&entity_dir).ok();
+
+    // Step 2: Build context
+    let ctx = build_intelligence_context(
+        workspace,
+        db,
+        entity_id,
+        entity_type,
+        account,
+        project,
+        prior.as_ref(),
+    );
+
+    // Step 3: Build prompt
+    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx);
+
+    // Step 4: Spawn Claude Code
+    let output = pty
+        .spawn_claude(workspace, &prompt)
+        .map_err(|e| format!("Claude Code error: {}", e))?;
+
+    // Step 5: Parse response
+    let intel = parse_intelligence_response(
+        &output.stdout,
+        entity_id,
+        entity_type,
+        ctx.file_manifest.len(),
+        ctx.file_manifest,
+    )?;
+
+    // Step 6: Write intelligence.json
+    write_intelligence_json(&entity_dir, &intel)?;
+
+    // Step 7: Update DB cache
+    let _ = db.upsert_entity_intelligence(&intel);
+
+    log::info!(
+        "Enriched intelligence for {} '{}' ({} risks, {} wins, {} stakeholders)",
+        entity_type,
+        entity_name,
+        intel.risks.len(),
+        intel.recent_wins.len(),
+        intel.stakeholder_insights.len(),
+    );
+
+    Ok(intel)
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -663,5 +1407,224 @@ mod tests {
             Some("Updated assessment.")
         );
         assert_eq!(fetched.risks.len(), 2);
+    }
+
+    // ─── Phase 2 tests: prompt builder + response parser ───
+
+    #[test]
+    fn test_build_intelligence_prompt_initial() {
+        let ctx = IntelligenceContext {
+            facts_block: "Health: green\nARR: $100000".to_string(),
+            meeting_history: "- 2026-01-15 | QBR | Quarterly review".to_string(),
+            open_actions: "- [P1] Follow up on renewal".to_string(),
+            recent_captures: "- [win] Expanded seats".to_string(),
+            stakeholders: "- Alice | VP Eng | Acme | 5 meetings".to_string(),
+            file_manifest: vec![SourceManifestEntry {
+                filename: "qbr.md".to_string(),
+                modified_at: "2026-01-30".to_string(),
+                format: Some("markdown".to_string()),
+            }],
+            file_contents: "--- File: qbr.md ---\nContent here".to_string(),
+            prior_intelligence: None, // Initial mode
+            next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
+        };
+
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx);
+
+        assert!(prompt.contains("INITIAL intelligence build"));
+        assert!(prompt.contains("Acme Corp"));
+        assert!(prompt.contains("Health: green"));
+        assert!(prompt.contains("QBR"));
+        assert!(prompt.contains("renewal"));
+        assert!(prompt.contains("COMPANY_DESCRIPTION:"));
+        assert!(prompt.contains("INTELLIGENCE"));
+        assert!(prompt.contains("END_INTELLIGENCE"));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_incremental() {
+        let ctx = IntelligenceContext {
+            facts_block: "Status: active".to_string(),
+            prior_intelligence: Some(r#"{"entityId":"proj","executiveAssessment":"Prior."}"#.to_string()),
+            ..Default::default()
+        };
+
+        let prompt = build_intelligence_prompt("Project X", "project", &ctx);
+
+        assert!(prompt.contains("INCREMENTAL update"));
+        assert!(prompt.contains("Prior."));
+        assert!(!prompt.contains("COMPANY_DESCRIPTION:"));
+    }
+
+    #[test]
+    fn test_parse_intelligence_response_full() {
+        let response = r#"Some preamble text
+
+INTELLIGENCE
+EXECUTIVE_ASSESSMENT:
+Acme is in a strong position with growing adoption across teams.
+The renewal trajectory is positive but champion departure poses risk.
+END_EXECUTIVE_ASSESSMENT
+RISK: Champion leaving Q2 | SOURCE: qbr-notes.md | URGENCY: critical
+RISK: Budget uncertainty | SOURCE: email | URGENCY: watch
+WIN: Expanded to 3 teams | SOURCE: capture | IMPACT: 20% seat growth
+WIN: NPS improved to 85 | SOURCE: survey | IMPACT: advocacy
+WORKING: Onboarding flow is smooth
+WORKING: Support ticket volume down
+NOT_WORKING: Reporting integration delayed
+UNKNOWN: Budget for next fiscal year
+STAKEHOLDER: Alice Chen | ROLE: VP Engineering | ASSESSMENT: Strong advocate, drives adoption | ENGAGEMENT: high
+STAKEHOLDER: Bob Kim | ROLE: IT Director | ASSESSMENT: Cautious, needs ROI data | ENGAGEMENT: medium
+VALUE: 2026-01-15 | Reduced onboarding time by 40% | SOURCE: qbr-deck.pdf | IMPACT: $50k savings
+NEXT_MEETING_PREP: Review reporting blockers status
+NEXT_MEETING_PREP: Prepare champion transition plan
+NEXT_MEETING_PREP: Bring updated ROI metrics
+COMPANY_DESCRIPTION: Enterprise SaaS platform for workflow automation
+COMPANY_INDUSTRY: Technology / SaaS
+COMPANY_SIZE: 500-1000
+COMPANY_HQ: San Francisco, USA
+COMPANY_CONTEXT: Recently acquired by larger corp, integration ongoing
+END_INTELLIGENCE
+
+Some trailing text"#;
+
+        let manifest = vec![SourceManifestEntry {
+            filename: "qbr-notes.md".to_string(),
+            modified_at: "2026-01-30".to_string(),
+            format: Some("markdown".to_string()),
+        }];
+
+        let intel = parse_intelligence_response(response, "acme-corp", "account", 1, manifest)
+            .expect("should parse");
+
+        assert_eq!(intel.entity_id, "acme-corp");
+        assert_eq!(intel.entity_type, "account");
+        assert!(intel.executive_assessment.unwrap().contains("champion departure"));
+
+        assert_eq!(intel.risks.len(), 2);
+        assert_eq!(intel.risks[0].text, "Champion leaving Q2");
+        assert_eq!(intel.risks[0].urgency, "critical");
+        assert_eq!(intel.risks[0].source.as_deref(), Some("qbr-notes.md"));
+        assert_eq!(intel.risks[1].urgency, "watch");
+
+        assert_eq!(intel.recent_wins.len(), 2);
+        assert_eq!(intel.recent_wins[0].impact.as_deref(), Some("20% seat growth"));
+
+        let state = intel.current_state.unwrap();
+        assert_eq!(state.working.len(), 2);
+        assert_eq!(state.not_working.len(), 1);
+        assert_eq!(state.unknowns.len(), 1);
+
+        assert_eq!(intel.stakeholder_insights.len(), 2);
+        assert_eq!(intel.stakeholder_insights[0].name, "Alice Chen");
+        assert_eq!(intel.stakeholder_insights[0].engagement.as_deref(), Some("high"));
+
+        assert_eq!(intel.value_delivered.len(), 1);
+        assert_eq!(intel.value_delivered[0].statement, "Reduced onboarding time by 40%");
+
+        let readiness = intel.next_meeting_readiness.unwrap();
+        assert_eq!(readiness.prep_items.len(), 3);
+
+        let ctx = intel.company_context.unwrap();
+        assert_eq!(ctx.description.as_deref(), Some("Enterprise SaaS platform for workflow automation"));
+        assert_eq!(ctx.industry.as_deref(), Some("Technology / SaaS"));
+        assert_eq!(ctx.headquarters.as_deref(), Some("San Francisco, USA"));
+        assert!(ctx.additional_context.is_some());
+    }
+
+    #[test]
+    fn test_parse_intelligence_response_partial() {
+        let response = "INTELLIGENCE\nEXECUTIVE_ASSESSMENT:\nBrief assessment.\nEND_EXECUTIVE_ASSESSMENT\nRISK: One risk | URGENCY: low\nEND_INTELLIGENCE";
+
+        let intel = parse_intelligence_response(response, "beta", "project", 0, vec![])
+            .expect("should parse");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief assessment."));
+        assert_eq!(intel.risks.len(), 1);
+        assert!(intel.recent_wins.is_empty());
+        assert!(intel.stakeholder_insights.is_empty());
+        assert!(intel.company_context.is_none());
+    }
+
+    #[test]
+    fn test_parse_intelligence_response_no_block() {
+        let response = "Just some random text with no structured block.";
+        let result = parse_intelligence_response(response, "x", "account", 0, vec![]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No INTELLIGENCE block"));
+    }
+
+    #[test]
+    fn test_parse_risk_line() {
+        let risk = parse_risk_line(" Budget cuts | SOURCE: email thread | URGENCY: critical");
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert_eq!(r.text, "Budget cuts");
+        assert_eq!(r.source.as_deref(), Some("email thread"));
+        assert_eq!(r.urgency, "critical");
+    }
+
+    #[test]
+    fn test_parse_risk_line_minimal() {
+        let risk = parse_risk_line(" Risk text only");
+        assert!(risk.is_some());
+        let r = risk.unwrap();
+        assert_eq!(r.text, "Risk text only");
+        assert_eq!(r.urgency, "watch"); // default
+        assert!(r.source.is_none());
+    }
+
+    #[test]
+    fn test_parse_stakeholder_line() {
+        let sh = parse_stakeholder_line(" Jane Doe | ROLE: CTO | ASSESSMENT: Key decision maker | ENGAGEMENT: high");
+        assert!(sh.is_some());
+        let s = sh.unwrap();
+        assert_eq!(s.name, "Jane Doe");
+        assert_eq!(s.role.as_deref(), Some("CTO"));
+        assert_eq!(s.engagement.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn test_extract_multiline_field() {
+        let block = "EXECUTIVE_ASSESSMENT:\nFirst paragraph.\n\nSecond paragraph.\nEND_EXECUTIVE_ASSESSMENT\nRISK: something";
+        let result = extract_multiline_field(block, "EXECUTIVE_ASSESSMENT:");
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.contains("First paragraph."));
+        assert!(text.contains("Second paragraph."));
+    }
+
+    #[test]
+    fn test_build_intelligence_context_account() {
+        let db = test_db();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+
+        let account = DbAccount {
+            id: "test-acct".to_string(),
+            name: "Test Acct".to_string(),
+            lifecycle: Some("steady-state".to_string()),
+            arr: Some(100_000.0),
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: Some("2026-12-31".to_string()),
+            csm: Some("Jane".to_string()),
+            champion: Some("Bob".to_string()),
+            nps: Some(75),
+            tracker_path: None,
+            parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&account).expect("upsert");
+
+        let ctx = build_intelligence_context(
+            workspace, &db, "test-acct", "account",
+            Some(&account), None, None,
+        );
+
+        assert!(ctx.facts_block.contains("Health: green"));
+        assert!(ctx.facts_block.contains("ARR: $100000"));
+        assert!(ctx.facts_block.contains("Renewal: 2026-12-31"));
+        assert!(ctx.prior_intelligence.is_none()); // initial mode
     }
 }
