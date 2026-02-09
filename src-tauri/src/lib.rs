@@ -7,6 +7,7 @@ mod db_backup;
 pub mod entity;
 pub mod entity_intel;
 mod error;
+mod intel_queue;
 pub mod intelligence;
 mod executor;
 mod google;
@@ -90,6 +91,13 @@ pub fn run() {
             let capture_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 capture::run_capture_loop(capture_state, capture_handle).await;
+            });
+
+            // Spawn intelligence enrichment processor (I132)
+            let intel_state = state.clone();
+            let intel_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                intel_queue::run_intel_processor(intel_state, intel_handle).await;
             });
 
             // Create tray menu
