@@ -78,6 +78,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0055](0055-schedule-first-dashboard-layout.md) | Schedule-first dashboard layout — two-column with sidebar | Accepted |
 | [0056](0056-parent-child-accounts.md) | Parent-child accounts — enterprise BU hierarchy | Accepted |
 | [0057](0057-entity-intelligence-architecture.md) | Entity intelligence architecture — three-file pattern, auto-triggered enrichment, persistent entity prep | Accepted |
+| [0058](0058-proactive-intelligence-maintenance.md) | Proactive intelligence maintenance — self-healing gap detection, calendar-driven refresh, overnight batch processing | Proposed |
 
 ---
 

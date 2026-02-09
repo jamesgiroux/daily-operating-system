@@ -196,6 +196,54 @@ async fn fetch_message_metadata(
 }
 
 // ============================================================================
+// Archive (remove INBOX label)
+// ============================================================================
+
+/// Archive emails by removing the INBOX label via Gmail batchModify.
+///
+/// This is a soft operation — emails remain in All Mail and are fully searchable.
+/// Gmail's batchModify accepts up to 1000 IDs per call.
+pub async fn archive_emails(
+    access_token: &str,
+    message_ids: &[String],
+) -> Result<usize, GoogleApiError> {
+    if message_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let client = reqwest::Client::new();
+
+    // Gmail batchModify supports up to 1000 IDs per request
+    for chunk in message_ids.chunks(1000) {
+        let body = serde_json::json!({
+            "ids": chunk,
+            "removeLabelIds": ["INBOX"]
+        });
+
+        let resp = client
+            .post("https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify")
+            .bearer_auth(access_token)
+            .json(&body)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(GoogleApiError::AuthExpired);
+        }
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GoogleApiError::ApiError {
+                status: status.as_u16(),
+                message: body,
+            });
+        }
+    }
+
+    Ok(message_ids.len())
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

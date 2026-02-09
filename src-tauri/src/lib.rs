@@ -226,6 +226,8 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
+            // I144: Archive low-priority emails
+            commands::archive_low_priority_emails,
             // I39: Feature Toggles
             commands::get_features,
             commands::set_feature_enabled,
@@ -246,6 +248,7 @@ pub fn run() {
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
             commands::get_meeting_entities,
+            commands::update_meeting_entity,
             // I129: Person Creation
             commands::create_person,
             // I51: People
