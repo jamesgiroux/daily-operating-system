@@ -217,9 +217,11 @@ export default function MeetingHistoryDetailPage() {
               <CardContent>
                 <div className="space-y-2">
                   {detail.actions.map((a) => (
-                    <div
+                    <Link
                       key={a.id}
-                      className="flex items-center gap-2 text-sm"
+                      to="/actions/$actionId"
+                      params={{ actionId: a.id }}
+                      className="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
                     >
                       <CheckCircle2
                         className={cn(
@@ -245,7 +247,7 @@ export default function MeetingHistoryDetailPage() {
                           {formatShortDate(a.dueDate)}
                         </span>
                       )}
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </CardContent>

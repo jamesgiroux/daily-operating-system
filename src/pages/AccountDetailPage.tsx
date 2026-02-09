@@ -412,7 +412,7 @@ export default function AccountDetailPage() {
                   {detail.openActions.length > 0 && (
                     <Link
                       to="/actions"
-                      search={{ search: detail.name }}
+                      search={{ search: detail.id }}
                       className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
                     >
                       View all
@@ -426,8 +426,8 @@ export default function AccountDetailPage() {
                       {detail.openActions.map((a) => (
                         <Link
                           key={a.id}
-                          to="/actions"
-                          search={{ search: detail.name }}
+                          to="/actions/$actionId"
+                          params={{ actionId: a.id }}
                           className="flex items-center gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
                         >
                           <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />

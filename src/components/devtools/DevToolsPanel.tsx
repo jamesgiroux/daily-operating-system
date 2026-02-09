@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,14 +31,24 @@ interface DevState {
   hasDatabase: boolean;
   actionCount: number;
   accountCount: number;
+  projectCount: number;
   meetingCount: number;
   hasTodayData: boolean;
   googleAuthStatus: string;
 }
 
 export function DevToolsPanel() {
-  // Gate on dev mode — renders nothing in production builds
-  if (!import.meta.env.DEV) return null;
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    // Gate on dev build + config.developerMode
+    if (!import.meta.env.DEV) return;
+    invoke<{ developerMode?: boolean }>("get_config")
+      .then((cfg) => setEnabled(cfg.developerMode === true))
+      .catch(() => {}); // No config yet — stay hidden
+  }, []);
+
+  if (!import.meta.env.DEV || !enabled) return null;
 
   return <DevToolsPanelInner />;
 }
@@ -131,7 +141,7 @@ function DevToolsPanelInner() {
                   ok={devState?.hasDatabase ?? false}
                   detail={
                     devState
-                      ? `${devState.actionCount} actions, ${devState.accountCount} accounts, ${devState.meetingCount} meetings`
+                      ? `${devState.actionCount} actions, ${devState.accountCount} accounts, ${devState.projectCount} projects, ${devState.meetingCount} meetings`
                       : "—"
                   }
                 />
@@ -170,6 +180,15 @@ function DevToolsPanelInner() {
                   loading={loading === "mock_full"}
                   disabled={loading !== null}
                   onClick={() => applyScenario("mock_full")}
+                />
+                <ScenarioButton
+                  icon={Brain}
+                  label="Enriched Mock (Intelligence)"
+                  description="Full mock + decisions, delegations, portfolio alerts, skip-today"
+                  variant="default"
+                  loading={loading === "mock_enriched"}
+                  disabled={loading !== null}
+                  onClick={() => applyScenario("mock_enriched")}
                 />
                 <ScenarioButton
                   icon={Shield}

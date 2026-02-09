@@ -38,6 +38,9 @@ pub struct Config {
     pub user_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_focus: Option<String>,
+    /// Show developer tools panel (wrench icon). Only effective in debug builds.
+    #[serde(default)]
+    pub developer_mode: bool,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -586,7 +589,7 @@ pub struct WeekOverview {
     pub week_narrative: Option<String>,
     /// AI-identified top priority (I94 — null until AI enrichment)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_priority: Option<serde_json::Value>,
+    pub top_priority: Option<TopPriority>,
     /// Proactive readiness checks surfacing prep gaps (I93)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readiness_checks: Option<Vec<ReadinessCheck>>,
@@ -719,40 +722,49 @@ pub struct TimeBlock {
     pub suggested_use: Option<String>,
 }
 
+/// AI-identified top priority for the week (I94)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TopPriority {
+    pub title: String,
+    pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+}
+
 // =============================================================================
 // Focus Data Types
 // =============================================================================
 
-/// Focus suggestions parsed from 81-suggested-focus.md
+/// Focus page data — assembled from schedule.json + SQLite actions + gap analysis
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusData {
-    pub priorities: Vec<FocusPriority>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub time_blocks: Option<Vec<TimeBlock>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quick_wins: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub energy_notes: Option<EnergyNotes>,
+    pub focus_statement: Option<String>,
+    pub priorities: Vec<crate::db::DbAction>,
+    pub key_meetings: Vec<FocusMeeting>,
+    pub available_blocks: Vec<TimeBlock>,
+    pub total_focus_minutes: u32,
 }
 
-/// Priority tier for focus
+/// Lightweight meeting projection for the Focus page
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FocusPriority {
-    pub level: String,
-    pub label: String,
-    pub items: Vec<String>,
-}
-
-/// Energy-aware scheduling notes
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EnergyNotes {
+pub struct FocusMeeting {
+    pub id: String,
+    pub title: String,
+    pub time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub morning: Option<String>,
+    pub end_time: Option<String>,
+    pub meeting_type: String,
+    pub has_prep: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub afternoon: Option<String>,
+    pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_file: Option<String>,
 }
 
 // =============================================================================
@@ -1196,6 +1208,7 @@ mod tests {
             user_company: None,
             user_title: None,
             user_focus: None,
+            developer_mode: false,
         }
     }
 

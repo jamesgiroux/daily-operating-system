@@ -1,7 +1,7 @@
 //! Week workflow definition
 //!
-//! Three-phase pattern (ADR-0049 Rust-native):
-//! Rust prepare_week → Claude /week → Rust deliver_week
+//! Per-operation pipeline (I94, matches today pattern):
+//! Rust prepare_week → Rust deliver_week → enrich_week (AI, fault-tolerant)
 //! Runs Monday early AM. Generates week overview, action summary, focus blocks.
 
 use crate::types::WorkflowId;

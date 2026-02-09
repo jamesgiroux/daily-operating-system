@@ -1099,6 +1099,27 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         })
         .collect();
 
+    // Build title→id lookup from actions.json so week items link to real action IDs
+    let action_id_by_title: std::collections::HashMap<String, String> = {
+        let mut map = std::collections::HashMap::new();
+        let actions_path = data_dir.join("actions.json");
+        if let Ok(content) = std::fs::read_to_string(&actions_path) {
+            if let Ok(parsed) = serde_json::from_str::<Value>(&content) {
+                if let Some(all) = parsed.get("actions").and_then(|v| v.as_array()) {
+                    for a in all {
+                        if let (Some(id), Some(title)) = (
+                            a.get("id").and_then(|v| v.as_str()),
+                            a.get("title").and_then(|v| v.as_str()),
+                        ) {
+                            map.insert(title.to_string(), id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        map
+    };
+
     let overdue_items: Vec<Value> = overdue
         .iter()
         .take(20)
@@ -1111,8 +1132,11 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
                     (Utc::now().date_naive() - dd).num_days()
                 })
             });
+            let id = a.get("id").and_then(|v| v.as_str()).map(String::from)
+                .or_else(|| action_id_by_title.get(&title).cloned())
+                .unwrap_or_else(|| format!("overdue-{}", i));
             json!({
-                "id": a.get("id").and_then(|v| v.as_str()).unwrap_or(&format!("overdue-{}", i)),
+                "id": id,
                 "title": title,
                 "account": a.get("account"),
                 "dueDate": due_date,
@@ -1128,8 +1152,11 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         .enumerate()
         .map(|(i, a)| {
             let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = a.get("id").and_then(|v| v.as_str()).map(String::from)
+                .or_else(|| action_id_by_title.get(&title).cloned())
+                .unwrap_or_else(|| format!("week-{}", i));
             json!({
-                "id": a.get("id").and_then(|v| v.as_str()).unwrap_or(&format!("week-{}", i)),
+                "id": id,
                 "title": title,
                 "account": a.get("account"),
                 "dueDate": a.get("due_date").or_else(|| a.get("dueDate")),

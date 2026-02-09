@@ -42,35 +42,27 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
   const activeMeetings = meetings.filter(m => m.overlayStatus !== "cancelled");
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-lg font-semibold">
-          <CalendarDays className="size-5" />
-          Schedule
-        </h2>
-        <div className="flex items-center gap-3">
-          {currentMeeting && (
-            <span className="flex items-center gap-1.5 text-xs text-primary">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-primary" />
-              </span>
-              In meeting
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        {currentMeeting && (
+          <span className="flex items-center gap-1.5 text-primary">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-primary" />
             </span>
-          )}
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Clock className="size-3" />
-            {formatNowTime(now)}
+            In meeting
           </span>
-          <span className="text-sm text-muted-foreground">
-            {activeMeetings.length} meeting{activeMeetings.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+        )}
+        <span className="flex items-center gap-1.5">
+          <Clock className="size-3" />
+          {formatNowTime(now)}
+        </span>
+        <span>{activeMeetings.length} meeting{activeMeetings.length !== 1 ? "s" : ""}</span>
       </div>
 
       <div className="relative">
         {/* Timeline line */}
-        <div className="absolute left-[7px] top-6 bottom-6 w-px bg-border" />
+        <div className="absolute left-[7px] top-6 bottom-6 w-px bg-border/50" />
 
         <div className="space-y-6">
           {meetings.map((meeting, index) => {

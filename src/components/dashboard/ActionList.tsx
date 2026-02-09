@@ -2,7 +2,6 @@ import { useState, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { CheckSquare, ChevronRight } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ActionItem } from "./ActionItem";
 import type { Action } from "@/types";
 
@@ -37,47 +36,43 @@ export function ActionList({ actions, maxVisible = 5 }: ActionListProps) {
   const hasMore = pendingCount > maxVisible;
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-medium">
-            Actions Due
-          </CardTitle>
-          <span className="font-mono text-sm font-light text-muted-foreground">
-            {pendingCount} {pendingCount === 1 ? "item" : "items"}
-          </span>
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Actions Due
+        </h3>
+        <span className="font-mono text-xs font-light text-muted-foreground">
+          {pendingCount} {pendingCount === 1 ? "item" : "items"}
+        </span>
+      </div>
+      {pendingCount === 0 ? (
+        <div className="flex flex-col items-center justify-center py-6 text-center">
+          <CheckSquare className="mb-2 size-8 text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">No actions due</p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {pendingCount === 0 ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center">
-            <CheckSquare className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">No actions due</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {visibleActions.map((action) => (
-              <ActionItem
-                key={action.id}
-                action={action}
-                isLocallyCompleted={completedIds.has(action.id)}
-                onComplete={handleComplete}
-              />
-            ))}
+      ) : (
+        <div className="space-y-2">
+          {visibleActions.map((action) => (
+            <ActionItem
+              key={action.id}
+              action={action}
+              isLocallyCompleted={completedIds.has(action.id)}
+              onComplete={handleComplete}
+            />
+          ))}
 
-            {hasMore && (
-              <Link
-                to="/actions"
-                search={{ search: undefined }}
-                className="flex w-full items-center justify-center gap-1 py-2 text-sm text-primary hover:text-primary/80 transition-colors"
-              >
-                View all {pendingCount} actions
-                <ChevronRight className="size-4" />
-              </Link>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {hasMore && (
+            <Link
+              to="/actions"
+              search={{ search: undefined }}
+              className="flex w-full items-center justify-center gap-1 py-2 text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              View all {pendingCount} actions
+              <ChevronRight className="size-4" />
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
