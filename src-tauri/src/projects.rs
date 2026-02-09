@@ -210,6 +210,16 @@ pub fn write_project_markdown(
         }
     }
 
+    // === Intelligence sections (I134 — from intelligence.json) ===
+
+    let intel_dir = project_dir(workspace, &project.name);
+    if let Ok(intel) = crate::entity_intel::read_intelligence_json(&intel_dir) {
+        let intel_md = crate::entity_intel::format_intelligence_markdown(&intel);
+        if !intel_md.is_empty() {
+            md.push_str(&intel_md);
+        }
+    }
+
     // === Auto-generated sections below ===
 
     md.push_str("<!-- auto-generated -->\n");
