@@ -105,9 +105,11 @@ export function useDashboardData(): {
 
   // Silent refresh when calendar poll detects changes (ADR-0032)
   // Also refreshes on prep-ready (I41 — reactive prep generation)
+  // Also refreshes on entity-updated (meeting entity reassignment cascade)
   useEffect(() => {
     let unlistenCalendar: UnlistenFn | undefined;
     let unlistenPrep: UnlistenFn | undefined;
+    let unlistenEntity: UnlistenFn | undefined;
     let cancelled = false;
 
     listen("calendar-updated", () => {
@@ -130,10 +132,21 @@ export function useDashboardData(): {
       }
     });
 
+    listen("entity-updated", () => {
+      loadData(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenEntity = fn;
+      }
+    });
+
     return () => {
       cancelled = true;
       unlistenCalendar?.();
       unlistenPrep?.();
+      unlistenEntity?.();
     };
   }, [loadData]);
 
