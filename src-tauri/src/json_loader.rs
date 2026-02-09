@@ -610,6 +610,15 @@ pub struct DirectiveMeetingContext {
     pub recent_captures: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub meeting_history: Option<Vec<serde_json::Value>>,
+    // I135: Entity intelligence (from intelligence.json) — persistent prep context
+    #[serde(default)]
+    pub executive_assessment: Option<String>,
+    #[serde(default)]
+    pub entity_risks: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub entity_readiness: Option<Vec<String>>,
+    #[serde(default)]
+    pub stakeholder_insights: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
