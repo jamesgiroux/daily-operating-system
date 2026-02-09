@@ -17,6 +17,7 @@ use std::fs;
 use std::path::Path;
 
 use chrono::{DateTime, Timelike, Utc};
+use chrono_tz::Tz;
 use regex::Regex;
 use serde_json::{json, Value};
 
@@ -61,8 +62,20 @@ pub fn normalise_meeting_type(raw: &str) -> &'static str {
     "internal"
 }
 
-/// Convert an ISO datetime string to human-readable time like "9:00 AM".
+/// Convert an ISO datetime string to human-readable time like "9:00 AM" in local tz.
+///
+/// Uses the system-local timezone by default. Callers that have a config timezone
+/// should use `format_time_display_tz()` instead.
 pub fn format_time_display(iso: &str) -> String {
+    // Fallback: use system local offset for display
+    format_time_display_tz(iso, None)
+}
+
+/// Convert an ISO datetime string to human-readable time in the given timezone.
+///
+/// If `tz` is None, falls back to the system local offset embedded in the timestamp,
+/// or UTC if the timestamp has no offset.
+pub fn format_time_display_tz(iso: &str, tz: Option<Tz>) -> String {
     if iso.is_empty() || !iso.contains('T') {
         return "All day".to_string();
     }
@@ -70,9 +83,15 @@ pub fn format_time_display(iso: &str) -> String {
         .or_else(|_| DateTime::parse_from_rfc3339(iso))
     {
         Ok(dt) => {
-            let hour = dt.format("%I").to_string();
-            let hour = hour.trim_start_matches('0');
-            format!("{}:{} {}", hour, dt.format("%M"), dt.format("%p"))
+            let local = match tz {
+                Some(tz) => dt.with_timezone(&tz).format("%-I:%M %p").to_string(),
+                None => {
+                    // Use system local time
+                    let local_dt = dt.with_timezone(&chrono::Local);
+                    local_dt.format("%-I:%M %p").to_string()
+                }
+            };
+            local
         }
         Err(_) => {
             if iso.len() >= 16 {
@@ -301,6 +320,11 @@ pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value,
         .clone()
         .unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
 
+    // Resolve user timezone for display (default: system local via None)
+    let tz: Option<Tz> = crate::state::load_config()
+        .ok()
+        .and_then(|c| c.schedules.today.timezone.parse::<Tz>().ok());
+
     let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
@@ -334,7 +358,7 @@ pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value,
         let mut meeting_obj = json!({
             "id": meeting_id,
             "calendarEventId": event.id,
-            "time": format_time_display(start),
+            "time": format_time_display_tz(start, tz),
             "title": summary,
             "type": meeting_type,
             "hasPrep": has_prep,
@@ -343,7 +367,7 @@ pub fn deliver_schedule(directive: &Directive, data_dir: &Path) -> Result<Value,
 
         if let Some(obj) = meeting_obj.as_object_mut() {
             if !end.is_empty() {
-                obj.insert("endTime".to_string(), json!(format_time_display(end)));
+                obj.insert("endTime".to_string(), json!(format_time_display_tz(end, tz)));
             }
             if let Some(ref acct) = account {
                 obj.insert("account".to_string(), json!(acct));
@@ -748,17 +772,93 @@ fn build_prep_json(
             if let Some(ref v) = ctx.current_state {
                 obj.insert("currentState".to_string(), json!(v));
             }
-            if let Some(ref v) = ctx.risks {
-                obj.insert("risks".to_string(), json!(v));
+            if let Some(ref v) = ctx.key_principles {
+                obj.insert("keyPrinciples".to_string(), json!(v));
             }
-            if let Some(ref v) = ctx.talking_points {
-                obj.insert("talkingPoints".to_string(), json!(v));
+
+            // --- Synthesize prep content from raw data when structured fields are empty ---
+
+            // Risks: use ctx.risks if present, else fall back to account_data.current_risks
+            let risks: Vec<Value> = ctx
+                .risks
+                .as_ref()
+                .map(|v| v.iter().map(|s| json!(s)).collect())
+                .unwrap_or_else(|| {
+                    ctx.account_data
+                        .as_ref()
+                        .and_then(|d| d.get("current_risks"))
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().map(|s| json!(s)).collect())
+                        .unwrap_or_default()
+                });
+            if !risks.is_empty() {
+                obj.insert("risks".to_string(), json!(risks));
             }
+
+            // Talking points: use ctx.talking_points if present, else synthesize from
+            // recent_wins (from account_data) + recent_captures (wins from SQLite)
+            let talking_points: Vec<Value> = ctx
+                .talking_points
+                .as_ref()
+                .map(|v| v.iter().map(|s| json!(s)).collect())
+                .unwrap_or_else(|| {
+                    let mut points: Vec<Value> = Vec::new();
+                    // Recent wins from dashboard
+                    if let Some(wins) = ctx.account_data.as_ref()
+                        .and_then(|d| d.get("recent_wins"))
+                        .and_then(|v| v.as_array())
+                    {
+                        for w in wins.iter().take(3) {
+                            if let Some(s) = w.as_str() {
+                                points.push(json!(format!("Recent win: {}", s)));
+                            }
+                        }
+                    }
+                    // Wins from recent captures (SQLite)
+                    if let Some(captures) = ctx.wins.as_ref() {
+                        for w in captures.iter().take(2) {
+                            points.push(json!(format!("Win: {}", w)));
+                        }
+                    }
+                    points
+                });
+            if !talking_points.is_empty() {
+                obj.insert("talkingPoints".to_string(), json!(talking_points));
+            }
+
+            // Questions: use ctx.questions if present
             if let Some(ref v) = ctx.questions {
                 obj.insert("questions".to_string(), json!(v));
             }
-            if let Some(ref v) = ctx.key_principles {
-                obj.insert("keyPrinciples".to_string(), json!(v));
+
+            // Open items: use ctx.open_items if present, else synthesize from
+            // open_actions (raw JSON array from SQLite meeting context)
+            let open_items: Vec<Value> = ctx
+                .open_items
+                .as_ref()
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| {
+                            if let Some(o) = item.as_object() {
+                                json!({
+                                    "title": o.get("title").and_then(|v| v.as_str()).unwrap_or(&item.to_string()),
+                                    "dueDate": o.get("due_date").and_then(|v| v.as_str()),
+                                    "context": o.get("context").and_then(|v| v.as_str()),
+                                    "isOverdue": o.get("is_overdue").and_then(|v| v.as_bool()).unwrap_or(false),
+                                })
+                            } else {
+                                json!({"title": item.to_string().trim_matches('"'), "isOverdue": false})
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_else(|| {
+                    // Fall back to raw open_actions from the directive meeting context
+                    synthesize_open_items_from_raw(ctx)
+                });
+            if !open_items.is_empty() {
+                obj.insert("openItems".to_string(), json!(open_items));
             }
 
             // Strategic programs → array of {name, status}
@@ -777,26 +877,6 @@ fn build_prep_json(
                     })
                     .collect();
                 obj.insert("strategicPrograms".to_string(), json!(prog_json));
-            }
-
-            // Open items → array of {title, dueDate, context, isOverdue}
-            if let Some(ref items) = ctx.open_items {
-                let items_json: Vec<Value> = items
-                    .iter()
-                    .map(|item| {
-                        if let Some(o) = item.as_object() {
-                            json!({
-                                "title": o.get("title").and_then(|v| v.as_str()).unwrap_or(&item.to_string()),
-                                "dueDate": o.get("due_date").and_then(|v| v.as_str()),
-                                "context": o.get("context").and_then(|v| v.as_str()),
-                                "isOverdue": o.get("is_overdue").and_then(|v| v.as_bool()).unwrap_or(false),
-                            })
-                        } else {
-                            json!({"title": item.to_string().trim_matches('"'), "isOverdue": false})
-                        }
-                    })
-                    .collect();
-                obj.insert("openItems".to_string(), json!(items_json));
             }
 
             // References → array of {label, path, lastUpdated}
@@ -830,6 +910,33 @@ fn build_prep_json(
     }
 
     prep
+}
+
+/// Synthesize open items from raw meeting context data.
+///
+/// Converts `open_actions` (from SQLite via meeting_context.rs) into
+/// the `openItems` format that `generate_mechanical_agenda()` expects.
+fn synthesize_open_items_from_raw(ctx: &DirectiveMeetingContext) -> Vec<Value> {
+    let mut items = Vec::new();
+
+    if let Some(ref actions) = ctx.open_actions {
+        let today_str = Utc::now().date_naive().to_string();
+        for action in actions.iter().take(10) {
+            let title = action.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            if title.is_empty() {
+                continue;
+            }
+            let due = action.get("due_date").and_then(|v| v.as_str()).unwrap_or("");
+            let is_overdue = !due.is_empty() && due < today_str.as_str();
+            items.push(json!({
+                "title": title,
+                "dueDate": if due.is_empty() { None } else { Some(due) },
+                "isOverdue": is_overdue,
+            }));
+        }
+    }
+
+    items
 }
 
 /// Generate a mechanical agenda from existing prep data.
@@ -2123,11 +2230,17 @@ mod tests {
 
     #[test]
     fn test_format_time_display() {
-        assert_eq!(format_time_display("2025-02-07T09:00:00+00:00"), "9:00 AM");
+        // Test with explicit UTC timezone
+        let utc_tz: Tz = "UTC".parse().unwrap();
+        assert_eq!(format_time_display_tz("2025-02-07T09:00:00+00:00", Some(utc_tz)), "9:00 AM");
         assert_eq!(
-            format_time_display("2025-02-07T14:30:00+00:00"),
+            format_time_display_tz("2025-02-07T14:30:00+00:00", Some(utc_tz)),
             "2:30 PM"
         );
+        // Test with a known non-UTC timezone
+        let est: Tz = "America/New_York".parse().unwrap();
+        assert_eq!(format_time_display_tz("2025-02-07T14:00:00+00:00", Some(est)), "9:00 AM");
+        // Edge cases
         assert_eq!(format_time_display(""), "All day");
         assert_eq!(format_time_display("2025-02-07"), "All day");
     }

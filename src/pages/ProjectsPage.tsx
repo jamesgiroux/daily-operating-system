@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,12 +7,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import { ListRow, ListColumn } from "@/components/ui/list-row";
 import {
   StatusBadge,
   projectStatusStyles,
 } from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
 import { FolderKanban, Plus, RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ProjectListItem } from "@/types";
 
 type StatusTab = "all" | "active" | "on_hold" | "completed";
@@ -201,7 +202,7 @@ export default function ProjectsPage() {
           />
 
           {/* Projects list */}
-          <div className="space-y-2">
+          <div>
             {filtered.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -224,67 +225,63 @@ export default function ProjectsPage() {
   );
 }
 
+const statusDot: Record<string, string> = {
+  active: "bg-success",
+  on_hold: "bg-primary",
+  completed: "bg-blue-500",
+};
+
 function ProjectRow({ project }: { project: ProjectListItem }) {
+  const daysSince = project.daysSinceLastMeeting;
+  const isStale = daysSince != null && daysSince > 30;
+
+  const subtitle = [
+    project.owner ? `Owner: ${project.owner}` : null,
+    project.milestone,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <Link to="/projects/$projectId" params={{ projectId: project.id }}>
-      <Card className="cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-md">
-        <CardContent className="flex items-center gap-4 p-4">
-          {/* Avatar initial */}
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-            {project.name.charAt(0).toUpperCase()}
-          </div>
-
-          {/* Name + badges */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium">{project.name}</span>
-              <StatusBadge
-                value={project.status}
-                styles={projectStatusStyles}
-                fallback={projectStatusStyles.active}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {project.owner && <span>Owner: {project.owner}</span>}
-              {project.owner && project.milestone && (
-                <span className="text-muted-foreground/40">&middot;</span>
-              )}
-              {project.milestone && <span>{project.milestone}</span>}
-            </div>
-          </div>
-
-          {/* Target date */}
+    <ListRow
+      to="/projects/$projectId"
+      params={{ projectId: project.id }}
+      signalColor={statusDot[project.status] ?? "bg-muted-foreground/30"}
+      name={project.name}
+      badges={
+        <StatusBadge
+          value={project.status}
+          styles={projectStatusStyles}
+          fallback={projectStatusStyles.active}
+        />
+      }
+      subtitle={subtitle || undefined}
+      columns={
+        <>
           {project.targetDate && (
-            <div className="shrink-0 text-right">
-              <div className="text-xs text-muted-foreground">
-                Target: {project.targetDate}
-              </div>
-            </div>
+            <ListColumn value={project.targetDate} label="target" className="w-20" />
           )}
-
-          {/* Open actions count */}
           {project.openActionCount > 0 && (
-            <div className="shrink-0 text-right">
-              <div className="text-sm font-medium">
-                {project.openActionCount}
-              </div>
-              <div className="text-xs text-muted-foreground">actions</div>
-            </div>
+            <ListColumn
+              value={project.openActionCount}
+              label="actions"
+              className="w-14"
+            />
           )}
-
-          {/* Days since last meeting */}
-          {project.daysSinceLastMeeting != null && (
-            <div className="w-16 shrink-0 text-right">
-              <div className="text-xs text-muted-foreground">
-                {project.daysSinceLastMeeting === 0
-                  ? "Today"
-                  : `${project.daysSinceLastMeeting}d ago`}
-              </div>
-            </div>
+          {daysSince != null && (
+            <ListColumn
+              value={
+                <span className={cn(isStale && "text-destructive")}>
+                  {daysSince === 0 ? "Today" : `${daysSince}d`}
+                </span>
+              }
+              label="last mtg"
+              className="w-14"
+            />
           )}
-        </CardContent>
-      </Card>
-    </Link>
+        </>
+      }
+    />
   );
 }
 

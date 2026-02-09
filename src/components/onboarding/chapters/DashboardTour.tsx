@@ -58,12 +58,11 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
     [],
   );
 
-  // Install demo data then load dashboard
+  // Load whatever dashboard data exists (real or empty)
   useEffect(() => {
     let cancelled = false;
     async function setup() {
       try {
-        await invoke("install_demo_data");
         const result = await invoke<{
           status: string;
           data?: DashboardData;
@@ -73,7 +72,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           setData(result.data);
         }
       } catch (err) {
-        console.error("Failed to install demo data:", err);
+        console.error("Failed to load dashboard data:", err);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -89,7 +88,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
       <div className="flex flex-col items-center justify-center gap-4 py-16">
         <Loader2 className="size-8 animate-spin text-primary" />
         <p className="text-sm text-muted-foreground">
-          Preparing your demo briefing...
+          Loading your briefing...
         </p>
       </div>
     );
@@ -99,7 +98,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
     return (
       <div className="space-y-4 text-center py-8">
         <p className="text-sm text-muted-foreground">
-          Couldn't load demo data. You can explore the dashboard after setup.
+          No briefing data yet. You can explore the dashboard after setup.
         </p>
         <Button onClick={onNext}>
           Continue

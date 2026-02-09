@@ -700,6 +700,22 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         rusqlite::params!["initech", "Initech", "onboarding", 350_000.0, "green", "Accounts/Initech/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
 
+    // I114: Contoso parent with 2 child BUs
+    conn.execute(
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params!["contoso", "Contoso", "steady-state", 2_400_000.0, "green", "2026-06-30", "Accounts/Contoso", &today],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, parent_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params!["contoso--enterprise", "Enterprise", "steady-state", 1_800_000.0, "green", "2026-06-30", "Accounts/Contoso/Enterprise", "contoso", &today],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO accounts (id, name, lifecycle, arr, health, contract_end, tracker_path, parent_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params!["contoso--smb", "SMB", "at-risk", 600_000.0, "yellow", "2026-03-15", "Accounts/Contoso/SMB", "contoso", &today],
+    ).map_err(|e| e.to_string())?;
+
     // --- Entities (mirrors accounts) ---
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -714,6 +730,22 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params!["initech", "Initech", "account", "Accounts/Initech/dashboard.md", &today],
+    ).map_err(|e| e.to_string())?;
+
+    // I114: Contoso entities (parent + children)
+    conn.execute(
+        "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params!["contoso", "Contoso", "account", "Accounts/Contoso", &today],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params!["contoso--enterprise", "Contoso Enterprise", "account", "Accounts/Contoso/Enterprise", &today],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params!["contoso--smb", "Contoso SMB", "account", "Accounts/Contoso/SMB", &today],
     ).map_err(|e| e.to_string())?;
 
     // --- Projects ---
@@ -1584,6 +1616,85 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
         serde_json::to_string_pretty(&initech_json).unwrap(),
     )
     .map_err(|e| format!("Failed to write Initech dashboard.json: {}", e))?;
+
+    // --- I114: Contoso parent + child BU workspace files ---
+    let contoso_dir = accounts_dir.join("Contoso");
+    std::fs::create_dir_all(&contoso_dir)
+        .map_err(|e| format!("Failed to create Contoso dir: {}", e))?;
+
+    let contoso_json = serde_json::json!({
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 2400000,
+            "health": "green",
+            "lifecycle": "steady-state",
+            "renewalDate": "2026-06-30",
+            "csm": "You",
+            "champion": "Marcus Webb"
+        },
+        "companyOverview": {
+            "description": "Contoso is a Fortune 500 enterprise with two business units using our platform. The Enterprise division handles large-scale deployments while the SMB division supports small and mid-size customers.",
+            "industry": "Technology Services",
+            "size": "5000+ employees",
+            "headquarters": "Seattle, WA"
+        },
+        "notes": "Enterprise BU is the flagship relationship. SMB showing usage decline — needs attention before March renewal."
+    });
+    std::fs::write(
+        contoso_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&contoso_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Contoso dashboard.json: {}", e))?;
+
+    // Contoso Enterprise (child BU)
+    let enterprise_dir = contoso_dir.join("Enterprise");
+    std::fs::create_dir_all(&enterprise_dir)
+        .map_err(|e| format!("Failed to create Enterprise dir: {}", e))?;
+
+    let enterprise_json = serde_json::json!({
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 1800000,
+            "health": "green",
+            "lifecycle": "steady-state",
+            "renewalDate": "2026-06-30",
+            "csm": "You",
+            "champion": "David Kim"
+        },
+        "parentId": "contoso",
+        "notes": "Strong adoption. 85% DAU across engineering teams."
+    });
+    std::fs::write(
+        enterprise_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&enterprise_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Enterprise dashboard.json: {}", e))?;
+
+    // Contoso SMB (child BU)
+    let smb_dir = contoso_dir.join("SMB");
+    std::fs::create_dir_all(&smb_dir)
+        .map_err(|e| format!("Failed to create SMB dir: {}", e))?;
+
+    let smb_json = serde_json::json!({
+        "version": 1,
+        "entityType": "account",
+        "structured": {
+            "arr": 600000,
+            "health": "yellow",
+            "lifecycle": "at-risk",
+            "renewalDate": "2026-03-15",
+            "csm": "You"
+        },
+        "parentId": "contoso",
+        "notes": "Usage declining. Lost 2 key users last month. Renewal at risk without intervention."
+    });
+    std::fs::write(
+        smb_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&smb_json).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write SMB dashboard.json: {}", e))?;
 
     // --- Project workspace files ---
     write_project_workspace_files(workspace)?;

@@ -5,12 +5,24 @@ import type { DbAction } from "@/types";
 type StatusFilter = "all" | "pending" | "completed" | "waiting";
 type PriorityFilter = "all" | "P1" | "P2" | "P3";
 
+export interface CreateActionParams {
+  title: string;
+  priority?: string;
+  dueDate?: string;
+  accountId?: string;
+  projectId?: string;
+  personId?: string;
+  context?: string;
+  sourceLabel?: string;
+}
+
 interface UseActionsReturn {
   actions: DbAction[];
   allActions: DbAction[];
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  createAction: (params: CreateActionParams) => Promise<string>;
   completeAction: (id: string) => Promise<void>;
   toggleAction: (id: string) => Promise<void>;
   statusFilter: StatusFilter;
@@ -90,6 +102,24 @@ export function useActions(initialSearch?: string): UseActionsReturn {
   useEffect(() => {
     loadActions();
   }, [loadActions]);
+
+  const createAction = useCallback(
+    async (params: CreateActionParams): Promise<string> => {
+      const id = await invoke<string>("create_action", {
+        title: params.title,
+        priority: params.priority,
+        dueDate: params.dueDate,
+        accountId: params.accountId,
+        projectId: params.projectId,
+        personId: params.personId,
+        context: params.context,
+        sourceLabel: params.sourceLabel,
+      });
+      await loadActions();
+      return id;
+    },
+    [loadActions]
+  );
 
   const completeAction = useCallback(
     async (id: string) => {
@@ -174,6 +204,7 @@ export function useActions(initialSearch?: string): UseActionsReturn {
     loading,
     error,
     refresh: loadActions,
+    createAction,
     completeAction,
     toggleAction,
     statusFilter,

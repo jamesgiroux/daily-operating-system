@@ -2,7 +2,7 @@
 //!
 //! Replaces calendar_poll.py and ops/calendar_fetch.py.
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Offset, Utc};
 use serde::Deserialize;
 
 use super::GoogleApiError;
@@ -102,8 +102,21 @@ pub async fn fetch_events(
 ) -> Result<Vec<GoogleCalendarEvent>, GoogleApiError> {
     let client = reqwest::Client::new();
 
-    let time_min = format!("{}T00:00:00Z", start_date);
-    let time_max = format!("{}T00:00:00Z", end_date + chrono::Duration::days(1));
+    // Use local-midnight bounds, not UTC midnight.
+    // On Sunday 8pm EST, UTC midnight is already Monday — using Z would fetch wrong day.
+    let local_offset = chrono::Local::now().offset().fix();
+    let offset_secs = local_offset.local_minus_utc();
+    let offset_str = format!(
+        "{:+03}:{:02}",
+        offset_secs / 3600,
+        (offset_secs.unsigned_abs() % 3600) / 60
+    );
+    let time_min = format!("{}T00:00:00{}", start_date, offset_str);
+    let time_max = format!(
+        "{}T00:00:00{}",
+        end_date + chrono::Duration::days(1),
+        offset_str
+    );
 
     let mut all_events = Vec::new();
     let mut page_token: Option<String> = None;

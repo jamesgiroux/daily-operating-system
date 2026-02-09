@@ -76,6 +76,8 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0054](0054-list-page-design-pattern.md) | List page design pattern — signal-first flat rows | Accepted |
 | [0053](0053-dashboard-ux-redesign.md) | Dashboard UX redesign — readiness-first overview | Accepted |
 | [0055](0055-schedule-first-dashboard-layout.md) | Schedule-first dashboard layout — two-column with sidebar | Accepted |
+| [0056](0056-parent-child-accounts.md) | Parent-child accounts — enterprise BU hierarchy | Accepted |
+| [0057](0057-entity-intelligence-architecture.md) | Entity intelligence architecture — three-file pattern, auto-triggered enrichment, persistent entity prep | Accepted |
 
 ---
 
