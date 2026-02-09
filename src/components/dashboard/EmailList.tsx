@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Archive, ChevronRight, Loader2, Mail, RefreshCw } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { Email } from "@/types";
 
@@ -30,68 +29,64 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-medium">
-            Emails
-          </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            title="Refresh emails"
-          >
-            {refreshing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="size-3.5" />
-            )}
-          </Button>
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Emails
+        </h3>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Refresh emails"
+        >
+          {refreshing ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
+        </Button>
+      </div>
+      {highPriority.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-6 text-center">
+          <Mail className="mb-2 size-8 text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">
+            {emails.length === 0
+              ? "No email data yet"
+              : "Nothing needs attention"}
+          </p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {highPriority.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-6 text-center">
-            <Mail className="mb-2 size-8 text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">
-              {emails.length === 0
-                ? "No email data yet"
-                : "Nothing needs attention"}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {visibleEmails.map((email) => (
-              <EmailItem key={email.id} email={email} />
-            ))}
+      ) : (
+        <div className="space-y-1">
+          {visibleEmails.map((email) => (
+            <EmailItem key={email.id} email={email} />
+          ))}
 
-            {hiddenCount > 0 && (
-              <Link
-                to="/emails"
-                className="flex items-center justify-center gap-1 py-2 text-xs text-primary hover:text-primary/80 transition-colors"
-              >
-                +{hiddenCount} more high priority
-                <ChevronRight className="size-3" />
-              </Link>
-            )}
+          {hiddenCount > 0 && (
+            <Link
+              to="/emails"
+              className="flex items-center justify-center gap-1 py-2 text-xs text-primary hover:text-primary/80 transition-colors"
+            >
+              +{hiddenCount} more high priority
+              <ChevronRight className="size-3" />
+            </Link>
+          )}
 
-            {otherPriority.length > 0 && (
-              <Link
-                to="/emails"
-                className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Archive className="size-3" />
-                {otherPriority.length} lower priority reviewed
-                <ChevronRight className="size-3" />
-              </Link>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {otherPriority.length > 0 && (
+            <Link
+              to="/emails"
+              className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Archive className="size-3" />
+              {otherPriority.length} lower priority reviewed
+              <ChevronRight className="size-3" />
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

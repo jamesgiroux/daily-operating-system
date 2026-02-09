@@ -1,4 +1,4 @@
-import { useSearch } from "@tanstack/react-router";
+import { useSearch, Link } from "@tanstack/react-router";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -223,14 +223,16 @@ function ActionCard({
 
           <div className="flex-1 space-y-1">
             <div className="flex items-center gap-2">
-              <h3
+              <Link
+                to="/actions/$actionId"
+                params={{ actionId: action.id }}
                 className={cn(
-                  "font-medium",
+                  "font-medium transition-colors hover:text-primary",
                   isCompleted && "line-through"
                 )}
               >
                 {stripMarkdown(action.title)}
-              </h3>
+              </Link>
               <Badge
                 variant="outline"
                 className={cn(

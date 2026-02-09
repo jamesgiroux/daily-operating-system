@@ -43,16 +43,45 @@ pub struct DevState {
     pub has_database: bool,
     pub action_count: usize,
     pub account_count: usize,
+    pub project_count: usize,
     pub meeting_count: usize,
     pub people_count: usize,
     pub has_today_data: bool,
     pub google_auth_status: String,
 }
 
+/// Check if the current workspace is the dev sandbox (not a real user workspace).
+fn is_dev_workspace(state: &AppState) -> bool {
+    let current = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+    match current {
+        None => true,
+        Some(path) => Path::new(&path) == dev_workspace().as_path(),
+    }
+}
+
 /// Apply a named scenario. Entry point for the `dev_apply_scenario` command.
 pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
+    }
+
+    // Guard: destructive scenarios must not run against a real workspace.
+    // These wipe SQLite and/or write test data — safe only when workspace
+    // is the dev sandbox or not yet configured.
+    let destructive = matches!(
+        scenario,
+        "reset" | "mock_full" | "mock_no_auth" | "mock_empty" | "simulate_briefing" | "mock_enriched"
+    );
+    if destructive && !is_dev_workspace(state) {
+        return Err(
+            "Refused: workspace points to real data, not the dev sandbox \
+             (~/Documents/DailyOS-dev). Switch workspace back to DailyOS-dev first."
+                .into(),
+        );
     }
 
     match scenario {
@@ -75,6 +104,15 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
         "simulate_briefing" => {
             install_simulate_briefing(state)?;
             Ok("Simulate briefing: workspace + directives seeded. Run dev_run_delivery to execute Phase 2+3.".into())
+        }
+        "mock_enriched" => {
+            install_mock_data(state, true)?;
+            let workspace = dev_workspace();
+            let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+            if let Some(db) = db_guard.as_ref() {
+                seed_intelligence_data(db, &workspace)?;
+            }
+            Ok("Enriched mock installed — intelligence signals populated".into())
         }
         _ => Err(format!("Unknown scenario: {}", scenario)),
     }
@@ -103,7 +141,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         .map(|wp| Path::new(wp).join("_today").join("data").join("manifest.json").exists())
         .unwrap_or(false);
 
-    let (has_database, action_count, account_count, meeting_count, people_count) =
+    let (has_database, action_count, account_count, project_count, meeting_count, people_count) =
         match state.db.lock() {
             Ok(guard) => match guard.as_ref() {
                 Some(db) => {
@@ -115,6 +153,10 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
                         .conn_ref()
                         .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get::<_, usize>(0))
                         .unwrap_or(0);
+                    let projects = db
+                        .conn_ref()
+                        .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get::<_, usize>(0))
+                        .unwrap_or(0);
                     let meetings = db
                         .conn_ref()
                         .query_row("SELECT COUNT(*) FROM meetings_history", [], |r| {
@@ -125,11 +167,11 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
                         .conn_ref()
                         .query_row("SELECT COUNT(*) FROM people", [], |r| r.get::<_, usize>(0))
                         .unwrap_or(0);
-                    (true, actions, accounts, meetings, people)
+                    (true, actions, accounts, projects, meetings, people)
                 }
-                None => (false, 0, 0, 0, 0),
+                None => (false, 0, 0, 0, 0, 0),
             },
-            Err(_) => (false, 0, 0, 0, 0),
+            Err(_) => (false, 0, 0, 0, 0, 0),
         };
 
     let google_auth_status = state
@@ -149,6 +191,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         has_database,
         action_count,
         account_count,
+        project_count,
         meeting_count,
         people_count,
         has_today_data,
@@ -252,12 +295,12 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Create config
     crate::state::create_or_update_config(state, |config| {
         config.workspace_path = workspace.to_string_lossy().to_string();
-        config.entity_mode = "account".to_string();
+        config.entity_mode = "both".to_string();
         config.profile = "customer-success".to_string();
     })?;
 
     // Scaffold workspace
-    crate::state::initialize_workspace(&workspace, "account")?;
+    crate::state::initialize_workspace(&workspace, "both")?;
 
     // Write date-patched JSON fixtures
     write_fixtures(&workspace)?;
@@ -267,6 +310,9 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     if let Some(db) = db_guard.as_ref() {
         seed_database(db)?;
     }
+
+    // Write project workspace files (dashboard.json + dashboard.md)
+    write_project_workspace_files(&workspace)?;
 
     // Seed transcript record for today's past Acme meeting (#1)
     let today_str = Local::now().format("%Y-%m-%d").to_string();
@@ -310,11 +356,11 @@ fn install_mock_empty(state: &AppState) -> Result<(), String> {
 
     crate::state::create_or_update_config(state, |config| {
         config.workspace_path = workspace.to_string_lossy().to_string();
-        config.entity_mode = "account".to_string();
+        config.entity_mode = "both".to_string();
         config.profile = "customer-success".to_string();
     })?;
 
-    crate::state::initialize_workspace(&workspace, "account")?;
+    crate::state::initialize_workspace(&workspace, "both")?;
 
     // Write mock Google token so we pass the auth check
     write_mock_google_token()?;
@@ -490,10 +536,10 @@ pub fn run_week_mechanical(state: &AppState) -> Result<String, String> {
     Ok("Week (mechanical): week-overview.json delivered".into())
 }
 
-/// Weekly prep — full pipeline including AI enrichment.
+/// Weekly prep — full pipeline including AI enrichment (I94).
 ///
-/// Runs Claude Code with /week skill (reads week-directive.json from workspace),
-/// then delivers week-overview.json.
+/// Mechanical delivery first, then AI enrichment via enrich_week().
+/// Requires Claude Code installed and authenticated.
 pub fn run_week_full(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -502,17 +548,24 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
     ensure_briefing_seeded(state)?;
 
     let workspace = get_workspace(state)?;
+    let data_dir = workspace.join("_today").join("data");
 
-    // Phase 2: AI enrichment via Claude Code /week
-    let pty = crate::pty::PtyManager::new();
-    let output = pty.spawn_claude(&workspace, "/week")
-        .map_err(|e| format!("Claude /week failed: {}", e))?;
-    log::info!("Week AI enrichment: {} bytes output", output.stdout.len());
-
-    // Phase 3: Mechanical delivery
+    // Phase 2: Mechanical delivery
     crate::prepare::orchestrate::deliver_week(&workspace)?;
 
-    Ok("Week (full): Claude /week + week-overview.json delivered".into())
+    // Phase 3: AI enrichment (fault-tolerant)
+    let pty = crate::pty::PtyManager::new();
+    let user_ctx = state.config.read().ok()
+        .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+        .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+
+    match crate::workflow::deliver::enrich_week(&data_dir, &pty, &workspace, &user_ctx) {
+        Ok(()) => Ok("Week (full): week-overview.json + AI enrichment delivered".into()),
+        Err(e) => {
+            log::warn!("Week AI enrichment failed (non-fatal): {}", e);
+            Ok(format!("Week (full): week-overview.json delivered. AI enrichment failed: {}", e))
+        }
+    }
 }
 
 /// Helper: get workspace path from config.
@@ -662,6 +715,114 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params!["initech", "Initech", "account", "Accounts/Initech/dashboard.md", &today],
     ).map_err(|e| e.to_string())?;
+
+    // --- Projects ---
+    // 3 projects across different statuses, linked to accounts where relevant.
+    let project_rows: Vec<(&str, &str, &str, Option<&str>, Option<&str>, Option<String>, &str)> = vec![
+        // (id, name, status, milestone, owner, target_date, tracker_path)
+        (
+            "acme-phase-2", "Acme Phase 2 Expansion", "active",
+            Some("Scope Finalization"), Some("You"),
+            Some(date_only(30)),
+            "Projects/Acme Phase 2 Expansion/dashboard.md",
+        ),
+        (
+            "globex-team-b-recovery", "Globex Team B Recovery", "active",
+            Some("Root Cause Analysis"), Some("You"),
+            Some(date_only(14)),
+            "Projects/Globex Team B Recovery/dashboard.md",
+        ),
+        (
+            "platform-migration", "Platform Migration v3", "on_hold",
+            Some("Architecture Review"), Some("Lisa Park"),
+            Some(date_only(60)),
+            "Projects/Platform Migration v3/dashboard.md",
+        ),
+    ];
+
+    for (id, name, status, milestone, owner, target_date, tracker_path) in &project_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO projects (id, name, status, milestone, owner, target_date, tracker_path, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![id, name, status, milestone, owner, target_date, tracker_path, &today],
+        ).map_err(|e| format!("Projects insert: {}", e))?;
+
+        // Mirror in entities table
+        conn.execute(
+            "INSERT OR REPLACE INTO entities (id, name, entity_type, tracker_path, updated_at) VALUES (?1, ?2, 'project', ?3, ?4)",
+            rusqlite::params![id, name, tracker_path, &today],
+        ).map_err(|e| format!("Project entity insert: {}", e))?;
+    }
+
+    // Project-linked actions
+    let project_action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, &str)> = vec![
+        // (id, title, priority, status, account_id, due_date, project_id)
+        (
+            "act-phase2-scope", "Finalize Phase 2 scope document", "P1", "pending",
+            Some("acme-corp"), Some(date_only(5)),
+            "acme-phase-2",
+        ),
+        (
+            "act-phase2-stakeholders", "Identify Phase 2 stakeholder group", "P2", "pending",
+            Some("acme-corp"), Some(date_only(10)),
+            "acme-phase-2",
+        ),
+        (
+            "act-teamb-usage-audit", "Run Team B usage audit", "P1", "pending",
+            Some("globex-industries"), Some(date_only(3)),
+            "globex-team-b-recovery",
+        ),
+        (
+            "act-teamb-interview", "Schedule interviews with Team B leads", "P2", "pending",
+            Some("globex-industries"), Some(date_only(7)),
+            "globex-team-b-recovery",
+        ),
+        (
+            "act-migration-arch", "Draft v3 architecture proposal", "P2", "pending",
+            None, Some(date_only(14)),
+            "platform-migration",
+        ),
+    ];
+
+    for (id, title, priority, status, account_id, due_date, project_id) in &project_action_rows {
+        conn.execute(
+            "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, project_id, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![id, title, priority, status, &today, due_date, account_id, project_id, &today],
+        ).map_err(|e| format!("Project action insert: {}", e))?;
+    }
+
+    // Project-linked meetings (reuse existing meetings via meeting_entities junction)
+    let project_meetings: Vec<(&str, &str, &str)> = vec![
+        // (meeting_id, entity_id, entity_type)
+        ("mh-acme-2d", "acme-phase-2", "project"),
+        ("mh-acme-7d", "acme-phase-2", "project"),
+        ("mh-globex-3d", "globex-team-b-recovery", "project"),
+        ("mh-globex-14d", "globex-team-b-recovery", "project"),
+        ("mh-standup-5d", "platform-migration", "project"),
+    ];
+
+    for (meeting_id, entity_id, entity_type) in &project_meetings {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Project meeting link: {}", e))?;
+    }
+
+    // Project-linked people (via entity_people)
+    let project_people: Vec<(&str, &str, &str)> = vec![
+        ("acme-phase-2", "sarah-chen-acme-com", "stakeholder"),
+        ("acme-phase-2", "alex-torres-acme-com", "contributor"),
+        ("globex-team-b-recovery", "jamie-morrison-globex-com", "stakeholder"),
+        ("globex-team-b-recovery", "casey-lee-globex-com", "stakeholder"),
+        ("platform-migration", "lisa-park-dailyos-test", "owner"),
+        ("platform-migration", "mike-chen-dailyos-test", "stakeholder"),
+    ];
+
+    for (entity_id, person_id, rel) in &project_people {
+        conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![entity_id, person_id, rel],
+        ).map_err(|e| format!("Project-people link: {}", e))?;
+    }
 
     // --- Actions (matching actions.json IDs) ---
     // Each action includes context (why it matters) and source tracing (where it came from).
@@ -982,6 +1143,106 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     Ok(())
 }
 
+/// Layer intelligence-specific data on top of `seed_database()` output.
+///
+/// Adds: decision-flagged actions, stale delegations, portfolio alerts
+/// (renewal + stale account), and skip-today signals via `intelligence.json`.
+fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String> {
+    let now = chrono::Utc::now();
+    let today = now.to_rfc3339();
+    let date_only = |n: i64| -> String {
+        (chrono::Local::now() + chrono::Duration::days(n))
+            .format("%Y-%m-%d")
+            .to_string()
+    };
+    let days_ago_rfc = |n: i64| -> String {
+        (now - chrono::Duration::days(n)).to_rfc3339()
+    };
+
+    let conn = db.conn_ref();
+
+    // --- Decision-flagged actions ---
+    // Flag two existing P1 actions so get_flagged_decisions() returns them.
+    conn.execute(
+        "UPDATE actions SET needs_decision = 1 WHERE id IN ('act-sow-acme', 'act-qbr-deck-globex')",
+        [],
+    ).map_err(|e| format!("Flag decisions: {}", e))?;
+
+    // --- Stale delegation actions (new inserts) ---
+    // status='waiting' + created_at old enough to exceed STALE_DELEGATION_DAYS (3d).
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            "act-legal-review-acme",
+            "Waiting on legal review of Acme MSA amendment",
+            "P1",
+            "waiting",
+            days_ago_rfc(10),
+            date_only(3),
+            "acme-corp",
+            "Legal",
+            "Sarah Chen needs the amended MSA before Phase 2 scoping can proceed. Legal has had the draft for 10 days — follow up needed.",
+            &today,
+        ],
+    ).map_err(|e| format!("Insert delegation 1: {}", e))?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, waiting_on, context, updated_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![
+            "act-finance-approval-initech",
+            "Waiting on finance approval for Initech Phase 2 budget",
+            "P2",
+            "waiting",
+            days_ago_rfc(7),
+            date_only(7),
+            "initech",
+            "Finance",
+            "Dana Patel confirmed Phase 2 interest but budget must be approved by finance. Submitted 7 days ago — no response yet.",
+            &today,
+        ],
+    ).map_err(|e| format!("Insert delegation 2: {}", e))?;
+
+    // --- Portfolio alerts: renewal ---
+    // Set Globex contract_end to 45 days from now → triggers get_renewal_alerts(60).
+    conn.execute(
+        "UPDATE accounts SET contract_end = ?1 WHERE id = 'globex-industries'",
+        rusqlite::params![date_only(45)],
+    ).map_err(|e| format!("Set Globex contract_end: {}", e))?;
+
+    // --- Portfolio alerts: stale account ---
+    // Set Initech updated_at to 35 days ago → triggers get_stale_accounts(30).
+    conn.execute(
+        "UPDATE accounts SET updated_at = ?1 WHERE id = 'initech'",
+        rusqlite::params![days_ago_rfc(35)],
+    ).map_err(|e| format!("Set Initech stale: {}", e))?;
+
+    // --- Skip-today signals via intelligence.json ---
+    // The loader expects a flat JSON array of { item, reason } objects.
+    let skip_today = serde_json::json!([
+        {
+            "item": "NPS survey follow-up batch",
+            "reason": "No responses received yet — wait for Tuesday deadline"
+        },
+        {
+            "item": "Archive cleanup backlog",
+            "reason": "Already done this week — next scheduled for Monday"
+        }
+    ]);
+
+    let data_dir = workspace.join("_today").join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("Failed to create data dir: {}", e))?;
+    std::fs::write(
+        data_dir.join("intelligence.json"),
+        serde_json::to_string_pretty(&skip_today).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write intelligence.json: {}", e))?;
+
+    Ok(())
+}
+
 /// Seed calendar events to produce overlay statuses via merge.
 ///
 /// All briefing meetings get a matching calendar event EXCEPT Initech Kickoff
@@ -1098,6 +1359,11 @@ fn write_workspace_markdown(workspace: &Path) -> Result<(), String> {
     let friday = {
         let weekday = today.weekday().num_days_from_monday() as i64;
         (today + chrono::Duration::days(4 - weekday)).format("%Y-%m-%d")
+    };
+    let date_only = |n: i64| -> String {
+        (today + chrono::Duration::days(n))
+            .format("%Y-%m-%d")
+            .to_string()
     };
 
     // --- actions.md (checkbox format that actions.rs parses) ---
@@ -1319,6 +1585,9 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
     )
     .map_err(|e| format!("Failed to write Initech dashboard.json: {}", e))?;
 
+    // --- Project workspace files ---
+    write_project_workspace_files(workspace)?;
+
     // --- People workspace files ---
     // Write person.json for each seeded person. Matches the data in seed_database().
     // Covers: with/without org, with/without role, with/without notes, all relationship types.
@@ -1463,6 +1732,185 @@ fn write_directive_fixtures(workspace: &Path) -> Result<(), String> {
         preps_dir.join(&globex_prep_name),
         serde_json::to_string_pretty(&globex_prep).unwrap(),
     ).map_err(|e| format!("Failed to write Globex QBR prep: {}", e))?;
+
+    Ok(())
+}
+
+/// Write project workspace files (dashboard.json + dashboard.md) for 3 mock projects.
+///
+/// Called from both `install_mock_data` (for rich detail pages) and
+/// `write_workspace_markdown` (for simulate_briefing).
+fn write_project_workspace_files(workspace: &Path) -> Result<(), String> {
+    let today = Local::now();
+    let date_only = |n: i64| -> String {
+        (today + chrono::Duration::days(n))
+            .format("%Y-%m-%d")
+            .to_string()
+    };
+
+    let projects_dir = workspace.join("Projects");
+
+    // Acme Phase 2 Expansion
+    let phase2_dir = projects_dir.join("Acme Phase 2 Expansion");
+    std::fs::create_dir_all(&phase2_dir)
+        .map_err(|e| format!("Failed to create Phase 2 dir: {}", e))?;
+
+    let phase2_json = serde_json::json!({
+        "version": 1,
+        "entityType": "project",
+        "structured": {
+            "status": "active",
+            "milestone": "Scope Finalization",
+            "owner": "You",
+            "targetDate": date_only(30)
+        },
+        "description": "Phase 2 expansion of Acme Corp deployment. Extends coverage from engineering to ops, finance, and APAC teams. Builds on Phase 1 success (completed ahead of schedule, 15% above benchmark). Key dependency: Alex Torres KT plan before his March departure.",
+        "milestones": [
+            { "name": "Scope Finalization", "status": "active", "targetDate": date_only(10), "notes": "Awaiting legal review of amended MSA" },
+            { "name": "Kickoff", "status": "planned", "targetDate": date_only(30), "notes": "April kickoff pending scope sign-off" },
+            { "name": "APAC Pilot", "status": "planned", "targetDate": date_only(90), "notes": "Singapore office first" }
+        ],
+        "notes": "Dependent on SOW and legal review. Sarah Chen is executive sponsor."
+    });
+    std::fs::write(
+        phase2_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&phase2_json).unwrap(),
+    ).map_err(|e| format!("Failed to write Phase 2 dashboard.json: {}", e))?;
+
+    let phase2_md = format!(
+        r#"# Acme Phase 2 Expansion
+
+**Status:** {} active
+**Milestone:** Scope Finalization
+**Owner:** You
+**Target Date:** {}
+
+## Description
+Phase 2 expansion of Acme Corp deployment. Extends coverage from engineering to ops, finance, and APAC teams. Builds on Phase 1 success (completed ahead of schedule, 15% above benchmark). Key dependency: Alex Torres KT plan before his March departure.
+
+## Milestones
+- {} **Scope Finalization** — Target: {} — Awaiting legal review of amended MSA
+- {} **Kickoff** — Target: {} — April kickoff pending scope sign-off
+- {} **APAC Pilot** — Target: {} — Singapore office first
+
+## Notes
+Dependent on SOW and legal review. Sarah Chen is executive sponsor.
+"#,
+        "\u{1f7e2}", date_only(30),
+        "\u{1f7e2}", date_only(10),
+        "\u{26aa}", date_only(30),
+        "\u{26aa}", date_only(90),
+    );
+    std::fs::write(phase2_dir.join("dashboard.md"), phase2_md)
+        .map_err(|e| format!("Failed to write Phase 2 dashboard.md: {}", e))?;
+
+    // Globex Team B Recovery
+    let teamb_dir = projects_dir.join("Globex Team B Recovery");
+    std::fs::create_dir_all(&teamb_dir)
+        .map_err(|e| format!("Failed to create Team B dir: {}", e))?;
+
+    let teamb_json = serde_json::json!({
+        "version": 1,
+        "entityType": "project",
+        "structured": {
+            "status": "active",
+            "milestone": "Root Cause Analysis",
+            "owner": "You",
+            "targetDate": date_only(14)
+        },
+        "description": "Intervention project to reverse declining usage in Globex Team B. Usage down 20% MoM. Critical for renewal — QBR is the forcing function. Casey Lee (Head of Ops) is the key contact for Team B adoption metrics.",
+        "milestones": [
+            { "name": "Root Cause Analysis", "status": "active", "targetDate": date_only(7), "notes": "Usage audit + lead interviews" },
+            { "name": "Engagement Plan", "status": "planned", "targetDate": date_only(14), "notes": "Corrective actions for Team B" },
+            { "name": "Recovery Verified", "status": "planned", "targetDate": date_only(45), "notes": "Usage trend reversal confirmed" }
+        ],
+        "notes": "Must show progress before QBR. Renewal depends on this."
+    });
+    std::fs::write(
+        teamb_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&teamb_json).unwrap(),
+    ).map_err(|e| format!("Failed to write Team B dashboard.json: {}", e))?;
+
+    let teamb_md = format!(
+        r#"# Globex Team B Recovery
+
+**Status:** {} active
+**Milestone:** Root Cause Analysis
+**Owner:** You
+**Target Date:** {}
+
+## Description
+Intervention project to reverse declining usage in Globex Team B. Usage down 20% MoM. Critical for renewal — QBR is the forcing function. Casey Lee (Head of Ops) is the key contact for Team B adoption metrics.
+
+## Milestones
+- {} **Root Cause Analysis** — Target: {} — Usage audit + lead interviews
+- {} **Engagement Plan** — Target: {} — Corrective actions for Team B
+- {} **Recovery Verified** — Target: {} — Usage trend reversal confirmed
+
+## Notes
+Must show progress before QBR. Renewal depends on this.
+"#,
+        "\u{1f7e2}", date_only(14),
+        "\u{1f7e2}", date_only(7),
+        "\u{26aa}", date_only(14),
+        "\u{26aa}", date_only(45),
+    );
+    std::fs::write(teamb_dir.join("dashboard.md"), teamb_md)
+        .map_err(|e| format!("Failed to write Team B dashboard.md: {}", e))?;
+
+    // Platform Migration v3
+    let migration_dir = projects_dir.join("Platform Migration v3");
+    std::fs::create_dir_all(&migration_dir)
+        .map_err(|e| format!("Failed to create Migration dir: {}", e))?;
+
+    let migration_json = serde_json::json!({
+        "version": 1,
+        "entityType": "project",
+        "structured": {
+            "status": "on_hold",
+            "milestone": "Architecture Review",
+            "owner": "Lisa Park",
+            "targetDate": date_only(60)
+        },
+        "description": "Internal platform migration from v2 to v3 architecture. On hold pending architecture review. Lisa Park (Eng Manager) owns the technical design. Blocked by capacity constraints — team focused on customer-facing work through Q1.",
+        "milestones": [
+            { "name": "Architecture Review", "status": "on_hold", "targetDate": date_only(21), "notes": "Blocked on team capacity" },
+            { "name": "Migration Plan", "status": "planned", "targetDate": date_only(45), "notes": "Detailed migration runbook" },
+            { "name": "v3 Cutover", "status": "planned", "targetDate": date_only(60), "notes": "Zero-downtime migration" }
+        ],
+        "notes": "On hold until Q2. Architecture proposal draft needed first."
+    });
+    std::fs::write(
+        migration_dir.join("dashboard.json"),
+        serde_json::to_string_pretty(&migration_json).unwrap(),
+    ).map_err(|e| format!("Failed to write Migration dashboard.json: {}", e))?;
+
+    let migration_md = format!(
+        r#"# Platform Migration v3
+
+**Status:** {} on_hold
+**Milestone:** Architecture Review
+**Owner:** Lisa Park
+**Target Date:** {}
+
+## Description
+Internal platform migration from v2 to v3 architecture. On hold pending architecture review. Lisa Park (Eng Manager) owns the technical design. Blocked by capacity constraints — team focused on customer-facing work through Q1.
+
+## Milestones
+- {} **Architecture Review** — Target: {} — Blocked on team capacity
+- {} **Migration Plan** — Target: {} — Detailed migration runbook
+- {} **v3 Cutover** — Target: {} — Zero-downtime migration
+
+## Notes
+On hold until Q2. Architecture proposal draft needed first.
+"#,
+        "\u{1f7e1}", date_only(60),
+        "\u{1f7e1}", date_only(21),
+        "\u{26aa}", date_only(45),
+        "\u{26aa}", date_only(60),
+    );
+    std::fs::write(migration_dir.join("dashboard.md"), migration_md)
+        .map_err(|e| format!("Failed to write Migration dashboard.md: {}", e))?;
 
     Ok(())
 }

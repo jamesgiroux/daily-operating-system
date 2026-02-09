@@ -216,6 +216,7 @@ pub fn create_or_update_config(
                 user_company: None,
                 user_title: None,
                 user_focus: None,
+                developer_mode: false,
             }
         }
     };

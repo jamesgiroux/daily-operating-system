@@ -416,15 +416,42 @@ pub fn sync_projects_from_workspace(
             continue;
         }
 
+        // Skip system/hidden folders (e.g. _archive, .DS_Store)
+        let dir_name = entry.file_name();
+        let name_str = dir_name.to_string_lossy();
+        if name_str.starts_with('_') || name_str.starts_with('.') {
+            continue;
+        }
+
         let json_path = entry.path().join("dashboard.json");
         if !json_path.exists() {
-            // Project dir exists but no JSON file -- generate from SQLite if we have data
-            let dir_name = entry.file_name();
-            let name = dir_name.to_string_lossy();
+            // Project dir exists but no JSON file
+            let name = name_str;
             if let Ok(Some(db_project)) = db.get_project_by_name(&name) {
+                // Already in SQLite — generate files from DB
                 let _ = write_project_json(workspace, &db_project, None, db);
                 let _ = write_project_markdown(workspace, &db_project, None, db);
                 synced += 1;
+            } else {
+                // New folder discovery — bootstrap minimal record from folder name
+                let now = Utc::now().to_rfc3339();
+                let id = slugify(&name);
+                let new_project = DbProject {
+                    id,
+                    name: name.to_string(),
+                    status: "active".to_string(),
+                    milestone: None,
+                    owner: None,
+                    target_date: None,
+                    tracker_path: Some(format!("Projects/{}", name)),
+                    updated_at: now,
+                };
+                if db.upsert_project(&new_project).is_ok() {
+                    let _ = write_project_json(workspace, &new_project, None, db);
+                    let _ = write_project_markdown(workspace, &new_project, None, db);
+                    log::info!("Bootstrapped project '{}' from existing folder", name);
+                    synced += 1;
+                }
             }
             continue;
         }
@@ -814,5 +841,66 @@ Trailing text";
     fn test_parse_enrichment_response_missing() {
         let response = "No enrichment block here.";
         assert!(parse_project_enrichment_response(response).is_none());
+    }
+
+    #[test]
+    fn test_sync_bootstraps_from_folder_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        // Create project directories with NO dashboard.json and NO SQLite record
+        let proj1 = workspace.join("Projects/Widget v2");
+        let proj2 = workspace.join("Projects/Internal Tooling");
+        std::fs::create_dir_all(&proj1).unwrap();
+        std::fs::create_dir_all(&proj2).unwrap();
+
+        // Drop existing content in one
+        std::fs::write(proj1.join("spec.md"), "# Spec\nRequirements here").unwrap();
+
+        let synced = sync_projects_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced, 2);
+
+        // Verify SQLite records were created with sensible defaults
+        let widget = db.get_project("widget-v2").unwrap();
+        assert!(widget.is_some());
+        let widget = widget.unwrap();
+        assert_eq!(widget.name, "Widget v2");
+        assert_eq!(widget.status, "active");
+        assert_eq!(widget.tracker_path, Some("Projects/Widget v2".to_string()));
+
+        let tooling = db.get_project("internal-tooling").unwrap();
+        assert!(tooling.is_some());
+
+        // Verify dashboard files were created
+        assert!(proj1.join("dashboard.json").exists());
+        assert!(proj1.join("dashboard.md").exists());
+
+        // Verify existing files were NOT touched
+        let spec = std::fs::read_to_string(proj1.join("spec.md")).unwrap();
+        assert!(spec.contains("Requirements here"));
+
+        // Verify entity bridge fired
+        let entity = db.get_entity("widget-v2").unwrap();
+        assert!(entity.is_some());
+    }
+
+    #[test]
+    fn test_sync_bootstrap_no_duplicates() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workspace = dir.path();
+        let db = test_db();
+
+        std::fs::create_dir_all(workspace.join("Projects/New Thing")).unwrap();
+
+        let synced1 = sync_projects_from_workspace(workspace, &db).unwrap();
+        assert_eq!(synced1, 1);
+
+        // Second sync: may re-sync due to timestamp harmonization, but must not duplicate
+        let _synced2 = sync_projects_from_workspace(workspace, &db).unwrap();
+
+        let all = db.get_all_projects().unwrap();
+        let count = all.iter().filter(|p| p.name == "New Thing").count();
+        assert_eq!(count, 1, "bootstrap must not create duplicates on re-sync");
     }
 }
