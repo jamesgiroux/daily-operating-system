@@ -12,6 +12,7 @@ pub mod intelligence;
 mod executor;
 mod google;
 pub mod google_api;
+mod hygiene;
 mod json_loader;
 pub mod prepare;
 mod notification;
@@ -98,6 +99,13 @@ pub fn run() {
             let intel_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            });
+
+            // Spawn hygiene scanner loop (I145 — ADR-0058)
+            let hygiene_state = state.clone();
+            let hygiene_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                hygiene::run_hygiene_loop(hygiene_state, hygiene_handle).await;
             });
 
             // Create tray menu
@@ -286,6 +294,8 @@ pub fn run() {
             // I76: Database Backup & Rebuild
             commands::backup_database,
             commands::rebuild_database,
+            // I148: Hygiene
+            commands::get_hygiene_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

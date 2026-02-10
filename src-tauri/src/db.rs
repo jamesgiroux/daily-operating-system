@@ -2860,6 +2860,179 @@ impl ActionDb {
             person_id: row.get(15)?,
         })
     }
+
+    // =========================================================================
+    // Hygiene Gap Detection (I145 — ADR-0058)
+    // =========================================================================
+
+    /// People with email-derived names: no spaces, contains @, or single word.
+    /// These likely need real names resolved from email headers or manual input.
+    pub fn get_unnamed_people(&self) -> Result<Vec<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+             FROM people
+             WHERE name NOT LIKE '% %' OR name LIKE '%@%'
+             ORDER BY meeting_count DESC",
+        )?;
+        let rows = stmt.query_map([], Self::map_person_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// People never classified because user_domain wasn't set at creation time.
+    pub fn get_unknown_relationship_people(&self) -> Result<Vec<DbPerson>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, name, organization, role, relationship, notes,
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+             FROM people
+             WHERE relationship = 'unknown'
+             ORDER BY meeting_count DESC",
+        )?;
+        let rows = stmt.query_map([], Self::map_person_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Entities with content files in content_index but no intelligence cache row
+    /// or NULL enriched_at. Returns (entity_id, entity_type) pairs.
+    pub fn get_entities_without_intelligence(&self) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT ci.entity_id, ci.entity_type
+             FROM content_index ci
+             LEFT JOIN entity_intelligence ei ON ei.entity_id = ci.entity_id
+             WHERE ei.enriched_at IS NULL OR ei.entity_id IS NULL
+             ORDER BY ci.entity_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Entities where enriched_at is older than threshold AND new content exists
+    /// since last enrichment. Returns (entity_id, entity_type, enriched_at) tuples.
+    pub fn get_stale_entity_intelligence(
+        &self,
+        stale_days: i32,
+    ) -> Result<Vec<(String, String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ei.entity_id, ei.entity_type, ei.enriched_at
+             FROM entity_intelligence ei
+             WHERE ei.enriched_at < datetime('now', ?1 || ' days')
+               AND EXISTS (
+                   SELECT 1 FROM content_index ci
+                   WHERE ci.entity_id = ei.entity_id
+                     AND ci.modified_at > ei.enriched_at
+               )
+             ORDER BY ei.enriched_at ASC",
+        )?;
+        let days_param = format!("-{stale_days}");
+        let rows = stmt.query_map(params![days_param], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Content files with no extracted summary. These can be backfilled mechanically.
+    pub fn get_unsummarized_content_files(&self) -> Result<Vec<DbContentFile>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, entity_id, entity_type, filename, relative_path, absolute_path,
+                    format, file_size, modified_at, indexed_at, extracted_at, summary,
+                    content_type, priority
+             FROM content_index
+             WHERE summary IS NULL
+               AND format IN ('Markdown', 'Text', 'Pdf', 'Docx', 'Html')
+             ORDER BY priority DESC, modified_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DbContentFile {
+                id: row.get(0)?,
+                entity_id: row.get(1)?,
+                entity_type: row.get(2)?,
+                filename: row.get(3)?,
+                relative_path: row.get(4)?,
+                absolute_path: row.get(5)?,
+                format: row.get(6)?,
+                file_size: row.get(7)?,
+                modified_at: row.get(8)?,
+                indexed_at: row.get(9)?,
+                extracted_at: row.get(10)?,
+                summary: row.get(11)?,
+                content_type: row.get(12)?,
+                priority: row.get(13)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Meetings with an account_id (legacy column) but no meeting_entities junction row.
+    /// These are orphaned from the Sprint 9 M2M refactor.
+    pub fn get_orphaned_meetings(&self, days_back: i32) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT mh.id, mh.title, mh.meeting_type, mh.start_time, mh.end_time,
+                    mh.account_id, mh.attendees, mh.notes_path, mh.summary,
+                    mh.created_at, mh.calendar_event_id
+             FROM meetings_history mh
+             LEFT JOIN meeting_entities me ON me.meeting_id = mh.id
+             WHERE mh.account_id IS NOT NULL AND mh.account_id != ''
+               AND me.meeting_id IS NULL
+               AND mh.start_time >= datetime('now', ?1 || ' days')
+             ORDER BY mh.start_time DESC",
+        )?;
+        let days_param = format!("-{days_back}");
+        let rows = stmt.query_map(params![days_param], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Update a person's relationship classification.
+    pub fn update_person_relationship(&self, person_id: &str, relationship: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE people SET relationship = ?1, updated_at = ?3 WHERE id = ?2",
+            params![relationship, person_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Recompute a person's meeting count from the meeting_attendees junction table.
+    pub fn recompute_person_meeting_count(&self, person_id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE people SET meeting_count = (
+                SELECT COUNT(*) FROM meeting_attendees WHERE person_id = ?1
+             ), updated_at = ?2
+             WHERE id = ?1",
+            params![person_id, now],
+        )?;
+        Ok(())
+    }
+
+    /// Update a person's name (for email display name resolution).
+    pub fn update_person_name(&self, person_id: &str, name: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE people SET name = ?1, updated_at = ?3 WHERE id = ?2",
+            params![name, person_id, now],
+        )?;
+        Ok(())
+    }
 }
 
 // =============================================================================
