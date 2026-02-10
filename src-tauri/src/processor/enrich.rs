@@ -283,7 +283,7 @@ ACCOUNT: <account name if relevant, or NONE>
 MEETING: <meeting name if relevant, or NONE>
 {summary_instruction}
 ACTIONS:
-- <action with optional inline metadata>
+- <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
 - <customer win, positive outcome, or success signal>
@@ -296,13 +296,18 @@ DECISIONS:
 END_DECISIONS
 
 Rules for actions:
+- TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence — a task.
+  - Good: "Follow up on renewal pricing"
+  - Bad: "Follow up with the client regarding the renewal discussion they mentioned"
 - Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
 - Include @AccountName when action relates to a specific customer/account
 - Include due: YYYY-MM-DD when a deadline is mentioned or implied
-- Include #context for topic category (billing, onboarding, support, etc.)
-- Use "waiting" or "blocked" if action depends on someone else
+- Include #"context" with a short sentence explaining WHY this matters. Use quotes around multi-word context.
+  - Good: #"Renewal decision pending CFO approval"
+  - Bad: #billing
+- Use "waiting" or "blocked" in the title if action depends on someone else
 - If no metadata can be inferred, just write the action text plainly
-- Example: P1 @Acme Follow up on renewal due: 2026-03-15 #billing
+- Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2"
 
 Rules for wins/risks:
 - Only include if the file relates to a customer/account
