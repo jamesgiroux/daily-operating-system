@@ -108,6 +108,23 @@ export default function MeetingDetailPage() {
     );
   }
 
+  const hasAnyContent = Boolean(
+    data.meetingContext ||
+    (data.quickContext && data.quickContext.length > 0) ||
+    (data.attendees && data.attendees.length > 0) ||
+    (data.attendeeContext && data.attendeeContext.length > 0) ||
+    (data.sinceLast && data.sinceLast.length > 0) ||
+    (data.strategicPrograms && data.strategicPrograms.length > 0) ||
+    (data.currentState && data.currentState.length > 0) ||
+    (data.risks && data.risks.length > 0) ||
+    (data.talkingPoints && data.talkingPoints.length > 0) ||
+    (data.openItems && data.openItems.length > 0) ||
+    (data.questions && data.questions.length > 0) ||
+    (data.keyPrinciples && data.keyPrinciples.length > 0) ||
+    (data.proposedAgenda && data.proposedAgenda.length > 0) ||
+    data.stakeholderSignals
+  );
+
   return (
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
@@ -133,6 +150,18 @@ export default function MeetingDetailPage() {
             )}
           </div>
 
+          {!hasAnyContent && (
+            <div className="text-center py-12 text-muted-foreground">
+              <Clock className="mx-auto mb-3 size-8 opacity-50" />
+              <p className="text-lg font-medium">Prep is being generated</p>
+              <p className="text-sm mt-2">
+                Meeting context will appear here once AI enrichment completes.
+              </p>
+            </div>
+          )}
+
+          {hasAnyContent && (
+          <>
           {/* Copy All */}
           <div className="mb-6">
             <CopyAllButton data={data} />
@@ -433,6 +462,8 @@ export default function MeetingDetailPage() {
                 </Card>
               )}
             </div>
+          </>
+          )}
         </div>
       </ScrollArea>
     </main>

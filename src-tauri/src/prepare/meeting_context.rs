@@ -7,6 +7,7 @@
 //! - Open actions for account
 //! - File references (account tracker, summaries, archive)
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use regex::Regex;
@@ -77,7 +78,11 @@ fn gather_meeting_context(
     match meeting_type {
         "customer" | "qbr" | "training" => {
             if accounts_dir.is_dir() {
-                if let Some(matched) = guess_account_name(meeting, &accounts_dir) {
+                // I168: filesystem match first, then DB fallback
+                let matched = guess_account_name(meeting, &accounts_dir).or_else(|| {
+                    db.and_then(|db| resolve_account_from_db(db, event_id, &accounts_dir))
+                });
+                if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
                     let account_path = accounts_dir.join(&matched.relative_path);
 
@@ -191,7 +196,11 @@ fn gather_meeting_context(
 
         "partnership" => {
             if accounts_dir.is_dir() {
-                if let Some(matched) = guess_account_name(meeting, &accounts_dir) {
+                // I168: filesystem match first, then DB fallback
+                let matched = guess_account_name(meeting, &accounts_dir).or_else(|| {
+                    db.and_then(|db| resolve_account_from_db(db, event_id, &accounts_dir))
+                });
+                if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
                     let account_path = accounts_dir.join(&matched.relative_path);
                     for fname in &["dashboard.md", "stakeholders.md", "actions.md"] {
@@ -289,6 +298,102 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
 // ---------------------------------------------------------------------------
 // File search helpers
 // ---------------------------------------------------------------------------
+
+/// Resolve an account from the database when filesystem matching fails (I168).
+///
+/// Two-step resolution:
+/// 1. Direct: check `meeting_entities` junction for this meeting's primary ID
+/// 2. Attendee inference: look up meeting attendees → person → entity links, majority vote
+fn resolve_account_from_db(
+    db: &crate::db::ActionDb,
+    event_id: &str,
+    accounts_dir: &Path,
+) -> Option<AccountMatch> {
+    let meeting_id = crate::workflow::deliver::meeting_primary_id(
+        Some(event_id),
+        "",
+        "",
+        "",
+    );
+
+    // Step 1: Direct meeting_entities junction lookup
+    if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
+        for entity in &entities {
+            if entity.entity_type == crate::entity::EntityType::Account {
+                if let Some(matched) = find_account_dir_by_name(&entity.name, accounts_dir) {
+                    return Some(matched);
+                }
+            }
+        }
+    }
+
+    // Step 2: Attendee inference from meetings_history
+    // Look up the meeting by calendar_event_id, get attendees, resolve person→entity
+    if let Ok(Some(meeting)) = db.get_meeting_by_calendar_event_id(event_id) {
+        if let Some(ref attendees_str) = meeting.attendees {
+            let emails: Vec<&str> = attendees_str.split(',').map(|s| s.trim()).collect();
+            let mut votes: HashMap<String, usize> = HashMap::new();
+
+            for email in &emails {
+                if let Ok(Some(person)) = db.get_person_by_email(email) {
+                    if let Ok(entities) = db.get_entities_for_person(&person.id) {
+                        for entity in entities {
+                            if entity.entity_type == crate::entity::EntityType::Account {
+                                *votes.entry(entity.name.clone()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((top_name, _)) = votes.into_iter().max_by_key(|(_, c)| *c) {
+                if let Some(matched) = find_account_dir_by_name(&top_name, accounts_dir) {
+                    return Some(matched);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Find an account directory by name (exact, case-insensitive match).
+/// Checks both top-level and child BU directories.
+fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<AccountMatch> {
+    let name_lower = name.to_lowercase();
+    let entries = std::fs::read_dir(accounts_dir).ok()?;
+
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+
+        // Exact top-level match
+        if dir_name.to_lowercase() == name_lower {
+            return Some(AccountMatch {
+                name: dir_name.clone(),
+                relative_path: dir_name,
+            });
+        }
+
+        // Check child BU directories
+        if let Ok(children) = std::fs::read_dir(entry.path()) {
+            for child in children.flatten() {
+                let child_name = child.file_name().to_string_lossy().to_string();
+                if child.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                    && child_name.to_lowercase() == name_lower
+                {
+                    return Some(AccountMatch {
+                        name: child_name.clone(),
+                        relative_path: format!("{}/{}", dir_name, child_name),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Result of matching a meeting to an account directory.
 struct AccountMatch {
