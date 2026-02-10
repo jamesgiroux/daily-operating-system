@@ -1213,6 +1213,7 @@ mod tests {
             user_title: None,
             user_focus: None,
             developer_mode: false,
+            ai_models: crate::types::AiModelConfig::default(),
         }
     }
 }

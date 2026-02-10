@@ -16,8 +16,9 @@ use crate::entity_intel::{
     build_intelligence_context, build_intelligence_prompt, parse_intelligence_response,
     read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
-use crate::pty::PtyManager;
+use crate::pty::{ModelTier, PtyManager};
 use crate::state::AppState;
+use crate::types::AiModelConfig;
 
 /// Debounce window for content-triggered enrichment requests.
 const CONTENT_DEBOUNCE_SECS: u64 = 30;
@@ -207,7 +208,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         };
 
         // Phase 2: Run PTY enrichment (no DB lock held)
-        let intel = match run_enrichment(&input) {
+        let ai_config = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+            .unwrap_or_default();
+        let intel = match run_enrichment(&input, &ai_config) {
             Ok(intel) => intel,
             Err(e) => {
                 log::warn!(
@@ -327,8 +334,8 @@ fn gather_enrichment_input(
 }
 
 /// Phase 2: Run PTY enrichment (no DB lock held).
-fn run_enrichment(input: &EnrichmentInput) -> Result<IntelligenceJson, String> {
-    let pty = PtyManager::new().with_timeout(180);
+fn run_enrichment(input: &EnrichmentInput, ai_config: &AiModelConfig) -> Result<IntelligenceJson, String> {
+    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config).with_timeout(180);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
