@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DailyOS — Open the app. Your day is ready.</title>
+  <meta name="description" content="DailyOS builds operational intelligence about your accounts, projects, and people — then prepares your day so you walk in ready.">
+  <meta property="og:title" content="DailyOS — Open the app. Your day is ready.">
+  <meta property="og:description" content="Operational intelligence for your accounts, projects, and people.">
+  <meta property="og:image" content="https://daily-os.com/og-image.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://daily-os.com">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="DailyOS — Open the app. Your day is ready.">
+  <meta name="twitter:description" content="Operational intelligence for your accounts, projects, and people.">
+  <meta name="twitter:image" content="https://daily-os.com/og-image.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --cream: #f5f2ef;
+      --charcoal: #1a1f24;
+      --charcoal-light: #2d343c;
+      --gold: #c9a227;
+      --sage: #7fb685;
+      --peach: #e8967a;
+      --text-primary: #1a1f24;
+      --text-secondary: #5a6068;
+      --text-on-dark: #f5f2ef;
+      --text-muted-on-dark: #a0a8b0;
+      --border-light: rgba(26, 31, 36, 0.08);
+      --border-dark: rgba(245, 242, 239, 0.1);
+    }
+
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text-primary); background: var(--cream); line-height: 1.6; overflow-x: hidden; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ---- Nav ---- */
+    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(245, 242, 239, 0.9); border-bottom: 1px solid var(--border-light); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+    .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-logo { font-weight: 700; font-size: 1.25rem; color: var(--text-primary); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
+    .nav-logo-icon { width: 28px; height: 28px; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
+    .nav-links a { font-size: 0.9rem; font-weight: 500; color: var(--text-secondary); text-decoration: none; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .nav-links a.nav-cta { background: var(--charcoal); color: var(--cream); padding: 0.5rem 1.25rem; border-radius: 6px; transition: opacity 0.2s; }
+    .nav-links a.nav-cta:hover { opacity: 0.85; }
+    .nav-toggle { display: none; background: none; border: none; cursor: pointer; padding: 0.5rem; }
+    .nav-toggle span { display: block; width: 22px; height: 2px; background: var(--text-primary); margin: 5px 0; transition: all 0.3s; }
+
+    /* ---- Sections ---- */
+    .section { padding: 100px 2rem; }
+    .section-inner { max-width: 900px; margin: 0 auto; }
+    .section--dark { background: var(--charcoal); color: var(--text-on-dark); }
+    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold); margin-bottom: 1rem; }
+    .section h2 { font-size: clamp(2rem, 4vw, 2.75rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 1.5rem; }
+    .section p { font-size: 1.125rem; line-height: 1.7; color: var(--text-secondary); margin-bottom: 1rem; }
+    .section p:last-child { margin-bottom: 0; }
+    .section--dark p { color: var(--text-muted-on-dark); }
+
+    /* ---- Hero ---- */
+    .hero { padding: 180px 2rem 120px; text-align: center; background: var(--charcoal); color: var(--text-on-dark); }
+    .hero-inner { max-width: 800px; margin: 0 auto; }
+    .hero h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 700; line-height: 1.08; letter-spacing: -0.03em; margin-bottom: 1.5rem; }
+    .hero h1 .gold { color: var(--gold); }
+    .hero-sub { font-size: clamp(1.1rem, 2.5vw, 1.35rem); color: var(--text-muted-on-dark); line-height: 1.5; margin-bottom: 2.5rem; }
+    .hero-cta { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
+    .hero-cta:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .hero-badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold); border: 1px solid rgba(201, 162, 39, 0.3); border-radius: 100px; padding: 0.4rem 1rem; margin-bottom: 2rem; }
+
+    /* ---- Problem / Flip ---- */
+    .problem-text { font-size: 1.25rem; line-height: 1.7; max-width: 680px; }
+    .pull-quote { font-size: clamp(1.5rem, 3.5vw, 2rem); font-weight: 600; font-style: italic; color: var(--gold); line-height: 1.35; margin: 2.5rem 0; letter-spacing: -0.01em; }
+
+    /* ---- How It Works ---- */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3rem; margin-top: 3rem; }
+    .step { text-align: center; }
+    .step-number { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--gold); color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 1.25rem; font-weight: 700; margin-bottom: 1.25rem; }
+    .step h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--text-on-dark); }
+    .step p { font-size: 0.95rem; color: var(--text-muted-on-dark); line-height: 1.6; }
+
+    /* ---- Mock Dashboard ---- */
+    .mock-container { margin-top: 3rem; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.08); }
+    .mock-titlebar { background: #2d343c; height: 36px; display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+    .mock-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .mock-dot--red { background: #ff5f57; }
+    .mock-dot--yellow { background: #ffbd2e; }
+    .mock-dot--green { background: #28c840; }
+    .mock-body { background: var(--cream); display: grid; grid-template-columns: 220px 1fr 280px; min-height: 420px; }
+
+    /* Sidebar */
+    .mock-sidebar { background: #f0ece8; padding: 1.25rem; border-right: 1px solid rgba(0,0,0,0.06); }
+    .mock-sidebar-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; }
+    .mock-sidebar-item--active { background: rgba(201, 162, 39, 0.1); color: var(--text-primary); }
+    .mock-sidebar-icon { width: 16px; height: 16px; opacity: 0.6; }
+    .mock-sidebar-section { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); opacity: 0.5; padding: 1rem 0.75rem 0.4rem; }
+
+    /* Main content */
+    .mock-main { padding: 1.5rem 2rem; }
+    .mock-date { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.5rem; }
+    .mock-focus { font-size: 0.85rem; color: var(--gold); font-weight: 500; margin-bottom: 1.5rem; padding: 0.6rem 0.75rem; background: rgba(201, 162, 39, 0.06); border-radius: 6px; border-left: 3px solid var(--gold); }
+
+    /* Meeting cards */
+    .mock-meeting { background: white; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.5rem; border: 1px solid rgba(0,0,0,0.06); display: grid; grid-template-columns: 60px 1fr auto; gap: 0.75rem; align-items: center; }
+    .mock-time { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text-secondary); }
+    .mock-meeting-title { font-size: 0.8rem; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+    .mock-meeting-detail { font-size: 0.7rem; color: var(--text-secondary); }
+    .mock-badge { font-size: 0.6rem; font-weight: 600; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
+    .mock-badge--ready { background: rgba(127, 182, 133, 0.15); color: var(--sage); }
+    .mock-badge--gold { background: rgba(201, 162, 39, 0.12); color: var(--gold); }
+    .mock-badge--peach { background: rgba(232, 150, 122, 0.12); color: var(--peach); }
+
+    /* Right sidebar */
+    .mock-right { padding: 1.5rem 1.25rem; border-left: 1px solid rgba(0,0,0,0.06); }
+    .mock-right-header { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 0.75rem; }
+    .mock-action { font-size: 0.75rem; color: var(--text-primary); padding: 0.5rem 0; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; gap: 0.5rem; align-items: flex-start; }
+    .mock-action-check { width: 14px; height: 14px; border: 1.5px solid rgba(0,0,0,0.2); border-radius: 3px; flex-shrink: 0; margin-top: 1px; }
+    .mock-action-text { line-height: 1.4; }
+    .mock-action-meta { font-size: 0.65rem; color: var(--text-secondary); margin-top: 2px; }
+    .mock-email { font-size: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid rgba(0,0,0,0.04); }
+    .mock-email-from { font-weight: 600; color: var(--text-primary); }
+    .mock-email-subject { color: var(--text-secondary); }
+    .mock-email-badge { display: inline-block; font-size: 0.55rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 3px; margin-left: 0.35rem; vertical-align: middle; }
+
+    /* ---- Compound Section ---- */
+    .compound-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2.5rem; }
+    .compound-card { padding: 2rem; border-radius: 12px; }
+    .compound-card--week1 { background: rgba(245, 242, 239, 0.05); border: 1px solid var(--border-dark); }
+    .compound-card--month2 { background: rgba(201, 162, 39, 0.06); border: 1px solid rgba(201, 162, 39, 0.15); }
+    .compound-card h3 { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1.25rem; }
+    .compound-card--week1 h3 { color: var(--text-muted-on-dark); }
+    .compound-card--month2 h3 { color: var(--gold); }
+    .compound-card li { font-size: 0.95rem; line-height: 1.6; padding: 0.4rem 0; list-style: none; }
+    .compound-card--week1 li { color: var(--text-muted-on-dark); }
+    .compound-card--month2 li { color: var(--text-on-dark); }
+
+    /* ---- CTA ---- */
+    .cta { text-align: center; padding: 120px 2rem; }
+    .cta p { color: var(--text-muted-on-dark); font-size: 1rem; margin-top: 1rem; }
+    .btn-primary { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+    /* ---- Footer ---- */
+    .footer { background: var(--charcoal); border-top: 1px solid var(--border-dark); padding: 3rem 2rem; }
+    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+    .footer-links { display: flex; gap: 2rem; list-style: none; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { font-size: 0.9rem; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-on-dark); }
+    .footer-meta p { font-size: 0.8rem; color: var(--text-muted-on-dark); line-height: 1.6; text-align: center; margin: 0; }
+
+    /* ---- Animations ---- */
+    .fade-in { opacity: 0; transform: translateY(24px); transition: opacity 0.7s ease, transform 0.7s ease; }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: rgba(245, 242, 239, 0.97); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-light); flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; }
+      .nav-links.open { display: flex; }
+      .nav-toggle { display: block; }
+      .hero { padding: 140px 1.5rem 80px; }
+      .section { padding: 72px 1.5rem; }
+      .steps { grid-template-columns: 1fr; gap: 2rem; }
+      .mock-body { grid-template-columns: 1fr; }
+      .mock-sidebar, .mock-right { display: none; }
+      .compound-grid { grid-template-columns: 1fr; }
+      .cta { padding: 80px 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="28" height="28"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+        DailyOS
+      </a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge fade-in">Alpha Release</div>
+      <h1 class="fade-in">Open the app.<br><span class="gold">Your day is ready.</span></h1>
+      <p class="hero-sub fade-in">Operational intelligence for your accounts, projects, and people.</p>
+      <a href="/setup.html" class="hero-cta fade-in">Get Early Access</a>
+    </div>
+  </section>
+
+  <!-- The Problem -->
+  <section class="section">
+    <div class="section-inner">
+      <p class="section-label fade-in">The problem</p>
+      <h2 class="fade-in">You're the human router<br>between 10 apps.</h2>
+      <p class="problem-text fade-in">Every meeting starts with 15 minutes of context-hunting. Slack threads, email chains, shared docs, CRM notes. By the time you piece it together, the meeting is half over.</p>
+      <p class="problem-text fade-in">You bought the productivity tool. Set it up perfectly. Folders, tags, dashboards. For two weeks, it was beautiful. Then life happened. You skipped a day. Then a week. The system fell behind.</p>
+      <p class="pull-quote fade-in">The guilt isn't laziness. It's the system's fault.</p>
+    </div>
+  </section>
+
+  <!-- The Flip -->
+  <section class="section section--dark">
+    <div class="section-inner">
+      <p class="section-label fade-in">The reframe</p>
+      <h2 class="fade-in">What if it wasn't you anymore?</h2>
+      <p class="fade-in">What if the system connected to your calendar and email, read your meeting transcripts and documents, and built a living picture of your work?</p>
+      <p class="fade-in">What if it learned your accounts, your projects, your people -- then used all of it to prepare every single day?</p>
+      <p class="pull-quote fade-in">The system operates. You leverage.</p>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="section section--dark" style="padding-top: 0;">
+    <div class="section-inner">
+      <p class="section-label fade-in" style="text-align: center;">How it works</p>
+      <h2 class="fade-in" style="text-align: center;">Three steps. Zero maintenance.</h2>
+      <div class="steps">
+        <div class="step fade-in">
+          <div class="step-number">1</div>
+          <h3>Connect</h3>
+          <p>Link your Google Calendar and Gmail. DailyOS reads your schedule and email. It never sends, modifies, or deletes anything.</p>
+        </div>
+        <div class="step fade-in">
+          <div class="step-number">2</div>
+          <h3>Learn</h3>
+          <p>Add your accounts and projects. Drop in transcripts and documents. DailyOS builds intelligence about your work automatically.</p>
+        </div>
+        <div class="step fade-in">
+          <div class="step-number">3</div>
+          <h3>Open</h3>
+          <p>Every morning, your day is ready. Meetings prepped, actions surfaced, emails triaged. You walk in prepared.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- What You See -->
+  <section class="section">
+    <div class="section-inner" style="max-width: 1000px;">
+      <p class="section-label fade-in">What you see</p>
+      <h2 class="fade-in">Your morning dashboard.</h2>
+      <p class="fade-in">Everything you need for the day. Your schedule with prep status. Your actions. Your priority emails. One screen, no hunting.</p>
+
+      <div class="mock-container fade-in">
+        <div class="mock-titlebar">
+          <div class="mock-dot mock-dot--red"></div>
+          <div class="mock-dot mock-dot--yellow"></div>
+          <div class="mock-dot mock-dot--green"></div>
+        </div>
+        <div class="mock-body">
+          <!-- Sidebar -->
+          <div class="mock-sidebar">
+            <div class="mock-sidebar-item mock-sidebar-item--active">
+              <svg class="mock-sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="2" y1="6" x2="14" y2="6"/></svg>
+              Dashboard
+            </div>
+            <div class="mock-sidebar-item">
+              <svg class="mock-sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1.5"/><polyline points="2 6 8 10 14 6"/></svg>
+              Emails
+            </div>
+            <div class="mock-sidebar-item">
+              <svg class="mock-sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><polyline points="8 5 8 8 10.5 9.5"/></svg>
+              Actions
+            </div>
+            <div class="mock-sidebar-item">
+              <svg class="mock-sidebar-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h8"/></svg>
+              Week
+            </div>
+            <div class="mock-sidebar-section">Accounts</div>
+            <div class="mock-sidebar-item">Acme Corp</div>
+            <div class="mock-sidebar-item">Initech</div>
+            <div class="mock-sidebar-item">Globex</div>
+          </div>
+
+          <!-- Main: Schedule -->
+          <div class="mock-main">
+            <div class="mock-date">Monday, February 10, 2026</div>
+            <div class="mock-focus">Acme QBR is Thursday -- deck needs final review. Initech renewal decision this week.</div>
+
+            <div class="mock-meeting">
+              <div class="mock-time">9:00 AM</div>
+              <div>
+                <div class="mock-meeting-title">Team Standup</div>
+                <div class="mock-meeting-detail">Internal &middot; 6 attendees</div>
+              </div>
+              <div class="mock-badge mock-badge--ready">Ready</div>
+            </div>
+            <div class="mock-meeting">
+              <div class="mock-time">10:30 AM</div>
+              <div>
+                <div class="mock-meeting-title">Acme Corp - Product Sync</div>
+                <div class="mock-meeting-detail">Acme Corp &middot; Sarah Chen, VP Product</div>
+              </div>
+              <div class="mock-badge mock-badge--ready">Ready</div>
+            </div>
+            <div class="mock-meeting">
+              <div class="mock-time">1:00 PM</div>
+              <div>
+                <div class="mock-meeting-title">Initech Renewal Discussion</div>
+                <div class="mock-meeting-detail">Initech &middot; Mark Davis, CFO</div>
+              </div>
+              <div class="mock-badge mock-badge--gold">Prep Needed</div>
+            </div>
+            <div class="mock-meeting">
+              <div class="mock-time">3:00 PM</div>
+              <div>
+                <div class="mock-meeting-title">Unknown - Jordan Lee</div>
+                <div class="mock-meeting-detail">External &middot; No prior history</div>
+              </div>
+              <div class="mock-badge mock-badge--peach">New Contact</div>
+            </div>
+          </div>
+
+          <!-- Right: Actions + Emails -->
+          <div class="mock-right">
+            <div class="mock-right-header">Actions</div>
+            <div class="mock-action">
+              <div class="mock-action-check"></div>
+              <div>
+                <div class="mock-action-text">Send updated pricing to Mark Davis</div>
+                <div class="mock-action-meta">Initech &middot; Due today</div>
+              </div>
+            </div>
+            <div class="mock-action">
+              <div class="mock-action-check"></div>
+              <div>
+                <div class="mock-action-text">Review QBR deck for Thursday</div>
+                <div class="mock-action-meta">Acme Corp &middot; Due Wed</div>
+              </div>
+            </div>
+            <div class="mock-action">
+              <div class="mock-action-check"></div>
+              <div>
+                <div class="mock-action-text">Follow up on support ticket #4821</div>
+                <div class="mock-action-meta">Globex &middot; Overdue</div>
+              </div>
+            </div>
+
+            <div class="mock-right-header" style="margin-top: 1.25rem;">Emails</div>
+            <div class="mock-email">
+              <div><span class="mock-email-from">Sarah Chen</span> <span class="mock-email-badge" style="background: rgba(232,150,122,0.15); color: var(--peach);">Reply needed</span></div>
+              <div class="mock-email-subject">Re: Product roadmap for Q2</div>
+            </div>
+            <div class="mock-email">
+              <div><span class="mock-email-from">Mark Davis</span> <span class="mock-email-badge" style="background: rgba(201,162,39,0.12); color: var(--gold);">FYI</span></div>
+              <div class="mock-email-subject">Renewal timeline update</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- It Compounds -->
+  <section class="section section--dark">
+    <div class="section-inner">
+      <p class="section-label fade-in">The retention story</p>
+      <h2 class="fade-in">It compounds.</h2>
+      <p class="fade-in">Every meeting, every transcript, every email makes the system smarter. Your accounts build up intelligence over time. Your people develop relationship histories. Six months in, DailyOS knows your work better than you do.</p>
+
+      <div class="compound-grid">
+        <div class="compound-card compound-card--week1 fade-in">
+          <h3>Week 1</h3>
+          <ul>
+            <li>Calendar is prepped</li>
+            <li>Emails are triaged</li>
+            <li>Actions are tracked</li>
+          </ul>
+        </div>
+        <div class="compound-card compound-card--month2 fade-in">
+          <h3>Month 2</h3>
+          <ul>
+            <li>Full account intelligence</li>
+            <li>Stakeholder relationship maps</li>
+            <li>Proactive risk alerts</li>
+            <li>Meeting history across people</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trust -->
+  <section class="section">
+    <div class="section-inner">
+      <p class="section-label fade-in">Your data</p>
+      <h2 class="fade-in">Your files. Your machine.<br>Your intelligence.</h2>
+      <p class="fade-in">Everything DailyOS knows lives as markdown and JSON files on your machine. No cloud database. No data lock-in. The app is one interface -- Claude Desktop, ChatGPT, or any AI tool can read the same files.</p>
+      <p class="pull-quote fade-in">Your brain shouldn't have a landlord.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta section--dark">
+    <div class="section-inner">
+      <h2 class="fade-in">Ready to stop maintaining<br>and start leveraging?</h2>
+      <div class="fade-in" style="margin-top: 2rem;">
+        <a href="/setup.html" class="btn-primary">Get Started</a>
+      </div>
+      <p class="fade-in">macOS (Apple Silicon) &middot; Open source &middot; Free during alpha</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html">Get Started</a></li>
+        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+      <div class="footer-meta">
+        <p>DailyOS is open source under GPL-3.0</p>
+        <p>&copy; 2026 James Giroux</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function() {
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) entry.target.classList.add('visible');
+        });
+      }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+      document.querySelectorAll('.fade-in').forEach(function(el) { observer.observe(el); });
+
+      var toggle = document.querySelector('.nav-toggle');
+      var links = document.querySelector('.nav-links');
+      toggle.addEventListener('click', function() {
+        var isOpen = links.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      links.querySelectorAll('a').forEach(function(link) {
+        link.addEventListener('click', function() {
+          links.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
+  </script>
+
+</body>
+</html>
