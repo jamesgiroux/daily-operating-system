@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: macos-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            macos-cargo-
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri app (macOS arm64)
+        run: pnpm tauri build --target aarch64-apple-darwin
+
+      - name: Find DMG
+        id: find-dmg
+        run: |
+          DMG_PATH=$(ls src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          DMG_NAME=$(basename "$DMG_PATH")
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+          echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: DailyOS ${{ github.ref_name }}
+          body: |
+            ## Installation
+
+            1. Download the DMG
+            2. Drag DailyOS to Applications
+            3. Run: `xattr -cr /Applications/DailyOS.app`
+            4. Open DailyOS
+
+            > The `xattr` step is required because the app is not code-signed.
+          files: ${{ steps.find-dmg.outputs.dmg_path }}
+          draft: false
+          prerelease: false
