@@ -1,12 +1,30 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import { EntityPicker } from "@/components/ui/entity-picker";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
@@ -15,11 +33,13 @@ import {
   Calendar,
   FolderKanban,
   Mail,
+  Merge,
   Pencil,
   Save,
+  Trash2,
   X,
 } from "lucide-react";
-import type { PersonDetail } from "@/types";
+import type { Person, PersonDetail } from "@/types";
 
 const temperatureStyles: Record<string, { dot: string; badge: string }> = {
   hot: { dot: "bg-success", badge: "bg-success/15 text-success" },
@@ -30,6 +50,7 @@ const temperatureStyles: Record<string, { dot: string; badge: string }> = {
 
 export default function PersonDetailPage() {
   const { personId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<PersonDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +63,15 @@ export default function PersonDetailPage() {
   const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Merge + Delete state
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<Person | null>(null);
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [mergeSearchQuery, setMergeSearchQuery] = useState("");
+  const [mergeSearchResults, setMergeSearchResults] = useState<Person[]>([]);
+  const [merging, setMerging] = useState(false);
 
   const load = useCallback(async () => {
     if (!personId) return;
@@ -120,6 +150,56 @@ export default function PersonDetailPage() {
       await load();
     } catch (e) {
       setError(String(e));
+    }
+  }
+
+  // Search for merge targets (debounced via useEffect)
+  useEffect(() => {
+    if (!mergeSearchQuery || mergeSearchQuery.length < 2) {
+      setMergeSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await invoke<Person[]>("search_people", {
+          query: mergeSearchQuery,
+        });
+        // Exclude the current person from results
+        setMergeSearchResults(results.filter((p) => p.id !== personId));
+      } catch {
+        setMergeSearchResults([]);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [mergeSearchQuery, personId]);
+
+  async function handleMerge() {
+    if (!detail || !mergeTarget) return;
+    try {
+      setMerging(true);
+      const keepId = await invoke<string>("merge_people", {
+        keepId: mergeTarget.id,
+        removeId: detail.id,
+      });
+      setMergeConfirmOpen(false);
+      setMergeDialogOpen(false);
+      navigate({ to: "/people/$personId", params: { personId: keepId } });
+    } catch (e) {
+      setError(String(e));
+      setMerging(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!detail) return;
+    try {
+      setMerging(true);
+      await invoke("delete_person", { personId: detail.id });
+      setDeleteConfirmOpen(false);
+      navigate({ to: "/people" });
+    } catch (e) {
+      setError(String(e));
+      setMerging(false);
     }
   }
 
@@ -264,12 +344,40 @@ export default function PersonDetailPage() {
               </div>
             </div>
 
-            {dirty && (
-              <Button size="sm" onClick={handleSave} disabled={saving}>
-                <Save className="mr-1 size-4" />
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <Button size="sm" onClick={handleSave} disabled={saving}>
+                  <Save className="mr-1 size-4" />
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              )}
+              {!editing && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setMergeSearchQuery("");
+                      setMergeSearchResults([]);
+                      setMergeTarget(null);
+                      setMergeDialogOpen(true);
+                    }}
+                  >
+                    <Merge className="mr-1 size-4" />
+                    Merge into...
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    <Trash2 className="mr-1 size-4" />
+                    Delete
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Metrics Row */}
@@ -463,6 +571,103 @@ export default function PersonDetailPage() {
           </div>
         </div>
       </ScrollArea>
+
+      {/* Merge Person Picker Dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Merge {detail.name} into...</DialogTitle>
+            <DialogDescription>
+              Search for the person to merge into. All meetings, entity links, and actions will transfer to the selected person.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Search by name or email..."
+            value={mergeSearchQuery}
+            onChange={(e) => setMergeSearchQuery(e.target.value)}
+            autoFocus
+          />
+          {mergeSearchResults.length > 0 && (
+            <div className="max-h-60 space-y-1 overflow-y-auto">
+              {mergeSearchResults.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setMergeTarget(p);
+                    setMergeDialogOpen(false);
+                    setMergeConfirmOpen(true);
+                  }}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                >
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                    {p.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium">{p.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {p.email}
+                      {p.organization && ` \u00B7 ${p.organization}`}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {mergeSearchQuery.length >= 2 && mergeSearchResults.length === 0 && (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              No matching people found
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Confirmation AlertDialog */}
+      <AlertDialog open={mergeConfirmOpen} onOpenChange={setMergeConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge {detail.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Permanently merge <strong>{detail.name}</strong> ({detail.email}) into{" "}
+              <strong>{mergeTarget?.name}</strong> ({mergeTarget?.email}).
+              All meetings, entity links, and actions will transfer to {mergeTarget?.name}.
+              This person's record will be deleted. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={merging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleMerge}
+              disabled={merging}
+              variant="default"
+            >
+              {merging ? "Merging..." : "Merge"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Confirmation AlertDialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {detail.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              All meeting attendance records, entity links, and action associations for{" "}
+              <strong>{detail.name}</strong> will be removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={merging}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={merging}
+              variant="destructive"
+            >
+              {merging ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

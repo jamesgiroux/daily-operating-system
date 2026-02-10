@@ -35,7 +35,7 @@ pub async fn prepare_today(
     let today = chrono::Local::now().date_naive();
 
     // Load config
-    let (profile, user_domain) = get_config(state);
+    let (profile, user_domain, user_focus) = get_config(state);
 
     log::info!(
         "prepare_today: workspace={}, profile={}, domain={}",
@@ -46,13 +46,16 @@ pub async fn prepare_today(
 
     // Step 1: Context metadata
     let (iso_year, iso_week, _) = today.iso_week_fields();
-    let context = json!({
+    let mut context = json!({
         "date": today.to_string(),
         "day_of_week": today.format("%A").to_string(),
         "week_number": iso_week,
         "year": iso_year,
         "profile": profile,
     });
+    if let Some(ref focus) = user_focus {
+        context.as_object_mut().unwrap().insert("focus".to_string(), json!(focus));
+    }
 
     // Step 2: Fetch calendar events + classify
     let account_hints = build_account_domain_hints(workspace);
@@ -166,7 +169,7 @@ pub async fn prepare_week(
     let now = Utc::now();
     let today = chrono::Local::now().date_naive();
 
-    let (profile, user_domain) = get_config(state);
+    let (profile, user_domain, _user_focus) = get_config(state);
 
     // Week bounds
     let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
@@ -263,7 +266,7 @@ pub async fn refresh_emails(
     state: &AppState,
     workspace: &Path,
 ) -> Result<(), ExecutionError> {
-    let (_profile, user_domain) = get_config(state);
+    let (_profile, user_domain, _user_focus) = get_config(state);
     let account_hints = build_account_domain_hints(workspace);
 
     // Extract customer domains from morning's schedule.json if available
@@ -380,7 +383,7 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
 // Shared helpers
 // ============================================================================
 
-fn get_config(state: &AppState) -> (String, String) {
+fn get_config(state: &AppState) -> (String, String, Option<String>) {
     let config_guard = state.config.read().ok();
     let config = config_guard.as_ref().and_then(|g| g.as_ref());
 
@@ -392,7 +395,10 @@ fn get_config(state: &AppState) -> (String, String) {
         .and_then(|c| c.user_domain.clone())
         .unwrap_or_default();
 
-    (profile, user_domain)
+    let user_focus = config
+        .and_then(|c| c.user_focus.clone());
+
+    (profile, user_domain, user_focus)
 }
 
 /// Build account domain hints from Accounts/ directory.
@@ -464,6 +470,7 @@ async fn fetch_and_classify_today(
             "organizer": raw.organizer,
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
+            "account": cm.account,
         }));
         events.push(json!({
             "id": ev.id,
@@ -568,6 +575,7 @@ async fn fetch_and_classify_week(
             "organizer": raw.organizer,
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
+            "account": cm.account,
         }));
         events.push(json!({
             "id": ev.id,
