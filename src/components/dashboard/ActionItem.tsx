@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { Circle, CheckCircle2, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Action, Priority } from "@/types";
@@ -50,18 +51,24 @@ export function ActionItem({ action, isLocallyCompleted, onComplete }: ActionIte
 
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-start justify-between gap-2">
-          <span
+          <Link
+            to="/actions/$actionId"
+            params={{ actionId: action.id }}
             className={cn(
-              "font-medium",
+              "font-medium transition-colors hover:text-primary",
               isCompleted && "line-through text-muted-foreground"
             )}
           >
             {stripMarkdown(action.title)}
-          </span>
+          </Link>
           <Badge className={cn("shrink-0", priorityStyles[action.priority])} variant="secondary">
             {action.priority}
           </Badge>
         </div>
+
+        {action.context && (
+          <p className="text-sm text-muted-foreground line-clamp-1">{action.context}</p>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {action.account && (

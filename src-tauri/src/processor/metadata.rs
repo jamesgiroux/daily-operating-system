@@ -43,7 +43,8 @@ fn re_due_date() -> &'static Regex {
 
 fn re_context() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"#(\S+)").unwrap())
+    // Match #"quoted multi-word context" or #single-word (backwards compatible)
+    RE.get_or_init(|| Regex::new(r#"#"([^"]+)"|#(\S+)"#).unwrap())
 }
 
 fn re_waiting() -> &'static Regex {
@@ -77,7 +78,11 @@ pub fn parse_action_metadata(text: &str) -> ActionMetadata {
     }
 
     if let Some(caps) = re_context().captures(text) {
-        meta.context = Some(caps[1].to_string());
+        // Group 1 = quoted multi-word, Group 2 = single-word fallback
+        meta.context = caps
+            .get(1)
+            .or_else(|| caps.get(2))
+            .map(|m| m.as_str().to_string());
     }
 
     meta.is_waiting = re_waiting().is_match(text);
@@ -108,6 +113,21 @@ mod tests {
         assert_eq!(m.due_date.as_deref(), Some("2026-03-15"));
         assert_eq!(m.context.as_deref(), Some("billing"));
         assert!(!m.is_waiting);
+        assert_eq!(m.clean_title, "Follow up on renewal");
+    }
+
+    #[test]
+    fn quoted_context() {
+        let m = parse_action_metadata(
+            r#"Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2""#,
+        );
+        assert_eq!(m.priority.as_deref(), Some("P1"));
+        assert_eq!(m.account.as_deref(), Some("Acme"));
+        assert_eq!(m.due_date.as_deref(), Some("2026-03-15"));
+        assert_eq!(
+            m.context.as_deref(),
+            Some("CFO needs pricing comparison before Q2")
+        );
         assert_eq!(m.clean_title, "Follow up on renewal");
     }
 
