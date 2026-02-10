@@ -1,869 +1,411 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Get Started - DailyOS</title>
-    <meta name="description" content="Get started with DailyOS. From download to first briefing in under 10 minutes.">
-    <meta property="og:title" content="Get Started - DailyOS">
-    <meta property="og:description" content="From download to first briefing in under 10 minutes.">
-    <meta property="og:image" content="https://daily-os.com/og-image.png">
-    <meta property="og:url" content="https://daily-os.com/setup.html">
-    <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary_large_image">
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --cream: #f5f2ef;
-            --cream-dark: #ebe5e0;
-            --charcoal: #1a1f24;
-            --charcoal-light: #2d343c;
-            --gold: #c9a227;
-            --gold-hover: #b8931f;
-            --gold-muted: rgba(201, 162, 39, 0.12);
-            --sage: #7fb685;
-            --sage-muted: rgba(127, 182, 133, 0.12);
-            --peach: #e8967a;
-            --peach-muted: rgba(232, 150, 122, 0.10);
-            --text-primary: #1a1f24;
-            --text-secondary: #5a6370;
-            --text-muted: #8a929d;
-            --border: rgba(26, 31, 36, 0.08);
-            --border-strong: rgba(26, 31, 36, 0.14);
-
-            --font-sans: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-        }
-
-        *, *::before, *::after {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        html {
-            scroll-behavior: smooth;
-            scroll-padding-top: 5rem;
-        }
-
-        body {
-            font-family: var(--font-sans);
-            background: var(--cream);
-            color: var(--text-primary);
-            line-height: 1.65;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-        }
-
-        /* -------------------------------------------------- */
-        /* NAV                                                */
-        /* -------------------------------------------------- */
-
-        .nav {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 100;
-            background: rgba(245, 242, 239, 0.85);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--border);
-        }
-
-        .nav-inner {
-            max-width: 1120px;
-            margin: 0 auto;
-            padding: 0 2rem;
-            height: 3.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .nav-logo {
-            font-weight: 700;
-            font-size: 1.125rem;
-            color: var(--charcoal);
-            text-decoration: none;
-            letter-spacing: -0.02em;
-        }
-
-        .nav-links {
-            display: flex;
-            gap: 2rem;
-            list-style: none;
-        }
-
-        .nav-links a {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--text-secondary);
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-
-        .nav-links a:hover {
-            color: var(--charcoal);
-        }
-
-        .nav-links a.active {
-            color: var(--charcoal);
-        }
-
-        .nav-toggle {
-            display: none;
-            background: none;
-            border: none;
-            cursor: pointer;
-            padding: 0.25rem;
-        }
-
-        .nav-toggle svg {
-            width: 24px;
-            height: 24px;
-            color: var(--charcoal);
-        }
-
-        /* -------------------------------------------------- */
-        /* LAYOUT                                             */
-        /* -------------------------------------------------- */
-
-        .container {
-            max-width: 1120px;
-            margin: 0 auto;
-            padding: 0 2rem;
-        }
-
-        .page-content {
-            padding-top: 6rem;
-            padding-bottom: 6rem;
-        }
-
-        section {
-            margin-bottom: 5rem;
-        }
-
-        section:last-child {
-            margin-bottom: 0;
-        }
-
-        /* -------------------------------------------------- */
-        /* TYPOGRAPHY                                         */
-        /* -------------------------------------------------- */
-
-        h1 {
-            font-size: clamp(2.25rem, 5vw, 3.25rem);
-            font-weight: 700;
-            letter-spacing: -0.03em;
-            line-height: 1.15;
-            color: var(--charcoal);
-        }
-
-        h2 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            letter-spacing: -0.025em;
-            line-height: 1.25;
-            color: var(--charcoal);
-            margin-bottom: 1rem;
-        }
-
-        h3 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            letter-spacing: -0.015em;
-            line-height: 1.35;
-            color: var(--charcoal);
-            margin-bottom: 0.5rem;
-        }
-
-        p {
-            color: var(--text-secondary);
-            font-size: 1.0625rem;
-            line-height: 1.7;
-        }
-
-        p + p {
-            margin-top: 1rem;
-        }
-
-        a {
-            color: var(--gold);
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.15s;
-        }
-
-        a:hover {
-            color: var(--gold-hover);
-        }
-
-        strong {
-            color: var(--charcoal);
-            font-weight: 600;
-        }
-
-        /* -------------------------------------------------- */
-        /* HERO                                               */
-        /* -------------------------------------------------- */
-
-        .hero {
-            text-align: center;
-            padding: 4rem 0 3rem;
-            margin-bottom: 4rem;
-        }
-
-        .hero h1 {
-            margin-bottom: 1rem;
-        }
-
-        .hero p {
-            font-size: 1.25rem;
-            color: var(--text-secondary);
-            max-width: 480px;
-            margin: 0 auto;
-        }
-
-        /* -------------------------------------------------- */
-        /* PREREQUISITE CARDS                                 */
-        /* -------------------------------------------------- */
-
-        .prereq-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem;
-            margin-top: 1.75rem;
-        }
-
-        .prereq-card {
-            background: #fff;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 2rem 1.75rem;
-            transition: border-color 0.2s;
-        }
-
-        .prereq-card:hover {
-            border-color: var(--border-strong);
-        }
-
-        .prereq-icon {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1.25rem;
-        }
-
-        .prereq-icon svg {
-            width: 22px;
-            height: 22px;
-        }
-
-        .prereq-icon--charcoal {
-            background: rgba(26, 31, 36, 0.08);
-            color: var(--charcoal);
-        }
-
-        .prereq-icon--gold {
-            background: var(--gold-muted);
-            color: var(--gold);
-        }
-
-        .prereq-icon--sage {
-            background: var(--sage-muted);
-            color: var(--sage);
-        }
-
-        .prereq-card h3 {
-            margin-bottom: 0.625rem;
-        }
-
-        .prereq-card p {
-            font-size: 0.9375rem;
-            line-height: 1.6;
-        }
-
-        .prereq-card .card-link {
-            display: inline-block;
-            margin-top: 0.75rem;
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-
-        /* -------------------------------------------------- */
-        /* STEPS                                              */
-        /* -------------------------------------------------- */
-
-        .step {
-            display: grid;
-            grid-template-columns: 3.5rem 1fr;
-            gap: 0 1.5rem;
-            align-items: start;
-        }
-
-        .step-number {
-            width: 3.25rem;
-            height: 3.25rem;
-            border-radius: 50%;
-            border: 2px solid var(--gold);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.25rem;
-            font-weight: 700;
-            color: var(--gold);
-            flex-shrink: 0;
-            margin-top: 0.125rem;
-        }
-
-        .step-content {
-            min-width: 0;
-        }
-
-        .step-content h2 {
-            margin-bottom: 0.75rem;
-        }
-
-        .step-content > p {
-            margin-bottom: 1rem;
-        }
-
-        /* -------------------------------------------------- */
-        /* CTA BUTTON                                         */
-        /* -------------------------------------------------- */
-
-        .cta-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.625rem;
-            background: var(--gold);
-            color: #fff;
-            font-family: var(--font-sans);
-            font-size: 1.0625rem;
-            font-weight: 600;
-            padding: 0.875rem 2rem;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            text-decoration: none;
-            transition: background 0.2s, transform 0.15s;
-            margin-top: 0.5rem;
-        }
-
-        .cta-btn:hover {
-            background: var(--gold-hover);
-            color: #fff;
-            transform: translateY(-1px);
-        }
-
-        .cta-btn svg {
-            width: 18px;
-            height: 18px;
-        }
-
-        /* -------------------------------------------------- */
-        /* WARNING BOX                                        */
-        /* -------------------------------------------------- */
-
-        .warning-box {
-            background: var(--peach-muted);
-            border-left: 3px solid var(--peach);
-            border-radius: 0 8px 8px 0;
-            padding: 1.25rem 1.5rem;
-            margin-top: 1.5rem;
-        }
-
-        .warning-box p {
-            font-size: 0.9375rem;
-            color: var(--text-primary);
-            line-height: 1.6;
-        }
-
-        .warning-box p + p {
-            margin-top: 0.5rem;
-        }
-
-        .warning-box strong {
-            color: var(--charcoal);
-        }
-
-        /* -------------------------------------------------- */
-        /* CODE BLOCKS                                        */
-        /* -------------------------------------------------- */
-
-        code {
-            font-family: var(--font-mono);
-            font-size: 0.875em;
-            background: rgba(26, 31, 36, 0.06);
-            padding: 0.15em 0.4em;
-            border-radius: 4px;
-            color: var(--charcoal);
-        }
-
-        pre {
-            background: var(--charcoal);
-            color: var(--cream);
-            font-family: var(--font-mono);
-            font-size: 0.875rem;
-            line-height: 1.7;
-            padding: 1.25rem 1.5rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            margin: 1rem 0;
-        }
-
-        pre code {
-            background: none;
-            padding: 0;
-            border-radius: 0;
-            color: inherit;
-            font-size: inherit;
-        }
-
-        .code-comment {
-            color: var(--text-muted);
-        }
-
-        /* -------------------------------------------------- */
-        /* ORDERED INSTRUCTIONS                               */
-        /* -------------------------------------------------- */
-
-        .instructions {
-            list-style: none;
-            counter-reset: instruction;
-            margin: 1rem 0;
-        }
-
-        .instructions li {
-            counter-increment: instruction;
-            position: relative;
-            padding-left: 2rem;
-            font-size: 1.0625rem;
-            color: var(--text-secondary);
-            line-height: 1.7;
-            margin-bottom: 0.625rem;
-        }
-
-        .instructions li::before {
-            content: counter(instruction) ".";
-            position: absolute;
-            left: 0;
-            font-weight: 600;
-            color: var(--gold);
-        }
-
-        /* -------------------------------------------------- */
-        /* CALLOUT (gold)                                     */
-        /* -------------------------------------------------- */
-
-        .callout {
-            border: 2px solid var(--gold);
-            border-radius: 10px;
-            padding: 1.5rem 2rem;
-            margin-top: 1.5rem;
-            text-align: center;
-        }
-
-        .callout p {
-            font-size: 1.1875rem;
-            font-weight: 600;
-            color: var(--charcoal);
-            font-style: italic;
-        }
-
-        /* -------------------------------------------------- */
-        /* NOTE (subtle)                                      */
-        /* -------------------------------------------------- */
-
-        .note {
-            background: rgba(26, 31, 36, 0.03);
-            border-radius: 8px;
-            padding: 1rem 1.25rem;
-            margin-top: 1.25rem;
-        }
-
-        .note p {
-            font-size: 0.9375rem;
-            color: var(--text-muted);
-            line-height: 1.6;
-        }
-
-        /* -------------------------------------------------- */
-        /* FOLDER TREE                                        */
-        /* -------------------------------------------------- */
-
-        .tree-line {
-            color: var(--cream);
-        }
-
-        .tree-comment {
-            color: var(--text-muted);
-        }
-
-        .tree-folder {
-            color: var(--gold-muted);
-        }
-
-        /* -------------------------------------------------- */
-        /* HELP SECTION                                       */
-        /* -------------------------------------------------- */
-
-        .help-links {
-            list-style: none;
-            margin-top: 1rem;
-        }
-
-        .help-links li {
-            font-size: 1.0625rem;
-            color: var(--text-secondary);
-            line-height: 1.7;
-            padding-left: 1.5rem;
-            position: relative;
-            margin-bottom: 0.375rem;
-        }
-
-        .help-links li::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: 0.75em;
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: var(--gold);
-        }
-
-        /* -------------------------------------------------- */
-        /* FOOTER                                             */
-        /* -------------------------------------------------- */
-
-        .footer {
-            border-top: 1px solid var(--border);
-            padding: 3rem 0;
-            margin-top: 2rem;
-        }
-
-        .footer-inner {
-            display: flex;
-            justify-content: space-between;
-            align-items: start;
-            flex-wrap: wrap;
-            gap: 2rem;
-        }
-
-        .footer-links {
-            display: flex;
-            gap: 1.5rem;
-            list-style: none;
-            flex-wrap: wrap;
-        }
-
-        .footer-links a {
-            font-size: 0.875rem;
-            font-weight: 500;
-            color: var(--text-muted);
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-
-        .footer-links a:hover {
-            color: var(--charcoal);
-        }
-
-        .footer-meta {
-            text-align: right;
-        }
-
-        .footer-meta p {
-            font-size: 0.8125rem;
-            color: var(--text-muted);
-            line-height: 1.6;
-        }
-
-        /* -------------------------------------------------- */
-        /* RESPONSIVE                                         */
-        /* -------------------------------------------------- */
-
-        @media (max-width: 768px) {
-            .nav-links {
-                display: none;
-                position: absolute;
-                top: 3.5rem;
-                left: 0;
-                right: 0;
-                background: rgba(245, 242, 239, 0.97);
-                backdrop-filter: blur(12px);
-                -webkit-backdrop-filter: blur(12px);
-                flex-direction: column;
-                padding: 1rem 2rem 1.5rem;
-                gap: 0;
-                border-bottom: 1px solid var(--border);
-            }
-
-            .nav-links.open {
-                display: flex;
-            }
-
-            .nav-links li {
-                padding: 0.5rem 0;
-            }
-
-            .nav-toggle {
-                display: block;
-            }
-
-            .container {
-                padding: 0 1.25rem;
-            }
-
-            .hero {
-                padding: 2.5rem 0 2rem;
-                margin-bottom: 3rem;
-            }
-
-            .prereq-grid {
-                grid-template-columns: 1fr;
-                gap: 1rem;
-            }
-
-            .step {
-                grid-template-columns: 1fr;
-                gap: 0.75rem;
-            }
-
-            .step-number {
-                width: 2.75rem;
-                height: 2.75rem;
-                font-size: 1.125rem;
-            }
-
-            section {
-                margin-bottom: 3.5rem;
-            }
-
-            .footer-inner {
-                flex-direction: column;
-            }
-
-            .footer-meta {
-                text-align: left;
-            }
-
-            pre {
-                font-size: 0.8125rem;
-                padding: 1rem 1.25rem;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .cta-btn {
-                width: 100%;
-                justify-content: center;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Get Started — DailyOS</title>
+  <meta name="description" content="From download to your first briefing in under 10 minutes. macOS, Claude Code, Google Workspace.">
+  <meta property="og:title" content="Get Started — DailyOS">
+  <meta property="og:description" content="From download to your first briefing in under 10 minutes.">
+  <meta property="og:image" content="https://daily-os.com/og-image.png">
+  <meta property="og:url" content="https://daily-os.com/setup.html">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --cream: #f5f2ef;
+      --charcoal: #1a1f24;
+      --charcoal-light: #2d343c;
+      --gold: #c9a227;
+      --sage: #7fb685;
+      --peach: #e8967a;
+      --text-primary: #1a1f24;
+      --text-secondary: #5a6068;
+      --text-on-dark: #f5f2ef;
+      --text-muted-on-dark: #a0a8b0;
+      --border-light: rgba(26, 31, 36, 0.08);
+      --border-dark: rgba(245, 242, 239, 0.1);
+    }
+
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text-primary); background: var(--cream); line-height: 1.6; overflow-x: hidden; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* ---- Nav ---- */
+    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(26, 31, 36, 0.92); border-bottom: 1px solid var(--border-dark); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-logo { font-weight: 700; font-size: 1.15rem; color: var(--text-on-dark); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
+    .nav-logo-icon { width: 26px; height: 26px; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
+    .nav-links a { font-size: 0.875rem; font-weight: 500; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-on-dark); }
+    .nav-links a.nav-cta { background: var(--gold); color: var(--charcoal); padding: 0.45rem 1.15rem; border-radius: 6px; font-weight: 600; transition: opacity 0.2s; }
+    .nav-links a.nav-cta:hover { opacity: 0.88; }
+    .nav-toggle { display: none; background: none; border: none; cursor: pointer; padding: 0.5rem; }
+    .nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text-on-dark); margin: 5px 0; transition: all 0.3s; }
+
+    /* ---- Layout ---- */
+    .section { padding: 140px 2rem; }
+    .section-inner { max-width: 700px; margin: 0 auto; }
+    .section--dark { background: var(--charcoal); color: var(--text-on-dark); }
+    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 2rem; }
+
+    /* ---- Typography ---- */
+    .section h2 { font-size: clamp(2.25rem, 5vw, 3.25rem); font-weight: 700; line-height: 1.12; letter-spacing: -0.03em; margin-bottom: 2rem; }
+    .section p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1.25rem; }
+    .section p:last-child { margin-bottom: 0; }
+    .section--dark p { color: var(--text-muted-on-dark); }
+
+    /* ---- Hero ---- */
+    .hero { padding: 180px 2rem 120px; text-align: center; background: var(--charcoal); color: var(--text-on-dark); }
+    .hero-inner { max-width: 700px; margin: 0 auto; }
+    .hero h1 { font-size: clamp(2.75rem, 7vw, 4.5rem); font-weight: 700; line-height: 1.08; letter-spacing: -0.035em; margin-bottom: 1.5rem; }
+    .hero p { font-size: 1.35rem; color: var(--text-muted-on-dark); line-height: 1.65; }
+
+    /* ---- Prereqs ---- */
+    .prereq-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 3rem; }
+    .prereq-card { background: white; border: 1px solid var(--border-light); border-radius: 12px; padding: 2rem 1.75rem; transition: border-color 0.2s; }
+    .prereq-card:hover { border-color: rgba(26, 31, 36, 0.16); }
+    .prereq-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
+    .prereq-icon svg { width: 22px; height: 22px; }
+    .prereq-icon--charcoal { background: rgba(26, 31, 36, 0.08); color: var(--charcoal); }
+    .prereq-icon--gold { background: rgba(201, 162, 39, 0.12); color: var(--gold); }
+    .prereq-icon--sage { background: rgba(127, 182, 133, 0.12); color: var(--sage); }
+    .prereq-card h3 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.015em; color: var(--text-primary); margin-bottom: 0.5rem; }
+    .prereq-card p { font-size: 1rem; line-height: 1.6; color: var(--text-secondary); margin-bottom: 0; }
+    .prereq-card .card-link { display: inline-block; margin-top: 0.75rem; font-size: 0.9rem; font-weight: 600; color: var(--gold); text-decoration: none; transition: opacity 0.2s; }
+    .prereq-card .card-link:hover { opacity: 0.8; }
+
+    /* ---- Steps ---- */
+    .steps { display: flex; flex-direction: column; gap: 0; }
+    .step-block { padding: 140px 2rem; border-bottom: 1px solid var(--border-light); }
+    .step-block:last-child { border-bottom: none; }
+    .step-inner { max-width: 700px; margin: 0 auto; display: grid; grid-template-columns: 3.5rem 1fr; gap: 1.5rem; align-items: start; }
+    .step-number { width: 3.25rem; height: 3.25rem; border-radius: 50%; border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--gold); flex-shrink: 0; margin-top: 0.15rem; }
+    .step-content h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.025em; margin-bottom: 1.25rem; }
+    .step-content p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1rem; }
+    .step-content p:last-child { margin-bottom: 0; }
+
+    /* ---- Button ---- */
+    .btn-primary { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-download { display: inline-flex; align-items: center; gap: 0.75rem; }
+
+    /* ---- Warning ---- */
+    .warning-box { background: rgba(232, 150, 122, 0.08); border-left: 3px solid var(--peach); border-radius: 0 8px 8px 0; padding: 1.25rem 1.5rem; margin-top: 2rem; }
+    .warning-box p { font-size: 1rem; color: var(--text-primary); line-height: 1.65; margin-bottom: 0; }
+    .warning-box strong { color: var(--charcoal); font-weight: 600; }
+
+    /* ---- Code ---- */
+    code { font-family: 'JetBrains Mono', monospace; font-size: 0.875em; background: rgba(26, 31, 36, 0.06); padding: 0.15em 0.4em; border-radius: 4px; color: var(--charcoal); }
+    pre { background: var(--charcoal); color: var(--cream); font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; line-height: 1.7; padding: 1.5rem 1.75rem; border-radius: 10px; overflow-x: auto; margin: 1.5rem 0; }
+    pre code { background: none; padding: 0; border-radius: 0; color: inherit; font-size: inherit; }
+
+    /* ---- Folder tree ---- */
+    .tree-comment { color: var(--text-muted-on-dark); opacity: 0.5; }
+
+    /* ---- Instructions ---- */
+    .instructions { list-style: none; counter-reset: instruction; margin: 1.5rem 0; }
+    .instructions li { counter-increment: instruction; position: relative; padding-left: 2rem; font-size: 1.15rem; color: var(--text-secondary); line-height: 1.75; margin-bottom: 0.75rem; }
+    .instructions li::before { content: counter(instruction) "."; position: absolute; left: 0; font-weight: 600; color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 1rem; }
+    .instructions strong { color: var(--text-primary); font-weight: 600; }
+
+    /* ---- Note ---- */
+    .note { background: rgba(127, 182, 133, 0.06); border-left: 3px solid var(--sage); border-radius: 0 8px 8px 0; padding: 1.25rem 1.5rem; margin-top: 1.5rem; }
+    .note p { font-size: 1rem; color: var(--text-secondary); line-height: 1.65; margin-bottom: 0; }
+
+    /* ---- Callout ---- */
+    .callout { border: 2px solid var(--gold); border-radius: 12px; padding: 2rem 2.5rem; margin-top: 2.5rem; text-align: center; }
+    .callout p { font-size: 1.35rem; font-weight: 600; color: var(--text-primary); font-style: italic; line-height: 1.5; margin-bottom: 0; }
+    .callout .callout-sub { font-size: 1.05rem; font-weight: 400; font-style: normal; color: var(--text-secondary); margin-top: 0.75rem; }
+
+    /* ---- Help ---- */
+    .help-links { list-style: none; margin-top: 1.5rem; }
+    .help-links li { font-size: 1.15rem; color: var(--text-secondary); line-height: 1.75; padding-left: 1.75rem; position: relative; margin-bottom: 0.5rem; }
+    .help-links li::before { content: ""; position: absolute; left: 0; top: 0.7em; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+    .help-links a { color: var(--gold); text-decoration: none; font-weight: 500; transition: opacity 0.2s; }
+    .help-links a:hover { opacity: 0.8; }
+
+    /* ---- Footer ---- */
+    .footer { background: var(--charcoal); border-top: 1px solid var(--border-dark); padding: 3rem 2rem; }
+    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+    .footer-links { display: flex; gap: 2rem; list-style: none; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { font-size: 0.875rem; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-on-dark); }
+    .footer-meta p { font-size: 0.8rem; color: var(--text-muted-on-dark); line-height: 1.6; text-align: center; margin: 0; }
+
+    /* ---- Animations ---- */
+    .fade-in { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+    .fade-in-d1 { transition-delay: 0.12s; }
+    .fade-in-d2 { transition-delay: 0.24s; }
+    .fade-in-d3 { transition-delay: 0.36s; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 768px) {
+      .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: rgba(26, 31, 36, 0.97); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-dark); flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; }
+      .nav-links.open { display: flex; }
+      .nav-toggle { display: block; }
+      .hero { padding: 140px 1.5rem 80px; }
+      .prereq-grid { grid-template-columns: 1fr; gap: 1rem; }
+      .step-block { padding: 80px 1.5rem; }
+      .step-inner { grid-template-columns: 1fr; }
+      .step-number { margin-bottom: 0.25rem; }
+      .section { padding: 100px 1.5rem; }
+      pre { font-size: 0.8rem; padding: 1.25rem 1.25rem; }
+    }
+
+    @media (max-width: 480px) {
+      .btn-primary { width: 100%; text-align: center; }
+      .btn-download { justify-content: center; }
+    }
+  </style>
 </head>
 <body>
 
-    <!-- NAV -->
-    <nav class="nav">
-        <div class="nav-inner">
-            <a href="/" class="nav-logo">DailyOS</a>
-            <button class="nav-toggle" aria-label="Toggle navigation" onclick="document.querySelector('.nav-links').classList.toggle('open')">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                </svg>
-            </button>
-            <ul class="nav-links">
-                <li><a href="/">Home</a></li>
-                <li><a href="/tour">Tour</a></li>
-                <li><a href="/philosophy">Philosophy</a></li>
-                <li><a href="/setup.html" class="active">Get Started</a></li>
-            </ul>
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">
+        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+        DailyOS
+      </a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html" class="nav-cta">Get Early Access</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ============================================ -->
+  <!-- HERO                                         -->
+  <!-- ============================================ -->
+  <section class="hero">
+    <div class="hero-inner">
+      <h1 class="fade-in">Get started.</h1>
+      <p class="fade-in fade-in-d1">Download to first briefing in under 10 minutes.<br>Your first real morning takes a week.</p>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- PREREQUISITES                                -->
+  <!-- ============================================ -->
+  <section class="section">
+    <div class="section-inner" style="max-width: 900px;">
+      <p class="section-label fade-in">Before you start</p>
+      <h2 class="fade-in">Three things you need.</h2>
+
+      <div class="prereq-grid fade-in">
+        <!-- macOS -->
+        <div class="prereq-card">
+          <div class="prereq-icon prereq-icon--charcoal">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+            </svg>
+          </div>
+          <h3>macOS (Apple Silicon)</h3>
+          <p>Runs natively on M-series Macs. Intel and other platforms coming.</p>
         </div>
-    </nav>
 
-    <!-- PAGE -->
-    <div class="page-content">
-        <div class="container">
-
-            <!-- HERO -->
-            <section class="hero">
-                <h1>Get Started with DailyOS</h1>
-                <p>From download to first briefing in under 10 minutes.</p>
-            </section>
-
-            <!-- PREREQUISITES -->
-            <section>
-                <h2>Prerequisites</h2>
-                <div class="prereq-grid">
-
-                    <!-- macOS -->
-                    <div class="prereq-card">
-                        <div class="prereq-icon prereq-icon--charcoal">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
-                            </svg>
-                        </div>
-                        <h3>macOS (Apple Silicon)</h3>
-                        <p>DailyOS runs natively on Mac. Intel and other platforms coming soon.</p>
-                    </div>
-
-                    <!-- Claude Code -->
-                    <div class="prereq-card">
-                        <div class="prereq-icon prereq-icon--gold">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-                            </svg>
-                        </div>
-                        <h3>Claude Code</h3>
-                        <p>DailyOS uses Claude Code for AI enrichment. Requires a Claude Pro ($20/mo) or Max subscription.</p>
-                        <a href="https://claude.ai/claude-code" class="card-link">Get Claude Code &rarr;</a>
-                    </div>
-
-                    <!-- Google Workspace -->
-                    <div class="prereq-card">
-                        <div class="prereq-icon prereq-icon--sage">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
-                            </svg>
-                        </div>
-                        <h3>Google Workspace</h3>
-                        <p>Calendar and Gmail integration. Personal Google accounts work too.</p>
-                    </div>
-
-                </div>
-            </section>
-
-            <!-- STEP 1: DOWNLOAD -->
-            <section>
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <h2>Download</h2>
-                        <p>Download the latest release from GitHub.</p>
-                        <a href="https://github.com/jamesgiroux/daily-operating-system/releases/latest" class="cta-btn">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                            </svg>
-                            Download DailyOS v0.7.0
-                        </a>
-
-                        <div class="warning-box">
-                            <p><strong>macOS Gatekeeper:</strong> macOS will block the app because it's not signed by Apple. To allow it:</p>
-                            <pre><code>xattr -cr /Applications/DailyOS.app</code></pre>
-                            <p>Or: <strong>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</strong></p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 2: CONNECT GOOGLE -->
-            <section>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <h2>Connect Google</h2>
-                        <p>When you first open DailyOS, it will ask to connect your Google account.</p>
-                        <ol class="instructions">
-                            <li>Click <strong>Connect Google</strong> in Settings</li>
-                            <li>Sign in with your Google account</li>
-                            <li>Allow calendar and email access</li>
-                            <li>You'll see a confirmation in the app</li>
-                        </ol>
-                        <div class="note">
-                            <p>DailyOS reads your calendar and email to prepare your day. It never modifies, sends, or deletes anything without your explicit action.</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 3: WORKSPACE -->
-            <section>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <h2>Set Up Your Workspace</h2>
-                        <p>Choose a folder on your machine. DailyOS creates the structure.</p>
-                        <pre><code><span class="tree-folder">~/Documents/DailyOS/</span>
-<span class="tree-line">&#9500;&#9472;&#9472;</span> _today/          <span class="tree-comment">&larr; Your daily briefing</span>
-<span class="tree-line">&#9500;&#9472;&#9472;</span> _inbox/          <span class="tree-comment">&larr; Drop files for processing</span>
-<span class="tree-line">&#9500;&#9472;&#9472;</span> _archive/        <span class="tree-comment">&larr; Past briefings</span>
-<span class="tree-line">&#9500;&#9472;&#9472;</span> Accounts/        <span class="tree-comment">&larr; Your customers/clients</span>
-<span class="tree-line">&#9492;&#9472;&#9472;</span> Projects/        <span class="tree-comment">&larr; Your projects</span></code></pre>
-                        <p>Everything lives in this folder. Markdown and JSON files you own.</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 4: ACCOUNTS & PROJECTS -->
-            <section>
-                <div class="step">
-                    <div class="step-number">4</div>
-                    <div class="step-content">
-                        <h2>Add Your Accounts &amp; Projects</h2>
-                        <p>The onboarding wizard helps you add the accounts and projects you work on. DailyOS uses these to build intelligence and prep your meetings.</p>
-                        <p>You can always add more later from the app.</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- STEP 5: FIRST MORNING -->
-            <section>
-                <div class="step">
-                    <div class="step-number">5</div>
-                    <div class="step-content">
-                        <h2>Your First Morning</h2>
-                        <p>Your first briefing runs at 6:00 AM. Open DailyOS tomorrow morning.</p>
-                        <p>You'll see your schedule prepped, emails triaged, and actions surfaced.</p>
-                        <div class="callout">
-                            <p>"Open the app. Your day is ready."</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- NEED HELP -->
-            <section>
-                <h2>Need Help?</h2>
-                <p>DailyOS is in alpha. If something doesn't work:</p>
-                <ul class="help-links">
-                    <li><a href="https://github.com/jamesgiroux/daily-operating-system/issues">File an issue on GitHub</a></li>
-                    <li><a href="mailto:james@daily-os.com">Reach out directly</a></li>
-                </ul>
-            </section>
-
+        <!-- Claude Code -->
+        <div class="prereq-card">
+          <div class="prereq-icon prereq-icon--gold">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+            </svg>
+          </div>
+          <h3>Claude Code</h3>
+          <p>DailyOS uses Claude Code for AI enrichment. Requires Claude Pro or Max ($20/mo+).</p>
+          <a href="https://claude.ai/claude-code" class="card-link">Get Claude Code &rarr;</a>
         </div>
+
+        <!-- Google Workspace -->
+        <div class="prereq-card">
+          <div class="prereq-icon prereq-icon--sage">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+            </svg>
+          </div>
+          <h3>Google Workspace</h3>
+          <p>Calendar and Gmail integration. Personal Google accounts work too.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================ -->
+  <!-- STEP 1: DOWNLOAD                             -->
+  <!-- ============================================ -->
+  <div class="steps">
+    <div class="step-block">
+      <div class="step-inner">
+        <div class="step-number fade-in">1</div>
+        <div class="step-content">
+          <h2 class="fade-in">Download DailyOS</h2>
+          <p class="fade-in">Grab the latest release from GitHub.</p>
+          <div class="fade-in">
+            <a href="https://github.com/jamesgiroux/daily-operating-system/releases/latest" class="btn-primary btn-download">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="18" height="18">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download v0.7.0
+            </a>
+          </div>
+
+          <div class="warning-box fade-in">
+            <p><strong>macOS Gatekeeper:</strong> The app isn't signed by Apple yet. You'll need to allow it:</p>
+            <pre><code>xattr -cr /Applications/DailyOS.app</code></pre>
+            <p>Or: <strong>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</strong></p>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- FOOTER -->
-    <footer class="footer">
-        <div class="container">
-            <div class="footer-inner">
-                <ul class="footer-links">
-                    <li><a href="/">Home</a></li>
-                    <li><a href="/tour">Tour</a></li>
-                    <li><a href="/philosophy">Philosophy</a></li>
-                    <li><a href="/setup.html">Get Started</a></li>
-                    <li><a href="https://github.com/jamesgiroux/daily-operating-system">GitHub</a></li>
-                </ul>
-                <div class="footer-meta">
-                    <p>DailyOS is open source under GPL-3.0</p>
-                    <p>&copy; 2026 James Giroux</p>
-                </div>
-            </div>
+    <!-- ============================================ -->
+    <!-- STEP 2: CONNECT GOOGLE                       -->
+    <!-- ============================================ -->
+    <div class="step-block">
+      <div class="step-inner">
+        <div class="step-number fade-in">2</div>
+        <div class="step-content">
+          <h2 class="fade-in">Connect Google</h2>
+          <p class="fade-in">First launch asks to connect your Google account.</p>
+          <ol class="instructions fade-in">
+            <li>Click <strong>Connect Google</strong> in Settings</li>
+            <li>Sign in with your Google account</li>
+            <li>Allow calendar and email access</li>
+            <li>Confirmation appears in the app</li>
+          </ol>
+          <div class="note fade-in">
+            <p>DailyOS reads your calendar and email to prepare your day. It never modifies, sends, or deletes anything without your explicit action.</p>
+          </div>
         </div>
-    </footer>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STEP 3: WORKSPACE                            -->
+    <!-- ============================================ -->
+    <div class="step-block">
+      <div class="step-inner">
+        <div class="step-number fade-in">3</div>
+        <div class="step-content">
+          <h2 class="fade-in">Choose your workspace</h2>
+          <p class="fade-in">Pick a folder. DailyOS creates the structure.</p>
+          <div class="fade-in">
+            <pre><code>~/Documents/DailyOS/
+├── _today/       <span class="tree-comment"># Your daily briefing</span>
+├── _inbox/       <span class="tree-comment"># Drop files for processing</span>
+├── _archive/     <span class="tree-comment"># Past briefings</span>
+├── Accounts/     <span class="tree-comment"># Your customers and clients</span>
+└── Projects/     <span class="tree-comment"># Your projects</span></code></pre>
+          </div>
+          <p class="fade-in">Everything lives in this folder. Markdown and JSON files you own. Open them in any editor, sync them with any tool, read them with any AI.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STEP 4: ACCOUNTS & PROJECTS                  -->
+    <!-- ============================================ -->
+    <div class="step-block">
+      <div class="step-inner">
+        <div class="step-number fade-in">4</div>
+        <div class="step-content">
+          <h2 class="fade-in">Add your accounts and projects</h2>
+          <p class="fade-in">The onboarding wizard walks you through it. Add the accounts you manage, the projects you're tracking. DailyOS uses these to build intelligence and prep your meetings.</p>
+          <p class="fade-in">You can always add more later.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- STEP 5: FIRST MORNING                        -->
+    <!-- ============================================ -->
+    <div class="step-block" style="border-bottom: none;">
+      <div class="step-inner">
+        <div class="step-number fade-in">5</div>
+        <div class="step-content">
+          <h2 class="fade-in">Open your first morning</h2>
+          <p class="fade-in">Your first briefing runs at 6:00 AM. Open DailyOS tomorrow morning and your day is laid out. Schedule prepped. Emails triaged. Actions surfaced.</p>
+          <p class="fade-in">Day 1 is thin. The system has one day of context. By week 2, you'll feel it working. By month 2, you'll wonder how you operated without it. That's not a promise. That's how compounding intelligence works.</p>
+          <div class="callout fade-in">
+            <p>"Open the app. Your day is ready."</p>
+            <p class="callout-sub">It starts modest. It doesn't stay that way.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <!-- NEED HELP                                    -->
+  <!-- ============================================ -->
+  <section class="section">
+    <div class="section-inner">
+      <p class="section-label fade-in">Support</p>
+      <h2 class="fade-in">Need help?</h2>
+      <p class="fade-in">DailyOS is in alpha. Things will break. When they do:</p>
+      <ul class="help-links fade-in">
+        <li><a href="https://github.com/jamesgiroux/daily-operating-system/issues">File an issue on GitHub</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html">Get Started</a></li>
+        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+      <div class="footer-meta">
+        <p>DailyOS is open source under GPL-3.0</p>
+        <p>&copy; 2026 James Giroux</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function() {
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) entry.target.classList.add('visible');
+        });
+      }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+      document.querySelectorAll('.fade-in').forEach(function(el) { observer.observe(el); });
+
+      var toggle = document.querySelector('.nav-toggle');
+      var links = document.querySelector('.nav-links');
+      toggle.addEventListener('click', function() {
+        var isOpen = links.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+      links.querySelectorAll('a').forEach(function(link) {
+        link.addEventListener('click', function() {
+          links.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
+  </script>
 
 </body>
 </html>
