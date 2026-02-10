@@ -4,55 +4,16 @@ Active issues, known risks, assumptions, and dependencies.
 
 **Convention:** Issues use `I` prefix. When an issue is resolved, mark it `Closed` with a one-line resolution. Don't delete — future you wants to know what was considered.
 
-**Current state:** 439 Rust tests passing. Sprints 1-8 complete. Python runtime eliminated. Entity intelligence architecture complete (ADR-0057, I130-I138). Active work: Sprint 9 (entity relationship graph) + ship-path bugs.
+**Current state:** 500 Rust tests passing. Sprints 1-10 complete. Python runtime eliminated. Entity intelligence architecture complete (ADR-0057, I130-I138). Proactive intelligence maintenance shipped (ADR-0058, I145-I148). Entity relationship graph shipped (I50, I52, I129). Entity directory template shipped (ADR-0059). Production OAuth embedded (I123). Active work: ship-path blocker (I8).
 
 ---
 
 ## Issues
 
-### Sprint 9 — Entity Relationship Graph (Ship Blocker)
-
-Entities exist but live in isolation. Meetings don't know which accounts they serve. People can't be linked to accounts from the UI. Projects don't exist as entities. The user is doing the synthesis work that the system should be doing — violates P6 (AI-Native) and P7 (Consumption Over Production). Without M2M, meeting intelligence can't connect to entity intelligence, and the core promise ("your day is ready") falls short.
-
-**Scope:** Build the relationship graph between meetings, people, accounts, and projects. Three issues, in dependency order:
-
-**I50: Projects overlay table and project entity support**
-Projects as first-class entities alongside accounts. `projects` overlay table, CRUD commands, ProjectsPage + ProjectDetailPage (mirror account patterns). Content indexing + intelligence enrichment reuse entity_intel.rs shared module. Unblocks I52 (meetings need entities to link to).
-
-**I52: Meeting-entity many-to-many association**
-Junction table linking meetings to entities (accounts, projects, people). Auto-association from attendee domains + manual override. Meeting prep consumes all linked entity intelligence. Schedule view shows entity badges on meeting cards. This is the architectural keystone — once meetings know their entities, every surface gets smarter.
-
-**I129: People entity editability — name, account link, and user contributions**
-Already on ship path. People are auto-created from calendar attendees but key fields (name, account link) have no edit path. Entity picker for account linking, editable names, manual person creation, promoted notes. The "last mile" for people as useful nodes in the relationship graph.
-
-**Sequence:** I50 (projects exist) → I52 (M2M links everything) → I129 (people become editable nodes). I129 can start in parallel with I50 since it doesn't depend on projects.
-
-**Not in scope for Sprint 9:** Entity-mode config UI (I53), MCP integrations (I54), kits (I40), intelligence layers (I35/I55). Those build on top of the relationship graph but don't block it.
-
----
-
 ### Planned — Ship Path
 
 **I8: DMG build + GitHub Actions CI + GitHub Releases**
 Unsigned DMG for colleague distribution. GitHub Actions builds arm64 DMG on push/tag. GitHub Releases hosts the artifact. README with Gatekeeper bypass instructions (`xattr -cr`). No signing/notarization (no Apple Developer account). No updater (zero users, premature).
-
-**I119: Gmail API returns empty metadata fields**
-`gmail.rs` fetches messages but `from`, `from_email`, `subject`, and `date` are all empty strings in the directive. Snippets are populated so the API call works — header extraction (`From`, `Subject`, `Date`) is failing silently. Likely cause: `format=metadata` or `metadataHeaders` parameter issue, or response parsing doesn't walk `payload.headers[]` correctly.
-
-**I123: Production Google OAuth credentials**
-App requires users to supply their own `credentials.json` from Google Cloud Console. For distribution, DailyOS needs its own registered OAuth client. Client ID/secret embedded in Rust binary (compile-time `include_str!` or build-time env var). Steps: (1) Create Google Cloud project. (2) Configure OAuth consent screen (external, limited scope: Calendar read, Gmail read). (3) Create Desktop app OAuth client. (4) Embed in `google_api/auth.rs`. (5) Remove `credentials.json` file requirement. Dev override via env var for local testing.
-
-
-*I129 moved to Sprint 9 (Entity Relationship Graph).*
-
-### Planned — Intelligence Quality
-
-**I139: File summary indexing + enrichment payload optimization**
-Intelligence enrichment times out on accounts with 15+ content files because the prompt sends up to 50K chars of raw file text plus a web search instruction. Three changes:
-(a) **Sort files by recency.** `get_entity_files` returns `modified_at DESC` so newest files get priority within the char budget. 90-day recency filter already applied (I138 hotfix).
-(b) **Mechanical file summaries.** On content index sync, extract a summary per file (headings + first paragraph, ~500 chars). Store in the existing `content_index.summary` column (already in schema, always NULL). Zero AI cost — purely mechanical text extraction.
-(c) **Enrichment sends summaries, not full text.** Prompt includes file summaries (50 files in 3K chars) instead of raw contents (3 files in 12K chars). Dramatically better signal density per token. Full text available on demand if a future multi-turn enrichment needs it.
-Also: removed web search from initial enrichment prompt, reduced char caps (50K→12K initial, 20K→8K incremental), bumped PTY timeout to 180s. These hotfixes are already shipped; I139 completes the architectural fix.
 
 ### Open
 
@@ -65,29 +26,10 @@ IntelligenceCard removed from dashboard (ADR-0055). Portfolio alerts (renewal ap
 **I122: Sunday briefing fetches Monday calendar labeled as "today"**
 Running daily briefing on Sunday produces a directive with Monday's date and meetings labeled "today". Prepare phase likely targets next business day. If intentional, UI should say "Tomorrow" or "Monday." If not, fetch actual current day's calendar.
 
-
-
-
-**I127: Manual action creation with entity connection**
-No path to create an action from scratch — every action enters via briefing pipeline, post-meeting capture, inbox processing, or transcript parsing. Violates P3 (Buttons, Not Commands). New `create_action` Tauri command + inline creation row on ActionsPage + "Add action" on entity detail pages. `person_id` FK on actions table. Does NOT include field editing after creation (see I128).
-
-**I128: Action field editing after creation** — Blocked by I127
-Most action fields are immutable after creation. Only priority and status can be changed. Title, due_date, context, source_label, entity connections are write-once. New `update_action` command accepting partial field set. Editable fields inline on ActionDetailPage. Guard: warn before editing briefing-generated actions (would be overwritten on next briefing run).
-
-**I144: Batch archive low-priority emails via Gmail API**
-AI triages emails into high/medium/low priority. Low-priority emails are already collapsed under "FYI" on EmailsPage. Add a one-click "Archive all" action that removes the INBOX label from all low-priority emails via Gmail `batchModify` API. Three parts:
-(a) **gmail.rs** — `archive_emails(access_token, message_ids)` using `POST /gmail/v1/users/me/messages/batchModify` with `removeLabelIds: ["INBOX"]`.
-(b) **commands.rs** — `archive_low_priority_emails` Tauri command that reads current emails.json, collects low-priority IDs, calls Gmail archive, then removes them from the local JSON.
-(c) **EmailsPage.tsx** — "Archive all" button in the FYI section header. Confirmation step before executing. Optimistic removal from UI on success.
-Gmail archive is soft (emails stay in All Mail, not deleted). Aligns with P6 (AI-Native: AI triaged, one button to act) and P3 (Buttons, Not Commands).
-
 **I26: Web search for unknown external meetings**
 When a meeting involves people/companies not in the workspace, prep is thin. Pattern exists: I74 does websearch for known accounts. Extend to unknown meeting attendees: detect unrecognized domains, research company + attendee context, inject into prep. Not blocked by I27.
 
-**I94: Week page Phase 2 — AI enrichment + briefing layout** — ADR-0052
-`weekNarrative` + `topPriority` AI fields. Layout restructure from dashboard feel to briefing feel. Remove Card wrappers, full-width narrative prose, taper visual density. Research: `docs/research/2026-02-08-weekly-briefing-ux-research.md`.
-
-**I95: Week page Phase 3 — proactive suggestions** — ADR-0052, blocked by I94
+**I95: Week page Phase 3 — proactive suggestions** — ADR-0052
 Draft agenda requests, pre-fill preps, suggest tasks for open blocks. Time blocking proactivity setting. Only "suggestions" ships initially.
 
 **I140: Branded Google OAuth success page**
@@ -112,11 +54,11 @@ Reduce friction for feeding external context into the system. Form factor TBD �
 ### Parking Lot (post-ship, blocked by I27 or needs usage data)
 
 **I27: Entity-mode architecture — umbrella issue**
-ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues: I53, I54, I55. I50 and I52 promoted to Sprint 9 (ship blocker). Current state: `entities` table and `accounts` overlay exist (ADR-0045), bridge pattern proven. Remaining scope: entity-mode config (I53), MCP integration framework (I54), intelligence layers (I35/I55), entity mention extraction, cross-entity content linking.
+ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues: I53, I54, I55. I50/I52/I129 shipped in Sprint 9 (entity relationship graph complete). Current state: `entities` table, `accounts`/`projects` overlays, `meeting_entities` junction, people sub-entity all exist. Bridge pattern proven. Remaining scope: entity-mode config (I53), MCP integration framework (I54), intelligence layers (I35/I55), entity mention extraction, cross-entity content linking.
 
 **I40: CS Kit — account-mode fields, templates, and vocabulary** — Blocked by I27
 
-**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I52 (Sprint 9)
+**I53: Entity-mode config, onboarding, and UI adaptation** — Blocked by I27
 
 **I54: MCP client integration framework** — Blocked by I27
 
@@ -139,6 +81,34 @@ ADR-0046 three-layer architecture: Core + Entity Mode + Integrations. Sub-issues
 **I92: User-configurable metadata fields** — Blocked by I27, ADR-0051
 
 ### Closed
+
+**I50:** Resolved. Sprint 9. Projects as first-class entities. `projects` overlay table, CRUD commands, ProjectsPage + ProjectDetailPage (mirrors account patterns). Content indexing + intelligence enrichment via shared entity_intel.rs module.
+
+**I52:** Resolved. Sprint 9. Meeting-entity M2M junction table (`meeting_entities`). Auto-association from attendee domains. `update_meeting_entity` orchestrator with cascade to actions, captures, and intelligence queue. Interactive EntityPicker on MeetingCard. Entity overlay in `get_dashboard_data`. ADR-0059 entity directory template (3-folder scaffold bootstrapped on creation, BU detection excludes managed dirs).
+
+**I129:** Resolved. Sprint 9. People entity editability — editable names, account linking via EntityPicker, manual person creation, promoted notes. People as useful nodes in the relationship graph.
+
+**I119:** Resolved. Gmail header extraction works correctly in Rust-native `gmail.rs` (`format=metadata` + `metadataHeaders` + case-insensitive lookup). Original bug was in the Python-era implementation, fixed by Sprint 8 port (I83-I85).
+
+**I127:** Resolved. `create_action` Tauri command with full field support (title, priority, due_date, entity connections, context, source_label, person_id). `useActions` hook. Inline "Add action" on ActionsPage + AccountDetailPage.
+
+**I128:** Resolved. `update_action` Tauri command with partial-field updates and `clear_*` flags for nullable fields. ActionDetailPage with click-to-edit title, context, source label, account (EntityPicker), due date.
+
+**I144:** Resolved. `archive_emails` in gmail.rs via `batchModify` API (remove INBOX label). `archive_low_priority_emails` Tauri command. "Archive all" button on EmailsPage FYI section.
+
+**I94:** Resolved. ADR-0052. `weekNarrative` + `topPriority` AI fields parsed from enrichment response. WeekPage renders narrative prose and top priority card. Parsers + tests in deliver.rs.
+
+**I123:** Resolved. Production Google OAuth credentials embedded in `google_api/mod.rs` via `embedded_credentials()`. DailyOS Google Cloud project (dailyos-487000). File-based `credentials.json` still overrides for dev. Users no longer need to supply their own credentials.
+
+**I139:** Resolved. File summary extraction handled by hygiene scanner backfill (I145). `extract_and_summarize()` in entity_intel.rs runs for files with NULL summary. Enrichment char caps and PTY timeout hotfixes already shipped. Recency sort already applied (I138 hotfix).
+
+**I145:** Resolved. Hygiene scanner module (hygiene.rs) with gap detection queries, mechanical fixes (relationship reclassification, orphaned meeting linking, meeting count recomputation, file summary backfill), and background loop (30s startup delay, 4-hour cycle). 19 tests. ADR-0058.
+
+**I146:** Resolved. Email display name extraction from From headers. Auto-link people to entities by domain matching. AI-budgeted gap filling with ProactiveHygiene priority (lowest) in IntelligenceQueue. HygieneBudget with AtomicU32 counter and daily reset. 8 tests.
+
+**I147:** Resolved. Pre-meeting intelligence refresh (2-hour window, 7-day staleness threshold) integrated into calendar poller. Overnight batch scan with expanded AI budget (20 vs 10 daytime). maintenance.json output consumed by morning briefing enrichment. 7 tests.
+
+**I148:** Resolved. `get_hygiene_report` Tauri command. System Health card on SettingsPage showing last scan time, gap counts, and fixes applied.
 
 **I130:** Resolved. intelligence.json schema, entity_intelligence DB table, CRUD in db.rs, TypeScript EntityIntelligence type. CompanyOverview migration. Foundation for ADR-0057.
 
