@@ -291,6 +291,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 .as_ref()
                                 .map(|c| c.profile.clone())
                                 .unwrap_or_else(|| "customer-success".to_string());
+                            let ai_config = config
+                                .as_ref()
+                                .map(|c| c.ai_models.clone())
+                                .unwrap_or_default();
 
                             let db_guard = state.db.lock().ok();
                             let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
@@ -302,6 +306,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                     &prompt.meeting,
                                     db_ref,
                                     &profile,
+                                    Some(&ai_config),
                                 );
 
                             if result.status == "success" {
