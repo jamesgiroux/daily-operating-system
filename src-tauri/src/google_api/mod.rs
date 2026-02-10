@@ -176,12 +176,14 @@ pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
     Ok(())
 }
 
-/// Load client credentials from credentials.json.
+/// Load client credentials.
 ///
 /// Resolution order:
-/// 1. ~/.dailyos/google/credentials.json (primary)
+/// 1. ~/.dailyos/google/credentials.json (dev override)
 /// 2. <workspace>/.config/google/credentials.json (CLI-era fallback)
+/// 3. Embedded defaults (production — I123)
 pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, GoogleApiError> {
+    // Dev override: file on disk takes priority
     let primary = credentials_path();
     if primary.exists() {
         let content = std::fs::read_to_string(&primary)?;
@@ -200,7 +202,25 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
         }
     }
 
-    Err(GoogleApiError::CredentialsNotFound(primary))
+    // Production defaults — no credentials.json needed
+    Ok(embedded_credentials())
+}
+
+/// Built-in OAuth client credentials (I123).
+///
+/// These are the production DailyOS Desktop App credentials registered in
+/// Google Cloud. Users don't need to supply their own credentials.json.
+/// A file on disk still overrides these for local development.
+fn embedded_credentials() -> ClientCredentials {
+    ClientCredentials {
+        installed: InstalledAppCredentials {
+            client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com".to_string(),
+            client_secret: "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".to_string(),
+            auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
+            token_uri: "https://oauth2.googleapis.com/token".to_string(),
+            redirect_uris: vec!["http://localhost".to_string()],
+        },
+    }
 }
 
 // ============================================================================
