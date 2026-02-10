@@ -118,11 +118,13 @@ pub fn resolve_account_dir(workspace: &Path, account: &DbAccount) -> PathBuf {
 ///
 /// BU directories have human-readable names (no numeric prefix).
 /// Internal org folders start with digits (`01-Customer-Information`, `02-Meetings`).
+/// App-managed entity subdirs (`Call-Transcripts`, etc.) are excluded (ADR-0059).
 /// We already skip `_`/`.`-prefixed dirs elsewhere.
 pub fn is_bu_directory(name: &str) -> bool {
     !name.starts_with(|c: char| c.is_ascii_digit())
         && !name.starts_with('_')
         && !name.starts_with('.')
+        && !crate::util::MANAGED_ENTITY_DIRS.contains(&name)
 }
 
 /// Write `dashboard.json` for an account.
@@ -1405,6 +1407,10 @@ END_ENRICHMENT";
         assert!(!is_bu_directory("02-Meetings"));
         assert!(!is_bu_directory("_archive"));
         assert!(!is_bu_directory(".hidden"));
+        // App-managed entity subdirs (ADR-0059) must NOT be treated as BUs
+        assert!(!is_bu_directory("Call-Transcripts"));
+        assert!(!is_bu_directory("Meeting-Notes"));
+        assert!(!is_bu_directory("Documents"));
     }
 
     #[test]
