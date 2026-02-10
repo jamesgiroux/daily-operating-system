@@ -1,5 +1,89 @@
 use std::path::{Path, PathBuf};
 
+// ─── Entity Directory Template ──────────────────────────────────────────────
+//
+// Core subdirectories created inside every entity (account or project).
+// These are app-managed — the user can add more, but these always exist.
+
+/// App-managed subdirectory names inside entity directories.
+/// Used by `is_bu_directory` to distinguish these from BU child accounts.
+pub const MANAGED_ENTITY_DIRS: &[&str] = &["Call-Transcripts", "Meeting-Notes", "Documents"];
+
+/// Bootstrap the standard directory template inside an entity directory.
+///
+/// Creates `Call-Transcripts/`, `Meeting-Notes/`, `Documents/` with README
+/// files that help external tools (Claude Desktop, CLI tools) understand
+/// the structure. Idempotent — skips existing directories, never overwrites.
+pub fn bootstrap_entity_directory(
+    entity_dir: &Path,
+    entity_name: &str,
+    entity_type: &str, // "account" or "project"
+) -> Result<(), String> {
+    // Root README
+    let root_readme = entity_dir.join("README.md");
+    if !root_readme.exists() {
+        let content = format!(
+            r#"# {name}
+
+This directory is managed by [DailyOS](https://dailyos.dev). It contains operational intelligence for the {etype} "{name}".
+
+## Structure
+
+- `dashboard.json` — Structured data (factual fields, metrics). Machine-readable.
+- `dashboard.md` — Generated overview. Human and AI readable. Do not edit directly.
+- `intelligence.json` — AI-synthesized intelligence. Auto-updated when content changes.
+- `Call-Transcripts/` — Meeting call transcripts with YAML frontmatter.
+- `Meeting-Notes/` — Meeting summaries, notes, and outcomes.
+- `Documents/` — General documents related to this {etype}.
+
+## For AI Tools
+
+Read `dashboard.md` for a comprehensive overview of this {etype}. For structured data, read `dashboard.json` and `intelligence.json`. All markdown files in this directory tree are indexed for intelligence enrichment — adding files here improves the AI's understanding of this {etype}.
+"#,
+            name = entity_name,
+            etype = entity_type,
+        );
+        std::fs::write(&root_readme, content)
+            .map_err(|e| format!("Failed to write README: {}", e))?;
+    }
+
+    // Subdirectories with READMEs
+    let subdirs: &[(&str, &str)] = &[
+        (
+            "Call-Transcripts",
+            "Meeting call transcripts. Files include YAML frontmatter with meeting metadata (ID, title, account, date, type). New transcripts placed here are automatically indexed for intelligence enrichment.",
+        ),
+        (
+            "Meeting-Notes",
+            "Meeting summaries, notes, and outcomes. Captures from post-meeting prompts and manually added notes. Indexed for intelligence enrichment.",
+        ),
+        (
+            "Documents",
+            "General documents related to this entity. Inbox-processed files, reports, and reference material. Any file added here is automatically indexed for intelligence enrichment.",
+        ),
+    ];
+
+    for (dir_name, description) in subdirs {
+        let dir_path = entity_dir.join(dir_name);
+        if !dir_path.exists() {
+            std::fs::create_dir_all(&dir_path)
+                .map_err(|e| format!("Failed to create {}: {}", dir_name, e))?;
+        }
+        let readme_path = dir_path.join("README.md");
+        if !readme_path.exists() {
+            let content = format!(
+                "# {dir}\n\n{desc}\n",
+                dir = dir_name.replace('-', " "),
+                desc = description,
+            );
+            std::fs::write(&readme_path, content)
+                .map_err(|e| format!("Failed to write {}/README.md: {}", dir_name, e))?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Validates a filename resolves within the inbox directory.
 /// Returns the resolved path or an error if traversal is detected.
 pub fn validate_inbox_path(workspace: &Path, filename: &str) -> Result<PathBuf, String> {
@@ -297,5 +381,59 @@ mod tests {
         atomic_write_str(&path, "first").unwrap();
         atomic_write_str(&path, "second").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+    }
+
+    // Entity directory template tests
+
+    #[test]
+    fn test_bootstrap_entity_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let entity_dir = dir.path().join("Acme");
+        std::fs::create_dir_all(&entity_dir).unwrap();
+
+        bootstrap_entity_directory(&entity_dir, "Acme", "account").unwrap();
+
+        // Verify subdirectories exist
+        assert!(entity_dir.join("Call-Transcripts").is_dir());
+        assert!(entity_dir.join("Meeting-Notes").is_dir());
+        assert!(entity_dir.join("Documents").is_dir());
+
+        // Verify READMEs exist
+        assert!(entity_dir.join("README.md").exists());
+        assert!(entity_dir.join("Call-Transcripts/README.md").exists());
+        assert!(entity_dir.join("Meeting-Notes/README.md").exists());
+        assert!(entity_dir.join("Documents/README.md").exists());
+
+        // Verify root README has entity name and type
+        let readme = std::fs::read_to_string(entity_dir.join("README.md")).unwrap();
+        assert!(readme.contains("Acme"));
+        assert!(readme.contains("account"));
+    }
+
+    #[test]
+    fn test_bootstrap_entity_directory_idempotent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let entity_dir = dir.path().join("Beta");
+        std::fs::create_dir_all(&entity_dir).unwrap();
+
+        // Write a custom README first
+        std::fs::write(entity_dir.join("README.md"), "# Custom").unwrap();
+
+        bootstrap_entity_directory(&entity_dir, "Beta", "project").unwrap();
+
+        // Custom README should NOT be overwritten
+        let readme = std::fs::read_to_string(entity_dir.join("README.md")).unwrap();
+        assert_eq!(readme, "# Custom");
+
+        // But subdirectories should still be created
+        assert!(entity_dir.join("Call-Transcripts").is_dir());
+    }
+
+    #[test]
+    fn test_managed_entity_dirs_constant() {
+        assert_eq!(MANAGED_ENTITY_DIRS.len(), 3);
+        assert!(MANAGED_ENTITY_DIRS.contains(&"Call-Transcripts"));
+        assert!(MANAGED_ENTITY_DIRS.contains(&"Meeting-Notes"));
+        assert!(MANAGED_ENTITY_DIRS.contains(&"Documents"));
     }
 }

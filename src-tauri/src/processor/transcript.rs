@@ -56,7 +56,7 @@ pub fn process_transcript(
         workspace
             .join("Accounts")
             .join(&account_dir)
-            .join("01-Customer-Information")
+            .join("Call-Transcripts")
             .join(&dest_filename)
     } else {
         workspace.join("_archive").join(&date).join(&dest_filename)
@@ -345,7 +345,7 @@ Respond in exactly this format:
 
 SUMMARY: <2-3 sentence summary of the meeting discussion and outcomes>
 ACTIONS:
-- <action with optional P1/P2/P3, @Account, due: YYYY-MM-DD, #context>
+- <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
 - <positive outcome, success signal, or customer win>
@@ -358,13 +358,18 @@ DECISIONS:
 END_DECISIONS
 
 Rules for actions:
+- TITLE MUST be concise and imperative: verb + object, max 10 words. Not a sentence, not a description — a task.
+  - Good: "Follow up on renewal pricing"
+  - Bad: "Follow up with the client regarding the renewal discussion they mentioned during the quarterly business review"
 - Include priority when urgency is inferable (P1=urgent, P2=normal, P3=low)
 - Include @AccountName when action relates to a specific customer/account
 - Include due: YYYY-MM-DD when a deadline is mentioned or implied
-- Include #context for topic category (billing, onboarding, support, etc.)
-- Use "waiting" or "blocked" if action depends on someone else
+- Include #"context" with a short sentence explaining WHY this action matters or WHAT was discussed. Use quotes around multi-word context.
+  - Good: #"Renewal decision pending CFO approval, budget freeze risk"
+  - Bad: #billing
+- Use "waiting" or "blocked" in the title if action depends on someone else
 - If no metadata can be inferred, just write the action text plainly
-- Example: P1 @Acme Follow up on renewal due: 2026-03-15 #billing
+- Example: Follow up on renewal P1 @Acme due: 2026-03-15 #"CFO needs pricing comparison before Q2 budget lock"
 
 Rules for wins/risks:
 - Wins: successful launches, expanded usage, positive feedback, renewals, upsells
@@ -506,6 +511,10 @@ mod tests {
         assert!(prompt.contains("customer"));
         assert!(prompt.contains("Hello world transcript"));
         assert!(prompt.contains("DECISIONS:"));
+        // Verify concise title instructions
+        assert!(prompt.contains("max 10 words"));
+        // Verify quoted context format
+        assert!(prompt.contains("#\""));
     }
 
     #[test]
@@ -543,13 +552,13 @@ mod tests {
         let destination = workspace
             .join("Accounts")
             .join(&account_dir)
-            .join("01-Customer-Information")
+            .join("Call-Transcripts")
             .join(&dest_filename);
 
         assert_eq!(
             destination,
             PathBuf::from(
-                "/workspace/Accounts/Acme-Corp/01-Customer-Information/2026-02-07-acme-qbr-transcript.md"
+                "/workspace/Accounts/Acme-Corp/Call-Transcripts/2026-02-07-acme-qbr-transcript.md"
             )
         );
     }

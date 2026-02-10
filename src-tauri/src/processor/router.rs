@@ -27,20 +27,32 @@ pub fn resolve_destination(
     filename: &str,
 ) -> Option<PathBuf> {
     match classification {
-        Classification::MeetingNotes { .. } => {
-            // Route to archive/YYYY-MM-DD/
-            let date = Utc::now().format("%Y-%m-%d").to_string();
-            Some(workspace.join("_archive").join(&date).join(filename))
+        Classification::MeetingNotes { account } => {
+            if let Some(account) = account {
+                // Route to Accounts/<name>/Meeting-Notes/ (ADR-0059)
+                let account_dir = sanitize_dir_name(account);
+                Some(
+                    workspace
+                        .join("Accounts")
+                        .join(&account_dir)
+                        .join("Meeting-Notes")
+                        .join(filename),
+                )
+            } else {
+                // No account — route to archive
+                let date = Utc::now().format("%Y-%m-%d").to_string();
+                Some(workspace.join("_archive").join(&date).join(filename))
+            }
         }
 
         Classification::AccountUpdate { account } => {
-            // Route to Accounts/<name>/01-Customer-Information/
+            // Route to Accounts/<name>/Documents/ (ADR-0059)
             let account_dir = sanitize_dir_name(account);
             Some(
                 workspace
                     .join("Accounts")
                     .join(&account_dir)
-                    .join("01-Customer-Information")
+                    .join("Documents")
                     .join(filename),
             )
         }
@@ -148,10 +160,25 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_meeting_notes() {
+    fn test_resolve_meeting_notes_with_account() {
         let workspace = Path::new("/workspace");
         let classification = Classification::MeetingNotes {
-            account: Some("acme".to_string()),
+            account: Some("acme corp".to_string()),
+        };
+        let dest = resolve_destination(&classification, workspace, "notes.md");
+        assert!(dest.is_some());
+        let dest = dest.unwrap();
+        assert_eq!(
+            dest,
+            PathBuf::from("/workspace/Accounts/Acme-Corp/Meeting-Notes/notes.md")
+        );
+    }
+
+    #[test]
+    fn test_resolve_meeting_notes_no_account() {
+        let workspace = Path::new("/workspace");
+        let classification = Classification::MeetingNotes {
+            account: None,
         };
         let dest = resolve_destination(&classification, workspace, "notes.md");
         assert!(dest.is_some());
@@ -171,7 +198,7 @@ mod tests {
         let dest = dest.unwrap();
         assert_eq!(
             dest,
-            PathBuf::from("/workspace/Accounts/Acme-Corp/01-Customer-Information/update.md")
+            PathBuf::from("/workspace/Accounts/Acme-Corp/Documents/update.md")
         );
     }
 
