@@ -115,19 +115,23 @@ enum PollError {
 /// Runs as an async task — polls every N minutes during work hours.
 /// Updates AppState with events and emits `calendar-updated` to the frontend.
 pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
-    loop {
-        let interval = get_poll_interval(&state);
-        tokio::time::sleep(Duration::from_secs(interval * 60)).await;
+    // Brief startup delay to let Google auth settle before first poll
+    tokio::time::sleep(Duration::from_secs(5)).await;
 
+    loop {
         // Check if we should poll
         if !should_poll(&state) {
+            tokio::time::sleep(Duration::from_secs(30)).await;
             continue;
         }
 
         // Get workspace path
         let workspace = match get_workspace(&state) {
             Some(p) => p,
-            None => continue,
+            None => {
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                continue;
+            }
         };
 
         // Poll calendar
@@ -185,6 +189,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 log::warn!("Calendar poll error: {}", e);
             }
         }
+
+        // Sleep between polls
+        let interval = get_poll_interval(&state);
+        tokio::time::sleep(Duration::from_secs(interval * 60)).await;
     }
 }
 
@@ -254,12 +262,7 @@ fn generate_preps_for_new_meetings(
             continue;
         }
 
-        let meeting_type_str = match event.meeting_type {
-            MeetingType::Customer => "customer",
-            MeetingType::Qbr => "qbr",
-            MeetingType::Partnership => "partnership",
-            _ => continue,
-        };
+        let meeting_type_str = event.meeting_type.as_str();
 
         let meeting_id = make_meeting_id(
             &event.title,
@@ -447,6 +450,18 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             continue;
         }
 
+        // Ensure meeting exists in DB so record_meeting_attendance can query start_time
+        if let Err(e) = db.ensure_meeting_in_history(
+            &event.id,
+            &event.title,
+            event.meeting_type.as_str(),
+            &event.start.to_rfc3339(),
+            Some(&event.end.to_rfc3339()),
+            event.account.as_deref(),
+        ) {
+            log::warn!("Failed to ensure meeting '{}' in history: {}", event.title, e);
+        }
+
         for email in &event.attendees {
             let email_lower = email.to_lowercase();
 
@@ -457,11 +472,13 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
 
             // Check if person already exists in DB
             let existing = db.get_person_by_email(&email_lower).ok().flatten();
-            if existing.is_some() {
+            if let Some(ref person) = existing {
                 // Person already tracked — auto-link to entity if applicable
-                if let (Some(ref account), Some(ref person)) = (&event.account, &existing) {
+                if let Some(ref account) = event.account {
                     let _ = db.link_person_to_entity(&person.id, account, "associated");
                 }
+                // Record attendance (idempotent — safe across repeated polls)
+                let _ = db.record_meeting_attendance(&event.id, &person.id);
                 continue;
             }
 
@@ -495,6 +512,9 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 if let Some(ref account) = event.account {
                     let _ = db.link_person_to_entity(&id, account, "associated");
                 }
+
+                // Record attendance for the new person
+                let _ = db.record_meeting_attendance(&event.id, &id);
             }
         }
     }

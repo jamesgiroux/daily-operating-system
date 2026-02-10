@@ -2,12 +2,12 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useInbox } from "@/hooks/useInbox";
 import type { InboxFile, InboxFileType } from "@/types";
 import { cn } from "@/lib/utils";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { PageError } from "@/components/PageState";
 import {
   Building2,
@@ -159,6 +159,26 @@ function getProcessingQuote(): string {
 }
 
 // =============================================================================
+// Persistent processing status styles (StatusBadge)
+// =============================================================================
+
+const inboxStatusStyles: Record<string, string> = {
+  completed:
+    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+  needs_enrichment:
+    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
+  error:
+    "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
+};
+
+function formatInboxStatus(value: string): string {
+  if (value === "completed") return "Processed";
+  if (value === "needs_enrichment") return "Needs AI";
+  if (value === "error") return "Error";
+  return value.replace(/_/g, " ");
+}
+
+// =============================================================================
 // Inbox Page
 // =============================================================================
 
@@ -217,6 +237,29 @@ export default function InboxPage() {
       unlisten?.();
     };
   }, [refresh]);
+
+  // ---------------------------------------------------------------------------
+  // Hydrate file states from backend processing status
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    setFileStates((prev) => {
+      const next = { ...prev };
+      for (const file of files) {
+        const existing = prev[file.filename];
+        // Only seed from backend if we don't already have active local state
+        if (!existing || existing.status === "new") {
+          if (file.processingStatus === "error") {
+            next[file.filename] = {
+              ...defaultFileState,
+              status: "error",
+              error: file.processingError,
+            };
+          }
+        }
+      }
+      return next;
+    });
+  }, [files]);
 
   // ---------------------------------------------------------------------------
   // State helpers — reads from `prev` to avoid stale closures
@@ -724,14 +767,22 @@ function InboxRow({
           )}
 
           {isError && (
-            <Badge variant="destructive" className="h-5 text-[10px] px-1.5">Error</Badge>
+            <StatusBadge value="error" styles={inboxStatusStyles} formatLabel={formatInboxStatus} />
           )}
 
-          {!isProcessing && !isError && time && (
+          {!isProcessing && !isError && file.processingStatus && (
+            <StatusBadge
+              value={file.processingStatus}
+              styles={inboxStatusStyles}
+              formatLabel={formatInboxStatus}
+            />
+          )}
+
+          {!isProcessing && !isError && !file.processingStatus && time && (
             <span className="text-xs text-muted-foreground/40">{time}</span>
           )}
 
-          {/* Process button — visible on hover or always on touch */}
+          {/* Process button — always visible */}
           {isProcessing ? (
             <button
               onClick={onCancel}
@@ -746,9 +797,6 @@ function InboxRow({
               className={cn(
                 "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-all",
                 "text-muted-foreground/50 hover:bg-muted hover:text-foreground",
-                "opacity-0 group-hover:opacity-100",
-                // Always visible on touch / when focused
-                "focus-visible:opacity-100",
               )}
             >
               <Zap className="size-3" />

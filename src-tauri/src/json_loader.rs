@@ -109,6 +109,8 @@ pub struct JsonMeeting {
     pub calendar_event_id: Option<String>,
     pub time: String,
     pub end_time: Option<String>,
+    #[serde(default)]
+    pub start_iso: Option<String>,
     pub title: String,
     #[serde(rename = "type")]
     pub meeting_type: String,
@@ -177,6 +179,7 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
             calendar_event_id: m.calendar_event_id,
             time: m.time,
             end_time: m.end_time,
+            start_iso: m.start_iso,
             title: m.title,
             meeting_type,
             account: m.account,

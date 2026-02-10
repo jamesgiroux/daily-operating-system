@@ -2,6 +2,9 @@
 .claude/
 CLAUDE.md
 
+# Internal working documents (backlog, decisions, architecture)
+daybreak/
+
 # Local working documents (PRDs, drafts, notes)
 .docs/
 
