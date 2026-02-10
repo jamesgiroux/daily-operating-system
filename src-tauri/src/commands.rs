@@ -2366,11 +2366,14 @@ pub fn populate_workspace(
             }
         };
 
-        // Create folder (idempotent)
+        // Create folder + directory template (ADR-0059, idempotent)
         let account_dir = workspace.join("Accounts").join(name);
         if let Err(e) = std::fs::create_dir_all(&account_dir) {
             log::warn!("Failed to create account dir '{}': {}", name, e);
             continue;
+        }
+        if let Err(e) = crate::util::bootstrap_entity_directory(&account_dir, name, "account") {
+            log::warn!("Failed to bootstrap account template '{}': {}", name, e);
         }
 
         // Upsert to SQLite (non-fatal)
@@ -2424,6 +2427,15 @@ pub fn populate_workspace(
             tracker_path: Some(format!("Projects/{}", name)),
             updated_at: now.clone(),
         };
+
+        // Create folder + directory template (ADR-0059, idempotent)
+        let project_dir = workspace.join("Projects").join(name);
+        if let Err(e) = std::fs::create_dir_all(&project_dir) {
+            log::warn!("Failed to create project dir '{}': {}", name, e);
+        }
+        if let Err(e) = crate::util::bootstrap_entity_directory(&project_dir, name, "project") {
+            log::warn!("Failed to bootstrap project template '{}': {}", name, e);
+        }
 
         if let Ok(db_guard) = state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
@@ -3672,10 +3684,13 @@ pub fn create_account(
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
 
-    // Create workspace files
+    // Create workspace files + directory template (ADR-0059)
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
+        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+        let _ = std::fs::create_dir_all(&account_dir);
+        let _ = crate::util::bootstrap_entity_directory(&account_dir, &name, "account");
         let _ = crate::accounts::write_account_json(workspace, &account, None, db);
         let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
     }
@@ -3972,10 +3987,13 @@ pub fn create_project(
 
     db.upsert_project(&project).map_err(|e| e.to_string())?;
 
-    // Create workspace files
+    // Create workspace files + directory template (ADR-0059)
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
+        let project_dir = crate::projects::project_dir(workspace, validated_name);
+        let _ = std::fs::create_dir_all(&project_dir);
+        let _ = crate::util::bootstrap_entity_directory(&project_dir, validated_name, "project");
         let _ = crate::projects::write_project_json(workspace, &project, None, db);
         let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
     }
@@ -4146,4 +4164,16 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
         custom_sections: Vec::new(),
         parent_id: account.parent_id.clone(),
     }
+}
+
+/// Get the latest hygiene scan report
+#[tauri::command]
+pub fn get_hygiene_report(
+    state: State<Arc<AppState>>,
+) -> Result<Option<crate::hygiene::HygieneReport>, String> {
+    let guard = state
+        .last_hygiene_report
+        .lock()
+        .map_err(|_| "Lock poisoned".to_string())?;
+    Ok(guard.clone())
 }
