@@ -90,7 +90,7 @@ They appreciate:
 - Compiles into a daily overview
 
 **8:00 AM — You open DailyOS**
-- Today's overview is ready
+- Your daily briefing is ready
 - Meeting prep cards are populated
 - Actions needing attention are surfaced
 - You read it with your coffee
