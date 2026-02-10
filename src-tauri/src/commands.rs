@@ -743,8 +743,22 @@ pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
     };
 
     let workspace = Path::new(&config.workspace_path);
-    let files = list_inbox_files(workspace);
+    let mut files = list_inbox_files(workspace);
     let count = files.len();
+
+    // Enrich files with persistent processing status from DB
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(status_map) = db.get_latest_processing_status() {
+                for file in &mut files {
+                    if let Some((status, error)) = status_map.get(&file.filename) {
+                        file.processing_status = Some(status.clone());
+                        file.processing_error = error.clone();
+                    }
+                }
+            }
+        }
+    }
 
     if files.is_empty() {
         InboxResult::Empty {
@@ -843,12 +857,13 @@ pub async fn enrich_inbox_file(
     crate::util::validate_inbox_path(workspace, &filename)?;
 
     let user_ctx = crate::types::UserContext::from_config(&config);
+    let ai_config = config.ai_models.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile, Some(&user_ctx))
+        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile, Some(&user_ctx), Some(&ai_config))
     })
     .await
     .map_err(|e| format!("AI processing task failed: {}", e))
@@ -1247,6 +1262,43 @@ pub fn set_developer_mode(
 ) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.developer_mode = enabled;
+    })
+}
+
+/// Set AI model for a tier (synthesis, extraction, mechanical)
+#[tauri::command]
+pub fn set_ai_model(
+    tier: String,
+    model: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    // Validate tier
+    let valid_tiers = ["synthesis", "extraction", "mechanical"];
+    if !valid_tiers.contains(&tier.as_str()) {
+        return Err(format!(
+            "Invalid tier '{}'. Must be one of: {}",
+            tier,
+            valid_tiers.join(", ")
+        ));
+    }
+
+    // Validate model
+    let valid_models = ["opus", "sonnet", "haiku"];
+    if !valid_models.contains(&model.as_str()) {
+        return Err(format!(
+            "Invalid model '{}'. Must be one of: {}",
+            model,
+            valid_models.join(", ")
+        ));
+    }
+
+    crate::state::create_or_update_config(&state, |config| {
+        match tier.as_str() {
+            "synthesis" => config.ai_models.synthesis = model.clone(),
+            "extraction" => config.ai_models.extraction = model.clone(),
+            "mechanical" => config.ai_models.mechanical = model.clone(),
+            _ => {} // unreachable after validation
+        }
     })
 }
 
@@ -1942,6 +1994,7 @@ pub async fn attach_meeting_transcript(
     let state_clone = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
+    let ai_config = config.ai_models.clone();
     let meeting_id = meeting.id.clone();
     let meeting_clone = meeting.clone();
     let file_path_for_record = file_path.clone();
@@ -1956,6 +2009,7 @@ pub async fn attach_meeting_transcript(
             &meeting_clone,
             db_ref,
             &profile,
+            Some(&ai_config),
         )
     })
     .await
@@ -3119,6 +3173,87 @@ pub fn create_person(
     Ok(id)
 }
 
+/// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
+/// Also cleans up filesystem directories and regenerates the kept person's files.
+#[tauri::command]
+pub fn merge_people(
+    keep_id: String,
+    remove_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Get removed person's info before merge (for filesystem cleanup)
+    let removed = db
+        .get_person(&remove_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Person not found: {}", remove_id))?;
+
+    // Perform DB merge
+    db.merge_people(&keep_id, &remove_id)
+        .map_err(|e| e.to_string())?;
+
+    // Filesystem cleanup
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+
+        // Remove the merged-away person's directory
+        let remove_dir = if let Some(ref tp) = removed.tracker_path {
+            workspace.join(tp)
+        } else {
+            crate::people::person_dir(workspace, &removed.name)
+        };
+        if remove_dir.exists() {
+            let _ = std::fs::remove_dir_all(&remove_dir);
+        }
+
+        // Regenerate kept person's files
+        if let Ok(Some(kept)) = db.get_person(&keep_id) {
+            let _ = crate::people::write_person_json(workspace, &kept, db);
+            let _ = crate::people::write_person_markdown(workspace, &kept, db);
+        }
+    }
+
+    Ok(keep_id)
+}
+
+/// Delete a person and all their references. Also removes their filesystem directory.
+#[tauri::command]
+pub fn delete_person(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Get person info before delete (for filesystem cleanup)
+    let person = db
+        .get_person(&person_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Person not found: {}", person_id))?;
+
+    // Perform DB delete
+    db.delete_person(&person_id).map_err(|e| e.to_string())?;
+
+    // Filesystem cleanup
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let person_dir = if let Some(ref tp) = person.tracker_path {
+            workspace.join(tp)
+        } else {
+            crate::people::person_dir(workspace, &person.name)
+        };
+        if person_dir.exists() {
+            let _ = std::fs::remove_dir_all(&person_dir);
+        }
+    }
+
+    Ok(())
+}
+
 /// Enrich a person with intelligence assessment (relationship intelligence).
 #[tauri::command]
 pub async fn enrich_person(
@@ -3139,7 +3274,11 @@ pub async fn enrich_person(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Person not found: {}", person_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(180);
+    let ai_config = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    };
+    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
@@ -3771,7 +3910,11 @@ pub async fn enrich_account(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(180);
+    let ai_config = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    };
+    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,
@@ -4105,7 +4248,11 @@ pub async fn enrich_project(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Project not found: {}", project_id))?;
 
-    let pty = crate::pty::PtyManager::new().with_timeout(180);
+    let ai_config = {
+        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
+        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    };
+    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
     crate::entity_intel::enrich_entity_intelligence(
         std::path::Path::new(&workspace_path),
         db,

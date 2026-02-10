@@ -196,6 +196,7 @@ pub fn run() {
             commands::set_entity_mode,
             commands::set_workspace_path,
             commands::set_developer_mode,
+            commands::set_ai_model,
             commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
@@ -259,6 +260,8 @@ pub fn run() {
             commands::update_meeting_entity,
             // I129: Person Creation
             commands::create_person,
+            commands::merge_people,
+            commands::delete_person,
             // I51: People
             commands::get_people,
             commands::get_person_detail,

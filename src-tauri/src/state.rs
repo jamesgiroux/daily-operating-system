@@ -291,6 +291,7 @@ pub fn create_or_update_config(
                 user_title: None,
                 user_focus: None,
                 developer_mode: false,
+                ai_models: crate::types::AiModelConfig::default(),
             }
         }
     };

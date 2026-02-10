@@ -16,16 +16,15 @@ use tokio::sync::mpsc;
 
 use crate::error::ExecutionError;
 use crate::notification::send_notification;
-use crate::pty::PtyManager;
+use crate::pty::{ModelTier, PtyManager};
 use crate::scheduler::SchedulerMessage;
 use crate::state::{create_execution_record, AppState};
-use crate::types::{ExecutionTrigger, WorkflowId, WorkflowPhase, WorkflowStatus};
+use crate::types::{AiModelConfig, ExecutionTrigger, WorkflowId, WorkflowPhase, WorkflowStatus};
 
 /// Executor manages workflow execution
 pub struct Executor {
     state: Arc<AppState>,
     app_handle: AppHandle,
-    pty_manager: PtyManager,
 }
 
 impl Executor {
@@ -33,8 +32,17 @@ impl Executor {
         Self {
             state,
             app_handle,
-            pty_manager: PtyManager::new(),
         }
+    }
+
+    /// Read AI model config from current config, falling back to defaults.
+    fn ai_model_config(&self) -> AiModelConfig {
+        self.state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+            .unwrap_or_default()
     }
 
     /// Start the executor loop
@@ -299,14 +307,15 @@ impl Executor {
         let to_enrich = &needs_enrichment[..needs_enrichment.len().min(MAX_ENRICHMENTS_PER_BATCH)];
         let mut enriched_count = 0;
 
-        // Build user context for AI prompts
+        // Build user context and AI model config for AI prompts
         let user_ctx = self.state.config.read().ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_default();
+        let ai_config = self.ai_model_config();
 
         for filename in to_enrich {
             log::info!("AI enriching '{}'", filename);
-            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile, Some(&user_ctx));
+            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile, Some(&user_ctx), Some(&ai_config));
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
                     log::info!("Enriched '{}' → routed as {}", filename, classification);
@@ -401,9 +410,10 @@ impl Executor {
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
         if let Err(e) = crate::workflow::deliver::enrich_week(
             &data_dir,
-            &self.pty_manager,
+            &synthesis_pty,
             workspace,
             &user_ctx,
             &*self.state,
@@ -578,11 +588,16 @@ impl Executor {
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
+        // Create per-tier PtyManagers (I174)
+        let ai_config = self.ai_model_config();
+        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+
         // AI: Enrich emails (high-priority only, feature-gated I39)
         if email_enabled {
             if let Err(e) = crate::workflow::deliver::enrich_emails(
                 &data_dir,
-                &self.pty_manager,
+                &extraction_pty,
                 &workspace,
                 &user_ctx,
             ) {
@@ -595,7 +610,7 @@ impl Executor {
         if prep_enabled {
             if let Err(e) = crate::workflow::deliver::enrich_preps(
                 &data_dir,
-                &self.pty_manager,
+                &extraction_pty,
                 &workspace,
             ) {
                 log::warn!("Prep enrichment failed (non-fatal): {}", e);
@@ -606,7 +621,7 @@ impl Executor {
         // AI: Generate briefing narrative
         if let Err(e) = crate::workflow::deliver::enrich_briefing(
             &data_dir,
-            &self.pty_manager,
+            &synthesis_pty,
             &workspace,
             &user_ctx,
             &*self.state,
@@ -777,9 +792,10 @@ impl Executor {
         let user_ctx = self.state.config.read().ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &self.ai_model_config());
         if let Err(e) = crate::workflow::deliver::enrich_emails(
             &data_dir,
-            &self.pty_manager,
+            &extraction_pty,
             workspace,
             &user_ctx,
         ) {
