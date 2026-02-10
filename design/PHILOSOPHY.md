@@ -226,11 +226,11 @@ The system maintains itself. You show up and use what it's prepared. The AI work
 
 | Before | After |
 |--------|-------|
-| You prompt /today | /today already ran |
-| You remember to wrap | The system wraps for you |
+| You prep for meetings | Prep already ran at 6am |
+| You remember to follow up | The system tracks it for you |
 | You schedule tasks | Tasks surface when relevant |
 | You gather context | Context is gathered |
-| You type commands | You click (or just read) |
+| You hunt across 10 apps | You open one app and read |
 
 You stop feeling guilty about "not keeping up with your system" because the system keeps up with you.
 
@@ -289,4 +289,4 @@ That's DailyOS.
 
 ---
 
-*This document represents founding philosophy. It will evolve, but the core conviction won't: the AI-native era demands tools that operate, not tools that wait for you to operate them.*
+*This document represents founding philosophy. The core conviction: the AI-native era demands tools that operate, not tools that wait for you to operate them.*
