@@ -56,25 +56,20 @@ The user's first interaction is consumption, not configuration. Reading, not pro
 
 ## Principle 3: Buttons, Not Commands
 
-**Every CLI action must have a GUI equivalent.**
+**Most actions shouldn't require user interaction at all.**
 
-If power users can do something by typing a command, regular users must be able to do it by clicking a button. The interface is a translation layer, not a limitation.
-
-But more importantly: **most actions shouldn't require either.**
-
-| Level | Example |
-|-------|---------|
-| Automatic | Morning brief generates at 6am |
-| One-click | "Refresh" button regenerates on demand |
-| Command | `/today --force` for edge cases |
-
-**The hierarchy of interaction:**
+The hierarchy of interaction:
 1. **Invisible** — It happens without user action (best)
 2. **One-click** — User initiates with minimal effort
 3. **Configuration** — User sets preferences once
-4. **Command** — Power user override (acceptable but not primary)
 
-**The principle:** The best interface is no interface. Automation beats buttons beats commands.
+| Level | Example |
+|-------|---------|
+| Automatic | Daily briefing generates at 6am |
+| One-click | "Run Briefing" button regenerates on demand |
+| Configuration | Change briefing time in settings |
+
+**The principle:** The best interface is no interface. Automation beats buttons beats configuration.
 
 ---
 
@@ -89,7 +84,7 @@ But we're not a prison.
 **Escape hatches exist:**
 - Don't like the folder structure? Change it.
 - Want different timing? Configure it.
-- Need something we didn't think of? Build a plugin.
+- Need something we didn't think of? Build an extension.
 - Hate a feature entirely? Turn it off.
 
 **The balance:**
@@ -287,4 +282,4 @@ Sometimes principles conflict. Here's how to resolve:
 
 ---
 
-*These principles are guardrails, not handcuffs. They exist to guide decisions, not prevent good ideas. When you find yourself wanting to violate one, ask why—sometimes the principle is wrong for the context, and we should update it.*
+*These principles are guardrails, not handcuffs. They exist to guide decisions, not prevent good ideas.*

@@ -2,76 +2,76 @@
 
 > Open the app. Your day is ready.
 
-DailyOS is an AI-powered executive assistant for everyone—not just executives.
+Operational intelligence for your accounts, projects, and people.
 
-**This branch (`feature/daybreak`)** is developing the native desktop app version of DailyOS.
+## What is DailyOS?
 
----
+DailyOS is a native desktop app that connects to your Google Calendar and Gmail, builds persistent intelligence about your accounts, projects, and people, and prepares your day every morning. It runs locally on your machine -- your data stays in markdown and JSON files you own. AI enrichment is powered by Claude Code (your existing subscription, no API keys).
+
+## Install
+
+Download the latest `.dmg` from [GitHub Releases](https://github.com/jamesgiroux/daily-operating-system/releases).
+
+On first launch, macOS Gatekeeper may block the app. Right-click the app, select Open, then confirm.
+
+**Prerequisites:**
+
+- macOS (Apple Silicon)
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- Google account (Calendar + Gmail access, configured during onboarding)
+
+## Features
+
+- Daily briefing with AI-enriched meeting prep
+- Account and project intelligence (executive assessments, risks, wins, stakeholder insights)
+- People tracking with relationship history and meeting patterns
+- Email triage with three-tier AI priority classification
+- Action tracking across briefings, transcripts, and inbox
+- Transcript processing with outcome extraction (actions, decisions, captures)
+- Weekly narrative with priority synthesis and gap analysis
+- Background scheduling (daily briefing, archive, intelligence refresh)
+- Local-first: markdown + JSON on your filesystem, SQLite working store
+- Open source (GPL-3.0)
+
+## Development
+
+```bash
+pnpm install
+pnpm tauri dev
+```
+
+**Prerequisites:** Rust 1.70+, Node.js 18+, pnpm 8+
+
+**Run backend tests:**
+
+```bash
+cd src-tauri && cargo test
+```
+
+There are approximately 500 Rust tests covering the backend.
+
+## Architecture
+
+Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows through three tiers: filesystem (durable markdown + JSON), SQLite (working store), and app memory (ephemeral). AI enrichment runs through Claude Code CLI spawned as a PTY subprocess.
+
+See [ARCHITECTURE.md](daybreak/docs/ARCHITECTURE.md) for full details and 59 [Architecture Decision Records](daybreak/docs/decisions/).
 
 ## Documentation
 
-All product documentation lives in `daybreak/docs/`:
+- [PHILOSOPHY.md](design/PHILOSOPHY.md) -- Why we exist
+- [PRINCIPLES.md](design/PRINCIPLES.md) -- Design principles
+- [VISION.md](design/VISION.md) -- Product vision
+- [ARCHITECTURE.md](daybreak/docs/ARCHITECTURE.md) -- Technical architecture
+- [decisions/](daybreak/docs/decisions/) -- Architecture Decision Records
 
-### Philosophy & Vision
+Product website: [daily-os.com](https://daily-os.com)
 
-| Document | Purpose |
-|----------|---------|
-| [PHILOSOPHY.md](daybreak/docs/PHILOSOPHY.md) | Why we exist. The manifesto. |
-| [PRINCIPLES.md](daybreak/docs/PRINCIPLES.md) | Design principles and decision framework |
-| [VISION.md](daybreak/docs/VISION.md) | Product vision and target user |
+## License
 
-### Product & Planning
+[GPL-3.0](LICENSE)
 
-| Document | Purpose |
-|----------|---------|
-| [JTBD.md](daybreak/docs/JTBD.md) | Jobs to be done, outcomes, hiring criteria |
-| [PRD.md](daybreak/docs/PRD.md) | Feature specifications and requirements |
-| [MVP.md](daybreak/docs/MVP.md) | MVP scope definition—what's in, what's out |
-| [ROADMAP.md](daybreak/docs/ROADMAP.md) | Phases, milestones, dependencies |
+## Links
 
-### Technical
-
-| Document | Purpose |
-|----------|---------|
-| [ARCHITECTURE.md](daybreak/docs/ARCHITECTURE.md) | System design and data flow |
-| [SKILLS.md](daybreak/docs/SKILLS.md) | Commands and skills catalog |
-| [DEVELOPMENT.md](daybreak/docs/DEVELOPMENT.md) | How to build and run locally |
-
----
-
-## Repository Structure
-
-```
-.
-├── daybreak/           # Native app development (codename)
-│   └── docs/           # All product documentation
-│
-├── .claude/            # Claude Code skills
-│   └── skills/         # /arch, /eng, /pm, /ux, /red-team
-│
-├── _archive/           # Original CLI version (reference)
-│   └── dailyos/        # Proof-of-concept that validated the approach
-│
-├── CLAUDE.md           # Claude Code project instructions
-└── LICENSE             # AGPL-3.0
-```
-
----
-
-## Status
-
-**Phase 1: "Your day is ready"** — In Development
-
-See [ROADMAP.md](daybreak/docs/ROADMAP.md) for milestones.
-
----
-
-## Quick Links
-
-- [What's in MVP?](daybreak/docs/MVP.md)
-- [How to build](daybreak/docs/DEVELOPMENT.md)
-- [Architecture](daybreak/docs/ARCHITECTURE.md)
-
----
-
-*DailyOS — the system operates, you leverage.*
+- [Website](https://daily-os.com)
+- [Releases](https://github.com/jamesgiroux/daily-operating-system/releases)
+- [Issues](https://github.com/jamesgiroux/daily-operating-system/issues)
