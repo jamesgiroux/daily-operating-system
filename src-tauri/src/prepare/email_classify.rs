@@ -21,6 +21,46 @@ pub fn extract_email_address(from_field: &str) -> String {
     from_field.trim().to_lowercase()
 }
 
+/// Extract the display name from a "From" header like "Jane Doe <jane@customer.com>".
+///
+/// Returns `Some("Jane Doe")` if a display name is present, `None` for bare emails.
+/// Handles quoted display names: `"Jane Doe" <jane@customer.com>`.
+pub fn extract_display_name(from_field: &str) -> Option<String> {
+    let trimmed = from_field.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Must have angle brackets to have a display name
+    let angle_start = trimmed.find('<')?;
+    if angle_start == 0 {
+        return None; // "<email>" with no name prefix
+    }
+
+    let name_part = trimmed[..angle_start].trim();
+    if name_part.is_empty() {
+        return None;
+    }
+
+    // Strip surrounding quotes
+    let name = name_part.trim_matches('"').trim();
+    if name.is_empty() {
+        return None;
+    }
+
+    // Reject if the "name" is actually an email address
+    if name.contains('@') {
+        return None;
+    }
+
+    // Must have at least two words to be a real name (not "Jdoe")
+    if !name.contains(' ') {
+        return None;
+    }
+
+    Some(name.to_string())
+}
+
 /// Extract domain from an email address.
 pub fn extract_domain(email_addr: &str) -> String {
     if let Some(at_pos) = email_addr.rfind('@') {
@@ -349,5 +389,52 @@ mod tests {
             ),
             "medium"
         );
+    }
+
+    // --- extract_display_name tests ---
+
+    #[test]
+    fn test_display_name_angle_brackets() {
+        assert_eq!(
+            extract_display_name("Jane Doe <jane@customer.com>"),
+            Some("Jane Doe".to_string())
+        );
+    }
+
+    #[test]
+    fn test_display_name_quoted() {
+        assert_eq!(
+            extract_display_name("\"Jane Doe\" <jane@customer.com>"),
+            Some("Jane Doe".to_string())
+        );
+    }
+
+    #[test]
+    fn test_display_name_bare_email() {
+        assert_eq!(extract_display_name("jane@customer.com"), None);
+    }
+
+    #[test]
+    fn test_display_name_empty() {
+        assert_eq!(extract_display_name(""), None);
+    }
+
+    #[test]
+    fn test_display_name_single_word() {
+        // Single word names (e.g. "Jdoe <jdoe@co.com>") are not real names
+        assert_eq!(extract_display_name("Jdoe <jdoe@co.com>"), None);
+    }
+
+    #[test]
+    fn test_display_name_email_in_name() {
+        assert_eq!(
+            extract_display_name("jane@co.com <jane@co.com>"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_display_name_angle_only() {
+        assert_eq!(extract_display_name("<jane@co.com>"), None);
     }
 }

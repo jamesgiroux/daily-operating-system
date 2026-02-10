@@ -29,6 +29,8 @@ const POLL_INTERVAL_SECS: u64 = 5;
 /// Higher numeric value = higher priority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IntelPriority {
+    /// Background maintenance — lowest priority, budget-gated (I146 — ADR-0058).
+    ProactiveHygiene = 0,
     /// Triggered by content file changes in the entity directory.
     ContentChange = 1,
     /// Triggered by calendar changes affecting this entity's meetings.
@@ -67,8 +69,10 @@ impl IntelligenceQueue {
     /// `CONTENT_DEBOUNCE_SECS` — rapid changes within the window are
     /// coalesced into a single request.
     pub fn enqueue(&self, request: IntelRequest) {
-        // Debounce: skip if same entity was enqueued recently (content changes only)
-        if request.priority == IntelPriority::ContentChange {
+        // Debounce: skip if same entity was enqueued recently (low-priority triggers only)
+        if request.priority == IntelPriority::ContentChange
+            || request.priority == IntelPriority::ProactiveHygiene
+        {
             if let Ok(last) = self.last_enqueued.lock() {
                 if let Some(last_time) = last.get(&request.entity_id) {
                     if last_time.elapsed().as_secs() < CONTENT_DEBOUNCE_SECS {
