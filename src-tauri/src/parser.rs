@@ -769,7 +769,13 @@ fn text_preview(path: &Path, file_type: &InboxFileType) -> Option<String> {
     }
 
     if text.len() > 200 {
-        text.truncate(200);
+        // Find a valid char boundary at or before byte 200 to avoid
+        // panicking on multi-byte UTF-8 characters (emojis, accented chars).
+        let mut end = 200;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
         text.push_str("...");
     }
     if text.is_empty() { None } else { Some(text) }

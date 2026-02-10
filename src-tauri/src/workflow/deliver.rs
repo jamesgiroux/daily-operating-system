@@ -1622,6 +1622,31 @@ pub fn enrich_briefing(
         ));
     }
 
+    // I147: Include overnight maintenance summary if available
+    let maintenance_path = data_dir.join("maintenance.json");
+    if let Ok(maintenance_raw) = fs::read_to_string(&maintenance_path) {
+        if let Ok(maintenance) =
+            serde_json::from_str::<crate::hygiene::OvernightReport>(&maintenance_raw)
+        {
+            let total = maintenance.entities_refreshed
+                + maintenance.names_resolved
+                + maintenance.meetings_linked
+                + maintenance.summaries_extracted;
+            if total > 0 {
+                prompt.push_str(&format!(
+                    "\n## Overnight Maintenance\n\
+                     DailyOS refreshed intelligence for {} accounts, resolved names for {} people, \
+                     linked {} meetings, and extracted {} file summaries overnight.\n\
+                     Briefly mention this at the end of the narrative (one sentence).\n",
+                    maintenance.entities_refreshed,
+                    maintenance.names_resolved,
+                    maintenance.meetings_linked,
+                    maintenance.summaries_extracted,
+                ));
+            }
+        }
+    }
+
     prompt.push_str(
         "\nWrite a 2-3 sentence narrative that helps them understand the shape of their day.\n\
          Focus on what matters most — customer calls, overdue items, important emails.\n\

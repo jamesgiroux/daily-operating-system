@@ -150,6 +150,20 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     *guard = events;
                 }
 
+                // Pre-meeting intelligence refresh (I147 — ADR-0058)
+                if let Ok(db_guard) = state.db.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        let refreshed =
+                            crate::hygiene::check_upcoming_meeting_readiness(db, &state.intel_queue);
+                        if !refreshed.is_empty() {
+                            log::info!(
+                                "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
+                                refreshed.len()
+                            );
+                        }
+                    }
+                }
+
                 let _ = app_handle.emit("calendar-updated", ());
 
                 // Notify frontend about new preps
