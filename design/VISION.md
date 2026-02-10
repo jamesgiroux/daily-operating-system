@@ -96,8 +96,7 @@ They appreciate:
 - You read it with your coffee
 
 **8:15 AM — You're prepared**
-- Click "Ready" on the day
-- Minimize the app
+- Close the app
 - Get to work
 
 ### During the Day
@@ -121,17 +120,10 @@ They appreciate:
 
 ### Evening
 
-**5:30 PM — Wrap notification**
-- "Ready to close out?"
-- Click → today's summary appears
-- What you accomplished
-- What's carrying to tomorrow
-- Any loose ends
-
-**5:35 PM — Done**
-- Review takes 2 minutes
-- Click "Close Day"
-- Tomorrow's system runs tonight
+**5:30 PM — Background archive**
+- The system archives today's briefing automatically
+- Captures what happened, what carried over
+- Tomorrow's briefing runs overnight
 - You shut the laptop
 
 ---
@@ -200,23 +192,17 @@ When you walk into a meeting prepared and someone asks "how did you know that?"�
 
 ---
 
-## Evolution
+## How It Works
 
-DailyOS started as a CLI proof-of-concept built on Claude Code—where we tested approaches to productivity, experimented with skills and agents, and identified gaps.
+DailyOS is a native desktop app built with Tauri (Rust + React). All data processing happens locally on your machine.
 
-DailyOS is now becoming a native desktop application. Same primitives underneath (skills, agents, markdown, Python). But wrapped in an interface that doesn't require technical knowledge.
+**The architecture:**
+- **Rust backend** fetches your Google Calendar and Gmail, processes transcripts, manages the working store
+- **Claude Code CLI** (your existing subscription) handles AI enrichment — meeting prep, email triage, entity intelligence, briefing synthesis
+- **Markdown + JSON files** you own are the durable archive — readable by any AI tool, any text editor, any future system
+- **SQLite** serves as the working store for fast queries and cross-referencing
 
-**The evolution:**
-
-```mermaid
-flowchart TB
-    CLI["DailyOS CLI<br/>(proof of concept)"]
-    App["DailyOS App<br/>(native desktop)"]
-    Future["Future: App-first<br/>• Regular users get the app<br/>• Power users access primitives via Claude Code<br/>• Same files, same skills, same agents<br/>• Different interface for different needs"]
-    CLI --> App --> Future
-```
-
-Under the hood, it's the same system. The native app is DailyOS that runs itself.
+No cloud service. No API keys to manage. No vendor lock-in on your data.
 
 ---
 
@@ -265,21 +251,15 @@ Out of the box, DailyOS is opinionated. It makes decisions so you don't have to.
 
 But knowledge work varies. A CS leader needs different intelligence than a VP of Engineering. Account-based work needs different signals than project-based work.
 
-**The customization model (ADR-0046):**
-
 **Entity Mode:** How you organize your work — account-based, project-based, or both. Determines what you track and how meetings associate with entities.
 
-**Kits:** Domain-specific fields, templates, and vocabulary for your role. CS Kit adds account health and renewal tracking. Sales Kit adds pipeline stages. Requires a compatible entity mode.
+**Kits:** Domain-specific fields, templates, and vocabulary for your role. CS Kit adds account health and renewal tracking. Sales Kit adds pipeline stages.
 
-**Intelligence:** Analytical perspectives that change how the system interprets your data. Executive Intelligence adds decision framing and delegation tracking. ProDev Intelligence captures personal impact and career narrative. Works with any entity mode.
+**Intelligence:** Analytical perspectives layered on top. Executive Intelligence adds decision framing and delegation tracking. ProDev Intelligence captures personal impact and career narrative.
 
-**Integrations:** MCP data source connectors. Gong for transcripts. Salesforce for CRM data. Linear for project tracking. Any combination, any entity mode.
+**Integrations:** Data source connectors via MCP. Gong for transcripts. Salesforce for CRM data. Linear for project tracking.
 
-**Configuration:** Timing, working hours, what surfaces and what doesn't. No code required.
-
-**Fork and Own:** It's open source. Your data is markdown. Take it all and go.
-
-The goal: 80% of users pick an entity mode and one or two Kits/Intelligence layers during onboarding. The other 20% compose exactly what they need.
+**Fork and Own:** It's open source (GPL-3.0). Your data is markdown. Take it all and go.
 
 ---
 
@@ -327,4 +307,4 @@ You open DailyOS. Your day is ready. You're prepared.
 
 ---
 
-*This vision will evolve as we build and learn. But the north star stays fixed: the system operates, you leverage. Open the app, your day is ready.*
+*The system operates, you leverage. Open the app, your day is ready.*
