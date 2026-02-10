@@ -8,7 +8,8 @@ use std::path::Path;
 use chrono::Utc;
 
 use crate::db::{ActionDb, DbProcessingLog};
-use crate::pty::PtyManager;
+use crate::pty::{ModelTier, PtyManager};
+use crate::types::AiModelConfig;
 
 use super::classifier::Classification;
 use super::router::{move_file, resolve_destination};
@@ -45,6 +46,7 @@ pub fn enrich_file(
     db: Option<&ActionDb>,
     profile: &str,
     user_ctx: Option<&crate::types::UserContext>,
+    ai_config: Option<&AiModelConfig>,
 ) -> EnrichResult {
     // I60: validate path stays within inbox
     let file_path = match crate::util::validate_inbox_path(workspace, filename) {
@@ -67,8 +69,10 @@ pub fn enrich_file(
     // Build the prompt for Claude
     let prompt = build_enrichment_prompt(filename, &content, user_ctx);
 
-    // Invoke Claude Code via PTY
-    let pty = PtyManager::new().with_timeout(AI_TIMEOUT_SECS);
+    // Invoke Claude Code via PTY (Mechanical tier — I174)
+    let default_config = AiModelConfig::default();
+    let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config.unwrap_or(&default_config))
+        .with_timeout(AI_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,
         Err(e) => {

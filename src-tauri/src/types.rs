@@ -41,6 +41,9 @@ pub struct Config {
     /// Show developer tools panel (wrench icon). Only effective in debug builds.
     #[serde(default)]
     pub developer_mode: bool,
+    /// AI model configuration for tiered operations (I174).
+    #[serde(default)]
+    pub ai_models: AiModelConfig,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -68,6 +71,48 @@ fn default_history_count() -> u32 {
 
 fn default_profile() -> String {
     "customer-success".to_string()
+}
+
+// =============================================================================
+// AI Model Configuration (I174)
+// =============================================================================
+
+/// AI model configuration for tiered operations.
+///
+/// Synthesis: intelligence, briefing, week narrative (needs reasoning).
+/// Extraction: emails, preps (structured extraction from context).
+/// Mechanical: inbox classification, file summaries (simple tasks).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiModelConfig {
+    #[serde(default = "default_synthesis_model")]
+    pub synthesis: String,
+    #[serde(default = "default_extraction_model")]
+    pub extraction: String,
+    #[serde(default = "default_mechanical_model")]
+    pub mechanical: String,
+}
+
+impl Default for AiModelConfig {
+    fn default() -> Self {
+        Self {
+            synthesis: default_synthesis_model(),
+            extraction: default_extraction_model(),
+            mechanical: default_mechanical_model(),
+        }
+    }
+}
+
+fn default_synthesis_model() -> String {
+    "sonnet".to_string()
+}
+
+fn default_extraction_model() -> String {
+    "sonnet".to_string()
+}
+
+fn default_mechanical_model() -> String {
+    "haiku".to_string()
 }
 
 fn default_entity_mode() -> String {
@@ -348,6 +393,10 @@ pub struct InboxFile {
     pub modified: String,
     pub preview: Option<String>,
     pub file_type: InboxFileType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processing_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processing_error: Option<String>,
 }
 
 /// Day overview parsed from _today/overview.md
@@ -384,6 +433,23 @@ pub enum MeetingType {
     AllHands,
     External,
     Personal,
+}
+
+impl MeetingType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MeetingType::Customer => "customer",
+            MeetingType::Qbr => "qbr",
+            MeetingType::Training => "training",
+            MeetingType::Internal => "internal",
+            MeetingType::TeamSync => "team_sync",
+            MeetingType::OneOnOne => "one_on_one",
+            MeetingType::Partnership => "partnership",
+            MeetingType::AllHands => "all_hands",
+            MeetingType::External => "external",
+            MeetingType::Personal => "personal",
+        }
+    }
 }
 
 /// Stakeholder information for meeting prep
@@ -444,6 +510,9 @@ pub struct Meeting {
     pub time: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<String>,
+    /// ISO 8601 start timestamp for reliable date parsing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_iso: Option<String>,
     pub title: String,
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
@@ -1224,6 +1293,7 @@ mod tests {
             user_title: None,
             user_focus: None,
             developer_mode: false,
+            ai_models: AiModelConfig::default(),
         }
     }
 
