@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::{DateTime, Utc};
@@ -12,6 +13,60 @@ use crate::types::{
 
 /// Maximum number of execution records to keep in memory
 const MAX_HISTORY_SIZE: usize = 100;
+
+/// Daily AI call budget for proactive hygiene (I146 — ADR-0058).
+pub struct HygieneBudget {
+    pub daily_ai_calls: AtomicU32,
+    pub daily_limit: u32,
+    /// ISO date string (YYYY-MM-DD) of last reset. Resets at midnight local time.
+    pub last_reset: Mutex<String>,
+}
+
+impl Default for HygieneBudget {
+    fn default() -> Self {
+        Self::new(10) // Daytime default: 10 AI calls/day
+    }
+}
+
+impl HygieneBudget {
+    pub fn new(limit: u32) -> Self {
+        Self {
+            daily_ai_calls: AtomicU32::new(0),
+            daily_limit: limit,
+            last_reset: Mutex::new(Utc::now().format("%Y-%m-%d").to_string()),
+        }
+    }
+
+    /// Check if budget allows another AI call, resetting counter if day changed.
+    pub fn try_consume(&self) -> bool {
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        if let Ok(mut last) = self.last_reset.lock() {
+            if *last != today {
+                self.daily_ai_calls
+                    .store(0, std::sync::atomic::Ordering::Relaxed);
+                *last = today;
+            }
+        }
+
+        let current = self
+            .daily_ai_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if current < self.daily_limit {
+            true
+        } else {
+            // Undo the increment
+            self.daily_ai_calls
+                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            false
+        }
+    }
+
+    /// Current count of AI calls used today.
+    pub fn used_today(&self) -> u32 {
+        self.daily_ai_calls
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
 
 /// Application state managed by Tauri
 pub struct AppState {
@@ -29,6 +84,10 @@ pub struct AppState {
     pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
     /// Background intelligence enrichment queue (I132)
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
+    /// Last hygiene scan report (I145 — ADR-0058)
+    pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
+    /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
+    pub hygiene_budget: HygieneBudget,
 }
 
 impl AppState {
@@ -102,6 +161,8 @@ impl AppState {
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             transcript_processed: Mutex::new(transcript_processed),
             intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
+            last_hygiene_report: Mutex::new(None),
+            hygiene_budget: HygieneBudget::new(10),
         }
     }
 
