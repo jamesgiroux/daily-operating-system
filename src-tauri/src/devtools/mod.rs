@@ -491,24 +491,28 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     )?;
 
     // --- AI enrichment ---
-    let pty = crate::pty::PtyManager::new();
+    let ai_config = state.config.read().ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+    let extraction_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config);
+    let synthesis_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
     let user_ctx = state.config.read().ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
         .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
     let mut enriched = Vec::new();
 
-    match crate::workflow::deliver::enrich_emails(&data_dir, &pty, &workspace, &user_ctx) {
+    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx) {
         Ok(()) => enriched.push("emails"),
         Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
     }
 
-    match crate::workflow::deliver::enrich_preps(&data_dir, &pty, &workspace) {
+    match crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, &workspace) {
         Ok(()) => enriched.push("preps"),
         Err(e) => log::warn!("Prep enrichment failed (non-fatal): {}", e),
     }
 
-    match crate::workflow::deliver::enrich_briefing(&data_dir, &pty, &workspace, &user_ctx, state) {
+    match crate::workflow::deliver::enrich_briefing(&data_dir, &synthesis_pty, &workspace, &user_ctx, state) {
         Ok(()) => enriched.push("briefing"),
         Err(e) => log::warn!("Briefing enrichment failed (non-fatal): {}", e),
     }
@@ -558,12 +562,15 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
     crate::prepare::orchestrate::deliver_week(&workspace)?;
 
     // Phase 3: AI enrichment (fault-tolerant)
-    let pty = crate::pty::PtyManager::new();
+    let ai_config = state.config.read().ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+    let synthesis_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
     let user_ctx = state.config.read().ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
         .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
 
-    match crate::workflow::deliver::enrich_week(&data_dir, &pty, &workspace, &user_ctx, state) {
+    match crate::workflow::deliver::enrich_week(&data_dir, &synthesis_pty, &workspace, &user_ctx, state) {
         Ok(()) => Ok("Week (full): week-overview.json + AI enrichment delivered".into()),
         Err(e) => {
             log::warn!("Week AI enrichment failed (non-fatal): {}", e);

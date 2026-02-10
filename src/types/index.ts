@@ -57,6 +57,8 @@ export interface Meeting {
   calendarEventId?: string;
   time: string;
   endTime?: string;
+  /** ISO 8601 start timestamp for reliable date parsing */
+  startIso?: string;
   title: string;
   type: MeetingType;
   account?: string;
@@ -168,6 +170,8 @@ export interface InboxFile {
   modified: string;
   preview?: string;
   fileType: InboxFileType;
+  processingStatus?: string;
+  processingError?: string;
 }
 
 export type DataFreshness =
@@ -846,6 +850,16 @@ export interface ProjectDetail extends ProjectListItem {
   }[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+}
+
+// =============================================================================
+// AI Model Config (I174)
+// =============================================================================
+
+export interface AiModelConfig {
+  synthesis: string;
+  extraction: string;
+  mechanical: string;
 }
 
 // =============================================================================

@@ -26,10 +26,11 @@ import {
   Loader2,
   ToggleRight,
   Activity,
+  Cpu,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { toast } from "sonner";
-import type { PostMeetingCaptureConfig, FeatureDefinition, EntityMode } from "@/types";
+import type { PostMeetingCaptureConfig, FeatureDefinition, EntityMode, AiModelConfig } from "@/types";
 
 interface Config {
   workspacePath: string;
@@ -160,6 +161,9 @@ export default function SettingsPage() {
 
             {/* Feature Toggles */}
             <FeaturesCard />
+
+            {/* AI Models */}
+            <AiModelsCard />
 
             {/* Entity Mode */}
             <EntityModeCard
@@ -557,6 +561,90 @@ function FeaturesCard() {
             </Button>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+const modelOptions = ["haiku", "sonnet", "opus"] as const;
+
+const tierDescriptions: Record<string, { label: string; description: string }> = {
+  synthesis: {
+    label: "Synthesis",
+    description: "Intelligence, briefings, weekly narrative",
+  },
+  extraction: {
+    label: "Extraction",
+    description: "Emails, meeting preps",
+  },
+  mechanical: {
+    label: "Mechanical",
+    description: "Inbox classification, transcripts",
+  },
+};
+
+function AiModelsCard() {
+  const [aiModels, setAiModels] = useState<AiModelConfig | null>(null);
+
+  useEffect(() => {
+    invoke<{ aiModels?: AiModelConfig }>("get_config")
+      .then((config) => {
+        setAiModels(
+          config.aiModels ?? { synthesis: "sonnet", extraction: "sonnet", mechanical: "haiku" },
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleModelChange(tier: string, model: string) {
+    if (!aiModels) return;
+    try {
+      await invoke("set_ai_model", { tier, model });
+      setAiModels({ ...aiModels, [tier]: model });
+      toast.success(`${tierDescriptions[tier]?.label ?? tier} model set to ${model}`);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update model");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Cpu className="size-4" />
+          AI Models
+        </CardTitle>
+        <CardDescription>
+          Choose which Claude model handles each type of operation
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {(["synthesis", "extraction", "mechanical"] as const).map((tier) => {
+          const info = tierDescriptions[tier];
+          const current = aiModels?.[tier] ?? "sonnet";
+          return (
+            <div key={tier} className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <p className="text-sm font-medium">{info.label}</p>
+                <p className="text-xs text-muted-foreground">{info.description}</p>
+              </div>
+              <div className="flex gap-1">
+                {modelOptions.map((model) => (
+                  <Button
+                    key={model}
+                    variant={current === model ? "default" : "outline"}
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => handleModelChange(tier, model)}
+                    disabled={!aiModels}
+                  >
+                    {model}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </CardContent>
     </Card>
   );
