@@ -134,6 +134,25 @@ pub fn make_meeting_id(summary: &str, start: &str, meeting_type: &str) -> String
     format!("{}-{}-{}", time_prefix, meeting_type, slug)
 }
 
+/// Derive the primary meeting ID from a calendar event (ADR-0061).
+///
+/// Prefers the Google Calendar event ID (stable across runs) with `@` sanitized
+/// for filesystem safety. Falls back to `make_meeting_id()` for non-calendar
+/// meetings or when the event ID is absent.
+pub fn meeting_primary_id(
+    calendar_event_id: Option<&str>,
+    summary: &str,
+    start: &str,
+    meeting_type: &str,
+) -> String {
+    if let Some(eid) = calendar_event_id {
+        if !eid.is_empty() {
+            return eid.replace('@', "_at_");
+        }
+    }
+    make_meeting_id(summary, start, meeting_type)
+}
+
 /// Look up the meeting type for a calendar event by matching its id
 /// against the classified meetings dict from the directive.
 pub fn classify_event(
@@ -348,7 +367,7 @@ pub fn deliver_schedule(
         let summary = event.summary.as_deref().unwrap_or("No title");
         let start = event.start.as_deref().unwrap_or("");
         let end = event.end.as_deref().unwrap_or("");
-        let meeting_id = make_meeting_id(summary, start, meeting_type);
+        let meeting_id = meeting_primary_id(event.id.as_deref(), summary, start, meeting_type);
 
         let mc = find_meeting_context(account.as_deref(), Some(event_id), meeting_contexts);
         let prep_summary = mc.and_then(build_prep_summary);
@@ -363,6 +382,7 @@ pub fn deliver_schedule(
             "id": meeting_id,
             "calendarEventId": event.id,
             "time": format_time_display_tz(start, tz),
+            "startIso": start,
             "title": summary,
             "type": meeting_type,
             "hasPrep": has_prep,
@@ -615,7 +635,6 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
     fs::create_dir_all(&preps_dir)
         .map_err(|e| format!("Failed to create preps dir: {}", e))?;
 
-    let events = &directive.calendar.events;
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
     let mut prep_paths: Vec<String> = Vec::new();
@@ -637,42 +656,19 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
                 continue;
             }
 
-            // Find matching calendar event for stable ID
-            let matched_event = event_id
-                .and_then(|eid| events.iter().find(|e| e.id.as_deref() == Some(eid)));
-
-            let meeting_id = if let Some(ev) = matched_event {
-                make_meeting_id(
-                    ev.summary.as_deref().unwrap_or("meeting"),
-                    ev.start.as_deref().unwrap_or(""),
-                    normalised_type,
-                )
-            } else {
-                let title = meeting
-                    .title
-                    .as_deref()
-                    .or(meeting.summary.as_deref())
-                    .or(account)
-                    .unwrap_or("meeting");
-                let start = meeting
-                    .start_display
-                    .as_deref()
-                    .or(meeting.start.as_deref())
-                    .unwrap_or("");
-                let time_part: String =
-                    start.chars().filter(|c| c.is_ascii_digit()).take(4).collect();
-                let time_part = if time_part.is_empty() {
-                    "0000".to_string()
-                } else {
-                    time_part
-                };
-                let slug_re = Regex::new(r"[^a-z0-9]+").unwrap();
-                let lower = title.to_lowercase();
-                let slug = slug_re.replace_all(&lower, "-");
-                let slug = slug.trim_matches('-');
-                let slug = if slug.len() > 40 { &slug[..40] } else { slug };
-                format!("{}-{}-{}", time_part, normalised_type, slug)
-            };
+            // ADR-0061: Use calendar event ID as primary key, fall back to slug
+            let title = meeting
+                .title
+                .as_deref()
+                .or(meeting.summary.as_deref())
+                .or(account)
+                .unwrap_or("meeting");
+            let start = meeting
+                .start
+                .as_deref()
+                .or(meeting.start_display.as_deref())
+                .unwrap_or("");
+            let meeting_id = meeting_primary_id(event_id, title, start, normalised_type);
 
             let prep_data = build_prep_json(meeting, normalised_type, &meeting_id, mc);
             let rel_path = format!("preps/{}.json", meeting_id);
@@ -701,6 +697,91 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
 
     log::info!("deliver_preps: {} prep files written", prep_paths.len());
     Ok(prep_paths)
+}
+
+/// Check whether a prep JSON file has substantive content beyond stub fields (I166).
+///
+/// A prep is "substantive" if it has any content beyond the mechanical fields
+/// (meetingId, title, meetingType, timeRange). Returns false for stubs that
+/// were written when meeting context gathering found no data.
+pub fn is_substantive_prep(prep_path: &Path) -> bool {
+    let Ok(content) = fs::read_to_string(prep_path) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<Value>(&content) else {
+        return false;
+    };
+    // Content fields that indicate real prep data exists
+    let content_keys = [
+        "context",
+        "quickContext",
+        "attendees",
+        "sinceLast",
+        "strategicPrograms",
+        "currentState",
+        "openItems",
+        "risks",
+        "talkingPoints",
+        "questions",
+        "keyPrinciples",
+        "proposedAgenda",
+        "attendeeContext",
+        "stakeholderSignals",
+    ];
+    content_keys.iter().any(|key| {
+        json.get(key).map_or(false, |v| {
+            !v.is_null()
+                && v.as_str().map_or(true, |s| !s.is_empty())
+                && v.as_array().map_or(true, |a| !a.is_empty())
+                && v.as_object().map_or(true, |o| !o.is_empty())
+        })
+    })
+}
+
+/// Reconcile `hasPrep` flags in schedule.json to reflect actual prep content (I166).
+///
+/// Called after `deliver_preps` and `enrich_preps` to ensure "View Prep" buttons
+/// only appear when the prep file has substantive content.
+pub fn reconcile_prep_flags(data_dir: &Path) -> Result<(), String> {
+    let schedule_path = data_dir.join("schedule.json");
+    if !schedule_path.exists() {
+        return Ok(());
+    }
+
+    let content =
+        fs::read_to_string(&schedule_path).map_err(|e| format!("Read schedule.json: {}", e))?;
+    let mut schedule: Value =
+        serde_json::from_str(&content).map_err(|e| format!("Parse schedule.json: {}", e))?;
+
+    let Some(meetings) = schedule.get_mut("meetings").and_then(|v| v.as_array_mut()) else {
+        return Ok(());
+    };
+
+    let mut updated = false;
+    for meeting in meetings.iter_mut() {
+        if let Some(prep_file) = meeting.get("prepFile").and_then(|v| v.as_str()) {
+            let prep_path = data_dir.join(prep_file);
+            let has_substance = is_substantive_prep(&prep_path);
+            let current = meeting
+                .get("hasPrep")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if current != has_substance {
+                meeting
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("hasPrep".to_string(), json!(has_substance));
+                updated = true;
+            }
+        }
+    }
+
+    if updated {
+        write_json(&schedule_path, &schedule)?;
+        log::info!("reconcile_prep_flags: updated hasPrep flags in schedule.json");
+    }
+
+    Ok(())
 }
 
 /// Build a single prep JSON object (matches JsonPrep in json_loader.rs).
@@ -1364,6 +1445,40 @@ pub fn parse_briefing_narrative(response: &str) -> Option<String> {
     }
 }
 
+/// Parse the AI-generated daily focus statement from Claude's response.
+///
+/// Expects: `FOCUS:\n<single sentence>\nEND_FOCUS`
+pub fn parse_briefing_focus(response: &str) -> Option<String> {
+    let mut in_block = false;
+    let mut lines: Vec<&str> = Vec::new();
+
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("FOCUS:") {
+            in_block = true;
+            let after = trimmed.strip_prefix("FOCUS:").unwrap().trim();
+            if !after.is_empty() {
+                lines.push(after);
+            }
+        } else if trimmed == "END_FOCUS" {
+            break;
+        } else if in_block {
+            lines.push(trimmed);
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    let focus = lines.join(" ").trim().to_string();
+    if focus.is_empty() {
+        None
+    } else {
+        Some(focus)
+    }
+}
+
 /// Classify meeting density for briefing tone adaptation (I37).
 ///
 /// Returns a density label based on meeting count:
@@ -1648,36 +1763,60 @@ pub fn enrich_briefing(
     }
 
     prompt.push_str(
-        "\nWrite a 2-3 sentence narrative that helps them understand the shape of their day.\n\
+        "\nProvide two sections in your response:\n\n\
+         1. A 2-3 sentence narrative that helps them understand the shape of their day.\n\
          Focus on what matters most — customer calls, overdue items, important emails.\n\
          Be direct, not chatty.\n\n\
+         2. A single-sentence focus statement — the one thing that matters most today.\n\
+         This should be actionable and specific, not generic. Think: what would you tell them \
+         if they only had 30 seconds? Reference the specific meeting, account, or deadline.\n\n\
+         Format your response EXACTLY as:\n\n\
          NARRATIVE:\n\
-         <your narrative here>\n\
-         END_NARRATIVE",
+         <your 2-3 sentence narrative>\n\
+         END_NARRATIVE\n\n\
+         FOCUS:\n\
+         <your single-sentence focus>\n\
+         END_FOCUS",
     );
 
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude briefing failed: {}", e))?;
 
-    let narrative = parse_briefing_narrative(&output.stdout);
+    let response = &output.stdout;
+    let narrative = parse_briefing_narrative(response);
+    let focus = parse_briefing_focus(response);
     let _ = fs::remove_file(&context_path);
 
-    match narrative {
-        Some(text) => {
-            schedule
-                .as_object_mut()
-                .unwrap()
-                .insert("narrative".to_string(), json!(text));
-            write_json(&data_dir.join("schedule.json"), &schedule)?;
-            log::info!("enrich_briefing: narrative written ({} chars)", text.len());
-            Ok(())
-        }
-        None => {
-            log::warn!("enrich_briefing: no narrative parsed from Claude output");
-            Ok(())
-        }
+    let mut updated = false;
+
+    if let Some(ref text) = narrative {
+        schedule
+            .as_object_mut()
+            .unwrap()
+            .insert("narrative".to_string(), json!(text));
+        log::info!("enrich_briefing: narrative written ({} chars)", text.len());
+        updated = true;
+    } else {
+        log::warn!("enrich_briefing: no narrative parsed from Claude output");
     }
+
+    if let Some(ref text) = focus {
+        schedule
+            .as_object_mut()
+            .unwrap()
+            .insert("focus".to_string(), json!(text));
+        log::info!("enrich_briefing: focus written ({} chars)", text.len());
+        updated = true;
+    } else {
+        log::warn!("enrich_briefing: no focus parsed from Claude output");
+    }
+
+    if updated {
+        write_json(&data_dir.join("schedule.json"), &schedule)?;
+    }
+
+    Ok(())
 }
 
 /// Parsed enrichment for a single agenda item.
@@ -2569,6 +2708,134 @@ mod tests {
     }
 
     #[test]
+    fn test_meeting_primary_id_prefers_event_id() {
+        let id = meeting_primary_id(
+            Some("abc123_20260210T100000Z@google.com"),
+            "Acme Sync",
+            "2026-02-10T10:00:00+00:00",
+            "customer",
+        );
+        assert_eq!(id, "abc123_20260210T100000Z_at_google.com");
+    }
+
+    #[test]
+    fn test_meeting_primary_id_falls_back_to_slug() {
+        let id = meeting_primary_id(
+            None,
+            "Acme Q1 Sync",
+            "2025-02-07T09:00:00+00:00",
+            "customer",
+        );
+        assert!(id.starts_with("0900-customer-"));
+        assert!(id.contains("acme"));
+    }
+
+    #[test]
+    fn test_meeting_primary_id_empty_event_id_falls_back() {
+        let id = meeting_primary_id(
+            Some(""),
+            "Acme Q1 Sync",
+            "2025-02-07T09:00:00+00:00",
+            "customer",
+        );
+        assert!(id.starts_with("0900-customer-"));
+    }
+
+    #[test]
+    fn test_is_substantive_prep_with_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let prep_path = dir.path().join("prep.json");
+        let prep = json!({
+            "meetingId": "test",
+            "title": "Acme Call",
+            "meetingType": "customer",
+            "context": "Acme is a key customer with $1M ARR",
+            "risks": ["Renewal at risk"],
+        });
+        fs::write(&prep_path, serde_json::to_string(&prep).unwrap()).unwrap();
+        assert!(is_substantive_prep(&prep_path));
+    }
+
+    #[test]
+    fn test_is_substantive_prep_stub_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let prep_path = dir.path().join("prep.json");
+        let prep = json!({
+            "meetingId": "test",
+            "title": "Weekly Sync",
+            "meetingType": "internal",
+        });
+        fs::write(&prep_path, serde_json::to_string(&prep).unwrap()).unwrap();
+        assert!(!is_substantive_prep(&prep_path));
+    }
+
+    #[test]
+    fn test_is_substantive_prep_empty_arrays() {
+        let dir = tempfile::tempdir().unwrap();
+        let prep_path = dir.path().join("prep.json");
+        let prep = json!({
+            "meetingId": "test",
+            "title": "Sync",
+            "risks": [],
+            "questions": [],
+            "context": "",
+        });
+        fs::write(&prep_path, serde_json::to_string(&prep).unwrap()).unwrap();
+        assert!(!is_substantive_prep(&prep_path));
+    }
+
+    #[test]
+    fn test_reconcile_prep_flags() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path();
+
+        // Create preps directory with one substantive and one stub
+        let preps_dir = data_dir.join("preps");
+        fs::create_dir_all(&preps_dir).unwrap();
+
+        let good_prep = json!({
+            "meetingId": "m1",
+            "title": "Acme Call",
+            "context": "Important customer",
+        });
+        let stub_prep = json!({
+            "meetingId": "m2",
+            "title": "Weekly",
+        });
+        fs::write(
+            preps_dir.join("m1.json"),
+            serde_json::to_string(&good_prep).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            preps_dir.join("m2.json"),
+            serde_json::to_string(&stub_prep).unwrap(),
+        )
+        .unwrap();
+
+        // Create schedule.json with both marked as hasPrep: true
+        let schedule = json!({
+            "date": "2026-02-10",
+            "meetings": [
+                {"id": "m1", "title": "Acme Call", "hasPrep": true, "prepFile": "preps/m1.json"},
+                {"id": "m2", "title": "Weekly", "hasPrep": true, "prepFile": "preps/m2.json"},
+            ],
+        });
+        write_json(&data_dir.join("schedule.json"), &schedule).unwrap();
+
+        // Reconcile
+        reconcile_prep_flags(data_dir).unwrap();
+
+        // Check results
+        let updated: Value =
+            serde_json::from_str(&fs::read_to_string(data_dir.join("schedule.json")).unwrap())
+                .unwrap();
+        let meetings = updated["meetings"].as_array().unwrap();
+        assert_eq!(meetings[0]["hasPrep"], true); // substantive
+        assert_eq!(meetings[1]["hasPrep"], false); // stub
+    }
+
+    #[test]
     fn test_make_action_id_stable() {
         let id1 = make_action_id("Send proposal", "Acme", "2025-02-10");
         let id2 = make_action_id("Send proposal", "Acme", "2025-02-10");
@@ -2836,6 +3103,39 @@ END_NARRATIVE
         let response = "Here's some random output without markers.";
         let narrative = parse_briefing_narrative(response);
         assert!(narrative.is_none());
+    }
+
+    #[test]
+    fn test_parse_briefing_focus() {
+        let response = "\
+NARRATIVE:
+Busy day ahead with 3 customer calls.
+END_NARRATIVE
+
+FOCUS:
+Nail the Acme QBR prep — the renewal decision is next month and usage is declining.
+END_FOCUS
+";
+        let focus = parse_briefing_focus(response);
+        assert!(focus.is_some());
+        let text = focus.unwrap();
+        assert!(text.contains("Acme QBR"));
+        assert!(text.contains("renewal"));
+    }
+
+    #[test]
+    fn test_parse_briefing_focus_missing() {
+        let response = "NARRATIVE:\nSome narrative.\nEND_NARRATIVE";
+        let focus = parse_briefing_focus(response);
+        assert!(focus.is_none());
+    }
+
+    #[test]
+    fn test_parse_briefing_focus_inline() {
+        let response = "FOCUS: Review the SOW before the 2 PM legal call.\nEND_FOCUS";
+        let focus = parse_briefing_focus(response);
+        assert!(focus.is_some());
+        assert!(focus.unwrap().contains("SOW"));
     }
 
     #[test]
