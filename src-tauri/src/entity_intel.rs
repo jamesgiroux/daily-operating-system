@@ -406,6 +406,8 @@ pub struct IntelligenceContext {
     pub file_manifest: Vec<SourceManifestEntry>,
     /// Extracted text from workspace files (50KB initial, 20KB incremental).
     pub file_contents: String,
+    /// Raw text from the 2 most recent call transcripts (for engagement assessment).
+    pub recent_transcripts: String,
     /// Serialized prior intelligence for incremental mode.
     pub prior_intelligence: Option<String>,
     /// Next upcoming meeting for this entity.
@@ -678,6 +680,41 @@ pub fn build_intelligence_context(
         ctx.file_contents = file_parts.join("\n\n");
     }
 
+    // --- Recent call transcripts (for stakeholder engagement assessment) ---
+    // Read the raw text of the 2 most recent transcripts (up to 5K chars each).
+    // Summaries are too compressed to judge engagement; raw text has the signal.
+    {
+        let mut transcript_files: Vec<&crate::db::DbContentFile> = files
+            .iter()
+            .filter(|f| f.content_type == "transcript")
+            .collect();
+        // Sort by content date descending (most recent first)
+        transcript_files.sort_by(|a, b| {
+            let da = content_date_rfc3339(&a.filename, &a.modified_at);
+            let db_date = content_date_rfc3339(&b.filename, &b.modified_at);
+            db_date.cmp(&da)
+        });
+
+        let mut transcript_parts: Vec<String> = Vec::new();
+        for tf in transcript_files.into_iter().take(2) {
+            let path = std::path::Path::new(&tf.absolute_path);
+            if let Ok(text) = crate::processor::extract::extract_text(path) {
+                let capped = if text.len() > 5000 {
+                    format!("{}…", &text[..5000])
+                } else {
+                    text
+                };
+                transcript_parts.push(format!(
+                    "--- {} ({}) ---\n{}",
+                    tf.filename, tf.modified_at, capped
+                ));
+            }
+        }
+        if !transcript_parts.is_empty() {
+            ctx.recent_transcripts = transcript_parts.join("\n\n");
+        }
+    }
+
     // --- Prior intelligence (for incremental mode) ---
     if let Some(p) = prior {
         ctx.prior_intelligence = serde_json::to_string_pretty(p).ok();
@@ -811,6 +848,20 @@ pub fn build_intelligence_prompt(
         prompt.push_str("\n\n");
     }
 
+    // Recent call transcripts (raw text for engagement assessment)
+    if !ctx.recent_transcripts.is_empty() {
+        prompt.push_str(
+            "## Recent Call Transcripts\n\
+             Use these transcripts to assess stakeholder engagement. Look for:\n\
+             - Who speaks and how often\n\
+             - Who asks detailed questions or proposes next steps (high engagement)\n\
+             - Who participates but follows rather than leads (medium)\n\
+             - Who is mostly silent, reactive, or absent (low)\n\n",
+        );
+        prompt.push_str(&ctx.recent_transcripts);
+        prompt.push_str("\n\n");
+    }
+
     // Writing style instructions
     prompt.push_str(
         "WRITING RULES:\n\
@@ -844,6 +895,11 @@ pub fn build_intelligence_prompt(
          NOT_WORKING: <what needs attention>\n\
          UNKNOWN: <knowledge gap that should be resolved>\n\
          STAKEHOLDER: <name> | ROLE: <role> | ASSESSMENT: <1-2 sentences> | ENGAGEMENT: <high|medium|low|unknown>\n\
+         (Engagement criteria — base ONLY on call transcript evidence above:\n\
+          high = drives discussion, asks detailed questions, proposes next steps, references prior conversations\n\
+          medium = participates and responds but follows rather than leads\n\
+          low = mostly silent, reactive only, brief responses, or absent from recent calls\n\
+          unknown = person not present in available transcripts)\n\
          VALUE: <date> | <value statement> | SOURCE: <filename> | IMPACT: <impact>\n\
          NEXT_MEETING_PREP: <preparation item for next meeting>\n",
     );
@@ -2078,6 +2134,7 @@ mod tests {
                 content_type: Some("qbr".to_string()),
             }],
             file_contents: "--- qbr.md [qbr] (2026-01-30) ---\nContent here".to_string(),
+            recent_transcripts: String::new(),
             prior_intelligence: None, // Initial mode
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
         };

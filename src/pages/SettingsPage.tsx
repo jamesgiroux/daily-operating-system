@@ -25,6 +25,7 @@ import {
   LogOut,
   Loader2,
   ToggleRight,
+  Activity,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { toast } from "sonner";
@@ -256,6 +257,9 @@ export default function SettingsPage() {
                 )}
               </CardContent>
             </Card>
+
+            {/* System Health */}
+            <SystemHealthCard />
 
             {/* Run result */}
             {runResult && (
@@ -772,6 +776,143 @@ function WorkspaceCard({
             Change
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// =============================================================================
+// System Health Card (I148)
+// =============================================================================
+
+interface HygieneReport {
+  scannedAt: string;
+  unnamedPeople: number;
+  unknownRelationships: number;
+  missingIntelligence: number;
+  staleIntelligence: number;
+  unsummarizedFiles: number;
+  orphanedMeetings: number;
+  fixes: {
+    relationshipsReclassified: number;
+    filesIndexed: number;
+    summariesExtracted: number;
+    orphanedMeetingsLinked: number;
+    meetingCountsUpdated: number;
+    namesResolved: number;
+    peopleLinkedByDomain: number;
+    aiEnrichmentsEnqueued: number;
+  };
+}
+
+function SystemHealthCard() {
+  const [report, setReport] = useState<HygieneReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  async function loadReport() {
+    try {
+      const result = await invoke<HygieneReport | null>("get_hygiene_report");
+      setReport(result);
+    } catch {
+      // No report yet — expected on first launch
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadReport();
+  }, []);
+
+  if (loading) return null;
+
+  const totalGaps = report
+    ? report.unnamedPeople +
+      report.unknownRelationships +
+      report.missingIntelligence +
+      report.staleIntelligence +
+      report.unsummarizedFiles +
+      report.orphanedMeetings
+    : 0;
+
+  const totalFixes = report
+    ? report.fixes.relationshipsReclassified +
+      report.fixes.filesIndexed +
+      report.fixes.summariesExtracted +
+      report.fixes.orphanedMeetingsLinked +
+      report.fixes.meetingCountsUpdated +
+      report.fixes.namesResolved +
+      report.fixes.peopleLinkedByDomain +
+      report.fixes.aiEnrichmentsEnqueued
+    : 0;
+
+  function formatTime(iso: string): string {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    } catch {
+      return iso;
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Activity className="size-4" />
+          System Health
+        </CardTitle>
+        <CardDescription>
+          Automated data quality maintenance
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {report ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Last scan</span>
+              <span>{formatTime(report.scannedAt)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Gaps detected</span>
+              <Badge variant={totalGaps === 0 ? "secondary" : "outline"}>
+                {totalGaps}
+              </Badge>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Fixes applied</span>
+              <Badge variant={totalFixes > 0 ? "default" : "secondary"}>
+                {totalFixes}
+              </Badge>
+            </div>
+            {totalGaps > 0 && (
+              <div className="rounded-md border p-3 text-xs text-muted-foreground space-y-1">
+                {report.unnamedPeople > 0 && (
+                  <p>{report.unnamedPeople} unnamed people</p>
+                )}
+                {report.unknownRelationships > 0 && (
+                  <p>{report.unknownRelationships} unclassified relationships</p>
+                )}
+                {report.missingIntelligence > 0 && (
+                  <p>{report.missingIntelligence} entities without intelligence</p>
+                )}
+                {report.staleIntelligence > 0 && (
+                  <p>{report.staleIntelligence} stale intelligence records</p>
+                )}
+                {report.unsummarizedFiles > 0 && (
+                  <p>{report.unsummarizedFiles} unsummarized files</p>
+                )}
+                {report.orphanedMeetings > 0 && (
+                  <p>{report.orphanedMeetings} orphaned meetings</p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            No scan completed yet — runs automatically after startup
+          </p>
+        )}
       </CardContent>
     </Card>
   );
