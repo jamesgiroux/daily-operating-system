@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Philosophy - DailyOS</title>
+  <meta name="description" content="Your brain shouldn't have a landlord. The philosophy behind DailyOS: AI-native productivity, zero-guilt design, and true data ownership.">
+  <meta property="og:title" content="Philosophy - DailyOS">
+  <meta property="og:description" content="Your brain shouldn't have a landlord. A different philosophy for productivity tools.">
+  <meta property="og:image" content="/og-image.png">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://daily-os.com/philosophy.html">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Philosophy - DailyOS">
+  <meta name="twitter:description" content="Your brain shouldn't have a landlord. A different philosophy for productivity tools.">
+  <meta name="twitter:image" content="/og-image.png">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --cream: #f5f2ef;
+      --charcoal: #1a1f24;
+      --gold: #c9a227;
+      --sage: #7fb685;
+      --peach: #e8967a;
+      --text-primary: #1a1f24;
+      --text-secondary: #5a6068;
+      --text-on-dark: #f5f2ef;
+      --text-muted-on-dark: #a0a8b0;
+      --border-light: rgba(26, 31, 36, 0.08);
+      --border-dark: rgba(245, 242, 239, 0.1);
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: var(--text-primary);
+      background: var(--cream);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    code, .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ---- Navigation ---- */
+
+    .nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: var(--cream);
+      border-bottom: 1px solid var(--border-light);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .nav-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text-primary);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .nav-logo-icon {
+      width: 28px;
+      height: 28px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-links a.active {
+      color: var(--text-primary);
+    }
+
+    .nav-links a.nav-cta {
+      background: var(--charcoal);
+      color: var(--cream);
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      transition: opacity 0.2s ease;
+    }
+
+    .nav-links a.nav-cta:hover {
+      opacity: 0.85;
+    }
+
+    /* Mobile nav toggle */
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.5rem;
+    }
+
+    .nav-toggle span {
+      display: block;
+      width: 22px;
+      height: 2px;
+      background: var(--text-primary);
+      margin: 5px 0;
+      transition: all 0.3s ease;
+    }
+
+    /* ---- Sections ---- */
+
+    .section {
+      padding: 100px 2rem;
+    }
+
+    .section-inner {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .section--dark {
+      background: var(--charcoal);
+      color: var(--text-on-dark);
+    }
+
+    .section--dark .section-subtitle {
+      color: var(--text-muted-on-dark);
+    }
+
+    /* ---- Hero ---- */
+
+    .hero {
+      padding: 180px 2rem 120px;
+      text-align: center;
+    }
+
+    .hero-inner {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero .section-subtitle {
+      font-size: clamp(1.1rem, 2.5vw, 1.35rem);
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    /* ---- Typography ---- */
+
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 1rem;
+    }
+
+    .section h2 {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.5rem;
+    }
+
+    .section p {
+      font-size: 1.125rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    .section--dark p {
+      color: var(--text-muted-on-dark);
+    }
+
+    .section p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ---- Pull Quote ---- */
+
+    .pull-quote {
+      font-size: clamp(1.5rem, 3.5vw, 2rem);
+      font-weight: 600;
+      font-style: italic;
+      color: var(--gold);
+      line-height: 1.35;
+      margin: 2.5rem 0;
+      letter-spacing: -0.01em;
+    }
+
+    .section--dark .pull-quote {
+      color: var(--gold);
+    }
+
+    /* ---- Comparison Cards ---- */
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin: 3rem 0 2.5rem;
+    }
+
+    .comparison-card {
+      padding: 2.5rem;
+      border-radius: 12px;
+    }
+
+    .comparison-card--old {
+      background: rgba(245, 242, 239, 0.05);
+      border: 1px solid var(--border-dark);
+    }
+
+    .comparison-card--new {
+      background: rgba(201, 162, 39, 0.08);
+      border: 1px solid rgba(201, 162, 39, 0.2);
+    }
+
+    .comparison-card h3 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 1.75rem;
+    }
+
+    .comparison-card--old h3 {
+      color: var(--text-muted-on-dark);
+    }
+
+    .comparison-card--new h3 {
+      color: var(--gold);
+    }
+
+    .comparison-card ul {
+      list-style: none;
+    }
+
+    .comparison-card li {
+      font-size: 1.05rem;
+      line-height: 1.5;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .comparison-card--old li {
+      color: var(--text-muted-on-dark);
+    }
+
+    .comparison-card--new li {
+      color: var(--text-on-dark);
+    }
+
+    .comparison-card li:last-child {
+      border-bottom: none;
+    }
+
+    /* ---- Emphasis Text ---- */
+
+    .emphasis {
+      font-size: 1.2rem;
+      line-height: 1.65;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .section--dark .emphasis {
+      color: var(--text-on-dark);
+    }
+
+    /* ---- CTA Section ---- */
+
+    .cta {
+      text-align: center;
+      padding: 120px 2rem;
+    }
+
+    .cta h2 {
+      margin-bottom: 2rem;
+    }
+
+    .btn-primary {
+      display: inline-block;
+      background: var(--gold);
+      color: var(--charcoal);
+      padding: 1rem 2.5rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    /* ---- Footer ---- */
+
+    .footer {
+      background: var(--charcoal);
+      border-top: 1px solid var(--border-dark);
+      padding: 3rem 2rem;
+    }
+
+    .footer-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .footer-links a {
+      font-size: 0.9rem;
+      color: var(--text-muted-on-dark);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-on-dark);
+    }
+
+    .footer-meta {
+      text-align: center;
+    }
+
+    .footer-meta p {
+      font-size: 0.8rem;
+      color: var(--text-muted-on-dark);
+      line-height: 1.6;
+      margin: 0;
+    }
+
+    /* ---- Animations ---- */
+
+    .fade-in {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.7s ease, transform 0.7s ease;
+    }
+
+    .fade-in.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* stagger children */
+    .fade-in-group .fade-in:nth-child(2) { transition-delay: 0.1s; }
+    .fade-in-group .fade-in:nth-child(3) { transition-delay: 0.2s; }
+    .fade-in-group .fade-in:nth-child(4) { transition-delay: 0.25s; }
+
+    /* ---- Responsive ---- */
+
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+        position: absolute;
+        top: 64px;
+        left: 0;
+        right: 0;
+        background: var(--cream);
+        border-bottom: 1px solid var(--border-light);
+        flex-direction: column;
+        padding: 1.5rem 2rem;
+        gap: 1rem;
+      }
+
+      .nav-links.open {
+        display: flex;
+      }
+
+      .nav-toggle {
+        display: block;
+      }
+
+      .nav-toggle.open span:nth-child(1) {
+        transform: rotate(45deg) translate(5px, 5px);
+      }
+
+      .nav-toggle.open span:nth-child(2) {
+        opacity: 0;
+      }
+
+      .nav-toggle.open span:nth-child(3) {
+        transform: rotate(-45deg) translate(5px, -5px);
+      }
+
+      .hero {
+        padding: 140px 1.5rem 80px;
+      }
+
+      .section {
+        padding: 72px 1.5rem;
+      }
+
+      .comparison {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+      }
+
+      .comparison-card {
+        padding: 2rem;
+      }
+
+      .cta {
+        padding: 80px 1.5rem;
+      }
+
+      .footer-links {
+        gap: 1.25rem;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .hero {
+        padding: 130px 1.25rem 64px;
+      }
+
+      .section {
+        padding: 56px 1.25rem;
+      }
+
+      .comparison-card {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <nav class="nav" role="navigation" aria-label="Main navigation">
+    <div class="nav-inner">
+      <a href="/" class="nav-logo" aria-label="DailyOS Home">
+        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+          <circle cx="16" cy="16" r="16" fill="#1a1f24"/>
+          <polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/>
+        </svg>
+        DailyOS
+      </a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html" class="active">Philosophy</a></li>
+        <li><a href="/setup.html" class="nav-cta">Get Started</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero section--dark" role="banner">
+    <div class="hero-inner">
+      <h1 class="fade-in">Your brain shouldn't have a landlord.</h1>
+      <p class="section-subtitle fade-in">A different philosophy for productivity tools.</p>
+    </div>
+  </section>
+
+  <!-- AI-Native, Not AI-Assisted -->
+  <section class="section section--dark" id="ai-native">
+    <div class="section-inner">
+      <p class="section-label fade-in">The paradigm shift</p>
+      <h2 class="fade-in">AI-Native, Not AI-Assisted</h2>
+
+      <div class="comparison fade-in-group">
+        <div class="comparison-card comparison-card--old fade-in">
+          <h3>Digital-Native</h3>
+          <ul>
+            <li>You start with a blank canvas</li>
+            <li>You fill containers</li>
+            <li>You are the operator</li>
+            <li>Default state: empty, waiting</li>
+          </ul>
+        </div>
+        <div class="comparison-card comparison-card--new fade-in">
+          <h3>AI-Native</h3>
+          <ul>
+            <li>AI starts with a draft</li>
+            <li>You refine outputs</li>
+            <li>The system operates</li>
+            <li>Default state: prepared, ready</li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="emphasis fade-in">Not AI-assisted. Not AI-enhanced. AI-native. The difference matters. The creative act shifts from generation to curation.</p>
+    </div>
+  </section>
+
+  <!-- Zero-Guilt Design -->
+  <section class="section" id="zero-guilt">
+    <div class="section-inner">
+      <p class="section-label fade-in">Principle one</p>
+      <h2 class="fade-in">Zero-Guilt Design</h2>
+      <p class="fade-in">Skip a day. Skip a week. Nothing breaks. No streak counters. No red badges. No "you haven't logged in" shame.</p>
+      <p class="pull-quote fade-in">The system catches up. You don't have to.</p>
+      <p class="fade-in">Every other productivity tool punishes absence. Miss a weekly review, fall behind. Forget to process your inbox, lose track. The system demands tribute.</p>
+      <p class="fade-in">DailyOS was designed from day one around a simple test: what happens if the user disappears for a week? The answer should always be "nothing breaks."</p>
+    </div>
+  </section>
+
+  <!-- Ownership, Not Tenancy -->
+  <section class="section section--dark" id="ownership">
+    <div class="section-inner">
+      <p class="section-label fade-in">Your data, your files</p>
+      <h2 class="fade-in">Ownership, Not Tenancy</h2>
+      <p class="fade-in">Your data is markdown files on your machine. Not rows in someone else's database. Sync however you want -- Git, Dropbox, iCloud, nothing. Walk away anytime with everything you've built.</p>
+      <p class="pull-quote fade-in">Your thoughts, your files, your control.</p>
+      <p class="fade-in">Every "second brain" tool is a tenant relationship. You rent space in their system. Your notes live in their database. Your connections are theirs to query and monetize.</p>
+      <p class="fade-in">DailyOS is ownership. Markdown files. Local-first. Sync-agnostic. Portable. No lock-in, no hostage data, no proprietary formats.</p>
+    </div>
+  </section>
+
+  <!-- Operational Intelligence -->
+  <section class="section" id="intelligence">
+    <div class="section-inner">
+      <p class="section-label fade-in">Compounding knowledge</p>
+      <h2 class="fade-in">Operational Intelligence</h2>
+      <p class="fade-in">DailyOS doesn't just show your schedule. It builds intelligence about your accounts, projects, and people -- then uses it to prepare every day.</p>
+      <p class="pull-quote fade-in">Every meeting, transcript, and email makes the system smarter. It compounds.</p>
+      <p class="fade-in">Someone books 30 minutes on your calendar. Vague title. No agenda. You open DailyOS and find background on the person, context from past conversations, their recent priorities, and a briefing ready before you've had coffee.</p>
+      <p class="fade-in">That's not a productivity tool. That's a system that actually operates.</p>
+    </div>
+  </section>
+
+  <!-- The Archive Is the Product -->
+  <section class="section section--dark" id="archive">
+    <div class="section-inner">
+      <p class="section-label fade-in">Open by default</p>
+      <h2 class="fade-in">The Archive Is the Product</h2>
+      <p class="fade-in">Your workspace is an AI-consumable knowledge base. DailyOS is one interface. Claude Desktop is another. Any AI tool can read it.</p>
+      <p class="pull-quote fade-in">Digital-native hoards data. AI-native opens it.</p>
+      <p class="fade-in">When DailyOS maintains your meeting prep, your account dashboards, your action items -- it's simultaneously maintaining a knowledge base that every AI tool can work with. Claude, ChatGPT, Gemini, whatever comes next.</p>
+      <p class="fade-in">The competitive moat isn't the app. It's the archive. Anyone can build a dashboard. A continuously maintained, AI-enriched, deeply cross-referenced knowledge base of your professional life -- that's the product.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta section--dark" id="get-started">
+    <div class="section-inner">
+      <h2 class="fade-in">Ready to try a different approach?</h2>
+      <div class="fade-in">
+        <a href="/setup.html" class="btn-primary">Get Started</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html">Get Started</a></li>
+        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+      </ul>
+      <div class="footer-meta">
+        <p>DailyOS is open source under GPL-3.0</p>
+        <p>&copy; 2026 James Giroux</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll animations -->
+  <script>
+    (function () {
+      // IntersectionObserver for fade-in animations
+      var observer = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+            }
+          });
+        },
+        { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+      );
+
+      document.querySelectorAll('.fade-in').forEach(function (el) {
+        observer.observe(el);
+      });
+
+      // Mobile nav toggle
+      var toggle = document.querySelector('.nav-toggle');
+      var links = document.querySelector('.nav-links');
+
+      toggle.addEventListener('click', function () {
+        var isOpen = links.classList.toggle('open');
+        toggle.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+
+      // Close mobile nav on link click
+      links.querySelectorAll('a').forEach(function (link) {
+        link.addEventListener('click', function () {
+          links.classList.remove('open');
+          toggle.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
+  </script>
+
+</body>
+</html>
