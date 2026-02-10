@@ -314,7 +314,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
           entityId: newId,
           entityType: "account",
           meetingTitle: meeting.title,
-          startTime: meeting.time,
+          startTime: meeting.startIso ?? meeting.time,
           meetingTypeStr: meeting.type,
         });
         // Trigger silent dashboard refresh so actions list reflects the cascade
@@ -326,7 +326,7 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
         console.error("Failed to update meeting entity:", err);
       }
     },
-    [meeting.id, meeting.title, meeting.time, meeting.type, meeting.linkedEntities, meeting.accountId]
+    [meeting.id, meeting.title, meeting.startIso, meeting.time, meeting.type, meeting.linkedEntities, meeting.accountId]
   );
 
   const { outcomes, loading, refresh: refreshOutcomes } =
