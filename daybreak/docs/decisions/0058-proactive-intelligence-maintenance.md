@@ -1,7 +1,7 @@
 # ADR-0058: Proactive Intelligence Maintenance
 
 **Date:** 2026-02-09
-**Status:** Proposed
+**Status:** Accepted
 **Builds on:** [ADR-0057](0057-entity-intelligence-architecture.md) (entity intelligence architecture), [ADR-0042](0042-per-operation-pipelines.md) (per-operation pipelines), [ADR-0048](0048-three-tier-data-model.md) (three-tier data model)
 
 ## Context
