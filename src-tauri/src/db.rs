@@ -1973,6 +1973,39 @@ impl ActionDb {
         Ok(entries)
     }
 
+    /// Get the latest processing status for each filename in the processing_log.
+    ///
+    /// Returns a map of `filename -> (status, error_message)` using the most recent
+    /// log entry per filename. Uses the existing `idx_processing_created` index.
+    pub fn get_latest_processing_status(
+        &self,
+    ) -> Result<HashMap<String, (String, Option<String>)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.filename, p.status, p.error_message
+             FROM processing_log p
+             INNER JOIN (
+                 SELECT filename, MAX(created_at) AS max_created
+                 FROM processing_log
+                 GROUP BY filename
+             ) latest ON p.filename = latest.filename AND p.created_at = latest.max_created",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+
+        let mut map = HashMap::new();
+        for row in rows {
+            let (filename, status, error_message) = row?;
+            map.insert(filename, (status, error_message));
+        }
+        Ok(map)
+    }
+
     // =========================================================================
     // Captures (post-meeting wins/risks)
     // =========================================================================
@@ -2219,6 +2252,62 @@ impl ActionDb {
             }
         }
 
+        Ok(())
+    }
+
+    /// Look up a meeting by its Google Calendar event ID (I168).
+    pub fn get_meeting_by_calendar_event_id(
+        &self,
+        calendar_event_id: &str,
+    ) -> Result<Option<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, meeting_type, start_time, end_time,
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id
+             FROM meetings_history
+             WHERE calendar_event_id = ?1
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![calendar_event_id], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+            })
+        })?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Ensure a meeting exists in meetings_history (INSERT OR IGNORE).
+    /// Used by calendar polling to create lightweight records so
+    /// record_meeting_attendance() can query start_time.
+    /// Does NOT overwrite existing rows — reconcile.rs owns updates.
+    pub fn ensure_meeting_in_history(
+        &self,
+        id: &str,
+        title: &str,
+        meeting_type: &str,
+        start_time: &str,
+        end_time: Option<&str>,
+        account_id: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO meetings_history
+                (id, title, meeting_type, start_time, end_time, account_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![id, title, meeting_type, start_time, end_time, account_id, Utc::now().to_rfc3339()],
+        )?;
         Ok(())
     }
 
@@ -3031,6 +3120,131 @@ impl ActionDb {
             "UPDATE people SET name = ?1, updated_at = ?3 WHERE id = ?2",
             params![name, person_id, now],
         )?;
+        Ok(())
+    }
+
+    /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete `remove_id`.
+    ///
+    /// Transfers meeting attendees, entity links, and action associations.
+    /// Uses INSERT OR IGNORE to handle overlapping meeting/entity links gracefully.
+    pub fn merge_people(&self, keep_id: &str, remove_id: &str) -> Result<(), DbError> {
+        // Verify both exist
+        let keep = self.get_person(keep_id)?
+            .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
+        let _remove = self.get_person(remove_id)?
+            .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
+
+        // 1. Transfer meeting_attendees (INSERT OR IGNORE handles shared meetings)
+        self.conn.execute(
+            "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id)
+             SELECT meeting_id, ?1 FROM meeting_attendees WHERE person_id = ?2",
+            params![keep_id, remove_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM meeting_attendees WHERE person_id = ?1",
+            params![remove_id],
+        )?;
+
+        // 2. Transfer entity_people links
+        self.conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+             SELECT entity_id, ?1, relationship_type FROM entity_people WHERE person_id = ?2",
+            params![keep_id, remove_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM entity_people WHERE person_id = ?1",
+            params![remove_id],
+        )?;
+
+        // 3. Transfer actions
+        self.conn.execute(
+            "UPDATE actions SET person_id = ?1 WHERE person_id = ?2",
+            params![keep_id, remove_id],
+        )?;
+
+        // 4. Delete removed person's intelligence cache
+        self.conn.execute(
+            "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+            params![remove_id],
+        )?;
+
+        // 5. Delete removed person's entity row
+        self.conn.execute(
+            "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
+            params![remove_id],
+        )?;
+
+        // 6. Delete removed person's content_index rows
+        self.conn.execute(
+            "DELETE FROM content_index WHERE entity_id = ?1",
+            params![remove_id],
+        )?;
+
+        // 7. Delete removed person
+        self.conn.execute(
+            "DELETE FROM people WHERE id = ?1",
+            params![remove_id],
+        )?;
+
+        // 8. Recompute kept person's meeting count
+        self.recompute_person_meeting_count(keep_id)?;
+
+        // Merge notes if the removed person had any
+        if let Some(ref remove_notes) = _remove.notes {
+            if !remove_notes.is_empty() {
+                let merged_notes = match &keep.notes {
+                    Some(existing) if !existing.is_empty() => {
+                        format!("{}\n\n--- Merged from {} ---\n{}", existing, _remove.name, remove_notes)
+                    }
+                    _ => format!("--- Merged from {} ---\n{}", _remove.name, remove_notes),
+                };
+                let now = Utc::now().to_rfc3339();
+                self.conn.execute(
+                    "UPDATE people SET notes = ?1, updated_at = ?2 WHERE id = ?3",
+                    params![merged_notes, now, keep_id],
+                )?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Delete a person and all their references (attendance, entity links, actions, intelligence).
+    pub fn delete_person(&self, person_id: &str) -> Result<(), DbError> {
+        // Verify exists
+        let _person = self.get_person(person_id)?
+            .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
+
+        // Cascade deletes
+        self.conn.execute(
+            "DELETE FROM meeting_attendees WHERE person_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM entity_people WHERE person_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "UPDATE actions SET person_id = NULL WHERE person_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM entity_intelligence WHERE entity_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM entities WHERE id = ?1 AND entity_type = 'person'",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM content_index WHERE entity_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM people WHERE id = ?1",
+            params![person_id],
+        )?;
+
         Ok(())
     }
 }
@@ -4338,6 +4552,201 @@ mod tests {
     }
 
     // =========================================================================
+    // Merge + Delete People
+    // =========================================================================
+
+    fn make_meeting(db: &ActionDb, id: &str) {
+        let now = Utc::now().to_rfc3339();
+        let meeting = DbMeeting {
+            id: id.to_string(),
+            title: format!("Meeting {}", id),
+            meeting_type: "internal".to_string(),
+            start_time: now.clone(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+    }
+
+    #[test]
+    fn test_merge_transfers_attendees() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert keep");
+        db.upsert_person(&remove).expect("upsert remove");
+
+        make_meeting(&db, "mtg-a");
+        make_meeting(&db, "mtg-b");
+        db.record_meeting_attendance("mtg-a", &keep.id).expect("attend");
+        db.record_meeting_attendance("mtg-b", &remove.id).expect("attend");
+
+        db.merge_people(&keep.id, &remove.id).expect("merge");
+
+        let meetings = db.get_person_meetings(&keep.id, 50).expect("meetings");
+        assert_eq!(meetings.len(), 2, "kept person should attend both meetings");
+    }
+
+    #[test]
+    fn test_merge_transfers_entity_links() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert");
+        db.upsert_person(&remove).expect("upsert");
+
+        let account = DbAccount {
+            id: "acme".to_string(),
+            name: "Acme".to_string(),
+            lifecycle: None, arr: None, health: None, contract_start: None,
+            contract_end: None, csm: None, champion: None, nps: None,
+            tracker_path: None, parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&account).expect("upsert account");
+        db.link_person_to_entity(&remove.id, "acme", "associated").expect("link");
+
+        db.merge_people(&keep.id, &remove.id).expect("merge");
+
+        let entities = db.get_entities_for_person(&keep.id).expect("entities");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "acme");
+    }
+
+    #[test]
+    fn test_merge_transfers_actions() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert");
+        db.upsert_person(&remove).expect("upsert");
+
+        let mut action = sample_action("act-1", "Follow up");
+        action.person_id = Some(remove.id.clone());
+        db.upsert_action(&action).expect("upsert action");
+
+        db.merge_people(&keep.id, &remove.id).expect("merge");
+
+        let fetched = db.get_action_by_id("act-1").expect("get action").unwrap();
+        assert_eq!(fetched.person_id, Some(keep.id));
+    }
+
+    #[test]
+    fn test_merge_handles_shared_meetings() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert");
+        db.upsert_person(&remove).expect("upsert");
+
+        make_meeting(&db, "mtg-shared");
+        db.record_meeting_attendance("mtg-shared", &keep.id).expect("attend");
+        db.record_meeting_attendance("mtg-shared", &remove.id).expect("attend");
+
+        // Should not fail despite both attending the same meeting
+        db.merge_people(&keep.id, &remove.id).expect("merge should succeed with shared meetings");
+
+        let attendees = db.get_meeting_attendees("mtg-shared").expect("attendees");
+        assert_eq!(attendees.len(), 1, "only kept person remains");
+        assert_eq!(attendees[0].id, keep.id);
+    }
+
+    #[test]
+    fn test_merge_deletes_removed() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert");
+        db.upsert_person(&remove).expect("upsert");
+
+        db.merge_people(&keep.id, &remove.id).expect("merge");
+
+        assert!(db.get_person(&remove.id).expect("get").is_none(), "removed person should be gone");
+        assert!(db.get_person(&keep.id).expect("get").is_some(), "kept person should still exist");
+    }
+
+    #[test]
+    fn test_merge_recomputes_count() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        let remove = sample_person("remove@other.com");
+        db.upsert_person(&keep).expect("upsert");
+        db.upsert_person(&remove).expect("upsert");
+
+        make_meeting(&db, "mtg-1");
+        make_meeting(&db, "mtg-2");
+        make_meeting(&db, "mtg-3");
+        db.record_meeting_attendance("mtg-1", &keep.id).expect("attend");
+        db.record_meeting_attendance("mtg-2", &remove.id).expect("attend");
+        db.record_meeting_attendance("mtg-3", &remove.id).expect("attend");
+
+        db.merge_people(&keep.id, &remove.id).expect("merge");
+
+        let person = db.get_person(&keep.id).expect("get").unwrap();
+        assert_eq!(person.meeting_count, 3, "should have all 3 meetings");
+    }
+
+    #[test]
+    fn test_merge_nonexistent_fails() {
+        let db = test_db();
+        let keep = sample_person("keep@acme.com");
+        db.upsert_person(&keep).expect("upsert");
+
+        let err = db.merge_people(&keep.id, "nonexistent-id");
+        assert!(err.is_err(), "merge should fail when remove_id doesn't exist");
+
+        let err = db.merge_people("nonexistent-id", &keep.id);
+        assert!(err.is_err(), "merge should fail when keep_id doesn't exist");
+    }
+
+    #[test]
+    fn test_delete_person_cascades() {
+        let db = test_db();
+        let person = sample_person("doomed@test.com");
+        db.upsert_person(&person).expect("upsert");
+
+        make_meeting(&db, "mtg-doom");
+        db.record_meeting_attendance("mtg-doom", &person.id).expect("attend");
+
+        let account = DbAccount {
+            id: "doom-corp".to_string(),
+            name: "Doom Corp".to_string(),
+            lifecycle: None, arr: None, health: None, contract_start: None,
+            contract_end: None, csm: None, champion: None, nps: None,
+            tracker_path: None, parent_id: None,
+            updated_at: Utc::now().to_rfc3339(),
+        };
+        db.upsert_account(&account).expect("upsert account");
+        db.link_person_to_entity(&person.id, "doom-corp", "associated").expect("link");
+
+        let mut action = sample_action("act-doom", "Doomed action");
+        action.person_id = Some(person.id.clone());
+        db.upsert_action(&action).expect("upsert action");
+
+        db.delete_person(&person.id).expect("delete");
+
+        // Person gone
+        assert!(db.get_person(&person.id).expect("get").is_none());
+
+        // Attendance gone
+        let attendees = db.get_meeting_attendees("mtg-doom").expect("attendees");
+        assert_eq!(attendees.len(), 0);
+
+        // Entity link gone
+        let people = db.get_people_for_entity("doom-corp").expect("people");
+        assert_eq!(people.len(), 0);
+
+        // Action person_id nulled
+        let action = db.get_action_by_id("act-doom").expect("get action").unwrap();
+        assert!(action.person_id.is_none(), "person_id should be nulled, not left dangling");
+    }
+
+    // =========================================================================
     // Projects (I50)
     // =========================================================================
 
@@ -5113,5 +5522,66 @@ mod tests {
             found.is_some(),
             "Manual actions should appear in non-briefing pending query"
         );
+    }
+
+    #[test]
+    fn test_get_latest_processing_status() {
+        let db = test_db();
+
+        // Insert two entries for the same file — only latest should be returned
+        let entry1 = DbProcessingLog {
+            id: "log-1".to_string(),
+            filename: "report.pdf".to_string(),
+            source_path: "/inbox/report.pdf".to_string(),
+            destination_path: None,
+            classification: "document".to_string(),
+            status: "error".to_string(),
+            processed_at: None,
+            error_message: Some("parse failed".to_string()),
+            created_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        db.insert_processing_log(&entry1).unwrap();
+
+        let entry2 = DbProcessingLog {
+            id: "log-2".to_string(),
+            filename: "report.pdf".to_string(),
+            source_path: "/inbox/report.pdf".to_string(),
+            destination_path: Some("/accounts/acme/report.pdf".to_string()),
+            classification: "document".to_string(),
+            status: "completed".to_string(),
+            processed_at: Some("2025-01-02T00:00:00Z".to_string()),
+            error_message: None,
+            created_at: "2025-01-02T00:00:00Z".to_string(),
+        };
+        db.insert_processing_log(&entry2).unwrap();
+
+        // Insert a separate file with error status
+        let entry3 = DbProcessingLog {
+            id: "log-3".to_string(),
+            filename: "notes.md".to_string(),
+            source_path: "/inbox/notes.md".to_string(),
+            destination_path: None,
+            classification: "meeting".to_string(),
+            status: "error".to_string(),
+            processed_at: None,
+            error_message: Some("AI enrichment timed out".to_string()),
+            created_at: "2025-01-03T00:00:00Z".to_string(),
+        };
+        db.insert_processing_log(&entry3).unwrap();
+
+        let map = db.get_latest_processing_status().unwrap();
+
+        // Should have exactly 2 filenames
+        assert_eq!(map.len(), 2);
+
+        // report.pdf should show the LATEST entry (completed, no error)
+        let (status, error) = map.get("report.pdf").expect("report.pdf should be in map");
+        assert_eq!(status, "completed");
+        assert!(error.is_none());
+
+        // notes.md should show error with message
+        let (status, error) = map.get("notes.md").expect("notes.md should be in map");
+        assert_eq!(status, "error");
+        assert_eq!(error.as_deref(), Some("AI enrichment timed out"));
     }
 }

@@ -522,6 +522,8 @@ impl Executor {
         let prep_paths = if prep_enabled {
             let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+            // I166: reconcile hasPrep flags based on actual content
+            let _ = crate::workflow::deliver::reconcile_prep_flags(&data_dir);
             let _ = self.app_handle.emit("operation-delivered", "preps");
             log::info!("Today pipeline: preps delivered");
             paths
