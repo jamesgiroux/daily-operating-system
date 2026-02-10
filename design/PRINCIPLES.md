@@ -43,7 +43,7 @@ If any answer is "yes," redesign the feature.
 **The default state is "ready," not "waiting."**
 
 When the user opens DailyOS, things should already be done:
-- Today's overview: already generated
+- Daily briefing: already generated
 - Meeting prep: already pulled together
 - Actions due: already surfaced
 - Email summary: already compiled

@@ -3,36 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Product Tour - DailyOS</title>
-  <meta name="description" content="See what DailyOS looks like in action. AI-native daily intelligence for people who manage accounts, projects, and relationships.">
-
-  <!-- Open Graph -->
-  <meta property="og:title" content="Product Tour - DailyOS">
-  <meta property="og:description" content="See what DailyOS looks like in action. AI-native daily intelligence for people who manage accounts, projects, and relationships.">
+  <title>Product Tour — DailyOS</title>
+  <meta name="description" content="See DailyOS in action. Morning briefings, meeting intelligence, account context, and more — all prepared before you open the app.">
+  <meta property="og:title" content="Product Tour — DailyOS">
+  <meta property="og:description" content="See DailyOS in action. AI-native daily intelligence for people who manage relationships.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daily-os.com/tour.html">
   <meta property="og:image" content="https://daily-os.com/og-image.png">
-  <meta property="og:site_name" content="DailyOS">
-
-  <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Product Tour - DailyOS">
-  <meta name="twitter:description" content="See what DailyOS looks like in action. AI-native daily intelligence for people who manage accounts, projects, and relationships.">
+  <meta name="twitter:title" content="Product Tour — DailyOS">
+  <meta name="twitter:description" content="See DailyOS in action. AI-native daily intelligence for people who manage relationships.">
   <meta name="twitter:image" content="https://daily-os.com/og-image.png">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
   <style>
-    /* ═══ Design Tokens ═══ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
     :root {
       --cream: #f5f2ef;
       --cream-dark: #ebe5e0;
@@ -40,1467 +31,406 @@
       --charcoal-light: #2d343c;
       --gold: #c9a227;
       --gold-muted: #d4b85c;
-      --peach: #e8967a;
       --sage: #7fb685;
+      --peach: #e8967a;
       --white: #ffffff;
       --text-primary: #1a1f24;
-      --text-secondary: #5a6370;
+      --text-secondary: #5a6068;
       --text-muted: #8a929d;
-      --border: rgba(26, 31, 36, 0.1);
-      --border-dark: rgba(26, 31, 36, 0.15);
+      --text-on-dark: #f5f2ef;
+      --text-muted-on-dark: #a0a8b0;
+      --border: rgba(26, 31, 36, 0.08);
+      --border-dark: rgba(245, 242, 239, 0.1);
       --destructive: #c62828;
     }
 
-    /* ═══ Reset & Base ═══ */
-    *, *::before, *::after {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text-primary); background: var(--cream); line-height: 1.6; overflow-x: hidden; }
+    code, .mono { font-family: 'JetBrains Mono', monospace; }
 
-    html {
-      scroll-behavior: smooth;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
+    /* ---- Nav ---- */
+    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(26, 31, 36, 0.92); border-bottom: 1px solid var(--border-dark); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+    .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; height: 64px; display: flex; align-items: center; justify-content: space-between; }
+    .nav-logo { font-weight: 700; font-size: 1.15rem; color: var(--text-on-dark); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
+    .nav-logo-icon { width: 26px; height: 26px; }
+    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
+    .nav-links a { font-size: 0.875rem; font-weight: 500; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-on-dark); }
+    .nav-links a.active { color: var(--text-on-dark); }
+    .nav-links a.nav-cta { background: var(--gold); color: var(--charcoal); padding: 0.45rem 1.15rem; border-radius: 6px; font-weight: 600; transition: opacity 0.2s; }
+    .nav-links a.nav-cta:hover { opacity: 0.88; }
+    .nav-toggle { display: none; background: none; border: none; cursor: pointer; padding: 0.5rem; }
+    .nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text-on-dark); margin: 5px 0; transition: all 0.3s; }
 
-    body {
-      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      color: var(--text-primary);
-      background: var(--cream);
-      line-height: 1.6;
-    }
+    /* ---- Hero ---- */
+    .hero { padding: 180px 2rem 100px; text-align: center; background: var(--charcoal); color: var(--text-on-dark); }
+    .hero-inner { max-width: 700px; margin: 0 auto; }
+    .hero h1 { font-size: clamp(2.5rem, 6vw, 4rem); font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 1.5rem; }
+    .hero p { font-size: 1.25rem; color: var(--text-muted-on-dark); line-height: 1.7; }
 
-    .mono {
-      font-family: 'JetBrains Mono', monospace;
-    }
+    /* ---- Sections ---- */
+    .section { padding: 140px 2rem; }
+    .section-inner { max-width: 700px; margin: 0 auto; }
+    .section-wide { max-width: 1100px; margin: 0 auto; }
+    .section--dark { background: var(--charcoal); color: var(--text-on-dark); }
+    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 2rem; }
+    .section h2 { font-size: clamp(2.25rem, 5vw, 3.25rem); font-weight: 700; line-height: 1.12; letter-spacing: -0.03em; margin-bottom: 1.25rem; }
+    .section p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1.25rem; }
+    .section p:last-child { margin-bottom: 0; }
+    .section--dark p { color: var(--text-muted-on-dark); }
 
-    /* ═══ Navigation ═══ */
-    .nav {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 100;
-      background: rgba(245, 242, 239, 0.85);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-    }
+    /* ---- Window Frame ---- */
+    .window-frame { background: var(--white); border-radius: 12px; box-shadow: 0 0 0 1px rgba(26,31,36,0.1), 0 20px 50px -12px rgba(0,0,0,0.15); overflow: hidden; margin-top: 3rem; }
+    .window-titlebar { height: 36px; background: #2d343c; display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+    .window-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .window-dot--red { background: #ff5f57; }
+    .window-dot--yellow { background: #ffbd2e; }
+    .window-dot--green { background: #28c840; }
+    .window-body { background: var(--cream); }
 
-    .nav-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 2rem;
-      height: 3.5rem;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
+    /* ---- Dashboard Mockup ---- */
+    .app-main { padding: 2rem 2.5rem; }
+    .app-date { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.25rem; }
+    .focus-callout { display: flex; align-items: flex-start; gap: 0.625rem; background: rgba(127, 182, 133, 0.1); border: 1px solid rgba(127, 182, 133, 0.15); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1.5rem; }
+    .focus-icon { width: 1.125rem; height: 1.125rem; color: var(--sage); flex-shrink: 0; margin-top: 0.125rem; }
+    .focus-label { font-size: 0.8125rem; font-weight: 600; color: var(--sage); margin-bottom: 0.125rem; }
+    .focus-text { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); line-height: 1.5; }
+    .dashboard-grid { display: grid; grid-template-columns: 5fr 2fr; gap: 2rem; }
+    .timeline { display: flex; flex-direction: column; gap: 0.625rem; }
 
-    .nav-logo {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      text-decoration: none;
-      color: var(--text-primary);
-      font-weight: 600;
-      font-size: 1.125rem;
-      letter-spacing: -0.02em;
-    }
-
-    .nav-logo svg {
-      width: 1.5rem;
-      height: 1.5rem;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 2rem;
-      list-style: none;
-    }
-
-    .nav-links a {
-      text-decoration: none;
-      color: var(--text-secondary);
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: color 0.15s;
-    }
-
-    .nav-links a:hover,
-    .nav-links a.active {
-      color: var(--text-primary);
-    }
-
-    .nav-links a.active {
-      color: var(--gold);
-    }
-
-    /* ═══ Sections ═══ */
-    .section {
-      padding: 6rem 2rem;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .section:first-of-type {
-      padding-top: 8rem;
-    }
-
-    .section-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--gold);
-      margin-bottom: 0.75rem;
-    }
-
-    .section-title {
-      font-size: 2.5rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      line-height: 1.15;
-      margin-bottom: 1rem;
-      color: var(--text-primary);
-    }
-
-    .section-subtitle {
-      font-size: 1.125rem;
-      color: var(--text-secondary);
-      line-height: 1.7;
-      max-width: 640px;
-      margin-bottom: 3rem;
-    }
-
-    /* ═══ macOS Window Frame ═══ */
-    .window-frame {
-      background: var(--white);
-      border-radius: 12px;
-      box-shadow:
-        0 0 0 1px var(--border-dark),
-        0 4px 6px -1px rgba(0, 0, 0, 0.05),
-        0 20px 50px -12px rgba(0, 0, 0, 0.12);
-      overflow: hidden;
-    }
-
-    .window-titlebar {
-      height: 3rem;
-      background: linear-gradient(180deg, #fafafa 0%, #f2f2f2 100%);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      padding: 0 1rem;
-      position: relative;
-    }
-
-    .window-dots {
-      display: flex;
-      gap: 8px;
-    }
-
-    .window-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-
-    .window-dot--close { background: #ff5f57; }
-    .window-dot--minimize { background: #ffbd2e; }
-    .window-dot--maximize { background: #28c840; }
-
-    .window-title {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .window-body {
-      background: var(--cream);
-    }
-
-    /* ═══ App Mockup — Sidebar ═══ */
-    .app-layout {
-      display: flex;
-      min-height: 560px;
-    }
-
-    .app-sidebar {
-      width: 220px;
-      background: var(--white);
-      border-right: 1px solid var(--border);
-      padding: 1.25rem 0;
-      flex-shrink: 0;
-    }
-
-    .sidebar-section-label {
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      padding: 0 1rem;
-      margin-bottom: 0.375rem;
-      margin-top: 1.25rem;
-    }
-
-    .sidebar-section-label:first-child {
-      margin-top: 0;
-    }
-
-    .sidebar-item {
-      display: flex;
-      align-items: center;
-      gap: 0.625rem;
-      padding: 0.4375rem 1rem;
-      font-size: 0.8125rem;
-      color: var(--text-secondary);
-      cursor: default;
-      transition: background 0.1s;
-    }
-
-    .sidebar-item:hover {
-      background: var(--cream);
-    }
-
-    .sidebar-item.active {
-      background: var(--cream);
-      color: var(--text-primary);
-      font-weight: 600;
-    }
-
-    .sidebar-icon {
-      width: 1rem;
-      height: 1rem;
-      color: var(--text-muted);
-      flex-shrink: 0;
-    }
-
-    .sidebar-item.active .sidebar-icon {
-      color: var(--gold);
-    }
-
-    .sidebar-badge {
-      margin-left: auto;
-      background: var(--cream-dark);
-      color: var(--text-muted);
-      font-size: 0.6875rem;
-      font-weight: 600;
-      padding: 0.125rem 0.5rem;
-      border-radius: 9999px;
-    }
-
-    /* ═══ App Mockup — Main Content ═══ */
-    .app-main {
-      flex: 1;
-      padding: 2rem 2.5rem;
-      overflow: hidden;
-      min-width: 0;
-    }
-
-    .app-date {
-      font-size: 1.375rem;
-      font-weight: 600;
-      letter-spacing: -0.02em;
-      margin-bottom: 1.25rem;
-    }
-
-    /* Focus callout */
-    .focus-callout {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.625rem;
-      background: rgba(127, 182, 133, 0.1);
-      border: 1px solid rgba(127, 182, 133, 0.15);
-      border-radius: 0.5rem;
-      padding: 0.75rem 1rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .focus-icon {
-      width: 1.125rem;
-      height: 1.125rem;
-      color: var(--sage);
-      flex-shrink: 0;
-      margin-top: 0.125rem;
-    }
-
-    .focus-label {
-      font-size: 0.8125rem;
-      font-weight: 600;
-      color: var(--sage);
-      margin-bottom: 0.125rem;
-    }
-
-    .focus-text {
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--text-primary);
-      line-height: 1.5;
-    }
-
-    /* Dashboard two-column layout */
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: 5fr 2fr;
-      gap: 2rem;
-    }
-
-    /* Meeting timeline */
-    .timeline {
-      display: flex;
-      flex-direction: column;
-      gap: 0.625rem;
-    }
-
-    .meeting-card {
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1rem 1.25rem;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
-
-    .meeting-card:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    }
-
-    .meeting-card--customer {
-      border-left: 4px solid var(--gold);
-    }
-
-    .meeting-card--internal {
-      border-left: 4px solid var(--text-muted);
-    }
-
-    .meeting-card--personal {
-      border-left: 4px solid var(--sage);
-    }
-
-    .meeting-card--live {
-      border-left: 4px solid var(--gold);
-      box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.25);
-    }
-
-    .meeting-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
-    .meeting-time {
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-    }
-
-    .meeting-title {
-      font-weight: 600;
-      font-size: 0.9375rem;
-      margin-top: 0.125rem;
-    }
-
-    .meeting-account {
-      margin-top: 0.25rem;
-      font-size: 0.8125rem;
-      color: var(--gold);
-      font-weight: 500;
-    }
-
-    .meeting-badges {
-      display: flex;
-      gap: 0.375rem;
-      align-items: center;
-      flex-shrink: 0;
-    }
+    /* Meeting cards */
+    .meeting-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem 1.25rem; transition: transform 0.15s, box-shadow 0.15s; }
+    .meeting-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .meeting-card--customer { border-left: 4px solid var(--gold); }
+    .meeting-card--internal { border-left: 4px solid var(--text-muted); }
+    .meeting-card--personal { border-left: 4px solid var(--sage); }
+    .meeting-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+    .meeting-time { font-size: 0.8125rem; color: var(--text-muted); }
+    .meeting-title { font-weight: 600; font-size: 0.9375rem; margin-top: 0.125rem; }
+    .meeting-account { margin-top: 0.25rem; font-size: 0.8125rem; color: var(--gold); font-weight: 500; }
+    .meeting-badges { display: flex; gap: 0.375rem; align-items: center; flex-shrink: 0; }
 
     /* Badges */
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
-      padding: 0.1875rem 0.5rem;
-      border-radius: 9999px;
-      font-size: 0.6875rem;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
+    .badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1875rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
     .badge--customer { background: rgba(201, 162, 39, 0.15); color: var(--gold); }
     .badge--qbr { background: rgba(201, 162, 39, 0.15); color: var(--gold); }
     .badge--internal { background: var(--cream-dark); color: var(--text-muted); }
     .badge--personal { background: rgba(127, 182, 133, 0.15); color: var(--sage); }
     .badge--ready { background: rgba(127, 182, 133, 0.1); color: var(--sage); border: 1px solid rgba(127, 182, 133, 0.3); }
     .badge--needs-prep { background: rgba(232, 150, 122, 0.1); color: var(--peach); border: 1px solid rgba(232, 150, 122, 0.3); }
-    .badge--processed { background: rgba(127, 182, 133, 0.1); color: var(--sage); border: 1px solid rgba(127, 182, 133, 0.3); }
-    .badge--cancelable { background: transparent; color: var(--text-muted); border: 1px solid var(--border-dark); }
+    .badge--cancelable { background: transparent; color: var(--text-muted); border: 1px solid rgba(26,31,36,0.15); }
     .badge--p1 { background: rgba(198, 40, 40, 0.12); color: var(--destructive); }
     .badge--p2 { background: rgba(201, 162, 39, 0.12); color: var(--gold); }
     .badge--p3 { background: var(--cream-dark); color: var(--text-muted); }
     .badge--risk { background: rgba(232, 150, 122, 0.12); color: var(--peach); }
     .badge--win { background: rgba(127, 182, 133, 0.12); color: var(--sage); }
+    .badge-check { width: 0.6875rem; height: 0.6875rem; }
 
-    .badge-check {
-      width: 0.6875rem;
-      height: 0.6875rem;
-    }
+    /* Sidebar panel */
+    .sidebar-panel { display: flex; flex-direction: column; gap: 1.5rem; }
+    .panel-section-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.5rem; }
 
-    /* Link button style */
-    .view-prep-btn {
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--gold);
-      cursor: default;
-    }
+    /* Actions */
+    .action-item { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0; }
+    .action-checkbox { width: 1.125rem; height: 1.125rem; border-radius: 50%; border: 2px solid rgba(26,31,36,0.15); flex-shrink: 0; margin-top: 0.125rem; }
+    .action-content { flex: 1; min-width: 0; }
+    .action-title-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .action-title { font-size: 0.8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .action-account { font-size: 0.75rem; color: var(--gold); font-weight: 500; }
+    .action-due { font-size: 0.75rem; color: var(--text-muted); }
+    .action-due--overdue { color: var(--destructive); }
 
-    /* Sidebar panel (actions + emails) */
-    .sidebar-panel {
-      display: flex;
-      flex-direction: column;
-      gap: 1.5rem;
-    }
+    /* Emails */
+    .email-item { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0; }
+    .email-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--gold); flex-shrink: 0; margin-top: 0.4375rem; }
+    .email-sender { font-size: 0.8125rem; font-weight: 500; }
+    .email-subject { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .email-action { font-size: 0.6875rem; font-weight: 500; color: rgba(201, 162, 39, 0.8); margin-top: 0.125rem; }
 
-    .panel-section-title {
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      margin-bottom: 0.5rem;
-    }
-
-    /* Action items */
-    .action-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.625rem;
-      padding: 0.5rem 0;
-    }
-
-    .action-checkbox {
-      width: 1.125rem;
-      height: 1.125rem;
-      border-radius: 50%;
-      border: 2px solid var(--border-dark);
-      flex-shrink: 0;
-      margin-top: 0.125rem;
-    }
-
-    .action-content {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .action-title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.5rem;
-    }
-
-    .action-title {
-      font-size: 0.8125rem;
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .action-account {
-      font-size: 0.75rem;
-      color: var(--gold);
-      font-weight: 500;
-    }
-
-    .action-due {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .action-due--overdue {
-      color: var(--destructive);
-    }
-
-    /* Email items */
-    .email-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.625rem;
-      padding: 0.5rem 0;
-    }
-
-    .email-dot {
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      background: var(--gold);
-      flex-shrink: 0;
-      margin-top: 0.4375rem;
-    }
-
-    .email-content {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .email-sender {
-      font-size: 0.8125rem;
-      font-weight: 500;
-    }
-
-    .email-subject {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .email-action {
-      font-size: 0.6875rem;
-      font-weight: 500;
-      color: rgba(201, 162, 39, 0.8);
-      margin-top: 0.125rem;
-    }
-
-    /* ═══ Meeting Intelligence Mockup ═══ */
-    .meeting-detail {
-      padding: 2rem 2.5rem;
-    }
-
-    .meeting-detail-header {
-      margin-bottom: 2rem;
-    }
-
-    .meeting-detail-time {
-      font-size: 0.875rem;
-      color: var(--text-muted);
-      margin-bottom: 0.25rem;
-    }
-
-    .meeting-detail-title {
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 0.5rem;
-    }
-
-    .meeting-detail-meta {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .prep-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-    }
-
-    .prep-card {
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 1.25rem;
-    }
-
-    .prep-card--full {
-      grid-column: 1 / -1;
-    }
-
-    .prep-card-title {
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      margin-bottom: 0.75rem;
-    }
-
+    /* ---- Meeting Prep Mockup ---- */
+    .meeting-detail { padding: 2rem 2.5rem; }
+    .meeting-detail-time { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+    .meeting-detail-title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
+    .meeting-detail-meta { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+    .prep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    .prep-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem; }
+    .prep-card-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.75rem; }
     .prep-card-title--gold { color: var(--gold); }
-    .prep-card-title--peach { color: var(--peach); }
-    .prep-card-title--sage { color: var(--sage); }
-
-    .prep-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-
-    .prep-list-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.5rem;
-      font-size: 0.8125rem;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .prep-dot {
-      width: 0.375rem;
-      height: 0.375rem;
-      border-radius: 50%;
-      flex-shrink: 0;
-      margin-top: 0.4375rem;
-    }
-
+    .prep-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    .prep-list-item { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; }
+    .prep-dot { width: 0.375rem; height: 0.375rem; border-radius: 50%; flex-shrink: 0; margin-top: 0.4375rem; }
     .prep-dot--charcoal { background: var(--text-secondary); }
     .prep-dot--gold { background: var(--gold); }
     .prep-dot--peach { background: var(--peach); }
     .prep-dot--sage { background: var(--sage); }
 
-    /* People list in prep */
-    .people-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.625rem;
-    }
-
-    .person-row {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-
-    .person-avatar {
-      width: 2rem;
-      height: 2rem;
-      border-radius: 50%;
-      background: rgba(201, 162, 39, 0.1);
-      color: var(--gold);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 0.75rem;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .person-name {
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-
-    .person-role {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .person-engagement {
-      margin-left: auto;
-      font-size: 0.6875rem;
-      font-weight: 600;
-    }
-
+    /* People list */
+    .people-list { display: flex; flex-direction: column; gap: 0.625rem; }
+    .person-row { display: flex; align-items: center; gap: 0.75rem; }
+    .person-avatar { width: 2rem; height: 2rem; border-radius: 50%; background: rgba(201, 162, 39, 0.1); color: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
+    .person-name { font-size: 0.8125rem; font-weight: 600; }
+    .person-role { font-size: 0.75rem; color: var(--text-muted); }
+    .person-engagement { margin-left: auto; font-size: 0.6875rem; font-weight: 600; }
     .person-engagement--champion { color: var(--sage); }
     .person-engagement--neutral { color: var(--text-muted); }
 
-    /* ═══ Account Detail Mockup ═══ */
-    .account-detail {
-      padding: 2rem 2.5rem;
-    }
-
-    .account-hero {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-
-    .account-avatar {
-      width: 3.5rem;
-      height: 3.5rem;
-      border-radius: 50%;
-      background: rgba(201, 162, 39, 0.1);
-      color: var(--gold);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.25rem;
-      font-weight: 600;
-      flex-shrink: 0;
-    }
-
-    .account-name {
-      font-size: 1.75rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-
-    .account-badges {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 0.25rem;
-    }
-
-    .health-dot {
-      width: 0.625rem;
-      height: 0.625rem;
-      border-radius: 50%;
-      display: inline-block;
-    }
-
+    /* ---- Account Mockup ---- */
+    .account-detail { padding: 2rem 2.5rem; }
+    .account-hero { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    .account-avatar { width: 3.5rem; height: 3.5rem; border-radius: 50%; background: rgba(201, 162, 39, 0.1); color: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: 600; flex-shrink: 0; }
+    .account-name { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+    .account-badges { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem; }
+    .health-dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; display: inline-block; }
     .health-dot--green { background: var(--sage); }
-    .health-dot--yellow { background: #ffbd2e; }
-    .health-dot--red { background: var(--destructive); }
+    .health-badge { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; font-weight: 500; color: var(--sage); }
+    .lifecycle-badge { font-size: 0.6875rem; font-weight: 500; color: var(--text-muted); border: 1px solid rgba(26,31,36,0.15); padding: 0.125rem 0.5rem; border-radius: 9999px; }
+    .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .metric-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem 1rem; }
+    .metric-value { font-size: 1.25rem; font-weight: 600; }
+    .metric-label { font-size: 0.6875rem; color: var(--text-muted); }
+    .assessment { font-size: 0.875rem; line-height: 1.8; color: var(--text-primary); margin-bottom: 1.5rem; }
+    .assessment-meta { font-size: 0.6875rem; color: var(--text-muted); }
+    .attention-item { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 0.5rem; }
+    .attention-item--risk { background: rgba(198, 40, 40, 0.06); }
+    .attention-item--win { background: rgba(127, 182, 133, 0.08); }
+    .attention-icon { width: 1rem; height: 1rem; flex-shrink: 0; margin-top: 0.125rem; }
+    .attention-text { font-size: 0.8125rem; line-height: 1.5; }
+    .attention-meta { display: flex; gap: 0.5rem; margin-top: 0.25rem; align-items: center; }
 
-    .health-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.375rem;
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--sage);
-    }
+    /* ---- After Meeting Flow ---- */
+    .flow-steps { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 1.5rem; align-items: start; margin-top: 3rem; }
+    .flow-step { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 2rem 1.75rem; }
+    .flow-step-number { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; color: var(--gold); letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+    .flow-step h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
+    .flow-step p { font-size: 0.95rem; line-height: 1.6; color: var(--text-secondary); margin-bottom: 0; }
+    .flow-arrow { display: flex; align-items: center; padding-top: 3rem; color: var(--gold); font-size: 1.5rem; }
+    .flow-output { list-style: none; margin-top: 0.75rem; }
+    .flow-output li { font-size: 0.85rem; color: var(--text-secondary); padding: 0.25rem 0; padding-left: 1rem; position: relative; }
+    .flow-output li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
 
-    .lifecycle-badge {
-      font-size: 0.6875rem;
-      font-weight: 500;
-      color: var(--text-muted);
-      border: 1px solid var(--border-dark);
-      padding: 0.125rem 0.5rem;
-      border-radius: 9999px;
-      text-transform: capitalize;
-    }
+    /* ---- Week View ---- */
+    .week-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-top: 3rem; }
+    .week-day { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+    .week-day--active { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+    .week-day-label { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.75rem; }
+    .week-day--active .week-day-label { color: var(--gold); }
+    .week-day-meeting { font-size: 0.75rem; color: var(--text-secondary); padding: 0.3rem 0; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 0.4rem; }
+    .week-day-meeting:last-child { border-bottom: none; }
+    .week-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+    .week-dot--gold { background: var(--gold); }
+    .week-dot--muted { background: var(--text-muted); opacity: 0.4; }
+    .week-dot--sage { background: var(--sage); }
+    .week-day-stat { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid rgba(0,0,0,0.04); }
 
-    /* Metrics row */
-    .metrics-row {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
-    }
+    /* ---- CTA ---- */
+    .cta { text-align: center; padding: 140px 2rem; }
+    .cta p { font-size: 1.1rem; color: var(--text-muted-on-dark); margin-top: 0.75rem; }
+    .btn-primary { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
 
-    .metric-card {
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 0.75rem 1rem;
-    }
+    /* ---- Footer ---- */
+    .footer { background: var(--charcoal); border-top: 1px solid var(--border-dark); padding: 3rem 2rem; }
+    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+    .footer-links { display: flex; gap: 2rem; list-style: none; flex-wrap: wrap; justify-content: center; }
+    .footer-links a { font-size: 0.875rem; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
+    .footer-links a:hover { color: var(--text-on-dark); }
+    .footer-meta p { font-size: 0.8rem; color: var(--text-muted-on-dark); line-height: 1.6; text-align: center; margin: 0; }
 
-    .metric-value {
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
+    /* ---- Animations ---- */
+    .fade-in { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
+    .fade-in-d1 { transition-delay: 0.12s; }
+    .fade-in-d2 { transition-delay: 0.24s; }
 
-    .metric-label {
-      font-size: 0.6875rem;
-      color: var(--text-muted);
-    }
-
-    /* Executive assessment */
-    .assessment {
-      font-size: 0.875rem;
-      line-height: 1.8;
-      color: var(--text-primary);
-      margin-bottom: 1.5rem;
-    }
-
-    .assessment-meta {
-      font-size: 0.6875rem;
-      color: var(--text-muted);
-    }
-
-    /* Attention items */
-    .attention-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      padding: 0.75rem 1rem;
-      border-radius: 0.5rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .attention-item--risk {
-      background: rgba(198, 40, 40, 0.06);
-    }
-
-    .attention-item--win {
-      background: rgba(127, 182, 133, 0.08);
-    }
-
-    .attention-icon {
-      width: 1rem;
-      height: 1rem;
-      flex-shrink: 0;
-      margin-top: 0.125rem;
-    }
-
-    .attention-text {
-      font-size: 0.8125rem;
-      line-height: 1.5;
-    }
-
-    .attention-meta {
-      display: flex;
-      gap: 0.5rem;
-      margin-top: 0.25rem;
-      align-items: center;
-    }
-
-    /* Account grid layout */
-    .account-grid {
-      display: grid;
-      grid-template-columns: 3fr 2fr;
-      gap: 1.5rem;
-    }
-
-    /* Stakeholder cards */
-    .stakeholder-card {
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 0.5rem;
-      padding: 0.75rem 1rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .stakeholder-header {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-    }
-
-    .stakeholder-name {
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-
-    .stakeholder-role {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .stakeholder-assessment {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin-top: 0.375rem;
-      line-height: 1.5;
-    }
-
-    /* ═══ Section 4: Compounds ═══ */
-    .compounds-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 2rem;
-      margin-top: 2rem;
-    }
-
-    .compound-panel {
-      background: var(--white);
-      border: 1px solid var(--border);
-      border-radius: 0.75rem;
-      overflow: hidden;
-    }
-
-    .compound-label {
-      padding: 0.75rem 1.25rem;
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--text-muted);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .compound-body {
-      padding: 1.25rem;
-    }
-
-    .compound-meeting-simple {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      padding: 0.5rem 0;
-      font-size: 0.8125rem;
-    }
-
-    .compound-dot {
-      width: 0.5rem;
-      height: 0.5rem;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .compound-dot--muted { background: var(--text-muted); opacity: 0.4; }
-    .compound-dot--gold { background: var(--gold); }
-    .compound-dot--sage { background: var(--sage); }
-
-    .compound-time {
-      color: var(--text-muted);
-      width: 4rem;
-      flex-shrink: 0;
-    }
-
-    .compound-title {
-      color: var(--text-secondary);
-    }
-
-    .compound-caption {
-      padding: 1rem 1.25rem;
-      font-size: 0.8125rem;
-      color: var(--text-muted);
-      font-style: italic;
-      border-top: 1px solid var(--border);
-      background: var(--cream);
-    }
-
-    /* Rich compound card */
-    .compound-meeting-rich {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 0.75rem;
-      padding: 0.625rem 0;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .compound-meeting-rich:last-child {
-      border-bottom: none;
-    }
-
-    .compound-rich-left {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-      flex: 1;
-      min-width: 0;
-    }
-
-    .compound-rich-title {
-      font-size: 0.8125rem;
-      font-weight: 600;
-    }
-
-    .compound-rich-account {
-      font-size: 0.6875rem;
-      color: var(--gold);
-      font-weight: 500;
-    }
-
-    /* ═══ Section 5: File Tree ═══ */
-    .file-tree {
-      background: var(--charcoal);
-      border-radius: 0.75rem;
-      padding: 2rem 2.5rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8125rem;
-      line-height: 1.8;
-      color: rgba(245, 242, 239, 0.7);
-      overflow-x: auto;
-      box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.2);
-      max-width: 640px;
-    }
-
-    .file-tree .dir {
-      color: var(--gold);
-      font-weight: 500;
-    }
-
-    .file-tree .file-json {
-      color: rgba(245, 242, 239, 0.5);
-    }
-
-    .file-tree .file-md {
-      color: var(--sage);
-    }
-
-    .file-tree .file-folder {
-      color: var(--gold-muted);
-    }
-
-    /* ═══ Footer ═══ */
-    .footer {
-      border-top: 1px solid var(--border);
-      padding: 3rem 2rem;
-      text-align: center;
-    }
-
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 2rem;
-      list-style: none;
-      margin-bottom: 1.5rem;
-    }
-
-    .footer-links a {
-      text-decoration: none;
-      color: var(--text-secondary);
-      font-size: 0.875rem;
-      font-weight: 500;
-      transition: color 0.15s;
-    }
-
-    .footer-links a:hover {
-      color: var(--gold);
-    }
-
-    .footer-license {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-bottom: 0.25rem;
-    }
-
-    .footer-copyright {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    /* ═══ Annotations ═══ */
-    .annotation-wrapper {
-      position: relative;
-    }
-
-    .annotation {
-      position: absolute;
-      display: flex;
-      align-items: flex-start;
-      gap: 0.5rem;
-      pointer-events: none;
-    }
-
-    .annotation-line {
-      width: 2rem;
-      height: 1px;
-      background: var(--gold);
-      flex-shrink: 0;
-      margin-top: 0.5625rem;
-    }
-
-    .annotation-text {
-      font-size: 0.75rem;
-      font-weight: 500;
-      color: var(--gold);
-      white-space: nowrap;
-      line-height: 1.2;
-    }
-
-    .annotation-text span {
-      display: block;
-      font-weight: 400;
-      color: var(--text-muted);
-      font-size: 0.6875rem;
-      margin-top: 0.125rem;
-    }
-
-    /* Annotation positions */
-    .annotation--focus {
-      top: 7.5rem;
-      right: -14rem;
-    }
-
-    .annotation--prep {
-      top: 15.5rem;
-      right: -14rem;
-    }
-
-    .annotation--actions {
-      top: 9rem;
-      left: -15rem;
-      flex-direction: row-reverse;
-    }
-
-    .annotation--actions .annotation-line {
-      transform: scaleX(-1);
-    }
-
-    /* ═══ Prose text ═══ */
-    .prose-body {
-      font-size: 1.0625rem;
-      line-height: 1.8;
-      color: var(--text-secondary);
-      max-width: 600px;
-    }
-
-    .prose-body strong {
-      color: var(--text-primary);
-      font-weight: 600;
-    }
-
-    /* ═══ Divider ═══ */
-    .section-divider {
-      width: 3rem;
-      height: 2px;
-      background: var(--border-dark);
-      margin: 0 auto;
-    }
-
-    /* ═══ Fade-in Animations ═══ */
-    .fade-in {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
-                  transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-
-    .fade-in.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .fade-in-delay-1 { transition-delay: 0.1s; }
-    .fade-in-delay-2 { transition-delay: 0.2s; }
-    .fade-in-delay-3 { transition-delay: 0.3s; }
-
-    /* ═══ Responsive ═══ */
+    /* ---- Responsive ---- */
     @media (max-width: 1024px) {
-      .annotation { display: none; }
-
-      .dashboard-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .account-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .prep-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .compounds-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .metrics-row {
-        grid-template-columns: repeat(2, 1fr);
-      }
+      .flow-steps { grid-template-columns: 1fr; }
+      .flow-arrow { display: none; }
+      .week-grid { grid-template-columns: repeat(3, 1fr); }
+      .metrics-row { grid-template-columns: repeat(2, 1fr); }
     }
-
     @media (max-width: 768px) {
-      .app-sidebar { display: none; }
-
-      .section-title {
-        font-size: 1.75rem;
-      }
-
-      .section {
-        padding: 4rem 1.25rem;
-      }
-
-      .section:first-of-type {
-        padding-top: 6rem;
-      }
-
-      .app-main {
-        padding: 1.25rem;
-      }
-
-      .meeting-detail {
-        padding: 1.25rem;
-      }
-
-      .account-detail {
-        padding: 1.25rem;
-      }
-
-      .nav-links {
-        gap: 1rem;
-      }
-
-      .footer-links {
-        flex-wrap: wrap;
-        gap: 1rem;
-      }
-
-      .file-tree {
-        padding: 1.25rem;
-        font-size: 0.75rem;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .nav-inner {
-        padding: 0 1rem;
-      }
-
-      .nav-links a {
-        font-size: 0.8125rem;
-      }
-
-      .metrics-row {
-        grid-template-columns: 1fr 1fr;
-      }
+      .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: rgba(26, 31, 36, 0.97); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-dark); flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; }
+      .nav-links.open { display: flex; }
+      .nav-toggle { display: block; }
+      .hero { padding: 150px 1.5rem 80px; }
+      .section { padding: 100px 1.5rem; }
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .prep-grid { grid-template-columns: 1fr; }
+      .week-grid { grid-template-columns: 1fr 1fr; }
+      .app-main, .meeting-detail, .account-detail { padding: 1.25rem; }
+      .cta { padding: 100px 1.5rem; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ═══ Navigation ═══ -->
-  <nav class="nav" role="navigation">
+  <!-- Nav -->
+  <nav class="nav">
     <div class="nav-inner">
       <a href="/" class="nav-logo">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24">
-          <circle cx="16" cy="16" r="16" fill="#1a1f24"/>
-          <polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/>
-        </svg>
+        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
         DailyOS
       </a>
+      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
       <ul class="nav-links">
         <li><a href="/">Home</a></li>
         <li><a href="/tour.html" class="active">Tour</a></li>
         <li><a href="/philosophy.html">Philosophy</a></li>
-        <li><a href="/setup.html">Get Started</a></li>
+        <li><a href="/setup.html" class="nav-cta">Get Early Access</a></li>
       </ul>
     </div>
   </nav>
 
-  <!-- ═══ Section 1: Your Morning ═══ -->
-  <section class="section" id="morning">
-    <div class="fade-in">
-      <div class="section-label">The Daily Briefing</div>
-      <h2 class="section-title">Your morning, prepared</h2>
-      <p class="section-subtitle">
-        Open the app and your day is ready. Meetings prepped, actions prioritized,
-        emails triaged. No setup, no ritual, no guilt if you skip a day.
-      </p>
+  <!-- ============================================ -->
+  <!-- HERO                                         -->
+  <!-- ============================================ -->
+  <section class="hero">
+    <div class="hero-inner">
+      <h1 class="fade-in">See it in action.</h1>
+      <p class="fade-in fade-in-d1">Five screens. That's the whole product.</p>
     </div>
+  </section>
 
-    <div class="fade-in fade-in-delay-1 annotation-wrapper">
-      <!-- Annotations (visible on wide screens) -->
-      <div class="annotation annotation--focus">
-        <div class="annotation-line"></div>
-        <div class="annotation-text">
-          AI-synthesized focus
-          <span>One sentence, not ten stats</span>
-        </div>
-      </div>
-      <div class="annotation annotation--prep">
-        <div class="annotation-line"></div>
-        <div class="annotation-text">
-          Prep status at a glance
-          <span>Ready, needs prep, or processed</span>
-        </div>
+  <!-- ============================================ -->
+  <!-- SECTION 1: YOUR MORNING                      -->
+  <!-- ============================================ -->
+  <section class="section" id="morning">
+    <div class="section-wide">
+      <div class="section-inner" style="margin-bottom: 0;">
+        <p class="section-label fade-in">The daily briefing</p>
+        <h2 class="fade-in">Your morning, prepared.</h2>
+        <p class="fade-in">Open the app. Your schedule is laid out with prep status for every meeting. Your priority actions are surfaced. Your flagged emails have suggested next steps. No setup. No ritual.</p>
       </div>
 
-      <!-- Window Frame -->
-      <div class="window-frame">
+      <div class="window-frame fade-in fade-in-d1">
         <div class="window-titlebar">
-          <div class="window-dots">
-            <div class="window-dot window-dot--close"></div>
-            <div class="window-dot window-dot--minimize"></div>
-            <div class="window-dot window-dot--maximize"></div>
-          </div>
-          <div class="window-title">DailyOS</div>
+          <div class="window-dot window-dot--red"></div>
+          <div class="window-dot window-dot--yellow"></div>
+          <div class="window-dot window-dot--green"></div>
         </div>
         <div class="window-body">
-          <div class="app-layout">
-            <!-- Sidebar -->
-            <div class="app-sidebar">
-              <div class="sidebar-section-label">Today</div>
-              <div class="sidebar-item active">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                Today
-              </div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                This Week
-              </div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-                Inbox
-                <span class="sidebar-badge">3</span>
-              </div>
-
-              <div class="sidebar-section-label">Workspace</div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                Actions
-              </div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                People
-              </div>
-
-              <div class="sidebar-section-label">Entities</div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/></svg>
-                Accounts
-              </div>
-              <div class="sidebar-item">
-                <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
-                Projects
+          <div class="app-main">
+            <div class="app-date">Monday, February 10, 2026</div>
+            <div class="focus-callout">
+              <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              <div>
+                <div class="focus-label">Focus</div>
+                <div class="focus-text">Your week is front-loaded &mdash; 5 external meetings today, 2 tomorrow. Acme QBR is the priority: renewal decision is this quarter.</div>
               </div>
             </div>
-
-            <!-- Main Content -->
-            <div class="app-main">
-              <div class="app-date">Monday, February 10, 2026</div>
-
-              <div class="focus-callout">
-                <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <div class="dashboard-grid">
+              <div class="timeline">
+                <div class="meeting-card meeting-card--customer">
+                  <div class="meeting-header">
+                    <div>
+                      <div class="meeting-time mono">9:00 AM</div>
+                      <div class="meeting-title">Weekly Check-in</div>
+                      <div class="meeting-account">Globex Corp</div>
+                    </div>
+                    <div class="meeting-badges">
+                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
+                      <span class="badge badge--customer">Customer</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="meeting-card meeting-card--internal">
+                  <div class="meeting-header">
+                    <div>
+                      <div class="meeting-time mono">10:00 AM</div>
+                      <div class="meeting-title">CS Team Standup</div>
+                    </div>
+                    <div class="meeting-badges">
+                      <span class="badge badge--cancelable">Cancelable</span>
+                      <span class="badge badge--internal">Team Sync</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="meeting-card meeting-card--customer">
+                  <div class="meeting-header">
+                    <div>
+                      <div class="meeting-time mono">11:30 AM</div>
+                      <div class="meeting-title">Onboarding Kickoff</div>
+                      <div class="meeting-account">Initech</div>
+                    </div>
+                    <div class="meeting-badges">
+                      <span class="badge badge--needs-prep">Needs prep</span>
+                      <span class="badge badge--customer">Customer</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="meeting-card meeting-card--customer">
+                  <div class="meeting-header">
+                    <div>
+                      <div class="meeting-time mono">2:00 PM</div>
+                      <div class="meeting-title">QBR Review</div>
+                      <div class="meeting-account">Acme Corp</div>
+                    </div>
+                    <div class="meeting-badges">
+                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
+                      <span class="badge badge--qbr">QBR</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="meeting-card meeting-card--personal">
+                  <div class="meeting-header">
+                    <div>
+                      <div class="meeting-time mono">4:00 PM</div>
+                      <div class="meeting-title">1:1 with Manager</div>
+                    </div>
+                    <div class="meeting-badges">
+                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
+                      <span class="badge badge--personal">1:1</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="sidebar-panel">
                 <div>
-                  <div class="focus-label">Focus</div>
-                  <div class="focus-text">Your week is front-loaded &mdash; 5 external meetings today, 2 tomorrow. Acme QBR is the priority: renewal decision is this quarter.</div>
-                </div>
-              </div>
-
-              <div class="dashboard-grid">
-                <!-- Schedule Column -->
-                <div class="timeline">
-                  <div class="meeting-card meeting-card--customer">
-                    <div class="meeting-header">
-                      <div>
-                        <div class="meeting-time mono">9:00 AM <span style="color: var(--text-muted); opacity: 0.5;">&mdash;</span> <span style="opacity: 0.7;">9:30 AM</span></div>
-                        <div class="meeting-title">Weekly Check-in</div>
-                        <div class="meeting-account">Globex Corp</div>
-                      </div>
-                      <div class="meeting-badges">
-                        <span class="badge badge--ready">
-                          <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          View Prep
-                        </span>
-                        <span class="badge badge--customer">Customer</span>
-                      </div>
+                  <div class="panel-section-title">Actions</div>
+                  <div class="action-item">
+                    <div class="action-checkbox"></div>
+                    <div class="action-content">
+                      <div class="action-title-row"><div class="action-title">Send QBR deck to Sarah</div><span class="badge badge--p1">P1</span></div>
+                      <div class="action-account">Acme Corp</div>
+                      <div class="action-due action-due--overdue">Overdue &middot; Feb 7</div>
                     </div>
                   </div>
-
-                  <div class="meeting-card meeting-card--internal">
-                    <div class="meeting-header">
-                      <div>
-                        <div class="meeting-time mono">10:00 AM <span style="color: var(--text-muted); opacity: 0.5;">&mdash;</span> <span style="opacity: 0.7;">10:30 AM</span></div>
-                        <div class="meeting-title">CS Team Standup</div>
-                      </div>
-                      <div class="meeting-badges">
-                        <span class="badge badge--cancelable">Cancelable</span>
-                        <span class="badge badge--internal">Team Sync</span>
-                      </div>
+                  <div class="action-item">
+                    <div class="action-checkbox"></div>
+                    <div class="action-content">
+                      <div class="action-title-row"><div class="action-title">Follow up on integration ticket</div><span class="badge badge--p2">P2</span></div>
+                      <div class="action-account">Globex Corp</div>
+                      <div class="action-due">Due Feb 12</div>
                     </div>
                   </div>
-
-                  <div class="meeting-card meeting-card--customer">
-                    <div class="meeting-header">
-                      <div>
-                        <div class="meeting-time mono">11:30 AM <span style="color: var(--text-muted); opacity: 0.5;">&mdash;</span> <span style="opacity: 0.7;">12:00 PM</span></div>
-                        <div class="meeting-title">Onboarding Kickoff</div>
-                        <div class="meeting-account">Initech</div>
-                      </div>
-                      <div class="meeting-badges">
-                        <span class="badge badge--needs-prep">Needs prep</span>
-                        <span class="badge badge--customer">Customer</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="meeting-card meeting-card--customer">
-                    <div class="meeting-header">
-                      <div>
-                        <div class="meeting-time mono">2:00 PM <span style="color: var(--text-muted); opacity: 0.5;">&mdash;</span> <span style="opacity: 0.7;">3:00 PM</span></div>
-                        <div class="meeting-title">QBR Review</div>
-                        <div class="meeting-account">Acme Corp</div>
-                      </div>
-                      <div class="meeting-badges">
-                        <span class="badge badge--ready">
-                          <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          View Prep
-                        </span>
-                        <span class="badge badge--qbr">QBR</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="meeting-card meeting-card--personal">
-                    <div class="meeting-header">
-                      <div>
-                        <div class="meeting-time mono">4:00 PM <span style="color: var(--text-muted); opacity: 0.5;">&mdash;</span> <span style="opacity: 0.7;">4:30 PM</span></div>
-                        <div class="meeting-title">1:1 with Manager</div>
-                      </div>
-                      <div class="meeting-badges">
-                        <span class="badge badge--ready">
-                          <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          View Prep
-                        </span>
-                        <span class="badge badge--personal">1:1</span>
-                      </div>
+                  <div class="action-item">
+                    <div class="action-checkbox"></div>
+                    <div class="action-content">
+                      <div class="action-title-row"><div class="action-title">Draft onboarding timeline</div><span class="badge badge--p2">P2</span></div>
+                      <div class="action-account">Initech</div>
+                      <div class="action-due">Due Feb 14</div>
                     </div>
                   </div>
                 </div>
-
-                <!-- Sidebar Column -->
-                <div class="sidebar-panel">
-                  <!-- Actions -->
-                  <div>
-                    <div class="panel-section-title">Actions</div>
-                    <div class="action-item">
-                      <div class="action-checkbox"></div>
-                      <div class="action-content">
-                        <div class="action-title-row">
-                          <div class="action-title">Send QBR deck to Sarah</div>
-                          <span class="badge badge--p1">P1</span>
-                        </div>
-                        <div class="action-account">Acme Corp</div>
-                        <div class="action-due action-due--overdue">Overdue &middot; Feb 7</div>
-                      </div>
-                    </div>
-                    <div class="action-item">
-                      <div class="action-checkbox"></div>
-                      <div class="action-content">
-                        <div class="action-title-row">
-                          <div class="action-title">Follow up on integration ticket</div>
-                          <span class="badge badge--p2">P2</span>
-                        </div>
-                        <div class="action-account">Globex Corp</div>
-                        <div class="action-due">Due Feb 12</div>
-                      </div>
-                    </div>
-                    <div class="action-item">
-                      <div class="action-checkbox"></div>
-                      <div class="action-content">
-                        <div class="action-title-row">
-                          <div class="action-title">Draft onboarding timeline</div>
-                          <span class="badge badge--p2">P2</span>
-                        </div>
-                        <div class="action-account">Initech</div>
-                        <div class="action-due">Due Feb 14</div>
-                      </div>
-                    </div>
-                    <div class="action-item">
-                      <div class="action-checkbox"></div>
-                      <div class="action-content">
-                        <div class="action-title-row">
-                          <div class="action-title">Update risk register</div>
-                          <span class="badge badge--p3">P3</span>
-                        </div>
-                        <div class="action-due">Due Feb 15</div>
-                      </div>
+                <div>
+                  <div class="panel-section-title">Emails</div>
+                  <div class="email-item">
+                    <div class="email-dot"></div>
+                    <div>
+                      <div class="email-sender">Sarah Chen</div>
+                      <div class="email-subject">Re: QBR Agenda &mdash; expansion section?</div>
+                      <div class="email-action">&rarr; Reply before your 2 PM</div>
                     </div>
                   </div>
-
-                  <!-- Emails -->
-                  <div>
-                    <div class="panel-section-title">Emails</div>
-                    <div class="email-item">
-                      <div class="email-dot"></div>
-                      <div class="email-content">
-                        <div class="email-sender">Sarah Chen</div>
-                        <div class="email-subject">Re: QBR Agenda &mdash; can we add a section on expansion?</div>
-                        <div class="email-action">&rarr; Reply before your 2 PM meeting</div>
-                      </div>
-                    </div>
-                    <div class="email-item">
-                      <div class="email-dot"></div>
-                      <div class="email-content">
-                        <div class="email-sender">Tom Rivera (Initech)</div>
-                        <div class="email-subject">Onboarding questions &mdash; team access and SSO</div>
-                        <div class="email-action">&rarr; Forward to engineering for SSO setup</div>
-                      </div>
-                    </div>
-                    <div class="email-item">
-                      <div class="email-dot"></div>
-                      <div class="email-content">
-                        <div class="email-sender">Lisa Park</div>
-                        <div class="email-subject">Globex usage report ready for review</div>
-                        <div class="email-action">&rarr; Review before Wednesday check-in</div>
-                      </div>
+                  <div class="email-item">
+                    <div class="email-dot"></div>
+                    <div>
+                      <div class="email-sender">Tom Rivera (Initech)</div>
+                      <div class="email-subject">Onboarding questions &mdash; SSO</div>
+                      <div class="email-action">&rarr; Forward to engineering</div>
                     </div>
                   </div>
                 </div>
@@ -1512,30 +442,26 @@
     </div>
   </section>
 
-  <!-- ═══ Section 2: Meeting Intelligence ═══ -->
-  <section class="section" id="meeting-intelligence">
-    <div class="fade-in">
-      <div class="section-label">Meeting Intelligence</div>
-      <h2 class="section-title">Every meeting, prepped</h2>
-      <p class="section-subtitle">
-        DailyOS synthesizes account history, recent emails, past meeting notes, and
-        stakeholder context into a prep brief. You read it. You're ready.
-      </p>
-    </div>
+  <!-- ============================================ -->
+  <!-- SECTION 2: MEETING INTELLIGENCE              -->
+  <!-- ============================================ -->
+  <section class="section section--dark" id="meeting-intelligence">
+    <div class="section-wide">
+      <div class="section-inner" style="margin-bottom: 0;">
+        <p class="section-label fade-in">Meeting intelligence</p>
+        <h2 class="fade-in" style="color: var(--text-on-dark);">Click any meeting. The prep is done.</h2>
+        <p class="fade-in">Who's in the room and their engagement history. What was discussed last time. Open action items. Risk signals. A suggested agenda based on what actually matters.</p>
+      </div>
 
-    <div class="fade-in fade-in-delay-1">
-      <div class="window-frame">
+      <div class="window-frame fade-in fade-in-d1">
         <div class="window-titlebar">
-          <div class="window-dots">
-            <div class="window-dot window-dot--close"></div>
-            <div class="window-dot window-dot--minimize"></div>
-            <div class="window-dot window-dot--maximize"></div>
-          </div>
-          <div class="window-title">DailyOS</div>
+          <div class="window-dot window-dot--red"></div>
+          <div class="window-dot window-dot--yellow"></div>
+          <div class="window-dot window-dot--green"></div>
         </div>
         <div class="window-body">
           <div class="meeting-detail">
-            <div class="meeting-detail-header">
+            <div>
               <div class="meeting-detail-time mono">2:00 PM &mdash; 3:00 PM</div>
               <div class="meeting-detail-title">QBR Review &mdash; Acme Corp</div>
               <div class="meeting-detail-meta">
@@ -1544,93 +470,49 @@
                 <span style="font-size: 0.8125rem; color: var(--text-muted);">5 attendees</span>
               </div>
             </div>
-
             <div class="prep-grid">
-              <!-- What to Know -->
               <div class="prep-card">
                 <div class="prep-card-title">What to Know</div>
                 <ul class="prep-list">
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--charcoal"></span>
-                    Renewal decision expected this quarter. ARR $180K with expansion conversation active for new analytics module ($45K).
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--peach"></span>
-                    CFO (David Marsh) hasn't confirmed budget for the expansion. Sarah flagged this in last week's email.
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--sage"></span>
-                    Support ticket backlog cleared. CSAT improved from 7.2 to 8.6 since last QBR. Use this as a proof point.
-                  </li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span>Renewal decision expected this quarter. ARR $180K with expansion conversation active for analytics module ($45K).</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--peach"></span>CFO (David Marsh) hasn't confirmed budget. Sarah flagged this in last week's email.</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--sage"></span>CSAT improved from 7.2 to 8.6 since last QBR. Use as proof point.</li>
                 </ul>
               </div>
-
-              <!-- Key People -->
               <div class="prep-card">
                 <div class="prep-card-title">Key People</div>
                 <div class="people-list">
                   <div class="person-row">
                     <div class="person-avatar">SC</div>
-                    <div>
-                      <div class="person-name">Sarah Chen</div>
-                      <div class="person-role">VP Operations</div>
-                    </div>
+                    <div><div class="person-name">Sarah Chen</div><div class="person-role">VP Operations</div></div>
                     <div class="person-engagement person-engagement--champion" style="margin-left: auto;">Champion</div>
                   </div>
                   <div class="person-row">
                     <div class="person-avatar">DM</div>
-                    <div>
-                      <div class="person-name">David Marsh</div>
-                      <div class="person-role">CFO</div>
-                    </div>
+                    <div><div class="person-name">David Marsh</div><div class="person-role">CFO</div></div>
                     <div class="person-engagement person-engagement--neutral" style="margin-left: auto;">Neutral</div>
                   </div>
                   <div class="person-row">
                     <div class="person-avatar">JL</div>
-                    <div>
-                      <div class="person-name">Jenny Liu</div>
-                      <div class="person-role">Product Lead</div>
-                    </div>
+                    <div><div class="person-name">Jenny Liu</div><div class="person-role">Product Lead</div></div>
                     <div class="person-engagement person-engagement--champion" style="margin-left: auto;">Champion</div>
                   </div>
                 </div>
               </div>
-
-              <!-- Suggested Agenda -->
               <div class="prep-card">
                 <div class="prep-card-title prep-card-title--gold">Suggested Agenda</div>
                 <ul class="prep-list">
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--gold"></span>
-                    Review Q4 outcomes and CSAT improvement story
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--gold"></span>
-                    Analytics module demo and ROI projection
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--gold"></span>
-                    Address CFO budget concerns directly
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--gold"></span>
-                    Align on renewal timeline and next steps
-                  </li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Review Q4 outcomes and CSAT improvement</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Analytics module demo and ROI projection</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Address CFO budget concerns directly</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Align on renewal timeline</li>
                 </ul>
               </div>
-
-              <!-- Recent Context -->
               <div class="prep-card">
                 <div class="prep-card-title">Recent Context</div>
                 <ul class="prep-list">
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--charcoal"></span>
-                    <strong style="font-weight: 600; color: var(--text-primary);">Jan 28:</strong>&nbsp; Weekly check-in &mdash; Sarah mentioned the CFO wants to see adoption metrics before signing off on expansion.
-                  </li>
-                  <li class="prep-list-item">
-                    <span class="prep-dot prep-dot--charcoal"></span>
-                    <strong style="font-weight: 600; color: var(--text-primary);">Jan 15:</strong>&nbsp; Training session completed. Jenny's team fully onboarded on the new reporting module.
-                  </li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span><strong style="font-weight: 600; color: var(--text-primary);">Jan 28:</strong>&nbsp; Sarah mentioned CFO wants adoption metrics before signing off on expansion.</li>
+                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span><strong style="font-weight: 600; color: var(--text-primary);">Jan 15:</strong>&nbsp; Jenny's team fully onboarded on the new reporting module.</li>
                 </ul>
               </div>
             </div>
@@ -1640,30 +522,25 @@
     </div>
   </section>
 
-  <!-- ═══ Section 3: Account Intelligence ═══ -->
+  <!-- ============================================ -->
+  <!-- SECTION 3: ACCOUNT INTELLIGENCE              -->
+  <!-- ============================================ -->
   <section class="section" id="account-intelligence">
-    <div class="fade-in">
-      <div class="section-label">Account Intelligence</div>
-      <h2 class="section-title">Accounts that build themselves</h2>
-      <p class="section-subtitle">
-        Every meeting, transcript, and email enriches the account automatically.
-        No CRM updates. No manual notes. Intelligence compounds over time.
-      </p>
-    </div>
+    <div class="section-wide">
+      <div class="section-inner" style="margin-bottom: 0;">
+        <p class="section-label fade-in">Account intelligence</p>
+        <h2 class="fade-in">Accounts that build themselves.</h2>
+        <p class="fade-in">Every meeting, transcript, and email enriches the account record. Health signals, stakeholder sentiment, expansion opportunities, risk indicators. All maintained without touching a CRM.</p>
+      </div>
 
-    <div class="fade-in fade-in-delay-1">
-      <div class="window-frame">
+      <div class="window-frame fade-in fade-in-d1">
         <div class="window-titlebar">
-          <div class="window-dots">
-            <div class="window-dot window-dot--close"></div>
-            <div class="window-dot window-dot--minimize"></div>
-            <div class="window-dot window-dot--maximize"></div>
-          </div>
-          <div class="window-title">DailyOS</div>
+          <div class="window-dot window-dot--red"></div>
+          <div class="window-dot window-dot--yellow"></div>
+          <div class="window-dot window-dot--green"></div>
         </div>
         <div class="window-body">
           <div class="account-detail">
-            <!-- Hero -->
             <div class="account-hero">
               <div class="account-avatar">A</div>
               <div>
@@ -1672,131 +549,30 @@
                   <div class="account-badges">
                     <span class="health-badge"><span class="health-dot health-dot--green"></span> Green</span>
                     <span class="lifecycle-badge">Growth</span>
-                    <span class="badge" style="background: rgba(201, 162, 39, 0.12); color: var(--gold);">warm</span>
                   </div>
                 </div>
-                <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.25rem;">CSM: Jamie Wilson</div>
+                <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.25rem;">14 files &middot; Last updated 2 hours ago</div>
               </div>
             </div>
-
-            <!-- Metrics -->
             <div class="metrics-row">
-              <div class="metric-card">
-                <div class="metric-value">$180K</div>
-                <div class="metric-label">ARR</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-value">Growth</div>
-                <div class="metric-label">Lifecycle</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-value">47 days</div>
-                <div class="metric-label">Renewal</div>
-              </div>
-              <div class="metric-card">
-                <div class="metric-value">6 <span style="font-size: 0.75rem; font-weight: 400; color: var(--sage);">&uarr;</span></div>
-                <div class="metric-label">Meetings (30d)</div>
-              </div>
+              <div class="metric-card"><div class="metric-value">$180K</div><div class="metric-label">ARR</div></div>
+              <div class="metric-card"><div class="metric-value">Growth</div><div class="metric-label">Lifecycle</div></div>
+              <div class="metric-card"><div class="metric-value">47 days</div><div class="metric-label">Renewal</div></div>
+              <div class="metric-card"><div class="metric-value">6 <span style="font-size: 0.75rem; font-weight: 400; color: var(--sage);">&uarr;</span></div><div class="metric-label">Meetings (30d)</div></div>
             </div>
-
-            <!-- Executive Assessment -->
-            <div class="assessment">
-              Acme is in a strong position heading into renewal. The champion (Sarah Chen, VP Ops) is engaged and driving internal adoption &mdash; weekly active users up 34% since the reporting module launch. The expansion conversation for the analytics module ($45K) is active, but the CFO hasn't confirmed budget. The QBR today is the critical moment to present adoption metrics and address the budget concern directly.
-            </div>
-            <div class="assessment-meta" style="margin-bottom: 1.5rem;">Intelligence last updated 2 hours ago from 14 files</div>
-
-            <!-- Attention Items + Account Grid -->
+            <div class="assessment">Acme is in a strong position heading into renewal. The champion (Sarah Chen, VP Ops) is engaged and driving internal adoption &mdash; weekly active users up 34% since the reporting module launch. Expansion conversation for the analytics module ($45K) is active, but the CFO hasn't confirmed budget.</div>
             <div class="attention-item attention-item--risk">
               <svg class="attention-icon" style="color: var(--destructive);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               <div>
-                <div class="attention-text">CFO hasn't confirmed budget for analytics module expansion ($45K). Sarah flagged this may require a separate approval process.</div>
-                <div class="attention-meta">
-                  <span class="badge badge--risk" style="font-size: 0.625rem;">watch</span>
-                  <span style="font-size: 0.6875rem; color: var(--text-muted);">Email, Feb 3</span>
-                </div>
+                <div class="attention-text">CFO hasn't confirmed budget for analytics module expansion ($45K). May require separate approval process.</div>
+                <div class="attention-meta"><span class="badge badge--risk" style="font-size: 0.625rem;">watch</span><span style="font-size: 0.6875rem; color: var(--text-muted);">Email, Feb 3</span></div>
               </div>
             </div>
-
-            <div class="attention-item attention-item--risk">
-              <svg class="attention-icon" style="color: var(--destructive);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <div>
-                <div class="attention-text">Engineering team requested API rate limit increase. No response from Acme's IT in 2 weeks.</div>
-                <div class="attention-meta">
-                  <span class="badge badge--risk" style="font-size: 0.625rem;">low</span>
-                  <span style="font-size: 0.6875rem; color: var(--text-muted);">Support ticket</span>
-                </div>
-              </div>
-            </div>
-
             <div class="attention-item attention-item--win">
-              <svg class="attention-icon" style="color: var(--sage);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 9 7 12 7s5-3 7.5-3a2.5 2.5 0 0 1 0 5H18"/><path d="M18 15h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M6 15H4.5a2.5 2.5 0 0 0 0 5H6"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="18" y1="9" x2="18" y2="15"/><path d="M6 15h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2z"/></svg>
+              <svg class="attention-icon" style="color: var(--sage);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               <div>
                 <div class="attention-text">CSAT improved from 7.2 to 8.6 since last QBR. Support ticket backlog fully cleared.</div>
-                <div class="attention-meta">
-                  <span style="font-size: 0.6875rem; color: var(--text-muted);">Strengthens renewal position</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Grid: Main + Sidebar -->
-            <div class="account-grid" style="margin-top: 1.5rem;">
-              <div>
-                <!-- Stakeholder Intelligence -->
-                <div style="margin-bottom: 1.5rem;">
-                  <div class="panel-section-title" style="margin-bottom: 0.75rem;">Stakeholder Intelligence</div>
-                  <div class="stakeholder-card">
-                    <div class="stakeholder-header">
-                      <span class="stakeholder-name">Sarah Chen</span>
-                      <span class="stakeholder-role">VP Operations</span>
-                      <span class="badge badge--win" style="margin-left: auto; font-size: 0.625rem;">Champion</span>
-                    </div>
-                    <div class="stakeholder-assessment">Actively driving internal adoption. Weekly touchpoint established. Flagged CFO budget concern proactively, signaling strong partnership.</div>
-                  </div>
-                  <div class="stakeholder-card">
-                    <div class="stakeholder-header">
-                      <span class="stakeholder-name">David Marsh</span>
-                      <span class="stakeholder-role">CFO</span>
-                      <span class="badge badge--cancelable" style="margin-left: auto; font-size: 0.625rem;">Neutral</span>
-                    </div>
-                    <div class="stakeholder-assessment">Decision-maker for expansion budget. Has not attended last 3 meetings. Needs adoption metrics and ROI data to approve.</div>
-                  </div>
-                  <div class="stakeholder-card">
-                    <div class="stakeholder-header">
-                      <span class="stakeholder-name">Jenny Liu</span>
-                      <span class="stakeholder-role">Product Lead</span>
-                      <span class="badge badge--win" style="margin-left: auto; font-size: 0.625rem;">Champion</span>
-                    </div>
-                    <div class="stakeholder-assessment">Power user. Completed training for her entire team in January. Vocal advocate for the analytics module.</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Sidebar -->
-              <div>
-                <div style="background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem; margin-bottom: 1rem;">
-                  <div class="panel-section-title" style="margin-bottom: 0.75rem;">Account Details</div>
-                  <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.375rem 1rem; font-size: 0.8125rem;">
-                    <span style="color: var(--text-muted);">Health</span>
-                    <span style="display: flex; align-items: center; gap: 0.375rem;"><span class="health-dot health-dot--green"></span> Green</span>
-                    <span style="color: var(--text-muted);">Lifecycle</span>
-                    <span>Growth</span>
-                    <span style="color: var(--text-muted);">ARR</span>
-                    <span>$180,000</span>
-                    <span style="color: var(--text-muted);">Champion</span>
-                    <span>Sarah Chen</span>
-                    <span style="color: var(--text-muted);">Renewal</span>
-                    <span>Mar 28, 2026</span>
-                  </div>
-                </div>
-
-                <div style="background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem;">
-                  <div class="panel-section-title" style="margin-bottom: 0.75rem;">Company Context</div>
-                  <p style="font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 0.5rem;">B2B SaaS company specializing in supply chain optimization for mid-market manufacturers.</p>
-                  <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 1rem;">
-                    <span>Industry: Manufacturing</span>
-                    <span>Size: 450 employees</span>
-                  </div>
-                </div>
+                <div class="attention-meta"><span style="font-size: 0.6875rem; color: var(--text-muted);">Strengthens renewal position</span></div>
               </div>
             </div>
           </div>
@@ -1805,199 +581,145 @@
     </div>
   </section>
 
-  <!-- ═══ Section 4: It Compounds ═══ -->
-  <section class="section" id="compounds">
-    <div class="fade-in">
-      <div class="section-label">Intelligence Over Time</div>
-      <h2 class="section-title">It compounds</h2>
-      <p class="section-subtitle">
-        Every meeting, transcript, and email makes the system smarter. Your accounts
-        build up intelligence. Your people develop relationship histories.
-      </p>
-    </div>
+  <!-- ============================================ -->
+  <!-- SECTION 4: AFTER THE MEETING                 -->
+  <!-- ============================================ -->
+  <section class="section section--dark" id="after">
+    <div class="section-wide">
+      <div class="section-inner" style="margin-bottom: 0;">
+        <p class="section-label fade-in">After the meeting</p>
+        <h2 class="fade-in" style="color: var(--text-on-dark);">Drop the transcript. Walk away.</h2>
+        <p class="fade-in">After a call, drop the transcript into your inbox folder. The system processes it automatically. Summary, action items, stakeholder updates, account enrichment. You don't think about it again.</p>
+      </div>
 
-    <div class="fade-in fade-in-delay-1">
-      <div class="compounds-grid">
-        <!-- Day 1 -->
-        <div class="compound-panel">
-          <div class="compound-label">Day 1</div>
-          <div class="compound-body">
-            <div class="compound-meeting-simple">
-              <span class="compound-dot compound-dot--muted"></span>
-              <span class="compound-time mono">9:00 AM</span>
-              <span class="compound-title">Weekly Check-in</span>
-            </div>
-            <div class="compound-meeting-simple">
-              <span class="compound-dot compound-dot--muted"></span>
-              <span class="compound-time mono">10:00 AM</span>
-              <span class="compound-title">CS Team Standup</span>
-            </div>
-            <div class="compound-meeting-simple">
-              <span class="compound-dot compound-dot--muted"></span>
-              <span class="compound-time mono">11:30 AM</span>
-              <span class="compound-title">Onboarding Kickoff</span>
-            </div>
-            <div class="compound-meeting-simple">
-              <span class="compound-dot compound-dot--muted"></span>
-              <span class="compound-time mono">2:00 PM</span>
-              <span class="compound-title">QBR Review</span>
-            </div>
-          </div>
-          <div class="compound-caption">Your calendar, organized.</div>
+      <div class="flow-steps fade-in fade-in-d1">
+        <div class="flow-step">
+          <div class="flow-step-number">01 DROP</div>
+          <h3>Drop the transcript</h3>
+          <p>Drag a file into the inbox folder. Any format. Meeting recording, transcript, notes.</p>
         </div>
-
-        <!-- Month 2 -->
-        <div class="compound-panel">
-          <div class="compound-label">Month 2</div>
-          <div class="compound-body">
-            <div class="compound-meeting-rich">
-              <div class="compound-rich-left">
-                <span class="compound-dot compound-dot--gold" style="margin-top: 0.375rem;"></span>
-                <div>
-                  <div class="compound-rich-title">Weekly Check-in</div>
-                  <div class="compound-rich-account">Globex Corp</div>
-                </div>
-              </div>
-              <div class="meeting-badges">
-                <span class="badge badge--ready" style="font-size: 0.5625rem;">
-                  <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 0.5625rem; height: 0.5625rem;"><polyline points="20 6 9 17 4 12"/></svg>
-                  Ready
-                </span>
-                <span class="badge badge--customer" style="font-size: 0.5625rem;">Customer</span>
-              </div>
-            </div>
-            <div class="compound-meeting-rich">
-              <div class="compound-rich-left">
-                <span class="compound-dot compound-dot--muted" style="margin-top: 0.375rem; opacity: 1;"></span>
-                <div>
-                  <div class="compound-rich-title">CS Team Standup</div>
-                </div>
-              </div>
-              <div class="meeting-badges">
-                <span class="badge badge--cancelable" style="font-size: 0.5625rem;">Cancelable</span>
-              </div>
-            </div>
-            <div class="compound-meeting-rich">
-              <div class="compound-rich-left">
-                <span class="compound-dot compound-dot--gold" style="margin-top: 0.375rem;"></span>
-                <div>
-                  <div class="compound-rich-title">Expansion Review</div>
-                  <div class="compound-rich-account">Acme Corp</div>
-                </div>
-              </div>
-              <div class="meeting-badges">
-                <span class="badge badge--ready" style="font-size: 0.5625rem;">
-                  <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 0.5625rem; height: 0.5625rem;"><polyline points="20 6 9 17 4 12"/></svg>
-                  Ready
-                </span>
-                <span class="badge badge--customer" style="font-size: 0.5625rem;">Customer</span>
-              </div>
-            </div>
-            <div class="compound-meeting-rich">
-              <div class="compound-rich-left">
-                <span class="compound-dot compound-dot--sage" style="margin-top: 0.375rem;"></span>
-                <div>
-                  <div class="compound-rich-title">1:1 with Manager</div>
-                </div>
-              </div>
-              <div class="meeting-badges">
-                <span class="badge badge--processed" style="font-size: 0.5625rem;">
-                  <svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 0.5625rem; height: 0.5625rem;"><polyline points="20 6 9 17 4 12"/></svg>
-                  Ready
-                </span>
-                <span class="badge badge--personal" style="font-size: 0.5625rem;">1:1</span>
-              </div>
-            </div>
-          </div>
-          <div class="compound-caption">Full operational intelligence.</div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">02 PROCESS</div>
+          <h3>System processes it</h3>
+          <p>AI reads the transcript, extracts what matters, and routes it to the right places.</p>
+        </div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-step">
+          <div class="flow-step-number">03 OUTPUT</div>
+          <h3>Everything filed</h3>
+          <ul class="flow-output">
+            <li>Meeting summary in account folder</li>
+            <li>Action items assigned with due dates</li>
+            <li>Stakeholder records updated</li>
+            <li>Account intelligence enriched</li>
+            <li>Tomorrow's briefing improved</li>
+          </ul>
         </div>
       </div>
     </div>
-
-    <div class="fade-in fade-in-delay-2" style="margin-top: 3rem;">
-      <p class="prose-body">
-        <strong>Six months in, DailyOS knows your work better than you do.</strong>
-        It remembers what was discussed in every meeting, tracks every commitment,
-        and surfaces the context you need exactly when you need it. Not because
-        you maintained it &mdash; because the system did.
-      </p>
-    </div>
   </section>
 
-  <!-- ═══ Section 5: Your Files. Your Machine. ═══ -->
-  <section class="section" id="local-first">
-    <div class="fade-in">
-      <div class="section-label">Local-First Architecture</div>
-      <h2 class="section-title">Your files. Your machine.</h2>
-      <p class="section-subtitle">
-        Everything DailyOS knows lives as markdown and JSON on your machine.
-        No cloud. No lock-in. Any AI tool can read your workspace.
-      </p>
-    </div>
+  <!-- ============================================ -->
+  <!-- SECTION 5: YOUR WEEK                         -->
+  <!-- ============================================ -->
+  <section class="section" id="week">
+    <div class="section-wide">
+      <div class="section-inner" style="margin-bottom: 0;">
+        <p class="section-label fade-in">Your week</p>
+        <h2 class="fade-in">The rhythm is daily. The intelligence is cumulative.</h2>
+        <p class="fade-in">Each morning, DailyOS runs at 6 AM. By the time you have coffee, your daily briefing is ready. But the system is also looking ahead &mdash; flagging what's coming, tracking what's overdue, connecting today's meetings to last week's context.</p>
+      </div>
 
-    <div class="fade-in fade-in-delay-1">
-      <div class="file-tree">
-<span class="dir">~/Documents/DailyOS/</span>
-├── <span class="dir">_today/</span>
-│   ├── <span class="file-json">schedule.json</span>
-│   ├── <span class="file-md">briefing.md</span>
-│   └── <span class="file-md">prep-acme-qbr.md</span>
-├── <span class="dir">Accounts/</span>
-│   └── <span class="dir">Acme-Corp/</span>
-│       ├── <span class="file-md">README.md</span>
-│       ├── <span class="file-json">dashboard.json</span>
-│       ├── <span class="file-json">intelligence.json</span>
-│       ├── <span class="file-md">dashboard.md</span>
-│       ├── <span class="file-folder">Call-Transcripts/</span>
-│       ├── <span class="file-folder">Meeting-Notes/</span>
-│       └── <span class="file-folder">Documents/</span>
-└── <span class="dir">Projects/</span>
+      <div class="week-grid fade-in fade-in-d1">
+        <div class="week-day week-day--active">
+          <div class="week-day-label">Mon (today)</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Globex check-in</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> CS standup</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Initech kickoff</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Acme QBR</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span> 1:1 manager</div>
+          <div class="week-day-stat">5 meetings &middot; 3 prepped</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-label">Tue</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Globex expansion</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Product sync</div>
+          <div class="week-day-stat">2 meetings</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-label">Wed</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Initech training</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Team standup</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span> 1:1 Sarah</div>
+          <div class="week-day-stat">3 meetings &middot; 1 action due</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-label">Thu</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Acme follow-up</div>
+          <div class="week-day-stat">1 meeting</div>
+        </div>
+        <div class="week-day">
+          <div class="week-day-label">Fri</div>
+          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Focus time</div>
+          <div class="week-day-stat">No meetings &middot; 2 actions due</div>
+        </div>
       </div>
     </div>
+  </section>
 
-    <div class="fade-in fade-in-delay-2" style="margin-top: 3rem;">
-      <p class="prose-body">
-        DailyOS maintains a structured, AI-consumable knowledge base in markdown.
-        The app is one view into that data. <strong>Claude Desktop, ChatGPT, or any
-        future AI tool can read the same workspace.</strong> The archive is the product,
-        not the app.
-      </p>
+  <!-- ============================================ -->
+  <!-- CTA                                          -->
+  <!-- ============================================ -->
+  <section class="cta section--dark">
+    <div class="section-inner">
+      <h2 class="fade-in" style="font-size: clamp(2rem, 5vw, 3rem); color: var(--text-on-dark);">Ready to see your morning prepared?</h2>
+      <div class="fade-in fade-in-d1">
+        <a href="/setup.html" class="btn-primary">Get Early Access</a>
+      </div>
+      <p class="fade-in fade-in-d2" style="margin-top: 1rem;">Open source &middot; GPL-3.0 &middot; Free during alpha</p>
     </div>
   </section>
 
-  <!-- ═══ Footer ═══ -->
+  <!-- Footer -->
   <footer class="footer">
-    <ul class="footer-links">
-      <li><a href="/">Home</a></li>
-      <li><a href="/tour.html">Tour</a></li>
-      <li><a href="/philosophy.html">Philosophy</a></li>
-      <li><a href="/setup.html">Get Started</a></li>
-      <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
-    </ul>
-    <div class="footer-license">DailyOS is open source under GPL-3.0</div>
-    <div class="footer-copyright">&copy; 2026 James Giroux</div>
+    <div class="footer-inner">
+      <ul class="footer-links">
+        <li><a href="/">Home</a></li>
+        <li><a href="/tour.html">Tour</a></li>
+        <li><a href="/philosophy.html">Philosophy</a></li>
+        <li><a href="/setup.html">Get Started</a></li>
+        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
+      </ul>
+      <div class="footer-meta">
+        <p>DailyOS is open source under GPL-3.0</p>
+        <p>&copy; 2026 James Giroux</p>
+      </div>
+    </div>
   </footer>
 
-  <!-- ═══ Scroll Animations ═══ -->
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      var elements = document.querySelectorAll('.fade-in');
-
+    (function() {
       var observer = new IntersectionObserver(function(entries) {
         entries.forEach(function(entry) {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('visible');
-          }
+          if (entry.isIntersecting) entry.target.classList.add('visible');
         });
-      }, {
-        threshold: 0.1,
-        rootMargin: '0px 0px -40px 0px'
-      });
+      }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
+      document.querySelectorAll('.fade-in').forEach(function(el) { observer.observe(el); });
 
-      elements.forEach(function(el) {
-        observer.observe(el);
+      var toggle = document.querySelector('.nav-toggle');
+      var links = document.querySelector('.nav-links');
+      toggle.addEventListener('click', function() {
+        var isOpen = links.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       });
-    });
+      links.querySelectorAll('a').forEach(function(link) {
+        link.addEventListener('click', function() {
+          links.classList.remove('open');
+          toggle.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
   </script>
 
 </body>
