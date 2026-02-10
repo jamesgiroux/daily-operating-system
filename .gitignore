@@ -42,7 +42,6 @@ htmlcov/
 # Node
 node_modules/
 package-lock.json
-pnpm-lock.yaml
 
 # Tauri
 src-tauri/target/
