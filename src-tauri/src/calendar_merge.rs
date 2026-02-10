@@ -61,6 +61,7 @@ pub fn merge_meetings(
             // Enriched: live timing + briefing enrichment
             briefing_meeting.time = format_time_display(event.start, tz);
             briefing_meeting.end_time = Some(format_time_display(event.end, tz));
+            briefing_meeting.start_iso = Some(event.start.to_rfc3339());
             briefing_meeting.title = event.title.clone();
             briefing_meeting.overlay_status = Some(OverlayStatus::Enriched);
             result.push(briefing_meeting);
@@ -71,6 +72,7 @@ pub fn merge_meetings(
                 calendar_event_id: Some(event.id.clone()),
                 time: format_time_display(event.start, tz),
                 end_time: Some(format_time_display(event.end, tz)),
+                start_iso: Some(event.start.to_rfc3339()),
                 title: event.title.clone(),
                 meeting_type: event.meeting_type.clone(),
                 account: event.account.clone(),
@@ -162,6 +164,7 @@ mod tests {
             calendar_event_id: event_id.map(|s| s.to_string()),
             time: "9:00 AM".to_string(),
             end_time: Some("10:00 AM".to_string()),
+            start_iso: None,
             title: title.to_string(),
             meeting_type: MeetingType::Customer,
             account: Some("Acme".to_string()),

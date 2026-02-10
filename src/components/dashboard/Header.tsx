@@ -15,14 +15,14 @@ export function Header({ onCommandMenuOpen }: HeaderProps) {
   const { status, nextRunTime, runNow, isRunning } = useWorkflow();
 
   return (
-    <header
-      data-tauri-drag-region
-      className="flex h-14 shrink-0 items-center gap-2 border-b px-4"
-    >
-      <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 h-4" />
+    <header className="relative flex h-14 shrink-0 items-center gap-2 border-b px-4">
+      {/* Drag region covers the full header but sits behind interactive elements */}
+      <div data-tauri-drag-region className="absolute inset-0" />
 
-      <div className="flex flex-1 items-center justify-between">
+      <SidebarTrigger className="relative -ml-1" />
+      <Separator orientation="vertical" className="relative mr-2 h-4" />
+
+      <div className="relative flex flex-1 items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">Today</h1>
           <StatusIndicator status={status} nextRunTime={nextRunTime} />

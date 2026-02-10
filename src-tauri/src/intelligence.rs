@@ -367,6 +367,7 @@ mod tests {
             calendar_event_id: None,
             time: "09:00".to_string(),
             end_time: Some("10:00".to_string()),
+            start_iso: None,
             title: title.to_string(),
             meeting_type: mt,
             account: None,

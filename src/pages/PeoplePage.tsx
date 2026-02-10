@@ -181,8 +181,8 @@ export default function PeoplePage() {
                 <Plus className="mr-1 size-4" />
                 Add Person
               </Button>
-              <Button variant="ghost" size="icon" className="size-8" onClick={loadPeople}>
-                <RefreshCw className="size-4" />
+              <Button variant="ghost" size="icon" className="size-8" onClick={loadPeople} disabled={loading}>
+                <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>

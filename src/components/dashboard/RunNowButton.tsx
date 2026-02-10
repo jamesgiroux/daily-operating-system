@@ -68,7 +68,7 @@ export function RunNowButton({
 }
 
 /**
- * Icon-only version for compact layouts
+ * Compact version with icon + label for the header
  */
 export function RunNowIconButton({
   onClick,
@@ -84,15 +84,21 @@ export function RunNowIconButton({
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={onClick}
             disabled={isDisabled}
-            className={cn("h-8 w-8", className)}
+            className={cn("h-8 items-center gap-1.5 px-2.5 text-muted-foreground", className)}
           >
             {isRunning ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <>
+                <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                <span className="text-xs leading-none">Running...</span>
+              </>
             ) : (
-              <Play className="h-4 w-4" />
+              <>
+                <Play className="size-3.5 shrink-0" />
+                <span className="text-xs leading-none">Run Briefing</span>
+              </>
             )}
           </Button>
         </TooltipTrigger>

@@ -368,6 +368,7 @@ impl MeetingBuilder {
             calendar_event_id: None,
             time: self.time,
             end_time: self.end_time,
+            start_iso: None,
             title: self.title,
             meeting_type: self.meeting_type.unwrap_or(MeetingType::Internal),
             account: self.account,
@@ -855,6 +856,8 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
                 modified,
                 preview,
                 file_type,
+                processing_status: None,
+                processing_error: None,
             })
         })
         .collect();
@@ -2013,6 +2016,7 @@ pub fn parse_meetings_from_overview(
                     calendar_event_id: None,
                     time: time.clone(),
                     end_time: None,
+                    start_iso: None,
                     title: event,
                     meeting_type,
                     account: None, // Would need to parse from event title
