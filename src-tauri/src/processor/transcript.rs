@@ -9,7 +9,8 @@ use std::path::Path;
 use chrono::Utc;
 
 use crate::db::{ActionDb, DbProcessingLog};
-use crate::pty::PtyManager;
+use crate::pty::{ModelTier, PtyManager};
+use crate::types::AiModelConfig;
 use crate::types::{CalendarEvent, CapturedAction, TranscriptResult};
 
 use super::enrich::parse_enrichment_response;
@@ -31,6 +32,7 @@ pub fn process_transcript(
     meeting: &CalendarEvent,
     db: Option<&ActionDb>,
     profile: &str,
+    ai_config: Option<&AiModelConfig>,
 ) -> TranscriptResult {
     let source = Path::new(file_path);
 
@@ -93,7 +95,9 @@ pub fn process_transcript(
 
     // 3. Build prompt and invoke Claude
     let prompt = build_transcript_prompt(meeting, &content);
-    let pty = PtyManager::new().with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
+    let default_config = AiModelConfig::default();
+    let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config.unwrap_or(&default_config))
+        .with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,
         Err(e) => {

@@ -13,13 +13,28 @@ use std::time::Duration;
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 use crate::error::ExecutionError;
+use crate::types::AiModelConfig;
 
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 
+/// Model tier for AI operations (I174).
+///
+/// Maps to configured model names via `AiModelConfig`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelTier {
+    /// Intelligence, briefing, week narrative — needs synthesis
+    Synthesis,
+    /// Emails, preps — structured extraction
+    Extraction,
+    /// Inbox classification, file summaries — mechanical tasks
+    Mechanical,
+}
+
 /// PTY Manager for spawning Claude Code
 pub struct PtyManager {
     timeout_secs: u64,
+    model: Option<String>,
 }
 
 impl Default for PtyManager {
@@ -32,12 +47,28 @@ impl PtyManager {
     pub fn new() -> Self {
         Self {
             timeout_secs: DEFAULT_CLAUDE_TIMEOUT_SECS,
+            model: None,
         }
     }
 
     pub fn with_timeout(mut self, timeout_secs: u64) -> Self {
         self.timeout_secs = timeout_secs;
         self
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
+        self
+    }
+
+    /// Create a PtyManager configured for a specific model tier.
+    pub fn for_tier(tier: ModelTier, config: &AiModelConfig) -> Self {
+        let model = match tier {
+            ModelTier::Synthesis => &config.synthesis,
+            ModelTier::Extraction => &config.extraction,
+            ModelTier::Mechanical => &config.mechanical,
+        };
+        Self::new().with_model(model.clone())
     }
 
     /// Check if Claude Code CLI is available
@@ -93,7 +124,11 @@ impl PtyManager {
 
         // Build the command
         let mut cmd = CommandBuilder::new("claude");
-        cmd.args(["--print", command]);
+        if let Some(ref model) = self.model {
+            cmd.args(["--model", model, "--print", command]);
+        } else {
+            cmd.args(["--print", command]);
+        }
         cmd.cwd(workspace);
 
         // Spawn the child process
