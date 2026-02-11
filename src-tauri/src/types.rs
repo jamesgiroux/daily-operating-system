@@ -30,6 +30,10 @@ pub struct Config {
     pub features: HashMap<String, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_domain: Option<String>,
+    /// Multiple user domains for multi-org classification (I171).
+    /// Takes precedence over `user_domain` when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_domains: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +121,25 @@ fn default_mechanical_model() -> String {
 
 fn default_entity_mode() -> String {
     "account".to_string()
+}
+
+impl Config {
+    /// Resolve the list of user domains for internal/external classification.
+    ///
+    /// Merges `user_domains` (preferred) with legacy `user_domain` field.
+    /// Returns an empty vec if neither is set.
+    pub fn resolved_user_domains(&self) -> Vec<String> {
+        if let Some(ref domains) = self.user_domains {
+            if !domains.is_empty() {
+                return domains.clone();
+            }
+        }
+        // Fallback to legacy single domain
+        match &self.user_domain {
+            Some(d) if !d.is_empty() => vec![d.clone()],
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Entity mode type for validation
@@ -539,6 +562,10 @@ pub struct Meeting {
     /// Entities linked via M2M junction table (I52)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,
+    /// Suggestion to unarchive an account that matched this meeting's domain (I161).
+    /// Set when classification matched an archived account. Frontend shows a banner.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_unarchive_account_id: Option<String>,
 }
 
 /// An entity linked to a meeting via the junction table.
@@ -1288,6 +1315,7 @@ mod tests {
             post_meeting_capture: PostMeetingCaptureConfig::default(),
             features: HashMap::new(),
             user_domain: None,
+            user_domains: None,
             user_name: None,
             user_company: None,
             user_title: None,

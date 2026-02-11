@@ -181,15 +181,30 @@ pub fn org_from_email(email: &str) -> String {
 pub fn classify_relationship(email: &str, user_domain: Option<&str>) -> String {
     match user_domain {
         Some(domain) if !domain.is_empty() => {
-            let email_domain = email.split('@').nth(1).unwrap_or("");
-            if email_domain.eq_ignore_ascii_case(domain) {
-                "internal".to_string()
-            } else {
-                "external".to_string()
-            }
+            classify_relationship_multi(email, &[domain.to_string()])
         }
         _ => "unknown".to_string(),
     }
+}
+
+/// Classify a person as internal/external based on multiple user domains (I171).
+///
+/// Returns "internal" if the email domain matches ANY of the user's domains,
+/// "external" if it matches none, or "unknown" if the list is empty.
+pub fn classify_relationship_multi(email: &str, user_domains: &[String]) -> String {
+    if user_domains.is_empty() {
+        return "unknown".to_string();
+    }
+    let email_domain = email.split('@').nth(1).unwrap_or("");
+    if email_domain.is_empty() {
+        return "unknown".to_string();
+    }
+    for domain in user_domains {
+        if !domain.is_empty() && email_domain.eq_ignore_ascii_case(domain) {
+            return "internal".to_string();
+        }
+    }
+    "external".to_string()
 }
 
 /// Convert a display name to a URL-safe kebab-case slug.
@@ -280,6 +295,16 @@ mod tests {
         assert_eq!(classify_relationship("them@other.com", Some("myco.com")), "external");
         assert_eq!(classify_relationship("anyone@any.com", None), "unknown");
         assert_eq!(classify_relationship("anyone@any.com", Some("")), "unknown");
+    }
+
+    #[test]
+    fn test_classify_relationship_multi() {
+        let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
+        assert_eq!(classify_relationship_multi("me@myco.com", &domains), "internal");
+        assert_eq!(classify_relationship_multi("you@subsidiary.com", &domains), "internal");
+        assert_eq!(classify_relationship_multi("them@other.com", &domains), "external");
+        assert_eq!(classify_relationship_multi("anyone@any.com", &[]), "unknown");
+        assert_eq!(classify_relationship_multi("no-at-sign", &domains), "unknown");
     }
 
     // Path traversal guard tests (I60)

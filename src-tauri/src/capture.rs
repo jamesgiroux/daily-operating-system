@@ -105,7 +105,7 @@ fn check_for_transcript(
         // Check for account match (if account is known)
         let has_account = account
             .map(|a| {
-                let slug = a.to_lowercase().replace(' ', "-").replace('_', "-");
+                let slug = a.to_lowercase().replace([' ', '_'], "-");
                 lower.contains(&slug)
             })
             .unwrap_or(false);

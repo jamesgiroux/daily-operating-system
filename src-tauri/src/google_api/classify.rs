@@ -50,11 +50,28 @@ pub struct ClassifiedMeeting {
 ///
 /// Arguments:
 /// - `event`: The raw calendar event.
-/// - `user_domain`: The user's email domain (e.g., "company.com").
+/// - `user_domain`: The user's primary email domain (e.g., "company.com").
+///   For multi-domain support (I171), use `classify_meeting_multi`.
 /// - `account_hints`: Lowercased slugs of known customer accounts (e.g., {"acme", "bigcorp"}).
 pub fn classify_meeting(
     event: &GoogleCalendarEvent,
     user_domain: &str,
+    account_hints: &HashSet<String>,
+) -> ClassifiedMeeting {
+    let domains: Vec<String> = if user_domain.is_empty() {
+        Vec::new()
+    } else {
+        vec![user_domain.to_string()]
+    };
+    classify_meeting_multi(event, &domains, account_hints)
+}
+
+/// Multi-domain meeting classification (I171).
+///
+/// Classifies attendees as internal if their domain matches ANY of `user_domains`.
+pub fn classify_meeting_multi(
+    event: &GoogleCalendarEvent,
+    user_domains: &[String],
     account_hints: &HashSet<String>,
 ) -> ClassifiedMeeting {
     let title_lower = event.summary.to_lowercase();
@@ -103,15 +120,18 @@ pub fn classify_meeting(
         None
     };
 
-    // ---- Step 4: Domain classification ----
-    let (external, _internal): (Vec<&String>, Vec<&String>) = if !user_domain.is_empty() {
+    // ---- Step 4: Domain classification (I171: multi-domain) ----
+    let (external, _internal): (Vec<&String>, Vec<&String>) = if !user_domains.is_empty() {
         event
             .attendees
             .iter()
             .filter(|a| a.contains('@'))
-            .partition(|a| !a.to_lowercase().ends_with(&format!("@{}", user_domain)))
+            .partition(|a| {
+                let lower = a.to_lowercase();
+                !user_domains.iter().any(|d| !d.is_empty() && lower.ends_with(&format!("@{}", d)))
+            })
     } else {
-        // Without a known domain, treat all as potentially external
+        // Without known domains, treat all as potentially external
         (event.attendees.iter().collect(), Vec::new())
     };
 
