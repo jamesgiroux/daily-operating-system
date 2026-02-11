@@ -84,6 +84,7 @@ pub fn merge_meetings(
                 prep_reviewed: None,
                 account_id: None,
                 linked_entities: None,
+                suggested_unarchive_account_id: None,
             });
         }
     }
@@ -109,7 +110,7 @@ pub fn merge_meetings(
 /// Convert a display time like "9:00 AM" to a sortable 24h minute value.
 fn sort_time_key(time: &str) -> u32 {
     let time = time.trim();
-    let (time_part, period) = if let Some(pos) = time.find(|c: char| c == 'A' || c == 'P') {
+    let (time_part, period) = if let Some(pos) = time.find(['A', 'P']) {
         (&time[..pos].trim(), &time[pos..])
     } else {
         return 9999; // Unparseable → sort to end
@@ -176,6 +177,7 @@ mod tests {
             prep_reviewed: None,
             account_id: None,
             linked_entities: None,
+            suggested_unarchive_account_id: None,
         }
     }
 

@@ -70,7 +70,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
             const dotState = computeMeetingDisplayState(meeting, {
               isPast: false,
               outcomesStatus: "unknown",
-              isLive: live || (meeting.isCurrent ?? false),
+              isLive: live,
               hasInlinePrep: false,
               hasEnrichedPrep: false,
             });
@@ -100,7 +100,7 @@ export function MeetingTimeline({ meetings }: MeetingTimelineProps) {
                 />
 
                 <div className="flex-1">
-                  <MeetingCard meeting={meeting} />
+                  <MeetingCard meeting={meeting} now={now} currentMeeting={currentMeeting} />
                 </div>
               </div>
             );

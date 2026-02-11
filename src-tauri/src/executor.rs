@@ -215,7 +215,7 @@ impl Executor {
         // Re-lock DB briefly to persist meetings
         if let Ok(db_guard) = self.state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
-                reconcile::persist_meetings(db, &recon);
+                reconcile::persist_meetings(db, &recon, &workspace);
             }
         }
 

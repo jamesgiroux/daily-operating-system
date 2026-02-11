@@ -116,7 +116,7 @@ impl AppState {
                 match crate::people::sync_people_from_workspace(
                     workspace,
                     db_ref,
-                    cfg.user_domain.as_deref(),
+                    &cfg.resolved_user_domains(),
                 ) {
                     Ok(n) if n > 0 => log::info!("Startup: synced {} people from workspace", n),
                     Ok(_) => {}
@@ -286,6 +286,7 @@ pub fn create_or_update_config(
                 post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
                 features: std::collections::HashMap::new(),
                 user_domain: None,
+                user_domains: None,
                 user_name: None,
                 user_company: None,
                 user_title: None,

@@ -191,6 +191,7 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
             prep_reviewed: None,
             account_id: None,
             linked_entities: None,
+            suggested_unarchive_account_id: None,
         }
     }).collect();
 

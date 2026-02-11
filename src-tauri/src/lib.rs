@@ -1,3 +1,10 @@
+// I149: Suppress dead_code — serde struct fields appear unused to the compiler but
+// are required for forward-compatible JSON deserialization. Parser/notification
+// functions are reserved for future use.
+#![allow(dead_code)]
+// Devtools mock data uses large tuple types for seed fixtures.
+#![allow(clippy::type_complexity)]
+
 pub mod accounts;
 mod calendar_merge;
 mod capture;
@@ -203,6 +210,7 @@ pub fn run() {
             commands::reopen_action,
             commands::get_meeting_history,
             commands::get_meeting_history_detail,
+            commands::search_meetings,
             commands::get_action_detail,
             // Phase 3.0: Google Auth
             commands::get_google_auth_status,
@@ -299,6 +307,23 @@ pub fn run() {
             commands::rebuild_database,
             // I148: Hygiene
             commands::get_hygiene_report,
+            // I172: Duplicate People Detection
+            commands::get_duplicate_people,
+            // I176: Archive / Unarchive Entities
+            commands::archive_account,
+            commands::archive_project,
+            commands::archive_person,
+            commands::get_archived_accounts,
+            commands::get_archived_projects,
+            commands::get_archived_people,
+            // I171: Multi-Domain Config
+            commands::set_user_domains,
+            // I162: Bulk Entity Creation
+            commands::bulk_create_accounts,
+            commands::bulk_create_projects,
+            // I143: Account Events
+            commands::record_account_event,
+            commands::get_account_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

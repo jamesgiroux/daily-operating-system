@@ -442,11 +442,12 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
         None => return,
     };
 
-    let user_domain = state
+    let user_domains = state
         .config
         .read()
         .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
+        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .unwrap_or_default();
 
     for path in paths {
         if !path.exists() {
@@ -457,9 +458,9 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
             Ok(people::ReadPersonResult { mut person, linked_entities }) => {
                 // Classify relationship if unknown
                 if person.relationship == "unknown" {
-                    person.relationship = crate::util::classify_relationship(
+                    person.relationship = crate::util::classify_relationship_multi(
                         &person.email,
-                        user_domain.as_deref(),
+                        &user_domains,
                     );
                 }
 

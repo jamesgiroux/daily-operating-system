@@ -75,6 +75,8 @@ export interface Meeting {
   prepReviewed?: boolean;
   /** Entities linked via M2M junction table (I52) */
   linkedEntities?: LinkedEntity[];
+  /** Account ID suggestion when meeting matches an archived account (I161) */
+  suggestedUnarchiveAccountId?: string;
 }
 
 export interface MeetingPrep {
@@ -566,6 +568,7 @@ export interface Person {
   firstSeen?: string;
   meetingCount: number;
   updatedAt: string;
+  archived: boolean;
 }
 
 /** Person with pre-computed signals for list pages (I106). */
@@ -631,6 +634,7 @@ export interface AccountListItem {
   parentName?: string;
   childCount: number;
   isParent: boolean;
+  archived: boolean;
 }
 
 export interface CompanyOverview {
@@ -816,6 +820,7 @@ export interface ProjectListItem {
   targetDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
+  archived: boolean;
 }
 
 export interface ProjectMilestone {
@@ -926,4 +931,65 @@ export interface MeetingHistoryDetail {
   attendees: string[];
   captures: DbCapture[];
   actions: DbAction[];
+  /** Persisted pre-meeting prep context (I181). */
+  prepContext?: PrepContext;
+}
+
+/** Enriched pre-meeting prep context (I181). */
+export interface PrepContext {
+  intelligenceSummary?: string;
+  entityRisks?: Array<{ text: string; urgency?: string; source?: string }>;
+  entityReadiness?: string[];
+  talkingPoints?: string[];
+  proposedAgenda?: Array<{ topic: string; why?: string; source?: string }>;
+  openItems?: Array<{ title: string; dueDate?: string; isOverdue?: boolean }>;
+  questions?: string[];
+  stakeholderInsights?: Array<{
+    name: string;
+    role?: string;
+    assessment?: string;
+  }>;
+}
+
+/** Meeting search result (I183). */
+export interface MeetingSearchResult {
+  id: string;
+  title: string;
+  meetingType: string;
+  startTime: string;
+  accountName?: string;
+  matchSnippet?: string;
+}
+
+// =============================================================================
+// Account Events (I143)
+// =============================================================================
+
+export type AccountEventType =
+  | "renewal"
+  | "expansion"
+  | "churn"
+  | "downgrade";
+
+export interface AccountEvent {
+  id: number;
+  accountId: string;
+  eventType: AccountEventType;
+  eventDate: string;
+  arrImpact?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// Duplicate People Detection (I172)
+// =============================================================================
+
+export interface DuplicateCandidate {
+  person1Id: string;
+  person1Name: string;
+  person2Id: string;
+  person2Name: string;
+  confidence: number;
+  reason: string;
 }
