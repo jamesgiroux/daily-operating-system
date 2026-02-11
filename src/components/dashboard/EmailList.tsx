@@ -12,10 +12,10 @@ interface EmailListProps {
 
 export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
   const [refreshing, setRefreshing] = useState(false);
-  const highPriority = emails.filter((e) => e.priority === "high");
-  const otherPriority = emails.filter((e) => e.priority !== "high");
-  const visibleEmails = highPriority.slice(0, maxVisible);
-  const hiddenCount = highPriority.length - visibleEmails.length;
+  const actionable = emails.filter((e) => e.priority === "high" || e.priority === "medium");
+  const lowPriority = emails.filter((e) => e.priority === "low");
+  const visibleEmails = actionable.slice(0, maxVisible);
+  const hiddenCount = actionable.length - visibleEmails.length;
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -49,7 +49,7 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
           )}
         </Button>
       </div>
-      {highPriority.length === 0 ? (
+      {actionable.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 text-center">
           <Mail className="mb-2 size-8 text-muted-foreground/50" />
           <p className="text-sm text-muted-foreground">
@@ -69,22 +69,22 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
               to="/emails"
               className="flex items-center justify-center gap-1 py-2 text-xs text-primary hover:text-primary/80 transition-colors"
             >
-              +{hiddenCount} more high priority
-              <ChevronRight className="size-3" />
-            </Link>
-          )}
-
-          {otherPriority.length > 0 && (
-            <Link
-              to="/emails"
-              className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Archive className="size-3" />
-              {otherPriority.length} lower priority reviewed
+              +{hiddenCount} more
               <ChevronRight className="size-3" />
             </Link>
           )}
         </div>
+      )}
+
+      {lowPriority.length > 0 && (
+        <Link
+          to="/emails"
+          className="flex items-center justify-center gap-1.5 pt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Archive className="size-3" />
+          {lowPriority.length} lower priority reviewed
+          <ChevronRight className="size-3" />
+        </Link>
       )}
     </section>
   );

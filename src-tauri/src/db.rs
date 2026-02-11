@@ -69,6 +69,7 @@ pub struct DbAccount {
     pub tracker_path: Option<String>,
     pub parent_id: Option<String>,
     pub updated_at: String,
+    pub archived: bool,
 }
 
 /// Aggregated signals for a parent account's children (I114).
@@ -96,6 +97,9 @@ pub struct DbMeeting {
     pub summary: Option<String>,
     pub created_at: String,
     pub calendar_event_id: Option<String>,
+    /// Enriched prep context JSON (I181). Only populated by get_meeting_by_id.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_context_json: Option<String>,
 }
 
 /// A row from the `processing_log` table.
@@ -161,6 +165,7 @@ pub struct DbPerson {
     pub first_seen: Option<String>,
     pub meeting_count: i32,
     pub updated_at: String,
+    pub archived: bool,
 }
 
 /// Person-level relationship signals (parallel to StakeholderSignals).
@@ -190,6 +195,7 @@ pub struct PersonListItem {
     pub first_seen: Option<String>,
     pub meeting_count: i32,
     pub updated_at: String,
+    pub archived: bool,
     pub temperature: String,
     pub trend: String,
 }
@@ -206,6 +212,7 @@ pub struct DbProject {
     pub target_date: Option<String>,
     pub tracker_path: Option<String>,
     pub updated_at: String,
+    pub archived: bool,
 }
 
 /// Activity signals for a project (parallel to StakeholderSignals).
@@ -239,6 +246,19 @@ pub struct DbContentFile {
     pub summary: Option<String>,
     pub content_type: String,
     pub priority: i32,
+}
+
+/// A lifecycle event for an account (I143 — renewal tracking).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountEvent {
+    pub id: i64,
+    pub account_id: String,
+    pub event_type: String,
+    pub event_date: String,
+    pub arr_impact: Option<f64>,
+    pub notes: Option<String>,
+    pub created_at: String,
 }
 
 /// Compute relationship temperature from last meeting date.
@@ -408,6 +428,32 @@ impl ActionDb {
         );
         let _ = conn.execute_batch(
             "ALTER TABLE content_index ADD COLUMN priority INTEGER NOT NULL DEFAULT 5;",
+        );
+
+        // Sprint 12 Migration: add archived column to entities
+        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN archived INTEGER DEFAULT 0;");
+        let _ = conn.execute_batch("ALTER TABLE projects ADD COLUMN archived INTEGER DEFAULT 0;");
+        let _ = conn.execute_batch("ALTER TABLE people ADD COLUMN archived INTEGER DEFAULT 0;");
+
+        // Sprint 12 Migration: account lifecycle events table (I143)
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS account_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id TEXT NOT NULL,
+                event_type TEXT NOT NULL CHECK(event_type IN ('renewal', 'expansion', 'churn', 'downgrade')),
+                event_date TEXT NOT NULL,
+                arr_impact REAL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+            );"
+        );
+        let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);");
+        let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);");
+
+        // Migration: add prep_context_json to meetings_history (I181)
+        let _ = conn.execute_batch(
+            "ALTER TABLE meetings_history ADD COLUMN prep_context_json TEXT;",
         );
 
         Ok(Self { conn })
@@ -854,8 +900,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, lifecycle, arr, health, contract_start, contract_end,
-                csm, champion, nps, tracker_path, parent_id, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                csm, champion, nps, tracker_path, parent_id, updated_at, archived
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 lifecycle = excluded.lifecycle,
@@ -883,6 +929,7 @@ impl ActionDb {
                 account.tracker_path,
                 account.parent_id,
                 account.updated_at,
+                account.archived as i32,
             ],
         )?;
         // Keep entity mirror in sync
@@ -908,7 +955,7 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -925,7 +972,7 @@ impl ActionDb {
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -942,7 +989,7 @@ impl ActionDb {
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
              FROM accounts ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -953,8 +1000,8 @@ impl ActionDb {
     pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
-             FROM accounts WHERE parent_id IS NULL ORDER BY name",
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+             FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -964,8 +1011,8 @@ impl ActionDb {
     pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
-             FROM accounts WHERE parent_id = ?1 ORDER BY name",
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+             FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1032,6 +1079,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1065,6 +1113,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1227,6 +1276,7 @@ impl ActionDb {
             target_date: row.get(5)?,
             tracker_path: row.get(6)?,
             updated_at: row.get(7)?,
+            archived: row.get::<_, i32>(8).unwrap_or(0) != 0,
         })
     }
 
@@ -1235,8 +1285,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO projects (
                 id, name, status, milestone, owner, target_date,
-                tracker_path, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                tracker_path, updated_at, archived
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 status = excluded.status,
@@ -1254,6 +1304,7 @@ impl ActionDb {
                 project.target_date,
                 project.tracker_path,
                 project.updated_at,
+                project.archived as i32,
             ],
         )?;
         self.ensure_entity_for_project(project)?;
@@ -1276,7 +1327,7 @@ impl ActionDb {
     pub fn get_project(&self, id: &str) -> Result<Option<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at
+                    tracker_path, updated_at, archived
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
@@ -1290,7 +1341,7 @@ impl ActionDb {
     pub fn get_project_by_name(&self, name: &str) -> Result<Option<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at
+                    tracker_path, updated_at, archived
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
@@ -1304,8 +1355,8 @@ impl ActionDb {
     pub fn get_all_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
-                    tracker_path, updated_at
-             FROM projects ORDER BY name",
+                    tracker_path, updated_at, archived
+             FROM projects WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1385,6 +1436,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1577,6 +1629,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1806,6 +1859,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
 
@@ -1816,12 +1870,12 @@ impl ActionDb {
         Ok(meetings)
     }
 
-    /// Look up a single meeting by its ID.
+    /// Look up a single meeting by its ID (includes prep_context_json).
     pub fn get_meeting_by_id(&self, id: &str) -> Result<Option<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
                     account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
+                    calendar_event_id, prep_context_json
              FROM meetings_history
              WHERE id = ?1",
         )?;
@@ -1839,6 +1893,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: row.get(11)?,
             })
         })?;
 
@@ -2215,8 +2270,8 @@ impl ActionDb {
             "INSERT INTO meetings_history (
                 id, title, meeting_type, start_time, end_time,
                 account_id, attendees, notes_path, summary, created_at,
-                calendar_event_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                calendar_event_id, prep_context_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
@@ -2226,7 +2281,8 @@ impl ActionDb {
                 attendees = excluded.attendees,
                 notes_path = excluded.notes_path,
                 summary = excluded.summary,
-                calendar_event_id = excluded.calendar_event_id",
+                calendar_event_id = excluded.calendar_event_id,
+                prep_context_json = COALESCE(excluded.prep_context_json, meetings_history.prep_context_json)",
             params![
                 meeting.id,
                 meeting.title,
@@ -2239,6 +2295,7 @@ impl ActionDb {
                 meeting.summary,
                 meeting.created_at,
                 meeting.calendar_event_id,
+                meeting.prep_context_json,
             ],
         )?;
 
@@ -2281,6 +2338,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         match rows.next() {
@@ -2415,7 +2473,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -2435,7 +2493,7 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -2476,8 +2534,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO people (
                 id, email, name, organization, role, relationship, notes,
-                tracker_path, last_seen, first_seen, meeting_count, updated_at
-             ) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
+             ) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 name = COALESCE(excluded.name, people.name),
                 organization = COALESCE(excluded.organization, people.organization),
@@ -2506,6 +2564,7 @@ impl ActionDb {
                 person.first_seen,
                 person.meeting_count,
                 person.updated_at,
+                person.archived as i32,
             ],
         )?;
         // Mirror to entities table (bridge pattern, like ensure_entity_for_account)
@@ -2529,7 +2588,7 @@ impl ActionDb {
     pub fn get_person_by_email(&self, email: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
              FROM people WHERE email = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![email], Self::map_person_row)?;
@@ -2543,7 +2602,7 @@ impl ActionDb {
     pub fn get_person(&self, id: &str) -> Result<Option<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
              FROM people WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_person_row)?;
@@ -2559,7 +2618,7 @@ impl ActionDb {
             Some(rel) => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
                      FROM people WHERE relationship = ?1 ORDER BY name",
                 )?;
                 let rows = stmt.query_map(params![rel], Self::map_person_row)?;
@@ -2568,7 +2627,7 @@ impl ActionDb {
             None => {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
-                            tracker_path, last_seen, first_seen, meeting_count, updated_at
+                            tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
                      FROM people ORDER BY name",
                 )?;
                 let rows = stmt.query_map([], Self::map_person_row)?;
@@ -2586,6 +2645,7 @@ impl ActionDb {
     ) -> Result<Vec<PersonListItem>, DbError> {
         let sql = "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
                           p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at,
+                          p.archived,
                           COALESCE(cnt30.c, 0) AS count_30d,
                           COALESCE(cnt90.c, 0) AS count_90d,
                           last_m.max_start
@@ -2604,14 +2664,14 @@ impl ActionDb {
                        SELECT ma.person_id, MAX(m.start_time) AS max_start FROM meeting_attendees ma
                        JOIN meetings_history m ON m.id = ma.meeting_id GROUP BY ma.person_id
                    ) last_m ON last_m.person_id = p.id
-                   WHERE (?1 IS NULL OR p.relationship = ?1)
+                   WHERE p.archived = 0 AND (?1 IS NULL OR p.relationship = ?1)
                    ORDER BY p.name";
 
         let mut stmt = self.conn.prepare(sql)?;
         let rows = stmt.query_map(params![relationship], |row| {
-            let count_30d: i32 = row.get(12)?;
-            let count_90d: i32 = row.get(13)?;
-            let last_meeting: Option<String> = row.get(14)?;
+            let count_30d: i32 = row.get(13)?;
+            let count_90d: i32 = row.get(14)?;
+            let last_meeting: Option<String> = row.get(15)?;
 
             let temperature = match &last_meeting {
                 Some(dt) => compute_temperature(dt),
@@ -2632,6 +2692,7 @@ impl ActionDb {
                 first_seen: row.get(9)?,
                 meeting_count: row.get(10)?,
                 updated_at: row.get(11)?,
+                archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                 temperature,
                 trend,
             })
@@ -2643,7 +2704,7 @@ impl ActionDb {
     pub fn get_people_for_entity(&self, entity_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
              FROM people p
              JOIN entity_people ep ON p.id = ep.person_id
              WHERE ep.entity_id = ?1
@@ -2753,7 +2814,7 @@ impl ActionDb {
     pub fn get_meeting_attendees(&self, meeting_id: &str) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
-                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
              FROM people p
              JOIN meeting_attendees ma ON p.id = ma.person_id
              WHERE ma.meeting_id = ?1
@@ -2792,6 +2853,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2854,7 +2916,7 @@ impl ActionDb {
         let pattern = format!("%{query}%");
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
              FROM people
              WHERE name LIKE ?1 OR email LIKE ?1 OR organization LIKE ?1
              ORDER BY name
@@ -2906,6 +2968,7 @@ impl ActionDb {
             first_seen: row.get(9)?,
             meeting_count: row.get(10)?,
             updated_at: row.get(11)?,
+            archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
         })
     }
 
@@ -2925,6 +2988,7 @@ impl ActionDb {
             tracker_path: row.get(10)?,
             parent_id: row.get(11)?,
             updated_at: row.get(12)?,
+            archived: row.get::<_, i32>(13).unwrap_or(0) != 0,
         })
     }
 
@@ -2959,7 +3023,7 @@ impl ActionDb {
     pub fn get_unnamed_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
              FROM people
              WHERE name NOT LIKE '% %' OR name LIKE '%@%'
              ORDER BY meeting_count DESC",
@@ -2972,7 +3036,7 @@ impl ActionDb {
     pub fn get_unknown_relationship_people(&self) -> Result<Vec<DbPerson>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, name, organization, role, relationship, notes,
-                    tracker_path, last_seen, first_seen, meeting_count, updated_at
+                    tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
              FROM people
              WHERE relationship = 'unknown'
              ORDER BY meeting_count DESC",
@@ -3085,6 +3149,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                prep_context_json: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3246,6 +3311,208 @@ impl ActionDb {
         )?;
 
         Ok(())
+    }
+
+    // =========================================================================
+    // Archive (Sprint 12)
+    // =========================================================================
+
+    /// Archive or unarchive an account. Cascade: archiving a parent archives all children.
+    pub fn archive_account(&self, id: &str, archived: bool) -> Result<usize, DbError> {
+        let val = if archived { 1 } else { 0 };
+        let now = Utc::now().to_rfc3339();
+
+        // Archive/unarchive the account itself
+        let changed = self.conn.execute(
+            "UPDATE accounts SET archived = ?1, updated_at = ?2 WHERE id = ?3",
+            params![val, now, id],
+        )?;
+
+        // If archiving a parent, cascade to children
+        if archived {
+            self.conn.execute(
+                "UPDATE accounts SET archived = 1, updated_at = ?1 WHERE parent_id = ?2",
+                params![now, id],
+            )?;
+        }
+
+        Ok(changed)
+    }
+
+    /// Archive or unarchive a project.
+    pub fn archive_project(&self, id: &str, archived: bool) -> Result<usize, DbError> {
+        let val = if archived { 1 } else { 0 };
+        let now = Utc::now().to_rfc3339();
+        Ok(self.conn.execute(
+            "UPDATE projects SET archived = ?1, updated_at = ?2 WHERE id = ?3",
+            params![val, now, id],
+        )?)
+    }
+
+    /// Archive or unarchive a person.
+    pub fn archive_person(&self, id: &str, archived: bool) -> Result<usize, DbError> {
+        let val = if archived { 1 } else { 0 };
+        let now = Utc::now().to_rfc3339();
+        Ok(self.conn.execute(
+            "UPDATE people SET archived = ?1, updated_at = ?2 WHERE id = ?3",
+            params![val, now, id],
+        )?)
+    }
+
+    /// Get archived accounts (top-level + children).
+    pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+             FROM accounts WHERE archived = 1 ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get archived projects.
+    pub fn get_archived_projects(&self) -> Result<Vec<DbProject>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, status, milestone, owner, target_date, tracker_path, updated_at, archived
+             FROM projects WHERE archived = 1 ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_project_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get archived people with signals.
+    pub fn get_archived_people_with_signals(&self) -> Result<Vec<PersonListItem>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship,
+                    p.notes, p.tracker_path, p.last_seen, p.first_seen, p.meeting_count,
+                    p.updated_at, p.archived,
+                    COALESCE(m30.cnt, 0) as freq_30d,
+                    COALESCE(m90.cnt, 0) as freq_90d
+             FROM people p
+             LEFT JOIN (
+                 SELECT person_id, COUNT(*) as cnt
+                 FROM meeting_attendees ma
+                 JOIN meetings_history mh ON ma.meeting_id = mh.id
+                 WHERE mh.start_time >= datetime('now', '-30 days')
+                 GROUP BY person_id
+             ) m30 ON m30.person_id = p.id
+             LEFT JOIN (
+                 SELECT person_id, COUNT(*) as cnt
+                 FROM meeting_attendees ma
+                 JOIN meetings_history mh ON ma.meeting_id = mh.id
+                 WHERE mh.start_time >= datetime('now', '-90 days')
+                 GROUP BY person_id
+             ) m90 ON m90.person_id = p.id
+             WHERE p.archived = 1
+             ORDER BY p.name",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let last_seen: Option<String> = row.get(8)?;
+            let freq_30d: i32 = row.get(13)?;
+            let freq_90d: i32 = row.get(14)?;
+            let temperature = Self::compute_temperature(&last_seen);
+            let trend = Self::compute_trend(freq_30d, freq_90d);
+            Ok(PersonListItem {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                name: row.get(2)?,
+                organization: row.get(3)?,
+                role: row.get(4)?,
+                relationship: row.get(5)?,
+                notes: row.get(6)?,
+                tracker_path: row.get(7)?,
+                last_seen,
+                first_seen: row.get(9)?,
+                meeting_count: row.get(10)?,
+                updated_at: row.get(11)?,
+                archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
+                temperature,
+                trend,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    // =========================================================================
+    // Account Events (I143 — renewal tracking)
+    // =========================================================================
+
+    /// Record a lifecycle event for an account.
+    pub fn record_account_event(
+        &self,
+        account_id: &str,
+        event_type: &str,
+        event_date: &str,
+        arr_impact: Option<f64>,
+        notes: Option<&str>,
+    ) -> Result<i64, DbError> {
+        self.conn.execute(
+            "INSERT INTO account_events (account_id, event_type, event_date, arr_impact, notes)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![account_id, event_type, event_date, arr_impact, notes],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get lifecycle events for an account, ordered by date descending.
+    pub fn get_account_events(&self, account_id: &str) -> Result<Vec<DbAccountEvent>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, event_type, event_date, arr_impact, notes, created_at
+             FROM account_events WHERE account_id = ?1 ORDER BY event_date DESC, id DESC",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountEvent {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                event_type: row.get(2)?,
+                event_date: row.get(3)?,
+                arr_impact: row.get(4)?,
+                notes: row.get(5)?,
+                created_at: row.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Check if an account has any churn events (for auto-rollover logic).
+    pub fn has_churn_event(&self, account_id: &str) -> Result<bool, DbError> {
+        let count: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM account_events WHERE account_id = ?1 AND event_type = 'churn'",
+            params![account_id],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Get accounts with renewal_date (contract_end) in the past and no churn event.
+    pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
+                    a.csm, a.champion, a.nps, a.tracker_path, a.parent_id, a.updated_at, a.archived
+             FROM accounts a
+             WHERE a.contract_end IS NOT NULL
+               AND a.contract_end < date('now')
+               AND a.archived = 0
+               AND a.id NOT IN (
+                   SELECT account_id FROM account_events WHERE event_type = 'churn'
+               )
+             ORDER BY a.contract_end",
+        )?;
+        let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Compute temperature from an optional last-seen timestamp.
+    fn compute_temperature(last_seen: &Option<String>) -> String {
+        match last_seen {
+            Some(dt) => compute_temperature(dt),
+            None => "cold".to_string(),
+        }
+    }
+
+    /// Compute trend from 30d and 90d frequencies.
+    fn compute_trend(freq_30d: i32, freq_90d: i32) -> String {
+        compute_trend(freq_30d, freq_90d)
     }
 }
 
@@ -3427,6 +3694,7 @@ mod tests {
             tracker_path: Some("Accounts/acme-corp".to_string()),
             parent_id: None,
             updated_at: now,
+            archived: false,
         };
 
         db.upsert_account(&account).expect("upsert account");
@@ -3463,6 +3731,7 @@ mod tests {
             summary: Some("Discussed renewal".to_string()),
             created_at: now,
             calendar_event_id: Some("gcal-evt-001".to_string()),
+            prep_context_json: None,
         };
 
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -3493,6 +3762,7 @@ mod tests {
                 summary: None,
                 created_at: now.clone(),
                 calendar_event_id: None,
+                prep_context_json: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
         }
@@ -3751,6 +4021,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert");
 
@@ -3779,6 +4050,7 @@ mod tests {
             csm: None,
             champion: None,
             nps: None,
+            archived: false,
             tracker_path: None,
             parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
@@ -3880,6 +4152,7 @@ mod tests {
             tracker_path: Some("Accounts/beta-inc".to_string()),
             parent_id: None,
             updated_at: "2025-06-01T00:00:00Z".to_string(),
+            archived: false,
         };
 
         // upsert_account now calls ensure_entity_for_account automatically
@@ -4111,6 +4384,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&soon).expect("insert");
 
@@ -4129,6 +4403,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&no_end).expect("insert");
 
@@ -4147,6 +4422,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&expired).expect("insert");
 
@@ -4174,6 +4450,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
+            archived: false,
         };
         db.upsert_account(&stale).expect("insert");
 
@@ -4192,6 +4469,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&fresh).expect("insert");
 
@@ -4259,6 +4537,7 @@ mod tests {
                 summary: None,
                 created_at: now.to_rfc3339(),
                 calendar_event_id: None,
+                prep_context_json: None,
             };
             db.upsert_meeting(&meeting).expect("insert meeting");
         }
@@ -4290,6 +4569,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).expect("insert account");
 
@@ -4347,6 +4627,7 @@ mod tests {
             first_seen: Some(now.clone()),
             meeting_count: 0,
             updated_at: now,
+            archived: false,
         }
     }
 
@@ -4418,6 +4699,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
 
@@ -4457,6 +4739,7 @@ mod tests {
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
         db.record_meeting_attendance("mtg-attend-001", &person.id)
@@ -4569,6 +4852,7 @@ mod tests {
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
     }
@@ -4607,6 +4891,7 @@ mod tests {
             contract_end: None, csm: None, champion: None, nps: None,
             tracker_path: None, parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&remove.id, "acme", "associated").expect("link");
@@ -4720,6 +5005,7 @@ mod tests {
             contract_end: None, csm: None, champion: None, nps: None,
             tracker_path: None, parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&person.id, "doom-corp", "associated").expect("link");
@@ -4764,6 +5050,7 @@ mod tests {
             target_date: Some("2026-06-01".to_string()),
             tracker_path: Some("Projects/Widget v2".to_string()),
             updated_at: now,
+            archived: false,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -4788,6 +5075,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now,
+            archived: false,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -4815,6 +5103,7 @@ mod tests {
                 target_date: None,
                 tracker_path: None,
                 updated_at: now.clone(),
+                archived: false,
             };
             db.upsert_project(&project).expect("upsert");
         }
@@ -4838,6 +5127,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now,
+            archived: false,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -4862,6 +5152,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now,
+            archived: false,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -4883,6 +5174,7 @@ mod tests {
             target_date: None,
             tracker_path: Some("Projects/Widget v2".to_string()),
             updated_at: now,
+            archived: false,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -4906,6 +5198,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now.clone(),
+            archived: false,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -4959,6 +5252,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now.clone(),
+            archived: false,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -5052,6 +5346,7 @@ mod tests {
             target_date: None,
             tracker_path: None,
             updated_at: now.clone(),
+            archived: false,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -5113,6 +5408,7 @@ mod tests {
             summary: None,
             created_at: now.clone(),
             calendar_event_id: None,
+            prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert");
 

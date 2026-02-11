@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import type { ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
@@ -11,8 +11,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   StatusBadge,
   healthStyles,
-  progressStyles,
 } from "@/components/ui/status-badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
 import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import {
@@ -23,6 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   AlertTriangle,
+  Archive,
   ArrowLeft,
   CalendarClock,
   CheckCircle2,
@@ -43,14 +54,17 @@ import {
   HelpCircle,
   Target,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import type {
   AccountDetail,
+  AccountEvent,
   AccountHealth,
   AccountChildSummary,
   ContentFile,
   IntelRisk,
   IntelWin,
   StakeholderInsight,
+  StrategicProgram,
   ParentAggregate,
 } from "@/types";
 
@@ -115,6 +129,7 @@ function AssessmentBody({ text }: { text: string }) {
 
 export default function AccountDetailPage() {
   const { accountId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<AccountDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +165,25 @@ export default function AccountDetailPage() {
   // Evidence section collapse state
   const [evidenceOpen, setEvidenceOpen] = useState(false);
 
+  // I163: Strategic programs inline editing
+  const [programs, setPrograms] = useState<StrategicProgram[]>([]);
+  const programsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // I143: Lifecycle events
+  const [events, setEvents] = useState<AccountEvent[]>([]);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [newEventType, setNewEventType] = useState("renewal");
+  const [newEventDate, setNewEventDate] = useState("");
+  const [newArrImpact, setNewArrImpact] = useState("");
+  const [newEventNotes, setNewEventNotes] = useState("");
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (programsSaveTimer.current) clearTimeout(programsSaveTimer.current);
+    };
+  }, []);
+
   const intelligence = detail?.intelligence ?? null;
 
   const load = useCallback(async () => {
@@ -170,6 +204,7 @@ export default function AccountDetailPage() {
       setEditChampion(result.champion ?? "");
       setEditRenewal(result.renewalDate ?? "");
       setEditNotes(result.notes ?? "");
+      setPrograms(result.strategicPrograms);
       setDirty(false);
       // I124: Load content files
       try {
@@ -177,6 +212,15 @@ export default function AccountDetailPage() {
           entityId: accountId,
         });
         setFiles(contentFiles);
+      } catch {
+        // Non-critical — don't block page load
+      }
+      // I143: Load lifecycle events
+      try {
+        const accountEvents = await invoke<AccountEvent[]>("get_account_events", {
+          accountId,
+        });
+        setEvents(accountEvents);
       } catch {
         // Non-critical — don't block page load
       }
@@ -334,6 +378,89 @@ export default function AccountDetailPage() {
     }
   }
 
+  // I163: Debounced save for strategic programs
+  const savePrograms = useCallback(
+    async (updated: StrategicProgram[]) => {
+      if (!detail) return;
+      if (programsSaveTimer.current) clearTimeout(programsSaveTimer.current);
+      programsSaveTimer.current = setTimeout(async () => {
+        try {
+          await invoke("update_account_programs", {
+            accountId: detail.id,
+            programsJson: JSON.stringify(updated),
+          });
+        } catch (e) {
+          console.error("Failed to save programs:", e);
+        }
+      }, 400);
+    },
+    [detail]
+  );
+
+  function handleProgramUpdate(index: number, updated: StrategicProgram) {
+    const next = [...programs];
+    next[index] = updated;
+    setPrograms(next);
+    savePrograms(next);
+  }
+
+  function handleProgramDelete(index: number) {
+    const next = programs.filter((_, i) => i !== index);
+    setPrograms(next);
+    savePrograms(next);
+  }
+
+  function handleAddProgram() {
+    const next = [...programs, { name: "", status: "Active", notes: "" }];
+    setPrograms(next);
+    // Don't save yet — let the user fill in the name first
+  }
+
+  // I143: Record a lifecycle event
+  async function handleRecordEvent() {
+    if (!detail || !newEventDate) return;
+    try {
+      await invoke("record_account_event", {
+        accountId: detail.id,
+        eventType: newEventType,
+        eventDate: newEventDate,
+        arrImpact: newArrImpact ? parseFloat(newArrImpact) : null,
+        notes: newEventNotes || null,
+      });
+      const updated = await invoke<AccountEvent[]>("get_account_events", {
+        accountId: detail.id,
+      });
+      setEvents(updated);
+      setShowEventForm(false);
+      setNewEventType("renewal");
+      setNewEventDate("");
+      setNewArrImpact("");
+      setNewEventNotes("");
+    } catch (err) {
+      console.error("Failed to record event:", err);
+    }
+  }
+
+  async function handleArchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_account", { id: detail.id, archived: true });
+      navigate({ to: "/accounts" });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleUnarchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_account", { id: detail.id, archived: false });
+      await load();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-8">
@@ -431,6 +558,16 @@ export default function AccountDetailPage() {
             )}
           </div>
 
+          {/* Archived Banner */}
+          {detail.archived && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between">
+              <span className="text-sm text-charcoal/70">This account is archived and hidden from active views.</span>
+              <Button variant="outline" size="sm" onClick={handleUnarchive}>
+                Unarchive
+              </Button>
+            </div>
+          )}
+
           {/* Hero Section */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-4">
@@ -506,6 +643,30 @@ export default function AccountDetailPage() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+              {!detail.archived && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground">
+                      <Archive className="mr-1 size-3" />
+                      Archive
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Archive Account</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {detail.isParent
+                          ? `Archive "${detail.name}" and its ${detail.childCount} business unit${detail.childCount !== 1 ? "s" : ""}? They will be hidden from active views.`
+                          : `Archive "${detail.name}"? It will be hidden from active views.`}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
             </div>
           </div>
 
@@ -1088,34 +1249,6 @@ export default function AccountDetailPage() {
                       )}
                     </div>
 
-                    {/* Strategic Programs */}
-                    {detail.strategicPrograms.length > 0 && (
-                      <div>
-                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Strategic Programs
-                        </h4>
-                        <div className="space-y-2">
-                          {detail.strategicPrograms.map((p, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center gap-2 text-sm"
-                            >
-                              <StatusBadge
-                                value={p.status}
-                                styles={progressStyles}
-                                fallback={progressStyles.planned}
-                              />
-                              <span className="font-medium">{p.name}</span>
-                              {p.notes && (
-                                <span className="text-muted-foreground">
-                                  &mdash; {p.notes}
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1204,6 +1337,157 @@ export default function AccountDetailPage() {
                     rows={4}
                     className="w-full resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
                   />
+                </CardContent>
+              </Card>
+
+              {/* I163: Strategic Programs (inline editable) */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Strategic Programs
+                    {programs.length > 0 && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({programs.length})
+                      </span>
+                    )}
+                  </CardTitle>
+                  <button
+                    onClick={handleAddProgram}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <Plus className="size-3" />
+                    Add
+                  </button>
+                </CardHeader>
+                <CardContent>
+                  {programs.length > 0 ? (
+                    <div className="space-y-1">
+                      {programs.map((p, i) => (
+                        <ProgramRow
+                          key={i}
+                          program={p}
+                          autoFocusName={!p.name}
+                          onUpdate={(updated) => handleProgramUpdate(i, updated)}
+                          onDelete={() => handleProgramDelete(i)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={Target}
+                      message="No strategic programs"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* I143: Lifecycle Events */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold">
+                      Lifecycle Events
+                      {events.length > 0 && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({events.length})
+                        </span>
+                      )}
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setShowEventForm(true)}
+                    >
+                      + Record
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {showEventForm && (
+                    <div className="space-y-3 border rounded-lg p-3 mb-3">
+                      <select
+                        value={newEventType}
+                        onChange={(e) => setNewEventType(e.target.value)}
+                        className="h-8 w-full rounded border bg-background px-2 text-sm"
+                      >
+                        <option value="renewal">Renewal</option>
+                        <option value="expansion">Expansion</option>
+                        <option value="churn">Churn</option>
+                        <option value="downgrade">Downgrade</option>
+                      </select>
+                      <Input
+                        type="date"
+                        value={newEventDate}
+                        onChange={(e) => setNewEventDate(e.target.value)}
+                        className="h-8"
+                      />
+                      <Input
+                        type="number"
+                        placeholder="ARR impact"
+                        value={newArrImpact}
+                        onChange={(e) => setNewArrImpact(e.target.value)}
+                        className="h-8"
+                      />
+                      <Input
+                        placeholder="Notes (optional)"
+                        value={newEventNotes}
+                        onChange={(e) => setNewEventNotes(e.target.value)}
+                        className="h-8"
+                      />
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={handleRecordEvent} disabled={!newEventDate}>
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowEventForm(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {events.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No lifecycle events recorded
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {events.map((event) => (
+                        <div
+                          key={event.id}
+                          className="flex items-center justify-between py-1.5 text-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={eventBadgeClass(event.eventType)}
+                            >
+                              {event.eventType}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              {formatDate(event.eventDate)}
+                            </span>
+                          </div>
+                          {event.arrImpact != null && (
+                            <span
+                              className={cn(
+                                "font-mono text-xs",
+                                event.arrImpact >= 0
+                                  ? "text-green-600"
+                                  : "text-destructive"
+                              )}
+                            >
+                              {event.arrImpact >= 0 ? "+" : ""}
+                              {formatCurrency(event.arrImpact)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
@@ -1434,6 +1718,116 @@ function StakeholderCard({
   }
 
   return content;
+}
+
+// ─── I163: Strategic Program Inline Editing ──────────────────────────────────
+
+const programStatusOptions = ["Active", "Planning", "On Hold", "Complete"] as const;
+
+function ProgramRow({
+  program,
+  autoFocusName,
+  onUpdate,
+  onDelete,
+}: {
+  program: StrategicProgram;
+  autoFocusName?: boolean;
+  onUpdate: (updated: StrategicProgram) => void;
+  onDelete: () => void;
+}) {
+  const [editingField, setEditingField] = useState<"name" | "notes" | null>(
+    autoFocusName ? "name" : null
+  );
+
+  return (
+    <div className="flex items-center gap-2 rounded-md px-1 py-1.5 group">
+      {/* Name — click to edit */}
+      {editingField === "name" ? (
+        <Input
+          autoFocus
+          defaultValue={program.name}
+          placeholder="Program name"
+          onBlur={(e) => {
+            const val = e.target.value.trim();
+            if (val) {
+              onUpdate({ ...program, name: val });
+            } else if (!program.name) {
+              // Empty new program — remove it
+              onDelete();
+            }
+            setEditingField(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = program.name;
+              setEditingField(null);
+            }
+          }}
+          className="h-7 text-sm flex-1"
+        />
+      ) : (
+        <span
+          className="flex-1 truncate text-sm cursor-pointer hover:underline decoration-muted-foreground/40"
+          onClick={() => setEditingField("name")}
+        >
+          {program.name || "Untitled program"}
+        </span>
+      )}
+
+      {/* Status dropdown */}
+      <select
+        value={program.status}
+        onChange={(e) => onUpdate({ ...program, status: e.target.value })}
+        className="h-7 shrink-0 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
+      >
+        {programStatusOptions.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+
+      {/* Notes — click to edit */}
+      {editingField === "notes" ? (
+        <Input
+          autoFocus
+          defaultValue={program.notes ?? ""}
+          placeholder="Notes (optional)"
+          onBlur={(e) => {
+            onUpdate({ ...program, notes: e.target.value.trim() || undefined });
+            setEditingField(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            if (e.key === "Escape") {
+              e.currentTarget.value = program.notes ?? "";
+              setEditingField(null);
+            }
+          }}
+          className="h-7 text-xs flex-1"
+        />
+      ) : (
+        <span
+          className="truncate text-xs text-muted-foreground cursor-pointer hover:underline decoration-muted-foreground/40 max-w-[120px]"
+          onClick={() => setEditingField("notes")}
+          title={program.notes ?? "Add notes"}
+        >
+          {program.notes || "notes"}
+        </span>
+      )}
+
+      {/* Delete — visible on hover */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={onDelete}
+      >
+        <X className="size-3" />
+      </Button>
+    </div>
+  );
 }
 
 // ─── Existing Sub-components ─────────────────────────────────────────────────
@@ -1899,6 +2293,27 @@ function formatMeetingType(meetingType: string): string {
     personal: "Personal",
   };
   return labels[meetingType] ?? meetingType;
+}
+
+function eventBadgeClass(type: string): string {
+  switch (type) {
+    case "renewal":
+    case "expansion":
+      return "text-green-600 border-green-600/30";
+    case "churn":
+    case "downgrade":
+      return "text-destructive border-destructive/30";
+    default:
+      return "";
+  }
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 function formatRenewalCountdown(dateStr: string): string {
