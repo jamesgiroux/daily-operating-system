@@ -61,7 +61,6 @@ export default function PersonDetailPage() {
   // Editable fields
   const [editName, setEditName] = useState("");
   const [editRole, setEditRole] = useState("");
-  const [editOrg, setEditOrg] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -86,7 +85,6 @@ export default function PersonDetailPage() {
       setDetail(result);
       setEditName(result.name);
       setEditRole(result.role ?? "");
-      setEditOrg(result.organization ?? "");
       setEditNotes(result.notes ?? "");
       setDirty(false);
     } catch (e) {
@@ -121,7 +119,6 @@ export default function PersonDetailPage() {
     const updates: [string, string][] = [];
     if (editName !== detail.name) updates.push(["name", editName]);
     if (editRole !== (detail.role ?? "")) updates.push(["role", editRole]);
-    if (editOrg !== (detail.organization ?? "")) updates.push(["organization", editOrg]);
     if (editNotes !== (detail.notes ?? "")) updates.push(["notes", editNotes]);
 
     for (const [field, value] of updates) {
@@ -136,7 +133,6 @@ export default function PersonDetailPage() {
     if (!detail) return;
     setEditName(detail.name);
     setEditRole(detail.role ?? "");
-    setEditOrg(detail.organization ?? "");
     setEditNotes(detail.notes ?? "");
     setDirty(false);
     setEditing(false);
@@ -365,13 +361,21 @@ export default function PersonDetailPage() {
                     <Mail className="size-3" />
                     {detail.email}
                   </span>
-                  {detail.organization && (
-                    <span className="flex items-center gap-1">
-                      <Building2 className="size-3" />
-                      {detail.organization}
-                      {detail.role && ` \u00B7 ${detail.role}`}
-                    </span>
-                  )}
+                  {(() => {
+                    const accts = detail.entities?.filter((e) => e.entityType === "account") ?? [];
+                    const label = accts.length > 0
+                      ? accts.map((a) => a.name).join(", ")
+                      : detail.organization;
+                    return label ? (
+                      <span className="flex items-center gap-1">
+                        <Building2 className="size-3" />
+                        {label}
+                        {detail.role && ` \u00B7 ${detail.role}`}
+                      </span>
+                    ) : detail.role ? (
+                      <span>{detail.role}</span>
+                    ) : null;
+                  })()}
                 </div>
               </div>
             </div>
@@ -504,7 +508,7 @@ export default function PersonDetailPage() {
                 </CardHeader>
                 <CardContent>
                   {detail.entities && detail.entities.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="mb-3 space-y-2">
                       {detail.entities.map((e) => (
                         <div
                           key={e.id}
@@ -584,8 +588,6 @@ export default function PersonDetailPage() {
                     <PersonDetailsEditForm
                       editName={editName}
                       setEditName={setEditName}
-                      editOrg={editOrg}
-                      setEditOrg={setEditOrg}
                       editRole={editRole}
                       setEditRole={setEditRole}
                       editNotes={editNotes}
@@ -746,8 +748,27 @@ function EmptyState({
 function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
   const fields: { label: string; value: React.ReactNode }[] = [];
 
-  if (detail.organization) {
-    fields.push({ label: "Organization", value: detail.organization });
+  // Show linked accounts as "Account" (replaces free-text organization)
+  const accounts = detail.entities?.filter((e) => e.entityType === "account") ?? [];
+  if (accounts.length > 0) {
+    fields.push({
+      label: "Account",
+      value: (
+        <div className="flex flex-wrap gap-1.5">
+          {accounts.map((a) => (
+            <Link
+              key={a.id}
+              to="/accounts/$accountId"
+              params={{ accountId: a.id }}
+              className="inline-flex items-center gap-1 text-primary hover:underline"
+            >
+              <Building2 className="size-3" />
+              {a.name}
+            </Link>
+          ))}
+        </div>
+      ),
+    });
   }
   if (detail.role) {
     fields.push({ label: "Role", value: detail.role });
@@ -785,8 +806,6 @@ function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
 function PersonDetailsEditForm({
   editName,
   setEditName,
-  editOrg,
-  setEditOrg,
   editRole,
   setEditRole,
   editNotes,
@@ -799,8 +818,6 @@ function PersonDetailsEditForm({
 }: {
   editName: string;
   setEditName: (v: string) => void;
-  editOrg: string;
-  setEditOrg: (v: string) => void;
   editRole: string;
   setEditRole: (v: string) => void;
   editNotes: string;
@@ -828,21 +845,6 @@ function PersonDetailsEditForm({
             setDirty(true);
           }}
           placeholder="Full name"
-          className={inputClass}
-        />
-      </div>
-      <div>
-        <label className="text-xs font-medium text-muted-foreground">
-          Organization
-        </label>
-        <input
-          type="text"
-          value={editOrg}
-          onChange={(e) => {
-            setEditOrg(e.target.value);
-            setDirty(true);
-          }}
-          placeholder="Organization"
           className={inputClass}
         />
       </div>

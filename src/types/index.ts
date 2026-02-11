@@ -575,6 +575,8 @@ export interface Person {
 export interface PersonListItem extends Person {
   temperature: string;
   trend: string;
+  /** Comma-separated names of linked account entities. */
+  accountNames?: string;
 }
 
 export interface PersonSignals {
