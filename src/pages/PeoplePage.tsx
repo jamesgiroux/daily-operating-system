@@ -474,8 +474,8 @@ function PersonRow({
       }
       subtitle={
         <>
-          {person.organization}
-          {person.organization && person.role && " \u00B7 "}
+          {person.accountNames ?? person.organization}
+          {(person.accountNames ?? person.organization) && person.role && " \u00B7 "}
           {person.role}
         </>
       }
@@ -498,7 +498,7 @@ function ArchivedPersonRow({ person }: { person: PersonListItem }) {
       subtitle={
         [
           person.email,
-          person.organization,
+          person.accountNames ?? person.organization,
         ]
           .filter(Boolean)
           .join(" \u00B7 ") || undefined

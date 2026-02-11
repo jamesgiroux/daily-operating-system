@@ -198,6 +198,8 @@ pub struct PersonListItem {
     pub archived: bool,
     pub temperature: String,
     pub trend: String,
+    /// Comma-separated names of linked account entities (from entity_people).
+    pub account_names: Option<String>,
 }
 
 /// A row from the `projects` table (I50).
@@ -1600,6 +1602,123 @@ impl ActionDb {
         Ok(total)
     }
 
+    /// Cascade meeting entity links to all non-internal attendees.
+    /// When a meeting is linked to an account/project, automatically link all
+    /// external attendees to that entity via the `entity_people` junction table.
+    ///
+    /// Returns the number of new person-entity links created (excludes existing links).
+    pub fn cascade_meeting_entity_to_people(
+        &self,
+        meeting_id: &str,
+        account_id: Option<&str>,
+        project_id: Option<&str>,
+    ) -> Result<usize, DbError> {
+        let entity_id = account_id.or(project_id);
+        let entity_id = match entity_id {
+            Some(eid) => eid,
+            None => return Ok(0),
+        };
+
+        // Link all external attendees of this meeting to the entity (idempotent).
+        let count = self.conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+             SELECT ?1, ma.person_id, 'attendee'
+             FROM meeting_attendees ma
+             JOIN people p ON ma.person_id = p.id
+             WHERE ma.meeting_id = ?2
+               AND p.relationship = 'external'",
+            params![entity_id, meeting_id],
+        )?;
+
+        Ok(count)
+    }
+
+    // =========================================================================
+    // Domain reclassification (I184 — reclassify on domain change)
+    // =========================================================================
+
+    /// Reclassify all people's relationship based on current user domains.
+    /// People whose email domain matches ANY domain → "internal", otherwise → "external".
+    /// Returns the number of people whose relationship changed.
+    pub fn reclassify_people_for_domains(&self, user_domains: &[String]) -> Result<usize, DbError> {
+        if user_domains.is_empty() {
+            return Ok(0);
+        }
+
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, email, relationship FROM people")?;
+        let people: Vec<(String, String, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut update_stmt = self
+            .conn
+            .prepare("UPDATE people SET relationship = ?1 WHERE id = ?2")?;
+
+        let mut total = 0;
+        for (id, email, current_rel) in &people {
+            let domain = email.split('@').nth(1).unwrap_or("");
+            if domain.is_empty() {
+                continue;
+            }
+            let new_rel = if user_domains
+                .iter()
+                .any(|d| d.eq_ignore_ascii_case(domain))
+            {
+                "internal"
+            } else {
+                "external"
+            };
+            if new_rel != current_rel {
+                update_stmt.execute(params![new_rel, id])?;
+                total += 1;
+            }
+        }
+
+        Ok(total)
+    }
+
+    /// Reclassify meeting types based on current attendee relationships.
+    /// Call after `reclassify_people_for_domains` to fix meetings whose type
+    /// was stale due to domain changes. Returns the number updated.
+    ///
+    /// Only touches domain-dependent types (customer, external, one_on_one, internal).
+    /// Title-derived types (qbr, training, all_hands, team_sync, personal) are left alone
+    /// since they don't depend on domain classification.
+    pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
+        let mut total = 0;
+
+        // Meetings classified as customer/external/one_on_one but ALL attendees are now internal → internal
+        total += self.conn.execute(
+            "UPDATE meetings_history SET meeting_type = 'internal'
+             WHERE meeting_type IN ('customer', 'external', 'one_on_one')
+               AND id IN (
+                   SELECT ma.meeting_id
+                   FROM meeting_attendees ma
+                   JOIN people p ON ma.person_id = p.id
+                   GROUP BY ma.meeting_id
+                   HAVING COUNT(CASE WHEN p.relationship != 'internal' THEN 1 END) = 0
+               )",
+            [],
+        )?;
+
+        // Meetings classified as internal but ANY attendee is now external → customer
+        total += self.conn.execute(
+            "UPDATE meetings_history SET meeting_type = 'customer'
+             WHERE meeting_type = 'internal'
+               AND id IN (
+                   SELECT DISTINCT ma.meeting_id
+                   FROM meeting_attendees ma
+                   JOIN people p ON ma.person_id = p.id
+                   WHERE p.relationship = 'external'
+               )",
+            [],
+        )?;
+
+        Ok(total)
+    }
+
     /// Get meetings for any entity (generic, via junction table).
     pub fn get_meetings_for_entity(
         &self,
@@ -2648,7 +2767,8 @@ impl ActionDb {
                           p.archived,
                           COALESCE(cnt30.c, 0) AS count_30d,
                           COALESCE(cnt90.c, 0) AS count_90d,
-                          last_m.max_start
+                          last_m.max_start,
+                          acct_names.names AS account_names
                    FROM people p
                    LEFT JOIN (
                        SELECT ma.person_id, COUNT(*) AS c FROM meeting_attendees ma
@@ -2664,6 +2784,12 @@ impl ActionDb {
                        SELECT ma.person_id, MAX(m.start_time) AS max_start FROM meeting_attendees ma
                        JOIN meetings_history m ON m.id = ma.meeting_id GROUP BY ma.person_id
                    ) last_m ON last_m.person_id = p.id
+                   LEFT JOIN (
+                       SELECT ep.person_id, GROUP_CONCAT(e.name, ', ') AS names
+                       FROM entity_people ep
+                       JOIN entities e ON e.id = ep.entity_id AND e.entity_type = 'account'
+                       GROUP BY ep.person_id
+                   ) acct_names ON acct_names.person_id = p.id
                    WHERE p.archived = 0 AND (?1 IS NULL OR p.relationship = ?1)
                    ORDER BY p.name";
 
@@ -2695,6 +2821,7 @@ impl ActionDb {
                 archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                 temperature,
                 trend,
+                account_names: row.get(16)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3387,7 +3514,8 @@ impl ActionDb {
                     p.notes, p.tracker_path, p.last_seen, p.first_seen, p.meeting_count,
                     p.updated_at, p.archived,
                     COALESCE(m30.cnt, 0) as freq_30d,
-                    COALESCE(m90.cnt, 0) as freq_90d
+                    COALESCE(m90.cnt, 0) as freq_90d,
+                    acct_names.names AS account_names
              FROM people p
              LEFT JOIN (
                  SELECT person_id, COUNT(*) as cnt
@@ -3403,6 +3531,12 @@ impl ActionDb {
                  WHERE mh.start_time >= datetime('now', '-90 days')
                  GROUP BY person_id
              ) m90 ON m90.person_id = p.id
+             LEFT JOIN (
+                 SELECT ep.person_id, GROUP_CONCAT(e.name, ', ') AS names
+                 FROM entity_people ep
+                 JOIN entities e ON e.id = ep.entity_id AND e.entity_type = 'account'
+                 GROUP BY ep.person_id
+             ) acct_names ON acct_names.person_id = p.id
              WHERE p.archived = 1
              ORDER BY p.name",
         )?;
@@ -3428,6 +3562,7 @@ impl ActionDb {
                 archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                 temperature,
                 trend,
+                account_names: row.get(15)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -5879,5 +6014,235 @@ mod tests {
         let (status, error) = map.get("notes.md").expect("notes.md should be in map");
         assert_eq!(status, "error");
         assert_eq!(error.as_deref(), Some("AI enrichment timed out"));
+    }
+
+    // =========================================================================
+    // cascade_meeting_entity_to_people (I184)
+    // =========================================================================
+
+    /// Helper: create an account and ensure its entity row exists.
+    fn setup_account(db: &ActionDb, id: &str, name: &str) {
+        let now = Utc::now().to_rfc3339();
+        let account = DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            updated_at: now,
+            archived: false,
+        };
+        db.upsert_account(&account).expect("upsert account");
+        db.ensure_entity_for_account(&account)
+            .expect("ensure entity");
+    }
+
+    /// Helper: create a meeting.
+    fn setup_meeting(db: &ActionDb, id: &str, title: &str) {
+        let now = Utc::now().to_rfc3339();
+        let meeting = DbMeeting {
+            id: id.to_string(),
+            title: title.to_string(),
+            meeting_type: "external".to_string(),
+            start_time: now.clone(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+            prep_context_json: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+    }
+
+    #[test]
+    fn test_cascade_meeting_entity_to_people_external_only() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        setup_meeting(&db, "m1", "Acme QBR");
+
+        // External person → should be linked
+        let mut external = sample_person("jane@acme.com");
+        external.relationship = "external".to_string();
+        db.upsert_person(&external).expect("upsert external");
+        db.record_meeting_attendance("m1", &external.id)
+            .expect("attend");
+
+        // Internal person → should NOT be linked
+        let mut internal = sample_person("john@mycompany.com");
+        internal.relationship = "internal".to_string();
+        db.upsert_person(&internal).expect("upsert internal");
+        db.record_meeting_attendance("m1", &internal.id)
+            .expect("attend");
+
+        let linked = db
+            .cascade_meeting_entity_to_people("m1", Some("acc1"), None)
+            .expect("cascade");
+        assert_eq!(linked, 1);
+
+        // External person linked to account
+        let entities = db
+            .get_entities_for_person(&external.id)
+            .expect("entities for external");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "acc1");
+
+        // Internal person NOT linked
+        let entities = db
+            .get_entities_for_person(&internal.id)
+            .expect("entities for internal");
+        assert_eq!(entities.len(), 0);
+    }
+
+    #[test]
+    fn test_cascade_meeting_entity_to_people_idempotent() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        setup_meeting(&db, "m1", "Acme QBR");
+
+        let mut person = sample_person("jane@acme.com");
+        person.relationship = "external".to_string();
+        db.upsert_person(&person).expect("upsert");
+        db.record_meeting_attendance("m1", &person.id)
+            .expect("attend");
+
+        // Manually link person first
+        db.link_person_to_entity(&person.id, "acc1", "associated")
+            .expect("manual link");
+
+        // Cascade should detect existing link, return 0 new
+        let linked = db
+            .cascade_meeting_entity_to_people("m1", Some("acc1"), None)
+            .expect("cascade");
+        assert_eq!(linked, 0);
+
+        // Still only one link
+        let entities = db
+            .get_entities_for_person(&person.id)
+            .expect("entities");
+        assert_eq!(entities.len(), 1);
+    }
+
+    #[test]
+    fn test_cascade_meeting_entity_to_people_no_entity() {
+        let db = test_db();
+        setup_meeting(&db, "m1", "Internal Sync");
+
+        let mut person = sample_person("someone@test.com");
+        person.relationship = "external".to_string();
+        db.upsert_person(&person).expect("upsert");
+        db.record_meeting_attendance("m1", &person.id)
+            .expect("attend");
+
+        // Cascade with no entity → 0 links
+        let linked = db
+            .cascade_meeting_entity_to_people("m1", None, None)
+            .expect("cascade");
+        assert_eq!(linked, 0);
+    }
+
+    // =========================================================================
+    // Domain reclassification tests (I184)
+    // =========================================================================
+
+    #[test]
+    fn test_reclassify_people_for_domains() {
+        let db = test_db();
+
+        // Create two people: one external, one unknown
+        let mut p1 = sample_person("alice@subsidiary.com");
+        p1.relationship = "external".to_string();
+        db.upsert_person(&p1).expect("upsert");
+
+        let mut p2 = sample_person("bob@vendor.com");
+        p2.relationship = "external".to_string();
+        db.upsert_person(&p2).expect("upsert");
+
+        // Add subsidiary.com as internal domain
+        let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
+        let changed = db.reclassify_people_for_domains(&domains).expect("reclassify");
+
+        // alice should flip to internal, bob stays external
+        assert_eq!(changed, 1);
+
+        let alice = db.get_person(&p1.id).expect("get").unwrap();
+        assert_eq!(alice.relationship, "internal");
+
+        let bob = db.get_person(&p2.id).expect("get").unwrap();
+        assert_eq!(bob.relationship, "external");
+    }
+
+    #[test]
+    fn test_reclassify_meeting_types_from_attendees() {
+        let db = test_db();
+        setup_meeting(&db, "m1", "Subsidiary Sync");
+
+        // Create person who is currently external
+        let mut p1 = sample_person("alice@subsidiary.com");
+        p1.relationship = "external".to_string();
+        db.upsert_person(&p1).expect("upsert");
+        db.record_meeting_attendance("m1", &p1.id).expect("attend");
+
+        // Meeting was classified as 'customer' because alice was external
+        db.conn
+            .execute(
+                "UPDATE meetings_history SET meeting_type = 'customer' WHERE id = 'm1'",
+                [],
+            )
+            .expect("set type");
+
+        // Now reclassify alice as internal
+        let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
+        db.reclassify_people_for_domains(&domains).expect("reclassify people");
+
+        // Reclassify meetings
+        let changed = db.reclassify_meeting_types_from_attendees().expect("reclassify meetings");
+        assert_eq!(changed, 1);
+
+        let meeting: String = db
+            .conn
+            .query_row(
+                "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(meeting, "internal");
+    }
+
+    #[test]
+    fn test_reclassify_preserves_title_based_types() {
+        let db = test_db();
+        setup_meeting(&db, "m1", "All Hands");
+
+        // Even with attendee changes, all_hands should not be touched
+        db.conn
+            .execute(
+                "UPDATE meetings_history SET meeting_type = 'all_hands' WHERE id = 'm1'",
+                [],
+            )
+            .expect("set type");
+
+        let changed = db.reclassify_meeting_types_from_attendees().expect("reclassify");
+        assert_eq!(changed, 0);
+
+        let meeting_type: String = db
+            .conn
+            .query_row(
+                "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query");
+        assert_eq!(meeting_type, "all_hands");
     }
 }
