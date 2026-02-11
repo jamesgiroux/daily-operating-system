@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::{ActionDb, DbAccount, DbAction};
+use crate::db::{ActionDb, DbAccount};
 use crate::types::{Meeting, MeetingType, OverlayStatus};
 
 /// Thresholds for intelligence signals.
@@ -379,6 +379,7 @@ mod tests {
             prep_reviewed: None,
             account_id: None,
             linked_entities: None,
+            suggested_unarchive_account_id: None,
         }
     }
 
@@ -463,6 +464,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&acct).expect("upsert");
 

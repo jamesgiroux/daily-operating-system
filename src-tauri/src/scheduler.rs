@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use cron::Schedule;
 use tokio::sync::mpsc;
@@ -295,7 +295,7 @@ pub fn get_next_run_time(entry: &ScheduleEntry) -> Result<DateTime<Utc>, Executi
         .parse()
         .map_err(|_| ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone)))?;
 
-    let now_local = Utc::now().with_timezone(&tz);
+    let _now_local = Utc::now().with_timezone(&tz);
     let next = schedule
         .upcoming(tz)
         .next()
