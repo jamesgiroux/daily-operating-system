@@ -4,12 +4,15 @@ import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  Building2,
   Check,
   ChevronDown,
   FileText,
+  FolderKanban,
   Loader2,
   Paperclip,
   Trophy,
+  X,
 } from "lucide-react";
 import {
   Collapsible,
@@ -21,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { useMeetingOutcomes } from "@/hooks/useMeetingOutcomes";
 import { MeetingOutcomes } from "./MeetingOutcomes";
 import { EntityPicker } from "@/components/ui/entity-picker";
-import type { Meeting, MeetingType, CalendarEvent } from "@/types";
+import type { Meeting, MeetingType, CalendarEvent, LinkedEntity } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface MeetingCardProps {
@@ -320,25 +323,28 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
     return endMs ? now > endMs : false;
   }, [meeting, now]);
 
-  // Local entity state for optimistic updates after reassignment
-  const linkedEntity = meeting.linkedEntities?.[0] ?? null;
-  const [entityId, setEntityId] = React.useState<string | null>(
-    linkedEntity?.id ?? meeting.accountId ?? null
+  // Local entity state for optimistic updates (multi-entity)
+  const [localEntities, setLocalEntities] = React.useState<LinkedEntity[]>(
+    meeting.linkedEntities ?? []
   );
 
   // Sync from props when meeting data refreshes (e.g., dashboard reload)
   React.useEffect(() => {
-    const le = meeting.linkedEntities?.[0] ?? null;
-    setEntityId(le?.id ?? meeting.accountId ?? null);
-  }, [meeting.linkedEntities, meeting.accountId]);
+    setLocalEntities(meeting.linkedEntities ?? []);
+  }, [meeting.linkedEntities]);
 
-  const handleEntityChange = React.useCallback(
-    async (newId: string | null) => {
-      // Optimistic update
-      setEntityId(newId);
+  const handleAddEntity = React.useCallback(
+    async (newId: string | null, name?: string) => {
+      if (!newId || !name) return;
+      // Skip if already linked
+      if (localEntities.some((e) => e.id === newId)) return;
+
+      const newEntity: LinkedEntity = { id: newId, name, entityType: "account" };
+      // Optimistic add
+      setLocalEntities((prev) => [...prev, newEntity]);
 
       try {
-        await invoke("update_meeting_entity", {
+        await invoke("add_meeting_entity", {
           meetingId: meeting.id,
           entityId: newId,
           entityType: "account",
@@ -346,16 +352,35 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
           startTime: meeting.startIso ?? meeting.time,
           meetingTypeStr: meeting.type,
         });
-        // Trigger silent dashboard refresh so actions list reflects the cascade
         emit("entity-updated");
       } catch (err) {
         // Revert on failure
-        const le = meeting.linkedEntities?.[0] ?? null;
-        setEntityId(le?.id ?? meeting.accountId ?? null);
-        console.error("Failed to update meeting entity:", err);
+        setLocalEntities((prev) => prev.filter((e) => e.id !== newId));
+        console.error("Failed to add meeting entity:", err);
       }
     },
-    [meeting.id, meeting.title, meeting.startIso, meeting.time, meeting.type, meeting.linkedEntities, meeting.accountId]
+    [meeting.id, meeting.title, meeting.startIso, meeting.time, meeting.type, localEntities]
+  );
+
+  const handleRemoveEntity = React.useCallback(
+    async (entityId: string, entityType: string) => {
+      // Optimistic remove
+      setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
+
+      try {
+        await invoke("remove_meeting_entity", {
+          meetingId: meeting.id,
+          entityId,
+          entityType,
+        });
+        emit("entity-updated");
+      } catch (err) {
+        // Revert on failure
+        setLocalEntities(meeting.linkedEntities ?? []);
+        console.error("Failed to remove meeting entity:", err);
+      }
+    },
+    [meeting.id, meeting.linkedEntities]
   );
 
   const { outcomes, loading, refresh: refreshOutcomes } =
@@ -485,12 +510,36 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
             <h3 className={cn("font-semibold", displayState.title.lineThrough && "line-through")}>
               {meeting.title}
             </h3>
-            <EntityPicker
-              value={entityId}
-              onChange={handleEntityChange}
-              entityType="account"
-              placeholder="Link account..."
-            />
+            <div className="flex flex-wrap items-center gap-1.5">
+              {localEntities.map((entity) => {
+                const Icon = entity.entityType === "project" ? FolderKanban : Building2;
+                return (
+                  <span
+                    key={entity.id}
+                    className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs"
+                  >
+                    <Icon className="size-3 text-muted-foreground" />
+                    {entity.name}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveEntity(entity.id, entity.entityType);
+                      }}
+                      className="ml-0.5 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                );
+              })}
+              <EntityPicker
+                value={null}
+                onChange={handleAddEntity}
+                entityType="account"
+                placeholder="Link account..."
+              />
+            </div>
             {meeting.suggestedUnarchiveAccountId && (
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs text-primary/70">Matches archived account</span>
@@ -505,7 +554,7 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
                         id: meeting.suggestedUnarchiveAccountId,
                         archived: false,
                       });
-                      await invoke("update_meeting_entity", {
+                      await invoke("add_meeting_entity", {
                         meetingId: meeting.id,
                         entityId: meeting.suggestedUnarchiveAccountId,
                         entityType: "account",

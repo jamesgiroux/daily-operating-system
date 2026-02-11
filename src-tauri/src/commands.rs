@@ -3277,6 +3277,10 @@ pub fn update_meeting_entity(
             .map_err(|e| e.to_string())?;
         db.cascade_meeting_entity_to_captures(&meeting_id, cascade_account, cascade_project)
             .map_err(|e| e.to_string())?;
+
+        // Cascade to people: link external attendees to the entity (I184)
+        db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
+            .map_err(|e| e.to_string())?;
     }
     // DB lock released
 
@@ -3296,6 +3300,114 @@ pub fn update_meeting_entity(
             requested_at: std::time::Instant::now(),
         });
     }
+
+    Ok(())
+}
+
+// =========================================================================
+// Additive Meeting-Entity Link/Unlink (I184 multi-entity)
+// =========================================================================
+
+/// Add an entity link to a meeting with full cascade (people, intelligence).
+/// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
+#[tauri::command]
+pub fn add_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    meeting_title: String,
+    start_time: String,
+    meeting_type_str: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        // Ensure meeting exists (today's meetings may not be in history yet)
+        let now = chrono::Utc::now().to_rfc3339();
+        let meeting = crate::db::DbMeeting {
+            id: meeting_id.clone(),
+            title: meeting_title,
+            meeting_type: meeting_type_str,
+            start_time,
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: None,
+            prep_context_json: None,
+        };
+        db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
+
+        // Add entity link (idempotent)
+        db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
+            .map_err(|e| e.to_string())?;
+
+        // Update legacy account_id if linking an account
+        if entity_type == "account" {
+            db.update_meeting_account(&meeting_id, Some(&entity_id))
+                .map_err(|e| e.to_string())?;
+        }
+
+        // Cascade people to this entity
+        let (cascade_account, cascade_project) = match entity_type.as_str() {
+            "account" => (Some(entity_id.as_str()), None),
+            "project" => (None, Some(entity_id.as_str())),
+            _ => (Some(entity_id.as_str()), None),
+        };
+        db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
+            .map_err(|e| e.to_string())?;
+    }
+    // DB lock released
+
+    // Queue intelligence refresh
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id,
+        entity_type,
+        priority: crate::intel_queue::IntelPriority::CalendarChange,
+        requested_at: std::time::Instant::now(),
+    });
+
+    Ok(())
+}
+
+/// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
+#[tauri::command]
+pub fn remove_meeting_entity(
+    meeting_id: String,
+    entity_id: String,
+    entity_type: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        db.unlink_meeting_entity(&meeting_id, &entity_id)
+            .map_err(|e| e.to_string())?;
+
+        // If we removed an account, update legacy account_id to next linked account (or null)
+        if entity_type == "account" {
+            let remaining = db.get_meeting_entities(&meeting_id).unwrap_or_default();
+            let next_account = remaining
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Account);
+            db.update_meeting_account(&meeting_id, next_account.map(|a| a.id.as_str()))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    // DB lock released
+
+    // Queue intelligence refresh for removed entity
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id,
+        entity_type,
+        priority: crate::intel_queue::IntelPriority::CalendarChange,
+        requested_at: std::time::Instant::now(),
+    });
 
     Ok(())
 }
@@ -4586,6 +4698,7 @@ pub fn get_archived_people(
 // =============================================================================
 
 /// Set multiple user domains for multi-org meeting classification.
+/// After saving, reclassifies existing people and meetings to reflect the new domains.
 #[tauri::command]
 pub fn set_user_domains(
     domains: String,
@@ -4597,7 +4710,7 @@ pub fn set_user_domains(
         .filter(|s| !s.is_empty())
         .collect();
 
-    crate::state::create_or_update_config(&state, |config| {
+    let config = crate::state::create_or_update_config(&state, |config| {
         // Update legacy single-domain field for backward compat
         config.user_domain = parsed.first().cloned();
         config.user_domains = if parsed.is_empty() {
@@ -4605,7 +4718,32 @@ pub fn set_user_domains(
         } else {
             Some(parsed.clone())
         };
-    })
+    })?;
+
+    // Reclassify existing people and meetings for the new domains (I184)
+    if !parsed.is_empty() {
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                match db.reclassify_people_for_domains(&parsed) {
+                    Ok(n) if n > 0 => {
+                        log::info!("Reclassified {} people after domain change", n);
+                        // Now fix meeting types based on updated relationships
+                        match db.reclassify_meeting_types_from_attendees() {
+                            Ok(m) if m > 0 => {
+                                log::info!("Reclassified {} meetings after domain change", m);
+                            }
+                            Ok(_) => {}
+                            Err(e) => log::warn!("Meeting reclassification failed: {}", e),
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::warn!("People reclassification failed: {}", e),
+                }
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 // =============================================================================

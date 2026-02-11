@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +28,7 @@ import {
   ToggleRight,
   Activity,
   Cpu,
+  X,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { toast } from "sonner";
@@ -419,39 +419,60 @@ function GoogleAccountCard() {
 }
 
 function UserDomainsCard() {
-  const [domainValue, setDomainValue] = useState("");
-  const [savedValue, setSavedValue] = useState("");
+  const [domains, setDomains] = useState<string[]>([]);
+  const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     invoke<{ userDomains?: string[]; userDomain?: string }>("get_config")
       .then((config) => {
-        const display = config.userDomains?.join(", ") || config.userDomain || "";
-        setDomainValue(display);
-        setSavedValue(display);
+        const loaded = config.userDomains ?? (config.userDomain ? [config.userDomain] : []);
+        setDomains(loaded.filter(Boolean));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  const hasChanges = domainValue.trim() !== savedValue.trim();
-
-  async function handleSave() {
+  async function saveDomains(next: string[]) {
     setSaving(true);
     try {
       const updated = await invoke<{ userDomains?: string[]; userDomain?: string }>(
         "set_user_domains",
-        { domains: domainValue },
+        { domains: next.join(", ") },
       );
-      const display = updated.userDomains?.join(", ") || updated.userDomain || "";
-      setDomainValue(display);
-      setSavedValue(display);
+      const saved = updated.userDomains ?? (updated.userDomain ? [updated.userDomain] : []);
+      setDomains(saved.filter(Boolean));
       toast.success("Domains updated");
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to update domains");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function addDomain(raw: string) {
+    const d = raw.trim().toLowerCase().replace(/^@/, "");
+    if (!d || domains.includes(d)) return;
+    const next = [...domains, d];
+    setDomains(next);
+    setInputValue("");
+    saveDomains(next);
+  }
+
+  function removeDomain(d: string) {
+    const next = domains.filter((x) => x !== d);
+    setDomains(next);
+    saveDomains(next);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if ((e.key === "," || e.key === "Enter" || e.key === "Tab") && inputValue.trim()) {
+      e.preventDefault();
+      addDomain(inputValue);
+    }
+    if (e.key === "Backspace" && !inputValue && domains.length > 0) {
+      removeDomain(domains[domains.length - 1]);
     }
   }
 
@@ -463,30 +484,45 @@ function UserDomainsCard() {
           Your Domains
         </CardTitle>
         <CardDescription>
-          Your organization's email domains (comma-separated) — used to distinguish internal vs external meetings
+          Your organization's email domains — used to distinguish internal vs external meetings
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-3">
-          <Input
-            value={domainValue}
-            onChange={(e) => setDomainValue(e.target.value)}
-            placeholder="example.com, contractor.com, subsidiary.com"
-            className="font-mono text-sm"
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-1.5 rounded-md border bg-background px-3 py-2 text-sm",
+            "focus-within:ring-1 focus-within:ring-ring",
+          )}
+        >
+          {domains.map((d) => (
+            <span
+              key={d}
+              className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-xs"
+            >
+              {d}
+              <button
+                type="button"
+                onClick={() => removeDomain(d)}
+                className="text-muted-foreground hover:text-foreground"
+                disabled={saving}
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value.replace(",", ""))}
+            onKeyDown={handleKeyDown}
+            onBlur={() => {
+              if (inputValue.trim()) addDomain(inputValue);
+            }}
+            placeholder={domains.length === 0 ? "example.com" : ""}
+            className="min-w-[120px] flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/50"
             disabled={loading}
           />
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={loading || saving || !hasChanges}
-          >
-            {saving ? (
-              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            ) : (
-              <Check className="mr-1.5 size-3.5" />
-            )}
-            Save
-          </Button>
+          {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
         </div>
       </CardContent>
     </Card>
