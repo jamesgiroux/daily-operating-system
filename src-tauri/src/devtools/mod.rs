@@ -1403,7 +1403,7 @@ fn write_workspace_markdown(workspace: &Path) -> Result<(), String> {
         let weekday = today.weekday().num_days_from_monday() as i64;
         (today + chrono::Duration::days(4 - weekday)).format("%Y-%m-%d")
     };
-    let date_only = |n: i64| -> String {
+    let _date_only = |n: i64| -> String {
         (today + chrono::Duration::days(n))
             .format("%Y-%m-%d")
             .to_string()

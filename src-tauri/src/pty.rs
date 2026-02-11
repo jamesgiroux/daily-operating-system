@@ -132,7 +132,7 @@ impl PtyManager {
         cmd.cwd(workspace);
 
         // Spawn the child process
-        let child = pair
+        let _child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| ExecutionError::IoError(format!("Failed to spawn claude: {}", e)))?;

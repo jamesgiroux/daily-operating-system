@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,21 @@ import {
   projectStatusStyles,
   progressStyles,
 } from "@/components/ui/status-badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
+  Archive,
   ArrowLeft,
   Calendar,
   CheckCircle2,
@@ -50,6 +62,7 @@ function TrendIcon({ trend }: { trend: string }) {
 
 export default function ProjectDetailPage() {
   const { projectId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +159,26 @@ export default function ProjectDetailPage() {
     }
   }
 
+  async function handleArchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_project", { id: detail.id, archived: true });
+      navigate({ to: "/projects" });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleUnarchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_project", { id: detail.id, archived: false });
+      await load();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-6">
@@ -182,6 +215,15 @@ export default function ProjectDetailPage() {
             Projects
           </Link>
 
+          {detail.archived && (
+            <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between">
+              <span className="text-sm text-charcoal/70">This project is archived and hidden from active views.</span>
+              <Button variant="outline" size="sm" onClick={handleUnarchive}>
+                Unarchive
+              </Button>
+            </div>
+          )}
+
           <div className="mb-6 flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-lg font-semibold text-primary">
@@ -217,12 +259,36 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            {dirty && (
-              <Button size="sm" onClick={handleSave} disabled={saving}>
-                <Save className="mr-1 size-4" />
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <Button size="sm" onClick={handleSave} disabled={saving}>
+                  <Save className="mr-1 size-4" />
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              )}
+              {!detail.archived && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground">
+                      <Archive className="mr-1 size-3" />
+                      Archive
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Archive Project</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Archive "{detail.name}"? It will be hidden from active views.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">

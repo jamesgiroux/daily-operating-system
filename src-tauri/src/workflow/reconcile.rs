@@ -206,13 +206,26 @@ pub fn run_reconciliation(
 }
 
 /// Record completed meetings in SQLite meetings_history.
-pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult) {
+///
+/// Also persists enriched prep context (I181) so prep data survives archival.
+pub fn persist_meetings(
+    db: &ActionDb,
+    result: &ReconciliationResult,
+    workspace: &Path,
+) {
+    let preps_dir = workspace.join("_today").join("data").join("preps");
+
     for ms in &result.meetings.details {
+        let meeting_id = ms
+            .calendar_event_id
+            .clone()
+            .unwrap_or_else(|| format!("archive-{}-{}", result.date, slug(&ms.title)));
+
+        // Read corresponding prep file if it exists (I181)
+        let prep_context_json = read_prep_context(&preps_dir, &meeting_id);
+
         let meeting = DbMeeting {
-            id: ms
-                .calendar_event_id
-                .clone()
-                .unwrap_or_else(|| format!("archive-{}-{}", result.date, slug(&ms.title))),
+            id: meeting_id,
             title: ms.title.clone(),
             meeting_type: ms.meeting_type.clone(),
             start_time: format!("{} {}", result.date, ms.time),
@@ -227,12 +240,60 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult) {
             summary: None,
             created_at: Utc::now().to_rfc3339(),
             calendar_event_id: ms.calendar_event_id.clone(),
+            prep_context_json,
         };
 
         if let Err(e) = db.upsert_meeting(&meeting) {
             log::warn!("Failed to persist meeting '{}': {}", ms.title, e);
         }
     }
+}
+
+/// Read and validate a prep context JSON file for a meeting (I181).
+fn read_prep_context(preps_dir: &Path, meeting_id: &str) -> Option<String> {
+    let prep_path = preps_dir.join(format!("{}.json", meeting_id));
+    if !prep_path.exists() {
+        return None;
+    }
+
+    let content = match fs::read_to_string(&prep_path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::debug!("Could not read prep file {:?}: {}", prep_path, e);
+            return None;
+        }
+    };
+
+    if is_prep_substantive(&content) {
+        Some(content)
+    } else {
+        None
+    }
+}
+
+/// Check if a prep JSON has meaningful content worth persisting.
+fn is_prep_substantive(json_str: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str) else {
+        return false;
+    };
+    [
+        "intelligenceSummary",
+        "entityRisks",
+        "entityReadiness",
+        "talkingPoints",
+        "proposedAgenda",
+        "openItems",
+        "questions",
+        "stakeholderInsights",
+    ]
+    .iter()
+    .any(|key| {
+        v.get(key).is_some_and(|val| {
+            !val.is_null()
+                && (val.as_str().map_or(true, |s| !s.is_empty())
+                    || val.as_array().is_some_and(|a| !a.is_empty()))
+        })
+    })
 }
 
 /// Write day-summary.json to the archive directory.

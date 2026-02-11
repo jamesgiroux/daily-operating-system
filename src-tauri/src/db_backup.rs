@@ -52,7 +52,7 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
 pub fn rebuild_from_filesystem(
     workspace: &Path,
     db: &ActionDb,
-    user_domain: Option<&str>,
+    user_domains: &[String],
 ) -> Result<(usize, usize, usize), String> {
     let accounts_synced = accounts::sync_accounts_from_workspace(workspace, db)
         .map_err(|e| format!("Account rebuild failed: {}", e))?;
@@ -60,7 +60,7 @@ pub fn rebuild_from_filesystem(
     let projects_synced = projects::sync_projects_from_workspace(workspace, db)
         .map_err(|e| format!("Project rebuild failed: {}", e))?;
 
-    let people_synced = people::sync_people_from_workspace(workspace, db, user_domain)
+    let people_synced = people::sync_people_from_workspace(workspace, db, user_domains)
         .map_err(|e| format!("People rebuild failed: {}", e))?;
 
     log::info!(
@@ -107,7 +107,7 @@ mod tests {
         std::fs::create_dir_all(&workspace).unwrap();
 
         let (accounts, projects, people) =
-            rebuild_from_filesystem(&workspace, &db, None).expect("rebuild");
+            rebuild_from_filesystem(&workspace, &db, &[]).expect("rebuild");
         assert_eq!(accounts, 0);
         assert_eq!(projects, 0);
         assert_eq!(people, 0);

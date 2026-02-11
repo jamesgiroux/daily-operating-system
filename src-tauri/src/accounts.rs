@@ -234,7 +234,7 @@ pub fn write_account_markdown(
         .and_then(|i| i.company_context.as_ref())
         .is_some();
     if !intel_has_company {
-        if let Some(ref overview) = json.and_then(|j| j.company_overview.as_ref()) {
+        if let Some(overview) = json.and_then(|j| j.company_overview.as_ref()) {
             md.push_str("## Company Overview\n\n");
             if let Some(ref desc) = overview.description {
                 md.push_str(desc);
@@ -254,7 +254,7 @@ pub fn write_account_markdown(
     }
 
     // Strategic Programs (from JSON)
-    if let Some(ref programs) = json.map(|j| &j.strategic_programs) {
+    if let Some(programs) = json.map(|j| &j.strategic_programs) {
         if !programs.is_empty() {
             md.push_str("## Strategic Programs\n\n");
             for p in programs.iter() {
@@ -275,7 +275,7 @@ pub fn write_account_markdown(
     }
 
     // Notes (from JSON)
-    if let Some(ref notes) = json.and_then(|j| j.notes.as_ref()) {
+    if let Some(notes) = json.and_then(|j| j.notes.as_ref()) {
         if !notes.is_empty() {
             md.push_str("## Notes\n\n");
             md.push_str(notes);
@@ -511,6 +511,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 tracker_path,
                 parent_id: Some(parent_id),
                 updated_at,
+                archived: false,
             },
             json,
         })
@@ -539,6 +540,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 tracker_path,
                 parent_id: json.parent_id.clone(),
                 updated_at,
+                archived: false,
             },
             json,
         })
@@ -617,6 +619,7 @@ pub fn sync_accounts_from_workspace(
                     tracker_path: Some(format!("Accounts/{}", name)),
                     parent_id: None,
                     updated_at: now,
+                    archived: false,
                 };
                 if db.upsert_account(&new_account).is_ok() {
                     let _ = write_account_json(workspace, &new_account, None, db);
@@ -782,6 +785,7 @@ pub fn sync_accounts_from_workspace(
                         tracker_path: Some(format!("Accounts/{}/{}", parent_name_str, sub_name_str)),
                         parent_id: Some(parent_id.clone()),
                         updated_at: now,
+                        archived: false,
                     };
                     if db.upsert_account(&new_child).is_ok() {
                         let _ = write_account_json(workspace, &new_child, None, db);
@@ -1111,6 +1115,7 @@ mod tests {
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
             updated_at: now,
+            archived: false,
         }
     }
 
@@ -1483,6 +1488,7 @@ END_ENRICHMENT";
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1558,6 +1564,7 @@ END_ENRICHMENT";
             tracker_path: Some("Accounts/Cox".to_string()),
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1576,6 +1583,7 @@ END_ENRICHMENT";
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1593,6 +1601,7 @@ END_ENRICHMENT";
             tracker_path: Some("Accounts/Cox/Enterprise".to_string()),
             parent_id: Some("cox".to_string()),
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1627,6 +1636,7 @@ END_ENRICHMENT";
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         })
         .unwrap();
 
@@ -1645,6 +1655,7 @@ END_ENRICHMENT";
             tracker_path: None,
             parent_id: Some("parent".to_string()),
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         })
         .unwrap();
 
@@ -1662,6 +1673,7 @@ END_ENRICHMENT";
             tracker_path: None,
             parent_id: Some("parent".to_string()),
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         })
         .unwrap();
 

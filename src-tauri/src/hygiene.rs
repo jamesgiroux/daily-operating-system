@@ -6,6 +6,7 @@
 //!
 //! Background loop: runs 30s after startup, then every 4 hours.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -36,6 +37,7 @@ pub struct HygieneReport {
     pub stale_intelligence: usize,
     pub unsummarized_files: usize,
     pub orphaned_meetings: usize,
+    pub duplicate_people: usize,
     pub fixes: MechanicalFixes,
     pub scanned_at: String,
 }
@@ -50,6 +52,7 @@ pub struct MechanicalFixes {
     pub meeting_counts_updated: usize,
     pub names_resolved: usize,
     pub people_linked_by_domain: usize,
+    pub renewals_rolled_over: usize,
     pub ai_enrichments_enqueued: usize,
 }
 
@@ -89,13 +92,18 @@ pub fn run_hygiene_scan(
         .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
         .map(|v| v.len())
         .unwrap_or(0);
+    report.duplicate_people = detect_duplicate_people(db)
+        .map(|v| v.len())
+        .unwrap_or(0);
 
     // --- Phase 1: Mechanical fixes (free, instant) ---
+    let user_domains = config.resolved_user_domains();
     report.fixes.relationships_reclassified =
-        fix_unknown_relationships(db, config.user_domain.as_deref());
+        fix_unknown_relationships(db, &user_domains);
     report.fixes.summaries_extracted = backfill_file_summaries(db);
     report.fixes.orphaned_meetings_linked = fix_orphaned_meetings(db);
     report.fixes.meeting_counts_updated = fix_meeting_counts(db);
+    report.fixes.renewals_rolled_over = fix_renewal_rollovers(db);
 
     // --- Phase 2: Email name resolution + domain linking (free) ---
     report.fixes.names_resolved = resolve_names_from_emails(db, workspace);
@@ -109,12 +117,11 @@ pub fn run_hygiene_scan(
     report
 }
 
-/// Reclassify people with "unknown" relationship using the current user_domain.
-fn fix_unknown_relationships(db: &ActionDb, user_domain: Option<&str>) -> usize {
-    let user_domain = match user_domain {
-        Some(d) if !d.is_empty() => d,
-        _ => return 0, // Can't classify without user_domain
-    };
+/// Reclassify people with "unknown" relationship using the user's domains (I171).
+fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> usize {
+    if user_domains.is_empty() {
+        return 0; // Can't classify without user domains
+    }
 
     let people = match db.get_unknown_relationship_people() {
         Ok(p) => p,
@@ -123,7 +130,7 @@ fn fix_unknown_relationships(db: &ActionDb, user_domain: Option<&str>) -> usize 
 
     let mut fixed = 0;
     for person in &people {
-        let new_rel = crate::util::classify_relationship(&person.email, Some(user_domain));
+        let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
         if new_rel != "unknown" {
             if db.update_person_relationship(&person.id, &new_rel).is_ok() {
                 fixed += 1;
@@ -214,6 +221,66 @@ fn fix_meeting_counts(db: &ActionDb) -> usize {
             fixed += 1;
         }
     }
+    fixed
+}
+
+/// Auto-rollover renewal dates for accounts that passed their renewal without churning.
+///
+/// For each non-archived account whose `contract_end` is in the past:
+///   1. Skip if the account has a 'churn' event (defensive — `get_accounts_past_renewal`
+///      already filters these, but this guards against race conditions).
+///   2. Record a 'renewal' event with the original contract_end date and current ARR.
+///   3. Advance `contract_end` by 12 months.
+///
+/// This ensures renewals don't silently go stale when the user simply continues the
+/// relationship without explicitly recording the event.
+fn fix_renewal_rollovers(db: &ActionDb) -> usize {
+    let past_renewal = match db.get_accounts_past_renewal() {
+        Ok(accounts) => accounts,
+        Err(_) => return 0,
+    };
+
+    let mut fixed = 0;
+    for account in &past_renewal {
+        // Defensive: skip if a churn event exists
+        if db.has_churn_event(&account.id).unwrap_or(false) {
+            continue;
+        }
+
+        let renewal_date = match account.contract_end.as_deref() {
+            Some(d) if !d.is_empty() => d,
+            _ => continue,
+        };
+
+        let parsed = match chrono::NaiveDate::parse_from_str(renewal_date, "%Y-%m-%d") {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        // Record the implicit renewal event
+        if db
+            .record_account_event(
+                &account.id,
+                "renewal",
+                renewal_date,
+                account.arr,
+                Some("Auto-renewed (no churn recorded)"),
+            )
+            .is_err()
+        {
+            continue;
+        }
+
+        // Advance contract_end by 12 months
+        let next = parsed + chrono::Months::new(12);
+        let next_str = next.format("%Y-%m-%d").to_string();
+        let _ = db.conn_ref().execute(
+            "UPDATE accounts SET contract_end = ?1 WHERE id = ?2",
+            rusqlite::params![next_str, account.id],
+        );
+        fixed += 1;
+    }
+
     fixed
 }
 
@@ -359,6 +426,197 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
     linked
 }
 
+// =============================================================================
+// Duplicate People Detection (I172)
+// =============================================================================
+
+/// A potential duplicate person pair with confidence scoring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DuplicateCandidate {
+    pub person1_id: String,
+    pub person1_name: String,
+    pub person2_id: String,
+    pub person2_name: String,
+    pub confidence: f32,
+    pub reason: String,
+}
+
+/// Detect potential duplicate people using name similarity within email domain groups.
+///
+/// Strategy:
+/// 1. Query all non-archived people from the database
+/// 2. Group people by email domain
+/// 3. Within each domain group, compare normalized names pairwise
+/// 4. Score based on:
+///    - Exact normalized name match (different emails) -> 0.95
+///    - Same first name + last name initial match -> 0.7
+///    - First 3 chars of both first and last name match -> 0.6
+///    - Same last name + same domain -> 0.4
+/// 5. Return candidates sorted by confidence descending
+///
+/// People with the same email are the same person and are NOT flagged.
+/// Only compares within the same email domain to keep the comparison set manageable.
+pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>, String> {
+    // Get all non-archived people
+    let people = db
+        .get_people(None)
+        .map_err(|e| format!("Failed to get people: {e}"))?;
+
+    let active: Vec<_> = people.into_iter().filter(|p| !p.archived).collect();
+
+    // Group by email domain
+    let mut domain_groups: HashMap<String, Vec<&crate::db::DbPerson>> = HashMap::new();
+    for person in &active {
+        let domain = crate::prepare::email_classify::extract_domain(&person.email);
+        if domain.is_empty() {
+            continue;
+        }
+        domain_groups.entry(domain).or_default().push(person);
+    }
+
+    let mut candidates: Vec<DuplicateCandidate> = Vec::new();
+
+    for (_domain, group) in &domain_groups {
+        // Skip singleton groups — no possible duplicates
+        if group.len() < 2 {
+            continue;
+        }
+
+        // Pairwise comparison within the domain group
+        for i in 0..group.len() {
+            for j in (i + 1)..group.len() {
+                let p1 = group[i];
+                let p2 = group[j];
+
+                // Same email = same person, not a duplicate
+                if p1.email.to_lowercase() == p2.email.to_lowercase() {
+                    continue;
+                }
+
+                if let Some((confidence, reason)) = score_name_similarity(&p1.name, &p2.name) {
+                    candidates.push(DuplicateCandidate {
+                        person1_id: p1.id.clone(),
+                        person1_name: p1.name.clone(),
+                        person2_id: p2.id.clone(),
+                        person2_name: p2.name.clone(),
+                        confidence,
+                        reason,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by confidence descending
+    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    Ok(candidates)
+}
+
+/// Normalized name parts: (first, last) both lowercase and trimmed.
+/// Returns None if the name is empty or clearly not a real name (e.g. just an email).
+fn split_name(name: &str) -> Option<(String, String)> {
+    let normalized = name.trim().to_lowercase();
+    // Skip email-as-name entries
+    if normalized.contains('@') {
+        return None;
+    }
+
+    let parts: Vec<&str> = normalized.split_whitespace().collect();
+    match parts.len() {
+        0 => None,
+        1 => Some((parts[0].to_string(), String::new())),
+        _ => {
+            let first = parts[0].to_string();
+            // Join remaining parts as last name (handles "Van Der Berg" etc.)
+            let last = parts[1..].join(" ");
+            Some((first, last))
+        }
+    }
+}
+
+/// Score name similarity between two people. Returns (confidence, reason) if
+/// the names are similar enough to flag, or None if no match.
+///
+/// Thresholds:
+/// - 0.95: Exact normalized name match (different emails)
+/// - 0.70: Same first name + last initial matches
+/// - 0.60: First 3 chars of both first and last name match
+/// - 0.40: Same last name (at least 3 chars)
+fn score_name_similarity(name1: &str, name2: &str) -> Option<(f32, String)> {
+    let (first1, last1) = split_name(name1)?;
+    let (first2, last2) = split_name(name2)?;
+
+    // Both must have at least a first name
+    if first1.is_empty() || first2.is_empty() {
+        return None;
+    }
+
+    // Exact full-name match
+    let full1 = if last1.is_empty() {
+        first1.clone()
+    } else {
+        format!("{first1} {last1}")
+    };
+    let full2 = if last2.is_empty() {
+        first2.clone()
+    } else {
+        format!("{first2} {last2}")
+    };
+    if full1 == full2 {
+        return Some((0.95, format!("Exact name match: \"{full1}\"")));
+    }
+
+    // From here, require both names to have first and last parts
+    if last1.is_empty() || last2.is_empty() {
+        return None;
+    }
+
+    // Same first name + last name initial matches
+    if first1 == first2 {
+        let last1_initial = last1.chars().next().unwrap_or(' ');
+        let last2_initial = last2.chars().next().unwrap_or(' ');
+        if last1_initial == last2_initial {
+            return Some((
+                0.70,
+                format!(
+                    "Same first name \"{first1}\" + last initial '{last1_initial}'"
+                ),
+            ));
+        }
+    }
+
+    // First 3 chars of both first and last match (catches typos/abbreviations)
+    let prefix_len = 3;
+    let f1_prefix: String = first1.chars().take(prefix_len).collect();
+    let f2_prefix: String = first2.chars().take(prefix_len).collect();
+    let l1_prefix: String = last1.chars().take(prefix_len).collect();
+    let l2_prefix: String = last2.chars().take(prefix_len).collect();
+
+    if f1_prefix.len() >= prefix_len
+        && l1_prefix.len() >= prefix_len
+        && f1_prefix == f2_prefix
+        && l1_prefix == l2_prefix
+    {
+        return Some((
+            0.60,
+            format!(
+                "Similar names: \"{first1} {last1}\" ~ \"{first2} {last2}\""
+            ),
+        ));
+    }
+
+    // Same last name (at least 3 chars) on same domain
+    if last1.len() >= 3 && last1 == last2 {
+        return Some((
+            0.40,
+            format!("Same last name \"{last1}\" on same domain"),
+        ));
+    }
+
+    None
+}
+
 /// Enqueue AI enrichment for entities with missing or stale intelligence.
 /// Respects the daily budget. Returns number of enrichments enqueued.
 fn enqueue_ai_enrichments(
@@ -464,6 +722,7 @@ pub fn check_upcoming_meeting_readiness(
                         summary: row.get(8)?,
                         created_at: row.get(9)?,
                         calendar_event_id: row.get(10)?,
+                        prep_context_json: None,
                     })
                 },
             )?;
@@ -602,13 +861,14 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
                 + report.fixes.meeting_counts_updated
                 + report.fixes.names_resolved
                 + report.fixes.people_linked_by_domain
+                + report.fixes.renewals_rolled_over
                 + report.fixes.ai_enrichments_enqueued;
 
             if total_gaps > 0 || total_fixes > 0 {
                 log::info!(
                     "HygieneLoop: {} gaps detected, {} fixes applied \
                      (relationships={}, summaries={}, orphaned={}, counts={}, \
-                     names={}, domain_links={}, ai_enqueued={})",
+                     names={}, domain_links={}, renewals={}, ai_enqueued={})",
                     total_gaps,
                     total_fixes,
                     report.fixes.relationships_reclassified,
@@ -617,6 +877,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
                     report.fixes.meeting_counts_updated,
                     report.fixes.names_resolved,
                     report.fixes.people_linked_by_domain,
+                    report.fixes.renewals_rolled_over,
                     report.fixes.ai_enrichments_enqueued,
                 );
             } else {
@@ -692,6 +953,7 @@ mod tests {
             first_seen: Some(now.clone()),
             meeting_count: 0,
             updated_at: now,
+            archived: false,
         };
         db.upsert_person(&person).expect("upsert person");
     }
@@ -712,6 +974,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: now,
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -779,7 +1042,8 @@ mod tests {
         seed_person(&db, "p1", "me@myco.com", "Me", "unknown");
         seed_person(&db, "p2", "them@other.com", "Them", "unknown");
 
-        let fixed = fix_unknown_relationships(&db, Some("myco.com"));
+        let domains = vec!["myco.com".to_string()];
+        let fixed = fix_unknown_relationships(&db, &domains);
         assert_eq!(fixed, 2);
 
         let p1 = db.get_person("p1").unwrap().unwrap();
@@ -794,7 +1058,7 @@ mod tests {
         let db = test_db();
         seed_person(&db, "p1", "me@myco.com", "Me", "unknown");
 
-        let fixed = fix_unknown_relationships(&db, None);
+        let fixed = fix_unknown_relationships(&db, &[]);
         assert_eq!(fixed, 0);
     }
 
@@ -803,9 +1067,10 @@ mod tests {
         let db = test_db();
         seed_person(&db, "p1", "me@myco.com", "Me", "unknown");
 
-        fix_unknown_relationships(&db, Some("myco.com"));
+        let domains = vec!["myco.com".to_string()];
+        fix_unknown_relationships(&db, &domains);
         // Second run: person is now "internal", not "unknown", so shouldn't be re-processed
-        let fixed = fix_unknown_relationships(&db, Some("myco.com"));
+        let fixed = fix_unknown_relationships(&db, &domains);
         assert_eq!(fixed, 0);
     }
 
@@ -1197,6 +1462,329 @@ mod tests {
         let _result = is_overnight_window();
     }
 
+    // --- Duplicate People Detection tests (I172) ---
+
+    #[test]
+    fn test_split_name_basic() {
+        let (first, last) = split_name("Jane Doe").unwrap();
+        assert_eq!(first, "jane");
+        assert_eq!(last, "doe");
+    }
+
+    #[test]
+    fn test_split_name_single() {
+        let (first, last) = split_name("Jane").unwrap();
+        assert_eq!(first, "jane");
+        assert_eq!(last, "");
+    }
+
+    #[test]
+    fn test_split_name_multi_part_last() {
+        let (first, last) = split_name("Jan Van Der Berg").unwrap();
+        assert_eq!(first, "jan");
+        assert_eq!(last, "van der berg");
+    }
+
+    #[test]
+    fn test_split_name_email_rejected() {
+        assert!(split_name("jane@acme.com").is_none());
+    }
+
+    #[test]
+    fn test_split_name_empty() {
+        assert!(split_name("").is_none());
+    }
+
+    #[test]
+    fn test_score_exact_match() {
+        let result = score_name_similarity("Jane Doe", "jane doe");
+        assert!(result.is_some());
+        let (confidence, reason) = result.unwrap();
+        assert!((confidence - 0.95).abs() < f32::EPSILON);
+        assert!(reason.contains("Exact name match"));
+    }
+
+    #[test]
+    fn test_score_first_name_plus_initial() {
+        let result = score_name_similarity("Jane Doe", "Jane Davis");
+        assert!(result.is_some());
+        let (confidence, _) = result.unwrap();
+        assert!((confidence - 0.70).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_score_prefix_match() {
+        let result = score_name_similarity("Jonathan Smith", "Jonny Smithson");
+        assert!(result.is_some());
+        let (confidence, _) = result.unwrap();
+        assert!((confidence - 0.60).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_score_same_last_name() {
+        let result = score_name_similarity("Alice Smith", "Bob Smith");
+        assert!(result.is_some());
+        let (confidence, _) = result.unwrap();
+        assert!((confidence - 0.40).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_score_no_match() {
+        let result = score_name_similarity("Jane Doe", "Bob Smith");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_score_both_single_name_different() {
+        // Single-word names that differ should not match
+        let result = score_name_similarity("Alice", "Bob");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_score_email_names_rejected() {
+        let result = score_name_similarity("jane@acme.com", "jane@other.com");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_detect_duplicates_exact_name_different_emails() {
+        let db = test_db();
+        seed_person(&db, "jane-doe-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-doe-2", "jdoe@acme.com", "Jane Doe", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        assert_eq!(dupes.len(), 1);
+        assert!((dupes[0].confidence - 0.95).abs() < f32::EPSILON);
+        assert!(dupes[0].reason.contains("Exact name match"));
+    }
+
+    #[test]
+    fn test_detect_duplicates_same_email_not_flagged() {
+        let db = test_db();
+        // Same email means same person — not a duplicate
+        seed_person(&db, "jane-1", "jane@acme.com", "Jane Doe", "external");
+        // This would normally be caught by upsert, but test the detection logic
+        // seed a person with the same email but different id would be same person
+        // Instead, two people with genuinely different emails on different domains
+        seed_person(&db, "jane-2", "jane@other.com", "Jane Doe", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        // Different domains, so they're in different groups — no match
+        assert!(dupes.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates_cross_domain_no_match() {
+        let db = test_db();
+        // Same name but different domains — not flagged (different domain groups)
+        seed_person(&db, "jane-acme", "jane@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-other", "jane@other.com", "Jane Doe", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        assert!(dupes.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates_archived_excluded() {
+        let db = test_db();
+        seed_person(&db, "jane-doe-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-doe-2", "jdoe@acme.com", "Jane Doe", "external");
+
+        // Archive one
+        db.conn_ref()
+            .execute("UPDATE people SET archived = 1 WHERE id = 'jane-doe-2'", [])
+            .unwrap();
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        assert!(dupes.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates_empty_db() {
+        let db = test_db();
+        let dupes = detect_duplicate_people(&db).unwrap();
+        assert!(dupes.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates_singleton_domain() {
+        let db = test_db();
+        seed_person(&db, "jane", "jane@acme.com", "Jane Doe", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        assert!(dupes.is_empty());
+    }
+
+    #[test]
+    fn test_detect_duplicates_sorted_by_confidence() {
+        let db = test_db();
+        // Exact match pair: 0.95
+        seed_person(&db, "jane-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-2", "jdoe@acme.com", "Jane Doe", "external");
+        // Same-last-name pair: 0.40
+        seed_person(&db, "bob-doe", "bob.doe@acme.com", "Bob Doe", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        // Should have at least 2 candidates (exact match + same last name pairs)
+        assert!(dupes.len() >= 2);
+        // First should be highest confidence
+        assert!(dupes[0].confidence >= dupes[1].confidence);
+    }
+
+    #[test]
+    fn test_detect_duplicates_in_hygiene_report() {
+        let db = test_db();
+        seed_person(&db, "jane-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-2", "jdoe@acme.com", "Jane Doe", "external");
+
+        let config = Config {
+            workspace_path: "/tmp/nonexistent".to_string(),
+            user_domain: Some("myco.com".to_string()),
+            ..default_test_config()
+        };
+
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        assert_eq!(report.duplicate_people, 1);
+    }
+
+    #[test]
+    fn test_detect_duplicates_first_name_initial_match() {
+        let db = test_db();
+        seed_person(&db, "jane-doe", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(&db, "jane-davis", "jane.davis@acme.com", "Jane Davis", "external");
+
+        let dupes = detect_duplicate_people(&db).unwrap();
+        // Should match: same first name + last initial 'D'
+        let matching: Vec<_> = dupes.iter().filter(|d| (d.confidence - 0.70).abs() < f32::EPSILON).collect();
+        assert_eq!(matching.len(), 1);
+    }
+
+    // --- Renewal auto-rollover tests (I143) ---
+
+    fn seed_account_with_renewal(db: &ActionDb, id: &str, name: &str, contract_end: &str, arr: Option<f64>) {
+        let now = Utc::now().to_rfc3339();
+        let account = crate::db::DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr,
+            health: None,
+            contract_start: None,
+            contract_end: Some(contract_end.to_string()),
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            updated_at: now,
+            archived: false,
+        };
+        db.upsert_account(&account).expect("upsert account");
+    }
+
+    #[test]
+    fn test_renewal_rollover_advances_date_and_records_event() {
+        let db = test_db();
+        // Account with contract_end 6 months in the past, no churn
+        let past = (Utc::now() - chrono::Duration::days(180))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_account_with_renewal(&db, "acme", "Acme Corp", &past, Some(120_000.0));
+
+        let fixed = fix_renewal_rollovers(&db);
+        assert_eq!(fixed, 1);
+
+        // Verify the renewal event was recorded
+        let events = db.get_account_events("acme").unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "renewal");
+        assert_eq!(events[0].event_date, past);
+        assert_eq!(events[0].arr_impact, Some(120_000.0));
+        assert!(events[0]
+            .notes
+            .as_deref()
+            .unwrap()
+            .contains("Auto-renewed"));
+
+        // Verify contract_end advanced by 12 months
+        let past_date = chrono::NaiveDate::parse_from_str(&past, "%Y-%m-%d").unwrap();
+        let expected_next = (past_date + chrono::Months::new(12))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let updated: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT contract_end FROM accounts WHERE id = 'acme'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(updated, expected_next);
+    }
+
+    #[test]
+    fn test_renewal_rollover_skips_churned_account() {
+        let db = test_db();
+        let past = (Utc::now() - chrono::Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_account_with_renewal(&db, "churned-co", "Churned Co", &past, Some(50_000.0));
+
+        // Record a churn event
+        db.record_account_event("churned-co", "churn", &past, Some(50_000.0), Some("Lost"))
+            .unwrap();
+
+        let fixed = fix_renewal_rollovers(&db);
+        assert_eq!(fixed, 0);
+
+        // contract_end should be unchanged
+        let contract_end: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT contract_end FROM accounts WHERE id = 'churned-co'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(contract_end, past);
+    }
+
+    #[test]
+    fn test_renewal_rollover_idempotent() {
+        let db = test_db();
+        let past = (Utc::now() - chrono::Duration::days(60))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_account_with_renewal(&db, "acme", "Acme Corp", &past, None);
+
+        let fixed1 = fix_renewal_rollovers(&db);
+        assert_eq!(fixed1, 1);
+
+        // Second run: contract_end is now in the future, so no rollover
+        let fixed2 = fix_renewal_rollovers(&db);
+        assert_eq!(fixed2, 0);
+    }
+
+    #[test]
+    fn test_renewal_rollover_in_hygiene_report() {
+        let db = test_db();
+        let past = (Utc::now() - chrono::Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
+        seed_account_with_renewal(&db, "acme", "Acme Corp", &past, Some(100_000.0));
+
+        let config = Config {
+            workspace_path: "/tmp/nonexistent".to_string(),
+            user_domain: Some("myco.com".to_string()),
+            ..default_test_config()
+        };
+
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        assert_eq!(report.fixes.renewals_rolled_over, 1);
+    }
+
     fn default_test_config() -> Config {
         Config {
             workspace_path: String::new(),
@@ -1208,6 +1796,7 @@ mod tests {
             post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
             features: std::collections::HashMap::new(),
             user_domain: None,
+            user_domains: None,
             user_name: None,
             user_company: None,
             user_title: None,

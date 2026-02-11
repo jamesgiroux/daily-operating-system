@@ -17,9 +17,27 @@ import { FolderKanban, Plus, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectListItem } from "@/types";
 
+/** Lightweight shape returned by get_archived_projects (DbProject from Rust). */
+interface ArchivedProject {
+  id: string;
+  name: string;
+  status: string;
+  milestone?: string;
+  owner?: string;
+  targetDate?: string;
+  archived: boolean;
+}
+
+type ArchiveTab = "active" | "archived";
+
 type StatusTab = "all" | "active" | "on_hold" | "completed";
 
-const tabs: { key: StatusTab; label: string }[] = [
+const archiveTabs: { key: ArchiveTab; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "archived", label: "Archived" },
+];
+
+const statusTabs: { key: StatusTab; label: string }[] = [
   { key: "all", label: "All" },
   { key: "active", label: "Active" },
   { key: "on_hold", label: "On Hold" },
@@ -35,6 +53,12 @@ export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // I176: archive tab
+  const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
+  const [archivedProjects, setArchivedProjects] = useState<ArchivedProject[]>([]);
+  // I162: bulk create mode
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkValue, setBulkValue] = useState("");
 
   const loadProjects = useCallback(async () => {
     try {
@@ -49,9 +73,27 @@ export default function ProjectsPage() {
     }
   }, []);
 
+  // I176: load archived projects
+  const loadArchivedProjects = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await invoke<ArchivedProject[]>("get_archived_projects");
+      setArchivedProjects(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+    if (archiveTab === "active") {
+      loadProjects();
+    } else {
+      loadArchivedProjects();
+    }
+  }, [archiveTab, loadProjects, loadArchivedProjects]);
 
   async function handleCreate() {
     if (!newName.trim()) return;
@@ -59,6 +101,23 @@ export default function ProjectsPage() {
       await invoke<string>("create_project", { name: newName.trim() });
       setNewName("");
       setCreating(false);
+      await loadProjects();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // I162: bulk create
+  async function handleBulkCreate() {
+    const names = bulkValue
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (names.length === 0) return;
+    try {
+      await invoke<string[]>("bulk_create_projects", { names });
+      setBulkValue("");
+      setBulkMode(false);
       await loadProjects();
     } catch (e) {
       setError(String(e));
@@ -83,7 +142,18 @@ export default function ProjectsPage() {
     completed: projects.filter((p) => p.status === "completed").length,
   };
 
-  if (loading && projects.length === 0) {
+  // I176: filter archived projects by search query
+  const filteredArchived = searchQuery
+    ? archivedProjects.filter(
+        (p) =>
+          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.owner ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : archivedProjects;
+
+  const isArchived = archiveTab === "archived";
+
+  if (loading && (isArchived ? archivedProjects.length === 0 : projects.length === 0)) {
     return (
       <main className="flex-1 overflow-hidden p-6">
         <div className="mb-6 space-y-2">
@@ -107,7 +177,7 @@ export default function ProjectsPage() {
     );
   }
 
-  if (projects.length === 0) {
+  if (!isArchived && projects.length === 0) {
     return (
       <main className="flex-1 overflow-hidden">
         <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
@@ -146,45 +216,117 @@ export default function ProjectsPage() {
               <h1 className="text-2xl font-semibold tracking-tight">
                 Projects
                 <span className="ml-2 text-base font-normal text-muted-foreground">
-                  {filtered.length}
+                  {isArchived ? filteredArchived.length : filtered.length}
                 </span>
               </h1>
               <p className="text-sm text-muted-foreground">
-                Project status, milestones, and deliverables
+                {isArchived
+                  ? "Previously tracked projects"
+                  : "Project status, milestones, and deliverables"}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {creating ? (
-                <InlineCreateForm
-                  value={newName}
-                  onChange={setNewName}
-                  onCreate={handleCreate}
-                  onCancel={() => {
-                    setCreating(false);
-                    setNewName("");
-                  }}
-                  placeholder="Project name"
-                />
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCreating(true)}
-                >
-                  <Plus className="mr-1 size-4" />
-                  New Project
-                </Button>
+              {!isArchived && (
+                <>
+                  {creating ? (
+                    <>
+                      {bulkMode ? (
+                        <div className="flex flex-col gap-2">
+                          <textarea
+                            autoFocus
+                            value={bulkValue}
+                            onChange={(e) => setBulkValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setBulkMode(false);
+                                setBulkValue("");
+                                setCreating(false);
+                              }
+                            }}
+                            placeholder="One project name per line"
+                            rows={5}
+                            className="w-64 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" onClick={handleBulkCreate}>
+                              Create{" "}
+                              {bulkValue.split("\n").filter((s) => s.trim()).length || ""}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setBulkMode(false);
+                                setBulkValue("");
+                              }}
+                            >
+                              Single
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setCreating(false);
+                                setBulkMode(false);
+                                setBulkValue("");
+                                setNewName("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <InlineCreateForm
+                            value={newName}
+                            onChange={setNewName}
+                            onCreate={handleCreate}
+                            onCancel={() => {
+                              setCreating(false);
+                              setNewName("");
+                            }}
+                            placeholder="Project name"
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setBulkMode(true)}
+                          >
+                            Bulk
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCreating(true)}
+                    >
+                      <Plus className="mr-1 size-4" />
+                      New Project
+                    </Button>
+                  )}
+                </>
               )}
               <Button
                 variant="ghost"
                 size="icon"
                 className="size-8"
-                onClick={loadProjects}
+                onClick={isArchived ? loadArchivedProjects : loadProjects}
               >
                 <RefreshCw className="size-4" />
               </Button>
             </div>
           </div>
+
+          <TabFilter
+            tabs={archiveTabs}
+            active={archiveTab}
+            onChange={setArchiveTab}
+            className="mb-4"
+          />
 
           <SearchInput
             value={searchQuery}
@@ -193,17 +335,35 @@ export default function ProjectsPage() {
             className="mb-4"
           />
 
-          <TabFilter
-            tabs={tabs}
-            active={tab}
-            onChange={setTab}
-            counts={tabCounts}
-            className="mb-6"
-          />
+          {!isArchived && (
+            <TabFilter
+              tabs={statusTabs}
+              active={tab}
+              onChange={setTab}
+              counts={tabCounts}
+              className="mb-6"
+            />
+          )}
 
           {/* Projects list */}
           <div>
-            {filtered.length === 0 ? (
+            {isArchived ? (
+              filteredArchived.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                    <FolderKanban className="mb-4 size-12 text-muted-foreground/40" />
+                    <p className="text-lg font-medium">No archived projects</p>
+                    <p className="text-sm text-muted-foreground">
+                      Archived projects will appear here.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredArchived.map((project) => (
+                  <ArchivedProjectRow key={project.id} project={project} />
+                ))
+              )
+            ) : filtered.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <FolderKanban className="mb-4 size-12 text-muted-foreground/40" />
@@ -280,6 +440,23 @@ function ProjectRow({ project }: { project: ProjectListItem }) {
             />
           )}
         </>
+      }
+    />
+  );
+}
+
+/** I176: Simplified row for archived projects (no active metrics). */
+function ArchivedProjectRow({ project }: { project: ArchivedProject }) {
+  return (
+    <ListRow
+      to="/projects/$projectId"
+      params={{ projectId: project.id }}
+      signalColor={statusDot[project.status] ?? "bg-muted-foreground/30"}
+      name={project.name}
+      subtitle={
+        [project.owner ? `Owner: ${project.owner}` : "", project.status]
+          .filter(Boolean)
+          .join(" \u00B7 ") || undefined
       }
     />
   );

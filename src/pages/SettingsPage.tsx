@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +15,7 @@ import {
   Check,
   FolderKanban,
   FolderOpen,
+  Globe,
   Layers,
   Play,
   RefreshCw,
@@ -155,6 +157,9 @@ export default function SettingsPage() {
           <div className="space-y-6">
             {/* Google Account */}
             <GoogleAccountCard />
+
+            {/* User Domains */}
+            <UserDomainsCard />
 
             {/* Post-Meeting Capture */}
             <CaptureSettingsCard />
@@ -408,6 +413,81 @@ function GoogleAccountCard() {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserDomainsCard() {
+  const [domainValue, setDomainValue] = useState("");
+  const [savedValue, setSavedValue] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<{ userDomains?: string[]; userDomain?: string }>("get_config")
+      .then((config) => {
+        const display = config.userDomains?.join(", ") || config.userDomain || "";
+        setDomainValue(display);
+        setSavedValue(display);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const hasChanges = domainValue.trim() !== savedValue.trim();
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const updated = await invoke<{ userDomains?: string[]; userDomain?: string }>(
+        "set_user_domains",
+        { domains: domainValue },
+      );
+      const display = updated.userDomains?.join(", ") || updated.userDomain || "";
+      setDomainValue(display);
+      setSavedValue(display);
+      toast.success("Domains updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update domains");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Globe className="size-4" />
+          Your Domains
+        </CardTitle>
+        <CardDescription>
+          Your organization's email domains (comma-separated) — used to distinguish internal vs external meetings
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-3">
+          <Input
+            value={domainValue}
+            onChange={(e) => setDomainValue(e.target.value)}
+            placeholder="example.com, contractor.com, subsidiary.com"
+            className="font-mono text-sm"
+            disabled={loading}
+          />
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={loading || saving || !hasChanges}
+          >
+            {saving ? (
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+            ) : (
+              <Check className="mr-1.5 size-3.5" />
+            )}
+            Save
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

@@ -96,7 +96,7 @@ pub fn process_transcript(
     // 3. Build prompt and invoke Claude
     let prompt = build_transcript_prompt(meeting, &content);
     let default_config = AiModelConfig::default();
-    let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config.unwrap_or(&default_config))
+    let pty = PtyManager::for_tier(ModelTier::Extraction, ai_config.unwrap_or(&default_config))
         .with_timeout(TRANSCRIPT_AI_TIMEOUT_SECS);
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,

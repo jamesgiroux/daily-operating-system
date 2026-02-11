@@ -383,6 +383,7 @@ pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
             target_date: json.structured.target_date.clone(),
             tracker_path,
             updated_at,
+            archived: false,
         },
         json,
     })
@@ -455,6 +456,7 @@ pub fn sync_projects_from_workspace(
                     target_date: None,
                     tracker_path: Some(format!("Projects/{}", name)),
                     updated_at: now,
+                    archived: false,
                 };
                 if db.upsert_project(&new_project).is_ok() {
                     let _ = write_project_json(workspace, &new_project, None, db);
@@ -727,6 +729,7 @@ mod tests {
             target_date: Some("2026-06-01".to_string()),
             tracker_path: Some(format!("Projects/{}", name)),
             updated_at: now,
+            archived: false,
         }
     }
 

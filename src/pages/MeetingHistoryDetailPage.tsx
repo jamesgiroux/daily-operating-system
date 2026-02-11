@@ -18,7 +18,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { MeetingHistoryDetail, LinkedEntity } from "@/types";
+import type { MeetingHistoryDetail, LinkedEntity, PrepContext } from "@/types";
 
 const meetingTypeLabels: Record<string, string> = {
   customer: "Customer",
@@ -211,6 +211,9 @@ export default function MeetingHistoryDetailPage() {
             </Card>
           )}
 
+          {/* Prep Context (I181) */}
+          {detail.prepContext && <PrepContextCard prep={detail.prepContext} />}
+
           {/* Captures by type */}
           {Object.keys(capturesByType).length > 0 && (
             <Card>
@@ -394,6 +397,156 @@ export default function MeetingHistoryDetailPage() {
         </div>
       </ScrollArea>
     </main>
+  );
+}
+
+function PrepContextCard({ prep }: { prep: PrepContext }) {
+  const hasAgenda = prep.proposedAgenda && prep.proposedAgenda.length > 0;
+  const hasTalkingPoints = prep.talkingPoints && prep.talkingPoints.length > 0;
+  const hasRisks = prep.entityRisks && prep.entityRisks.length > 0;
+  const hasOpenItems = prep.openItems && prep.openItems.length > 0;
+  const hasQuestions = prep.questions && prep.questions.length > 0;
+  const hasStakeholders =
+    prep.stakeholderInsights && prep.stakeholderInsights.length > 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium">Pre-Meeting Prep</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {prep.intelligenceSummary && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Context
+            </h4>
+            <p className="text-sm leading-relaxed">
+              {prep.intelligenceSummary}
+            </p>
+          </div>
+        )}
+
+        {hasAgenda && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Proposed Agenda
+            </h4>
+            <div className="space-y-1.5">
+              {prep.proposedAgenda!.map((item, i) => (
+                <div key={i} className="text-sm">
+                  <span className="font-medium">{item.topic}</span>
+                  {item.why && (
+                    <p className="ml-4 text-muted-foreground">{item.why}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hasTalkingPoints && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Talking Points
+            </h4>
+            <ul className="list-disc space-y-1 pl-4">
+              {prep.talkingPoints!.map((point, i) => (
+                <li key={i} className="text-sm text-muted-foreground">
+                  {point}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {hasRisks && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Risks
+            </h4>
+            <div className="space-y-1.5">
+              {prep.entityRisks!.map((risk, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-2 text-sm text-destructive"
+                >
+                  <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-xs font-bold">
+                    R
+                  </span>
+                  <span>{risk.text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hasOpenItems && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Open Items
+            </h4>
+            <div className="space-y-1">
+              {prep.openItems!.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span>{item.title}</span>
+                  {item.dueDate && (
+                    <span
+                      className={cn(
+                        "ml-auto shrink-0 text-xs",
+                        item.isOverdue
+                          ? "text-destructive"
+                          : "text-muted-foreground"
+                      )}
+                    >
+                      {item.dueDate}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hasQuestions && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Questions
+            </h4>
+            <ul className="list-disc space-y-1 pl-4">
+              {prep.questions!.map((q, i) => (
+                <li key={i} className="text-sm text-muted-foreground">
+                  {q}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {hasStakeholders && (
+          <div>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Stakeholder Insights
+            </h4>
+            <div className="space-y-1.5">
+              {prep.stakeholderInsights!.map((s, i) => (
+                <div key={i} className="text-sm">
+                  <span className="font-medium">{s.name}</span>
+                  {s.role && (
+                    <span className="text-muted-foreground"> ({s.role})</span>
+                  )}
+                  {s.assessment && (
+                    <p className="ml-4 text-muted-foreground">
+                      {s.assessment}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

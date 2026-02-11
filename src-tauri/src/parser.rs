@@ -384,6 +384,7 @@ impl MeetingBuilder {
             prep_reviewed: None,
             account_id: None,
             linked_entities: None,
+            suggested_unarchive_account_id: None,
         })
     }
 }
@@ -2028,6 +2029,7 @@ pub fn parse_meetings_from_overview(
                     prep_reviewed: None,
                     account_id: None,
                     linked_entities: None,
+                    suggested_unarchive_account_id: None,
                 });
 
                 id_counter += 1;
