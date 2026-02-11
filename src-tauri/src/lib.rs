@@ -266,6 +266,9 @@ pub fn run() {
             commands::unlink_meeting_entity,
             commands::get_meeting_entities,
             commands::update_meeting_entity,
+            // I184: Additive multi-entity link/unlink
+            commands::add_meeting_entity,
+            commands::remove_meeting_entity,
             // I129: Person Creation
             commands::create_person,
             commands::merge_people,
