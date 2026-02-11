@@ -17,7 +17,7 @@ use crate::google_api;
 use crate::people;
 use crate::state::{google_token_path, AppState};
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
-use crate::util::{classify_relationship, name_from_email, org_from_email, person_id_from_email};
+use crate::util::{name_from_email, org_from_email, person_id_from_email};
 use crate::workflow::deliver::{make_meeting_id, write_json};
 
 /// Run the Google OAuth flow via native Rust.
@@ -63,22 +63,22 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
         })?;
 
     // Build classification inputs from config + DB
-    let user_domain = state
+    let user_domains = state
         .config
         .read()
         .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()))
+        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
 
     let account_hints = build_account_hints(state);
 
-    // Classify and convert
+    // Classify and convert (I171: multi-domain)
     let events: Vec<CalendarEvent> = raw_events
         .iter()
         .map(|raw| {
-            let classified = google_api::classify::classify_meeting(
+            let classified = google_api::classify::classify_meeting_multi(
                 raw,
-                &user_domain,
+                &user_domains,
                 &account_hints,
             );
             classified.to_calendar_event()
@@ -427,11 +427,12 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             _ => None,
         });
 
-    let user_domain = state
+    let user_domains = state
         .config
         .read()
         .ok()
-        .and_then(|g| g.as_ref().and_then(|c| c.user_domain.clone()));
+        .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
+        .unwrap_or_default();
 
     let db_guard = match state.db.lock().ok() {
         Some(g) => g,
@@ -486,7 +487,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             let id = person_id_from_email(&email_lower);
             let name = name_from_email(&email_lower);
             let org = org_from_email(&email_lower);
-            let relationship = classify_relationship(&email_lower, user_domain.as_deref());
+            let relationship = crate::util::classify_relationship_multi(&email_lower, &user_domains);
 
             let person = DbPerson {
                 id: id.clone(),
@@ -501,11 +502,16 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 first_seen: Some(Utc::now().to_rfc3339()),
                 meeting_count: 0,
                 updated_at: Utc::now().to_rfc3339(),
+                archived: false,
             };
 
             if db.upsert_person(&person).is_ok() {
-                let _ = people::write_person_json(workspace, &person, db);
-                let _ = people::write_person_markdown(workspace, &person, db);
+                if let Err(e) = people::write_person_json(workspace, &person, db) {
+                    log::warn!("Failed to write person.json for '{}': {}", person.name, e);
+                }
+                if let Err(e) = people::write_person_markdown(workspace, &person, db) {
+                    log::warn!("Failed to write person.md for '{}': {}", person.name, e);
+                }
                 new_people += 1;
 
                 // Auto-link to entity if meeting has an account
@@ -631,6 +637,7 @@ mod tests {
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).unwrap();
 

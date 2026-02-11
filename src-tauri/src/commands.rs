@@ -22,6 +22,7 @@ use crate::SchedulerSender;
 
 /// Result type for dashboard data loading
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum DashboardResult {
     Success {
@@ -159,6 +160,38 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
     }
 
+    // Flag meetings that matched an archived account for unarchive suggestion (I161)
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(archived) = db.get_archived_accounts() {
+                let archived_ids: HashSet<String> =
+                    archived.iter().map(|a| a.id.to_lowercase()).collect();
+                if !archived_ids.is_empty() {
+                    for m in &mut meetings {
+                        // Resolve the account identifier: prefer account_id (junction table),
+                        // fall back to account (classification hint slug)
+                        let resolved = m
+                            .account_id
+                            .as_deref()
+                            .or(m.account.as_deref())
+                            .map(str::to_lowercase);
+                        if let Some(ref id) = resolved {
+                            if archived_ids.contains(id) {
+                                // Find the canonical (original-case) account ID
+                                let canonical = archived
+                                    .iter()
+                                    .find(|a| a.id.to_lowercase() == *id)
+                                    .map(|a| a.id.clone())
+                                    .unwrap_or_else(|| id.clone());
+                                m.suggested_unarchive_account_id = Some(canonical);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut actions = load_actions_json(&today_dir).unwrap_or_default();
 
     // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
@@ -170,7 +203,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     .map(|a| a.title.to_lowercase().trim().to_string())
                     .collect();
                 for dba in db_actions {
-                    if !json_titles.contains(&dba.title.to_lowercase().trim().to_string()) {
+                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
                         let priority = match dba.priority.as_str() {
                             "P1" => Priority::P1,
                             "P3" => Priority::P3,
@@ -298,6 +331,7 @@ pub fn get_next_run_time(
 
 /// Result type for meeting prep
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum MeetingPrepResult {
     Success { data: FullMeetingPrep },
@@ -428,6 +462,7 @@ fn extract_account_from_prep(prep_file: &str, today_dir: &Path) -> Option<String
 
 /// Result type for week data
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum WeekResult {
     Success { data: WeekOverview },
@@ -472,6 +507,7 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
 
 /// Result type for focus data
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum FocusResult {
     Success { data: FocusData },
@@ -621,6 +657,7 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
 
 /// Result type for all actions
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum ActionsResult {
     Success { data: Vec<Action> },
@@ -701,6 +738,7 @@ pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
 
 /// Result type for inbox files
 #[derive(Debug, serde::Serialize)]
+#[allow(clippy::large_enum_variant)]
 #[serde(tag = "status", rename_all = "lowercase")]
 pub enum InboxResult {
     Success {
@@ -1244,7 +1282,7 @@ pub fn set_workspace_path(
             let _ = crate::people::sync_people_from_workspace(
                 workspace,
                 db,
-                config.user_domain.as_deref(),
+                &config.resolved_user_domains(),
             );
             let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
             let _ = crate::projects::sync_projects_from_workspace(workspace, db);
@@ -1528,6 +1566,23 @@ pub struct MeetingHistoryDetail {
     pub attendees: Vec<String>,
     pub captures: Vec<crate::db::DbCapture>,
     pub actions: Vec<crate::db::DbAction>,
+    /// Parsed prep context from enrichment (I181).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_context: Option<PrepContext>,
+}
+
+/// Enriched pre-meeting prep context persisted from daily briefing (I181).
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrepContext {
+    pub intelligence_summary: Option<String>,
+    pub entity_risks: Option<Vec<serde_json::Value>>,
+    pub entity_readiness: Option<Vec<String>>,
+    pub talking_points: Option<Vec<String>>,
+    pub proposed_agenda: Option<Vec<serde_json::Value>>,
+    pub open_items: Option<Vec<serde_json::Value>>,
+    pub questions: Option<Vec<String>>,
+    pub stakeholder_insights: Option<Vec<serde_json::Value>>,
 }
 
 /// Get full detail for a single past meeting by ID.
@@ -1574,6 +1629,12 @@ pub fn get_meeting_history_detail(
         .filter(|s| !s.is_empty())
         .collect();
 
+    // Parse persisted prep context (I181)
+    let prep_context = meeting
+        .prep_context_json
+        .as_ref()
+        .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
+
     Ok(MeetingHistoryDetail {
         id: meeting.id,
         title: meeting.title,
@@ -1586,7 +1647,101 @@ pub fn get_meeting_history_detail(
         attendees,
         captures,
         actions,
+        prep_context,
     })
+}
+
+// =============================================================================
+// Meeting Search (I183)
+// =============================================================================
+
+/// A meeting search result with minimal metadata.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingSearchResult {
+    pub id: String,
+    pub title: String,
+    pub meeting_type: String,
+    pub start_time: String,
+    pub account_name: Option<String>,
+    pub match_snippet: Option<String>,
+}
+
+/// Search meetings by title, summary, or prep context (I183).
+#[tauri::command]
+pub fn search_meetings(
+    query: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<MeetingSearchResult>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let pattern = format!("%{}%", query.trim());
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, title, meeting_type, start_time, account_id, summary, prep_context_json
+             FROM meetings_history
+             WHERE title LIKE ?1
+                OR summary LIKE ?1
+                OR prep_context_json LIKE ?1
+             ORDER BY start_time DESC
+             LIMIT 50",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![&pattern], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        let (id, title, meeting_type, start_time, account_id, summary, prep_json) =
+            row.map_err(|e| e.to_string())?;
+
+        // Extract snippet: prefer summary, fall back to intelligence summary from prep
+        let match_snippet = summary.or_else(|| {
+            prep_json.and_then(|json| {
+                serde_json::from_str::<serde_json::Value>(&json)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("intelligenceSummary")
+                            .and_then(|s| s.as_str().map(|s| s.to_string()))
+                    })
+            })
+        });
+
+        // Resolve account name
+        let account_name = account_id
+            .as_ref()
+            .and_then(|aid| db.get_account(aid).ok().flatten())
+            .map(|a| a.name);
+
+        results.push(MeetingSearchResult {
+            id,
+            title,
+            meeting_type,
+            start_time,
+            account_name,
+            match_snippet,
+        });
+    }
+
+    Ok(results)
 }
 
 // =============================================================================
@@ -2026,7 +2181,14 @@ pub async fn attach_meeting_transcript(
 
     // On success, overwrite sentinel with real record.
     // On failure, remove sentinel so retry is possible (I61).
-    if result.status == "success" {
+    let has_outcomes = result.status == "success"
+        && (result.summary.as_ref().map_or(false, |s| !s.is_empty())
+            || !result.wins.is_empty()
+            || !result.risks.is_empty()
+            || !result.decisions.is_empty()
+            || !result.actions.is_empty());
+
+    if result.status == "success" && has_outcomes {
         let record = crate::types::TranscriptRecord {
             meeting_id: meeting_id.clone(),
             file_path: file_path_for_record,
@@ -2048,9 +2210,10 @@ pub async fn attach_meeting_transcript(
         let outcome_data = build_outcome_data(&meeting_id, &result, &state);
         let _ = app_handle.emit("transcript-processed", &outcome_data);
     } else {
-        // Processing failed — remove sentinel so the user can retry
+        // Processing failed or AI extraction was empty — remove sentinel so retry is possible
         if let Ok(mut guard) = state.transcript_processed.lock() {
             guard.remove(&meeting_id);
+            let _ = crate::state::save_transcript_records(&guard);
         }
     }
 
@@ -2446,6 +2609,7 @@ pub fn populate_workspace(
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
             updated_at: now.clone(),
+            archived: false,
         };
 
         if let Ok(db_guard) = state.db.lock() {
@@ -2480,6 +2644,7 @@ pub fn populate_workspace(
             target_date: None,
             tracker_path: Some(format!("Projects/{}", name)),
             updated_at: now.clone(),
+            archived: false,
         };
 
         // Create folder + directory template (ADR-0059, idempotent)
@@ -3082,6 +3247,7 @@ pub fn update_meeting_entity(
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            prep_context_json: None,
         };
         db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
 
@@ -3167,6 +3333,7 @@ pub fn create_person(
         first_seen: Some(now.clone()),
         meeting_count: 0,
         updated_at: now,
+        archived: false,
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
@@ -3819,6 +3986,7 @@ pub fn create_account(
         tracker_path: Some(tracker_path),
         parent_id,
         updated_at: now,
+        archived: false,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -4126,6 +4294,7 @@ pub fn create_project(
         target_date: None,
         tracker_path: Some(format!("Projects/{}", validated_name)),
         updated_at: now,
+        archived: false,
     };
 
     db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -4276,10 +4445,10 @@ pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<S
 
 #[tauri::command]
 pub async fn rebuild_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(usize, usize, usize), String> {
-    let (workspace_path, user_domain) = {
+    let (workspace_path, user_domains) = {
         let guard = state.config.read().map_err(|_| "Lock poisoned")?;
         let config = guard.as_ref().ok_or("Config not loaded")?;
-        (config.workspace_path.clone(), config.user_domain.clone())
+        (config.workspace_path.clone(), config.resolved_user_domains())
     };
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
@@ -4287,7 +4456,7 @@ pub async fn rebuild_database(state: tauri::State<'_, Arc<AppState>>) -> Result<
     crate::db_backup::rebuild_from_filesystem(
         std::path::Path::new(&workspace_path),
         db,
-        user_domain.as_deref(),
+        &user_domains,
     )
 }
 
@@ -4323,4 +4492,271 @@ pub fn get_hygiene_report(
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
+}
+
+/// Detect potential duplicate people (I172).
+#[tauri::command]
+pub fn get_duplicate_people(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    crate::hygiene::detect_duplicate_people(db)
+}
+
+// =============================================================================
+// I176: Archive / Unarchive Entities
+// =============================================================================
+
+/// Archive or unarchive an account. Cascades to children when archiving.
+#[tauri::command]
+pub fn archive_account(
+    id: String,
+    archived: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.archive_account(&id, archived)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Archive or unarchive a project.
+#[tauri::command]
+pub fn archive_project(
+    id: String,
+    archived: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.archive_project(&id, archived)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Archive or unarchive a person.
+#[tauri::command]
+pub fn archive_person(
+    id: String,
+    archived: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.archive_person(&id, archived)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Get archived accounts.
+#[tauri::command]
+pub fn get_archived_accounts(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccount>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_archived_accounts().map_err(|e| e.to_string())
+}
+
+/// Get archived projects.
+#[tauri::command]
+pub fn get_archived_projects(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbProject>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_archived_projects().map_err(|e| e.to_string())
+}
+
+/// Get archived people with signals.
+#[tauri::command]
+pub fn get_archived_people(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::PersonListItem>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_archived_people_with_signals()
+        .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// I171: Multi-Domain Config
+// =============================================================================
+
+/// Set multiple user domains for multi-org meeting classification.
+#[tauri::command]
+pub fn set_user_domains(
+    domains: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    let parsed: Vec<String> = domains
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    crate::state::create_or_update_config(&state, |config| {
+        // Update legacy single-domain field for backward compat
+        config.user_domain = parsed.first().cloned();
+        config.user_domains = if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed.clone())
+        };
+    })
+}
+
+// =============================================================================
+// I162: Bulk Entity Creation
+// =============================================================================
+
+/// Bulk-create accounts from a list of names. Returns created account IDs.
+#[tauri::command]
+pub fn bulk_create_accounts(
+    names: Vec<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<String>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let workspace_path = config
+        .as_ref()
+        .ok_or("Config not loaded")?
+        .workspace_path
+        .clone();
+    let workspace = Path::new(&workspace_path);
+
+    let mut created_ids = Vec::with_capacity(names.len());
+
+    for raw_name in &names {
+        let name = crate::util::validate_entity_name(raw_name)?;
+        let id = crate::util::slugify(name);
+
+        // Skip duplicates
+        if let Ok(Some(_)) = db.get_account(&id) {
+            continue;
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let account = crate::db::DbAccount {
+            id: id.clone(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some(format!("Accounts/{}", name)),
+            parent_id: None,
+            updated_at: now,
+            archived: false,
+        };
+
+        db.upsert_account(&account).map_err(|e| e.to_string())?;
+
+        // Create workspace files + directory template (ADR-0059)
+        let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+        let _ = std::fs::create_dir_all(&account_dir);
+        let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
+        let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+        let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
+
+        created_ids.push(id);
+    }
+
+    Ok(created_ids)
+}
+
+/// Bulk-create projects from a list of names. Returns created project IDs.
+#[tauri::command]
+pub fn bulk_create_projects(
+    names: Vec<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<String>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let workspace_path = config
+        .as_ref()
+        .ok_or("Config not loaded")?
+        .workspace_path
+        .clone();
+    let workspace = Path::new(&workspace_path);
+
+    let mut created_ids = Vec::with_capacity(names.len());
+
+    for raw_name in &names {
+        let name = crate::util::validate_entity_name(raw_name)?;
+        let id = crate::util::slugify(name);
+
+        // Skip duplicates
+        if let Ok(Some(_)) = db.get_project(&id) {
+            continue;
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let project = crate::db::DbProject {
+            id: id.clone(),
+            name: name.to_string(),
+            status: "active".to_string(),
+            milestone: None,
+            owner: None,
+            target_date: None,
+            tracker_path: Some(format!("Projects/{}", name)),
+            updated_at: now,
+            archived: false,
+        };
+
+        db.upsert_project(&project).map_err(|e| e.to_string())?;
+
+        // Create workspace files + directory template (ADR-0059)
+        let project_dir = crate::projects::project_dir(workspace, name);
+        let _ = std::fs::create_dir_all(&project_dir);
+        let _ = crate::util::bootstrap_entity_directory(&project_dir, name, "project");
+        let _ = crate::projects::write_project_json(workspace, &project, None, db);
+        let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
+
+        created_ids.push(id);
+    }
+
+    Ok(created_ids)
+}
+
+// =============================================================================
+// I143: Account Events
+// =============================================================================
+
+/// Record an account lifecycle event (expansion, contraction, churn, etc.)
+#[tauri::command]
+pub fn record_account_event(
+    account_id: String,
+    event_type: String,
+    event_date: String,
+    arr_impact: Option<f64>,
+    notes: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<i64, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.record_account_event(&account_id, &event_type, &event_date, arr_impact, notes.as_deref())
+        .map_err(|e| e.to_string())
+}
+
+/// Get account events for a given account.
+#[tauri::command]
+pub fn get_account_events(
+    account_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccountEvent>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_account_events(&account_id)
+        .map_err(|e| e.to_string())
 }

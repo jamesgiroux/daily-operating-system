@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,9 +13,15 @@ import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError, PageEmpty } from "@/components/PageState";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { Plus, RefreshCw, Users } from "lucide-react";
-import type { PersonListItem, PersonRelationship } from "@/types";
+import type { PersonListItem, PersonRelationship, DuplicateCandidate } from "@/types";
 
+type ArchiveTab = "active" | "archived";
 type RelationshipTab = "all" | "external" | "internal" | "unknown";
+
+const archiveTabs: { key: ArchiveTab; label: string }[] = [
+  { key: "active", label: "Active" },
+  { key: "archived", label: "Archived" },
+];
 
 const tabs: { key: RelationshipTab; label: string }[] = [
   { key: "all", label: "All" },
@@ -36,12 +42,26 @@ export default function PeoplePage() {
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
+  const [archivedPeople, setArchivedPeople] = useState<PersonListItem[]>([]);
   const [tab, setTab] = useState<RelationshipTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+
+  const loadDuplicates = useCallback(() => {
+    invoke<DuplicateCandidate[]>("get_duplicate_people")
+      .then(setDuplicates)
+      .catch(() => setDuplicates([]));
+  }, []);
+
+  useEffect(() => {
+    loadDuplicates();
+  }, [loadDuplicates]);
 
   const handleCreatePerson = useCallback(async () => {
     if (!newEmail.trim() || !newName.trim()) return;
@@ -78,16 +98,40 @@ export default function PeoplePage() {
     }
   }, [tab]);
 
-  useEffect(() => {
-    loadPeople();
-  }, [loadPeople]);
+  // I176: load archived people
+  const loadArchivedPeople = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await invoke<PersonListItem[]>("get_archived_people");
+      setArchivedPeople(result);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const unlisten = listen("people-updated", () => loadPeople());
+    if (archiveTab === "active") {
+      loadPeople();
+    } else {
+      loadArchivedPeople();
+    }
+  }, [archiveTab, loadPeople, loadArchivedPeople]);
+
+  useEffect(() => {
+    const unlisten = listen("people-updated", () => {
+      if (archiveTab === "active") {
+        loadPeople();
+      } else {
+        loadArchivedPeople();
+      }
+    });
     return () => {
       unlisten.then((f) => f());
     };
-  }, [loadPeople]);
+  }, [archiveTab, loadPeople, loadArchivedPeople]);
 
   const filtered = searchQuery
     ? people.filter(
@@ -111,6 +155,18 @@ export default function PeoplePage() {
     });
   }, [filtered]);
 
+  // I176: filter archived people by search query
+  const filteredArchived = searchQuery
+    ? archivedPeople.filter(
+        (p) =>
+          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.organization ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : archivedPeople;
+
+  const isArchived = archiveTab === "archived";
+
   const tabCounts: Record<RelationshipTab, number> = {
     all: people.length,
     external: people.filter((p) => p.relationship === "external").length,
@@ -118,7 +174,7 @@ export default function PeoplePage() {
     unknown: people.filter((p) => p.relationship === "unknown").length,
   };
 
-  if (loading && people.length === 0) {
+  if (loading && (isArchived ? archivedPeople.length === 0 : people.length === 0)) {
     return (
       <main className="flex-1 overflow-hidden p-6">
         <div className="mb-6 space-y-2">
@@ -137,12 +193,12 @@ export default function PeoplePage() {
   if (error) {
     return (
       <main className="flex-1 overflow-hidden">
-        <PageError message={error} onRetry={loadPeople} />
+        <PageError message={error} onRetry={isArchived ? loadArchivedPeople : loadPeople} />
       </main>
     );
   }
 
-  if (people.length === 0) {
+  if (!isArchived && people.length === 0) {
     return (
       <main className="flex-1 overflow-hidden">
         <PageEmpty
@@ -165,29 +221,46 @@ export default function PeoplePage() {
               <h1 className="text-2xl font-semibold tracking-tight">
                 People
                 <span className="ml-2 text-base font-normal text-muted-foreground">
-                  {filtered.length}
+                  {isArchived ? filteredArchived.length : filtered.length}
                 </span>
               </h1>
               <p className="text-sm text-muted-foreground">
-                People discovered from your calendar and meetings
+                {isArchived
+                  ? "Previously tracked people"
+                  : "People discovered from your calendar and meetings"}
               </p>
             </div>
             <div className="flex items-center gap-1">
+              {!isArchived && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddForm(true)}
+                >
+                  <Plus className="mr-1 size-4" />
+                  Add Person
+                </Button>
+              )}
               <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAddForm(true)}
+                variant="ghost"
+                size="icon"
+                className="size-8"
+                onClick={isArchived ? loadArchivedPeople : loadPeople}
+                disabled={loading}
               >
-                <Plus className="mr-1 size-4" />
-                Add Person
-              </Button>
-              <Button variant="ghost" size="icon" className="size-8" onClick={loadPeople} disabled={loading}>
                 <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
               </Button>
             </div>
           </div>
 
-          {showAddForm && (
+          <TabFilter
+            tabs={archiveTabs}
+            active={archiveTab}
+            onChange={setArchiveTab}
+            className="mb-4"
+          />
+
+          {!isArchived && showAddForm && (
             <Card className="mb-4">
               <CardContent className="flex items-center gap-2 py-3">
                 <input
@@ -249,17 +322,94 @@ export default function PeoplePage() {
             className="mb-4"
           />
 
-          <TabFilter
-            tabs={tabs}
-            active={tab}
-            onChange={setTab}
-            counts={tabCounts}
-            className="mb-6"
-          />
+          {!isArchived && (
+            <TabFilter
+              tabs={tabs}
+              active={tab}
+              onChange={setTab}
+              counts={tabCounts}
+              className="mb-6"
+            />
+          )}
+
+          {/* I172: Duplicate detection banner */}
+          {duplicates.length > 0 && !isArchived && (
+            <div className="mb-4 space-y-2">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 flex items-center justify-between">
+                <span className="text-sm text-charcoal/70">
+                  {duplicates.length} potential duplicate{duplicates.length !== 1 ? "s" : ""} detected
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-primary"
+                  onClick={() => setShowDuplicates(!showDuplicates)}
+                >
+                  {showDuplicates ? "Hide" : "Review"}
+                </Button>
+              </div>
+              {showDuplicates && (
+                <div className="space-y-2">
+                  {duplicates.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Link to="/people/$personId" params={{ personId: d.person1Id }} className="text-primary hover:underline">
+                          {d.person1Name}
+                        </Link>
+                        <span className="text-muted-foreground">{"\u2194"}</span>
+                        <Link to="/people/$personId" params={{ personId: d.person2Id }} className="text-primary hover:underline">
+                          {d.person2Name}
+                        </Link>
+                        <span className="text-xs text-muted-foreground">({Math.round(d.confidence * 100)}%)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{d.reason}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs"
+                          onClick={async () => {
+                            try {
+                              await invoke("merge_people", {
+                                keepId: d.person1Id,
+                                removeId: d.person2Id,
+                              });
+                              loadPeople();
+                              loadDuplicates();
+                            } catch (err) {
+                              console.error("Merge failed:", err);
+                            }
+                          }}
+                        >
+                          Merge
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* People list */}
           <div>
-            {sorted.length === 0 ? (
+            {isArchived ? (
+              filteredArchived.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+                    <Users className="mb-4 size-12 text-muted-foreground/40" />
+                    <p className="text-lg font-medium">No archived people</p>
+                    <p className="text-sm text-muted-foreground">
+                      Archived people will appear here.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                filteredArchived.map((person) => (
+                  <ArchivedPersonRow key={person.id} person={person} />
+                ))
+              )
+            ) : sorted.length === 0 ? (
               <Card>
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Users className="mb-4 size-12 text-muted-foreground/40" />
@@ -332,6 +482,30 @@ function PersonRow({
       columns={
         lastSeen ? (
           <ListColumn value={lastSeen} label="last seen" className="w-16" />
+        ) : undefined
+      }
+    />
+  );
+}
+
+/** I176: Simplified row for archived people (no temperature/trend signals). */
+function ArchivedPersonRow({ person }: { person: PersonListItem }) {
+  return (
+    <ListRow
+      to="/people/$personId"
+      params={{ personId: person.id }}
+      name={person.name}
+      subtitle={
+        [
+          person.email,
+          person.organization,
+        ]
+          .filter(Boolean)
+          .join(" \u00B7 ") || undefined
+      }
+      columns={
+        person.relationship !== "unknown" ? (
+          <ListColumn value={person.relationship} className="w-16" />
         ) : undefined
       }
     />

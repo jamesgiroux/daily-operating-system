@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{ActionDb, DbPerson};
-use crate::util::{classify_relationship, person_id_from_email};
+use crate::util::{classify_relationship_multi, person_id_from_email};
 
 /// JSON schema for person.json files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +263,7 @@ pub fn read_person_json(path: &Path) -> Result<ReadPersonResult, String> {
             first_seen: None,
             meeting_count: 0,
             updated_at,
+            archived: false,
         },
         linked_entities: json.linked_entities,
     })
@@ -278,7 +279,7 @@ pub fn read_person_json(path: &Path) -> Result<ReadPersonResult, String> {
 pub fn sync_people_from_workspace(
     workspace: &Path,
     db: &ActionDb,
-    user_domain: Option<&str>,
+    user_domains: &[String],
 ) -> Result<usize, String> {
     let people_dir = workspace.join("People");
     if !people_dir.exists() {
@@ -303,10 +304,10 @@ pub fn sync_people_from_workspace(
 
         match read_person_json(&json_path) {
             Ok(ReadPersonResult { person: mut file_person, linked_entities }) => {
-                // Classify relationship if unknown and user_domain is set
+                // Classify relationship if unknown and user_domains are set
                 if file_person.relationship == "unknown" {
                     file_person.relationship =
-                        classify_relationship(&file_person.email, user_domain);
+                        classify_relationship_multi(&file_person.email, user_domains);
                 }
 
                 // Check if SQLite has this person and compare timestamps

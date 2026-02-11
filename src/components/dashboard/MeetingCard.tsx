@@ -26,6 +26,10 @@ import { cn } from "@/lib/utils";
 
 interface MeetingCardProps {
   meeting: Meeting;
+  /** Live epoch ms from useCalendar — enables reactive isPast/isLive without per-card intervals. */
+  now?: number;
+  /** Current calendar event from useCalendar — used for live glow matching. */
+  currentMeeting?: CalendarEvent;
 }
 
 const borderStyles: Partial<Record<MeetingType, string>> = {
@@ -267,29 +271,54 @@ export function computeMeetingDisplayState(
   };
 }
 
-/** Check if a meeting's end time has passed today. */
-function isPastMeeting(meeting: Meeting): boolean {
-  const timeStr = meeting.endTime || meeting.time;
-  if (!timeStr) return false;
-
+/** Parse a display time like "10:30 AM" to epoch ms (today). */
+function parseDisplayTimeMs(timeStr: string | undefined): number | null {
+  if (!timeStr) return null;
   const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return false;
-
+  if (!match) return null;
   let hours = parseInt(match[1], 10);
   const minutes = parseInt(match[2], 10);
   const period = match[3].toUpperCase();
   if (period === "PM" && hours !== 12) hours += 12;
   if (period === "AM" && hours === 12) hours = 0;
-
-  const now = new Date();
-  const end = new Date();
-  end.setHours(hours, minutes, 0, 0);
-  return now > end;
+  const d = new Date();
+  d.setHours(hours, minutes, 0, 0);
+  return d.getTime();
 }
 
-export function MeetingCard({ meeting }: MeetingCardProps) {
+function getMeetingEndMs(meeting: Meeting): number | null {
+  return parseDisplayTimeMs(meeting.endTime) ?? parseDisplayTimeMs(meeting.time);
+}
+
+function getMeetingStartMs(meeting: Meeting): number | null {
+  return parseDisplayTimeMs(meeting.time);
+}
+
+export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeetingProp }: MeetingCardProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [attaching, setAttaching] = React.useState(false);
+
+  // Use provided live clock or fall back to Date.now() (static — no interval)
+  const now = nowProp ?? Date.now();
+
+  // Compute live state from actual current time (not stale JSON flag)
+  const isLive = React.useMemo(() => {
+    // First: match against the live calendar's current meeting
+    if (currentMeetingProp) {
+      if (meeting.calendarEventId && meeting.calendarEventId === currentMeetingProp.id) return true;
+      if (meeting.title === currentMeetingProp.title || meeting.id === currentMeetingProp.id) return true;
+    }
+    // Fallback: compare parsed display times against live clock
+    const startMs = getMeetingStartMs(meeting);
+    const endMs = getMeetingEndMs(meeting);
+    if (startMs && endMs) return startMs <= now && now < endMs;
+    return false;
+  }, [currentMeetingProp, meeting, now]);
+
+  const isPast = React.useMemo(() => {
+    const endMs = getMeetingEndMs(meeting);
+    return endMs ? now > endMs : false;
+  }, [meeting, now]);
 
   // Local entity state for optimistic updates after reassignment
   const linkedEntity = meeting.linkedEntities?.[0] ?? null;
@@ -333,15 +362,24 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
     useMeetingOutcomes(meeting.id);
   const outcomesStatus = loading ? "loading" as const : outcomes !== null ? "loaded" as const : "none" as const;
 
+  // Auto-expand when outcomes arrive (e.g., from transcript-processed event)
+  const prevOutcomes = React.useRef(outcomes);
+  React.useEffect(() => {
+    if (prevOutcomes.current === null && outcomes !== null) {
+      setIsOpen(true);
+    }
+    prevOutcomes.current = outcomes;
+  }, [outcomes]);
+
   const hasEnrichedPrep = !!(
     meeting.prep &&
     (meeting.prep.context || (meeting.prep.metrics && meeting.prep.metrics.length > 0))
   );
 
   const displayState = computeMeetingDisplayState(meeting, {
-    isPast: isPastMeeting(meeting),
+    isPast,
     outcomesStatus,
-    isLive: meeting.isCurrent ?? false,
+    isLive,
     hasInlinePrep: !!(meeting.prep && Object.keys(meeting.prep).length > 0),
     hasEnrichedPrep,
   });
@@ -389,7 +427,8 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
         filePath: selected,
         meeting: calendarEvent,
       });
-      refreshOutcomes();
+      await refreshOutcomes();
+      setIsOpen(true);
     } catch (err) {
       console.error("Failed to attach transcript:", err);
     } finally {
@@ -452,6 +491,38 @@ export function MeetingCard({ meeting }: MeetingCardProps) {
               entityType="account"
               placeholder="Link account..."
             />
+            {meeting.suggestedUnarchiveAccountId && (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-primary/70">Matches archived account</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-2 text-xs text-primary hover:text-primary"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await invoke("archive_account", {
+                        id: meeting.suggestedUnarchiveAccountId,
+                        archived: false,
+                      });
+                      await invoke("update_meeting_entity", {
+                        meetingId: meeting.id,
+                        entityId: meeting.suggestedUnarchiveAccountId,
+                        entityType: "account",
+                        meetingTitle: meeting.title,
+                        startTime: meeting.startIso ?? meeting.time,
+                        meetingTypeStr: meeting.type,
+                      });
+                      emit("entity-updated");
+                    } catch (err) {
+                      console.error("Failed to unarchive:", err);
+                    }
+                  }}
+                >
+                  Restore
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

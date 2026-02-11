@@ -82,6 +82,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0059](0059-entity-directory-template.md) | Core entity directory template — 3-folder scaffold, README convention, content-aware routing | Accepted |
 | [0060](0060-unified-radix-ui-monorepo.md) | Unified Radix UI monorepo — no standalone packages | Accepted |
 | [0061](0061-calendar-event-id-as-meeting-key.md) | Calendar event ID as meeting primary key — stable IDs, no slug fragility | Accepted |
+| [0062](0062-briefing-artifacts-vs-live-queries.md) | Briefing artifacts vs. live queries — data paradigm boundary, query module for time-awareness | Accepted |
 
 ---
 

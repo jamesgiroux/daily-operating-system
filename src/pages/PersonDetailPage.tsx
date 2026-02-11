@@ -24,10 +24,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
+  Archive,
   ArrowLeft,
   Building2,
   Calendar,
@@ -203,6 +205,26 @@ export default function PersonDetailPage() {
     }
   }
 
+  async function handleArchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_person", { id: detail.id, archived: true });
+      navigate({ to: "/people" });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleUnarchive() {
+    if (!detail) return;
+    try {
+      await invoke("archive_person", { id: detail.id, archived: false });
+      await load();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-8">
@@ -276,6 +298,16 @@ export default function PersonDetailPage() {
             <ArrowLeft className="size-4" />
             People
           </Link>
+
+          {/* Archived Banner */}
+          {detail.archived && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between">
+              <span className="text-sm text-charcoal/70">This person is archived and hidden from active views.</span>
+              <Button variant="outline" size="sm" onClick={handleUnarchive}>
+                Unarchive
+              </Button>
+            </div>
+          )}
 
           {/* Hero Section */}
           <div className="flex items-start justify-between">
@@ -366,6 +398,28 @@ export default function PersonDetailPage() {
                     <Merge className="mr-1 size-4" />
                     Merge into...
                   </Button>
+                  {!detail.archived && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-muted-foreground">
+                          <Archive className="mr-1 size-4" />
+                          Archive
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Archive Person</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Archive "{detail.name}"? They will be hidden from active views.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleArchive}>Archive</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
