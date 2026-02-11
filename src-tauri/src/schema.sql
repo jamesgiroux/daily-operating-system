@@ -38,10 +38,12 @@ CREATE TABLE IF NOT EXISTS accounts (
     nps INTEGER,
     tracker_path TEXT,
     parent_id TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    archived INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_archived ON accounts(archived);
 
 -- Projects (I50 / ADR-0046)
 CREATE TABLE IF NOT EXISTS projects (
@@ -52,9 +54,11 @@ CREATE TABLE IF NOT EXISTS projects (
     owner TEXT,
     target_date TEXT,
     tracker_path TEXT,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    archived INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived);
 
 CREATE TABLE IF NOT EXISTS meetings_history (
     id TEXT PRIMARY KEY,
@@ -66,7 +70,8 @@ CREATE TABLE IF NOT EXISTS meetings_history (
     attendees TEXT,
     notes_path TEXT,
     summary TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    prep_context_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_meetings_account ON meetings_history(account_id);
@@ -141,10 +146,12 @@ CREATE TABLE IF NOT EXISTS people (
     last_seen TEXT,
     first_seen TEXT,
     meeting_count INTEGER DEFAULT 0,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    archived INTEGER DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_people_email ON people(email);
 CREATE INDEX IF NOT EXISTS idx_people_relationship ON people(relationship);
+CREATE INDEX IF NOT EXISTS idx_people_archived ON people(archived);
 
 -- Meeting attendees junction (replaces always-NULL attendees TEXT column)
 CREATE TABLE IF NOT EXISTS meeting_attendees (
@@ -207,3 +214,17 @@ CREATE TABLE IF NOT EXISTS entity_intelligence (
     next_meeting_readiness_json TEXT,
     company_context_json TEXT
 );
+
+-- Account lifecycle events (I143 — renewal tracking, churn, expansion)
+CREATE TABLE IF NOT EXISTS account_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN ('renewal', 'expansion', 'churn', 'downgrade')),
+    event_date TEXT NOT NULL,
+    arr_impact REAL,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);
+CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);

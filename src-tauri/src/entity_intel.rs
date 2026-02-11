@@ -14,7 +14,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::CompanyOverview;
-use crate::db::{ActionDb, DbAccount, DbPerson};
+use crate::db::{ActionDb, DbAccount};
 use crate::util::atomic_write_str;
 
 // =============================================================================
@@ -416,7 +416,7 @@ pub struct IntelligenceContext {
 
 /// Build intelligence context by gathering all signals from SQLite + files.
 pub fn build_intelligence_context(
-    workspace: &Path,
+    _workspace: &Path,
     db: &ActionDb,
     entity_id: &str,
     entity_type: &str,
@@ -1982,6 +1982,7 @@ mod tests {
             tracker_path: Some("Accounts/Acme Corp".to_string()),
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
 
         let overview = CompanyOverview {
@@ -2032,6 +2033,7 @@ mod tests {
             tracker_path: Some("Accounts/Empty Corp".to_string()),
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
 
         let overview = CompanyOverview {
@@ -2330,6 +2332,7 @@ Some trailing text"#;
             tracker_path: None,
             parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
+            archived: false,
         };
         db.upsert_account(&account).expect("upsert");
 
