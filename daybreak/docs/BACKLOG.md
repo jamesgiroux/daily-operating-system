@@ -12,7 +12,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| **I158** | OAuth PKCE + Keychain storage | Blocker | Security |
 | **I179** | Focus page action prioritization intelligence | P0 | UX |
 | **I149** | Cargo clippy zero warnings | P0 | Infra |
 | **I150** | Dependency security audit | P0 | Security |
@@ -53,8 +52,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 ## Ship Blockers
 
-**I158: OAuth PKCE + credential hardening**
-Three layers: (1) PKCE flow (RFC 7636) — eliminates `client_secret` from source. (2) macOS Keychain for token storage — move from plaintext `~/.dailyos/google/token.json`. (3) Rotate current credentials after PKCE ships.
+No open ship blockers. Last blocker closed: **I158** (OAuth PKCE + Keychain token hardening).
 
 ---
 
