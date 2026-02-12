@@ -4,6 +4,15 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 ---
 
+## Sprint 16 — Focus Capacity + Prioritization
+
+*Focus page now computes real capacity and recommends what to execute first.*
+
+- <a name="i178"></a>**I178:** Focus capacity now uses live-calendar-first meeting data (with briefing fallback warnings), buffered gap math (10m pre/post), work-hours bounds, and explicit deep-work/available-time breakdowns.
+- <a name="i179"></a>**I179:** Focus page now ranks pending/waiting actions deterministically using urgency/impact signals, computes achievable count from available minutes, surfaces “Top 3 if you do nothing else,” and flags at-risk actions.
+
+---
+
 ## Sprint 15 — Meeting Intelligence Report
 
 *Report-grade prep UX and semantic cleanup built on Sprint 14 foundation.*
