@@ -894,33 +894,32 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
     }
 }
 
-/// Run overnight scan with expanded budget. All locks released before return.
+/// Run overnight scan with expanded budget.
+/// Opens own DB connection to avoid holding state.db Mutex during scan.
 fn try_run_overnight(state: &AppState) -> Option<OvernightReport> {
     let config = state.config.read().ok()?.clone()?;
 
-    let db_guard = state.db.lock().ok()?;
-    let db = db_guard.as_ref()?;
+    let db = crate::db::ActionDb::open().ok()?;
 
     let workspace = std::path::Path::new(&config.workspace_path);
     Some(run_overnight_scan(
-        db,
+        &db,
         &config,
         workspace,
         &state.intel_queue,
     ))
 }
 
-/// Synchronous scan attempt — acquires locks, runs scan, releases everything.
-/// Returns None if config or DB is unavailable.
+/// Synchronous scan attempt — releases everything when done.
+/// Opens own DB connection to avoid holding state.db Mutex during scan.
 fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
     let config = state.config.read().ok()?.clone()?;
 
-    let db_guard = state.db.lock().ok()?;
-    let db = db_guard.as_ref()?;
+    let db = crate::db::ActionDb::open().ok()?;
 
     let workspace = std::path::Path::new(&config.workspace_path);
     Some(run_hygiene_scan(
-        db,
+        &db,
         &config,
         workspace,
         Some(&state.hygiene_budget),
