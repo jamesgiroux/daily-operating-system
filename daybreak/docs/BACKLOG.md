@@ -167,9 +167,11 @@ Phase 1 completed (2026-02-12):
 - moved startup sync/indexing off `AppState::new()` onto a background task
 - bounded Claude auth check with timeout + forced process cleanup
 - applied lock-scope reductions and non-blocking reads in dashboard/focus paths
+- added lock-contention fallbacks + latency instrumentation for focus-polled commands
+- throttled/deduped focus refresh requests in dashboard hook
 
 Remaining completion criteria:
-- expand latency instrumentation beyond `get_dashboard_data` and surface p95 rollups
+- expand latency instrumentation beyond current hot commands and surface p95 rollups
 - define/consolidate DB concurrency strategy beyond global mutex (split-lock enforcement + queue/pool decision)
 
 ### UX & Polish

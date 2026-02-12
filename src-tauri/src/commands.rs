@@ -45,6 +45,25 @@ pub enum DashboardResult {
     },
 }
 
+/// p95 latency budgets for hot read commands.
+const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
+const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
+const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
+
+fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
+    let elapsed_ms = started.elapsed().as_millis();
+    if elapsed_ms > budget_ms {
+        log::warn!(
+            "{} exceeded latency budget: {}ms > {}ms",
+            command,
+            elapsed_ms,
+            budget_ms
+        );
+    } else {
+        log::debug!("{} completed in {}ms", command, elapsed_ms);
+    }
+}
+
 /// Get current configuration
 #[tauri::command]
 pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
@@ -64,6 +83,8 @@ pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, Strin
 #[tauri::command]
 pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     let started = std::time::Instant::now();
+    let mut db_busy = false;
+
     let result = (|| {
         // Get Google auth status for frontend
         let google_auth = state
@@ -71,7 +92,6 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             .lock()
             .map(|g| g.clone())
             .unwrap_or(GoogleAuthStatus::NotConfigured);
-
         // Get config
         let config = match state.config.read() {
             Ok(guard) => match guard.clone() {
@@ -148,6 +168,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
 
         // Annotate meetings with linked entities from junction table (I52)
@@ -168,6 +190,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
 
         // Flag meetings that matched an archived account for unarchive suggestion (I161)
@@ -200,6 +224,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
 
         let mut actions = load_actions_json(&today_dir).unwrap_or_default();
@@ -235,6 +261,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
 
         let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
@@ -286,13 +314,19 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     })();
 
     let elapsed_ms = started.elapsed().as_millis();
-    if elapsed_ms > 300 {
+    if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
         log::warn!(
-            "get_dashboard_data exceeded latency budget: {}ms",
-            elapsed_ms
+            "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
+            elapsed_ms,
+            DASHBOARD_LATENCY_BUDGET_MS,
+            db_busy
         );
     } else {
-        log::debug!("get_dashboard_data completed in {}ms", elapsed_ms);
+        log::debug!(
+            "get_dashboard_data completed in {}ms (db_busy={})",
+            elapsed_ms,
+            db_busy
+        );
     }
 
     result
@@ -314,8 +348,17 @@ pub fn get_workflow_status(
     workflow: String,
     state: State<Arc<AppState>>,
 ) -> Result<WorkflowStatus, String> {
-    let workflow_id: WorkflowId = workflow.parse()?;
-    Ok(state.get_workflow_status(workflow_id))
+    let started = std::time::Instant::now();
+    let result = (|| {
+        let workflow_id: WorkflowId = workflow.parse()?;
+        Ok(state.get_workflow_status(workflow_id))
+    })();
+    log_command_latency(
+        "get_workflow_status",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Get execution history
@@ -324,7 +367,14 @@ pub fn get_execution_history(
     limit: Option<usize>,
     state: State<Arc<AppState>>,
 ) -> Vec<ExecutionRecord> {
-    state.get_execution_history(limit.unwrap_or(10))
+    let started = std::time::Instant::now();
+    let result = state.get_execution_history(limit.unwrap_or(10));
+    log_command_latency(
+        "get_execution_history",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Get the next scheduled run time for a workflow
@@ -333,29 +383,34 @@ pub fn get_next_run_time(
     workflow: String,
     state: State<Arc<AppState>>,
 ) -> Result<Option<String>, String> {
-    let workflow_id: WorkflowId = workflow.parse()?;
+    let started = std::time::Instant::now();
+    let result = (|| {
+        let workflow_id: WorkflowId = workflow.parse()?;
 
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
+        let config = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("No configuration loaded")?;
 
-    let entry = match workflow_id {
-        WorkflowId::Today => &config.schedules.today,
-        WorkflowId::Archive => &config.schedules.archive,
-        WorkflowId::InboxBatch => &config.schedules.inbox_batch,
-        WorkflowId::Week => &config.schedules.week,
-    };
+        let entry = match workflow_id {
+            WorkflowId::Today => &config.schedules.today,
+            WorkflowId::Archive => &config.schedules.archive,
+            WorkflowId::InboxBatch => &config.schedules.inbox_batch,
+            WorkflowId::Week => &config.schedules.week,
+        };
 
-    if !entry.enabled {
-        return Ok(None);
-    }
+        if !entry.enabled {
+            return Ok(None);
+        }
 
-    scheduler_get_next_run_time(entry)
-        .map(|dt| Some(dt.to_rfc3339()))
-        .map_err(|e| e.to_string())
+        scheduler_get_next_run_time(entry)
+            .map(|dt| Some(dt.to_rfc3339()))
+            .map_err(|e| e.to_string())
+    })();
+    log_command_latency("get_next_run_time", started, READ_CMD_LATENCY_BUDGET_MS);
+    result
 }
 
 // =============================================================================
@@ -3186,17 +3241,21 @@ struct ClaudeStatusCacheEntry {
 }
 
 /// Cache Claude status checks to avoid shelling out on every focus event.
-const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
-
 #[tauri::command]
 pub fn check_claude_status() -> ClaudeStatus {
+    let started = std::time::Instant::now();
     static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
     let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
-
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
+
     if let Ok(guard) = cache.lock() {
         if let Some(entry) = guard.as_ref() {
             if entry.checked_at.elapsed() < ttl {
+                log_command_latency(
+                    "check_claude_status(cache_hit)",
+                    started,
+                    READ_CMD_LATENCY_BUDGET_MS,
+                );
                 return entry.status.clone();
             }
         }
@@ -3220,6 +3279,11 @@ pub fn check_claude_status() -> ClaudeStatus {
         });
     }
 
+    log_command_latency(
+        "check_claude_status(cache_miss)",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
     status
 }
 
@@ -3378,51 +3442,61 @@ fn build_outcome_data(
 pub fn get_executive_intelligence(
     state: State<Arc<AppState>>,
 ) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
-    // Load config for profile + workspace
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    // Load schedule meetings (merged with live calendar)
-    let meetings = if today_dir.join("data").exists() {
-        let briefing_meetings = load_schedule_json(&today_dir)
-            .map(|(_overview, meetings)| meetings)
-            .unwrap_or_default();
-        let live_events = state
-            .calendar_events
+    let started = std::time::Instant::now();
+    let result = (|| {
+        // Load config for profile + workspace
+        let config = state
+            .config
             .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
-    } else {
-        Vec::new()
-    };
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("No configuration loaded")?;
 
-    // Load cached skip-today from AI enrichment (if available)
-    let skip_today = load_skip_today(&today_dir);
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
 
-    // Compute intelligence from DB
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        // Load schedule meetings (merged with live calendar)
+        let meetings = if today_dir.join("data").exists() {
+            let briefing_meetings = load_schedule_json(&today_dir)
+                .map(|(_overview, meetings)| meetings)
+                .unwrap_or_default();
+            let live_events = state
+                .calendar_events
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            let tz: chrono_tz::Tz = config
+                .schedules
+                .today
+                .timezone
+                .parse()
+                .unwrap_or(chrono_tz::America::New_York);
+            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
+        } else {
+            Vec::new()
+        };
 
-    Ok(crate::intelligence::compute_executive_intelligence(
-        db,
-        &meetings,
-        &config.profile,
-        skip_today,
-    ))
+        // Load cached skip-today from AI enrichment (if available)
+        let skip_today = load_skip_today(&today_dir);
+
+        // Compute intelligence from DB
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        Ok(crate::intelligence::compute_executive_intelligence(
+            db,
+            &meetings,
+            &config.profile,
+            skip_today,
+        ))
+    })();
+
+    log_command_latency(
+        "get_executive_intelligence",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Load cached SKIP TODAY results from `_today/data/intelligence.json`.
