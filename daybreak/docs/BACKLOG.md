@@ -93,7 +93,7 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 | Blocker | I173 | Enrichment responsiveness — split-lock pattern + nice | — | Closed |
 | P0 | I185 | Calendar description pipeline — schema + plumb through 5 stages | — | Closed |
 | P0 | I186 | Account Snapshot enrichment — intelligence signals in prep | — | Closed |
-| P0 | I190 | Meeting route migration — /meeting/$meetingId + unified command | — | Closed |
+<a name="i190"></a>| P0 | I190 | Meeting route migration — /meeting/$meetingId + unified command | — | Closed |
 | P1 | I159 | People-aware prep for internal meetings | — | Closed |
 
 **Rationale:** Phases 1-2 of ADR-0064 and Phase 1 of ADR-0066 are pure plumbing — mechanical schema changes, data flow fixes, and route migration. No AI prompt redesign, no layout overhaul. They unblock Sprint 15 (the visual redesign + agenda-anchored enrichment). The two blockers (I177, I173) ship alongside because they affect daily usability. I159 extends prep coverage to internal meetings while we're already in the prep pipeline.
@@ -109,11 +109,15 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 
 | Priority | Issue | Scope | Status |
 |----------|-------|-------|--------|
-| P1 | I187 | Prep page three-tier layout (ADR-0064 P3) | Closed |
-| P1 | I188 | Agenda-anchored AI enrichment (ADR-0064 P4) | Partial |
-| P1 | I189 | Meeting prep editability (ADR-0065) | Closed |
+<a name="i187"></a>| P1 | I187 | Prep page three-tier layout (ADR-0064 P3) | Closed |
+<a name="i188"></a>| P1 | I188 | Agenda-anchored AI enrichment (ADR-0064 P4) | Partial |
+<a name="i189"></a>| P1 | I189 | Meeting prep editability (ADR-0065) | Closed |
 | P1 | I191 | Card-detail visual unification (ADR-0066 P2-3) | Closed |
 | P1 | I196 | Prep agenda/wins semantic split + source governance | Closed |
+
+### Meeting Preview Context (ADR-0063)
+
+Recent Meetings cards now surface a trimmed `prepContext` (intelligence summary, agenda excerpt, and risk/action/question counts) so the account detail page surfaces evaluation-ready context without navigating to the prep detail. This builds on the `/meeting/$meetingId` migration (I190) to fetch the prep context for each meeting.
 
 ---
 
@@ -214,8 +218,8 @@ Required before 0.9 beta (20-50 users). (1) Tauri auto-updater checking GitHub R
 
 | ID | Title | Blocked By |
 |----|-------|------------|
-| I27 | Entity-mode architecture (umbrella) | — |
-| I40 | CS Kit — account-mode fields + templates | I27 |
+<a name="i27"></a>| I27 | Entity-mode architecture (umbrella) | — |
+<a name="i40"></a>| I40 | CS Kit — account-mode fields + templates | I27 |
 | I53 | Entity-mode config + onboarding | I27 |
 | I54 | MCP client integration framework | I27 |
 | I28 | MCP server and client | I27 |

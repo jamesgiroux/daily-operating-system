@@ -80,9 +80,10 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0057](0057-entity-intelligence-architecture.md) | Entity intelligence architecture — three-file pattern, auto-triggered enrichment, persistent entity prep | Accepted |
 | [0058](0058-proactive-intelligence-maintenance.md) | Proactive intelligence maintenance — self-healing gap detection, calendar-driven refresh, overnight batch processing | Accepted |
 | [0059](0059-entity-directory-template.md) | Core entity directory template — 3-folder scaffold, README convention, content-aware routing | Accepted |
-| [0060](0060-unified-radix-ui-monorepo.md) | Unified Radix UI monorepo — no standalone packages | Accepted |
-| [0061](0061-calendar-event-id-as-meeting-key.md) | Calendar event ID as meeting primary key — stable IDs, no slug fragility | Accepted |
-| [0062](0062-briefing-artifacts-vs-live-queries.md) | Briefing artifacts vs. live queries — data paradigm boundary, query module for time-awareness | Accepted |
+| [0063](0063-meeting-preview-context.md) | Meeting preview cards surface prep context | Accepted |
+| [0064](0064-meeting-intelligence-foundation.md) | Meeting intelligence report layout | Accepted |
+| [0065](0065-meeting-prep-editability.md) | Meeting prep editability | Accepted |
+| [0066](0066-meeting-outcomes-unification.md) | Meeting outcomes integrated with prep | Accepted |
 
 ---
 

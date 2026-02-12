@@ -9,9 +9,11 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 *Report-grade prep UX and semantic cleanup built on Sprint 14 foundation.*
 
 ### Meeting Prep Experience
-- **I187:** Prep page three-tier layout delivered on `MeetingDetailPage` with executive brief hero, agenda-first flow, deep-context appendix, and report-style visual hierarchy.
-- **I189:** Meeting prep editability shipped: user agenda + notes persisted and editable from prep detail with future-meeting guardrails.
-- **I191:** Card-detail unification landed: prep/outcomes flow moved toward a unified meeting record presentation.
+<a name="i187"></a>- **I187:** Prep page three-tier layout delivered on `MeetingDetailPage` with executive brief hero, agenda-first flow, deep-context appendix, and report-style visual hierarchy.
+<a name="i189"></a>- **I189:** Meeting prep editability shipped: user agenda + notes persisted and editable from prep detail with future-meeting guardrails.
+<a name="i191"></a>- **I191:** Card-detail unification landed: prep/outcomes flow moved toward a unified meeting record presentation.
+<a name="i194"></a>- **I194:** User agenda and notes edits persist immediately to meeting prep JSON via new Tauri commands (`update_meeting_user_agenda`/`update_meeting_user_notes`), and the UI surfaces inline edit controls plus save/failure states (`ADR-0065`).
+<a name="i195"></a>- **I195:** Meeting outcomes now render inside the prep/outcomes section (depending on `MeetingOutcomes`/`MeetingDetailPage` wiring) so outcomes surface at the top even when post-meeting captures arrive earlier (`ADR-0066`).
 
 ### Prep Semantics
 - **I196:** Prep agenda/wins semantic split + source governance completed. `recentWins` and `recentWinSources` added as first-class prep fields (additive/backward compatible with `talkingPoints`). Enrichment parser now supports distinct `AGENDA` and `WINS` blocks, strips inline `source:` tails from display text, and persists source provenance structurally. Mechanical agenda generation now prioritizes open items/risks/questions and only falls back to wins when needed. Added one-time migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
@@ -155,11 +157,17 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 *Schedule-first dashboard (ADR-0055), list page redesign (ADR-0054), focus page.*
 
 ### Dashboard
+<a name="i97"></a>
 - **I97:** Readiness strip (later removed by ADR-0055).
+<a name="i98"></a>
 - **I98:** Action/email sidebar order flipped.
+<a name="i99"></a>
 - **I99:** Greeting removed, Focus promoted.
+<a name="i100"></a>
 - **I100:** ActionList maxVisible 3 → 5.
+<a name="i101"></a>
 - **I101:** Full-width summary (later superseded by ADR-0055 two-column).
+<a name="i109"></a>
 - **I109:** Focus page — `get_focus_data` from schedule.json + SQLite + gap analysis.
 - **I111:** Dashboard visual rhythm — removed chrome, tapered spacing, breathing room.
 - **I112:** Graceful empty state — missing schedule.json returns `Empty` not `Error`.
@@ -179,7 +187,9 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 ### Entity Hierarchy (ADR-0056)
 - **I113:** Workspace transition detection. Auto-scaffold, skip `_`-prefixed folders.
 - **I114:** Parent-child accounts — `parent_id` FK, expandable rows, breadcrumb, rollup.
+<a name="i116"></a>
 - **I116:** ActionsPage account name resolution via `ActionListItem`.
+<a name="i117"></a>
 - **I117:** `guess_account_name()` discovers child BU directories.
 - **I118:** Timezone formatting in `deliver.rs`, `orchestrate.rs`, `calendar_merge.rs`.
 
@@ -235,13 +245,20 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 - **I34:** Archive reconciliation (`workflow/reconcile.rs`).
 - **I36:** Daily impact rollup (`workflow/impact_rollup.rs`).
+<a name="i37"></a>
 - **I37:** Density-aware dashboard overview.
+<a name="i38"></a>
 - **I38:** Rust-native delivery + AI enrichment ops. ADR-0042.
 - **I39:** Feature toggle runtime with `is_feature_enabled()`.
+<a name="i41"></a>
 - **I41:** Reactive meeting:prep wiring via calendar poller.
+<a name="i42"></a>
 - **I42:** CoS executive intelligence layer (`intelligence.rs`).
+<a name="i43"></a>
 - **I43:** Stakeholder context in meeting prep.
+<a name="i44"></a>
 - **I44:** Meeting-scoped transcript intake. ADR-0044.
+<a name="i45"></a>
 - **I45:** Post-transcript outcome interaction UI.
 - **I46:** Meeting prep context expanded beyond customer/QBR/training. ADR-0043.
 - **I47:** Entity abstraction with `entities` table + bridge pattern. ADR-0045.
@@ -255,9 +272,12 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 *File processing, transcript extraction, account intelligence updates.*
 
+<a name="i30"></a>
 - **I30:** Inbox action extraction with rich metadata (`processor/metadata.rs`).
+<a name="i31"></a>
 - **I31:** Inbox transcript summarization with `detect_transcript()` heuristic.
 - **I32:** Inbox processor updates account intelligence via WINS/RISKS extraction.
+<a name="i33"></a>
 - **I33:** Wins/risks resurface in meeting preps via 14-day lookback.
 
 ---
@@ -278,18 +298,23 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 - **I11:** Email enrichment parsed and merged into `emails.json`.
 - **I12:** Email page shows AI context per priority tier.
 - **I13:** Onboarding wizard with 5-step flow.
+<a name="i14"></a>
 - **I14:** MeetingCard "View Prep" button.
 - **I15:** Entity-mode switcher in Settings.
 - **I16:** Schedule editing UI with human-readable cron.
+<a name="i17"></a>
 - **I17:** Non-briefing actions merge into dashboard.
+<a name="i18"></a>
 - **I18:** Google API credential caching.
 - **I19:** "Limited prep" badge for AI enrichment failures.
 - **I20:** Standalone email refresh.
 - **I21:** Expanded FYI email classification.
 - **I22:** Action completion writeback to source markdown.
 - **I23:** Three-layer cross-briefing action deduplication.
+<a name="i24"></a>
 - **I24:** `calendarEventId` field alongside local slug.
 - **I25:** `computeMeetingDisplayState()` unified badge rendering.
+<a name="i29"></a>
 - **I29:** Superseded by I73 template system + kit issues.
 - **I120:** Closed, won't fix. Legacy action import — starting clean.
 - **I121:** Closed, won't fix. Legacy prep generation — clean start.
