@@ -56,9 +56,13 @@ pub async fn run_archive(workspace: &Path) -> Result<ArchiveResult, String> {
     }
 
     // Create archive directory
-    fs::create_dir_all(&archive_dir)
-        .await
-        .map_err(|e| format!("Failed to create archive dir {}: {}", archive_dir.display(), e))?;
+    fs::create_dir_all(&archive_dir).await.map_err(|e| {
+        format!(
+            "Failed to create archive dir {}: {}",
+            archive_dir.display(),
+            e
+        )
+    })?;
 
     // Move files
     let mut archived = 0;
@@ -104,9 +108,7 @@ pub async fn run_archive(workspace: &Path) -> Result<ArchiveResult, String> {
 ///
 /// Includes: *.md files (except week-*.md)
 /// Excludes: directories, non-md files, week-*.md files
-async fn collect_archivable_files(
-    today_dir: &Path,
-) -> Result<Vec<std::path::PathBuf>, String> {
+async fn collect_archivable_files(today_dir: &Path) -> Result<Vec<std::path::PathBuf>, String> {
     let mut files = Vec::new();
 
     let mut entries = fs::read_dir(today_dir)
@@ -218,8 +220,12 @@ mod tests {
         fs::create_dir(&today_dir).await.unwrap();
 
         // Create test files
-        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
-        fs::write(today_dir.join("actions.md"), "# Actions").await.unwrap();
+        fs::write(today_dir.join("overview.md"), "# Overview")
+            .await
+            .unwrap();
+        fs::write(today_dir.join("actions.md"), "# Actions")
+            .await
+            .unwrap();
 
         let result = run_archive(temp.path()).await;
 
@@ -242,9 +248,15 @@ mod tests {
         fs::create_dir(&today_dir).await.unwrap();
 
         // Create test files
-        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
-        fs::write(today_dir.join("week-overview.md"), "# Week").await.unwrap();
-        fs::write(today_dir.join("week-actions.md"), "# Week Actions").await.unwrap();
+        fs::write(today_dir.join("overview.md"), "# Overview")
+            .await
+            .unwrap();
+        fs::write(today_dir.join("week-overview.md"), "# Week")
+            .await
+            .unwrap();
+        fs::write(today_dir.join("week-actions.md"), "# Week Actions")
+            .await
+            .unwrap();
 
         let result = run_archive(temp.path()).await;
 
@@ -267,8 +279,12 @@ mod tests {
         fs::create_dir(&today_dir).await.unwrap();
 
         // Create test files
-        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
-        fs::write(today_dir.join("notes.txt"), "Some notes").await.unwrap();
+        fs::write(today_dir.join("overview.md"), "# Overview")
+            .await
+            .unwrap();
+        fs::write(today_dir.join("notes.txt"), "Some notes")
+            .await
+            .unwrap();
         fs::write(today_dir.join("data.json"), "{}").await.unwrap();
 
         let result = run_archive(temp.path()).await;
@@ -289,7 +305,9 @@ mod tests {
         fs::create_dir(&today_dir).await.unwrap();
 
         // Create subdirectory and files
-        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
+        fs::write(today_dir.join("overview.md"), "# Overview")
+            .await
+            .unwrap();
         let subdir = today_dir.join("meetings");
         fs::create_dir(&subdir).await.unwrap();
         fs::write(subdir.join("prep.md"), "# Prep").await.unwrap();
@@ -315,13 +333,23 @@ mod tests {
         fs::create_dir_all(&preps_dir).await.unwrap();
 
         // Create markdown file to trigger archiving
-        fs::write(today_dir.join("overview.md"), "# Overview").await.unwrap();
+        fs::write(today_dir.join("overview.md"), "# Overview")
+            .await
+            .unwrap();
 
         // Create data files that should be cleaned
-        fs::write(data_dir.join("schedule.json"), "{}").await.unwrap();
-        fs::write(data_dir.join("actions.json"), "{}").await.unwrap();
-        fs::write(data_dir.join("manifest.json"), "{}").await.unwrap();
-        fs::write(preps_dir.join("0900-customer-acme.json"), "{}").await.unwrap();
+        fs::write(data_dir.join("schedule.json"), "{}")
+            .await
+            .unwrap();
+        fs::write(data_dir.join("actions.json"), "{}")
+            .await
+            .unwrap();
+        fs::write(data_dir.join("manifest.json"), "{}")
+            .await
+            .unwrap();
+        fs::write(preps_dir.join("0900-customer-acme.json"), "{}")
+            .await
+            .unwrap();
 
         let result = run_archive(temp.path()).await;
         assert!(result.is_ok());

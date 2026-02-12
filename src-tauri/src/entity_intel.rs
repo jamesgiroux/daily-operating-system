@@ -185,8 +185,7 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
     let path = dir.join(INTEL_FILENAME);
     let content = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))
 }
 
 /// Write intelligence.json atomically to an entity directory.
@@ -194,10 +193,9 @@ pub fn write_intelligence_json(dir: &Path, intel: &IntelligenceJson) -> Result<(
     std::fs::create_dir_all(dir)
         .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
     let path = dir.join(INTEL_FILENAME);
-    let content = serde_json::to_string_pretty(intel)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    atomic_write_str(&path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(intel).map_err(|e| format!("Serialize error: {}", e))?;
+    atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
     Ok(())
 }
 
@@ -265,7 +263,8 @@ pub fn migrate_company_overview_to_intelligence(
         Err(e) => {
             log::warn!(
                 "Failed to migrate intelligence for '{}': {}",
-                account.name, e
+                account.name,
+                e
             );
             None
         }
@@ -352,16 +351,13 @@ impl ActionDb {
                 recent_wins: wins_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
-                current_state: state_json
-                    .and_then(|j| serde_json::from_str(&j).ok()),
+                current_state: state_json.and_then(|j| serde_json::from_str(&j).ok()),
                 stakeholder_insights: stakeholder_json
                     .and_then(|j| serde_json::from_str(&j).ok())
                     .unwrap_or_default(),
                 value_delivered: Vec::new(), // Not cached in DB (stored in file only)
-                next_meeting_readiness: readiness_json
-                    .and_then(|j| serde_json::from_str(&j).ok()),
-                company_context: company_json
-                    .and_then(|j| serde_json::from_str(&j).ok()),
+                next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
+                company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
             })
         });
 
@@ -373,10 +369,7 @@ impl ActionDb {
     }
 
     /// Delete cached entity intelligence.
-    pub fn delete_entity_intelligence(
-        &self,
-        entity_id: &str,
-    ) -> Result<(), rusqlite::Error> {
+    pub fn delete_entity_intelligence(&self, entity_id: &str) -> Result<(), rusqlite::Error> {
         self.conn_ref().execute(
             "DELETE FROM entity_intelligence WHERE entity_id = ?1",
             rusqlite::params![entity_id],
@@ -505,8 +498,12 @@ pub fn build_intelligence_context(
 
     // --- Meeting history (last 90 days) ---
     let meetings = match entity_type {
-        "account" => db.get_meetings_for_account(entity_id, 20).unwrap_or_default(),
-        "project" => db.get_meetings_for_project(entity_id, 20).unwrap_or_default(),
+        "account" => db
+            .get_meetings_for_account(entity_id, 20)
+            .unwrap_or_default(),
+        "project" => db
+            .get_meetings_for_project(entity_id, 20)
+            .unwrap_or_default(),
         "person" => db.get_person_meetings(entity_id, 20).unwrap_or_default(),
         _ => Vec::new(),
     };
@@ -545,8 +542,12 @@ pub fn build_intelligence_context(
 
     // --- Recent captures ---
     let captures = match entity_type {
-        "account" => db.get_captures_for_account(entity_id, 90).unwrap_or_default(),
-        "project" => db.get_captures_for_project(entity_id, 90).unwrap_or_default(),
+        "account" => db
+            .get_captures_for_account(entity_id, 90)
+            .unwrap_or_default(),
+        "project" => db
+            .get_captures_for_project(entity_id, 90)
+            .unwrap_or_default(),
         _ => Vec::new(),
     };
     if !captures.is_empty() {
@@ -610,10 +611,7 @@ pub fn build_intelligence_context(
                     }
                     _ => String::new(),
                 };
-                lines.push(format!(
-                    "- {} ({}) — {}",
-                    ent.name, ent_type_str, detail
-                ));
+                lines.push(format!("- {} ({}) — {}", ent.name, ent_type_str, detail));
             }
             // Store in stakeholders field (repurposed for person context)
             if ctx.stakeholders.is_empty() {
@@ -933,8 +931,8 @@ pub fn parse_intelligence_response(
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
     // Find the INTELLIGENCE ... END_INTELLIGENCE block
-    let block = extract_intelligence_block(response)
-        .ok_or("No INTELLIGENCE block found in response")?;
+    let block =
+        extract_intelligence_block(response).ok_or("No INTELLIGENCE block found in response")?;
 
     let mut intel = IntelligenceJson {
         version: 1,
@@ -962,13 +960,19 @@ pub fn parse_intelligence_response(
                 intel.recent_wins.push(win);
             }
         } else if let Some(rest) = trimmed.strip_prefix("WORKING:") {
-            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            let state = intel
+                .current_state
+                .get_or_insert_with(CurrentState::default);
             state.working.push(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("NOT_WORKING:") {
-            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            let state = intel
+                .current_state
+                .get_or_insert_with(CurrentState::default);
             state.not_working.push(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("UNKNOWN:") {
-            let state = intel.current_state.get_or_insert_with(CurrentState::default);
+            let state = intel
+                .current_state
+                .get_or_insert_with(CurrentState::default);
             state.unknowns.push(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("STAKEHOLDER:") {
             if let Some(sh) = parse_stakeholder_line(rest) {
@@ -1066,10 +1070,7 @@ fn extract_intelligence_block(text: &str) -> Option<String> {
 
 /// Extract a multi-line field delimited by `FIELD_NAME:` and `END_FIELD_NAME`.
 fn extract_multiline_field(block: &str, start_marker: &str) -> Option<String> {
-    let end_marker = format!(
-        "END_{}",
-        start_marker.trim_end_matches(':')
-    );
+    let end_marker = format!("END_{}", start_marker.trim_end_matches(':'));
 
     let mut in_field = false;
     let mut lines = Vec::new();
@@ -1301,7 +1302,11 @@ pub fn format_intelligence_markdown(intel: &IntelligenceJson) -> String {
             if !intel.enriched_at.is_empty() {
                 md.push_str(&format!(
                     "_Last enriched: {}_\n\n",
-                    intel.enriched_at.split('T').next().unwrap_or(&intel.enriched_at)
+                    intel
+                        .enriched_at
+                        .split('T')
+                        .next()
+                        .unwrap_or(&intel.enriched_at)
                 ));
             }
         }
@@ -1338,8 +1343,9 @@ pub fn format_intelligence_markdown(intel: &IntelligenceJson) -> String {
 
     // Current State
     if let Some(ref state) = intel.current_state {
-        let has_content =
-            !state.working.is_empty() || !state.not_working.is_empty() || !state.unknowns.is_empty();
+        let has_content = !state.working.is_empty()
+            || !state.not_working.is_empty()
+            || !state.unknowns.is_empty();
         if has_content {
             md.push_str("## Current State\n\n");
             if !state.working.is_empty() {
@@ -1533,11 +1539,15 @@ pub(crate) fn classify_content(filename: &str, format: &str) -> (&'static str, i
     {
         return ("transcript", 9);
     }
-    if lower.contains("stakeholder") || lower.contains("org-chart") || lower.contains("relationship")
+    if lower.contains("stakeholder")
+        || lower.contains("org-chart")
+        || lower.contains("relationship")
     {
         return ("stakeholder-map", 9);
     }
-    if lower.contains("success-plan") || lower.contains("success_plan") || lower.contains("strategy")
+    if lower.contains("success-plan")
+        || lower.contains("success_plan")
+        || lower.contains("strategy")
     {
         return ("success-plan", 8);
     }
@@ -1711,10 +1721,8 @@ pub(crate) fn sync_content_index_for_entity(
     let existing = db
         .get_entity_files(entity_id)
         .map_err(|e| format!("DB error: {}", e))?;
-    let mut db_map: HashMap<String, crate::db::DbContentFile> = existing
-        .into_iter()
-        .map(|f| (f.id.clone(), f))
-        .collect();
+    let mut db_map: HashMap<String, crate::db::DbContentFile> =
+        existing.into_iter().map(|f| (f.id.clone(), f)).collect();
 
     // Scan the filesystem recursively
     let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
@@ -1766,7 +1774,8 @@ pub(crate) fn sync_content_index_for_entity(
         // Check if record exists in DB
         if let Some(existing_record) = db_map.remove(&id) {
             // File exists in DB — check if it changed (compare modified_at)
-            if existing_record.modified_at != modified_at || existing_record.file_size != file_size {
+            if existing_record.modified_at != modified_at || existing_record.file_size != file_size
+            {
                 // File changed — extract summary for new content
                 let (extracted_at_val, summary_val) = extract_and_summarize(path);
                 let record = crate::db::DbContentFile {
@@ -2106,12 +2115,10 @@ mod tests {
             urgency: "watch".to_string(),
         });
 
-        db.upsert_entity_intelligence(&intel).expect("second upsert");
+        db.upsert_entity_intelligence(&intel)
+            .expect("second upsert");
 
-        let fetched = db
-            .get_entity_intelligence("acme-corp")
-            .unwrap()
-            .unwrap();
+        let fetched = db.get_entity_intelligence("acme-corp").unwrap().unwrap();
         assert_eq!(
             fetched.executive_assessment.as_deref(),
             Some("Updated assessment.")
@@ -2162,7 +2169,9 @@ mod tests {
     fn test_build_intelligence_prompt_incremental() {
         let ctx = IntelligenceContext {
             facts_block: "Status: active".to_string(),
-            prior_intelligence: Some(r#"{"entityId":"proj","executiveAssessment":"Prior."}"#.to_string()),
+            prior_intelligence: Some(
+                r#"{"entityId":"proj","executiveAssessment":"Prior."}"#.to_string(),
+            ),
             ..Default::default()
         };
 
@@ -2217,7 +2226,10 @@ Some trailing text"#;
 
         assert_eq!(intel.entity_id, "acme-corp");
         assert_eq!(intel.entity_type, "account");
-        assert!(intel.executive_assessment.unwrap().contains("champion departure"));
+        assert!(intel
+            .executive_assessment
+            .unwrap()
+            .contains("champion departure"));
 
         assert_eq!(intel.risks.len(), 2);
         assert_eq!(intel.risks[0].text, "Champion leaving Q2");
@@ -2226,7 +2238,10 @@ Some trailing text"#;
         assert_eq!(intel.risks[1].urgency, "watch");
 
         assert_eq!(intel.recent_wins.len(), 2);
-        assert_eq!(intel.recent_wins[0].impact.as_deref(), Some("20% seat growth"));
+        assert_eq!(
+            intel.recent_wins[0].impact.as_deref(),
+            Some("20% seat growth")
+        );
 
         let state = intel.current_state.unwrap();
         assert_eq!(state.working.len(), 2);
@@ -2235,16 +2250,25 @@ Some trailing text"#;
 
         assert_eq!(intel.stakeholder_insights.len(), 2);
         assert_eq!(intel.stakeholder_insights[0].name, "Alice Chen");
-        assert_eq!(intel.stakeholder_insights[0].engagement.as_deref(), Some("high"));
+        assert_eq!(
+            intel.stakeholder_insights[0].engagement.as_deref(),
+            Some("high")
+        );
 
         assert_eq!(intel.value_delivered.len(), 1);
-        assert_eq!(intel.value_delivered[0].statement, "Reduced onboarding time by 40%");
+        assert_eq!(
+            intel.value_delivered[0].statement,
+            "Reduced onboarding time by 40%"
+        );
 
         let readiness = intel.next_meeting_readiness.unwrap();
         assert_eq!(readiness.prep_items.len(), 3);
 
         let ctx = intel.company_context.unwrap();
-        assert_eq!(ctx.description.as_deref(), Some("Enterprise SaaS platform for workflow automation"));
+        assert_eq!(
+            ctx.description.as_deref(),
+            Some("Enterprise SaaS platform for workflow automation")
+        );
         assert_eq!(ctx.industry.as_deref(), Some("Technology / SaaS"));
         assert_eq!(ctx.headquarters.as_deref(), Some("San Francisco, USA"));
         assert!(ctx.additional_context.is_some());
@@ -2257,7 +2281,10 @@ Some trailing text"#;
         let intel = parse_intelligence_response(response, "beta", "project", 0, vec![])
             .expect("should parse");
 
-        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief assessment."));
+        assert_eq!(
+            intel.executive_assessment.as_deref(),
+            Some("Brief assessment.")
+        );
         assert_eq!(intel.risks.len(), 1);
         assert!(intel.recent_wins.is_empty());
         assert!(intel.stakeholder_insights.is_empty());
@@ -2294,7 +2321,9 @@ Some trailing text"#;
 
     #[test]
     fn test_parse_stakeholder_line() {
-        let sh = parse_stakeholder_line(" Jane Doe | ROLE: CTO | ASSESSMENT: Key decision maker | ENGAGEMENT: high");
+        let sh = parse_stakeholder_line(
+            " Jane Doe | ROLE: CTO | ASSESSMENT: Key decision maker | ENGAGEMENT: high",
+        );
         assert!(sh.is_some());
         let s = sh.unwrap();
         assert_eq!(s.name, "Jane Doe");
@@ -2337,8 +2366,13 @@ Some trailing text"#;
         db.upsert_account(&account).expect("upsert");
 
         let ctx = build_intelligence_context(
-            workspace, &db, "test-acct", "account",
-            Some(&account), None, None,
+            workspace,
+            &db,
+            "test-acct",
+            "account",
+            Some(&account),
+            None,
+            None,
         );
 
         assert!(ctx.facts_block.contains("Health: green"));
@@ -2444,7 +2478,10 @@ Some trailing text"#;
     fn test_format_intelligence_markdown_empty() {
         let intel = IntelligenceJson::default();
         let md = format_intelligence_markdown(&intel);
-        assert!(md.is_empty(), "Empty intelligence should produce empty markdown");
+        assert!(
+            md.is_empty(),
+            "Empty intelligence should produce empty markdown"
+        );
     }
 
     #[test]
@@ -2581,7 +2618,10 @@ Some trailing text"#;
         assert_eq!(apply_recency_boost(5, &dated_filename, old), 6);
 
         // Old filename date, even with recent mtime → no boost
-        assert_eq!(apply_recency_boost(5, "2020-01-15-old-notes.md", &recent), 5);
+        assert_eq!(
+            apply_recency_boost(5, "2020-01-15-old-notes.md", &recent),
+            5
+        );
     }
 
     #[test]
@@ -2712,7 +2752,7 @@ Some trailing text"#;
         let files = db.get_entity_files("sort-test").unwrap();
         assert_eq!(files.len(), 3);
         assert_eq!(files[0].content_type, "dashboard"); // priority 10
-        assert_eq!(files[1].content_type, "notes");     // priority 7
-        assert_eq!(files[2].content_type, "general");   // priority 5
+        assert_eq!(files[1].content_type, "notes"); // priority 7
+        assert_eq!(files[2].content_type, "general"); // priority 5
     }
 }

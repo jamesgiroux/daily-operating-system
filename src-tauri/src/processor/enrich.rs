@@ -130,7 +130,8 @@ pub fn enrich_file(
             Ok(route_result) => {
                 // Write enriched companion .md for non-markdown files
                 if is_non_md {
-                    let companion_path = super::extract::companion_md_path(&route_result.destination);
+                    let companion_path =
+                        super::extract::companion_md_path(&route_result.destination);
                     let companion_content = super::extract::build_enriched_companion_md(
                         filename,
                         format,
@@ -139,7 +140,9 @@ pub fn enrich_file(
                         account.as_deref(),
                         &summary,
                     );
-                    if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                    if let Err(e) =
+                        crate::util::atomic_write_str(&companion_path, &companion_content)
+                    {
                         log::warn!("Failed to write companion .md for '{}': {}", filename, e);
                     }
                 }
@@ -161,7 +164,8 @@ pub fn enrich_file(
                 Ok(route_result) => {
                     // Write enriched companion .md for non-markdown files
                     if is_non_md {
-                        let companion_path = super::extract::companion_md_path(&route_result.destination);
+                        let companion_path =
+                            super::extract::companion_md_path(&route_result.destination);
                         let companion_content = super::extract::build_enriched_companion_md(
                             filename,
                             format,
@@ -170,7 +174,9 @@ pub fn enrich_file(
                             account.as_deref(),
                             &summary,
                         );
-                        if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                        if let Err(e) =
+                            crate::util::atomic_write_str(&companion_path, &companion_content)
+                        {
                             log::warn!("Failed to write companion .md for '{}': {}", filename, e);
                         }
                     }
@@ -254,7 +260,11 @@ pub fn enrich_file(
 ///
 /// Detects transcript-like content and uses a richer prompt with DISCUSSION
 /// section for transcript summarization (I31).
-fn build_enrichment_prompt(filename: &str, content: &str, user_ctx: Option<&crate::types::UserContext>) -> String {
+fn build_enrichment_prompt(
+    filename: &str,
+    content: &str,
+    user_ctx: Option<&crate::types::UserContext>,
+) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
     let truncated = if content.len() > 8000 {
@@ -365,7 +375,9 @@ fn detect_transcript(filename: &str, content: &str) -> bool {
                 if i > 0
                     && i < 25
                     && word_count <= 3
-                    && prefix.chars().all(|c| c.is_alphabetic() || c == ' ' || c == '.')
+                    && prefix
+                        .chars()
+                        .all(|c| c.is_alphabetic() || c == ' ' || c == '.')
                     && prefix.chars().next().unwrap_or(' ').is_uppercase()
                 {
                     speaker_lines += 1;
@@ -565,11 +577,7 @@ pub fn extract_actions_from_ai(
             .or_else(|| account_fallback.map(String::from));
 
         let action = crate::db::DbAction {
-            id: format!(
-                "ai-{}-{}",
-                source_filename.trim_end_matches(".md"),
-                count
-            ),
+            id: format!("ai-{}-{}", source_filename.trim_end_matches(".md"), count),
             title: meta.clean_title,
             priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
             status,
@@ -599,11 +607,7 @@ pub fn extract_actions_from_ai(
     }
 
     if count > 0 {
-        log::info!(
-            "AI extracted {} actions from '{}'",
-            count,
-            source_filename
-        );
+        log::info!("AI extracted {} actions from '{}'", count, source_filename);
     }
 }
 
@@ -715,8 +719,14 @@ END_RISKS";
 
     #[test]
     fn test_detect_transcript_by_filename() {
-        assert!(detect_transcript("acme-transcript-2026-01-15.md", "some content"));
-        assert!(detect_transcript("Meeting_Recording_Notes.md", "some content"));
+        assert!(detect_transcript(
+            "acme-transcript-2026-01-15.md",
+            "some content"
+        ));
+        assert!(detect_transcript(
+            "Meeting_Recording_Notes.md",
+            "some content"
+        ));
         assert!(!detect_transcript("acme-update.md", "some content"));
     }
 
