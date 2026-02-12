@@ -168,7 +168,7 @@ pub fn write_project_markdown(
     md.push('\n');
 
     // Description (from JSON)
-    if let Some(ref desc) = json.and_then(|j| j.description.as_ref()) {
+    if let Some(desc) = json.and_then(|j| j.description.as_ref()) {
         if !desc.is_empty() {
             md.push_str("## Description\n\n");
             md.push_str(desc);
@@ -177,7 +177,7 @@ pub fn write_project_markdown(
     }
 
     // Milestones (from JSON)
-    if let Some(ref milestones) = json.map(|j| &j.milestones) {
+    if let Some(milestones) = json.map(|j| &j.milestones) {
         if !milestones.is_empty() {
             md.push_str("## Milestones\n\n");
             for m in milestones.iter() {
@@ -201,7 +201,7 @@ pub fn write_project_markdown(
     }
 
     // Notes (from JSON)
-    if let Some(ref notes) = json.and_then(|j| j.notes.as_ref()) {
+    if let Some(notes) = json.and_then(|j| j.notes.as_ref()) {
         if !notes.is_empty() {
             md.push_str("## Notes\n\n");
             md.push_str(notes);
