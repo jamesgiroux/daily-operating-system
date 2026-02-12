@@ -10,6 +10,7 @@ use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::Serialize;
 
 use crate::db::ActionDb;
+use crate::google_api::GoogleToken;
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
 
@@ -242,6 +243,8 @@ fn reset_all(state: &AppState) -> Result<(), String> {
             let _ = std::fs::remove_file(path);
         }
     }
+    // Also clear secure token storage (e.g. macOS Keychain).
+    let _ = crate::google_api::token_store::delete_token();
 
     // 3. Clear workspace _today/data/ contents (not the dir itself)
     if let Some(wp) = &workspace_path {
@@ -2424,22 +2427,23 @@ On hold until Q2. Architecture proposal draft needed first.
 
 /// Write a mock Google token file.
 fn write_mock_google_token() -> Result<(), String> {
-    let token_path = crate::state::google_token_path();
-    if let Some(parent) = token_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create google dir: {}", e))?;
-    }
+    let token = GoogleToken {
+        token: "mock-dev-token".to_string(),
+        refresh_token: Some("mock-refresh".to_string()),
+        token_uri: "https://oauth2.googleapis.com/token".to_string(),
+        client_id: "mock-client-id".to_string(),
+        client_secret: Some("mock-client-secret".to_string()),
+        scopes: vec![
+            "https://www.googleapis.com/auth/calendar".to_string(),
+            "https://www.googleapis.com/auth/gmail.modify".to_string(),
+        ],
+        expiry: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
+        account: Some("dev@dailyos.test".to_string()),
+        universe_domain: Some("googleapis.com".to_string()),
+    };
 
-    let token = serde_json::json!({
-        "token": "mock-dev-token",
-        "refresh_token": "mock-refresh",
-        "email": "dev@dailyos.test"
-    });
-
-    std::fs::write(&token_path, token.to_string())
-        .map_err(|e| format!("Failed to write mock token: {}", e))?;
-
-    Ok(())
+    crate::google_api::token_store::save_token(&token)
+        .map_err(|e| format!("Failed to write mock token: {}", e))
 }
 
 #[cfg(test)]
