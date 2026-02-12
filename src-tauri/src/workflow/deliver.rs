@@ -25,6 +25,7 @@ use serde_json::{json, Value};
 use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
+use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
 
 // ============================================================================
 // Constants
@@ -50,6 +51,7 @@ const PREP_ELIGIBLE_TYPES: &[&str] = &["customer", "qbr", "partnership"];
 /// Meeting types eligible for person-focused prep (I159).
 /// These get lightweight prep built from attendee data in the people DB.
 const PERSON_PREP_TYPES: &[&str] = &["internal", "team_sync", "one_on_one"];
+const EMAILS_FILE: &str = "emails.json";
 
 // ============================================================================
 // Shared helpers (ported from deliver_today.py)
@@ -1513,9 +1515,176 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
 /// Maps `directive.emails` (classified + high_priority) to the frontend
 /// `Email` type. This is a mechanical op — no AI needed.
 ///
+fn parse_email_sync_stage(raw: Option<&str>, default: EmailSyncStage) -> EmailSyncStage {
+    match raw.unwrap_or("").to_lowercase().as_str() {
+        "fetch" => EmailSyncStage::Fetch,
+        "deliver" => EmailSyncStage::Deliver,
+        "enrich" => EmailSyncStage::Enrich,
+        "refresh" => EmailSyncStage::Refresh,
+        _ => default,
+    }
+}
+
+fn sync_to_value(sync: &EmailSyncStatus) -> Result<Value, String> {
+    serde_json::to_value(sync).map_err(|e| format!("Failed to serialize email sync status: {}", e))
+}
+
+fn existing_last_success_at(payload: &Value) -> Option<String> {
+    payload
+        .get("sync")
+        .and_then(|v| v.get("lastSuccessAt"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+fn ensure_email_payload_shape(payload: &mut Value) {
+    if !payload.is_object() {
+        *payload = json!({});
+    }
+    if let Some(obj) = payload.as_object_mut() {
+        if !obj.contains_key("highPriority") {
+            obj.insert("highPriority".to_string(), json!([]));
+        }
+        if !obj.contains_key("mediumPriority") {
+            obj.insert("mediumPriority".to_string(), json!([]));
+        }
+        if !obj.contains_key("lowPriority") {
+            obj.insert("lowPriority".to_string(), json!([]));
+        }
+    }
+    recalculate_email_stats(payload);
+}
+
+fn recalculate_email_stats(payload: &mut Value) {
+    let high_count = payload
+        .get("highPriority")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let medium_count = payload
+        .get("mediumPriority")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let low_count = payload
+        .get("lowPriority")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let total = high_count + medium_count + low_count;
+
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert(
+            "stats".to_string(),
+            json!({
+                "highCount": high_count,
+                "mediumCount": medium_count,
+                "lowCount": low_count,
+                "total": total,
+            }),
+        );
+    }
+}
+
+/// Read the full emails payload from disk if available.
+pub fn read_emails_payload(data_dir: &Path) -> Option<Value> {
+    let path = data_dir.join(EMAILS_FILE);
+    let raw = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
+/// Build an empty email payload with optional sync metadata.
+pub fn empty_emails_payload(sync: Option<&EmailSyncStatus>) -> Value {
+    let mut payload = json!({
+        "highPriority": [],
+        "mediumPriority": [],
+        "lowPriority": [],
+        "stats": {
+            "highCount": 0,
+            "mediumCount": 0,
+            "lowCount": 0,
+            "total": 0,
+        }
+    });
+    if let Some(sync) = sync {
+        if let Ok(sync_value) = sync_to_value(sync) {
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("sync".to_string(), sync_value);
+            }
+        }
+    }
+    payload
+}
+
+/// Parse structured sync metadata from an emails payload.
+pub fn extract_email_sync_status(payload: &Value) -> Option<EmailSyncStatus> {
+    payload
+        .get("sync")
+        .and_then(|v| serde_json::from_value::<EmailSyncStatus>(v.clone()).ok())
+}
+
+/// Update only sync metadata in emails.json while preserving existing lists/stats.
+pub fn set_email_sync_status(data_dir: &Path, sync: &EmailSyncStatus) -> Result<Value, String> {
+    let mut payload = read_emails_payload(data_dir).unwrap_or_else(|| empty_emails_payload(None));
+    ensure_email_payload_shape(&mut payload);
+
+    let mut sync_to_write = sync.clone();
+    if sync_to_write.last_success_at.is_none() {
+        sync_to_write.last_success_at = existing_last_success_at(&payload);
+    }
+    if sync_to_write.last_attempt_at.is_none() {
+        sync_to_write.last_attempt_at = Some(Utc::now().to_rfc3339());
+    }
+
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert("sync".to_string(), sync_to_value(&sync_to_write)?);
+    }
+    write_json(&data_dir.join(EMAILS_FILE), &payload)?;
+    Ok(payload)
+}
+
 /// Returns the emails JSON value (needed by manifest builder).
 pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, String> {
     let emails = &directive.emails;
+    let now = Utc::now().to_rfc3339();
+
+    if let Some(sync_error) = emails.sync_error.as_ref() {
+        let stage = parse_email_sync_stage(sync_error.stage.as_deref(), EmailSyncStage::Fetch);
+        let existing = read_emails_payload(data_dir);
+        let using_last_known_good = existing.is_some();
+        let last_success_at = existing.as_ref().and_then(existing_last_success_at);
+        let sync = EmailSyncStatus {
+            state: EmailSyncState::Error,
+            stage,
+            code: Some(
+                sync_error
+                    .code
+                    .clone()
+                    .unwrap_or_else(|| "email_sync_failed".to_string()),
+            ),
+            message: sync_error
+                .message
+                .clone()
+                .or_else(|| Some("Email sync failed".to_string())),
+            using_last_known_good: Some(using_last_known_good),
+            can_retry: Some(true),
+            last_attempt_at: Some(now),
+            last_success_at,
+        };
+
+        if let Some(mut payload) = existing {
+            ensure_email_payload_shape(&mut payload);
+            if let Some(obj) = payload.as_object_mut() {
+                obj.insert("sync".to_string(), sync_to_value(&sync)?);
+            }
+            write_json(&data_dir.join(EMAILS_FILE), &payload)?;
+            return Ok(payload);
+        }
+
+        let payload = empty_emails_payload(Some(&sync));
+        write_json(&data_dir.join(EMAILS_FILE), &payload)?;
+        return Ok(payload);
+    }
 
     // Build email objects from both sources, deduplicating by ID
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1584,6 +1753,17 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
     let low_count = low_priority.len();
     let total = high_count + medium_count + low_count;
 
+    let sync = EmailSyncStatus {
+        state: EmailSyncState::Ok,
+        stage: EmailSyncStage::Deliver,
+        code: None,
+        message: None,
+        using_last_known_good: Some(false),
+        can_retry: Some(true),
+        last_attempt_at: Some(now.clone()),
+        last_success_at: Some(now),
+    };
+
     let emails_data = json!({
         "highPriority": high_priority,
         "mediumPriority": medium_priority,
@@ -1594,9 +1774,10 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
             "lowCount": low_count,
             "total": total,
         },
+        "sync": sync_to_value(&sync)?,
     });
 
-    write_json(&data_dir.join("emails.json"), &emails_data)?;
+    write_json(&data_dir.join(EMAILS_FILE), &emails_data)?;
     log::info!(
         "deliver_emails: {} high, {} medium, {} low ({} total)",
         high_count,
@@ -1732,7 +1913,7 @@ pub fn enrich_emails(
         log::warn!("enrich_emails: no enrichments parsed from Claude output");
         // Clean up context file
         let _ = fs::remove_file(&context_path);
-        return Ok(());
+        return Err("No enrichments parsed from Claude output".to_string());
     }
 
     // Merge enrichments into emails.json
@@ -3569,6 +3750,7 @@ mod tests {
                 ],
                 medium_count: 3,
                 low_count: 5,
+                sync_error: None,
             },
             ..Default::default()
         };
@@ -3591,7 +3773,86 @@ mod tests {
         assert_eq!(result["stats"]["mediumCount"], 1);
         assert_eq!(result["stats"]["lowCount"], 1);
         assert_eq!(result["stats"]["total"], 3);
+        assert_eq!(result["sync"]["state"], "ok");
         assert!(data_dir.join("emails.json").exists());
+    }
+
+    #[test]
+    fn test_deliver_emails_sync_error_preserves_last_known_good() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+        fs::create_dir_all(&data_dir).unwrap();
+
+        let existing = json!({
+            "highPriority": [{
+                "id": "e-existing",
+                "sender": "Alice",
+                "senderEmail": "alice@example.com",
+                "subject": "Existing",
+                "priority": "high"
+            }],
+            "mediumPriority": [],
+            "lowPriority": [],
+            "stats": {
+                "highCount": 1,
+                "mediumCount": 0,
+                "lowCount": 0,
+                "total": 1
+            },
+            "sync": {
+                "state": "ok",
+                "stage": "deliver",
+                "lastSuccessAt": "2026-02-11T10:00:00Z"
+            }
+        });
+        write_json(&data_dir.join(EMAILS_FILE), &existing).unwrap();
+
+        let directive = Directive {
+            emails: crate::json_loader::DirectiveEmails {
+                classified: vec![],
+                high_priority: vec![],
+                medium_count: 0,
+                low_count: 0,
+                sync_error: Some(crate::json_loader::DirectiveEmailSyncError {
+                    stage: Some("fetch".to_string()),
+                    code: Some("gmail_fetch_failed".to_string()),
+                    message: Some("Fetch failed".to_string()),
+                }),
+            },
+            ..Default::default()
+        };
+
+        let result = deliver_emails(&directive, &data_dir).unwrap();
+        assert_eq!(result["highPriority"].as_array().unwrap().len(), 1);
+        assert_eq!(result["sync"]["state"], "error");
+        assert_eq!(result["sync"]["usingLastKnownGood"], true);
+        assert_eq!(result["sync"]["lastSuccessAt"], "2026-02-11T10:00:00Z");
+    }
+
+    #[test]
+    fn test_deliver_emails_sync_error_without_existing_writes_empty_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = dir.path().join("data");
+
+        let directive = Directive {
+            emails: crate::json_loader::DirectiveEmails {
+                classified: vec![],
+                high_priority: vec![],
+                medium_count: 0,
+                low_count: 0,
+                sync_error: Some(crate::json_loader::DirectiveEmailSyncError {
+                    stage: Some("fetch".to_string()),
+                    code: Some("gmail_auth_failed".to_string()),
+                    message: Some("Auth failed".to_string()),
+                }),
+            },
+            ..Default::default()
+        };
+
+        let result = deliver_emails(&directive, &data_dir).unwrap();
+        assert_eq!(result["stats"]["total"], 0);
+        assert_eq!(result["sync"]["state"], "error");
+        assert_eq!(result["sync"]["usingLastKnownGood"], false);
     }
 
     #[test]
