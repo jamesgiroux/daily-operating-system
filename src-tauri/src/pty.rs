@@ -35,6 +35,7 @@ pub enum ModelTier {
 pub struct PtyManager {
     timeout_secs: u64,
     model: Option<String>,
+    nice_priority: Option<i32>,
 }
 
 impl Default for PtyManager {
@@ -48,6 +49,7 @@ impl PtyManager {
         Self {
             timeout_secs: DEFAULT_CLAUDE_TIMEOUT_SECS,
             model: None,
+            nice_priority: None,
         }
     }
 
@@ -58,6 +60,13 @@ impl PtyManager {
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    /// Set CPU priority via `nice` for the subprocess (I173).
+    /// Lower values = higher priority. 10 is a reasonable default for background work.
+    pub fn with_nice_priority(mut self, priority: i32) -> Self {
+        self.nice_priority = Some(priority);
         self
     }
 
@@ -122,13 +131,26 @@ impl PtyManager {
             })
             .map_err(|e| ExecutionError::IoError(format!("Failed to open PTY: {}", e)))?;
 
-        // Build the command
-        let mut cmd = CommandBuilder::new("claude");
-        if let Some(ref model) = self.model {
-            cmd.args(["--model", model, "--print", command]);
+        // Build the command, optionally wrapped in `nice` for CPU priority (I173)
+        let mut cmd = if let Some(priority) = self.nice_priority {
+            let mut c = CommandBuilder::new("nice");
+            let prio_str = priority.to_string();
+            c.args(["-n", &prio_str, "claude"]);
+            if let Some(ref model) = self.model {
+                c.args(["--model", model, "--print", command]);
+            } else {
+                c.args(["--print", command]);
+            }
+            c
         } else {
-            cmd.args(["--print", command]);
-        }
+            let mut c = CommandBuilder::new("claude");
+            if let Some(ref model) = self.model {
+                c.args(["--model", model, "--print", command]);
+            } else {
+                c.args(["--print", command]);
+            }
+            c
+        };
         cmd.cwd(workspace);
 
         // Spawn the child process
@@ -141,9 +163,10 @@ impl PtyManager {
         drop(pair.slave);
 
         // Read output with timeout
-        let mut reader = pair.master.try_clone_reader().map_err(|e| {
-            ExecutionError::IoError(format!("Failed to clone PTY reader: {}", e))
-        })?;
+        let mut reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| ExecutionError::IoError(format!("Failed to clone PTY reader: {}", e)))?;
 
         // Use a channel to handle timeout
         let (tx, rx) = mpsc::channel();
