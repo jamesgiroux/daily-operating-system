@@ -216,10 +216,10 @@ impl Default for AppState {
     }
 }
 
-/// Run startup workspace sync in the background.
+/// Run startup workspace sync/indexing in the background.
 ///
-/// This intentionally uses a fresh DB connection rather than the global
-/// `AppState.db` mutex, so startup indexing does not block UI reads.
+/// Uses a fresh DB connection to avoid blocking UI reads on the global DB mutex
+/// during startup.
 pub fn run_startup_sync(state: &AppState) {
     let config = match state.config.read().ok().and_then(|g| g.clone()) {
         Some(cfg) => cfg,
