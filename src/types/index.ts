@@ -458,6 +458,49 @@ export interface MeetingOutcomeData {
   processedAt?: string;
 }
 
+export interface DbMeeting {
+  id: string;
+  title: string;
+  meetingType: string;
+  startTime: string;
+  endTime?: string;
+  accountId?: string;
+  attendees?: string;
+  notesPath?: string;
+  summary?: string;
+  createdAt: string;
+  calendarEventId?: string;
+  description?: string;
+  prepContextJson?: string;
+  userAgendaJson?: string;
+  userNotes?: string;
+  prepFrozenJson?: string;
+  prepFrozenAt?: string;
+  prepSnapshotPath?: string;
+  prepSnapshotHash?: string;
+  transcriptPath?: string;
+  transcriptProcessedAt?: string;
+}
+
+export interface MeetingIntelligence {
+  meeting: DbMeeting;
+  prep?: FullMeetingPrep;
+  isPast: boolean;
+  isCurrent: boolean;
+  isFrozen: boolean;
+  canEditUserLayer: boolean;
+  userAgenda?: string[];
+  userNotes?: string;
+  outcomes?: MeetingOutcomeData;
+  captures: DbCapture[];
+  actions: DbAction[];
+  linkedEntities: LinkedEntity[];
+  prepSnapshotPath?: string;
+  prepFrozenAt?: string;
+  transcriptPath?: string;
+  transcriptProcessedAt?: string;
+}
+
 // =============================================================================
 // Executive Intelligence (I42)
 // =============================================================================
