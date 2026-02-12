@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 551 Rust tests. v0.7.0-alpha shipped. Sprints 1-13 complete. Sprint 14 active. 0.7.1 fast-follow parallel.
+**Current state:** 560 Rust tests. v0.7.0-alpha shipped. Sprints 1-13 complete. Sprint 14 closed. Sprint 15 in progress. 0.7.1 fast-follow parallel.
 
 ---
 
@@ -13,26 +13,18 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I177** | Email sync silently fails post-model-tiering | Blocker | Data |
-| **I173** | Enrichment responsiveness (DB lock + nice) | Blocker | Infra |
 | **I158** | OAuth PKCE + Keychain storage | Blocker | Security |
-| **I185** | Calendar description pipeline (ADR-0064 P1) | P0 | Meetings |
-| **I186** | Account Snapshot enrichment (ADR-0064 P2) | P0 | Meetings |
-| **I190** | Meeting route migration (ADR-0066 P1) | P0 | Meetings |
 | **I178** | Focus page available time is incorrect | P0 | UX |
 | **I179** | Focus page action prioritization intelligence | P0 | UX |
 | **I149** | Cargo clippy zero warnings | P0 | Infra |
 | **I150** | Dependency security audit | P0 | Security |
 | **I151** | Input validation (IPC boundary) | P0 | Security |
 | **I152** | Error handling (eliminate panics) | P0 | Infra |
-| **I187** | Prep page three-tier layout (ADR-0064 P3) | P1 | Meetings |
 | **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P1 | Meetings |
-| **I191** | Card-detail visual unification (ADR-0066 P2-3) | P1 | Meetings |
-| **I189** | Meeting prep editability (ADR-0065) | P1 | Meetings |
 | **I153** | Binary size + startup perf | P1 | Infra |
 | **I154** | Frontend bundle audit | P1 | Infra |
 | **I155** | Rate limiting + retry hardening | P1 | Infra |
 | **I157** | Frontend component audit (radix-ui) | P1 | UX |
-| **I159** | People-aware prep for internal meetings | P1 | Meetings |
 | **I164** | Inbox processing status indicators | P1 | UX |
 | **I161** | Auto-unarchive on meeting detection | P2 | Entity |
 | **I162** | Bulk account creation | P2 | Entity |
@@ -59,10 +51,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 ## Ship Blockers
 
 **I177: Email sync silently fails post-model-tiering — CRITICAL BUG**
-Daily Briefing shows no emails, email refresh button has no effect. Root cause: Recent model tiering changes (I174) split `PtyManager` into per-tier instances (`Extraction`, `Synthesis`, `Mechanical`). Email enrichment uses `Extraction` tier via `enrich_emails()`. Two failure modes: (1) **Mechanical failure:** `deliver_emails()` in executor.rs line 554 silently returns `json!({})` on error, leaving user with no indication emails failed. (2) **Enrichment failure:** `enrich_emails()` in executor line 598 logs warning "Email enrichment failed (non-fatal)" but user sees nothing. Both paths suppress errors. Investigation needed: (a) Is `PtyManager::for_tier(Extraction, ...)` failing to initialize? (b) Is `spawn_claude()` failing when model config doesn't match tier? (c) Are errors from `fetch_and_classify_emails()` in orchestrate.rs being suppressed? Fix: (1) Surface email failures to user via toast notification or banner. (2) Add detailed error context to logs (what model tried to run, which tier, config values). (3) Test email pipeline with all model tiers to verify model availability. (4) Consider fallback (if enrichment fails, still show mechanical emails).
-
-**I173: Enrichment responsiveness — DB lock during PTY + nice subprocess**
-Two problems: (1) Manual `enrich_*` commands hold DB lock for entire PTY call (30-180s), blocking all other operations. Background `intel_queue.rs` already does this correctly (brief lock → release → PTY → brief lock to write). Fix: route manual enrichments through the queue or use split-lock pattern. (2) Claude subprocess has no CPU priority limit. Fix: spawn with `nice -n 10`.
+Daily Briefing now emits enrichment warning events, but mechanical delivery failures still fall back to empty payloads and need a fully-visible user path. Remaining work: (1) unify `email-error` + `email-enrichment-warning` handling in frontend to always show failure state, (2) confirm model-tier fallback behavior when extraction model is unavailable, (3) verify low-friction recovery action from UI.
 
 **I158: OAuth PKCE + credential hardening**
 Three layers: (1) PKCE flow (RFC 7636) — eliminates `client_secret` from source. (2) macOS Keychain for token storage — move from plaintext `~/.dailyos/google/token.json`. (3) Rotate current credentials after PKCE ships.
@@ -98,18 +87,33 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 
 *Calendar descriptions, enriched account snapshots, route migration, email fix. The data layer and plumbing that enables the prep page redesign (ADR-0064/0065/0066).*
 
-| Priority | Issue | Scope | Depends On |
-|----------|-------|-------|------------|
-| Blocker | I177 | Email sync fix — surface failures, fallback to mechanical | — |
-| Blocker | I173 | Enrichment responsiveness — split-lock pattern + nice | — |
-| P0 | I185 | Calendar description pipeline — schema + plumb through 5 stages | — |
-| P0 | I186 | Account Snapshot enrichment — intelligence signals in prep | — |
-| P0 | I190 | Meeting route migration — /meeting/$meetingId + unified command | — |
-| P1 | I159 | People-aware prep for internal meetings | — |
+| Priority | Issue | Scope | Depends On | Status |
+|----------|-------|-------|------------|--------|
+| Blocker | I177 | Email sync fix — surface failures, fallback to mechanical | — | Partial |
+| Blocker | I173 | Enrichment responsiveness — split-lock pattern + nice | — | Closed |
+| P0 | I185 | Calendar description pipeline — schema + plumb through 5 stages | — | Closed |
+| P0 | I186 | Account Snapshot enrichment — intelligence signals in prep | — | Closed |
+| P0 | I190 | Meeting route migration — /meeting/$meetingId + unified command | — | Closed |
+| P1 | I159 | People-aware prep for internal meetings | — | Closed |
 
 **Rationale:** Phases 1-2 of ADR-0064 and Phase 1 of ADR-0066 are pure plumbing — mechanical schema changes, data flow fixes, and route migration. No AI prompt redesign, no layout overhaul. They unblock Sprint 15 (the visual redesign + agenda-anchored enrichment). The two blockers (I177, I173) ship alongside because they affect daily usability. I159 extends prep coverage to internal meetings while we're already in the prep pipeline.
 
-**Not in Sprint 14:** I187 (three-tier layout), I188 (agenda-anchored AI), I189 (editability), I191 (card-detail unification) — these are the design-heavy phases that depend on the foundation laid here.
+**Closed in Sprint 14:** I173, I185, I186, I190, I159.  
+**Carryover to Sprint 15:** I177 (partial), I188 (partial).
+
+---
+
+## Sprint 15 — Meeting Intelligence Report
+
+*Report-style prep UX and semantic cleanup on top of Sprint 14 plumbing.*
+
+| Priority | Issue | Scope | Status |
+|----------|-------|-------|--------|
+| P1 | I187 | Prep page three-tier layout (ADR-0064 P3) | Closed |
+| P1 | I188 | Agenda-anchored AI enrichment (ADR-0064 P4) | Partial |
+| P1 | I189 | Meeting prep editability (ADR-0065) | Closed |
+| P1 | I191 | Card-detail visual unification (ADR-0066 P2-3) | Closed |
+| P1 | I196 | Prep agenda/wins semantic split + source governance | Closed |
 
 ---
 
@@ -117,31 +121,10 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 
 ### Meeting Intelligence (ADR-0064, 0065, 0066)
 
-**I185: Calendar description pipeline (ADR-0064 Phase 1)**
-Google Calendar event descriptions are fetched (`calendar.rs:206`) but stripped at `orchestrate.rs:462-480`. Add `description` TEXT column to `meetings_history`. Carry through fetch → classify → directive → DB → prep context assembly. Display raw description on prep page (Tier 3, "Calendar Notes" section). Mechanical — no AI changes.
-
-**I186: Account Snapshot enrichment (ADR-0064 Phase 2)**
-Replace label-only Quick Context (CSM + lifecycle) with richer Account Snapshot pulling from entity intelligence: health, ARR, lifecycle, renewal proximity, latest win, active risk, relationship temperature, days since contact. Cap at 6-8 items, render as clean key-value pairs (not raw markdown). All data already in SQLite/intelligence.json.
-
-**I187: Prep page three-tier layout (ADR-0064 Phase 3)**
-Restructure MeetingDetailPage into three tiers: Tier 1 (Walk-In Frame: headline + intelligence brief + account snapshot), Tier 2 (Agenda Layer: annotated agenda or signal summary), Tier 3 (Deep Context: collapsible people, history, programs, references). Empty states for all sections. Remove Card wrappers from Tier 1. Depends on I185, I186.
-
 **I188: Agenda-anchored AI enrichment (ADR-0064 Phase 4)**
-Detect agenda in calendar description. Restructure AI enrichment prompt: "enrich around this agenda" vs "generate an agenda." Annotate agenda items with relevant signals. Meeting-specific intelligence distillation (not echoed entity assessment). Depends on I185.
-
-**I189: Meeting prep editability (ADR-0065)**
-Two new fields: `user_agenda_json` (structured list) and `user_notes` (free-form markdown) on `meetings_history`. Tauri commands for read/write. Inline editing on prep page (auto-save on blur). Three-class enrichment contract: user-authored (READ-ONLY) / system-captured (AI input) / AI-generated (regenerated). Frozen after meeting ends. Depends on I187.
-
-**I190: Meeting route migration (ADR-0066 Phase 1)**
-Change route from `/meeting/$prepFile` (fragile, file-based) to `/meeting/$meetingId` (permanent, DB-backed). Update MeetingCard "View Prep" link. Update AccountDetailPage MeetingPreview links. Create `get_meeting_intelligence` command wrapping existing queries. Fallback: load from disk for today's meetings, from DB for past.
-
-**I191: Card-detail visual unification (ADR-0066 Phase 2-3)**
-MeetingCard expansion shows outcomes + collapsed prep together (not either/or). "View Full Record" replaces "View Prep" button. Detail page becomes meeting record: pre-meeting mode (prep-focused) flips to post-meeting mode (outcomes first, prep as historical context). Align card prep summary with ADR-0064 Tier 1 visual language. Depends on I187, I190.
+Partial: agenda/wins are now semantically split (`recentWins`/`proposedAgenda`) and enrichment prompt/parser treat them separately, but explicit calendar-description agenda extraction and agenda-first anchoring logic still need dedicated completion criteria.
 
 ### Meetings & Prep
-
-**I159: People-aware prep for internal meetings**
-For 1:1 and team sync meetings with known people, generate lightweight prep: recent meeting history, open actions, person intelligence, relationship signals. Not full account-style prep — just conversation context. All data exists in SQLite + person intelligence.json. Expand `PREP_ELIGIBLE_TYPES` or create parallel `PEOPLE_PREP_TYPES`.
 
 **I122: Sunday briefing fetches Monday calendar labeled as "today"**
 Running briefing on Sunday produces Monday's meetings labeled "today." Either intentional (UI should say "Tomorrow") or needs calendar day fix.
