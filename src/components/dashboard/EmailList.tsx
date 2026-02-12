@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Archive, ChevronRight, Loader2, Mail, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { Email } from "@/types";
 
@@ -17,12 +19,20 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
   const visibleEmails = actionable.slice(0, maxVisible);
   const hiddenCount = actionable.length - visibleEmails.length;
 
+  useEffect(() => {
+    const unlisten = listen<string>("email-enrichment-warning", (event) => {
+      toast.warning(event.payload, { duration: 6000 });
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
   async function handleRefresh() {
     setRefreshing(true);
     try {
       await invoke("refresh_emails");
+      toast.success("Emails refreshed");
     } catch (err) {
-      console.error("Email refresh failed:", err);
+      toast.error(typeof err === "string" ? err : "Email refresh failed");
     } finally {
       setRefreshing(false);
     }

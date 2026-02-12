@@ -1,18 +1,42 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { open } from "@tauri-apps/plugin-dialog";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { FullMeetingPrep, Stakeholder, StakeholderSignals, ActionWithContext, SourceReference, AttendeeContext, AgendaItem } from "@/types";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import type {
+  FullMeetingPrep,
+  Stakeholder,
+  StakeholderSignals,
+  ActionWithContext,
+  SourceReference,
+  AttendeeContext,
+  AgendaItem,
+  AccountSnapshotItem,
+  MeetingOutcomeData,
+  CalendarEvent,
+  StakeholderInsight,
+} from "@/types";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { useMeetingOutcomes } from "@/hooks/useMeetingOutcomes";
+import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
 import {
   AlertCircle,
   ArrowLeft,
   Check,
+  ChevronRight,
   Clock,
   Copy,
   Users,
@@ -21,10 +45,11 @@ import {
   BookOpen,
   AlertTriangle,
   CheckCircle,
-  TrendingUp,
   History,
   Target,
-  MessageSquare,
+  CalendarDays,
+  Paperclip,
+  Loader2,
 } from "lucide-react";
 
 interface MeetingPrepResult {
@@ -34,23 +59,85 @@ interface MeetingPrepResult {
 }
 
 export default function MeetingDetailPage() {
-  const { prepFile } = useParams({ strict: false });
+  const { meetingId } = useParams({ strict: false });
   const [data, setData] = useState<FullMeetingPrep | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load outcomes alongside prep (I195 — unified view)
+  const {
+    outcomes,
+    refresh: refreshOutcomes,
+  } = useMeetingOutcomes(meetingId ?? "");
+
+  // Transcript attach (from MeetingDetailPage)
+  const [attaching, setAttaching] = useState(false);
+
+  const handleAttachTranscript = useCallback(async () => {
+    if (!meetingId || !data) return;
+
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: "Transcripts",
+          extensions: ["md", "txt", "vtt", "srt", "docx", "pdf"],
+        },
+      ],
+    });
+    if (!selected) return;
+
+    setAttaching(true);
+    try {
+      // Build CalendarEvent from prep data. Prep JSON has limited metadata
+      // so we construct approximate timestamps from timeRange for today's date.
+      const parseTimeFromRange = (range: string, which: "start" | "end"): string => {
+        const parts = range.split(" - ");
+        const timeStr = which === "start" ? parts[0] : parts[1] || parts[0];
+        const match = timeStr?.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return new Date().toISOString();
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const period = match[3].toUpperCase();
+        if (period === "PM" && h !== 12) h += 12;
+        if (period === "AM" && h === 12) h = 0;
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        return d.toISOString();
+      };
+
+      const calendarEvent: CalendarEvent = {
+        id: meetingId,
+        title: data.title,
+        start: parseTimeFromRange(data.timeRange || "", "start"),
+        end: parseTimeFromRange(data.timeRange || "", "end"),
+        type: "internal",
+        attendees: [],
+        isAllDay: false,
+      };
+      await invoke("attach_meeting_transcript", {
+        filePath: selected,
+        meeting: calendarEvent,
+      });
+      await refreshOutcomes();
+    } catch (err) {
+      console.error("Failed to attach transcript:", err);
+    } finally {
+      setAttaching(false);
+    }
+  }, [meetingId, data, refreshOutcomes]);
 
   useEffect(() => {
     async function loadPrep() {
-      if (!prepFile) {
-        setError("No prep file specified");
+      if (!meetingId) {
+        setError("No meeting ID specified");
         setLoading(false);
         return;
       }
 
       try {
         const result = await invoke<MeetingPrepResult>("get_meeting_prep", {
-          prepFile,
+          meetingId,
         });
         if (result.status === "success" && result.data) {
           setData(result.data);
@@ -66,7 +153,11 @@ export default function MeetingDetailPage() {
       }
     }
     loadPrep();
-  }, [prepFile]);
+  }, [meetingId]);
+
+  // Determine meeting time state for editability (I194)
+  const isPastMeeting = data ? isMeetingPast(data.timeRange) : false;
+  const isEditable = !isPastMeeting;
 
   if (loading) {
     return (
@@ -110,6 +201,8 @@ export default function MeetingDetailPage() {
 
   const hasAnyContent = Boolean(
     data.meetingContext ||
+    data.calendarNotes ||
+    data.accountSnapshot ||
     (data.quickContext && data.quickContext.length > 0) ||
     (data.attendees && data.attendees.length > 0) ||
     (data.attendeeContext && data.attendeeContext.length > 0) ||
@@ -117,6 +210,7 @@ export default function MeetingDetailPage() {
     (data.strategicPrograms && data.strategicPrograms.length > 0) ||
     (data.currentState && data.currentState.length > 0) ||
     (data.risks && data.risks.length > 0) ||
+    (data.recentWins && data.recentWins.length > 0) ||
     (data.talkingPoints && data.talkingPoints.length > 0) ||
     (data.openItems && data.openItems.length > 0) ||
     (data.questions && data.questions.length > 0) ||
@@ -125,10 +219,52 @@ export default function MeetingDetailPage() {
     data.stakeholderSignals
   );
 
+  const attendeeNames = new Set<string>([
+    ...(data.attendeeContext ?? []).map((p) => normalizePersonKey(p.name)),
+    ...(data.attendees ?? []).map((p) => normalizePersonKey(p.name)),
+  ]);
+  const matchingStakeholderInsights = (data.stakeholderInsights ?? []).filter((person) =>
+    attendeeNames.has(normalizePersonKey(person.name))
+  );
+  const extendedStakeholderInsights = (data.stakeholderInsights ?? []).filter(
+    (person) => !attendeeNames.has(normalizePersonKey(person.name))
+  );
+  const topRisks = [
+    ...((data.entityRisks ?? []).map((risk) => risk.text)),
+    ...(data.risks ?? []),
+  ]
+    .map((risk) => sanitizeInlineText(risk))
+    .filter((risk) => risk.length > 0)
+    .slice(0, 3);
+  const lifecycle = getLifecycleForDisplay(data);
+  const heroMeta = getHeroMetaItems(data);
+  const agendaItems = (data.proposedAgenda ?? [])
+    .map((item) => ({
+      ...item,
+      topic: cleanPrepLine(item.topic),
+      why: item.why ? cleanPrepLine(item.why) : undefined,
+    }))
+    .filter((item) => item.topic.length > 0);
+  const { wins: recentWins } = deriveRecentWins(data);
+  const agendaNonWinItems = agendaItems.filter((item) => item.source !== "talking_point");
+  const agendaDisplayItems = agendaNonWinItems.length > 0 ? agendaNonWinItems : agendaItems;
+  const agendaTopics = new Set(agendaDisplayItems.map((item) => normalizePersonKey(item.topic)));
+  const recentWinsForSidebar = recentWins.filter(
+    (win) => !agendaTopics.has(normalizePersonKey(win))
+  );
+  const reportNav = [
+    { id: "executive-brief", label: "Executive Brief", show: Boolean(data.intelligenceSummary || data.meetingContext) },
+    { id: "agenda", label: "Agenda", show: Boolean(data.proposedAgenda?.length || data.userAgenda?.length) },
+    { id: "risks", label: "Risks", show: Boolean((data.entityRisks?.length ?? 0) > 0 || (data.risks?.length ?? 0) > 0) },
+    { id: "people", label: "People", show: Boolean(data.attendeeContext?.length || data.attendees?.length || data.stakeholderInsights?.length) },
+    { id: "actions", label: "Open Items", show: Boolean(data.openItems?.length) },
+    { id: "appendix", label: "Appendix", show: hasReferenceContent(data) || Boolean(data.sinceLast?.length || data.strategicPrograms?.length || data.currentState?.length || data.references?.length) },
+  ].filter((item) => item.show);
+
   return (
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
-        <div className="p-6">
+        <div className="mx-auto max-w-6xl p-6 pb-16">
           {/* Back button */}
           <Link to="/">
             <Button variant="ghost" size="sm" className="mb-4">
@@ -137,20 +273,43 @@ export default function MeetingDetailPage() {
             </Button>
           </Link>
 
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {data.title}
-            </h1>
-            {data.timeRange && (
-              <div className="mt-1 flex items-center gap-2 text-muted-foreground">
-                <Clock className="size-4" />
-                <span>{data.timeRange}</span>
-              </div>
-            )}
-          </div>
+          {/* Post-meeting: outcomes first (I195) */}
+          {isPastMeeting && outcomes && (
+            <>
+              <OutcomesSection outcomes={outcomes} onRefresh={refreshOutcomes} />
+              <Separator className="my-8" />
+              <p className="text-sm font-medium text-muted-foreground mb-4">
+                Pre-Meeting Context
+              </p>
+            </>
+          )}
 
-          {!hasAnyContent && (
+          {/* Past meeting without outcomes: prompt to attach transcript */}
+          {isPastMeeting && !outcomes && (
+            <Card className="mb-6 border-dashed">
+              <CardContent className="flex items-center justify-between py-4">
+                <div className="text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">No outcomes captured yet</p>
+                  <p>Attach a transcript or manually capture meeting outcomes.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAttachTranscript}
+                  disabled={attaching}
+                >
+                  {attaching ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="mr-2 size-4" />
+                  )}
+                  {attaching ? "Processing..." : "Attach Transcript"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {!hasAnyContent && !outcomes && (
             <div className="text-center py-12 text-muted-foreground">
               <Clock className="mx-auto mb-3 size-8 opacity-50" />
               <p className="text-lg font-medium">Prep is being generated</p>
@@ -160,309 +319,444 @@ export default function MeetingDetailPage() {
             </div>
           )}
 
-          {hasAnyContent && (
-          <>
-          {/* Copy All */}
-          <div className="mb-6">
-            <CopyAllButton data={data} />
-          </div>
-
-          <div className="space-y-6">
-              {/* Proposed Agenda (I80) — action layer, top of page */}
-              {data.proposedAgenda && data.proposedAgenda.length > 0 && (
-                <Card className="border-l-4 border-l-primary">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Target className="size-4 text-primary" />
-                      Proposed Agenda
-                      <CopyButton text={formatProposedAgenda(data.proposedAgenda)} label="agenda" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ol className="space-y-2">
-                      {data.proposedAgenda.map((item, i) => (
-                        <li key={i} className="flex items-start gap-3 text-sm">
-                          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                            {i + 1}
-                          </span>
-                          <div className="flex-1">
-                            <p className="font-medium">{item.topic}</p>
-                            {item.why && (
-                              <p className="text-muted-foreground text-xs mt-0.5">{item.why}</p>
+          {(hasAnyContent || outcomes) && (
+            <div className={cn(isPastMeeting && outcomes && "opacity-70")}>
+              <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px]">
+                <div className="space-y-10">
+                  <section
+                    id="executive-brief"
+                    className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/5 p-6"
+                  >
+                    <div className="absolute -right-10 -top-10 size-36 rounded-full bg-primary/10 blur-2xl" />
+                    <div className="relative">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            Meeting Intelligence Report
+                          </p>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+                              {data.title}
+                            </h1>
+                            {lifecycle && (
+                              <Badge
+                                variant="outline"
+                                className="border-primary/30 bg-primary/10 text-primary font-medium tracking-wide"
+                              >
+                                {lifecycle}
+                              </Badge>
                             )}
                           </div>
-                          {item.source && (
-                            <span className={cn(
-                              "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                              item.source === "risk" && "bg-destructive/10 text-destructive",
-                              item.source === "question" && "bg-muted text-muted-foreground",
-                              item.source === "open_item" && "bg-primary/10 text-primary",
-                              item.source === "talking_point" && "bg-success/10 text-success",
-                            )}>
-                              {item.source === "talking_point" ? "talking point" : item.source === "open_item" ? "action" : item.source}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Quick Context - metrics table */}
-              {data.quickContext && data.quickContext.length > 0 && (
-                <Card className="border-l-4 border-l-primary">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <TrendingUp className="size-4" />
-                      Quick Context
-                      <CopyButton text={formatQuickContext(data.quickContext!)} label="quick context" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      {data.quickContext.map(([metric, value], i) => (
-                        <div key={i} className="rounded-md bg-muted/50 p-3">
-                          <p className="text-xs font-medium text-muted-foreground">
-                            {metric}
+                          <p className="font-mono text-xs tracking-wide text-muted-foreground">
+                            {data.timeRange}
                           </p>
-                          <p className="text-sm font-semibold">{value}</p>
                         </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                        <CopyAllButton data={data} />
+                      </div>
 
-              {/* Relationship Context (I43) */}
-              {data.stakeholderSignals && (
-                <RelationshipContext signals={data.stakeholderSignals} />
-              )}
-
-              {/* Meeting context */}
-              {data.meetingContext && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <FileText className="size-4" />
-                      Context
-                      <CopyButton text={data.meetingContext} label="context" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="whitespace-pre-wrap text-sm">{data.meetingContext}</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* People in the Room (I81) */}
-              <PeopleInTheRoom
-                attendeeContext={data.attendeeContext}
-                attendees={data.attendees}
-              />
-
-              {/* Since Last Meeting */}
-              {data.sinceLast && data.sinceLast.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <History className="size-4" />
-                      Since Last Meeting
-                      <CopyButton text={formatBulletList(data.sinceLast)} label="since last meeting" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {data.sinceLast.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Strategic Programs */}
-              {data.strategicPrograms && data.strategicPrograms.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Target className="size-4" />
-                      Current Strategic Programs
-                      <CopyButton text={formatBulletList(data.strategicPrograms)} label="programs" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {data.strategicPrograms.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <span className={cn(
-                            "mt-0.5",
-                            item.startsWith("✓") ? "text-success" : "text-muted-foreground"
-                          )}>
-                            {item.startsWith("✓") ? "✓" : "○"}
-                          </span>
-                          <span>{item.replace(/^[✓○]\s*/, "")}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Current state */}
-              {data.currentState && data.currentState.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      Current State
-                      <CopyButton text={formatBulletList(data.currentState)} label="current state" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {data.currentState.map((item, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
-                          <span>{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Risks */}
-              {data.risks && data.risks.length > 0 && (
-                <Card className="border-l-4 border-l-destructive">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <AlertTriangle className="size-4 text-destructive" />
-                      Current Risks to Monitor
-                      <CopyButton text={formatBulletList(data.risks)} label="risks" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-2">
-                      {data.risks.map((risk, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
-                          <span>{risk}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Suggested Talking Points */}
-              {data.talkingPoints && data.talkingPoints.length > 0 && (
-                <Card className="border-l-4 border-l-success">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <MessageSquare className="size-4 text-success" />
-                      Suggested Talking Points
-                      <CopyButton text={formatNumberedList(data.talkingPoints)} label="talking points" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ol className="list-decimal list-inside space-y-2">
-                      {data.talkingPoints.map((point, i) => (
-                        <li key={i} className="text-sm">
-                          {point}
-                        </li>
-                      ))}
-                    </ol>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Open items / Actions */}
-              {data.openItems && data.openItems.length > 0 && (
-                <Card className="border-l-4 border-l-primary">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <CheckCircle className="size-4 text-primary" />
-                      Open Items to Discuss
-                      <CopyButton text={formatOpenItems(data.openItems)} label="open items" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {data.openItems.map((item, i) => (
-                        <ActionItem key={i} action={item} />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Questions */}
-              {data.questions && data.questions.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <HelpCircle className="size-4" />
-                      Questions to Surface
-                      <CopyButton text={formatNumberedList(data.questions)} label="questions" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ol className="list-decimal list-inside space-y-2">
-                      {data.questions.map((q, i) => (
-                        <li key={i} className="text-sm">
-                          {q}
-                        </li>
-                      ))}
-                    </ol>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Key principles */}
-              {data.keyPrinciples && data.keyPrinciples.length > 0 && (
-                <Card className="bg-muted/30">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <BookOpen className="size-4" />
-                      Key Principles
-                      <CopyButton text={formatBulletList(data.keyPrinciples)} label="principles" className="ml-auto" />
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {data.keyPrinciples.map((principle, i) => (
-                        <blockquote
-                          key={i}
-                          className="border-l-2 border-primary pl-4 text-sm italic"
-                        >
-                          {principle}
+                      {(data.intelligenceSummary || data.meetingContext) ? (
+                        <blockquote className="mt-6 border-l-2 border-l-primary/45 pl-5">
+                          {(data.intelligenceSummary || data.meetingContext || "")
+                            .split("\n")
+                            .filter((line) => line.trim())
+                            .slice(0, 3)
+                            .map((line, i) => (
+                              <p
+                                key={i}
+                                className={cn(
+                                  "text-base leading-8 text-foreground/90 sm:text-[17px]",
+                                  i > 0 && "mt-2",
+                                )}
+                              >
+                                {line}
+                              </p>
+                            ))}
                         </blockquote>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                      ) : (
+                        <p className="mt-6 text-sm text-muted-foreground/80">
+                          Intelligence builds as you meet with this account.
+                        </p>
+                      )}
 
-              {/* References */}
-              {data.references && data.references.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">References</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {data.references.map((ref, i) => (
-                        <ReferenceRow key={i} reference={ref} />
-                      ))}
+                      {topRisks.length > 0 && (
+                        <div className="mt-6 grid gap-2 sm:grid-cols-3">
+                          {topRisks.map((risk, i) => (
+                            <div key={i} className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive/80">Risk {i + 1}</p>
+                              <p className="mt-1 text-sm leading-relaxed">{risk}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {heroMeta.length > 0 && (
+                        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                          {heroMeta.map((item) => (
+                            <div key={item.label} className="rounded-lg border border-border/70 bg-card/60 px-3 py-2">
+                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                                {item.label}
+                              </p>
+                              <p className={cn("mt-1 text-sm font-medium", item.tone)}>
+                                {item.value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  </section>
+
+                  <section id="agenda" className="space-y-5">
+                    <SectionLabel
+                      label="Agenda"
+                      icon={<Target className="size-3.5" />}
+                      copyText={agendaDisplayItems.length > 0 ? formatProposedAgenda(agendaDisplayItems) : undefined}
+                      copyLabel="agenda"
+                    />
+                    {agendaDisplayItems.length > 0 ? (
+                      <ol className="space-y-3">
+                        {agendaDisplayItems.map((item, i) => (
+                          <li key={i} className="flex items-start gap-3 rounded-lg border border-border/70 bg-card/50 p-3">
+                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                              {i + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium leading-snug">{item.topic}</p>
+                              {item.why && (
+                                <p className="mt-1 text-xs text-muted-foreground">{item.why}</p>
+                              )}
+                            </div>
+                            {item.source && (
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                  item.source === "risk" && "bg-destructive/10 text-destructive",
+                                  item.source === "question" && "bg-muted text-muted-foreground",
+                                  item.source === "open_item" && "bg-primary/10 text-primary",
+                                  item.source === "talking_point" && "bg-success/10 text-success",
+                                )}
+                              >
+                                {item.source === "talking_point"
+                                  ? "win"
+                                  : item.source === "open_item"
+                                    ? "action"
+                                    : item.source}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <div className="rounded-lg border border-dashed border-border/80 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
+                        No proposed agenda yet. Add your own agenda items below.
+                      </div>
+                    )}
+                    {meetingId && (
+                      <UserAgendaEditor
+                        meetingId={meetingId}
+                        initialAgenda={data.userAgenda}
+                        isEditable={isEditable}
+                      />
+                    )}
+                    {meetingId && (
+                      <UserNotesEditor
+                        meetingId={meetingId}
+                        initialNotes={data.userNotes}
+                        isEditable={isEditable}
+                      />
+                    )}
+                    {data.calendarNotes && (
+                      <section>
+                        <SectionLabel label="Calendar Notes" icon={<CalendarDays className="size-3.5" />} />
+                        <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                          {data.calendarNotes}
+                        </p>
+                      </section>
+                    )}
+                  </section>
+
+                  {((data.entityRisks && data.entityRisks.length > 0) || (data.risks && data.risks.length > 0)) && (
+                    <section id="risks" className="space-y-4">
+                      <SectionLabel
+                        label="Risks"
+                        icon={<AlertTriangle className="size-3.5" />}
+                        className="text-destructive"
+                        copyText={formatBulletList([
+                          ...(data.entityRisks?.map((r) => r.text) ?? []),
+                          ...(data.risks ?? []),
+                        ])}
+                        copyLabel="risks"
+                      />
+                      <ul className="space-y-2.5">
+                        {data.entityRisks?.map((risk, i) => (
+                          <li key={`entity-${i}`} className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-card/50 p-3 text-sm leading-relaxed">
+                            <span
+                              className={cn(
+                                "mt-2 size-1.5 shrink-0 rounded-full",
+                                risk.urgency === "high" ? "bg-destructive" : "bg-destructive/50",
+                              )}
+                            />
+                            <span className="flex-1">{risk.text}</span>
+                          </li>
+                        ))}
+                        {data.risks?.map((risk, i) => (
+                          <li key={`ai-${i}`} className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-card/50 p-3 text-sm leading-relaxed">
+                            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-destructive/50" />
+                            <span>{risk}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  <section id="people" className="space-y-5">
+                    <PeopleInTheRoom attendeeContext={data.attendeeContext} attendees={data.attendees} />
+
+                    {matchingStakeholderInsights.length > 0 && (
+                      <div className="space-y-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Attendee Intelligence
+                        </p>
+                        <StakeholderInsightList people={matchingStakeholderInsights} />
+                      </div>
+                    )}
+
+                    {extendedStakeholderInsights.length > 0 && (
+                      <Collapsible defaultOpen={false}>
+                        <CollapsibleTrigger className="group flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground w-full py-1">
+                          <ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+                          Extended Stakeholder Map ({extendedStakeholderInsights.length})
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-4">
+                          <StakeholderInsightList people={extendedStakeholderInsights} />
+                        </CollapsibleContent>
+                      </Collapsible>
+                    )}
+                  </section>
+
+                  {data.openItems && data.openItems.length > 0 && (
+                    <section id="actions" className="space-y-8">
+                      <section>
+                        <SectionLabel
+                          label="Open Items"
+                          icon={<CheckCircle className="size-3.5" />}
+                          copyText={formatOpenItems(data.openItems)}
+                          copyLabel="open items"
+                        />
+                        <div className="mt-3 space-y-2">
+                          {data.openItems.map((item, i) => (
+                            <ActionItem key={i} action={item} />
+                          ))}
+                        </div>
+                      </section>
+                    </section>
+                  )}
+
+                  {(hasReferenceContent(data) || (data.sinceLast?.length ?? 0) > 0 || (data.strategicPrograms?.length ?? 0) > 0) && (
+                    <section id="appendix" className="space-y-4 border-t border-border/70 pt-6">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                        Appendix
+                      </p>
+                      <Collapsible defaultOpen={false}>
+                        <CollapsibleTrigger className="group flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground w-full py-1">
+                          <ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
+                          Open Supporting Context
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="mt-4 space-y-6">
+                          {data.sinceLast && data.sinceLast.length > 0 && (
+                            <section>
+                              <SectionLabel
+                                label="Since Last Meeting"
+                                icon={<History className="size-3.5" />}
+                                copyText={formatBulletList(data.sinceLast)}
+                                copyLabel="since last meeting"
+                              />
+                              <ul className="mt-3 space-y-2">
+                                {data.sinceLast.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
+                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
+
+                          {data.strategicPrograms && data.strategicPrograms.length > 0 && (
+                            <section>
+                              <SectionLabel
+                                label="Strategic Programs"
+                                icon={<Target className="size-3.5" />}
+                                copyText={formatBulletList(data.strategicPrograms)}
+                                copyLabel="programs"
+                              />
+                              <ul className="mt-3 space-y-2">
+                                {data.strategicPrograms.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
+                                    <span className={cn("mt-0.5", item.startsWith("✓") ? "text-success" : "text-muted-foreground")}>
+                                      {item.startsWith("✓") ? "✓" : "○"}
+                                    </span>
+                                    <span>{item.replace(/^[✓○]\s*/, "")}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
+
+                          {data.meetingContext && data.meetingContext.split("\n").length > 3 && (
+                            <section>
+                              <SectionLabel
+                                label="Full Context"
+                                icon={<FileText className="size-3.5" />}
+                                copyText={data.meetingContext}
+                                copyLabel="context"
+                              />
+                              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{data.meetingContext}</p>
+                            </section>
+                          )}
+
+                          {data.currentState && data.currentState.length > 0 && (
+                            <section>
+                              <SectionLabel label="Current State" copyText={formatBulletList(data.currentState)} copyLabel="current state" />
+                              <ul className="mt-3 space-y-2">
+                                {data.currentState.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
+                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+                                    <span>{item}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </section>
+                          )}
+
+                          {data.questions && data.questions.length > 0 && (
+                            <section>
+                              <SectionLabel
+                                label="Questions to Surface"
+                                icon={<HelpCircle className="size-3.5" />}
+                                copyText={formatNumberedList(data.questions)}
+                                copyLabel="questions"
+                              />
+                              <ol className="mt-3 space-y-2">
+                                {data.questions.map((q, i) => (
+                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
+                                    <span className="mt-0.5 text-xs font-medium text-muted-foreground w-4 shrink-0 text-right">{i + 1}.</span>
+                                    <span>{q}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </section>
+                          )}
+
+                          {data.keyPrinciples && data.keyPrinciples.length > 0 && (
+                            <section>
+                              <SectionLabel
+                                label="Key Principles"
+                                icon={<BookOpen className="size-3.5" />}
+                                copyText={formatBulletList(data.keyPrinciples)}
+                                copyLabel="principles"
+                              />
+                              <div className="mt-3 space-y-3">
+                                {data.keyPrinciples.map((principle, i) => (
+                                  <blockquote key={i} className="border-l-2 border-primary/30 pl-4 text-sm italic text-muted-foreground">
+                                    {principle}
+                                  </blockquote>
+                                ))}
+                              </div>
+                            </section>
+                          )}
+
+                          {data.references && data.references.length > 0 && (
+                            <section>
+                              <SectionLabel label="References" />
+                              <div className="mt-3 space-y-2">
+                                {data.references.map((ref_, i) => (
+                                  <ReferenceRow key={i} reference={ref_} />
+                                ))}
+                              </div>
+                            </section>
+                          )}
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </section>
+                  )}
+
+                  <div className="mt-12 flex items-center gap-3">
+                    <div className="h-px flex-1 bg-border" />
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/40">
+                      End of Brief
+                    </span>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                </div>
+
+                <aside className="hidden lg:block">
+                  <div className="sticky top-6 space-y-5">
+                    <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Jump To</p>
+                      <nav className="mt-3 space-y-2">
+                        {reportNav.map((item) => (
+                          <a
+                            key={item.id}
+                            href={`#${item.id}`}
+                            className="block rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+                          >
+                            {item.label}
+                          </a>
+                        ))}
+                      </nav>
+                    </section>
+
+                    {data.stakeholderSignals && (
+                      <section className="rounded-xl border border-border/70 bg-card/60 p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Relationship Signals</p>
+                        <div className="mt-3">
+                          <RelationshipPills signals={data.stakeholderSignals} />
+                        </div>
+                      </section>
+                    )}
+
+                    {data.entityReadiness && data.entityReadiness.length > 0 && (
+                      <section className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/80">Before This Meeting</p>
+                        <ul className="mt-3 space-y-2">
+                          {data.entityReadiness.slice(0, 4).map((item, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm">
+                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+
+                    {recentWinsForSidebar.length > 0 && (
+                      <section className="rounded-xl border border-success/20 bg-success/[0.08] p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success">
+                          Recent Wins
+                        </p>
+                        <ul className="mt-3 space-y-2.5">
+                          {recentWinsForSidebar.slice(0, 4).map((win, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm">
+                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-success/70" />
+                              <span className="leading-relaxed text-foreground">{win}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </div>
+                </aside>
+              </div>
             </div>
-          </>
+          )}
+
+          {/* Pre-meeting: outcomes below prep if they exist (I195) */}
+          {!isPastMeeting && outcomes && (
+            <>
+              <Separator className="my-8" />
+              <OutcomesSection outcomes={outcomes} onRefresh={refreshOutcomes} />
+            </>
           )}
         </div>
       </ScrollArea>
@@ -470,26 +764,37 @@ export default function MeetingDetailPage() {
   );
 }
 
-function CopyAllButton({ data }: { data: FullMeetingPrep }) {
-  const { copied, copy } = useCopyToClipboard();
-
+/** Thin section label used throughout report sections. */
+function SectionLabel({
+  label,
+  icon,
+  className,
+  copyText,
+  copyLabel,
+}: {
+  label: string;
+  icon?: React.ReactNode;
+  className?: string;
+  copyText?: string;
+  copyLabel?: string;
+}) {
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() => copy(formatFullPrep(data))}
-    >
-      {copied ? (
-        <Check className="mr-2 size-3.5 text-success" />
-      ) : (
-        <Copy className="mr-2 size-3.5" />
+    <div className="flex items-center gap-2">
+      <div className={cn(
+        "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
+        className,
+      )}>
+        {icon}
+        {label}
+      </div>
+      {copyText && (
+        <CopyButton text={copyText} label={copyLabel} className="ml-auto" />
       )}
-      {copied ? "Copied!" : "Copy All"}
-    </Button>
+    </div>
   );
 }
 
-function RelationshipContext({ signals }: { signals: StakeholderSignals }) {
+function RelationshipPills({ signals }: { signals: StakeholderSignals }) {
   const tempColor = {
     hot: "text-success",
     warm: "text-primary",
@@ -497,70 +802,196 @@ function RelationshipContext({ signals }: { signals: StakeholderSignals }) {
     cold: "text-destructive",
   }[signals.temperature] ?? "text-muted-foreground";
 
-  const trendLabel = {
-    increasing: "Increasing",
-    stable: "Stable",
-    decreasing: "Decreasing",
-  }[signals.trend] ?? signals.trend;
-
   const lastMeetingText = signals.lastMeeting
     ? formatRelativeDate(signals.lastMeeting)
     : "No meetings recorded";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <History className="size-4" />
-          Relationship Context
-          <CopyButton text={formatRelationshipContext(signals)} label="relationship context" className="ml-auto" />
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Last Meeting</p>
-            <p className={cn("text-sm font-semibold", tempColor)}>
-              {lastMeetingText}
-            </p>
-          </div>
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Temperature</p>
-            <p className={cn("text-sm font-semibold capitalize", tempColor)}>
-              {signals.temperature}
-            </p>
-          </div>
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Last 30 Days</p>
-            <p className="text-sm font-semibold">
-              {signals.meetingFrequency30d} meeting{signals.meetingFrequency30d !== 1 ? "s" : ""}
-            </p>
-          </div>
-          <div className="rounded-md bg-muted/50 p-3">
-            <p className="text-xs font-medium text-muted-foreground">Trend</p>
-            <p className="text-sm font-semibold">{trendLabel}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex flex-wrap gap-2">
+      <Badge variant="outline" className={cn("font-normal capitalize", tempColor)}>
+        {signals.temperature}
+      </Badge>
+      <Badge variant="outline" className="font-normal">
+        Last: {lastMeetingText}
+      </Badge>
+      <Badge variant="outline" className="font-normal">
+        {signals.meetingFrequency30d} meeting{signals.meetingFrequency30d !== 1 ? "s" : ""} / 30d
+      </Badge>
+    </div>
   );
 }
 
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+// =============================================================================
+// User Editability Components (I194 / ADR-0065)
+// =============================================================================
 
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
+function UserNotesEditor({
+  meetingId,
+  initialNotes,
+  isEditable,
+}: {
+  meetingId: string;
+  initialNotes?: string;
+  isEditable: boolean;
+}) {
+  const [notes, setNotes] = useState(initialNotes || "");
+  const [saving, setSaving] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Don't render if no notes and not editable (past meeting)
+  if (!isEditable && !notes) return null;
+
+  function handleChange(value: string) {
+    setNotes(value);
+
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await invoke("update_meeting_user_notes", { meetingId, notes: value });
+      } catch (err) {
+        console.error("Save failed:", err);
+      } finally {
+        setSaving(false);
+      }
+    }, 1000);
   }
-  const months = Math.floor(diffDays / 30);
-  return `${months} month${months !== 1 ? "s" : ""} ago`;
+
+  return (
+    <div className="rounded-lg border border-primary/10 bg-primary/[0.03] p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/70">My Notes</span>
+        {saving && <span className="text-[10px] text-muted-foreground animate-pulse">Saving...</span>}
+      </div>
+      {isEditable ? (
+        <textarea
+          value={notes}
+          onChange={(e) => handleChange(e.target.value)}
+          className="w-full min-h-[80px] rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-0 resize-y"
+          placeholder="Add your own notes for this meeting..."
+        />
+      ) : (
+        <div className="whitespace-pre-wrap text-sm leading-relaxed">{notes}</div>
+      )}
+    </div>
+  );
+}
+
+function UserAgendaEditor({
+  meetingId,
+  initialAgenda,
+  isEditable,
+}: {
+  meetingId: string;
+  initialAgenda?: string[];
+  isEditable: boolean;
+}) {
+  const [agenda, setAgenda] = useState(initialAgenda || []);
+  const [newItem, setNewItem] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Don't render if no agenda and not editable
+  if (!isEditable && agenda.length === 0) return null;
+
+  async function saveAgenda(updatedAgenda: string[]) {
+    setSaving(true);
+    try {
+      await invoke("update_meeting_user_agenda", { meetingId, agenda: updatedAgenda });
+      setAgenda(updatedAgenda);
+    } catch (err) {
+      console.error("Save failed:", err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addItem() {
+    if (!newItem.trim()) return;
+    saveAgenda([...agenda, newItem.trim()]);
+    setNewItem("");
+  }
+
+  function removeItem(index: number) {
+    saveAgenda(agenda.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="rounded-lg border border-primary/10 bg-primary/[0.03] p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/70">My Agenda</span>
+        {saving && <span className="text-[10px] text-muted-foreground animate-pulse">Saving...</span>}
+      </div>
+      {agenda.length > 0 && (
+        <ol className="space-y-2 mb-4">
+          {agenda.map((item, i) => (
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="text-xs font-medium text-primary/50 w-4 shrink-0 text-right mt-0.5">{i + 1}.</span>
+              <span className="flex-1 text-sm leading-relaxed">{item}</span>
+              {isEditable && (
+                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 opacity-0 hover:opacity-100 transition-opacity" onClick={() => removeItem(i)}>
+                  <span className="text-muted-foreground hover:text-foreground">&times;</span>
+                </Button>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {isEditable && (
+        <div className="flex gap-2">
+          <Input
+            value={newItem}
+            onChange={(e) => setNewItem(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addItem()}
+            placeholder="Add agenda item..."
+            className="h-8 border-0 bg-transparent text-sm shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+          />
+          <Button size="sm" variant="ghost" className="h-8 text-primary hover:text-primary" onClick={addItem}>Add</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Outcomes Section (I195 / ADR-0066)
+// =============================================================================
+
+function OutcomesSection({
+  outcomes,
+  onRefresh,
+}: {
+  outcomes: MeetingOutcomeData;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Meeting Outcomes</h2>
+      <MeetingOutcomes outcomes={outcomes} onRefresh={onRefresh} />
+    </div>
+  );
+}
+
+// =============================================================================
+// Shared Components
+// =============================================================================
+
+function CopyAllButton({ data }: { data: FullMeetingPrep }) {
+  const { copied, copy } = useCopyToClipboard();
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="text-muted-foreground hover:text-foreground shrink-0"
+      onClick={() => copy(formatFullPrep(data))}
+    >
+      {copied ? (
+        <Check className="size-3.5 text-success" />
+      ) : (
+        <Copy className="size-3.5" />
+      )}
+    </Button>
+  );
 }
 
 function PeopleInTheRoom({
@@ -570,64 +1001,95 @@ function PeopleInTheRoom({
   attendeeContext?: AttendeeContext[];
   attendees?: Stakeholder[];
 }) {
-  // Prefer rich attendeeContext; fall back to flat attendees
   if (attendeeContext && attendeeContext.length > 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="size-4" />
-            People in the Room
-            <CopyButton text={formatAttendeeContext(attendeeContext)} label="people" className="ml-auto" />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {attendeeContext.map((person, i) => (
-              <AttendeeRow key={i} person={person} />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+      <section>
+        <SectionLabel
+          label="People in the Room"
+          icon={<Users className="size-3.5" />}
+          copyText={formatAttendeeContext(attendeeContext)}
+          copyLabel="people"
+        />
+        <div className="mt-3 space-y-3">
+          {attendeeContext.map((person, i) => (
+            <AttendeeRow key={i} person={person} />
+          ))}
+        </div>
+      </section>
     );
   }
 
-  // Fallback to flat name/role/focus display
   if (attendees && attendees.length > 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="size-4" />
-            Key Attendees
-            <CopyButton text={formatAttendees(attendees)} label="attendees" className="ml-auto" />
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {attendees.map((attendee, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  {attendee.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="font-medium">{attendee.name}</p>
-                  {attendee.role && (
-                    <p className="text-sm text-muted-foreground">{attendee.role}</p>
-                  )}
-                  {attendee.focus && (
-                    <p className="text-sm text-muted-foreground">{attendee.focus}</p>
-                  )}
-                </div>
+      <section>
+        <SectionLabel
+          label="Key Attendees"
+          icon={<Users className="size-3.5" />}
+          copyText={formatAttendees(attendees)}
+          copyLabel="attendees"
+        />
+        <div className="mt-3 space-y-3">
+          {attendees.map((attendee, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+                {attendee.name.charAt(0)}
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <div>
+                <p className="text-sm font-medium">{attendee.name}</p>
+                {attendee.role && (
+                  <p className="text-xs text-muted-foreground">{attendee.role}</p>
+                )}
+                {attendee.focus && (
+                  <p className="text-xs text-muted-foreground">{attendee.focus}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     );
   }
 
   return null;
+}
+
+function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
+  return (
+    <div className="space-y-3">
+      {people.map((person, i) => (
+        <div key={i} className="flex items-start gap-3 rounded-lg border border-border/70 bg-card/50 p-3">
+          <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary shrink-0">
+            {person.name.charAt(0)}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium">{person.name}</p>
+              {person.role && (
+                <span className="text-xs text-muted-foreground">{sanitizeInlineText(person.role)}</span>
+              )}
+              {person.engagement && (
+                <span
+                  className={cn(
+                    "text-[10px] font-medium capitalize",
+                    person.engagement === "champion" && "text-success",
+                    person.engagement === "detractor" && "text-destructive",
+                    person.engagement === "neutral" && "text-muted-foreground",
+                  )}
+                >
+                  {person.engagement}
+                </span>
+              )}
+            </div>
+            {person.assessment && (
+              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                {truncateText(sanitizeInlineText(person.assessment), 180)}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function AttendeeRow({ person }: { person: AttendeeContext }) {
@@ -761,9 +1223,232 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
 }
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+function isMeetingPast(timeRange: string): boolean {
+  // Parse "9:00 AM - 10:00 AM" format — extract end time
+  const parts = timeRange.split(" - ");
+  const endStr = parts.length > 1 ? parts[1]?.trim() : parts[0]?.trim();
+  if (!endStr) return false;
+
+  const match = endStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return false;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const period = match[3].toUpperCase();
+  if (period === "PM" && hours !== 12) hours += 12;
+  if (period === "AM" && hours === 12) hours = 0;
+
+  const endDate = new Date();
+  endDate.setHours(hours, minutes, 0, 0);
+  return new Date() > endDate;
+}
+
+function hasReferenceContent(data: FullMeetingPrep): boolean {
+  return Boolean(
+    (data.meetingContext && data.meetingContext.split("\n").length > 3) ||
+    (data.currentState && data.currentState.length > 0) ||
+    (data.questions && data.questions.length > 0) ||
+    (data.keyPrinciples && data.keyPrinciples.length > 0) ||
+    (data.references && data.references.length > 0)
+  );
+}
+
+function getLifecycleForDisplay(data: FullMeetingPrep): string | null {
+  const lifecycle = findSnapshotValue(data.accountSnapshot, ["lifecycle"])
+    ?? findQuickContextValue(data.quickContext, "lifecycle");
+  if (!lifecycle) return null;
+
+  const clean = sanitizeInlineText(lifecycle).replace(/[_-]/g, " ").trim();
+  if (!clean) return null;
+  return clean;
+}
+
+function getHeroMetaItems(data: FullMeetingPrep): Array<{ label: string; value: string; tone?: string }> {
+  const rows: Array<{ label: string; value: string; tone?: string }> = [];
+  const add = (label: string, value: string | null | undefined) => {
+    const clean = value ? sanitizeInlineText(value) : "";
+    if (!clean) return;
+    if (rows.some((r) => r.label === label)) return;
+    rows.push({
+      label,
+      value: clean,
+      tone: resolveMetaTone(label, clean),
+    });
+  };
+
+  add(
+    "Health",
+    findSnapshotValue(data.accountSnapshot, ["health"]) ??
+      findQuickContextValue(data.quickContext, "health"),
+  );
+  add(
+    "ARR",
+    findSnapshotValue(data.accountSnapshot, ["arr"]) ??
+      findQuickContextValue(data.quickContext, "arr"),
+  );
+  add(
+    "Renewal",
+    findSnapshotValue(data.accountSnapshot, ["renewal"]) ??
+      findQuickContextValue(data.quickContext, "renewal"),
+  );
+  add(
+    "Ring",
+    findSnapshotValue(data.accountSnapshot, ["ring"]) ??
+      findQuickContextValue(data.quickContext, "ring"),
+  );
+
+  return rows.slice(0, 4);
+}
+
+function resolveMetaTone(label: string, value: string): string | undefined {
+  const v = value.toLowerCase();
+  if (label.toLowerCase() === "health") {
+    if (v.includes("red") || v.includes("risk")) return "text-destructive";
+    if (v.includes("green")) return "text-success";
+    if (v.includes("yellow")) return "text-primary";
+  }
+  return undefined;
+}
+
+function findSnapshotValue(
+  items: AccountSnapshotItem[] | undefined,
+  labels: string[],
+): string | undefined {
+  if (!items || items.length === 0) return undefined;
+  const target = new Set(labels.map((l) => normalizePersonKey(l)));
+  return items.find((item) => target.has(normalizePersonKey(item.label)))?.value;
+}
+
+function findQuickContextValue(
+  quickContext: [string, string][] | undefined,
+  key: string,
+): string | undefined {
+  if (!quickContext || quickContext.length === 0) return undefined;
+  const found = quickContext.find(([label]) => normalizePersonKey(label) === normalizePersonKey(key));
+  return found?.[1];
+}
+
+function formatRelativeDate(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) {
+    const weeks = Math.floor(diffDays / 7);
+    return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
+  }
+  const months = Math.floor(diffDays / 30);
+  return `${months} month${months !== 1 ? "s" : ""} ago`;
+}
+
+function normalizePersonKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function sanitizeInlineText(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function splitInlineSourceTail(value: string): { text: string; source?: string } {
+  const sourceMatch = value.match(/(?:^|\s)[_*]*\(?\s*source:\s*([^)]+?)\s*\)?[_*\s]*$/i);
+  if (!sourceMatch || sourceMatch.index == null) {
+    return { text: value.trim() };
+  }
+  return {
+    text: value.slice(0, sourceMatch.index).trim(),
+    source: sanitizeInlineText(sourceMatch[1]),
+  };
+}
+
+function cleanPrepLine(value: string): string {
+  const { text } = splitInlineSourceTail(value);
+  let raw = text.trim();
+
+  return sanitizeInlineText(raw)
+    .replace(/^recent\s+win:\s*/i, "")
+    .trim();
+}
+
+function deriveRecentWins(data: FullMeetingPrep): { wins: string[]; sources: SourceReference[] } {
+  const wins: string[] = [];
+  const sources: SourceReference[] = [];
+  const seenWins = new Set<string>();
+  const seenSources = new Set<string>();
+
+  const addSource = (rawSource: string | undefined) => {
+    if (!rawSource) return;
+    const clean = sanitizeInlineText(rawSource);
+    if (!clean) return;
+    const label = clean.split(/[\\/]/).filter(Boolean).pop() ?? clean;
+    const key = normalizePersonKey(clean);
+    if (!seenSources.has(key)) {
+      seenSources.add(key);
+      sources.push({
+        label,
+        path: clean,
+      });
+    }
+  };
+
+  for (const source of data.recentWinSources ?? []) {
+    const key = normalizePersonKey(source.path ?? source.label);
+    if (!seenSources.has(key)) {
+      seenSources.add(key);
+      sources.push({
+        label: sanitizeInlineText(source.label),
+        path: source.path ? sanitizeInlineText(source.path) : undefined,
+        lastUpdated: source.lastUpdated,
+      });
+    }
+  }
+
+  const hasStructuredWins = Boolean(data.recentWins && data.recentWins.length > 0);
+  const winCandidates = hasStructuredWins ? (data.recentWins ?? []) : (data.talkingPoints ?? []);
+
+  for (const point of winCandidates) {
+    const { source } = splitInlineSourceTail(point);
+    if (!data.recentWinSources || data.recentWinSources.length === 0) {
+      addSource(source);
+    }
+
+    const win = cleanPrepLine(point);
+    const winKey = normalizePersonKey(win);
+    if (win && !seenWins.has(winKey)) {
+      seenWins.add(winKey);
+      wins.push(win);
+    }
+  }
+
+  if (!hasStructuredWins) {
+    for (const point of data.talkingPoints ?? []) {
+      const { source } = splitInlineSourceTail(point);
+      if (!data.recentWinSources || data.recentWinSources.length === 0) {
+        addSource(source);
+      }
+    }
+  }
+
+  return { wins, sources };
+}
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars - 1).trim()}…`;
+}
+
+// =============================================================================
 // Copy-to-clipboard formatters
-// Output is clean plaintext with light markdown — pastes well into Slack,
-// email, and docs.
 // =============================================================================
 
 function formatBulletList(items: string[]): string {
@@ -778,23 +1463,11 @@ function formatQuickContext(items: [string, string][]): string {
   return items.map(([key, value]) => `${key}: ${value}`).join("\n");
 }
 
-function formatRelationshipContext(signals: StakeholderSignals): string {
-  const lastMeeting = signals.lastMeeting
-    ? formatRelativeDate(signals.lastMeeting)
-    : "No meetings recorded";
-  return [
-    `Last Meeting: ${lastMeeting}`,
-    `Temperature: ${signals.temperature}`,
-    `Last 30 Days: ${signals.meetingFrequency30d} meeting${signals.meetingFrequency30d !== 1 ? "s" : ""}`,
-    `Trend: ${signals.trend}`,
-  ].join("\n");
-}
-
 function formatProposedAgenda(items: AgendaItem[]): string {
   return items
     .map((a, i) => {
-      let line = `${i + 1}. ${a.topic}`;
-      if (a.why) line += ` — ${a.why}`;
+      let line = `${i + 1}. ${cleanPrepLine(a.topic)}`;
+      if (a.why) line += ` — ${cleanPrepLine(a.why)}`;
       return line;
     })
     .join("\n");
@@ -839,28 +1512,38 @@ function formatOpenItems(items: ActionWithContext[]): string {
 function formatFullPrep(data: FullMeetingPrep): string {
   const sections: string[] = [];
 
-  // Header
   sections.push(`# ${data.title}`);
   if (data.timeRange) sections.push(data.timeRange);
 
-  if (data.quickContext && data.quickContext.length > 0) {
+  if (data.accountSnapshot && data.accountSnapshot.length > 0) {
+    sections.push(`\n## Account Snapshot\n${data.accountSnapshot.map(s => `${s.label}: ${s.value}`).join("\n")}`);
+  } else if (data.quickContext && data.quickContext.length > 0) {
     sections.push(`\n## Quick Context\n${formatQuickContext(data.quickContext)}`);
-  }
-
-  if (data.stakeholderSignals) {
-    sections.push(`\n## Relationship Context\n${formatRelationshipContext(data.stakeholderSignals)}`);
   }
 
   if (data.meetingContext) {
     sections.push(`\n## Context\n${data.meetingContext}`);
   }
 
+  if (data.calendarNotes) {
+    sections.push(`\n## Calendar Notes\n${data.calendarNotes}`);
+  }
+
   if (data.proposedAgenda && data.proposedAgenda.length > 0) {
-    sections.push(`\n## Proposed Agenda\n${data.proposedAgenda.map((a, i) => {
-      let line = `${i + 1}. ${a.topic}`;
-      if (a.why) line += ` — ${a.why}`;
-      return line;
-    }).join("\n")}`);
+    const cleanAgenda = data.proposedAgenda
+      .map((item) => ({ ...item, topic: cleanPrepLine(item.topic), why: item.why ? cleanPrepLine(item.why) : undefined }))
+      .filter((item) => item.topic.length > 0);
+    if (cleanAgenda.length > 0) {
+      sections.push(`\n## Agenda\n${formatProposedAgenda(cleanAgenda)}`);
+    }
+  }
+
+  if (data.userAgenda && data.userAgenda.length > 0) {
+    sections.push(`\n## My Agenda\n${data.userAgenda.map((a, i) => `${i + 1}. ${a}`).join("\n")}`);
+  }
+
+  if (data.userNotes) {
+    sections.push(`\n## My Notes\n${data.userNotes}`);
   }
 
   if (data.attendeeContext && data.attendeeContext.length > 0) {
@@ -885,8 +1568,9 @@ function formatFullPrep(data: FullMeetingPrep): string {
     sections.push(`\n## Risks\n${formatBulletList(data.risks)}`);
   }
 
-  if (data.talkingPoints && data.talkingPoints.length > 0) {
-    sections.push(`\n## Talking Points\n${formatNumberedList(data.talkingPoints)}`);
+  const { wins: summaryWins } = deriveRecentWins(data);
+  if (summaryWins.length > 0) {
+    sections.push(`\n## Recent Wins\n${formatNumberedList(summaryWins)}`);
   }
 
   if (data.openItems && data.openItems.length > 0) {

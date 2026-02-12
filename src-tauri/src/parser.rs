@@ -3,17 +3,16 @@ use std::path::Path;
 
 use crate::types::{
     Action, ActionStatus, ActionWithContext, AlertSeverity, DayOverview, DayStats, Email,
-    EmailDetail, EmailPriority, EmailStats, EmailSummaryData,
-    FullMeetingPrep, HygieneAlert, InboxFile, InboxFileType, Meeting, MeetingPrep,
-    MeetingType, PrepStatus, Priority, SourceReference, Stakeholder, TimeBlock, WeekActionSummary,
-    WeekDay, WeekMeeting, WeekOverview,
+    EmailDetail, EmailPriority, EmailStats, EmailSummaryData, FullMeetingPrep, HygieneAlert,
+    InboxFile, InboxFileType, Meeting, MeetingPrep, MeetingType, PrepStatus, Priority,
+    SourceReference, Stakeholder, TimeBlock, WeekActionSummary, WeekDay, WeekMeeting, WeekOverview,
 };
 
 /// Parse the overview.md file into a DayOverview struct
 /// Handles both legacy format and DailyOS format (00-overview.md)
 pub fn parse_overview(path: &Path) -> Result<DayOverview, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read overview: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read overview: {}", e))?;
 
     let mut greeting = String::from("Good morning");
     let mut date = String::new();
@@ -55,7 +54,11 @@ pub fn parse_overview(path: &Path) -> Result<DayOverview, String> {
                     let date_str = parts[1..].join(", ");
                     let date_components: Vec<&str> = date_str.split(' ').collect();
                     if date_components.len() >= 2 {
-                        date = format!("{} {}", date_components[0], date_components[1].trim_end_matches(','));
+                        date = format!(
+                            "{} {}",
+                            date_components[0],
+                            date_components[1].trim_end_matches(',')
+                        );
                     }
                 }
                 // Determine greeting based on current time
@@ -125,9 +128,11 @@ pub fn parse_overview(path: &Path) -> Result<DayOverview, String> {
                 meeting_count,
                 if meeting_count == 1 { "" } else { "s" },
                 if customer_meeting_count > 0 {
-                    format!(", including {} customer call{}",
+                    format!(
+                        ", including {} customer call{}",
                         customer_meeting_count,
-                        if customer_meeting_count == 1 { "" } else { "s" })
+                        if customer_meeting_count == 1 { "" } else { "s" }
+                    )
                 } else {
                     String::new()
                 }
@@ -207,8 +212,8 @@ fn chrono_date_fallback() -> String {
 
 /// Parse the meetings.md file into a list of Meeting structs
 pub fn parse_meetings(path: &Path) -> Result<Vec<Meeting>, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read meetings: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read meetings: {}", e))?;
 
     let mut meetings = Vec::new();
     let mut current_meeting: Option<MeetingBuilder> = None;
@@ -280,10 +285,14 @@ pub fn parse_meetings(path: &Path) -> Result<Vec<Meeting>, String> {
                     let item = line_trimmed[2..].to_string();
                     if let Some(ref section) = current_prep_section {
                         match section.as_str() {
-                            "metrics" => builder.prep.metrics.get_or_insert_with(Vec::new).push(item),
+                            "metrics" => {
+                                builder.prep.metrics.get_or_insert_with(Vec::new).push(item)
+                            }
                             "risks" => builder.prep.risks.get_or_insert_with(Vec::new).push(item),
                             "wins" => builder.prep.wins.get_or_insert_with(Vec::new).push(item),
-                            "actions" => builder.prep.actions.get_or_insert_with(Vec::new).push(item),
+                            "actions" => {
+                                builder.prep.actions.get_or_insert_with(Vec::new).push(item)
+                            }
                             _ => {}
                         }
                     }
@@ -402,8 +411,7 @@ impl MeetingPrep {
 /// Parse the actions.md file into a list of Action structs
 /// Handles both legacy format and DailyOS format (80-actions-due.md)
 pub fn parse_actions(path: &Path) -> Result<Vec<Action>, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read actions: {}", e))?;
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read actions: {}", e))?;
 
     let mut actions = Vec::new();
     let mut id_counter = 1;
@@ -419,14 +427,18 @@ pub fn parse_actions(path: &Path) -> Result<Vec<Action>, String> {
         //   - **Source**: ...
 
         // Check if this is a top-level action line
-        if line_trimmed.starts_with("- [ ]") || line_trimmed.starts_with("- [x]") || line_trimmed.starts_with("- [X]") {
+        if line_trimmed.starts_with("- [ ]")
+            || line_trimmed.starts_with("- [x]")
+            || line_trimmed.starts_with("- [X]")
+        {
             // Save previous action
             if let Some(builder) = current_action.take() {
                 actions.push(builder.build(id_counter));
                 id_counter += 1;
             }
 
-            let is_completed = line_trimmed.starts_with("- [x]") || line_trimmed.starts_with("- [X]");
+            let is_completed =
+                line_trimmed.starts_with("- [x]") || line_trimmed.starts_with("- [X]");
             let rest = line_trimmed
                 .strip_prefix("- [x] ")
                 .or_else(|| line_trimmed.strip_prefix("- [X] "))
@@ -524,7 +536,13 @@ fn parse_action_line(line: &str, is_completed: bool) -> ActionBuilder {
 
             // Parse the rest after the bold title
             let rest = &line[start + 4 + end..];
-            parse_action_metadata(rest, &mut account, &mut due_date, &mut is_overdue, &mut days_overdue);
+            parse_action_metadata(
+                rest,
+                &mut account,
+                &mut due_date,
+                &mut is_overdue,
+                &mut days_overdue,
+            );
         }
     } else {
         // Legacy format: P1: Title @Account due:2024-02-05
@@ -613,11 +631,7 @@ fn parse_action_metadata(
                 if overdue_part.contains("overdue") {
                     *is_overdue = true;
                     // Try to extract number of days
-                    if let Some(days_str) = overdue_part
-                        .trim_start_matches('(')
-                        .split(' ')
-                        .next()
-                    {
+                    if let Some(days_str) = overdue_part.trim_start_matches('(').split(' ').next() {
                         if let Ok(days) = days_str.parse::<i32>() {
                             *days_overdue = Some(days);
                         }
@@ -673,10 +687,7 @@ pub fn count_inbox(workspace: &Path) -> usize {
                 .filter_map(|e| e.ok())
                 .filter(|e| {
                     e.path().is_file()
-                        && e.path()
-                            .extension()
-                            .map(|ext| ext == "md")
-                            .unwrap_or(false)
+                        && e.path().extension().map(|ext| ext == "md").unwrap_or(false)
                 })
                 .count()
         })
@@ -703,9 +714,7 @@ fn classify_file_type(ext: &str) -> InboxFileType {
 fn is_text_previewable(file_type: &InboxFileType) -> bool {
     matches!(
         file_type,
-        InboxFileType::Markdown
-            | InboxFileType::Data
-            | InboxFileType::Text
+        InboxFileType::Markdown | InboxFileType::Data | InboxFileType::Text
     )
 }
 
@@ -780,7 +789,11 @@ fn text_preview(path: &Path, file_type: &InboxFileType) -> Option<String> {
         text.truncate(end);
         text.push_str("...");
     }
-    if text.is_empty() { None } else { Some(text) }
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /// Generate a descriptive preview for binary/non-text files.
@@ -828,10 +841,7 @@ pub fn list_inbox_files(workspace: &Path) -> Vec<InboxFile> {
             let metadata = entry.metadata().ok()?;
             let filename = entry.file_name().to_str()?.to_string();
 
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
             let file_type = classify_file_type(ext);
 
             let modified = metadata
@@ -963,7 +973,8 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                 };
 
                 // Determine priority from notes emoji
-                let priority = if notes.contains("🔴") || notes.to_lowercase().contains("customer") {
+                let priority = if notes.contains("🔴") || notes.to_lowercase().contains("customer")
+                {
                     EmailPriority::High
                 } else if notes.contains("🟡") || notes.to_lowercase().contains("review") {
                     EmailPriority::Medium
@@ -998,8 +1009,7 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
 /// - **Sender Name** <email@example.com> [high]
 ///   Subject line here
 pub fn parse_emails(path: &Path) -> Result<Vec<Email>, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read emails: {}", e))?;
+    let content = fs::read_to_string(path).map_err(|e| format!("Failed to read emails: {}", e))?;
 
     let mut emails = Vec::new();
     let mut id_counter = 1;
@@ -1130,7 +1140,11 @@ pub fn discover_meeting_preps(today_dir: &Path) -> Vec<(String, String, String)>
                             if (1..=79).contains(&num) {
                                 // Extract time (HHMM) and type
                                 let time = if parts.len() > 1 { parts[1] } else { "" };
-                                let meeting_type = if parts.len() > 2 { parts[2] } else { "internal" };
+                                let meeting_type = if parts.len() > 2 {
+                                    parts[2]
+                                } else {
+                                    "internal"
+                                };
                                 preps.push((
                                     filename.to_string(),
                                     format_time_from_hhmm(time),
@@ -1177,10 +1191,11 @@ fn format_time_from_hhmm(hhmm: &str) -> String {
 
 /// Parse a full meeting prep file (01-HHMM-type-name-prep.md)
 pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read prep file: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read prep file: {}", e))?;
 
-    let filename = path.file_name()
+    let filename = path
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown")
         .to_string();
@@ -1229,7 +1244,10 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         if line_trimmed.starts_with("**") && line_trimmed.contains("|") && time_range.is_empty() {
             if let Some(time_part) = line_trimmed.strip_prefix("**") {
                 if let Some(pipe_pos) = time_part.find('|') {
-                    time_range = time_part[..pipe_pos].trim().trim_end_matches("**").to_string();
+                    time_range = time_part[..pipe_pos]
+                        .trim()
+                        .trim_end_matches("**")
+                        .to_string();
                 }
             }
             continue;
@@ -1243,12 +1261,18 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
                 pending_context_paragraphs.clear();
             }
 
-            current_section = line_trimmed.strip_prefix("## ").unwrap_or("").to_lowercase();
+            current_section = line_trimmed
+                .strip_prefix("## ")
+                .unwrap_or("")
+                .to_lowercase();
             in_table = false;
             continue;
         }
         if line_trimmed.starts_with("### ") {
-            current_section = line_trimmed.strip_prefix("### ").unwrap_or("").to_lowercase();
+            current_section = line_trimmed
+                .strip_prefix("### ")
+                .unwrap_or("")
+                .to_lowercase();
             in_table = false;
             continue;
         }
@@ -1262,7 +1286,9 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
             }
 
             // Skip header rows
-            if line_trimmed.to_lowercase().contains("metric") && line_trimmed.to_lowercase().contains("value") {
+            if line_trimmed.to_lowercase().contains("metric")
+                && line_trimmed.to_lowercase().contains("value")
+            {
                 in_table = true;
                 continue;
             }
@@ -1281,9 +1307,17 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
             if current_section.contains("quick context") {
                 let cells: Vec<&str> = line_trimmed.split('|').map(|s| s.trim()).collect();
                 if cells.len() >= 3 {
-                    let metric = cells.get(1).unwrap_or(&"").trim_start_matches("**").trim_end_matches("**").to_string();
+                    let metric = cells
+                        .get(1)
+                        .unwrap_or(&"")
+                        .trim_start_matches("**")
+                        .trim_end_matches("**")
+                        .to_string();
                     let value = cells.get(2).unwrap_or(&"").to_string();
-                    if !metric.is_empty() && !value.is_empty() && !metric.to_lowercase().contains("metric") {
+                    if !metric.is_empty()
+                        && !value.is_empty()
+                        && !metric.to_lowercase().contains("metric")
+                    {
                         quick_context.push((metric, value));
                     }
                 }
@@ -1293,7 +1327,10 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
             if current_section.contains("attendee") || current_section.contains("key stakeholder") {
                 let cells: Vec<&str> = line_trimmed.split('|').collect();
                 if cells.len() >= 3 {
-                    let name = cells.get(1).map(|s| s.trim().trim_start_matches("**").trim_end_matches("**")).unwrap_or("");
+                    let name = cells
+                        .get(1)
+                        .map(|s| s.trim().trim_start_matches("**").trim_end_matches("**"))
+                        .unwrap_or("");
                     let role = cells.get(2).map(|s| s.trim());
                     let focus = cells.get(3).map(|s| s.trim());
 
@@ -1336,10 +1373,14 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
                 .unwrap_or(&line_trimmed[5..])
                 .to_string();
 
-            if current_section.contains("strategic program") || current_section.contains("current strategic") {
+            if current_section.contains("strategic program")
+                || current_section.contains("current strategic")
+            {
                 let status = if is_checked { "✓ " } else { "○ " };
                 strategic_programs.push(format!("{}{}", status, item_text));
-            } else if current_section.contains("open action") || current_section.contains("action item") {
+            } else if current_section.contains("open action")
+                || current_section.contains("action item")
+            {
                 open_items.push(ActionWithContext {
                     title: item_text,
                     due_date: None,
@@ -1360,11 +1401,19 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
                 since_last.push(item);
             } else if current_section.contains("risk") {
                 risks.push(item);
-            } else if current_section.contains("talking point") || current_section.contains("suggested talking") {
+            } else if current_section.contains("talking point")
+                || current_section.contains("suggested talking")
+            {
                 talking_points.push(item);
-            } else if current_section.contains("current state") || current_section.contains("product track") || current_section.contains("partnership track") {
+            } else if current_section.contains("current state")
+                || current_section.contains("product track")
+                || current_section.contains("partnership track")
+            {
                 current_state.push(item);
-            } else if current_section.contains("open item") || current_section.contains("overdue") || current_section.contains("action") {
+            } else if current_section.contains("open item")
+                || current_section.contains("overdue")
+                || current_section.contains("action")
+            {
                 let is_overdue = current_section.contains("overdue");
                 open_items.push(ActionWithContext {
                     title: item,
@@ -1379,11 +1428,19 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         }
 
         // Numbered list items: 1. 2. etc
-        if line_trimmed.len() > 2 && line_trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        if line_trimmed.len() > 2
+            && line_trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        {
             if let Some(dot_pos) = line_trimmed.find(". ") {
                 let item = line_trimmed[dot_pos + 2..].to_string();
 
-                if current_section.contains("talking point") || current_section.contains("suggested talking") {
+                if current_section.contains("talking point")
+                    || current_section.contains("suggested talking")
+                {
                     talking_points.push(item);
                 } else if current_section.contains("question") || current_section.contains("ask") {
                     questions.push(item);
@@ -1410,7 +1467,10 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         }
 
         // General context paragraph (non-table text in context sections)
-        if current_section.contains("meeting title context") && !line_trimmed.is_empty() && !in_table {
+        if current_section.contains("meeting title context")
+            && !line_trimmed.is_empty()
+            && !in_table
+        {
             pending_context_paragraphs.push(line_trimmed.to_string());
         }
     }
@@ -1426,28 +1486,78 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         title,
         time_range,
         meeting_context,
-        quick_context: if quick_context.is_empty() { None } else { Some(quick_context) },
-        attendees: if attendees.is_empty() { None } else { Some(attendees) },
-        since_last: if since_last.is_empty() { None } else { Some(since_last) },
-        strategic_programs: if strategic_programs.is_empty() { None } else { Some(strategic_programs) },
-        current_state: if current_state.is_empty() { None } else { Some(current_state) },
-        open_items: if open_items.is_empty() { None } else { Some(open_items) },
+        calendar_notes: None,
+        account_snapshot: None,
+        quick_context: if quick_context.is_empty() {
+            None
+        } else {
+            Some(quick_context)
+        },
+        user_agenda: None,
+        user_notes: None,
+        attendees: if attendees.is_empty() {
+            None
+        } else {
+            Some(attendees)
+        },
+        since_last: if since_last.is_empty() {
+            None
+        } else {
+            Some(since_last)
+        },
+        strategic_programs: if strategic_programs.is_empty() {
+            None
+        } else {
+            Some(strategic_programs)
+        },
+        current_state: if current_state.is_empty() {
+            None
+        } else {
+            Some(current_state)
+        },
+        open_items: if open_items.is_empty() {
+            None
+        } else {
+            Some(open_items)
+        },
         risks: if risks.is_empty() { None } else { Some(risks) },
-        talking_points: if talking_points.is_empty() { None } else { Some(talking_points) },
-        questions: if questions.is_empty() { None } else { Some(questions) },
-        key_principles: if key_principles.is_empty() { None } else { Some(key_principles) },
-        references: if references.is_empty() { None } else { Some(references) },
+        talking_points: if talking_points.is_empty() {
+            None
+        } else {
+            Some(talking_points)
+        },
+        recent_wins: None,
+        recent_win_sources: None,
+        questions: if questions.is_empty() {
+            None
+        } else {
+            Some(questions)
+        },
+        key_principles: if key_principles.is_empty() {
+            None
+        } else {
+            Some(key_principles)
+        },
+        references: if references.is_empty() {
+            None
+        } else {
+            Some(references)
+        },
         raw_markdown: Some(content),
         stakeholder_signals: None,
         attendee_context: None,
         proposed_agenda: None,
+        intelligence_summary: None,
+        entity_risks: None,
+        entity_readiness: None,
+        stakeholder_insights: None,
     })
 }
 
 /// Parse the 83-email-summary.md file into EmailSummaryData
 pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read email summary: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read email summary: {}", e))?;
 
     let mut high_priority: Vec<EmailDetail> = Vec::new();
     let mut medium_priority: Vec<EmailDetail> = Vec::new();
@@ -1525,7 +1635,11 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
                 sender_email: String::new(),
                 subject: String::new(),
                 received: None,
-                priority: if in_high { EmailPriority::High } else { EmailPriority::Medium },
+                priority: if in_high {
+                    EmailPriority::High
+                } else {
+                    EmailPriority::Medium
+                },
                 email_type: None,
                 summary: None,
                 conversation_arc: None,
@@ -1542,7 +1656,11 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
                 let cells: Vec<&str> = line_trimmed.split('|').map(|s| s.trim()).collect();
                 if cells.len() >= 3 {
                     let field = cells.get(1).unwrap_or(&"");
-                    let value = cells.get(2).unwrap_or(&"").trim_start_matches("**").trim_end_matches("**");
+                    let value = cells
+                        .get(2)
+                        .unwrap_or(&"")
+                        .trim_start_matches("**")
+                        .trim_end_matches("**");
 
                     match field.to_lowercase().as_str() {
                         "from" | "**from**" => {
@@ -1570,27 +1688,90 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
             }
 
             // Summary, conversation arc, action
-            if line_trimmed.starts_with("**Summary:**") || line_trimmed.starts_with("**Summary**:") {
-                builder.summary = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
-            } else if line_trimmed.starts_with("**Conversation Arc:**") || line_trimmed.starts_with("**Conversation Arc**:") {
-                builder.conversation_arc = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
-            } else if line_trimmed.starts_with("**Action for") || line_trimmed.starts_with("**Specific Ask") {
-                builder.recommended_action = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
-            } else if line_trimmed.starts_with("**Recommended Action:**") || line_trimmed.starts_with("**Recommended Action**:") {
-                builder.recommended_action = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
-            } else if line_trimmed.starts_with("**Owner:**") || line_trimmed.starts_with("**Owner**:") {
-                builder.action_owner = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
-            } else if line_trimmed.starts_with("**Priority:**") || line_trimmed.starts_with("**Priority**:") {
-                builder.action_priority = Some(line_trimmed.split(':').skip(1).collect::<Vec<_>>().join(":").trim().to_string());
+            if line_trimmed.starts_with("**Summary:**") || line_trimmed.starts_with("**Summary**:")
+            {
+                builder.summary = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
+            } else if line_trimmed.starts_with("**Conversation Arc:**")
+                || line_trimmed.starts_with("**Conversation Arc**:")
+            {
+                builder.conversation_arc = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
+            } else if line_trimmed.starts_with("**Action for")
+                || line_trimmed.starts_with("**Specific Ask")
+            {
+                builder.recommended_action = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
+            } else if line_trimmed.starts_with("**Recommended Action:**")
+                || line_trimmed.starts_with("**Recommended Action**:")
+            {
+                builder.recommended_action = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
+            } else if line_trimmed.starts_with("**Owner:**")
+                || line_trimmed.starts_with("**Owner**:")
+            {
+                builder.action_owner = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
+            } else if line_trimmed.starts_with("**Priority:**")
+                || line_trimmed.starts_with("**Priority**:")
+            {
+                builder.action_priority = Some(
+                    line_trimmed
+                        .split(':')
+                        .skip(1)
+                        .collect::<Vec<_>>()
+                        .join(":")
+                        .trim()
+                        .to_string(),
+                );
             }
         }
 
         // Parse stats from summary section
-        if line_trimmed.starts_with("**High Priority**:") || line_trimmed.starts_with("| **HIGH Priority**") {
+        if line_trimmed.starts_with("**High Priority**:")
+            || line_trimmed.starts_with("| **HIGH Priority**")
+        {
             if let Some(count) = extract_count_from_line(line_trimmed) {
                 stats.high_count = count;
             }
-        } else if line_trimmed.starts_with("**Medium**:") || line_trimmed.starts_with("| **Medium**") {
+        } else if line_trimmed.starts_with("**Medium**:")
+            || line_trimmed.starts_with("| **Medium**")
+        {
             if let Some(count) = extract_count_from_line(line_trimmed) {
                 stats.medium_count = count;
             }
@@ -1617,7 +1798,11 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
 
     Ok(EmailSummaryData {
         high_priority,
-        medium_priority: if medium_priority.is_empty() { None } else { Some(medium_priority) },
+        medium_priority: if medium_priority.is_empty() {
+            None
+        } else {
+            Some(medium_priority)
+        },
         stats,
     })
 }
@@ -1668,8 +1853,8 @@ impl EmailDetailBuilder {
 
 /// Parse the week-00-overview.md file into WeekOverview
 pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read week overview: {}", e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read week overview: {}", e))?;
 
     let mut week_number = String::new();
     let mut date_range = String::new();
@@ -1708,14 +1893,21 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
 
         // Section headers
         if line_trimmed.starts_with("## ") {
-            current_section = line_trimmed.strip_prefix("## ").unwrap_or("").to_lowercase();
+            current_section = line_trimmed
+                .strip_prefix("## ")
+                .unwrap_or("")
+                .to_lowercase();
             in_meetings_table = current_section.contains("meeting");
             in_hygiene_table = current_section.contains("hygiene");
-            in_time_table = current_section.contains("available time") || current_section.contains("time block");
+            in_time_table = current_section.contains("available time")
+                || current_section.contains("time block");
             continue;
         }
         if line_trimmed.starts_with("### ") {
-            let subsection = line_trimmed.strip_prefix("### ").unwrap_or("").to_lowercase();
+            let subsection = line_trimmed
+                .strip_prefix("### ")
+                .unwrap_or("")
+                .to_lowercase();
             if subsection.contains("overdue") {
                 // Try to extract count: "### Overdue (18)"
                 if let Some(count) = extract_count_from_line(line_trimmed) {
@@ -1788,9 +1980,16 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
         // Focus areas (list)
         if current_section.contains("priorit") || current_section.contains("focus") {
             if line_trimmed.starts_with("1.") || line_trimmed.starts_with("- ") {
-                let item = line_trimmed.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-' || c == ' ');
+                let item = line_trimmed.trim_start_matches(|c: char| {
+                    c.is_ascii_digit() || c == '.' || c == '-' || c == ' '
+                });
                 if let Some(colon) = item.find(':') {
-                    focus_areas.push(item[..colon].trim_start_matches("**").trim_end_matches("**").to_string());
+                    focus_areas.push(
+                        item[..colon]
+                            .trim_start_matches("**")
+                            .trim_end_matches("**")
+                            .to_string(),
+                    );
                 } else {
                     focus_areas.push(item.to_string());
                 }
@@ -1814,9 +2013,21 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
         date_range,
         days,
         action_summary,
-        hygiene_alerts: if hygiene_alerts.is_empty() { None } else { Some(hygiene_alerts) },
-        focus_areas: if focus_areas.is_empty() { None } else { Some(focus_areas) },
-        available_time_blocks: if available_time_blocks.is_empty() { None } else { Some(available_time_blocks) },
+        hygiene_alerts: if hygiene_alerts.is_empty() {
+            None
+        } else {
+            Some(hygiene_alerts)
+        },
+        focus_areas: if focus_areas.is_empty() {
+            None
+        } else {
+            Some(focus_areas)
+        },
+        available_time_blocks: if available_time_blocks.is_empty() {
+            None
+        } else {
+            Some(available_time_blocks)
+        },
         week_narrative: None,
         top_priority: None,
         readiness_checks: None,
@@ -1840,7 +2051,9 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
     // Determine meeting type from lifecycle or explicit type
     let meeting_type = if let Some(ref t) = ring_or_type {
         match t.to_lowercase().as_str() {
-            "customer" | "summit" | "foundation" | "evolution" | "influence" => MeetingType::Customer,
+            "customer" | "summit" | "foundation" | "evolution" | "influence" => {
+                MeetingType::Customer
+            }
             "qbr" => MeetingType::Qbr,
             "training" => MeetingType::Training,
             "internal" => MeetingType::Internal,
@@ -1859,13 +2072,16 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
     // Parse prep status
     let prep_status = parse_prep_status(prep_status_str.as_deref().unwrap_or(""));
 
-    Some((day, WeekMeeting {
-        time,
-        title: account_or_title.clone(),
-        account: Some(account_or_title),
-        meeting_type,
-        prep_status,
-    }))
+    Some((
+        day,
+        WeekMeeting {
+            time,
+            title: account_or_title.clone(),
+            account: Some(account_or_title),
+            meeting_type,
+            prep_status,
+        },
+    ))
 }
 
 /// Parse prep status from status string
@@ -1903,11 +2119,12 @@ fn parse_hygiene_alert_row(line: &str) -> Option<HygieneAlert> {
     let issue = cells.get(4).map(|s| s.to_string()).unwrap_or_default();
 
     // Determine severity from section header or issue content
-    let severity = if issue.to_lowercase().contains("missing") || issue.to_lowercase().contains("no ") {
-        AlertSeverity::Critical
-    } else {
-        AlertSeverity::Warning
-    };
+    let severity =
+        if issue.to_lowercase().contains("missing") || issue.to_lowercase().contains("no ") {
+            AlertSeverity::Critical
+        } else {
+            AlertSeverity::Warning
+        };
 
     Some(HygieneAlert {
         account,
@@ -1955,8 +2172,8 @@ pub fn parse_meetings_from_overview(
     overview_path: &Path,
     today_dir: &Path,
 ) -> Result<Vec<Meeting>, String> {
-    let content = fs::read_to_string(overview_path)
-        .map_err(|e| format!("Failed to read overview: {}", e))?;
+    let content =
+        fs::read_to_string(overview_path).map_err(|e| format!("Failed to read overview: {}", e))?;
 
     let mut meetings = Vec::new();
     let mut id_counter = 1;
@@ -2046,7 +2263,9 @@ fn extract_prep_summary(full_prep: &FullMeetingPrep) -> MeetingPrep {
     // 1. Quick context metrics (customer meetings)
     // 2. Current state items (internal meetings)
     // 3. Since last updates
-    let metrics: Option<Vec<String>> = full_prep.quick_context.as_ref()
+    let metrics: Option<Vec<String>> = full_prep
+        .quick_context
+        .as_ref()
         .map(|qc| qc.iter().map(|(k, v)| format!("{}: {}", k, v)).collect())
         .or_else(|| full_prep.since_last.clone())
         .or_else(|| full_prep.current_state.clone());
@@ -2055,9 +2274,12 @@ fn extract_prep_summary(full_prep: &FullMeetingPrep) -> MeetingPrep {
     let risks = full_prep.risks.clone();
 
     // Build "Wins" from completed strategic programs or explicit wins
-    let wins: Option<Vec<String>> = full_prep.strategic_programs.as_ref()
+    let wins: Option<Vec<String>> = full_prep
+        .strategic_programs
+        .as_ref()
         .map(|programs| {
-            programs.iter()
+            programs
+                .iter()
                 .filter(|s| s.starts_with("✓"))
                 .map(|s| s.trim_start_matches("✓ ").to_string())
                 .collect()
@@ -2065,11 +2287,16 @@ fn extract_prep_summary(full_prep: &FullMeetingPrep) -> MeetingPrep {
         .filter(|v: &Vec<String>| !v.is_empty());
 
     // Build "Discuss" from talking points, questions, or open items (whatever's available)
-    let actions: Option<Vec<String>> = full_prep.talking_points.clone()
+    let actions: Option<Vec<String>> = full_prep
+        .talking_points
+        .clone()
         .or_else(|| full_prep.questions.clone())
-        .or_else(|| full_prep.open_items.as_ref().map(|items| {
-            items.iter().map(|i| i.title.clone()).collect()
-        }));
+        .or_else(|| {
+            full_prep
+                .open_items
+                .as_ref()
+                .map(|items| items.iter().map(|i| i.title.clone()).collect())
+        });
 
     // Build context - prefer meeting_context, fall back to formatted quick_context
     let context: Option<String> = full_prep.meeting_context.clone().or_else(|| {
@@ -2093,9 +2320,10 @@ fn extract_prep_summary(full_prep: &FullMeetingPrep) -> MeetingPrep {
     let stakeholders = full_prep.attendees.clone();
 
     // Extract open items as strings
-    let open_items: Option<Vec<String>> = full_prep.open_items.as_ref().map(|items| {
-        items.iter().map(|i| i.title.clone()).collect()
-    });
+    let open_items: Option<Vec<String>> = full_prep
+        .open_items
+        .as_ref()
+        .map(|items| items.iter().map(|i| i.title.clone()).collect());
 
     // Extract source references
     let source_references = full_prep.references.clone();
@@ -2149,10 +2377,7 @@ fn time_matches(display_time: &str, parsed_time: &str) -> bool {
     }
 
     // Close match (within 30 minutes)
-    if let (Ok(h1), Ok(h2)) = (
-        hhmm.parse::<i32>(),
-        parsed_hhmm.parse::<i32>(),
-    ) {
+    if let (Ok(h1), Ok(h2)) = (hhmm.parse::<i32>(), parsed_hhmm.parse::<i32>()) {
         let diff = (h1 - h2).abs();
         return diff <= 30 || diff >= 2330; // Handle midnight wrap
     }

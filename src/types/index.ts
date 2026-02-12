@@ -513,8 +513,12 @@ export interface FullMeetingPrep {
   title: string;
   timeRange: string;
   meetingContext?: string;
-  /** Quick Context metrics (key-value pairs like Ring, ARR, Health) */
+  /** Calendar event description from Google Calendar (I185) */
+  calendarNotes?: string;
+  /** Quick Context metrics (key-value pairs like Ring, ARR, Health) — legacy */
   quickContext?: [string, string][];
+  /** Intelligence-enriched account snapshot (I186) */
+  accountSnapshot?: AccountSnapshotItem[];
   attendees?: Stakeholder[];
   /** Since Last Meeting section items */
   sinceLast?: string[];
@@ -526,6 +530,10 @@ export interface FullMeetingPrep {
   risks?: string[];
   /** Suggested Talking Points */
   talkingPoints?: string[];
+  /** Canonical recent wins for meeting prep (I196) */
+  recentWins?: string[];
+  /** Structured provenance for recent wins (I196) */
+  recentWinSources?: SourceReference[];
   questions?: string[];
   keyPrinciples?: string[];
   references?: SourceReference[];
@@ -535,6 +543,26 @@ export interface FullMeetingPrep {
   attendeeContext?: AttendeeContext[];
   /** Proposed agenda synthesized from prep data (I80) */
   proposedAgenda?: AgendaItem[];
+  /** User-authored agenda items (I194 / ADR-0065) */
+  userAgenda?: string[];
+  /** User-authored notes (I194 / ADR-0065) */
+  userNotes?: string;
+  /** Intelligence summary — executive assessment from intelligence.json (I135) */
+  intelligenceSummary?: string;
+  /** Entity-level risks from intelligence.json (I135) */
+  entityRisks?: IntelRisk[];
+  /** Entity meeting readiness items from intelligence.json (I135) */
+  entityReadiness?: string[];
+  /** Stakeholder insights from intelligence.json (I135) */
+  stakeholderInsights?: StakeholderInsight[];
+}
+
+/** Account snapshot item for intelligence-enriched Quick Context (I186) */
+export interface AccountSnapshotItem {
+  label: string;
+  value: string;
+  type: "status" | "currency" | "text" | "date" | "intelligence" | "risk" | "win";
+  urgency?: string;
 }
 
 /** Relationship context signals computed from meeting history and account data (I43) */
@@ -661,6 +689,15 @@ export interface MeetingSummary {
   meetingType: string;
 }
 
+/** Richer meeting summary with optional prep context (ADR-0063). */
+export interface MeetingPreview {
+  id: string;
+  title: string;
+  startTime: string;
+  meetingType: string;
+  prepContext?: PrepContext;
+}
+
 /** Aggregated signals for parent account's children (I114). */
 export interface ParentAggregate {
   buCount: number;
@@ -685,7 +722,8 @@ export interface AccountDetail extends AccountListItem {
   strategicPrograms: StrategicProgram[];
   notes?: string;
   upcomingMeetings: MeetingSummary[];
-  recentMeetings: MeetingSummary[];
+  /** ADR-0063: richer type with optional prep context for preview cards. */
+  recentMeetings: MeetingPreview[];
   openActions: Action[];
   linkedPeople: Person[];
   signals?: {
@@ -943,6 +981,8 @@ export interface PrepContext {
   entityRisks?: Array<{ text: string; urgency?: string; source?: string }>;
   entityReadiness?: string[];
   talkingPoints?: string[];
+  recentWins?: string[];
+  recentWinSources?: SourceReference[];
   proposedAgenda?: Array<{ topic: string; why?: string; source?: string }>;
   openItems?: Array<{ title: string; dueDate?: string; isOverdue?: boolean }>;
   questions?: string[];
