@@ -533,7 +533,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .read()
         .ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-        .unwrap_or_else(|| crate::types::UserContext {
+        .unwrap_or(crate::types::UserContext {
             name: None,
             company: None,
             title: None,
@@ -628,7 +628,7 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
         .read()
         .ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-        .unwrap_or_else(|| crate::types::UserContext {
+        .unwrap_or(crate::types::UserContext {
             name: None,
             company: None,
             title: None,

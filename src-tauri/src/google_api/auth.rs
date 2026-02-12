@@ -12,7 +12,10 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use super::{load_credentials, save_token, GoogleApiError, GoogleToken, SCOPES};
+use super::{
+    load_credentials, save_token, send_with_retry, GoogleApiError, GoogleToken, RetryPolicy,
+    SCOPES,
+};
 
 /// Run the full OAuth2 consent flow.
 ///
@@ -33,10 +36,10 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     let oauth_state = generate_state();
 
     // Bind to a random port
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| GoogleApiError::Io(e))?;
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(GoogleApiError::Io)?;
     let port = listener
         .local_addr()
-        .map_err(|e| GoogleApiError::Io(e))?
+        .map_err(GoogleApiError::Io)?
         .port();
     let redirect_uri = format!("http://localhost:{}", port);
 
@@ -59,7 +62,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     // Wait for the redirect with a timeout
     listener
         .set_nonblocking(false)
-        .map_err(|e| GoogleApiError::Io(e))?;
+        .map_err(GoogleApiError::Io)?;
 
     let callback = wait_for_auth_callback(&listener)?;
     if callback.state.as_deref() != Some(oauth_state.as_str()) {
@@ -136,12 +139,12 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
 /// Wait for the OAuth redirect and extract the auth code from the URL.
 fn wait_for_auth_callback(listener: &TcpListener) -> Result<AuthCallback, GoogleApiError> {
-    let (mut stream, _) = listener.accept().map_err(|e| GoogleApiError::Io(e))?;
+    let (mut stream, _) = listener.accept().map_err(GoogleApiError::Io)?;
 
     let mut buffer = [0u8; 4096];
     let n = stream
         .read(&mut buffer)
-        .map_err(|e| GoogleApiError::Io(e))?;
+        .map_err(GoogleApiError::Io)?;
     let request = String::from_utf8_lossy(&buffer[..n]);
 
     let query = request
@@ -204,11 +207,13 @@ async fn fetch_user_email(access_token: &str) -> String {
     let client = reqwest::Client::new();
 
     // Try Gmail users.getProfile first
-    match client
-        .get("https://gmail.googleapis.com/gmail/v1/users/me/profile")
-        .bearer_auth(access_token)
-        .send()
-        .await
+    match send_with_retry(
+        client
+            .get("https://gmail.googleapis.com/gmail/v1/users/me/profile")
+            .bearer_auth(access_token),
+        &RetryPolicy::default(),
+    )
+    .await
     {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
@@ -221,11 +226,13 @@ async fn fetch_user_email(access_token: &str) -> String {
     }
 
     // Fallback: OAuth2 userinfo endpoint
-    match client
-        .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .bearer_auth(access_token)
-        .send()
-        .await
+    match send_with_retry(
+        client
+            .get("https://www.googleapis.com/oauth2/v2/userinfo")
+            .bearer_auth(access_token),
+        &RetryPolicy::default(),
+    )
+    .await
     {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
@@ -309,7 +316,11 @@ async fn exchange_auth_code(
         }
     }
 
-    let response = client.post(&installed.token_uri).form(&form).send().await?;
+    let response = send_with_retry(
+        client.post(&installed.token_uri).form(&form),
+        &RetryPolicy::default(),
+    )
+    .await?;
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     Ok((status, body))

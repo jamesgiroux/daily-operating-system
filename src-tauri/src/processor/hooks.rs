@@ -36,13 +36,13 @@ pub struct HookResult {
 
 /// Run all post-enrichment hooks. Error-isolated: one failure doesn't block others.
 pub fn run_post_enrichment_hooks(ctx: &EnrichmentContext, db: &ActionDb) -> Vec<HookResult> {
-    let mut results = Vec::new();
-    results.push(sync_actions_to_sqlite(ctx, db));
-    results.push(sync_completion_to_markdown(ctx, db));
     // Entity intelligence: write wins/risks as captures, touch last-contact (ADR-0045).
     // Core behavior — runs for all profiles, not just CS.
-    results.push(entity_intelligence(ctx, db));
-    results
+    vec![
+        sync_actions_to_sqlite(ctx, db),
+        sync_completion_to_markdown(ctx, db),
+        entity_intelligence(ctx, db),
+    ]
 }
 
 /// Sync extracted actions to the SQLite database.

@@ -234,9 +234,9 @@ impl Scheduler {
         let last_run = self.state.get_last_scheduled_run(workflow);
 
         // Look for scheduled times in the grace period
-        let mut iter = schedule.after(&grace_start);
+        let iter = schedule.after(&grace_start);
 
-        while let Some(scheduled) = iter.next() {
+        for scheduled in iter {
             let scheduled_utc = scheduled.with_timezone(&Utc);
 
             // Stop if we've passed now
