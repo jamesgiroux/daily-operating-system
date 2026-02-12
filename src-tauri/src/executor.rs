@@ -189,13 +189,11 @@ impl Executor {
         log::info!("Running archive workflow with reconciliation");
 
         // Step 1: Reconcile BEFORE archive (schedule.json gets cleaned)
-        // Lock DB briefly for reconciliation, then drop before the await
+        // Own DB connection to avoid starving foreground IPC commands
         let recon = {
-            let db_guard = self.state.db.lock().ok();
-            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-            let r = reconcile::run_reconciliation(workspace, db_ref);
-            // db_guard dropped here
-            r
+            let own_db = crate::db::ActionDb::open().ok();
+            let db_ref = own_db.as_ref();
+            reconcile::run_reconciliation(workspace, db_ref)
         };
 
         log::info!(
@@ -219,33 +217,31 @@ impl Executor {
                 .unwrap_or(false);
 
             if impact_enabled {
-                if let Ok(db_guard) = self.state.db.lock() {
-                    if let Some(db) = db_guard.as_ref() {
-                        match crate::workflow::impact_rollup::rollup_daily_impact(
-                            workspace,
-                            db,
-                            &recon.date,
-                        ) {
-                            Ok(r)
-                                if !r.skipped
-                                    && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) =>
-                            {
-                                log::info!(
-                                    "Impact rollup: {} wins, {} risks → {}",
-                                    r.wins_rolled_up,
-                                    r.risks_rolled_up,
-                                    r.file_path,
-                                );
-                            }
-                            Ok(r) if r.skipped => {
-                                log::info!("Impact rollup: skipped (already rolled up today)");
-                            }
-                            Ok(_) => {
-                                log::info!("Impact rollup: no captures to roll up");
-                            }
-                            Err(e) => {
-                                log::warn!("Impact rollup failed (non-fatal): {}", e);
-                            }
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    match crate::workflow::impact_rollup::rollup_daily_impact(
+                        workspace,
+                        &db,
+                        &recon.date,
+                    ) {
+                        Ok(r)
+                            if !r.skipped
+                                && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) =>
+                        {
+                            log::info!(
+                                "Impact rollup: {} wins, {} risks → {}",
+                                r.wins_rolled_up,
+                                r.risks_rolled_up,
+                                r.file_path,
+                            );
+                        }
+                        Ok(r) if r.skipped => {
+                            log::info!("Impact rollup: skipped (already rolled up today)");
+                        }
+                        Ok(_) => {
+                            log::info!("Impact rollup: no captures to roll up");
+                        }
+                        Err(e) => {
+                            log::warn!("Impact rollup failed (non-fatal): {}", e);
                         }
                     }
                 }
@@ -284,11 +280,9 @@ impl Executor {
             log::warn!("Failed to write morning flags: {}", e);
         }
 
-        // Re-lock DB briefly to persist meetings
-        if let Ok(db_guard) = self.state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                reconcile::persist_meetings(db, &recon, &workspace);
-            }
+        // Own DB connection to persist meetings
+        if let Ok(db) = crate::db::ActionDb::open() {
+            reconcile::persist_meetings(&db, &recon, &workspace);
         }
 
         // Update execution record
@@ -359,8 +353,8 @@ impl Executor {
 
         // Step 1: Quick-classify all inbox files
         let results = {
-            let db_guard = self.state.db.lock().ok();
-            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+            let own_db = crate::db::ActionDb::open().ok();
+            let db_ref = own_db.as_ref();
             crate::processor::process_all(workspace, db_ref, &profile)
         };
 
@@ -618,18 +612,17 @@ impl Executor {
             .map_err(|e| ExecutionError::ParseError(format!("Failed to load directive: {}", e)))?;
 
         // Deliver schedule + actions (with DB for entity ID resolution + dedup).
-        // Keep lock scope minimal to avoid starving UI reads.
+        // Own DB connection to avoid starving foreground IPC commands.
+        let own_db = crate::db::ActionDb::open().ok();
         let schedule_data = {
-            let db_guard = self.state.db.lock().ok();
-            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+            let db_ref = own_db.as_ref();
             crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
         };
         let _ = self.app_handle.emit("operation-delivered", "schedule");
         log::info!("Today pipeline: schedule delivered");
         let actions_data = {
-            let db_guard = self.state.db.lock().ok();
-            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+            let db_ref = own_db.as_ref();
             crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
         };
@@ -637,14 +630,10 @@ impl Executor {
         log::info!("Today pipeline: actions delivered");
 
         // Sync actions to SQLite (same as old post-processing)
-        {
-            let db_guard = self.state.db.lock().ok();
-            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-            if let Some(db) = db_ref {
-                match crate::workflow::today::sync_actions_to_db(workspace, db) {
-                    Ok(count) => log::info!("Today pipeline: synced {} actions to DB", count),
-                    Err(e) => log::warn!("Today pipeline: action sync failed (non-fatal): {}", e),
-                }
+        if let Some(ref db) = own_db {
+            match crate::workflow::today::sync_actions_to_db(workspace, db) {
+                Ok(count) => log::info!("Today pipeline: synced {} actions to DB", count),
+                Err(e) => log::warn!("Today pipeline: action sync failed (non-fatal): {}", e),
             }
         }
 
