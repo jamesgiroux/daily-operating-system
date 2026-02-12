@@ -12,7 +12,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| **I177** | Email sync silently fails post-model-tiering | Blocker | Data |
 | **I158** | OAuth PKCE + Keychain storage | Blocker | Security |
 | **I178** | Focus page available time is incorrect | P0 | UX |
 | **I179** | Focus page action prioritization intelligence | P0 | UX |
@@ -22,6 +21,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I152** | Error handling (eliminate panics) | P0 | Infra |
 | **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P1 | Meetings |
 | **I153** | Binary size + startup perf | P1 | Infra |
+| **I197** | Resume responsiveness hardening (startup + auth checks) | P1 | Infra |
 | **I154** | Frontend bundle audit | P1 | Infra |
 | **I155** | Rate limiting + retry hardening | P1 | Infra |
 | **I157** | Frontend component audit (radix-ui) | P1 | UX |
@@ -52,9 +52,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 ## Ship Blockers
 
-**I177: Email sync silently fails post-model-tiering — CRITICAL BUG**
-Daily Briefing now emits enrichment warning events, but mechanical delivery failures still fall back to empty payloads and need a fully-visible user path. Remaining work: (1) unify `email-error` + `email-enrichment-warning` handling in frontend to always show failure state, (2) confirm model-tier fallback behavior when extraction model is unavailable, (3) verify low-friction recovery action from UI.
-
 **I158: OAuth PKCE + credential hardening**
 Three layers: (1) PKCE flow (RFC 7636) — eliminates `client_secret` from source. (2) macOS Keychain for token storage — move from plaintext `~/.dailyos/google/token.json`. (3) Rotate current credentials after PKCE ships.
 
@@ -79,6 +76,7 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 | P0 | I151 | Input validation (Tauri IPC boundary) | Open |
 | P0 | I152 | Error handling (eliminate panics) | Open |
 | P1 | I153 | Binary size + startup perf | Open |
+| P1 | I197 | Resume responsiveness hardening (startup + auth checks) | Partial |
 | P1 | I154 | Frontend bundle audit | Open |
 | P1 | I155 | Rate limiting + retry hardening | Open |
 | P1 | I157 | Frontend component audit (radix-ui) | Open |
@@ -91,7 +89,7 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 
 | Priority | Issue | Scope | Depends On | Status |
 |----------|-------|-------|------------|--------|
-| Blocker | I177 | Email sync fix — surface failures, fallback to mechanical | — | Partial |
+| Blocker | I177 | Email sync fix — surface failures, fallback to mechanical | — | Closed |
 | Blocker | I173 | Enrichment responsiveness — split-lock pattern + nice | — | Closed |
 | P0 | I185 | Calendar description pipeline — schema + plumb through 5 stages | — | Closed |
 | P0 | I186 | Account Snapshot enrichment — intelligence signals in prep | — | Closed |
@@ -100,8 +98,8 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 
 **Rationale:** Phases 1-2 of ADR-0064 and Phase 1 of ADR-0066 are pure plumbing — mechanical schema changes, data flow fixes, and route migration. No AI prompt redesign, no layout overhaul. They unblock Sprint 15 (the visual redesign + agenda-anchored enrichment). The two blockers (I177, I173) ship alongside because they affect daily usability. I159 extends prep coverage to internal meetings while we're already in the prep pipeline.
 
-**Closed in Sprint 14:** I173, I185, I186, I190, I159.  
-**Carryover to Sprint 15:** I177 (partial), I188 (partial).
+**Closed in Sprint 14:** I177, I173, I185, I186, I190, I159.  
+**Carryover to Sprint 15:** I188 (partial).
 
 ---
 
@@ -159,6 +157,20 @@ Structured Account Plan (exec summary, 90-day focus, risk table, products/adopti
 
 **I143: Renewal lifecycle tracking**
 (a) Auto-rollover when renewal passes without churn. (b) Lifecycle event markers (churn, expansion, renewal) in `account_events` table. (c) UI for recording events on AccountDetailPage.
+
+### Infra & Runtime
+
+**I197: Resume responsiveness hardening (startup + auth checks)**
+Goal: eliminate avoidable UI stalls after focus return and on cold startup.
+
+Phase 1 completed (2026-02-12):
+- moved startup sync/indexing off `AppState::new()` onto a background task
+- bounded Claude auth check with timeout + forced process cleanup
+- applied lock-scope reductions and non-blocking reads in dashboard/focus paths
+
+Remaining completion criteria:
+- expand latency instrumentation beyond `get_dashboard_data` and surface p95 rollups
+- define/consolidate DB concurrency strategy beyond global mutex (split-lock enforcement + queue/pool decision)
 
 ### UX & Polish
 
