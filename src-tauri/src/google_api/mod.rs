@@ -16,6 +16,7 @@ pub mod classify;
 pub mod gmail;
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -112,6 +113,117 @@ pub enum GoogleApiError {
     FlowCancelled,
     #[error("Invalid credentials format: {0}")]
     InvalidCredentials(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct RetryPolicy {
+    pub max_attempts: u32,
+    pub initial_backoff_ms: u64,
+    pub max_backoff_ms: u64,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_backoff_ms: 250,
+            max_backoff_ms: 2_000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryDecision {
+    Retryable,
+    NonRetryable,
+}
+
+fn retry_decision_for_status(status: reqwest::StatusCode) -> RetryDecision {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status.is_server_error()
+    {
+        RetryDecision::Retryable
+    } else {
+        RetryDecision::NonRetryable
+    }
+}
+
+fn retry_delay(
+    attempt: u32,
+    policy: &RetryPolicy,
+    retry_after: Option<&reqwest::header::HeaderValue>,
+) -> Duration {
+    if let Some(value) = retry_after.and_then(|v| v.to_str().ok()) {
+        if let Ok(secs) = value.parse::<u64>() {
+            return Duration::from_secs(secs.min(30));
+        }
+    }
+
+    let exponent = 2u64.saturating_pow(attempt.saturating_sub(1));
+    let base = policy
+        .initial_backoff_ms
+        .saturating_mul(exponent)
+        .min(policy.max_backoff_ms);
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0))
+        % 150;
+    Duration::from_millis(base.saturating_add(jitter))
+}
+
+pub async fn send_with_retry(
+    request: reqwest::RequestBuilder,
+    policy: &RetryPolicy,
+) -> Result<reqwest::Response, GoogleApiError> {
+    let attempts = policy.max_attempts.max(1);
+    for attempt in 1..=attempts {
+        let Some(cloned) = request.try_clone() else {
+            return request.send().await.map_err(GoogleApiError::Http);
+        };
+
+        match cloned.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let decision = retry_decision_for_status(status);
+                if decision == RetryDecision::Retryable && attempt < attempts {
+                    let delay =
+                        retry_delay(attempt, policy, response.headers().get(reqwest::header::RETRY_AFTER));
+                    log::warn!(
+                        "google_api retry {}/{} after status {} (sleep {:?})",
+                        attempt,
+                        attempts,
+                        status,
+                        delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                return Ok(response);
+            }
+            Err(err) => {
+                let retryable_transport = err.is_timeout() || err.is_connect();
+                if retryable_transport && attempt < attempts {
+                    let delay = retry_delay(attempt, policy, None);
+                    log::warn!(
+                        "google_api retry {}/{} after transport error: {} (sleep {:?})",
+                        attempt,
+                        attempts,
+                        err,
+                        delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                return Err(GoogleApiError::Http(err));
+            }
+        }
+    }
+
+    Err(GoogleApiError::RefreshFailed(
+        "request exhausted retries".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -270,16 +382,16 @@ pub async fn refresh_access_token(token: &GoogleToken) -> Result<GoogleToken, Go
         .ok_or(GoogleApiError::AuthExpired)?;
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post(&token.token_uri)
-        .form(&[
+    let resp = send_with_retry(
+        client.post(&token.token_uri).form(&[
             ("client_id", token.client_id.as_str()),
             ("client_secret", token.client_secret.as_str()),
             ("refresh_token", refresh_token.as_str()),
             ("grant_type", "refresh_token"),
-        ])
-        .send()
-        .await?;
+        ]),
+        &RetryPolicy::default(),
+    )
+    .await?;
 
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
