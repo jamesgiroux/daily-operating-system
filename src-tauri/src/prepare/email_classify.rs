@@ -427,10 +427,7 @@ mod tests {
 
     #[test]
     fn test_display_name_email_in_name() {
-        assert_eq!(
-            extract_display_name("jane@co.com <jane@co.com>"),
-            None
-        );
+        assert_eq!(extract_display_name("jane@co.com <jane@co.com>"), None);
     }
 
     #[test]

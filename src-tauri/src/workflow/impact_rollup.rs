@@ -76,8 +76,7 @@ pub fn rollup_daily_impact(
         .map_err(|e| format!("Failed to create impact directory: {}", e))?;
 
     let existing_content = if file_path.exists() {
-        fs::read_to_string(&file_path)
-            .map_err(|e| format!("Failed to read impact file: {}", e))?
+        fs::read_to_string(&file_path).map_err(|e| format!("Failed to read impact file: {}", e))?
     } else {
         create_template(year, week)
     };
@@ -98,8 +97,15 @@ pub fn rollup_daily_impact(
     let risk_entries = format_entries(&risks);
 
     // 6. Insert entries into the correct sections
-    let updated = insert_into_section(&existing_content, "## Customer Outcomes", &day_header, &win_entries)
-        .and_then(|content| insert_into_section(&content, "## Risk Management", &day_header, &risk_entries));
+    let updated = insert_into_section(
+        &existing_content,
+        "## Customer Outcomes",
+        &day_header,
+        &win_entries,
+    )
+    .and_then(|content| {
+        insert_into_section(&content, "## Risk Management", &day_header, &risk_entries)
+    });
 
     let final_content = match updated {
         Some(content) => content,
@@ -107,10 +113,16 @@ pub fn rollup_daily_impact(
             // Fallback: append to end if sections not found
             let mut content = existing_content;
             if !win_entries.is_empty() {
-                content.push_str(&format!("\n## Customer Outcomes\n\n{}\n{}\n", day_header, win_entries));
+                content.push_str(&format!(
+                    "\n## Customer Outcomes\n\n{}\n{}\n",
+                    day_header, win_entries
+                ));
             }
             if !risk_entries.is_empty() {
-                content.push_str(&format!("\n## Risk Management\n\n{}\n{}\n", day_header, risk_entries));
+                content.push_str(&format!(
+                    "\n## Risk Management\n\n{}\n{}\n",
+                    day_header, risk_entries
+                ));
             }
             content
         }
@@ -144,17 +156,17 @@ fn format_entries(captures: &[&DbCapture]) -> String {
     // Group by label (account_id or meeting_title fallback)
     let mut grouped: BTreeMap<String, Vec<&DbCapture>> = BTreeMap::new();
     for cap in captures {
-        let label = cap
-            .account_id
-            .as_deref()
-            .unwrap_or(&cap.meeting_title);
+        let label = cap.account_id.as_deref().unwrap_or(&cap.meeting_title);
         grouped.entry(label.to_string()).or_default().push(cap);
     }
 
     let mut lines = Vec::new();
     for (label, caps) in &grouped {
         for cap in caps {
-            lines.push(format!("- **{}**: {} *(from {})*", label, cap.content, cap.meeting_title));
+            lines.push(format!(
+                "- **{}**: {} *(from {})*",
+                label, cap.content, cap.meeting_title
+            ));
         }
     }
 
@@ -266,8 +278,26 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "win", "Expanded deployment to 500 users", "2026-02-07");
-        insert_capture(&db, "c2", "mtg-2", "Beta Sync", Some("Beta"), "win", "New champion identified", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "win",
+            "Expanded deployment to 500 users",
+            "2026-02-07",
+        );
+        insert_capture(
+            &db,
+            "c2",
+            "mtg-2",
+            "Beta Sync",
+            Some("Beta"),
+            "win",
+            "New champion identified",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
         assert_eq!(result.wins_rolled_up, 2);
@@ -286,7 +316,16 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "risk", "Budget freeze in Q2", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "risk",
+            "Budget freeze in Q2",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
         assert_eq!(result.wins_rolled_up, 0);
@@ -302,7 +341,16 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "win", "Big win", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "win",
+            "Big win",
+            "2026-02-07",
+        );
 
         // First run writes
         let r1 = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
@@ -326,7 +374,16 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "win", "Win", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "win",
+            "Win",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
 
@@ -345,7 +402,16 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Team Retro", None, "win", "Improved velocity", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Team Retro",
+            None,
+            "win",
+            "Improved velocity",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
         assert_eq!(result.wins_rolled_up, 1);
@@ -359,9 +425,36 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "win", "Expanded deployment", "2026-02-07");
-        insert_capture(&db, "c2", "mtg-1", "Acme QBR", Some("Acme"), "risk", "Budget freeze", "2026-02-07");
-        insert_capture(&db, "c3", "mtg-2", "Beta Sync", Some("Beta"), "win", "New champion", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "win",
+            "Expanded deployment",
+            "2026-02-07",
+        );
+        insert_capture(
+            &db,
+            "c2",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "risk",
+            "Budget freeze",
+            "2026-02-07",
+        );
+        insert_capture(
+            &db,
+            "c3",
+            "mtg-2",
+            "Beta Sync",
+            Some("Beta"),
+            "win",
+            "New champion",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
         assert_eq!(result.wins_rolled_up, 2);
@@ -378,7 +471,10 @@ mod tests {
 
         // Day header appears in both sections
         let day_header_count = content.matches("### Saturday, Feb 7").count();
-        assert_eq!(day_header_count, 2, "Day header should appear in both sections");
+        assert_eq!(
+            day_header_count, 2,
+            "Day header should appear in both sections"
+        );
     }
 
     #[test]
@@ -386,8 +482,26 @@ mod tests {
         let db = test_db();
         let temp = tempfile::tempdir().unwrap();
 
-        insert_capture(&db, "c1", "mtg-1", "Acme QBR", Some("Acme"), "action", "Follow up on X", "2026-02-07");
-        insert_capture(&db, "c2", "mtg-1", "Acme QBR", Some("Acme"), "decision", "Go with option B", "2026-02-07");
+        insert_capture(
+            &db,
+            "c1",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "action",
+            "Follow up on X",
+            "2026-02-07",
+        );
+        insert_capture(
+            &db,
+            "c2",
+            "mtg-1",
+            "Acme QBR",
+            Some("Acme"),
+            "decision",
+            "Go with option B",
+            "2026-02-07",
+        );
 
         let result = rollup_daily_impact(temp.path(), &db, "2026-02-07").unwrap();
         // Actions and decisions should not be rolled up
@@ -408,7 +522,13 @@ mod tests {
     #[test]
     fn test_insert_into_section() {
         let content = "---\nweek: 2026-W06\n---\n\n## Customer Outcomes\n\n## Risk Management\n\n## Summary Stats\n";
-        let result = insert_into_section(content, "## Customer Outcomes", "### Friday, Feb 6", "- **Acme**: Win").unwrap();
+        let result = insert_into_section(
+            content,
+            "## Customer Outcomes",
+            "### Friday, Feb 6",
+            "- **Acme**: Win",
+        )
+        .unwrap();
         assert!(result.contains("### Friday, Feb 6\n- **Acme**: Win"));
         // Other sections preserved
         assert!(result.contains("## Risk Management"));

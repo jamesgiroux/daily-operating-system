@@ -84,9 +84,7 @@ impl ExecutionError {
             ExecutionError::ScriptFailed { .. } => "Check the logs for details.",
             ExecutionError::ParseError(_) => "Check the file format is correct.",
             ExecutionError::IoError(_) => "Check file permissions and disk space.",
-            ExecutionError::ClaudeCodeNotFound => {
-                "Install Claude Code from https://claude.ai/code"
-            }
+            ExecutionError::ClaudeCodeNotFound => "Install Claude Code from https://claude.ai/code",
             ExecutionError::ClaudeCodeNotAuthenticated => {
                 "Run 'claude login' in your terminal to authenticate."
             }

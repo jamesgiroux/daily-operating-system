@@ -90,8 +90,8 @@ pub fn is_extractable(path: &Path) -> bool {
 
 /// All file extensions that the extraction system handles (for stripping in classifier).
 pub const KNOWN_EXTENSIONS: &[&str] = &[
-    ".md", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml", ".log", ".xml", ".toml",
-    ".pdf", ".docx", ".xlsx", ".xls", ".xlsm", ".ods", ".pptx", ".html", ".htm", ".rtf",
+    ".md", ".txt", ".csv", ".tsv", ".json", ".yaml", ".yml", ".log", ".xml", ".toml", ".pdf",
+    ".docx", ".xlsx", ".xls", ".xlsm", ".ods", ".pptx", ".html", ".htm", ".rtf",
 ];
 
 /// Extract text content from a file.
@@ -141,9 +141,7 @@ fn extract_plaintext(path: &Path) -> Result<String, ExtractError> {
 fn extract_pdf(path: &Path) -> Result<String, ExtractError> {
     // pdf-extract can panic on malformed PDFs — wrap in catch_unwind
     let path_buf = path.to_path_buf();
-    let result = std::panic::catch_unwind(move || {
-        pdf_extract::extract_text(&path_buf)
-    });
+    let result = std::panic::catch_unwind(move || pdf_extract::extract_text(&path_buf));
 
     match result {
         Ok(Ok(text)) => Ok(text),
@@ -173,7 +171,8 @@ fn extract_docx(path: &Path) -> Result<String, ExtractError> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(quick_xml::events::Event::Start(ref e)) | Ok(quick_xml::events::Event::Empty(ref e)) => {
+            Ok(quick_xml::events::Event::Start(ref e))
+            | Ok(quick_xml::events::Event::Empty(ref e)) => {
                 let local = e.local_name();
                 if local.as_ref() == b"t" {
                     in_text_tag = true;
@@ -228,8 +227,7 @@ fn extract_xlsx(path: &Path) -> Result<String, ExtractError> {
             // Render as markdown table
             let mut rows = range.rows();
             if let Some(header) = rows.next() {
-                let header_cells: Vec<String> =
-                    header.iter().map(|c| cell_to_string(c)).collect();
+                let header_cells: Vec<String> = header.iter().map(|c| cell_to_string(c)).collect();
                 output.push_str("| ");
                 output.push_str(&header_cells.join(" | "));
                 output.push_str(" |\n");
@@ -244,8 +242,7 @@ fn extract_xlsx(path: &Path) -> Result<String, ExtractError> {
                 output.push_str(" |\n");
 
                 for row in rows {
-                    let cells: Vec<String> =
-                        row.iter().map(|c| cell_to_string(c)).collect();
+                    let cells: Vec<String> = row.iter().map(|c| cell_to_string(c)).collect();
                     output.push_str("| ");
                     output.push_str(&cells.join(" | "));
                     output.push_str(" |\n");
@@ -447,7 +444,13 @@ pub fn build_enriched_companion_md(
 
     format!(
         "---\nsource: {}\nformat: {}\nextracted: {}\nclassification: {}{}{}\n---\n\n{}",
-        source_filename, format_label, now, classification, account_line, summary_line, extracted_text
+        source_filename,
+        format_label,
+        now,
+        classification,
+        account_line,
+        summary_line,
+        extracted_text
     )
 }
 
@@ -469,19 +472,46 @@ mod tests {
 
     #[test]
     fn test_detect_format_markdown() {
-        assert_eq!(detect_format(Path::new("file.md")), SupportedFormat::Markdown);
-        assert_eq!(detect_format(Path::new("file.markdown")), SupportedFormat::Markdown);
+        assert_eq!(
+            detect_format(Path::new("file.md")),
+            SupportedFormat::Markdown
+        );
+        assert_eq!(
+            detect_format(Path::new("file.markdown")),
+            SupportedFormat::Markdown
+        );
     }
 
     #[test]
     fn test_detect_format_plaintext() {
-        assert_eq!(detect_format(Path::new("file.txt")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("data.csv")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("data.tsv")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("config.json")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("config.yaml")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("config.yml")), SupportedFormat::PlainText);
-        assert_eq!(detect_format(Path::new("app.log")), SupportedFormat::PlainText);
+        assert_eq!(
+            detect_format(Path::new("file.txt")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("data.csv")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("data.tsv")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("config.json")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("config.yaml")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("config.yml")),
+            SupportedFormat::PlainText
+        );
+        assert_eq!(
+            detect_format(Path::new("app.log")),
+            SupportedFormat::PlainText
+        );
     }
 
     #[test]
@@ -490,7 +520,10 @@ mod tests {
         assert_eq!(detect_format(Path::new("doc.docx")), SupportedFormat::Docx);
         assert_eq!(detect_format(Path::new("data.xlsx")), SupportedFormat::Xlsx);
         assert_eq!(detect_format(Path::new("data.xls")), SupportedFormat::Xlsx);
-        assert_eq!(detect_format(Path::new("slides.pptx")), SupportedFormat::Pptx);
+        assert_eq!(
+            detect_format(Path::new("slides.pptx")),
+            SupportedFormat::Pptx
+        );
         assert_eq!(detect_format(Path::new("page.html")), SupportedFormat::Html);
         assert_eq!(detect_format(Path::new("page.htm")), SupportedFormat::Html);
         assert_eq!(detect_format(Path::new("doc.rtf")), SupportedFormat::Rtf);
@@ -498,10 +531,22 @@ mod tests {
 
     #[test]
     fn test_detect_format_unsupported() {
-        assert_eq!(detect_format(Path::new("image.png")), SupportedFormat::Unsupported);
-        assert_eq!(detect_format(Path::new("video.mp4")), SupportedFormat::Unsupported);
-        assert_eq!(detect_format(Path::new("archive.zip")), SupportedFormat::Unsupported);
-        assert_eq!(detect_format(Path::new("no_extension")), SupportedFormat::Unsupported);
+        assert_eq!(
+            detect_format(Path::new("image.png")),
+            SupportedFormat::Unsupported
+        );
+        assert_eq!(
+            detect_format(Path::new("video.mp4")),
+            SupportedFormat::Unsupported
+        );
+        assert_eq!(
+            detect_format(Path::new("archive.zip")),
+            SupportedFormat::Unsupported
+        );
+        assert_eq!(
+            detect_format(Path::new("no_extension")),
+            SupportedFormat::Unsupported
+        );
     }
 
     #[test]
@@ -555,7 +600,11 @@ mod tests {
     fn test_extract_html_basic() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("page.html");
-        std::fs::write(&path, "<html><body><h1>Title</h1><p>Content here</p></body></html>").unwrap();
+        std::fs::write(
+            &path,
+            "<html><body><h1>Title</h1><p>Content here</p></body></html>",
+        )
+        .unwrap();
 
         let text = extract_text(&path).unwrap();
         assert!(text.contains("Title"));
@@ -591,22 +640,28 @@ mod tests {
     fn test_companion_md_path() {
         let original = PathBuf::from("/workspace/_archive/2026-02-08/report.pdf");
         let companion = companion_md_path(&original);
-        assert_eq!(companion, PathBuf::from("/workspace/_archive/2026-02-08/report.md"));
+        assert_eq!(
+            companion,
+            PathBuf::from("/workspace/_archive/2026-02-08/report.md")
+        );
     }
 
     #[test]
     fn test_companion_md_path_no_extension() {
         let original = PathBuf::from("/workspace/_archive/2026-02-08/readme");
         let companion = companion_md_path(&original);
-        assert_eq!(companion, PathBuf::from("/workspace/_archive/2026-02-08/readme.md"));
+        assert_eq!(
+            companion,
+            PathBuf::from("/workspace/_archive/2026-02-08/readme.md")
+        );
     }
 
     #[test]
     fn test_known_extensions_covers_formats() {
         // Verify all extensions in detect_format are also in KNOWN_EXTENSIONS
         let exts = [
-            "md", "txt", "csv", "tsv", "json", "yaml", "yml", "log",
-            "pdf", "docx", "xlsx", "xls", "xlsm", "ods", "pptx", "html", "htm", "rtf",
+            "md", "txt", "csv", "tsv", "json", "yaml", "yml", "log", "pdf", "docx", "xlsx", "xls",
+            "xlsm", "ods", "pptx", "html", "htm", "rtf",
         ];
         for ext in &exts {
             let with_dot = format!(".{}", ext);

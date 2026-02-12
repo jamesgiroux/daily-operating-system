@@ -187,7 +187,8 @@ mod tests {
     #[test]
     fn test_content_based_actions() {
         let path = PathBuf::from("notes.md");
-        let content = "# Meeting\n\n- [ ] Follow up with team\n- [ ] Send proposal\n- [ ] Review docs\n";
+        let content =
+            "# Meeting\n\n- [ ] Follow up with team\n- [ ] Send proposal\n- [ ] Review docs\n";
         let result = classify_file(&path, content);
         assert!(matches!(result, Classification::ActionItems { .. }));
     }
