@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -9,17 +10,17 @@ use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_emails_json, load_prep_json, load_schedule_json,
-    DataFreshness,
+    check_data_freshness, load_actions_json, load_emails_json, load_emails_json_with_sync,
+    load_prep_json, load_schedule_json, DataFreshness,
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
-    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
-    FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock, WeekOverview,
-    WorkflowId, WorkflowStatus,
+    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
+    ExecutionRecord, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile,
+    MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock,
+    WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -62,207 +63,239 @@ pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, Strin
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
 pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
-    // Get Google auth status for frontend
-    let google_auth = state
-        .google_auth
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or(GoogleAuthStatus::NotConfigured);
+    let started = std::time::Instant::now();
+    let result = (|| {
+        // Get Google auth status for frontend
+        let google_auth = state
+            .google_auth
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or(GoogleAuthStatus::NotConfigured);
 
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
+        // Get config
+        let config = match state.config.read() {
+            Ok(guard) => match guard.clone() {
+                Some(c) => c,
+                None => {
+                    return DashboardResult::Error {
+                        message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
+                    }
+                }
+            },
+            Err(_) => {
                 return DashboardResult::Error {
-                    message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
+                    message: "Internal error: config lock poisoned".to_string(),
                 }
             }
-        },
-        Err(_) => {
-            return DashboardResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
-        }
-    };
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    // Check if _today directory exists
-    if !today_dir.exists() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
         };
-    }
 
-    // Check for data directory
-    let data_dir = today_dir.join("data");
-    if !data_dir.exists() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
-        };
-    }
+        let workspace = Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
 
-    // Load from JSON
-    let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
-        Ok(data) => data,
-        Err(_) => {
+        // Check if _today directory exists
+        if !today_dir.exists() {
             return DashboardResult::Empty {
                 message: "Your daily briefing will appear here once generated.".to_string(),
                 google_auth,
-            }
+            };
         }
-    };
 
-    // Merge briefing meetings with live calendar events (ADR-0032)
-    let live_events = state
-        .calendar_events
-        .read()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-    let tz: chrono_tz::Tz = config
-        .schedules
-        .today
-        .timezone
-        .parse()
-        .unwrap_or(chrono_tz::America::New_York);
-    let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+        // Check for data directory
+        let data_dir = today_dir.join("data");
+        if !data_dir.exists() {
+            return DashboardResult::Empty {
+                message: "Your daily briefing will appear here once generated.".to_string(),
+                google_auth,
+            };
+        }
 
-    // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(reviewed) = db.get_reviewed_preps() {
-                for m in &mut meetings {
-                    if let Some(ref pf) = m.prep_file {
-                        if reviewed.contains_key(pf) {
-                            m.prep_reviewed = Some(true);
-                        }
-                    }
+        // Load from JSON
+        let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
+            Ok(data) => data,
+            Err(_) => {
+                return DashboardResult::Empty {
+                    message: "Your daily briefing will appear here once generated.".to_string(),
+                    google_auth,
                 }
             }
-        }
-    }
+        };
 
-    // Annotate meetings with linked entities from junction table (I52)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
-                for m in &mut meetings {
-                    if let Some(entities) = entity_map.get(&m.id) {
-                        m.linked_entities = Some(entities.clone());
-                        // First account entity also populates account_id + account name
-                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
-                            m.account_id = Some(acct.id.clone());
-                            m.account = Some(acct.name.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
+        // Merge briefing meetings with live calendar events (ADR-0032)
+        let live_events = state
+            .calendar_events
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let tz: chrono_tz::Tz = config
+            .schedules
+            .today
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::America::New_York);
+        let mut meetings =
+            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
-    // Flag meetings that matched an archived account for unarchive suggestion (I161)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(archived) = db.get_archived_accounts() {
-                let archived_ids: HashSet<String> =
-                    archived.iter().map(|a| a.id.to_lowercase()).collect();
-                if !archived_ids.is_empty() {
+        // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(reviewed) = db.get_reviewed_preps() {
                     for m in &mut meetings {
-                        // Resolve the account identifier: prefer account_id (junction table),
-                        // fall back to account (classification hint slug)
-                        let resolved = m
-                            .account_id
-                            .as_deref()
-                            .or(m.account.as_deref())
-                            .map(str::to_lowercase);
-                        if let Some(ref id) = resolved {
-                            if archived_ids.contains(id) {
-                                // Find the canonical (original-case) account ID
-                                let canonical = archived
-                                    .iter()
-                                    .find(|a| a.id.to_lowercase() == *id)
-                                    .map(|a| a.id.clone())
-                                    .unwrap_or_else(|| id.clone());
-                                m.suggested_unarchive_account_id = Some(canonical);
+                        if let Some(ref pf) = m.prep_file {
+                            if reviewed.contains_key(pf) {
+                                m.prep_reviewed = Some(true);
                             }
                         }
                     }
                 }
             }
         }
-    }
 
-    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-    // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
-                let json_titles: HashSet<String> = actions
-                    .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id,
-                            title: dba.title,
-                            account: dba.account_id,
-                            due_date: dba.due_date,
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context,
-                            source: dba.source_label,
-                            days_overdue: None,
-                        });
+        // Annotate meetings with linked entities from junction table (I52)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+                if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
+                    for m in &mut meetings {
+                        if let Some(entities) = entity_map.get(&m.id) {
+                            m.linked_entities = Some(entities.clone());
+                            // First account entity also populates account_id + account name
+                            if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
+                            {
+                                m.account_id = Some(acct.id.clone());
+                                m.account = Some(acct.name.clone());
+                            }
+                        }
                     }
                 }
             }
         }
-    }
 
-    let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
+        // Flag meetings that matched an archived account for unarchive suggestion (I161)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(archived) = db.get_archived_accounts() {
+                    let archived_ids: HashSet<String> =
+                        archived.iter().map(|a| a.id.to_lowercase()).collect();
+                    if !archived_ids.is_empty() {
+                        for m in &mut meetings {
+                            // Resolve the account identifier: prefer account_id (junction table),
+                            // fall back to account (classification hint slug)
+                            let resolved = m
+                                .account_id
+                                .as_deref()
+                                .or(m.account.as_deref())
+                                .map(str::to_lowercase);
+                            if let Some(ref id) = resolved {
+                                if archived_ids.contains(id) {
+                                    // Find the canonical (original-case) account ID
+                                    let canonical = archived
+                                        .iter()
+                                        .find(|a| a.id.to_lowercase() == *id)
+                                        .map(|a| a.id.clone())
+                                        .unwrap_or_else(|| id.clone());
+                                    m.suggested_unarchive_account_id = Some(canonical);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-    // Calculate stats (exclude cancelled meetings)
-    let inbox_count = count_inbox(workspace);
-    let active_meetings: Vec<_> = meetings
-        .iter()
-        .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-        .collect();
-    let stats = DayStats {
-        total_meetings: active_meetings.len(),
-        customer_meetings: active_meetings
+        let mut actions = load_actions_json(&today_dir).unwrap_or_default();
+
+        // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
+                    let json_titles: HashSet<String> = actions
+                        .iter()
+                        .map(|a| a.title.to_lowercase().trim().to_string())
+                        .collect();
+                    for dba in db_actions {
+                        if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                            let priority = match dba.priority.as_str() {
+                                "P1" => Priority::P1,
+                                "P3" => Priority::P3,
+                                _ => Priority::P2,
+                            };
+                            actions.push(Action {
+                                id: dba.id,
+                                title: dba.title,
+                                account: dba.account_id,
+                                due_date: dba.due_date,
+                                priority,
+                                status: crate::types::ActionStatus::Pending,
+                                is_overdue: None,
+                                context: dba.context,
+                                source: dba.source_label,
+                                days_overdue: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
+            match load_emails_json_with_sync(&today_dir) {
+                Ok(payload) => {
+                    let emails = if payload.emails.is_empty() {
+                        None
+                    } else {
+                        Some(payload.emails)
+                    };
+                    (emails, payload.sync)
+                }
+                Err(_) => (
+                    load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
+                    None,
+                ),
+            };
+
+        // Calculate stats (exclude cancelled meetings)
+        let inbox_count = count_inbox(workspace);
+        let active_meetings: Vec<_> = meetings
             .iter()
-            .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-            .count(),
-        actions_due: actions.len(),
-        inbox_count,
-    };
+            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
+            .collect();
+        let stats = DayStats {
+            total_meetings: active_meetings.len(),
+            customer_meetings: active_meetings
+                .iter()
+                .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
+                .count(),
+            actions_due: actions.len(),
+            inbox_count,
+        };
 
-    let freshness = check_data_freshness(&today_dir);
+        let freshness = check_data_freshness(&today_dir);
 
-    DashboardResult::Success {
-        data: DashboardData {
-            overview,
-            stats,
-            meetings,
-            actions,
-            emails,
-        },
-        freshness,
-        google_auth,
+        DashboardResult::Success {
+            data: DashboardData {
+                overview,
+                stats,
+                meetings,
+                actions,
+                emails,
+                email_sync,
+            },
+            freshness,
+            google_auth,
+        }
+    })();
+
+    let elapsed_ms = started.elapsed().as_millis();
+    if elapsed_ms > 300 {
+        log::warn!(
+            "get_dashboard_data exceeded latency budget: {}ms",
+            elapsed_ms
+        );
+    } else {
+        log::debug!("get_dashboard_data completed in {}ms", elapsed_ms);
     }
+
+    result
 }
 
 /// Trigger a workflow execution
@@ -1332,12 +1365,10 @@ pub async fn enrich_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
-        let db_guard = state.db.lock().ok();
-        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
         crate::processor::enrich::enrich_file(
             workspace,
             &filename,
-            db_ref,
+            Some(&state),
             &profile,
             Some(&user_ctx),
             Some(&ai_config),
@@ -3141,25 +3172,55 @@ pub fn populate_workspace(
 // =============================================================================
 
 /// Check whether Claude Code CLI is installed and authenticated.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeStatus {
     pub installed: bool,
     pub authenticated: bool,
 }
 
+#[derive(Debug, Clone)]
+struct ClaudeStatusCacheEntry {
+    status: ClaudeStatus,
+    checked_at: std::time::Instant,
+}
+
+/// Cache Claude status checks to avoid shelling out on every focus event.
+const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
+
 #[tauri::command]
 pub fn check_claude_status() -> ClaudeStatus {
+    static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
+    let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
+
+    let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
+    if let Ok(guard) = cache.lock() {
+        if let Some(entry) = guard.as_ref() {
+            if entry.checked_at.elapsed() < ttl {
+                return entry.status.clone();
+            }
+        }
+    }
+
     let installed = crate::pty::PtyManager::is_claude_available();
     let authenticated = if installed {
         crate::pty::PtyManager::is_claude_authenticated().unwrap_or(false)
     } else {
         false
     };
-    ClaudeStatus {
+    let status = ClaudeStatus {
         installed,
         authenticated,
+    };
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(ClaudeStatusCacheEntry {
+            status: status.clone(),
+            checked_at: std::time::Instant::now(),
+        });
     }
+
+    status
 }
 
 // =============================================================================
@@ -5535,5 +5596,4 @@ mod tests {
         assert!(after.contains("recentWins"));
         assert!(after.contains("recentWinSources"));
     }
-
 }
