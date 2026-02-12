@@ -25,10 +25,7 @@ use super::meeting_context;
 // ============================================================================
 
 /// Replaces prepare_today.py. Writes: _today/data/today-directive.json
-pub async fn prepare_today(
-    state: &AppState,
-    workspace: &Path,
-) -> Result<(), ExecutionError> {
+pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
     let now = Utc::now();
     // Use local date — not UTC — to determine "today" from the user's perspective.
     // Without this, a Sunday 8pm EST user gets Monday's briefing (UTC is already Monday).
@@ -41,7 +38,11 @@ pub async fn prepare_today(
         "prepare_today: workspace={}, profile={}, domain={}",
         workspace.display(),
         profile,
-        if user_domain.is_empty() { "(unknown)" } else { &user_domain }
+        if user_domain.is_empty() {
+            "(unknown)"
+        } else {
+            &user_domain
+        }
     );
 
     // Step 1: Context metadata
@@ -54,7 +55,10 @@ pub async fn prepare_today(
         "profile": profile,
     });
     if let Some(ref focus) = user_focus {
-        context.as_object_mut().unwrap().insert("focus".to_string(), json!(focus));
+        context
+            .as_object_mut()
+            .unwrap()
+            .insert("focus".to_string(), json!(focus));
     }
 
     // Step 2: Fetch calendar events + classify
@@ -71,11 +75,16 @@ pub async fn prepare_today(
         .iter()
         .filter_map(|g| g.get("duration_minutes").and_then(|v| v.as_i64()))
         .sum();
-    log::info!("prepare_today: {} gaps, {} min focus time", gap_list.len(), total_gap_minutes);
+    log::info!(
+        "prepare_today: {} gaps, {} min focus time",
+        gap_list.len(),
+        total_gap_minutes
+    );
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
-    let email_result = fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+    let email_result =
+        fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
     log::info!(
         "prepare_today: {} emails ({} high, {} medium, {} low)",
         email_result.all.len(),
@@ -91,11 +100,8 @@ pub async fn prepare_today(
     let actions_dict = action_result.to_value();
 
     // Step 6: Meeting contexts
-    let meeting_contexts = meeting_context::gather_all_meeting_contexts(
-        &classified,
-        workspace,
-        db_ref,
-    );
+    let meeting_contexts =
+        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref);
     // Drop DB guard before any further awaits
     drop(db_guard);
 
@@ -150,10 +156,16 @@ pub async fn prepare_today(
     });
 
     // Write output
-    let output_path = workspace.join("_today").join("data").join("today-directive.json");
+    let output_path = workspace
+        .join("_today")
+        .join("data")
+        .join("today-directive.json");
     write_directive(&output_path, &directive)?;
 
-    log::info!("prepare_today: directive written to {}", output_path.display());
+    log::info!(
+        "prepare_today: directive written to {}",
+        output_path.display()
+    );
     Ok(())
 }
 
@@ -162,10 +174,7 @@ pub async fn prepare_today(
 // ============================================================================
 
 /// Replaces prepare_week.py. Writes: _today/data/week-directive.json
-pub async fn prepare_week(
-    state: &AppState,
-    workspace: &Path,
-) -> Result<(), ExecutionError> {
+pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
     let now = Utc::now();
     let today = chrono::Local::now().date_naive();
 
@@ -203,11 +212,8 @@ pub async fn prepare_week(
     };
 
     // Meeting contexts
-    let meeting_contexts = meeting_context::gather_all_meeting_contexts(
-        &classified,
-        workspace,
-        db_ref,
-    );
+    let meeting_contexts =
+        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref);
     drop(db_guard);
 
     // Gap analysis
@@ -250,10 +256,16 @@ pub async fn prepare_week(
         },
     });
 
-    let output_path = workspace.join("_today").join("data").join("week-directive.json");
+    let output_path = workspace
+        .join("_today")
+        .join("data")
+        .join("week-directive.json");
     write_directive(&output_path, &directive)?;
 
-    log::info!("prepare_week: directive written to {}", output_path.display());
+    log::info!(
+        "prepare_week: directive written to {}",
+        output_path.display()
+    );
     Ok(())
 }
 
@@ -262,10 +274,7 @@ pub async fn prepare_week(
 // ============================================================================
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
-pub async fn refresh_emails(
-    state: &AppState,
-    workspace: &Path,
-) -> Result<(), ExecutionError> {
+pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
     let (_profile, user_domain, _user_focus) = get_config(state);
     let account_hints = build_account_domain_hints(workspace);
 
@@ -280,7 +289,8 @@ pub async fn refresh_emails(
                         for attendee in attendees {
                             if let Some(email) = attendee.as_str() {
                                 if email.contains('@') {
-                                    let domain = email.split('@').nth(1).unwrap_or("").to_lowercase();
+                                    let domain =
+                                        email.split('@').nth(1).unwrap_or("").to_lowercase();
                                     customer_domains.insert(domain);
                                 }
                             }
@@ -291,13 +301,17 @@ pub async fn refresh_emails(
         }
     }
 
-    let email_result = fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+    let email_result =
+        fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
 
     // Build refresh directive matching the shape Rust expects
     let mut high_priority = Vec::new();
     let mut classified = Vec::new();
     for email in &email_result.all {
-        let priority = email.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
+        let priority = email
+            .get("priority")
+            .and_then(|v| v.as_str())
+            .unwrap_or("medium");
         let entry = json!({
             "id": email.get("id"),
             "from": email.get("from"),
@@ -323,7 +337,10 @@ pub async fn refresh_emails(
         },
     });
 
-    let output_path = workspace.join("_today").join("data").join("email-refresh-directive.json");
+    let output_path = workspace
+        .join("_today")
+        .join("data")
+        .join("email-refresh-directive.json");
     write_directive(&output_path, &directive)?;
 
     log::info!(
@@ -349,8 +366,7 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
     let directive: Value = if directive_path.exists() {
         let raw = std::fs::read_to_string(&directive_path)
             .map_err(|e| format!("Failed to read week directive: {}", e))?;
-        serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse week directive: {}", e))?
+        serde_json::from_str(&raw).map_err(|e| format!("Failed to parse week directive: {}", e))?
     } else {
         return Err("Week directive not found".to_string());
     };
@@ -361,8 +377,7 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
         .map_err(|e| format!("JSON serialization failed: {}", e))?;
 
     if let Some(parent) = output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create dir: {}", e))?;
     }
     std::fs::write(&output_path, content)
         .map_err(|e| format!("Failed to write week overview: {}", e))?;
@@ -395,8 +410,7 @@ fn get_config(state: &AppState) -> (String, String, Option<String>) {
         .and_then(|c| c.user_domain.clone())
         .unwrap_or_default();
 
-    let user_focus = config
-        .and_then(|c| c.user_focus.clone());
+    let user_focus = config.and_then(|c| c.user_focus.clone());
 
     (profile, user_domain, user_focus)
 }
@@ -436,11 +450,19 @@ async fn fetch_and_classify_today(
     today: NaiveDate,
     user_domain: &str,
     account_hints: &HashSet<String>,
-) -> (Vec<Value>, Vec<Value>, Value, serde_json::Map<String, Value>) {
+) -> (
+    Vec<Value>,
+    Vec<Value>,
+    Value,
+    serde_json::Map<String, Value>,
+) {
     let access_token = match google_api::get_valid_access_token().await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!("prepare_today: Google auth failed ({}), calendar will be empty", e);
+            log::warn!(
+                "prepare_today: Google auth failed ({}), calendar will be empty",
+                e
+            );
             return (Vec::new(), Vec::new(), json!({}), serde_json::Map::new());
         }
     };
@@ -448,7 +470,10 @@ async fn fetch_and_classify_today(
     let raw_events = match google_api::calendar::fetch_events(&access_token, today, today).await {
         Ok(e) => e,
         Err(e) => {
-            log::warn!("prepare_today: Calendar fetch failed ({}), calendar will be empty", e);
+            log::warn!(
+                "prepare_today: Calendar fetch failed ({}), calendar will be empty",
+                e
+            );
             return (Vec::new(), Vec::new(), json!({}), serde_json::Map::new());
         }
     };
@@ -471,6 +496,7 @@ async fn fetch_and_classify_today(
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
             "account": cm.account,
+            "description": cm.description,
         }));
         events.push(json!({
             "id": ev.id,
@@ -483,7 +509,10 @@ async fn fetch_and_classify_today(
     // Bucket by type
     let mut meetings_by_type = serde_json::Map::new();
     for ev in &classified {
-        let mt = ev.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+        let mt = ev
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("external");
         meetings_by_type
             .entry(mt.to_string())
             .or_insert_with(|| json!([]))
@@ -504,12 +533,12 @@ async fn fetch_and_classify_today(
         let start_str = ev.get("start").and_then(|v| v.as_str()).unwrap_or("");
         let end_str = ev.get("end").and_then(|v| v.as_str()).unwrap_or("");
 
-        let start_dt = chrono::DateTime::parse_from_rfc3339(
-            &start_str.replace('Z', "+00:00"),
-        ).ok().or_else(|| chrono::DateTime::parse_from_rfc3339(start_str).ok());
-        let end_dt = chrono::DateTime::parse_from_rfc3339(
-            &end_str.replace('Z', "+00:00"),
-        ).ok().or_else(|| chrono::DateTime::parse_from_rfc3339(end_str).ok());
+        let start_dt = chrono::DateTime::parse_from_rfc3339(&start_str.replace('Z', "+00:00"))
+            .ok()
+            .or_else(|| chrono::DateTime::parse_from_rfc3339(start_str).ok());
+        let end_dt = chrono::DateTime::parse_from_rfc3339(&end_str.replace('Z', "+00:00"))
+            .ok()
+            .or_else(|| chrono::DateTime::parse_from_rfc3339(end_str).ok());
 
         let bucket = match (start_dt, end_dt) {
             (Some(_s), Some(e)) if now >= e => "past",
@@ -525,7 +554,12 @@ async fn fetch_and_classify_today(
             .push(json!(event_id));
     }
 
-    (classified, events, Value::Object(meetings_by_type), time_status)
+    (
+        classified,
+        events,
+        Value::Object(meetings_by_type),
+        time_status,
+    )
 }
 
 /// Fetch calendar events for a week, classify, and organize by day.
@@ -534,7 +568,13 @@ async fn fetch_and_classify_week(
     friday: NaiveDate,
     user_domain: &str,
     account_hints: &HashSet<String>,
-) -> (Vec<Value>, Vec<Value>, Value, serde_json::Map<String, Value>, Value) {
+) -> (
+    Vec<Value>,
+    Vec<Value>,
+    Value,
+    serde_json::Map<String, Value>,
+    Value,
+) {
     let access_token = match google_api::get_valid_access_token().await {
         Ok(t) => t,
         Err(e) => {
@@ -543,7 +583,13 @@ async fn fetch_and_classify_week(
                 "Monday": [], "Tuesday": [], "Wednesday": [],
                 "Thursday": [], "Friday": [],
             });
-            return (Vec::new(), Vec::new(), json!({}), serde_json::Map::new(), empty_days);
+            return (
+                Vec::new(),
+                Vec::new(),
+                json!({}),
+                serde_json::Map::new(),
+                empty_days,
+            );
         }
     };
 
@@ -555,7 +601,13 @@ async fn fetch_and_classify_week(
                 "Monday": [], "Tuesday": [], "Wednesday": [],
                 "Thursday": [], "Friday": [],
             });
-            return (Vec::new(), Vec::new(), json!({}), serde_json::Map::new(), empty_days);
+            return (
+                Vec::new(),
+                Vec::new(),
+                json!({}),
+                serde_json::Map::new(),
+                empty_days,
+            );
         }
     };
 
@@ -576,6 +628,7 @@ async fn fetch_and_classify_week(
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
             "account": cm.account,
+            "description": cm.description,
         }));
         events.push(json!({
             "id": ev.id,
@@ -588,7 +641,10 @@ async fn fetch_and_classify_week(
     // Bucket by type
     let mut meetings_by_type = serde_json::Map::new();
     for ev in &classified {
-        let mt = ev.get("type").and_then(|v| v.as_str()).unwrap_or("external");
+        let mt = ev
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("external");
         meetings_by_type
             .entry(mt.to_string())
             .or_insert_with(|| json!([]))
@@ -619,7 +675,13 @@ async fn fetch_and_classify_week(
 
     let time_status = serde_json::Map::new(); // Week doesn't need time_status
 
-    (classified, events, Value::Object(meetings_by_type), time_status, Value::Object(events_by_day))
+    (
+        classified,
+        events,
+        Value::Object(meetings_by_type),
+        time_status,
+        Value::Object(events_by_day),
+    )
 }
 
 /// Fetch and classify emails (async, uses google_api).
@@ -877,21 +939,16 @@ fn lean_meetings_by_type(meetings_by_type: &Value) -> Value {
 /// Write directive JSON to disk, creating parent dirs as needed.
 fn write_directive(path: &Path, data: &Value) -> Result<(), ExecutionError> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            ExecutionError::ScriptFailed {
-                code: 1,
-                stderr: format!("Failed to create dir {}: {}", parent.display(), e),
-            }
+        std::fs::create_dir_all(parent).map_err(|e| ExecutionError::ScriptFailed {
+            code: 1,
+            stderr: format!("Failed to create dir {}: {}", parent.display(), e),
         })?;
     }
-    let content = serde_json::to_string_pretty(data).map_err(|e| {
-        ExecutionError::ParseError(format!("JSON serialization failed: {}", e))
-    })?;
-    std::fs::write(path, content).map_err(|e| {
-        ExecutionError::ScriptFailed {
-            code: 1,
-            stderr: format!("Failed to write {}: {}", path.display(), e),
-        }
+    let content = serde_json::to_string_pretty(data)
+        .map_err(|e| ExecutionError::ParseError(format!("JSON serialization failed: {}", e)))?;
+    std::fs::write(path, content).map_err(|e| ExecutionError::ScriptFailed {
+        code: 1,
+        stderr: format!("Failed to write {}: {}", path.display(), e),
     })?;
     Ok(())
 }
@@ -947,16 +1004,10 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
         .unwrap_or("")
         .to_string();
 
-    let monday_str = context
-        .get("monday")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let monday_str = context.get("monday").and_then(|v| v.as_str()).unwrap_or("");
 
     // Build days array
-    let meetings_by_day = directive
-        .get("meetingsByDay")
-        .cloned()
-        .unwrap_or(json!({}));
+    let meetings_by_day = directive.get("meetingsByDay").cloned().unwrap_or(json!({}));
 
     let mut days = Vec::new();
     for (i, day_name) in DAY_NAMES.iter().enumerate() {
@@ -1006,9 +1057,8 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
 fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value], data_dir: &Path) -> Value {
     let mut meetings = Vec::new();
     for m in meetings_raw {
-        let meeting_type = normalise_meeting_type(
-            m.get("type").and_then(|v| v.as_str()).unwrap_or("internal"),
-        );
+        let meeting_type =
+            normalise_meeting_type(m.get("type").and_then(|v| v.as_str()).unwrap_or("internal"));
         if meeting_type == "personal" {
             continue;
         }
@@ -1037,7 +1087,14 @@ fn build_week_day(date: &str, day_name: &str, meetings_raw: &[Value], data_dir: 
 
 /// Resolve actual prep status for a meeting by checking prep files on disk.
 fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) -> String {
-    let prep_eligible = ["customer", "qbr", "partnership"];
+    let prep_eligible = [
+        "customer",
+        "qbr",
+        "partnership",
+        "internal",
+        "team_sync",
+        "one_on_one",
+    ];
     if meeting_id.is_empty() || !prep_eligible.contains(&meeting_type) {
         // Non-prep-eligible meetings don't need prep
         return "done".to_string();
@@ -1052,8 +1109,14 @@ fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) ->
     match std::fs::read_to_string(&prep_path) {
         Ok(content) => {
             if let Ok(prep) = serde_json::from_str::<Value>(&content) {
-                let has_agenda = prep.get("proposedAgenda").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty());
-                let has_talking_points = prep.get("talkingPoints").and_then(|v| v.as_array()).map_or(false, |a| !a.is_empty());
+                let has_agenda = prep
+                    .get("proposedAgenda")
+                    .and_then(|v| v.as_array())
+                    .map_or(false, |a| !a.is_empty());
+                let has_talking_points = prep
+                    .get("talkingPoints")
+                    .and_then(|v| v.as_array())
+                    .map_or(false, |a| !a.is_empty());
                 if has_agenda || has_talking_points {
                     "prep_ready".to_string()
                 } else {
@@ -1069,7 +1132,11 @@ fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) ->
 
 fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
     let actions = directive.get("actions").cloned().unwrap_or(json!({}));
-    let overdue = actions.get("overdue").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let overdue = actions
+        .get("overdue")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut this_week = actions
         .get("thisWeek")
         .or_else(|| actions.get("this_week"))
@@ -1085,7 +1152,11 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
                 if let Some(all) = today_actions.get("actions").and_then(|v| v.as_array()) {
                     this_week = all
                         .iter()
-                        .filter(|a| !a.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false))
+                        .filter(|a| {
+                            !a.get("isOverdue")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                        })
                         .cloned()
                         .collect();
                 }
@@ -1135,14 +1206,24 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         .take(20)
         .enumerate()
         .map(|(i, a)| {
-            let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let due_date = a.get("due_date").or_else(|| a.get("dueDate")).and_then(|v| v.as_str());
+            let title = a
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let due_date = a
+                .get("due_date")
+                .or_else(|| a.get("dueDate"))
+                .and_then(|v| v.as_str());
             let days_overdue = due_date.and_then(|d| {
-                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok().map(|dd| {
-                    (Utc::now().date_naive() - dd).num_days()
-                })
+                NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .ok()
+                    .map(|dd| (Utc::now().date_naive() - dd).num_days())
             });
-            let id = a.get("id").and_then(|v| v.as_str()).map(String::from)
+            let id = a
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
                 .or_else(|| action_id_by_title.get(&title).cloned())
                 .unwrap_or_else(|| format!("overdue-{}", i));
             json!({
@@ -1161,8 +1242,15 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
         .take(20)
         .enumerate()
         .map(|(i, a)| {
-            let title = a.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let id = a.get("id").and_then(|v| v.as_str()).map(String::from)
+            let title = a
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let id = a
+                .get("id")
+                .and_then(|v| v.as_str())
+                .map(String::from)
                 .or_else(|| action_id_by_title.get(&title).cloned())
                 .unwrap_or_else(|| format!("week-{}", i));
             json!({
@@ -1187,7 +1275,14 @@ fn build_action_summary(directive: &Value, data_dir: &Path) -> Value {
 /// Build readiness checks: surfaces prep gaps, overdue actions, and stale contacts.
 fn build_readiness_checks(directive: &Value, data_dir: &Path) -> Vec<Value> {
     let mut checks = Vec::new();
-    let prep_eligible = ["customer", "qbr", "partnership"];
+    let prep_eligible = [
+        "customer",
+        "qbr",
+        "partnership",
+        "internal",
+        "team_sync",
+        "one_on_one",
+    ];
 
     // 1. Meetings without preps
     let meetings_by_day = directive.get("meetingsByDay").cloned().unwrap_or(json!({}));
@@ -1207,8 +1302,11 @@ fn build_readiness_checks(directive: &Value, data_dir: &Path) -> Vec<Value> {
                     }
                     let prep_path = data_dir.join("preps").join(format!("{}.json", meeting_id));
                     if !prep_path.exists() {
-                        let title = m.get("title").or_else(|| m.get("summary"))
-                            .and_then(|v| v.as_str()).unwrap_or("Meeting");
+                        let title = m
+                            .get("title")
+                            .or_else(|| m.get("summary"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Meeting");
                         checks.push(json!({
                             "checkType": "no_prep",
                             "message": format!("{} has no prep", title),
@@ -1248,7 +1346,8 @@ fn build_readiness_checks(directive: &Value, data_dir: &Path) -> Vec<Value> {
             }
             seen_accounts.insert(account.to_string());
 
-            if let Some(last_meeting) = ctx.get("lastMeetingDate")
+            if let Some(last_meeting) = ctx
+                .get("lastMeetingDate")
                 .or_else(|| ctx.get("last_meeting_date"))
                 .and_then(|v| v.as_str())
             {
@@ -1275,11 +1374,16 @@ fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
     let context = directive.get("context").cloned().unwrap_or(json!({}));
     let monday_str = context.get("monday").and_then(|v| v.as_str()).unwrap_or("");
     let meetings_by_day = directive.get("meetingsByDay").cloned().unwrap_or(json!({}));
-    let time_blocks_raw = directive.get("timeBlocks").or_else(|| directive.get("time_blocks"))
-        .cloned().unwrap_or(json!({}));
-    let gaps_by_day = time_blocks_raw.get("gapsByDay")
+    let time_blocks_raw = directive
+        .get("timeBlocks")
+        .or_else(|| directive.get("time_blocks"))
+        .cloned()
+        .unwrap_or(json!({}));
+    let gaps_by_day = time_blocks_raw
+        .get("gapsByDay")
         .or_else(|| time_blocks_raw.get("gaps_by_day"))
-        .cloned().unwrap_or(json!({}));
+        .cloned()
+        .unwrap_or(json!({}));
 
     let mut shapes = Vec::new();
 
@@ -1343,14 +1447,24 @@ fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
         let mut available_blocks = Vec::new();
         if let Some(day_gaps) = gaps_by_day.get(day_name).and_then(|v| v.as_array()) {
             for gap in day_gaps {
-                let dur = gap.get("duration_minutes")
+                let dur = gap
+                    .get("duration_minutes")
                     .or_else(|| gap.get("durationMinutes"))
-                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 if dur < 30 {
                     continue;
                 }
-                let start = gap.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let end = gap.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let start = gap
+                    .get("start")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let end = gap
+                    .get("end")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if !start.is_empty() && !end.is_empty() {
                     available_blocks.push(json!({
                         "day": day_name,
@@ -1451,8 +1565,16 @@ fn build_time_blocks(directive: &Value) -> Vec<Value> {
 
     for s in &suggestions {
         let day = s.get("day").and_then(|v| v.as_str()).unwrap_or("");
-        let mut start = s.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let mut end = s.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let mut start = s
+            .get("start")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let mut end = s
+            .get("end")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let duration = s
             .get("duration_minutes")
             .or_else(|| s.get("duration"))
@@ -1496,12 +1618,23 @@ fn build_time_blocks(directive: &Value) -> Vec<Value> {
         for day_name in DAY_NAMES {
             if let Some(day_gaps) = gaps_by_day.get(day_name).and_then(|v| v.as_array()) {
                 for gap in day_gaps {
-                    let duration = gap.get("duration_minutes").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let duration = gap
+                        .get("duration_minutes")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
                     if duration < 30 {
                         continue;
                     }
-                    let mut start = gap.get("start").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let mut end = gap.get("end").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let mut start = gap
+                        .get("start")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let mut end = gap
+                        .get("end")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     if start.contains('T') {
                         start = start.split('T').nth(1).unwrap_or("")[..5].to_string();
                     }
@@ -1531,8 +1664,14 @@ fn build_week_markdown(overview: &Value) -> String {
     let mut md = String::new();
 
     // Header
-    let week_number = overview.get("weekNumber").and_then(|v| v.as_str()).unwrap_or("W??");
-    let date_range = overview.get("dateRange").and_then(|v| v.as_str()).unwrap_or("");
+    let week_number = overview
+        .get("weekNumber")
+        .and_then(|v| v.as_str())
+        .unwrap_or("W??");
+    let date_range = overview
+        .get("dateRange")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     md.push_str(&format!("# Week {} — {}\n\n", week_number, date_range));
 
     // Readiness
@@ -1542,7 +1681,11 @@ fn build_week_markdown(overview: &Value) -> String {
             for check in checks {
                 let msg = check.get("message").and_then(|v| v.as_str()).unwrap_or("");
                 let severity = check.get("severity").and_then(|v| v.as_str()).unwrap_or("");
-                let icon = if severity == "action_needed" { "\u{26a0}\u{fe0f}" } else { "\u{2139}\u{fe0f}" };
+                let icon = if severity == "action_needed" {
+                    "\u{26a0}\u{fe0f}"
+                } else {
+                    "\u{2139}\u{fe0f}"
+                };
                 md.push_str(&format!("- {} {}\n", icon, msg));
             }
             md.push('\n');
@@ -1556,7 +1699,10 @@ fn build_week_markdown(overview: &Value) -> String {
         md.push_str("|-----|----------|---------|-------|\n");
         for shape in shapes {
             let day = shape.get("dayName").and_then(|v| v.as_str()).unwrap_or("");
-            let count = shape.get("meetingCount").and_then(|v| v.as_u64()).unwrap_or(0);
+            let count = shape
+                .get("meetingCount")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             let density = shape.get("density").and_then(|v| v.as_str()).unwrap_or("");
             let density_cap = if density.is_empty() {
                 String::new()
@@ -1568,26 +1714,39 @@ fn build_week_markdown(overview: &Value) -> String {
                 }
             };
             // Sum available blocks for focus time
-            let focus_min: u64 = shape.get("availableBlocks")
+            let focus_min: u64 = shape
+                .get("availableBlocks")
                 .and_then(|v| v.as_array())
-                .map(|blocks| blocks.iter()
-                    .filter_map(|b| b.get("durationMinutes").and_then(|v| v.as_u64()))
-                    .sum())
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter_map(|b| b.get("durationMinutes").and_then(|v| v.as_u64()))
+                        .sum()
+                })
                 .unwrap_or(0);
             let focus_display = if focus_min >= 60 {
                 format!("{}h{}m", focus_min / 60, focus_min % 60)
             } else {
                 format!("{}m", focus_min)
             };
-            md.push_str(&format!("| {} | {} | {} | {} |\n", day, count, density_cap, focus_display));
+            md.push_str(&format!(
+                "| {} | {} | {} | {} |\n",
+                day, count, density_cap, focus_display
+            ));
         }
         md.push('\n');
     }
 
     // Actions
     let action_summary = overview.get("actionSummary").cloned().unwrap_or(json!({}));
-    let overdue_count = action_summary.get("overdueCount").and_then(|v| v.as_u64()).unwrap_or(0);
-    let due_count = action_summary.get("dueThisWeek").and_then(|v| v.as_u64()).unwrap_or(0);
+    let overdue_count = action_summary
+        .get("overdueCount")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let due_count = action_summary
+        .get("dueThisWeek")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
 
     if overdue_count > 0 || due_count > 0 {
         md.push_str("## Actions\n\n");
@@ -1598,26 +1757,40 @@ fn build_week_markdown(overview: &Value) -> String {
                 for item in overdue {
                     let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
                     let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let priority = item
+                        .get("priority")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("P3");
                     let days = item.get("daysOverdue").and_then(|v| v.as_i64());
-                    let days_str = days.map(|d| format!(" ({}d overdue)", d)).unwrap_or_default();
+                    let days_str = days
+                        .map(|d| format!(" ({}d overdue)", d))
+                        .unwrap_or_default();
                     if account.is_empty() {
                         md.push_str(&format!("- [{}] {}{}\n", priority, title, days_str));
                     } else {
-                        md.push_str(&format!("- [{}] {} — {}{}\n", priority, title, account, days_str));
+                        md.push_str(&format!(
+                            "- [{}] {} — {}{}\n",
+                            priority, title, account, days_str
+                        ));
                     }
                 }
                 md.push('\n');
             }
         }
 
-        if let Some(due) = action_summary.get("dueThisWeekItems").and_then(|v| v.as_array()) {
+        if let Some(due) = action_summary
+            .get("dueThisWeekItems")
+            .and_then(|v| v.as_array())
+        {
             if !due.is_empty() {
                 md.push_str(&format!("### Due This Week ({})\n\n", due.len()));
                 for item in due {
                     let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("");
                     let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let priority = item
+                        .get("priority")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("P3");
                     let due_date = item.get("dueDate").and_then(|v| v.as_str()).unwrap_or("");
                     // Extract day name from date if possible
                     let day_label = NaiveDate::parse_from_str(due_date, "%Y-%m-%d")
@@ -1632,7 +1805,10 @@ fn build_week_markdown(overview: &Value) -> String {
                     if account.is_empty() {
                         md.push_str(&format!("- [{}] {}{}\n", priority, title, suffix));
                     } else {
-                        md.push_str(&format!("- [{}] {} — {}{}\n", priority, title, account, suffix));
+                        md.push_str(&format!(
+                            "- [{}] {} — {}{}\n",
+                            priority, title, account, suffix
+                        ));
                     }
                 }
                 md.push('\n');
@@ -1646,10 +1822,14 @@ fn build_week_markdown(overview: &Value) -> String {
             md.push_str("## Account Health\n\n");
             for alert in alerts {
                 let account = alert.get("account").and_then(|v| v.as_str()).unwrap_or("");
-                let lifecycle = alert.get("lifecycle").and_then(|v| v.as_str()).unwrap_or("");
+                let lifecycle = alert
+                    .get("lifecycle")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let arr = alert.get("arr").and_then(|v| v.as_str()).unwrap_or("");
                 let issue = alert.get("issue").and_then(|v| v.as_str()).unwrap_or("");
-                let meta = [lifecycle, arr].iter()
+                let meta = [lifecycle, arr]
+                    .iter()
                     .filter(|s| !s.is_empty())
                     .copied()
                     .collect::<Vec<_>>()
@@ -1681,13 +1861,19 @@ fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
             seen_accounts.insert(account.to_string());
 
             let account_data = ctx.get("account_data").cloned().unwrap_or(json!({}));
-            let lifecycle = account_data.get("lifecycle").and_then(|v| v.as_str()).unwrap_or("");
-            let health = account_data.get("health").and_then(|v| v.as_str()).unwrap_or("");
+            let lifecycle = account_data
+                .get("lifecycle")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let health = account_data
+                .get("health")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let arr_raw = account_data.get("arr");
             let narrative = ctx.get("narrative").and_then(|v| v.as_str()).unwrap_or("");
 
-            let needs_alert = matches!(health, "yellow" | "red")
-                || matches!(lifecycle, "at-risk" | "churned");
+            let needs_alert =
+                matches!(health, "yellow" | "red") || matches!(lifecycle, "at-risk" | "churned");
 
             if needs_alert {
                 let severity = if health == "red" || lifecycle == "churned" {
@@ -1699,7 +1885,11 @@ fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
                 let issue = if !narrative.is_empty() {
                     format!("Health is {} — {}", health.to_uppercase(), narrative)
                 } else {
-                    format!("Health is {}, lifecycle {}", health.to_uppercase(), lifecycle)
+                    format!(
+                        "Health is {}, lifecycle {}",
+                        health.to_uppercase(),
+                        lifecycle
+                    )
                 };
 
                 alerts.push(json!({
@@ -1745,8 +1935,16 @@ fn format_arr(raw: Option<&Value>) -> String {
 fn normalise_meeting_type(raw: &str) -> String {
     let normalised = raw.to_lowercase().replace(' ', "_").replace('-', "_");
     let valid = [
-        "customer", "qbr", "training", "internal", "team_sync",
-        "one_on_one", "partnership", "all_hands", "external", "personal",
+        "customer",
+        "qbr",
+        "training",
+        "internal",
+        "team_sync",
+        "one_on_one",
+        "partnership",
+        "all_hands",
+        "external",
+        "personal",
     ];
     if valid.contains(&normalised.as_str()) {
         normalised
@@ -1779,7 +1977,11 @@ trait IsoWeekFields {
 impl IsoWeekFields for NaiveDate {
     fn iso_week_fields(&self) -> (i32, u32, u32) {
         let iso = self.iso_week();
-        (iso.year(), iso.week(), self.weekday().num_days_from_monday() + 1)
+        (
+            iso.year(),
+            iso.week(),
+            self.weekday().num_days_from_monday() + 1,
+        )
     }
 }
 
@@ -1805,9 +2007,18 @@ mod tests {
         });
 
         let checks = build_readiness_checks(&directive, data_dir);
-        assert_eq!(checks.len(), 1);
+        // I159: both customer and team_sync are now prep-eligible
+        assert_eq!(checks.len(), 2);
         assert_eq!(checks[0]["checkType"], "no_prep");
-        assert!(checks[0]["message"].as_str().unwrap().contains("Customer Sync"));
+        assert!(checks[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Customer Sync"));
+        assert_eq!(checks[1]["checkType"], "no_prep");
+        assert!(checks[1]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Team Standup"));
     }
 
     #[test]
@@ -1820,7 +2031,8 @@ mod tests {
         std::fs::write(
             preps_dir.join("m1.json"),
             r#"{"proposedAgenda": [{"topic": "Review"}]}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let directive = json!({
             "meetingsByDay": {
@@ -1852,7 +2064,10 @@ mod tests {
         let checks = build_readiness_checks(&directive, tmp.path());
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0]["checkType"], "overdue_action");
-        assert!(checks[0]["message"].as_str().unwrap().contains("2 overdue actions"));
+        assert!(checks[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("2 overdue actions"));
     }
 
     #[test]
@@ -1900,15 +2115,19 @@ mod tests {
     #[test]
     fn test_resolve_prep_status_non_eligible() {
         let tmp = TempDir::new().unwrap();
-        assert_eq!(resolve_prep_status("m1", "internal", tmp.path()), "done");
-        assert_eq!(resolve_prep_status("m1", "team_sync", tmp.path()), "done");
+        // I159: internal, team_sync, one_on_one are now person-prep eligible
+        assert_eq!(resolve_prep_status("m1", "personal", tmp.path()), "done");
+        assert_eq!(resolve_prep_status("m1", "all_hands", tmp.path()), "done");
     }
 
     #[test]
     fn test_resolve_prep_status_no_file() {
         let tmp = TempDir::new().unwrap();
         std::fs::create_dir_all(tmp.path().join("preps")).unwrap();
-        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "prep_needed");
+        assert_eq!(
+            resolve_prep_status("m1", "customer", tmp.path()),
+            "prep_needed"
+        );
     }
 
     #[test]
@@ -1919,8 +2138,12 @@ mod tests {
         std::fs::write(
             preps.join("m1.json"),
             r#"{"proposedAgenda": [{"topic": "Review"}]}"#,
-        ).unwrap();
-        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "prep_ready");
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_prep_status("m1", "customer", tmp.path()),
+            "prep_ready"
+        );
     }
 
     #[test]
@@ -1929,7 +2152,10 @@ mod tests {
         let preps = tmp.path().join("preps");
         std::fs::create_dir_all(&preps).unwrap();
         std::fs::write(preps.join("m1.json"), r#"{"title": "Meeting"}"#).unwrap();
-        assert_eq!(resolve_prep_status("m1", "customer", tmp.path()), "context_needed");
+        assert_eq!(
+            resolve_prep_status("m1", "customer", tmp.path()),
+            "context_needed"
+        );
     }
 
     #[test]
@@ -2125,14 +2351,16 @@ mod tests {
         std::fs::write(
             data_dir.join("week-directive.json"),
             serde_json::to_string_pretty(&directive).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let result = deliver_week(workspace);
         assert!(result.is_ok(), "deliver_week failed: {:?}", result);
         assert!(data_dir.join("week-overview.json").exists());
         assert!(workspace.join("_today").join("week-overview.md").exists());
 
-        let md = std::fs::read_to_string(workspace.join("_today").join("week-overview.md")).unwrap();
+        let md =
+            std::fs::read_to_string(workspace.join("_today").join("week-overview.md")).unwrap();
         assert!(md.contains("# Week W06"));
     }
 }

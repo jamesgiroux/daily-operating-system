@@ -12,9 +12,10 @@
 //! - `enrich_briefing()` → updates schedule.json with day narrative
 //! - `enrich_week()` → updates week-overview.json with narrative, priority, suggestions (I94/I95)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
@@ -43,8 +44,12 @@ const VALID_MEETING_TYPES: &[&str] = &[
     "personal",
 ];
 
-/// Meeting types that receive prep files
+/// Meeting types that receive prep files (account-based)
 const PREP_ELIGIBLE_TYPES: &[&str] = &["customer", "qbr", "partnership"];
+
+/// Meeting types eligible for person-focused prep (I159).
+/// These get lightweight prep built from attendee data in the people DB.
+const PERSON_PREP_TYPES: &[&str] = &["internal", "team_sync", "one_on_one"];
 
 // ============================================================================
 // Shared helpers (ported from deliver_today.py)
@@ -242,8 +247,9 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
             ("health", "Health"),
         ] {
             if let Some(val) = data.get(*key).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    at_a_glance.push(format!("{}: {}", label, val));
+                let clean = sanitize_inline_markdown(val);
+                if !clean.is_empty() {
+                    at_a_glance.push(format!("{}: {}", label, clean));
                 }
             }
         }
@@ -371,7 +377,9 @@ pub fn deliver_schedule(
 
         let mc = find_meeting_context(account.as_deref(), Some(event_id), meeting_contexts);
         let prep_summary = mc.and_then(build_prep_summary);
-        let has_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && mc.is_some();
+        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && mc.is_some();
+        let has_person_prep = PERSON_PREP_TYPES.contains(&meeting_type);
+        let has_prep = has_account_prep || has_person_prep;
         let prep_file = if has_prep {
             Some(format!("preps/{}.json", meeting_id))
         } else {
@@ -391,7 +399,10 @@ pub fn deliver_schedule(
 
         if let Some(obj) = meeting_obj.as_object_mut() {
             if !end.is_empty() {
-                obj.insert("endTime".to_string(), json!(format_time_display_tz(end, tz)));
+                obj.insert(
+                    "endTime".to_string(),
+                    json!(format_time_display_tz(end, tz)),
+                );
             }
             if let Some(ref acct) = account {
                 obj.insert("account".to_string(), json!(acct));
@@ -478,10 +489,7 @@ pub fn deliver_schedule(
     }
 
     write_json(&data_dir.join("schedule.json"), &schedule)?;
-    log::info!(
-        "deliver_schedule: {} meetings written",
-        meetings_json.len()
-    );
+    log::info!("deliver_schedule: {} meetings written", meetings_json.len());
     Ok(schedule)
 }
 
@@ -505,65 +513,62 @@ pub fn deliver_actions(
     // Load existing action titles from SQLite to skip duplicates (I23)
     let existing_titles: std::collections::HashSet<String> = db
         .and_then(|db| {
-            db.get_all_action_titles().ok().map(|titles| {
-                titles
-                    .into_iter()
-                    .collect()
-            })
+            db.get_all_action_titles()
+                .ok()
+                .map(|titles| titles.into_iter().collect())
         })
         .unwrap_or_default();
 
     let mut actions_list: Vec<Value> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let mut add_action =
-        |title: &str,
-         account: &str,
-         priority: &str,
-         status: &str,
-         due: &str,
-         is_overdue: bool,
-         days_overdue: Option<u32>,
-         context: &Option<String>,
-         source: &Option<String>| {
-            if title.to_lowercase().trim().is_empty() {
-                return;
-            }
-            if existing_titles.contains(&title.to_lowercase().trim().to_string()) {
-                return;
-            }
-            let id = make_action_id(title, account, due);
-            if seen_ids.contains(&id) {
-                return;
-            }
-            seen_ids.insert(id.clone());
+    let mut add_action = |title: &str,
+                          account: &str,
+                          priority: &str,
+                          status: &str,
+                          due: &str,
+                          is_overdue: bool,
+                          days_overdue: Option<u32>,
+                          context: &Option<String>,
+                          source: &Option<String>| {
+        if title.to_lowercase().trim().is_empty() {
+            return;
+        }
+        if existing_titles.contains(&title.to_lowercase().trim().to_string()) {
+            return;
+        }
+        let id = make_action_id(title, account, due);
+        if seen_ids.contains(&id) {
+            return;
+        }
+        seen_ids.insert(id.clone());
 
-            let mut obj = json!({
-                "id": id,
-                "title": title,
-                "priority": priority,
-                "status": status,
-                "isOverdue": is_overdue,
-            });
-            if let Some(map) = obj.as_object_mut() {
-                if !account.is_empty() {
-                    map.insert("account".to_string(), json!(account));
-                }
-                if !due.is_empty() {
-                    map.insert("dueDate".to_string(), json!(due));
-                }
-                if let Some(d) = days_overdue {
-                    map.insert("daysOverdue".to_string(), json!(d));
-                }
-                if let Some(ref c) = context {
-                    map.insert("context".to_string(), json!(c));
-                }
-                if let Some(ref s) = source {
-                    map.insert("source".to_string(), json!(s));
-                }
+        let mut obj = json!({
+            "id": id,
+            "title": title,
+            "priority": priority,
+            "status": status,
+            "isOverdue": is_overdue,
+        });
+        if let Some(map) = obj.as_object_mut() {
+            if !account.is_empty() {
+                map.insert("account".to_string(), json!(account));
             }
-            actions_list.push(obj);
-        };
+            if !due.is_empty() {
+                map.insert("dueDate".to_string(), json!(due));
+            }
+            if let Some(d) = days_overdue {
+                map.insert("daysOverdue".to_string(), json!(d));
+            }
+            if let Some(ref c) = context {
+                map.insert("context".to_string(), json!(c));
+            }
+            if let Some(ref s) = source {
+                map.insert("source".to_string(), json!(s));
+            }
+        }
+        actions_list.push(obj);
+    };
 
     // Overdue → P1
     for task in &raw.overdue {
@@ -589,7 +594,15 @@ pub fn deliver_actions(
         let account = task.account.as_deref().unwrap_or("");
         let due = task.effective_due_date().unwrap_or("");
         add_action(
-            title, account, "P1", "pending", due, false, None, &task.context, &task.source,
+            title,
+            account,
+            "P1",
+            "pending",
+            due,
+            false,
+            None,
+            &task.context,
+            &task.source,
         );
     }
 
@@ -599,7 +612,15 @@ pub fn deliver_actions(
         let account = task.account.as_deref().unwrap_or("");
         let due = task.effective_due_date().unwrap_or("");
         add_action(
-            title, account, "P2", "pending", due, false, None, &task.context, &task.source,
+            title,
+            account,
+            "P2",
+            "pending",
+            due,
+            false,
+            None,
+            &task.context,
+            &task.source,
         );
     }
 
@@ -608,7 +629,17 @@ pub fn deliver_actions(
         let what = item.what.as_deref().unwrap_or("Unknown");
         let title = format!("Waiting: {}", what);
         let who = item.who.as_deref().unwrap_or("");
-        add_action(&title, who, "P2", "waiting", "", false, None, &item.context, &None);
+        add_action(
+            &title,
+            who,
+            "P2",
+            "waiting",
+            "",
+            false,
+            None,
+            &item.context,
+            &None,
+        );
     }
 
     let actions_data = json!({
@@ -632,8 +663,7 @@ pub fn deliver_actions(
 /// Returns list of relative prep file paths (e.g. "preps/0900-customer-acme.json").
 pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<String>, String> {
     let preps_dir = data_dir.join("preps");
-    fs::create_dir_all(&preps_dir)
-        .map_err(|e| format!("Failed to create preps dir: {}", e))?;
+    fs::create_dir_all(&preps_dir).map_err(|e| format!("Failed to create preps dir: {}", e))?;
 
     let meetings_by_type = &directive.meetings;
     let meeting_contexts = &directive.meeting_contexts;
@@ -651,8 +681,10 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
             let event_id = meeting.event_id.as_deref().or(meeting.id.as_deref());
             let mc = find_meeting_context(account, event_id, meeting_contexts);
 
-            // Only write a prep file if there is meaningful context
-            if mc.is_none() && account.is_none() {
+            // Only write a prep file if there is meaningful context,
+            // OR if this is a person-prep-eligible type (I159)
+            let is_person_prep = PERSON_PREP_TYPES.contains(&normalised_type);
+            if mc.is_none() && account.is_none() && !is_person_prep {
                 continue;
             }
 
@@ -670,10 +702,32 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
                 .unwrap_or("");
             let meeting_id = meeting_primary_id(event_id, title, start, normalised_type);
 
-            let prep_data = build_prep_json(meeting, normalised_type, &meeting_id, mc);
+            let mut prep_data = build_prep_json(meeting, normalised_type, &meeting_id, mc);
             let rel_path = format!("preps/{}.json", meeting_id);
 
-            write_json(&data_dir.join(&rel_path), &prep_data)?;
+            // ADR-0065: Preserve user-authored fields from existing prep file.
+            // user_agenda and user_notes are owned by the user, never overwritten by system.
+            let prep_path = data_dir.join(&rel_path);
+            if prep_path.exists() {
+                if let Ok(existing) = fs::read_to_string(&prep_path) {
+                    if let Ok(existing_json) = serde_json::from_str::<Value>(&existing) {
+                        if let Some(obj) = prep_data.as_object_mut() {
+                            if let Some(ua) = existing_json.get("userAgenda") {
+                                if ua.is_array() && ua.as_array().map_or(false, |a| !a.is_empty()) {
+                                    obj.insert("userAgenda".to_string(), ua.clone());
+                                }
+                            }
+                            if let Some(un) = existing_json.get("userNotes") {
+                                if un.is_string() && un.as_str().map_or(false, |s| !s.is_empty()) {
+                                    obj.insert("userNotes".to_string(), un.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            write_json(&prep_path, &prep_data)?;
             prep_paths.push(rel_path);
         }
     }
@@ -722,11 +776,15 @@ pub fn is_substantive_prep(prep_path: &Path) -> bool {
         "openItems",
         "risks",
         "talkingPoints",
+        "recentWins",
+        "recentWinSources",
         "questions",
         "keyPrinciples",
         "proposedAgenda",
         "attendeeContext",
         "stakeholderSignals",
+        "calendarNotes",
+        "personPrep",
     ];
     content_keys.iter().any(|key| {
         json.get(key).map_or(false, |v| {
@@ -784,6 +842,235 @@ pub fn reconcile_prep_flags(data_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Build a compact account snapshot for meeting prep (I186).
+///
+/// Keep this intentionally short and operational so the prep page can render
+/// board-style metadata without long narrative fields.
+fn build_account_snapshot(ctx: Option<&DirectiveMeetingContext>) -> Vec<Value> {
+    let mut items: Vec<Value> = Vec::new();
+    let ctx = match ctx {
+        Some(c) => c,
+        None => return items,
+    };
+
+    // Mechanical fields from account_data (dashboard.json)
+    if let Some(data) = ctx.account_data.as_ref().and_then(|v| v.as_object()) {
+        let fields: &[(&str, &str, &str)] = &[
+            ("lifecycle", "Lifecycle", "text"),
+            ("health", "Health", "status"),
+            ("arr", "ARR", "currency"),
+            ("renewal", "Renewal", "date"),
+        ];
+        for (key, label, typ) in fields {
+            if let Some(val) = data.get(*key).and_then(|v| v.as_str()) {
+                let clean = sanitize_inline_markdown(val);
+                if !clean.is_empty() {
+                    items.push(json!({"label": label, "value": clean, "type": typ}));
+                }
+            }
+        }
+    }
+
+    // Cap small to avoid visual overload in prep report.
+    items.truncate(4);
+    items
+}
+
+fn sanitize_inline_markdown(value: &str) -> String {
+    value
+        .replace("[", "")
+        .replace("]", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(">", "")
+        .replace("**", "")
+        .replace("__", "")
+        .replace('`', "")
+        .replace('*', "")
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn source_tail_regex() -> &'static Regex {
+    static SOURCE_TAIL_RE: OnceLock<Regex> = OnceLock::new();
+    SOURCE_TAIL_RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|\s)[_*]*\(?\s*source:\s*([^)]+?)\s*\)?[_*\s]*$")
+            .expect("source tail regex must compile")
+    })
+}
+
+fn recent_win_prefix_regex() -> &'static Regex {
+    static RECENT_WIN_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+    RECENT_WIN_PREFIX_RE.get_or_init(|| {
+        Regex::new(r"(?i)^(recent\s+win|win)\s*:\s*").expect("recent win prefix regex must compile")
+    })
+}
+
+fn split_inline_source_tail(value: &str) -> (String, Option<String>) {
+    let raw = value.trim();
+    if let Some(caps) = source_tail_regex().captures(raw) {
+        if let Some(full_match) = caps.get(0) {
+            let cleaned = raw[..full_match.start()].trim().to_string();
+            let source = caps
+                .get(1)
+                .map(|m| sanitize_inline_markdown(m.as_str()))
+                .and_then(|s| if s.is_empty() { None } else { Some(s) });
+            return (cleaned, source);
+        }
+    }
+    (raw.to_string(), None)
+}
+
+fn sanitize_prep_line(value: &str) -> Option<String> {
+    let (without_source, _) = split_inline_source_tail(value);
+    let cleaned = sanitize_inline_markdown(&without_source);
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn sanitize_recent_win_line(value: &str) -> Option<String> {
+    let (without_source, _) = split_inline_source_tail(value);
+    let stripped = recent_win_prefix_regex()
+        .replace(&without_source, "")
+        .trim()
+        .to_string();
+    let cleaned = sanitize_inline_markdown(&stripped);
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn source_reference_value(source: &str) -> Option<Value> {
+    let cleaned = sanitize_inline_markdown(source);
+    if cleaned.is_empty() {
+        return None;
+    }
+    let label = cleaned
+        .split(['/', '\\'])
+        .filter(|part| !part.trim().is_empty())
+        .last()
+        .unwrap_or(cleaned.as_str())
+        .to_string();
+    Some(json!({
+        "label": label,
+        "path": cleaned,
+    }))
+}
+
+fn append_recent_win(
+    raw_win: &str,
+    source_hint: Option<&str>,
+    wins: &mut Vec<String>,
+    win_keys: &mut HashSet<String>,
+    sources: &mut Vec<Value>,
+    source_keys: &mut HashSet<String>,
+) {
+    let (without_source, embedded_source) = split_inline_source_tail(raw_win);
+    let Some(cleaned_win) = sanitize_recent_win_line(&without_source) else {
+        return;
+    };
+    let win_key = cleaned_win.to_lowercase();
+    if !win_keys.contains(&win_key) {
+        win_keys.insert(win_key);
+        wins.push(cleaned_win);
+    }
+
+    let source_text = source_hint.map(str::to_string).or(embedded_source);
+    if let Some(source) = source_text {
+        let source_key = source.to_lowercase();
+        if !source_keys.contains(&source_key) {
+            if let Some(src_value) = source_reference_value(&source) {
+                source_keys.insert(source_key);
+                sources.push(src_value);
+            }
+        }
+    }
+}
+
+fn derive_recent_wins_and_sources(ctx: &DirectiveMeetingContext) -> (Vec<String>, Vec<Value>) {
+    let mut wins: Vec<String> = Vec::new();
+    let mut sources: Vec<Value> = Vec::new();
+    let mut win_keys: HashSet<String> = HashSet::new();
+    let mut source_keys: HashSet<String> = HashSet::new();
+
+    if let Some(points) = &ctx.talking_points {
+        for point in points {
+            append_recent_win(
+                point,
+                None,
+                &mut wins,
+                &mut win_keys,
+                &mut sources,
+                &mut source_keys,
+            );
+        }
+    }
+
+    if let Some(account_wins) = ctx
+        .account_data
+        .as_ref()
+        .and_then(|d| d.get("recent_wins"))
+        .and_then(|v| v.as_array())
+    {
+        for win in account_wins.iter().take(6) {
+            if let Some(text) = win.as_str() {
+                append_recent_win(
+                    text,
+                    None,
+                    &mut wins,
+                    &mut win_keys,
+                    &mut sources,
+                    &mut source_keys,
+                );
+                continue;
+            }
+            if let Some(obj) = win.as_object() {
+                let text = obj
+                    .get("text")
+                    .or_else(|| obj.get("win"))
+                    .or_else(|| obj.get("summary"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let source = obj
+                    .get("source")
+                    .or_else(|| obj.get("path"))
+                    .or_else(|| obj.get("label"))
+                    .and_then(|v| v.as_str());
+                append_recent_win(
+                    text,
+                    source,
+                    &mut wins,
+                    &mut win_keys,
+                    &mut sources,
+                    &mut source_keys,
+                );
+            }
+        }
+    }
+
+    if let Some(capture_wins) = &ctx.wins {
+        for win in capture_wins.iter().take(4) {
+            append_recent_win(
+                win,
+                None,
+                &mut wins,
+                &mut win_keys,
+                &mut sources,
+                &mut source_keys,
+            );
+        }
+    }
+
+    (wins, sources)
+}
+
 /// Build a single prep JSON object (matches JsonPrep in json_loader.rs).
 fn build_prep_json(
     meeting: &DirectiveMeeting,
@@ -793,28 +1080,8 @@ fn build_prep_json(
 ) -> Value {
     let account = meeting.account.as_deref();
 
-    // Quick context from account data
-    let mut quick_context: serde_json::Map<String, Value> = serde_json::Map::new();
-    if let Some(ctx) = ctx {
-        if let Some(data) = ctx.account_data.as_ref().and_then(|v| v.as_object()) {
-            let labels: &[(&str, &str)] = &[
-                ("lifecycle", "Lifecycle"),
-                ("arr", "ARR"),
-                ("renewal", "Renewal"),
-                ("health", "Health"),
-                ("tier", "Tier"),
-                ("csm", "CSM"),
-                ("stage", "Stage"),
-            ];
-            for (key, label) in labels {
-                if let Some(val) = data.get(*key).and_then(|v| v.as_str()) {
-                    if !val.is_empty() {
-                        quick_context.insert(label.to_string(), json!(val));
-                    }
-                }
-            }
-        }
-    }
+    // Account snapshot: intelligence-enriched Quick Context (I186)
+    let account_snapshot = build_account_snapshot(ctx);
 
     // Attendees
     let attendees: Vec<Value> = ctx
@@ -865,14 +1132,23 @@ fn build_prep_json(
         if let Some(acct) = account {
             obj.insert("account".to_string(), json!(acct));
         }
-        if !quick_context.is_empty() {
-            obj.insert("quickContext".to_string(), Value::Object(quick_context));
+        // I159: Mark person-prep-eligible meetings so is_substantive_prep recognises them
+        if PERSON_PREP_TYPES.contains(&meeting_type) {
+            obj.insert("personPrep".to_string(), json!(true));
+        }
+        if !account_snapshot.is_empty() {
+            obj.insert("accountSnapshot".to_string(), json!(account_snapshot));
         }
         if !attendees.is_empty() {
             obj.insert("attendees".to_string(), json!(attendees));
         }
 
         if let Some(ctx) = ctx {
+            if let Some(ref desc) = ctx.description {
+                if !desc.is_empty() {
+                    obj.insert("calendarNotes".to_string(), json!(desc));
+                }
+            }
             if let Some(ref narrative) = ctx.narrative {
                 obj.insert("meetingContext".to_string(), json!(narrative));
             }
@@ -905,33 +1181,42 @@ fn build_prep_json(
                 obj.insert("risks".to_string(), json!(risks));
             }
 
-            // Talking points: use ctx.talking_points if present, else synthesize from
-            // recent_wins (from account_data) + recent_captures (wins from SQLite)
-            let talking_points: Vec<Value> = ctx
+            // Recent wins are canonical. Keep talkingPoints as legacy compatibility.
+            let (recent_wins, recent_win_sources) = derive_recent_wins_and_sources(ctx);
+            if !recent_wins.is_empty() {
+                obj.insert("recentWins".to_string(), json!(recent_wins));
+            }
+            if !recent_win_sources.is_empty() {
+                obj.insert("recentWinSources".to_string(), json!(recent_win_sources));
+            }
+
+            let mut talking_points: Vec<String> = ctx
                 .talking_points
                 .as_ref()
-                .map(|v| v.iter().map(|s| json!(s)).collect())
-                .unwrap_or_else(|| {
-                    let mut points: Vec<Value> = Vec::new();
-                    // Recent wins from dashboard
-                    if let Some(wins) = ctx.account_data.as_ref()
-                        .and_then(|d| d.get("recent_wins"))
-                        .and_then(|v| v.as_array())
-                    {
-                        for w in wins.iter().take(3) {
-                            if let Some(s) = w.as_str() {
-                                points.push(json!(format!("Recent win: {}", s)));
+                .map(|items| {
+                    let mut out: Vec<String> = Vec::new();
+                    let mut seen: HashSet<String> = HashSet::new();
+                    for item in items {
+                        if let Some(cleaned) = sanitize_prep_line(item) {
+                            let key = cleaned.to_lowercase();
+                            if !seen.contains(&key) {
+                                seen.insert(key);
+                                out.push(cleaned);
                             }
                         }
                     }
-                    // Wins from recent captures (SQLite)
-                    if let Some(captures) = ctx.wins.as_ref() {
-                        for w in captures.iter().take(2) {
-                            points.push(json!(format!("Win: {}", w)));
-                        }
-                    }
-                    points
-                });
+                    out
+                })
+                .unwrap_or_default();
+            if talking_points.is_empty() {
+                if let Some(wins) = obj.get("recentWins").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(ToString::to_string))
+                        .collect::<Vec<_>>()
+                }) {
+                    talking_points = wins;
+                }
+            }
             if !talking_points.is_empty() {
                 obj.insert("talkingPoints".to_string(), json!(talking_points));
             }
@@ -1056,7 +1341,10 @@ fn synthesize_open_items_from_raw(ctx: &DirectiveMeetingContext) -> Vec<Value> {
             if title.is_empty() {
                 continue;
             }
-            let due = action.get("due_date").and_then(|v| v.as_str()).unwrap_or("");
+            let due = action
+                .get("due_date")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let is_overdue = !due.is_empty() && due < today_str.as_str();
             items.push(json!({
                 "title": title,
@@ -1073,24 +1361,63 @@ fn synthesize_open_items_from_raw(ctx: &DirectiveMeetingContext) -> Vec<Value> {
 ///
 /// Synthesizes an agenda from open items (overdue first), risks,
 /// talking points, and questions. Caps at 7 items. No AI needed.
+fn push_unique_agenda_item(
+    agenda: &mut Vec<Value>,
+    seen_topics: &mut HashSet<String>,
+    topic: &str,
+    why: Option<&str>,
+    source: &str,
+    max_items: usize,
+) {
+    if agenda.len() >= max_items {
+        return;
+    }
+    let Some(clean_topic) = sanitize_prep_line(topic) else {
+        return;
+    };
+    let topic_key = clean_topic.to_lowercase();
+    if seen_topics.contains(&topic_key) {
+        return;
+    }
+    seen_topics.insert(topic_key);
+
+    let mut item = json!({
+        "topic": clean_topic,
+        "source": source,
+    });
+    if let Some(reason) = why.and_then(sanitize_prep_line) {
+        if let Some(obj) = item.as_object_mut() {
+            obj.insert("why".to_string(), json!(reason));
+        }
+    }
+    agenda.push(item);
+}
+
 fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
     let mut agenda: Vec<Value> = Vec::new();
+    let mut seen_topics: HashSet<String> = HashSet::new();
     const MAX_ITEMS: usize = 7;
 
     // 1. Overdue items first (most urgent)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items {
-            if agenda.len() >= MAX_ITEMS {
-                break;
-            }
-            let is_overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
+            let is_overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if is_overdue {
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown item");
-                agenda.push(json!({
-                    "topic": format!("Follow up: {}", title),
-                    "why": "Overdue — needs resolution",
-                    "source": "open_item",
-                }));
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown item");
+                push_unique_agenda_item(
+                    &mut agenda,
+                    &mut seen_topics,
+                    &format!("Follow up: {}", title),
+                    Some("Overdue — needs resolution"),
+                    "open_item",
+                    MAX_ITEMS,
+                );
             }
         }
     }
@@ -1098,61 +1425,80 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
     // 2. Risks (limit 2)
     if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
         for risk in risks.iter().take(2) {
-            if agenda.len() >= MAX_ITEMS {
-                break;
-            }
             if let Some(text) = risk.as_str() {
-                agenda.push(json!({
-                    "topic": text,
-                    "source": "risk",
-                }));
+                push_unique_agenda_item(
+                    &mut agenda,
+                    &mut seen_topics,
+                    text,
+                    None,
+                    "risk",
+                    MAX_ITEMS,
+                );
             }
         }
     }
 
-    // 3. Talking points (limit 3)
-    if let Some(points) = prep.get("talkingPoints").and_then(|v| v.as_array()) {
-        for point in points.iter().take(3) {
-            if agenda.len() >= MAX_ITEMS {
-                break;
-            }
-            if let Some(text) = point.as_str() {
-                agenda.push(json!({
-                    "topic": text,
-                    "source": "talking_point",
-                }));
-            }
-        }
-    }
-
-    // 4. Questions (limit 2)
+    // 3. Questions (limit 2)
     if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
         for q in questions.iter().take(2) {
-            if agenda.len() >= MAX_ITEMS {
-                break;
-            }
             if let Some(text) = q.as_str() {
-                agenda.push(json!({
-                    "topic": text,
-                    "source": "question",
-                }));
+                push_unique_agenda_item(
+                    &mut agenda,
+                    &mut seen_topics,
+                    text,
+                    None,
+                    "question",
+                    MAX_ITEMS,
+                );
             }
         }
     }
 
-    // 5. Non-overdue open items (limit 2)
+    // 4. Non-overdue open items (limit 2)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items.iter().take(4) {
-            if agenda.len() >= MAX_ITEMS {
-                break;
-            }
-            let is_overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
+            let is_overdue = item
+                .get("isOverdue")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if !is_overdue {
-                let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown item");
-                agenda.push(json!({
-                    "topic": title,
-                    "source": "open_item",
-                }));
+                let title = item
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown item");
+                push_unique_agenda_item(
+                    &mut agenda,
+                    &mut seen_topics,
+                    title,
+                    None,
+                    "open_item",
+                    MAX_ITEMS,
+                );
+            }
+        }
+    }
+
+    // 5. Wins are fallback only when agenda is still sparse.
+    if agenda.len() < 3 {
+        if let Some(wins) = prep
+            .get("recentWins")
+            .and_then(|v| v.as_array())
+            .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
+        {
+            for win in wins.iter().take(3) {
+                if let Some(text) = win.as_str() {
+                    let Some(clean_win) = sanitize_recent_win_line(text) else {
+                        continue;
+                    };
+                    push_unique_agenda_item(
+                        &mut agenda,
+                        &mut seen_topics,
+                        &clean_win,
+                        None,
+                        "talking_point",
+                        MAX_ITEMS,
+                    );
+                }
             }
         }
     }
@@ -1177,9 +1523,12 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
     let mut medium_priority: Vec<Value> = Vec::new();
     let mut low_priority: Vec<Value> = Vec::new();
 
-    let add_email = |email: &DirectiveEmail, priority: &str,
-                         seen: &mut std::collections::HashSet<String>,
-                         high: &mut Vec<Value>, medium: &mut Vec<Value>, low: &mut Vec<Value>| {
+    let add_email = |email: &DirectiveEmail,
+                     priority: &str,
+                     seen: &mut std::collections::HashSet<String>,
+                     high: &mut Vec<Value>,
+                     medium: &mut Vec<Value>,
+                     low: &mut Vec<Value>| {
         let id = email
             .id
             .clone()
@@ -1207,13 +1556,27 @@ pub fn deliver_emails(directive: &Directive, data_dir: &Path) -> Result<Value, S
 
     // High-priority emails from dedicated list
     for email in &emails.high_priority {
-        add_email(email, "high", &mut seen_ids, &mut high_priority, &mut medium_priority, &mut low_priority);
+        add_email(
+            email,
+            "high",
+            &mut seen_ids,
+            &mut high_priority,
+            &mut medium_priority,
+            &mut low_priority,
+        );
     }
 
     // All classified emails (high deduped, medium + low added)
     for email in &emails.classified {
         let prio = email.priority.as_deref().unwrap_or("medium");
-        add_email(email, prio, &mut seen_ids, &mut high_priority, &mut medium_priority, &mut low_priority);
+        add_email(
+            email,
+            prio,
+            &mut seen_ids,
+            &mut high_priority,
+            &mut medium_priority,
+            &mut low_priority,
+        );
     }
 
     let high_count = high_priority.len();
@@ -1332,10 +1695,7 @@ pub fn enrich_emails(
     for email in &high_priority {
         let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
         let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
-        let subject = email
-            .get("subject")
-            .and_then(|v| v.as_str())
-            .unwrap_or("?");
+        let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
         let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
         email_context.push_str(&format!(
             "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
@@ -1376,7 +1736,10 @@ pub fn enrich_emails(
     }
 
     // Merge enrichments into emails.json
-    if let Some(hp) = emails_data.get_mut("highPriority").and_then(|v| v.as_array_mut()) {
+    if let Some(hp) = emails_data
+        .get_mut("highPriority")
+        .and_then(|v| v.as_array_mut())
+    {
         for email in hp.iter_mut() {
             let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
             if let Some(enrichment) = enrichments.get(id) {
@@ -1500,11 +1863,7 @@ fn classify_meeting_density(count: usize) -> &'static str {
 /// Extracts unique entity IDs from schedule meetings (via linkedEntities + accountId
 /// fallback), looks up cached intelligence from the DB, returns a formatted context
 /// block for the prompt. Handles both accounts and projects.
-fn build_entity_intel_for_briefing(
-    schedule: &Value,
-    db: &crate::db::ActionDb,
-) -> String {
-
+fn build_entity_intel_for_briefing(schedule: &Value, db: &crate::db::ActionDb) -> String {
     let meetings = match schedule.get("meetings").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => return String::new(),
@@ -1564,7 +1923,12 @@ fn build_entity_intel_for_briefing(
 
             if !intel.risks.is_empty() {
                 block.push_str("Risks: ");
-                let risk_texts: Vec<&str> = intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+                let risk_texts: Vec<&str> = intel
+                    .risks
+                    .iter()
+                    .take(3)
+                    .map(|r| r.text.as_str())
+                    .collect();
                 block.push_str(&risk_texts.join("; "));
                 block.push('\n');
             }
@@ -1827,7 +2191,21 @@ pub struct AgendaItemEnrichment {
     pub source: Option<String>,
 }
 
-/// Parse Claude's agenda enrichment response.
+/// Parsed enrichment for a single recent win.
+#[derive(Debug, Clone, Default)]
+pub struct RecentWinEnrichment {
+    pub win: String,
+    pub source: Option<String>,
+}
+
+/// Combined prep enrichment payload by meeting.
+#[derive(Debug, Clone, Default)]
+pub struct PrepEnrichment {
+    pub agenda: Vec<AgendaItemEnrichment>,
+    pub wins: Vec<RecentWinEnrichment>,
+}
+
+/// Parse Claude's prep enrichment response (agenda + wins).
 ///
 /// Expected format:
 /// ```text
@@ -1836,56 +2214,150 @@ pub struct AgendaItemEnrichment {
 /// WHY:rationale for discussing this
 /// SOURCE:risk
 /// END_ITEM
-/// ITEM:another topic
-/// WHY:another rationale
-/// SOURCE:talking_point
-/// END_ITEM
 /// END_AGENDA
+/// WINS:meeting-id
+/// WIN:Executive sponsor re-engaged
+/// SOURCE:2026-02-11-call-notes.md
+/// END_WIN
+/// END_WINS
 /// ```
-pub fn parse_agenda_enrichment(response: &str) -> HashMap<String, Vec<AgendaItemEnrichment>> {
-    let mut result: HashMap<String, Vec<AgendaItemEnrichment>> = HashMap::new();
-    let mut current_meeting: Option<String> = None;
-    let mut current_items: Vec<AgendaItemEnrichment> = Vec::new();
-    let mut current_item: Option<AgendaItemEnrichment> = None;
+pub fn parse_prep_enrichment(response: &str) -> HashMap<String, PrepEnrichment> {
+    enum Section {
+        Agenda(String),
+        Wins(String),
+    }
+
+    let mut result: HashMap<String, PrepEnrichment> = HashMap::new();
+    let mut current_section: Option<Section> = None;
+    let mut current_agenda_item: Option<AgendaItemEnrichment> = None;
+    let mut current_win_item: Option<RecentWinEnrichment> = None;
+
+    let commit_agenda_item =
+        |meeting_id: &str,
+         item: AgendaItemEnrichment,
+         map: &mut HashMap<String, PrepEnrichment>| {
+            let entry = map.entry(meeting_id.to_string()).or_default();
+            if !item.topic.trim().is_empty() {
+                entry.agenda.push(item);
+            }
+        };
+
+    let commit_win_item =
+        |meeting_id: &str, item: RecentWinEnrichment, map: &mut HashMap<String, PrepEnrichment>| {
+            let entry = map.entry(meeting_id.to_string()).or_default();
+            if !item.win.trim().is_empty() {
+                entry.wins.push(item);
+            }
+        };
 
     for line in response.lines() {
         let trimmed = line.trim();
 
         if let Some(id) = trimmed.strip_prefix("AGENDA:") {
-            current_meeting = Some(id.trim().to_string());
-            current_items = Vec::new();
-        } else if trimmed == "END_AGENDA" {
-            if let Some(ref id) = current_meeting {
-                if !current_items.is_empty() {
-                    result.insert(id.clone(), current_items.clone());
+            if let Some(Section::Agenda(ref meeting_id)) = current_section {
+                if let Some(item) = current_agenda_item.take() {
+                    commit_agenda_item(meeting_id, item, &mut result);
                 }
             }
-            current_meeting = None;
-            current_items = Vec::new();
-        } else if current_meeting.is_some() {
-            if let Some(topic) = trimmed.strip_prefix("ITEM:") {
-                // Start a new item
-                current_item = Some(AgendaItemEnrichment {
-                    topic: topic.trim().to_string(),
-                    ..Default::default()
-                });
-            } else if trimmed == "END_ITEM" {
-                if let Some(item) = current_item.take() {
-                    if !item.topic.is_empty() {
-                        current_items.push(item);
+            current_section = Some(Section::Agenda(id.trim().to_string()));
+            continue;
+        }
+        if let Some(id) = trimmed.strip_prefix("WINS:") {
+            if let Some(Section::Wins(ref meeting_id)) = current_section {
+                if let Some(item) = current_win_item.take() {
+                    commit_win_item(meeting_id, item, &mut result);
+                }
+            }
+            current_section = Some(Section::Wins(id.trim().to_string()));
+            continue;
+        }
+
+        match current_section {
+            Some(Section::Agenda(ref meeting_id)) => {
+                if trimmed == "END_AGENDA" {
+                    if let Some(item) = current_agenda_item.take() {
+                        commit_agenda_item(meeting_id, item, &mut result);
+                    }
+                    current_section = None;
+                } else if let Some(topic) = trimmed.strip_prefix("ITEM:") {
+                    if let Some(item) = current_agenda_item.take() {
+                        commit_agenda_item(meeting_id, item, &mut result);
+                    }
+                    current_agenda_item = Some(AgendaItemEnrichment {
+                        topic: topic.trim().to_string(),
+                        ..Default::default()
+                    });
+                } else if trimmed == "END_ITEM" {
+                    if let Some(item) = current_agenda_item.take() {
+                        commit_agenda_item(meeting_id, item, &mut result);
+                    }
+                } else if let Some(ref mut item) = current_agenda_item {
+                    if let Some(val) = trimmed.strip_prefix("WHY:") {
+                        item.why = Some(val.trim().to_string());
+                    } else if let Some(val) = trimmed.strip_prefix("SOURCE:") {
+                        item.source = Some(val.trim().to_string());
                     }
                 }
-            } else if let Some(ref mut item) = current_item {
-                if let Some(val) = trimmed.strip_prefix("WHY:") {
-                    item.why = Some(val.trim().to_string());
-                } else if let Some(val) = trimmed.strip_prefix("SOURCE:") {
-                    item.source = Some(val.trim().to_string());
+            }
+            Some(Section::Wins(ref meeting_id)) => {
+                if trimmed == "END_WINS" {
+                    if let Some(item) = current_win_item.take() {
+                        commit_win_item(meeting_id, item, &mut result);
+                    }
+                    current_section = None;
+                } else if let Some(text) = trimmed.strip_prefix("WIN:") {
+                    if let Some(item) = current_win_item.take() {
+                        commit_win_item(meeting_id, item, &mut result);
+                    }
+                    current_win_item = Some(RecentWinEnrichment {
+                        win: text.trim().to_string(),
+                        ..Default::default()
+                    });
+                } else if trimmed == "END_WIN" || trimmed == "END_ITEM" {
+                    if let Some(item) = current_win_item.take() {
+                        commit_win_item(meeting_id, item, &mut result);
+                    }
+                } else if let Some(ref mut item) = current_win_item {
+                    if let Some(val) = trimmed.strip_prefix("SOURCE:") {
+                        item.source = Some(val.trim().to_string());
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+
+    // Commit trailing partial sections defensively.
+    if let Some(section) = current_section {
+        match section {
+            Section::Agenda(meeting_id) => {
+                if let Some(item) = current_agenda_item {
+                    commit_agenda_item(&meeting_id, item, &mut result);
+                }
+            }
+            Section::Wins(meeting_id) => {
+                if let Some(item) = current_win_item {
+                    commit_win_item(&meeting_id, item, &mut result);
                 }
             }
         }
     }
 
     result
+}
+
+/// Backward-compatible helper for agenda-only callers.
+pub fn parse_agenda_enrichment(response: &str) -> HashMap<String, Vec<AgendaItemEnrichment>> {
+    parse_prep_enrichment(response)
+        .into_iter()
+        .filter_map(|(meeting_id, enrichment)| {
+            if enrichment.agenda.is_empty() {
+                None
+            } else {
+                Some((meeting_id, enrichment.agenda))
+            }
+        })
+        .collect()
 }
 
 /// AI-enrich prep agendas via PTY-spawned Claude.
@@ -1931,14 +2403,27 @@ pub fn enrich_preps(
             Err(_) => continue,
         };
 
-        let meeting_id = prep.get("meetingId").and_then(|v| v.as_str()).unwrap_or("unknown");
-        let title = prep.get("title").and_then(|v| v.as_str()).unwrap_or("Meeting");
+        let meeting_id = prep
+            .get("meetingId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let title = prep
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Meeting");
         meeting_ids.push(meeting_id.to_string());
 
-        prep_context.push_str(&format!("--- Meeting: {} (ID: {}) ---\n", title, meeting_id));
+        prep_context.push_str(&format!(
+            "--- Meeting: {} (ID: {}) ---\n",
+            title, meeting_id
+        ));
 
-        if let Some(points) = prep.get("talkingPoints").and_then(|v| v.as_array()) {
-            prep_context.push_str("Talking Points:\n");
+        if let Some(points) = prep
+            .get("recentWins")
+            .and_then(|v| v.as_array())
+            .or_else(|| prep.get("talkingPoints").and_then(|v| v.as_array()))
+        {
+            prep_context.push_str("Recent Wins:\n");
             for p in points {
                 if let Some(t) = p.as_str() {
                     prep_context.push_str(&format!("- {}\n", t));
@@ -1957,8 +2442,15 @@ pub fn enrich_preps(
             prep_context.push_str("Open Items:\n");
             for item in items {
                 let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("?");
-                let overdue = item.get("isOverdue").and_then(|v| v.as_bool()).unwrap_or(false);
-                prep_context.push_str(&format!("- {}{}\n", title, if overdue { " [OVERDUE]" } else { "" }));
+                let overdue = item
+                    .get("isOverdue")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                prep_context.push_str(&format!(
+                    "- {}{}\n",
+                    title,
+                    if overdue { " [OVERDUE]" } else { "" }
+                ));
             }
         }
         if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
@@ -1980,13 +2472,16 @@ pub fn enrich_preps(
     }
 
     let prompt = format!(
-        "You are refining meeting agendas for a Customer Success Manager.\n\n\
-         For each meeting below, review the talking points, risks, open items, questions, \
-         and current mechanical agenda. Produce a refined agenda that:\n\
+        "You are refining meeting prep reports for a Customer Success Manager.\n\n\
+         For each meeting below, review recent wins, risks, open items, questions, \
+         and current mechanical agenda. Produce:\n\
+         1) A refined agenda that:\n\
          1. Orders items by impact (highest-stakes first)\n\
          2. Adds a brief 'why' rationale for each item\n\
-         3. Keeps the source category (risk, talking_point, question, open_item)\n\
-         4. Caps at 7 items per meeting\n\n\
+         3. Uses source category (risk, talking_point, question, open_item)\n\
+         4. Avoids duplicating recent wins unless there are no other substantive topics\n\
+         5. Caps at 7 items per meeting\n\
+         2) A clean recent wins list (max 4) with source provenance separated.\n\n\
          Format your response as:\n\
          AGENDA:meeting-id\n\
          ITEM:topic text\n\
@@ -1994,7 +2489,13 @@ pub fn enrich_preps(
          SOURCE:source_category\n\
          END_ITEM\n\
          ... more items ...\n\
-         END_AGENDA\n\n\
+         END_AGENDA\n\
+         WINS:meeting-id\n\
+         WIN:concise win statement (no markdown, no inline source: tail)\n\
+         SOURCE:path-or-label (optional, only if known)\n\
+         END_WIN\n\
+         ... more wins ...\n\
+         END_WINS\n\n\
          {}",
         prep_context
     );
@@ -2003,13 +2504,13 @@ pub fn enrich_preps(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
 
-    let enrichments = parse_agenda_enrichment(&output.stdout);
+    let enrichments = parse_prep_enrichment(&output.stdout);
     if enrichments.is_empty() {
-        log::warn!("enrich_preps: no agenda enrichments parsed from Claude output");
+        log::warn!("enrich_preps: no prep enrichments parsed from Claude output");
         return Ok(());
     }
 
-    // Merge enriched agendas back into prep files
+    // Merge enriched agendas/wins back into prep files
     let mut enriched_count = 0;
     for path in &prep_files {
         let raw = match fs::read_to_string(path) {
@@ -2027,31 +2528,86 @@ pub fn enrich_preps(
             .unwrap_or("")
             .to_string();
 
-        if let Some(items) = enrichments.get(&meeting_id) {
-            let agenda_json: Vec<Value> = items
+        if let Some(enrichment) = enrichments.get(&meeting_id) {
+            let mut agenda_seen: HashSet<String> = HashSet::new();
+            let mut win_seen: HashSet<String> = HashSet::new();
+            let mut source_seen: HashSet<String> = HashSet::new();
+
+            let agenda_json: Vec<Value> = enrichment
+                .agenda
                 .iter()
-                .map(|item| {
-                    let mut obj = json!({"topic": item.topic});
+                .filter_map(|item| {
+                    let topic = sanitize_prep_line(&item.topic)?;
+                    let key = topic.to_lowercase();
+                    if agenda_seen.contains(&key) {
+                        return None;
+                    }
+                    agenda_seen.insert(key);
+                    let mut obj = json!({"topic": topic});
                     if let Some(m) = obj.as_object_mut() {
                         if let Some(ref why) = item.why {
-                            m.insert("why".to_string(), json!(why));
+                            if let Some(clean_why) = sanitize_prep_line(why) {
+                                m.insert("why".to_string(), json!(clean_why));
+                            }
                         }
                         if let Some(ref source) = item.source {
-                            m.insert("source".to_string(), json!(source));
+                            let clean_source = sanitize_inline_markdown(source).to_lowercase();
+                            if !clean_source.is_empty() {
+                                m.insert("source".to_string(), json!(clean_source));
+                            }
                         }
                     }
-                    obj
+                    Some(obj)
                 })
+                .take(7)
                 .collect();
 
+            let mut wins_json: Vec<String> = Vec::new();
+            let mut win_sources_json: Vec<Value> = Vec::new();
+            for win in &enrichment.wins {
+                let (win_without_source, embedded_source) = split_inline_source_tail(&win.win);
+                if let Some(clean_win) = sanitize_recent_win_line(&win_without_source) {
+                    let key = clean_win.to_lowercase();
+                    if !win_seen.contains(&key) {
+                        win_seen.insert(key);
+                        wins_json.push(clean_win);
+                    }
+                }
+
+                let source_text = win.source.clone().or(embedded_source);
+                if let Some(source_text) = source_text {
+                    let source_key = source_text.to_lowercase();
+                    if !source_seen.contains(&source_key) {
+                        if let Some(source_ref) = source_reference_value(&source_text) {
+                            source_seen.insert(source_key);
+                            win_sources_json.push(source_ref);
+                        }
+                    }
+                }
+            }
+
             if let Some(obj) = prep.as_object_mut() {
-                obj.insert("proposedAgenda".to_string(), json!(agenda_json));
+                if !agenda_json.is_empty() {
+                    obj.insert("proposedAgenda".to_string(), json!(agenda_json));
+                }
+                if !wins_json.is_empty() {
+                    obj.insert("recentWins".to_string(), json!(wins_json.clone()));
+                    // Keep legacy field in sync for older consumers.
+                    obj.insert("talkingPoints".to_string(), json!(wins_json));
+                }
+                if !win_sources_json.is_empty() {
+                    obj.insert("recentWinSources".to_string(), json!(win_sources_json));
+                }
             } else {
-                log::warn!("enrich_preps: prep is not a JSON object, skipping agenda insertion");
+                log::warn!("enrich_preps: prep is not a JSON object, skipping enrichment merge");
             }
 
             if let Err(e) = write_json(path, &prep) {
-                log::warn!("enrich_preps: failed to write enriched prep {}: {}", path.display(), e);
+                log::warn!(
+                    "enrich_preps: failed to write enriched prep {}: {}",
+                    path.display(),
+                    e
+                );
             } else {
                 enriched_count += 1;
             }
@@ -2291,11 +2847,7 @@ pub fn parse_time_suggestions(response: &str) -> Vec<TimeSuggestion> {
 ///
 /// Walks dayShapes[].meetings[] to find unique account IDs, looks up cached
 /// intelligence from the DB. Same pattern as daily but over the whole week.
-fn build_entity_intel_for_week(
-    overview: &Value,
-    db: &crate::db::ActionDb,
-) -> String {
-
+fn build_entity_intel_for_week(overview: &Value, db: &crate::db::ActionDb) -> String {
     let day_shapes = match overview.get("dayShapes").and_then(|v| v.as_array()) {
         Some(arr) => arr,
         None => return String::new(),
@@ -2327,7 +2879,10 @@ fn build_entity_intel_for_week(
             if entity_ids.is_empty() {
                 if let Some(aid) = meeting.get("accountId").and_then(|v| v.as_str()) {
                     if !aid.is_empty() {
-                        let name = meeting.get("account").and_then(|v| v.as_str()).unwrap_or(aid);
+                        let name = meeting
+                            .get("account")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(aid);
                         entity_ids.push((aid.to_string(), name.to_string()));
                     }
                 }
@@ -2368,8 +2923,12 @@ fn build_entity_intel_for_week(
 
                 if !intel.risks.is_empty() {
                     block.push_str("Risks: ");
-                    let risk_texts: Vec<&str> =
-                        intel.risks.iter().take(3).map(|r| r.text.as_str()).collect();
+                    let risk_texts: Vec<&str> = intel
+                        .risks
+                        .iter()
+                        .take(3)
+                        .map(|r| r.text.as_str())
+                        .collect();
                     block.push_str(&risk_texts.join("; "));
                     block.push('\n');
                 }
@@ -2419,9 +2978,7 @@ pub fn enrich_week(
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
-    let day_shapes = overview
-        .get("dayShapes")
-        .and_then(|v| v.as_array());
+    let day_shapes = overview.get("dayShapes").and_then(|v| v.as_array());
     let total_meetings: usize = day_shapes
         .map(|shapes| {
             shapes
@@ -2509,10 +3066,8 @@ pub fn enrich_week(
                                 })
                                 .filter_map(|m| {
                                     let title = m.get("title").and_then(|v| v.as_str())?;
-                                    let acct = m
-                                        .get("account")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("");
+                                    let acct =
+                                        m.get("account").and_then(|v| v.as_str()).unwrap_or("");
                                     Some(format!("{} — {} ({})", day, title, acct))
                                 })
                                 .collect::<Vec<_>>()
@@ -2621,8 +3176,7 @@ pub fn enrich_week(
     // Parse top priority
     let priority = parse_top_priority(response);
     if let Some(ref p) = priority {
-        let priority_json = serde_json::to_value(p)
-            .unwrap_or(json!(null));
+        let priority_json = serde_json::to_value(p).unwrap_or(json!(null));
         overview
             .as_object_mut()
             .unwrap()
@@ -2642,7 +3196,10 @@ pub fn enrich_week(
                     if day != suggestion.block_day {
                         continue;
                     }
-                    if let Some(blocks) = shape.get_mut("availableBlocks").and_then(|v| v.as_array_mut()) {
+                    if let Some(blocks) = shape
+                        .get_mut("availableBlocks")
+                        .and_then(|v| v.as_array_mut())
+                    {
                         for block in blocks.iter_mut() {
                             let start = block.get("start").and_then(|v| v.as_str()).unwrap_or("");
                             if start == suggestion.block_start {
@@ -2656,7 +3213,10 @@ pub fn enrich_week(
                 }
             }
         }
-        log::info!("enrich_week: applied {} time-block suggestions", suggestions.len());
+        log::info!(
+            "enrich_week: applied {} time-block suggestions",
+            suggestions.len()
+        );
     }
 
     // Write back
@@ -2687,14 +3247,20 @@ mod tests {
     fn test_format_time_display() {
         // Test with explicit UTC timezone
         let utc_tz: Tz = "UTC".parse().unwrap();
-        assert_eq!(format_time_display_tz("2025-02-07T09:00:00+00:00", Some(utc_tz)), "9:00 AM");
+        assert_eq!(
+            format_time_display_tz("2025-02-07T09:00:00+00:00", Some(utc_tz)),
+            "9:00 AM"
+        );
         assert_eq!(
             format_time_display_tz("2025-02-07T14:30:00+00:00", Some(utc_tz)),
             "2:30 PM"
         );
         // Test with a known non-UTC timezone
         let est: Tz = "America/New_York".parse().unwrap();
-        assert_eq!(format_time_display_tz("2025-02-07T14:00:00+00:00", Some(est)), "9:00 AM");
+        assert_eq!(
+            format_time_display_tz("2025-02-07T14:00:00+00:00", Some(est)),
+            "9:00 AM"
+        );
         // Edge cases
         assert_eq!(format_time_display(""), "All day");
         assert_eq!(format_time_display("2025-02-07"), "All day");
@@ -2943,7 +3509,8 @@ mod tests {
         let data_dir = dir.path().join("data");
 
         let schedule = json!({"date": "2025-02-07", "meetings": []});
-        let actions = json!({"date": "2025-02-07", "summary": {"overdue": 0, "dueToday": 0}, "actions": []});
+        let actions =
+            json!({"date": "2025-02-07", "summary": {"overdue": 0, "dueToday": 0}, "actions": []});
         let directive = Directive {
             context: crate::json_loader::DirectiveContext {
                 date: Some("2025-02-07".to_string()),
@@ -2953,9 +3520,16 @@ mod tests {
         };
 
         let emails = json!({});
-        let result =
-            deliver_manifest(&directive, &schedule, &actions, &emails, &[], &data_dir, true)
-                .unwrap();
+        let result = deliver_manifest(
+            &directive,
+            &schedule,
+            &actions,
+            &emails,
+            &[],
+            &data_dir,
+            true,
+        )
+        .unwrap();
         assert_eq!(result["partial"], true);
         assert!(data_dir.join("manifest.json").exists());
     }
@@ -2967,16 +3541,14 @@ mod tests {
 
         let directive = Directive {
             emails: crate::json_loader::DirectiveEmails {
-                high_priority: vec![
-                    crate::json_loader::DirectiveEmail {
-                        id: Some("e1".to_string()),
-                        from: Some("Alice".to_string()),
-                        from_email: Some("alice@example.com".to_string()),
-                        subject: Some("Contract renewal".to_string()),
-                        snippet: Some("Please review the...".to_string()),
-                        priority: Some("high".to_string()),
-                    },
-                ],
+                high_priority: vec![crate::json_loader::DirectiveEmail {
+                    id: Some("e1".to_string()),
+                    from: Some("Alice".to_string()),
+                    from_email: Some("alice@example.com".to_string()),
+                    subject: Some("Contract renewal".to_string()),
+                    snippet: Some("Please review the...".to_string()),
+                    priority: Some("high".to_string()),
+                }],
                 classified: vec![
                     crate::json_loader::DirectiveEmail {
                         id: Some("e2".to_string()),
@@ -3158,7 +3730,13 @@ END_FOCUS
         };
 
         let result = deliver_manifest(
-            &directive, &schedule, &actions, &emails, &[], &data_dir, false,
+            &directive,
+            &schedule,
+            &actions,
+            &emails,
+            &[],
+            &data_dir,
+            false,
         )
         .unwrap();
         assert_eq!(result["partial"], false);
@@ -3181,6 +3759,11 @@ WHY:Position as proof of execution before Phase 2 ask
 SOURCE:talking_point
 END_ITEM
 END_AGENDA
+WINS:mtg-acme-weekly
+WIN:Influence tier upgrade executed with engineering leader (source: 2026-02-11-sync.md)
+SOURCE:2026-02-11-sync.md
+END_WIN
+END_WINS
 
 AGENDA:mtg-globex-qbr
 ITEM:Renewal proposal
@@ -3189,17 +3772,25 @@ SOURCE:talking_point
 END_ITEM
 END_AGENDA
 ";
-        let enrichments = parse_agenda_enrichment(response);
+        let enrichments = parse_prep_enrichment(response);
         assert_eq!(enrichments.len(), 2);
 
-        let acme = &enrichments["mtg-acme-weekly"];
+        let acme = &enrichments["mtg-acme-weekly"].agenda;
         assert_eq!(acme.len(), 2);
         assert_eq!(acme[0].topic, "Address Team B usage decline");
-        assert_eq!(acme[0].why.as_deref(), Some("25% drop threatens renewal — needs intervention plan"));
+        assert_eq!(
+            acme[0].why.as_deref(),
+            Some("25% drop threatens renewal — needs intervention plan")
+        );
         assert_eq!(acme[0].source.as_deref(), Some("risk"));
         assert_eq!(acme[1].topic, "Celebrate Phase 1 completion");
 
-        let globex = &enrichments["mtg-globex-qbr"];
+        let acme_wins = &enrichments["mtg-acme-weekly"].wins;
+        assert_eq!(acme_wins.len(), 1);
+        assert!(acme_wins[0].win.contains("Influence tier upgrade executed"));
+        assert_eq!(acme_wins[0].source.as_deref(), Some("2026-02-11-sync.md"));
+
+        let globex = &enrichments["mtg-globex-qbr"].agenda;
         assert_eq!(globex.len(), 1);
         assert_eq!(globex[0].topic, "Renewal proposal");
     }
@@ -3224,19 +3815,22 @@ END_AGENDA
         });
         let agenda = generate_mechanical_agenda(&prep);
 
-        // Should have items: 1 overdue + 2 risks + 3 talking points + 1 non-overdue = 7
-        assert_eq!(agenda.len(), 7);
+        // Should have items: 1 overdue + 2 risks + 2 questions + 1 non-overdue = 6
+        assert_eq!(agenda.len(), 6);
 
         // First item should be the overdue follow-up
-        assert!(agenda[0]["topic"].as_str().unwrap().starts_with("Follow up:"));
+        assert!(agenda[0]["topic"]
+            .as_str()
+            .unwrap()
+            .starts_with("Follow up:"));
         assert_eq!(agenda[0]["source"], "open_item");
 
         // Next 2 should be risks
         assert_eq!(agenda[1]["source"], "risk");
         assert_eq!(agenda[2]["source"], "risk");
-
-        // Next 3 should be talking points
-        assert_eq!(agenda[3]["source"], "talking_point");
+        // Questions should be included before wins.
+        assert_eq!(agenda[3]["source"], "question");
+        assert_eq!(agenda[4]["source"], "question");
     }
 
     #[test]
@@ -3264,6 +3858,36 @@ END_AGENDA
         });
         let agenda = generate_mechanical_agenda(&prep);
         assert_eq!(agenda.len(), 7);
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_uses_recent_wins_as_fallback() {
+        let prep = json!({
+            "recentWins": ["Recent win: Tier upgrade closed (source: notes.md)"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+        assert_eq!(agenda.len(), 1);
+        assert_eq!(agenda[0]["topic"], "Tier upgrade closed");
+        assert_eq!(agenda[0]["source"], "talking_point");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_back_compat_talking_points_fallback() {
+        let prep = json!({
+            "talkingPoints": ["Recent win: Expansion signal from sponsor (source: call.md)"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+        assert_eq!(agenda.len(), 1);
+        assert_eq!(agenda[0]["topic"], "Expansion signal from sponsor");
+        assert_eq!(agenda[0]["source"], "talking_point");
+    }
+
+    #[test]
+    fn test_sanitize_recent_win_line_removes_inline_source_tail() {
+        let cleaned = sanitize_recent_win_line(
+            "Recent win: Sponsor re-engaged _(source: 2026-02-11-transcript.md)_",
+        );
+        assert_eq!(cleaned.as_deref(), Some("Sponsor re-engaged"));
     }
 
     #[test]
@@ -3417,8 +4041,12 @@ END_SUGGESTIONS
             ]
         }"#;
 
-        let overview: crate::types::WeekOverview = serde_json::from_str(json).expect("Failed to deserialize WeekOverview");
-        assert_eq!(overview.week_narrative.as_deref(), Some("Test narrative about the week."));
+        let overview: crate::types::WeekOverview =
+            serde_json::from_str(json).expect("Failed to deserialize WeekOverview");
+        assert_eq!(
+            overview.week_narrative.as_deref(),
+            Some("Test narrative about the week.")
+        );
         assert!(overview.top_priority.is_some());
         let tp = overview.top_priority.clone().unwrap();
         assert_eq!(tp.title, "Ship the feature");
