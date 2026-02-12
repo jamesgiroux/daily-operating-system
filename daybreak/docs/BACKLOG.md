@@ -22,6 +22,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I152** | Error handling (eliminate panics) | P0 | Infra |
 | **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P1 | Meetings |
 | **I153** | Binary size + startup perf | P1 | Infra |
+| **I197** | Resume responsiveness hardening (startup + auth checks) | P1 | Infra |
 | **I154** | Frontend bundle audit | P1 | Infra |
 | **I155** | Rate limiting + retry hardening | P1 | Infra |
 | **I157** | Frontend component audit (radix-ui) | P1 | UX |
@@ -77,6 +78,7 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 | P0 | I151 | Input validation (Tauri IPC boundary) | Open |
 | P0 | I152 | Error handling (eliminate panics) | Open |
 | P1 | I153 | Binary size + startup perf | Open |
+| P1 | I197 | Resume responsiveness hardening (startup + auth checks) | Partial |
 | P1 | I154 | Frontend bundle audit | Open |
 | P1 | I155 | Rate limiting + retry hardening | Open |
 | P1 | I157 | Frontend component audit (radix-ui) | Open |
@@ -151,6 +153,21 @@ Structured Account Plan (exec summary, 90-day focus, risk table, products/adopti
 
 **I143: Renewal lifecycle tracking**
 (a) Auto-rollover when renewal passes without churn. (b) Lifecycle event markers (churn, expansion, renewal) in `account_events` table. (c) UI for recording events on AccountDetailPage.
+
+### Infra & Runtime
+
+**I197: Resume responsiveness hardening (startup + auth checks)**
+Goal: eliminate avoidable UI stalls after focus return and on cold startup.
+
+Phase 1 completed (2026-02-12):
+- moved startup sync/indexing off `AppState::new()` onto a background task
+- bounded Claude auth check with timeout + forced process cleanup
+- added lock-contention fallbacks + latency instrumentation for focus-polled commands
+- throttled/deduped focus refresh requests in dashboard hook
+
+Remaining completion criteria:
+- expand latency instrumentation beyond current hot commands and surface p95 rollups
+- define/consolidate DB concurrency strategy beyond global mutex (split-lock enforcement + queue/pool decision)
 
 ### UX & Polish
 
