@@ -9,17 +9,17 @@ use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_emails_json, load_prep_json, load_schedule_json,
-    DataFreshness,
+    check_data_freshness, load_actions_json, load_emails_json, load_emails_json_with_sync,
+    load_prep_json, load_schedule_json, DataFreshness,
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState};
 use crate::types::{
-    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
-    FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock, WeekOverview,
-    WorkflowId, WorkflowStatus,
+    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
+    ExecutionRecord, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile,
+    MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock,
+    WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -232,7 +232,21 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
     }
 
-    let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
+    let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
+        match load_emails_json_with_sync(&today_dir) {
+            Ok(payload) => {
+                let emails = if payload.emails.is_empty() {
+                    None
+                } else {
+                    Some(payload.emails)
+                };
+                (emails, payload.sync)
+            }
+            Err(_) => (
+                load_emails_json(&today_dir).ok().filter(|e| !e.is_empty()),
+                None,
+            ),
+        };
 
     // Calculate stats (exclude cancelled meetings)
     let inbox_count = count_inbox(workspace);
@@ -259,6 +273,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             meetings,
             actions,
             emails,
+            email_sync,
         },
         freshness,
         google_auth,
@@ -5551,5 +5566,4 @@ mod tests {
         assert!(after.contains("recentWins"));
         assert!(after.contains("recentWinSources"));
     }
-
 }
