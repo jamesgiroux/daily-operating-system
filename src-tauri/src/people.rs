@@ -68,7 +68,8 @@ pub fn person_dir(workspace: &Path, name: &str) -> PathBuf {
 /// Queries entity links from SQLite so they persist in the filesystem (ADR-0048).
 pub fn write_person_json(workspace: &Path, person: &DbPerson, db: &ActionDb) -> Result<(), String> {
     let dir = person_dir(workspace, &person.name);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
     // Query linked entity IDs so they survive a DB rebuild
     let linked_entities = db
@@ -93,10 +94,9 @@ pub fn write_person_json(workspace: &Path, person: &DbPerson, db: &ActionDb) -> 
     };
 
     let path = dir.join("person.json");
-    let content = serde_json::to_string_pretty(&json)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
+    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
 }
@@ -108,7 +108,8 @@ pub fn write_person_markdown(
     db: &ActionDb,
 ) -> Result<(), String> {
     let dir = person_dir(workspace, &person.name);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
     let mut md = String::new();
 
@@ -198,11 +199,7 @@ pub fn write_person_markdown(
     match db.get_entities_for_person(&person.id) {
         Ok(entities) if !entities.is_empty() => {
             for e in &entities {
-                md.push_str(&format!(
-                    "- {} ({})\n",
-                    e.name,
-                    e.entity_type.as_str()
-                ));
+                md.push_str(&format!("- {} ({})\n", e.name, e.entity_type.as_str()));
             }
             md.push('\n');
         }
@@ -226,8 +223,7 @@ pub struct ReadPersonResult {
 
 /// Read a person.json file and convert to DbPerson + linked entity IDs.
 pub fn read_person_json(path: &Path) -> Result<ReadPersonResult, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
     let json: PersonJson =
         serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
 
@@ -288,8 +284,8 @@ pub fn sync_people_from_workspace(
 
     let mut synced = 0;
 
-    let entries = std::fs::read_dir(&people_dir)
-        .map_err(|e| format!("Failed to read People/: {}", e))?;
+    let entries =
+        std::fs::read_dir(&people_dir).map_err(|e| format!("Failed to read People/: {}", e))?;
 
     for entry in entries {
         let entry = match entry {
@@ -303,7 +299,10 @@ pub fn sync_people_from_workspace(
         }
 
         match read_person_json(&json_path) {
-            Ok(ReadPersonResult { person: mut file_person, linked_entities }) => {
+            Ok(ReadPersonResult {
+                person: mut file_person,
+                linked_entities,
+            }) => {
                 // Classify relationship if unknown and user_domains are set
                 if file_person.relationship == "unknown" {
                     file_person.relationship =
@@ -324,7 +323,9 @@ pub fn sync_people_from_workspace(
                             // Restore entity links from JSON (ADR-0048)
                             for entity_id in &linked_entities {
                                 let _ = db.link_person_to_entity(
-                                    &file_person.id, entity_id, "associated",
+                                    &file_person.id,
+                                    entity_id,
+                                    "associated",
                                 );
                             }
                             let _ = write_person_markdown(workspace, &file_person, db);
@@ -343,9 +344,8 @@ pub fn sync_people_from_workspace(
                         let _ = db.upsert_person(&file_person);
                         // Restore entity links from JSON (ADR-0048)
                         for entity_id in &linked_entities {
-                            let _ = db.link_person_to_entity(
-                                &file_person.id, entity_id, "associated",
-                            );
+                            let _ =
+                                db.link_person_to_entity(&file_person.id, entity_id, "associated");
                         }
                         let _ = write_person_markdown(workspace, &file_person, db);
                         synced += 1;

@@ -67,7 +67,10 @@ pub fn process_file(
         return ProcessingResult::Error {
             message: format!(
                 "Unsupported file format: .{}",
-                file_path.extension().and_then(|e| e.to_str()).unwrap_or("unknown")
+                file_path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown")
             ),
         };
     }
@@ -86,11 +89,7 @@ pub fn process_file(
     let classification = classify_file(&file_path, &content);
     let class_label = classification.label().to_string();
 
-    log::info!(
-        "Classified '{}' as '{}'",
-        filename,
-        class_label
-    );
+    log::info!("Classified '{}' as '{}'", filename, class_label);
 
     // Resolve destination
     let destination = resolve_destination(&classification, workspace, filename);
@@ -100,13 +99,20 @@ pub fn process_file(
             // Route the file
             match move_file(&file_path, &dest) {
                 Ok(route_result) => {
-                    log::info!("Routed '{}' to '{}'", filename, route_result.destination.display());
+                    log::info!(
+                        "Routed '{}' to '{}'",
+                        filename,
+                        route_result.destination.display()
+                    );
 
                     // Write companion .md for non-markdown files
                     if is_non_md {
                         let companion_path = extract::companion_md_path(&route_result.destination);
-                        let companion_content = extract::build_companion_md(filename, format, &content);
-                        if let Err(e) = crate::util::atomic_write_str(&companion_path, &companion_content) {
+                        let companion_content =
+                            extract::build_companion_md(filename, format, &content);
+                        if let Err(e) =
+                            crate::util::atomic_write_str(&companion_path, &companion_content)
+                        {
                             log::warn!("Failed to write companion .md for '{}': {}", filename, e);
                         } else {
                             log::info!("Created companion .md at '{}'", companion_path.display());
@@ -132,9 +138,7 @@ pub fn process_file(
                             classification: class_label.clone(),
                             account: match &classification {
                                 Classification::MeetingNotes { account } => account.clone(),
-                                Classification::AccountUpdate { account } => {
-                                    Some(account.clone())
-                                }
+                                Classification::AccountUpdate { account } => Some(account.clone()),
                                 Classification::ActionItems { account } => account.clone(),
                                 _ => None,
                             },
@@ -142,7 +146,7 @@ pub fn process_file(
                             actions: Vec::new(), // actions already extracted above
                             destination_path: Some(dest.display().to_string()),
                             profile: profile.to_string(),
-                            wins: Vec::new(),  // quick path has no AI extraction
+                            wins: Vec::new(), // quick path has no AI extraction
                             risks: Vec::new(),
                             entity_type: None,
                         };
@@ -302,7 +306,11 @@ fn extract_and_sync_actions(
             .or_else(|| account_fallback.map(String::from));
 
         let action = crate::db::DbAction {
-            id: format!("inbox-{}-{}", source_filename.trim_end_matches(".md"), count),
+            id: format!(
+                "inbox-{}-{}",
+                source_filename.trim_end_matches(".md"),
+                count
+            ),
             title: meta.clean_title,
             priority: meta.priority.unwrap_or_else(|| "P2".to_string()),
             status,
@@ -365,12 +373,19 @@ mod tests {
 
         // Should be classified and routed
         match &result {
-            ProcessingResult::Routed { classification, destination } => {
+            ProcessingResult::Routed {
+                classification,
+                destination,
+            } => {
                 assert_eq!(classification, "meeting_notes");
                 // Companion .md should exist alongside the .txt
                 let dest_path = std::path::Path::new(destination);
                 let companion = dest_path.parent().unwrap().join("acme-meeting-notes.md");
-                assert!(companion.exists(), "Companion .md should exist at {}", companion.display());
+                assert!(
+                    companion.exists(),
+                    "Companion .md should exist at {}",
+                    companion.display()
+                );
 
                 let companion_content = std::fs::read_to_string(&companion).unwrap();
                 assert!(companion_content.contains("source: acme-meeting-notes.txt"));
@@ -409,7 +424,11 @@ mod tests {
                     .flatten()
                     .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
                     .collect();
-                assert_eq!(md_files.len(), 1, "Only the original .md should exist (no companion)");
+                assert_eq!(
+                    md_files.len(),
+                    1,
+                    "Only the original .md should exist (no companion)"
+                );
             }
             other => panic!("Expected Routed, got {:?}", other),
         }
@@ -449,7 +468,10 @@ mod tests {
         let result = process_file(workspace, filename, None, "customer-success");
 
         match &result {
-            ProcessingResult::Routed { classification, destination } => {
+            ProcessingResult::Routed {
+                classification,
+                destination,
+            } => {
                 assert_eq!(classification, "action_items");
                 // Companion .md should exist
                 let dest_path = std::path::Path::new(destination);

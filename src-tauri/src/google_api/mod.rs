@@ -187,8 +187,9 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
     let primary = credentials_path();
     if primary.exists() {
         let content = std::fs::read_to_string(&primary)?;
-        let creds: ClientCredentials = serde_json::from_str(&content)
-            .map_err(|e| GoogleApiError::InvalidCredentials(format!("{}: {}", primary.display(), e)))?;
+        let creds: ClientCredentials = serde_json::from_str(&content).map_err(|e| {
+            GoogleApiError::InvalidCredentials(format!("{}: {}", primary.display(), e))
+        })?;
         return Ok(creds);
     }
 
@@ -196,8 +197,9 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
         let fallback = ws.join(".config").join("google").join("credentials.json");
         if fallback.exists() {
             let content = std::fs::read_to_string(&fallback)?;
-            let creds: ClientCredentials = serde_json::from_str(&content)
-                .map_err(|e| GoogleApiError::InvalidCredentials(format!("{}: {}", fallback.display(), e)))?;
+            let creds: ClientCredentials = serde_json::from_str(&content).map_err(|e| {
+                GoogleApiError::InvalidCredentials(format!("{}: {}", fallback.display(), e))
+            })?;
             return Ok(creds);
         }
     }
@@ -214,7 +216,8 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
 fn embedded_credentials() -> ClientCredentials {
     ClientCredentials {
         installed: InstalledAppCredentials {
-            client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com".to_string(),
+            client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
+                .to_string(),
             client_secret: "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".to_string(),
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
@@ -240,10 +243,8 @@ pub fn is_token_expired(token: &GoogleToken) -> bool {
         None => true, // No expiry = assume expired, try refresh
         Some(expiry_str) => {
             // Python stores expiry as "2026-02-08T12:00:00.000000Z" or similar
-            match chrono::DateTime::parse_from_rfc3339(
-                &expiry_str.replace('Z', "+00:00"),
-            )
-            .or_else(|_| chrono::DateTime::parse_from_rfc3339(expiry_str))
+            match chrono::DateTime::parse_from_rfc3339(&expiry_str.replace('Z', "+00:00"))
+                .or_else(|_| chrono::DateTime::parse_from_rfc3339(expiry_str))
             {
                 Ok(expiry) => {
                     // Consider expired if within 60 seconds of expiry
@@ -351,7 +352,10 @@ mod tests {
         let parsed: GoogleToken = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.token, "ya29.test-access-token");
-        assert_eq!(parsed.refresh_token.as_deref(), Some("1//test-refresh-token"));
+        assert_eq!(
+            parsed.refresh_token.as_deref(),
+            Some("1//test-refresh-token")
+        );
         assert_eq!(parsed.client_id, "12345.apps.googleusercontent.com");
         assert_eq!(parsed.account.as_deref(), Some("user@example.com"));
     }
@@ -457,7 +461,10 @@ mod tests {
         }"#;
 
         let creds: ClientCredentials = serde_json::from_str(json).unwrap();
-        assert_eq!(creds.installed.client_id, "12345.apps.googleusercontent.com");
+        assert_eq!(
+            creds.installed.client_id,
+            "12345.apps.googleusercontent.com"
+        );
         assert_eq!(creds.installed.redirect_uris, vec!["http://localhost"]);
     }
 }

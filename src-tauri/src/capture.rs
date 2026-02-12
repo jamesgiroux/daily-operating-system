@@ -25,15 +25,11 @@ use crate::types::{CalendarEvent, MeetingType};
 #[derive(Debug, Clone)]
 enum PromptState {
     /// Waiting to see if a transcript appears in `_inbox/`
-    WaitingForTranscript {
-        deadline: DateTime<Utc>,
-    },
+    WaitingForTranscript { deadline: DateTime<Utc> },
     /// No transcript found — ready to show lightweight fallback prompt
     FallbackReady,
     /// Transcript found — auto-processing through inbox pipeline, no prompt needed
-    TranscriptDetected {
-        filename: String,
-    },
+    TranscriptDetected { filename: String },
 }
 
 /// A pending prompt waiting to be shown
@@ -49,10 +45,7 @@ struct PendingPrompt {
 fn should_prompt(meeting_type: &MeetingType) -> bool {
     matches!(
         meeting_type,
-        MeetingType::Customer
-            | MeetingType::Qbr
-            | MeetingType::Partnership
-            | MeetingType::External
+        MeetingType::Customer | MeetingType::Qbr | MeetingType::Partnership | MeetingType::External
     )
 }
 
@@ -194,8 +187,8 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                 && !dismissed.contains(id)
                 && !captured.contains(id)
             {
-                let transcript_deadline = now
-                    + Duration::minutes(capture_config.transcript_wait_minutes as i64);
+                let transcript_deadline =
+                    now + Duration::minutes(capture_config.transcript_wait_minutes as i64);
                 let trigger_time =
                     event.end + Duration::minutes(capture_config.delay_minutes as i64);
 
@@ -256,8 +249,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             "Triggering fallback capture prompt for '{}'",
                             prompt.meeting.title
                         );
-                        let _ = app_handle
-                            .emit("post-meeting-prompt-fallback", &prompt.meeting);
+                        let _ = app_handle.emit("post-meeting-prompt-fallback", &prompt.meeting);
                         to_remove.push(i);
                     }
                 }
@@ -265,8 +257,7 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                 PromptState::TranscriptDetected { filename } => {
                     // Transcript found — process with full meeting context (ADR-0044)
                     if let Some(ref ws) = workspace_path {
-                        let file_path =
-                            Path::new(ws).join("_inbox").join(filename.as_str());
+                        let file_path = Path::new(ws).join("_inbox").join(filename.as_str());
 
                         // Check immutability before processing
                         let already_processed = state
@@ -299,44 +290,31 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             let db_guard = state.db.lock().ok();
                             let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
 
-                            let result =
-                                crate::processor::transcript::process_transcript(
-                                    Path::new(ws),
-                                    &file_path.display().to_string(),
-                                    &prompt.meeting,
-                                    db_ref,
-                                    &profile,
-                                    Some(&ai_config),
-                                );
+                            let result = crate::processor::transcript::process_transcript(
+                                Path::new(ws),
+                                &file_path.display().to_string(),
+                                &prompt.meeting,
+                                db_ref,
+                                &profile,
+                                Some(&ai_config),
+                            );
 
                             if result.status == "success" {
                                 // Record transcript
                                 let record = crate::types::TranscriptRecord {
                                     meeting_id: prompt.meeting.id.clone(),
                                     file_path: file_path.display().to_string(),
-                                    destination: result
-                                        .destination
-                                        .clone()
-                                        .unwrap_or_default(),
+                                    destination: result.destination.clone().unwrap_or_default(),
                                     summary: result.summary.clone(),
                                     processed_at: Utc::now().to_rfc3339(),
                                 };
-                                if let Ok(mut guard) =
-                                    state.transcript_processed.lock()
-                                {
-                                    guard.insert(
-                                        prompt.meeting.id.clone(),
-                                        record,
-                                    );
-                                    let _ = crate::state::save_transcript_records(
-                                        &guard,
-                                    );
+                                if let Ok(mut guard) = state.transcript_processed.lock() {
+                                    guard.insert(prompt.meeting.id.clone(), record);
+                                    let _ = crate::state::save_transcript_records(&guard);
                                 }
 
                                 // Mark as captured
-                                if let Ok(mut guard) =
-                                    state.capture_captured.lock()
-                                {
+                                if let Ok(mut guard) = state.capture_captured.lock() {
                                     guard.insert(prompt.meeting.id.clone());
                                 }
 
@@ -346,13 +324,9 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 }
 
                                 // Emit event for live frontend updates
-                                let outcome = build_auto_outcome(
-                                    &prompt.meeting.id,
-                                    &result,
-                                    &state,
-                                );
-                                let _ = app_handle
-                                    .emit("transcript-processed", &outcome);
+                                let outcome =
+                                    build_auto_outcome(&prompt.meeting.id, &result, &state);
+                                let _ = app_handle.emit("transcript-processed", &outcome);
 
                                 log::info!(
                                     "Auto-processed transcript for '{}' — {} wins, {} risks, {} decisions",
