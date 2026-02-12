@@ -85,6 +85,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let customer_domains = extract_customer_domains(&meetings_by_type);
     let email_result =
         fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+    if let Some(ref sync_error) = email_result.sync_error {
+        log::warn!(
+            "prepare_today: email sync degraded [{}] {}",
+            sync_error.code,
+            sync_error.message
+        );
+    }
     log::info!(
         "prepare_today: {} emails ({} high, {} medium, {} low)",
         email_result.all.len(),
@@ -147,6 +154,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "classified": email_result.all,
             "medium_count": email_result.medium_count,
             "low_count": email_result.low_count,
+            "sync_error": email_result.sync_error.as_ref().map(EmailSyncFailure::to_json),
         },
         "files": {
             "existing_today": existing_today,
@@ -303,6 +311,9 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 
     let email_result =
         fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+    if let Some(sync_error) = email_result.sync_error {
+        return Err(ExecutionError::NetworkError(sync_error.message));
+    }
 
     // Build refresh directive matching the shape Rust expects
     let mut high_priority = Vec::new();
@@ -690,6 +701,24 @@ struct EmailResult {
     high: Vec<Value>,
     medium_count: u64,
     low_count: u64,
+    sync_error: Option<EmailSyncFailure>,
+}
+
+#[derive(Debug, Clone)]
+struct EmailSyncFailure {
+    stage: &'static str,
+    code: &'static str,
+    message: String,
+}
+
+impl EmailSyncFailure {
+    fn to_json(&self) -> Value {
+        json!({
+            "stage": self.stage,
+            "code": self.code,
+            "message": self.message,
+        })
+    }
 }
 
 async fn fetch_and_classify_emails(
@@ -706,6 +735,11 @@ async fn fetch_and_classify_emails(
                 high: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
+                sync_error: Some(EmailSyncFailure {
+                    stage: "fetch",
+                    code: "gmail_auth_failed",
+                    message: format!("Email fetch authentication failed: {}", e),
+                }),
             };
         }
     };
@@ -719,6 +753,11 @@ async fn fetch_and_classify_emails(
                 high: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
+                sync_error: Some(EmailSyncFailure {
+                    stage: "fetch",
+                    code: "gmail_fetch_failed",
+                    message: format!("Email fetch failed: {}", e),
+                }),
             };
         }
     };
@@ -765,6 +804,7 @@ async fn fetch_and_classify_emails(
         high,
         medium_count,
         low_count,
+        sync_error: None,
     }
 }
 
