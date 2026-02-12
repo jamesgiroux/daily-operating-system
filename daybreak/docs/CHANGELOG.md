@@ -20,6 +20,7 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 ### Focus/Capacity
 - **I178:** Closed. Focus available blocks now compute from live calendar events with schedule `startIso` fallback only when live events are unavailable (ADR-0062 completion).
+- **I179:** Closed. Focus now ranks pending/waiting actions deterministically with urgency and feasibility scoring, surfaces top 3 recommendations, and flags at-risk actions.
 
 ### Outcomes
 - Outcomes retrieval no longer requires transcript-record file state; DB transcript metadata + captures/actions now drive outcomes durability.
