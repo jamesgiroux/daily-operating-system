@@ -1194,7 +1194,9 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
             .map(|g| g.clone())
             .unwrap_or_default();
         let available_blocks: Vec<TimeBlock> = if live_events.is_empty() {
-            crate::queries::schedule::available_blocks_from_schedule_start_iso(&meetings, today_date)
+            crate::queries::schedule::available_blocks_from_schedule_start_iso(
+                &meetings, today_date,
+            )
         } else {
             crate::queries::schedule::available_blocks_from_live(&live_events, today_date)
         };
@@ -2357,8 +2359,8 @@ pub fn get_action_detail(
 
 /// Get current Google authentication status.
 ///
-/// Re-checks the token file on disk when the cached state is NotConfigured,
-/// so the UI picks up tokens written by external flows (e.g. manual auth).
+/// Re-checks persisted auth storage when cached state is NotConfigured,
+/// so the UI picks up credentials written by external flows.
 #[tauri::command]
 pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
     let started = std::time::Instant::now();
@@ -2368,7 +2370,7 @@ pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
         .map(|guard| guard.clone())
         .unwrap_or(GoogleAuthStatus::NotConfigured);
 
-    // If cached state says not configured, re-check disk — token may have
+    // If cached state says not configured, re-check storage — token may have
     // been written by a script or the browser auth flow completing late.
     if matches!(cached, GoogleAuthStatus::NotConfigured) {
         let fresh = crate::state::detect_google_auth();
