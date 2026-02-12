@@ -22,6 +22,7 @@ mod hygiene;
 mod intel_queue;
 pub mod intelligence;
 mod json_loader;
+mod latency;
 mod notification;
 mod parser;
 pub mod people;
@@ -260,6 +261,7 @@ pub fn run() {
             commands::populate_workspace,
             commands::set_user_profile,
             commands::check_claude_status,
+            commands::get_latency_rollups,
             commands::install_inbox_sample,
             // Dev Tools
             commands::dev_apply_scenario,
