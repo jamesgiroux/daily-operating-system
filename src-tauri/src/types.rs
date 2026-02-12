@@ -900,6 +900,10 @@ pub struct FocusData {
     pub key_meetings: Vec<FocusMeeting>,
     pub available_blocks: Vec<TimeBlock>,
     pub total_focus_minutes: u32,
+    pub availability: FocusAvailability,
+    pub prioritized_actions: Vec<PrioritizedFocusAction>,
+    pub top_three: Vec<String>,
+    pub implications: FocusImplications,
 }
 
 /// Lightweight meeting projection for the Focus page
@@ -917,6 +921,41 @@ pub struct FocusMeeting {
     pub account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_file: Option<String>,
+}
+
+/// Detailed availability diagnostics and capacity metrics for Focus (I178).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusAvailability {
+    pub source: String,
+    pub warnings: Vec<String>,
+    pub meeting_count: u32,
+    pub meeting_minutes: u32,
+    pub available_minutes: u32,
+    pub deep_work_minutes: u32,
+    pub deep_work_blocks: Vec<TimeBlock>,
+}
+
+/// Ranked action with deterministic feasibility/risk metadata (I179).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrioritizedFocusAction {
+    pub action: crate::db::DbAction,
+    pub score: i32,
+    pub effort_minutes: u32,
+    pub feasible: bool,
+    pub at_risk: bool,
+    pub reason: String,
+}
+
+/// High-level implications for today's focus capacity vs action load (I179).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusImplications {
+    pub achievable_count: u32,
+    pub total_count: u32,
+    pub at_risk_count: u32,
+    pub summary: String,
 }
 
 // =============================================================================
