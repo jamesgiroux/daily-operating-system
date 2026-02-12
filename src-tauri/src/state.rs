@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU32;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, TryLockError};
 
 use chrono::{DateTime, Utc};
 
@@ -88,6 +88,14 @@ pub struct AppState {
     pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
     /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
     pub hygiene_budget: HygieneBudget,
+}
+
+/// Non-blocking DB read outcome for hot command paths.
+pub enum DbTryRead<T> {
+    Ok(T),
+    Busy,
+    Unavailable,
+    Poisoned,
 }
 
 impl AppState {
@@ -189,6 +197,55 @@ impl AppState {
             .read()
             .ok()
             .and_then(|guard| guard.get(&workflow).cloned())
+    }
+
+    /// Hot-path DB read helper.
+    ///
+    /// Uses `try_lock()` so UI-facing read commands can degrade gracefully under
+    /// contention instead of blocking the render path.
+    pub fn with_db_try_read<T, F>(&self, f: F) -> DbTryRead<T>
+    where
+        F: FnOnce(&crate::db::ActionDb) -> T,
+    {
+        match self.db.try_lock() {
+            Ok(guard) => {
+                if let Some(db) = guard.as_ref() {
+                    DbTryRead::Ok(f(db))
+                } else {
+                    DbTryRead::Unavailable
+                }
+            }
+            Err(TryLockError::WouldBlock) => DbTryRead::Busy,
+            Err(TryLockError::Poisoned(_)) => DbTryRead::Poisoned,
+        }
+    }
+
+    /// Standard DB read helper for non-hot paths.
+    ///
+    /// Keep lock scope short: gather data, release lock, then do compute/network/IO.
+    pub fn with_db_read<T, F>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
+    {
+        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
+    }
+
+    /// Standard DB write helper for non-hot paths.
+    ///
+    /// Keep lock scope short: gather -> compute -> persist.
+    pub fn with_db_write<T, F>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
+    {
+        let guard = self.db.lock().map_err(|_| "DB lock poisoned".to_string())?;
+        let db = guard
+            .as_ref()
+            .ok_or_else(|| "Database unavailable".to_string())?;
+        f(db)
     }
 
     /// Save execution history to disk
@@ -730,4 +787,33 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
         imported,
         skipped_completed
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_with_db_try_read_busy_returns_busy() {
+        let state = AppState::new();
+        let _held = state.db.lock().expect("lock db");
+
+        match state.with_db_try_read(|_| 1_u8) {
+            DbTryRead::Busy => {}
+            _ => panic!("expected busy try-read result"),
+        }
+    }
+
+    #[test]
+    fn test_with_db_read_unavailable_maps_error() {
+        let state = AppState::new();
+        {
+            let mut guard = state.db.lock().expect("lock db");
+            *guard = None;
+        }
+        let err = state
+            .with_db_read(|_| Ok::<u8, String>(1))
+            .expect_err("db should be unavailable");
+        assert_eq!(err, "Database unavailable");
+    }
 }

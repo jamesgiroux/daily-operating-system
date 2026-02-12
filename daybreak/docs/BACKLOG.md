@@ -78,7 +78,7 @@ Focus page lists all top actions but doesn't prioritize based on time/capacity. 
 | P0 | I151 | Input validation (Tauri IPC boundary) | Open |
 | P0 | I152 | Error handling (eliminate panics) | Open |
 | P1 | I153 | Binary size + startup perf | Open |
-| P1 | I197 | Resume responsiveness hardening (startup + auth checks) | Partial |
+| P1 | I197 | Resume responsiveness hardening (startup + auth checks) | Closed |
 | P1 | I154 | Frontend bundle audit | Open |
 | P1 | I155 | Rate limiting + retry hardening | Open |
 | P1 | I157 | Frontend component audit (radix-ui) | Open |
@@ -200,9 +200,11 @@ Phase 1 completed (2026-02-12):
 - added lock-contention fallbacks + latency instrumentation for focus-polled commands
 - throttled/deduped focus refresh requests in dashboard hook
 
-Remaining completion criteria:
-- expand latency instrumentation beyond current hot commands and surface p95 rollups
-- define/consolidate DB concurrency strategy beyond global mutex (split-lock enforcement + queue/pool decision)
+Phase 2 completed (2026-02-12):
+- added in-memory latency rollups (`p50`/`p95`/max, budget violations, degraded counters) and exposed diagnostics via `get_latency_rollups` + devtools panel
+- expanded instrumentation coverage for startup/resume-sensitive commands (`get_dashboard_data`, `get_focus_data`, `check_claude_status`, `get_google_auth_status`, workflow status/history scheduling reads)
+- introduced `AppState` DB helper API (`with_db_try_read`, `with_db_read`, `with_db_write`) and migrated highest-contention hot reads to helper-based non-blocking access
+- documented staged split-lock DB strategy and migration roadmap in ADR-0067
 
 ### UX & Polish
 
