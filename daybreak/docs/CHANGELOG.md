@@ -4,12 +4,30 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 ---
 
-## Sprint 14 — Meeting Prep Semantics Completion
+## Sprint 15 — Meeting Intelligence Report
 
-*Agenda vs. wins split, structured source provenance, migration tooling.*
+*Report-grade prep UX and semantic cleanup built on Sprint 14 foundation.*
 
-### Meeting Prep (I196)
+### Meeting Prep Experience
+- **I187:** Prep page three-tier layout delivered on `MeetingDetailPage` with executive brief hero, agenda-first flow, deep-context appendix, and report-style visual hierarchy.
+- **I189:** Meeting prep editability shipped: user agenda + notes persisted and editable from prep detail with future-meeting guardrails.
+- **I191:** Card-detail unification landed: prep/outcomes flow moved toward a unified meeting record presentation.
+
+### Prep Semantics
 - **I196:** Prep agenda/wins semantic split + source governance completed. `recentWins` and `recentWinSources` added as first-class prep fields (additive/backward compatible with `talkingPoints`). Enrichment parser now supports distinct `AGENDA` and `WINS` blocks, strips inline `source:` tails from display text, and persists source provenance structurally. Mechanical agenda generation now prioritizes open items/risks/questions and only falls back to wins when needed. Added one-time migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
+
+---
+
+## Sprint 14 — Meeting Intelligence Foundation
+
+*Calendar/plumbing reliability work that unblocked the report redesign.*
+
+### Closed
+- **I173:** Enrichment responsiveness fixed with split-lock enrichment path reuse and `nice -n 10` PTY execution support.
+- **I185:** Calendar description pipeline completed end-to-end and exposed in prep as `calendarNotes`.
+- **I186:** Account snapshot enrichment completed with compact prep snapshot rendering and sanitization.
+- **I190:** Meeting route migration completed (`/meeting/$meetingId`) with DB/disk fallback prep loading.
+- **I159:** People-aware prep support for internal meeting types added via person-prep eligibility path.
 
 ---
 
