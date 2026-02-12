@@ -287,8 +287,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 .map(|c| c.ai_models.clone())
                                 .unwrap_or_default();
 
-                            let db_guard = state.db.lock().ok();
-                            let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+                            // Open own DB connection to avoid holding state.db Mutex
+                            // during PTY subprocess (which can run for minutes).
+                            let own_db = crate::db::ActionDb::open().ok();
+                            let db_ref = own_db.as_ref();
 
                             let result = crate::processor::transcript::process_transcript(
                                 Path::new(ws),
