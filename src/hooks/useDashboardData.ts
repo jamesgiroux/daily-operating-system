@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import type { DashboardData, DataFreshness, GoogleAuthStatus } from "@/types";
@@ -37,8 +37,15 @@ export function useDashboardData(): {
 } {
   const [state, setState] = useState<DashboardLoadState>({ status: "loading" });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const inFlightRef = useRef(false);
+  const lastFocusRefreshRef = useRef(0);
 
   const loadData = useCallback(async (showLoading = true) => {
+    if (inFlightRef.current) {
+      return;
+    }
+    inFlightRef.current = true;
+
     if (showLoading) {
       setState({ status: "loading" });
     } else {
@@ -65,6 +72,7 @@ export function useDashboardData(): {
         message: err instanceof Error ? err.message : "Unknown error occurred",
       });
     } finally {
+      inFlightRef.current = false;
       setIsRefreshing(false);
     }
   }, []);
@@ -77,7 +85,14 @@ export function useDashboardData(): {
   // Re-fetch when the window regains focus — catches data that changed
   // while user was on Settings, another page, or another app entirely.
   useEffect(() => {
-    const onFocus = () => loadData(false);
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - lastFocusRefreshRef.current < 30_000) {
+        return;
+      }
+      lastFocusRefreshRef.current = now;
+      void loadData(false);
+    };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [loadData]);
