@@ -13,7 +13,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I158** | OAuth PKCE + Keychain storage | Blocker | Security |
-| **I179** | Focus page action prioritization intelligence | P0 | UX |
 | **I149** | Cargo clippy zero warnings | P0 | Infra |
 | **I150** | Dependency security audit | P0 | Security |
 | **I151** | Input validation (IPC boundary) | P0 | Security |
@@ -59,9 +58,6 @@ Three layers: (1) PKCE flow (RFC 7636) — eliminates `client_secret` from sourc
 ---
 
 ## P0 Critical Issues
-
-**I179: Focus page actions are not prioritized — missing intelligence layer**
-Focus page lists all top actions but doesn't prioritize based on time/capacity. Three problems: (1) **No top 3:** shows a flat list, not "if you do nothing else, these 3 things." (2) **Ignores available time implications:** doesn't filter/rank by feasibility given current meeting load. (3) **Missing implications:** no synthesis about what's achievable vs. at-risk. If user has 2 hours and 5 actions, which ones matter? If day is 90% meetings, which 1 action is critical? Impact: User stares at 8 actions with no guidance on what to prioritize. Scope: (a) Calculate achievable action count using live capacity model (I178 completed). (b) AI-enrich action list with urgency/impact signals (due date, blocking other actions, customer-facing). (c) Synthesize top 3 with rationale ("You have 90 min; recommend these 3 because..."). (d) Flag at-risk items (blocked by unavailable time or dependencies).
 
 ---
 
