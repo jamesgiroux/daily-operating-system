@@ -321,6 +321,10 @@ export interface FocusData {
   keyMeetings: FocusMeeting[];
   availableBlocks: TimeBlock[];
   totalFocusMinutes: number;
+  availability: FocusAvailability;
+  prioritizedActions: PrioritizedFocusAction[];
+  topThree: string[];
+  implications: FocusImplications;
 }
 
 export interface FocusMeeting {
@@ -332,6 +336,32 @@ export interface FocusMeeting {
   hasPrep: boolean;
   account?: string;
   prepFile?: string;
+}
+
+export interface FocusAvailability {
+  source: "live" | "briefing_fallback" | string;
+  warnings: string[];
+  meetingCount: number;
+  meetingMinutes: number;
+  availableMinutes: number;
+  deepWorkMinutes: number;
+  deepWorkBlocks: TimeBlock[];
+}
+
+export interface PrioritizedFocusAction {
+  action: DbAction;
+  score: number;
+  effortMinutes: number;
+  feasible: boolean;
+  atRisk: boolean;
+  reason: string;
+}
+
+export interface FocusImplications {
+  achievableCount: number;
+  totalCount: number;
+  atRiskCount: number;
+  summary: string;
 }
 
 // =============================================================================
