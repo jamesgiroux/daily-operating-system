@@ -35,7 +35,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I115** | Multi-line action extraction | P2 | Data |
 | **I122** | Sunday briefing mislabeled as "today" | P2 | Meetings |
 | **I26** | Web search for unknown meetings | P2 | Meetings |
-| **I95** | Week page proactive suggestions | P2 | Meetings |
+| **I200** | Week page renders proactive suggestions from week-overview | P2 | Meetings |
+| **I201** | Live proactive suggestions via query layer (ADR-0062) | P2 | Meetings |
+| **I202** | Prep prefill + draft agenda actions (ADR-0065-aware) | P2 | Meetings |
 | **I140** | Branded OAuth success page | P2 | UX |
 | **I141** | AI content tagging during enrichment | P2 | Data |
 | **I142** | Account Plan artifact | P3 | Entity |
@@ -136,8 +138,32 @@ Running briefing on Sunday produces Monday's meetings labeled "today." Either in
 **I26: Web search for unknown external meetings**
 When meeting involves unrecognized people/companies, prep is thin. Extend I74 websearch pattern to unknown attendee domains. Not blocked by I27.
 
-**I95: Week page Phase 3 — proactive suggestions (ADR-0052)**
-Draft agenda requests, pre-fill preps, suggest tasks for open blocks. Time blocking as AI-driven setting.
+**I200: Week page renders proactive suggestions from week-overview**
+The week pipeline already computes `dayShapes.availableBlocks` and AI can write `suggestedUse`, but WeekPage does not display these blocks today. Ship a Week section that surfaces available blocks + suggestions and links suggestions to actionable destinations where possible.
+
+Acceptance criteria:
+- WeekPage shows per-day available blocks from `dayShapes[].availableBlocks` with `start/end/duration`.
+- `suggestedUse` text is visible when present.
+- Suggestion rows are keyboard-accessible and render sensible empty states (no blocks / no suggestions).
+- For suggestions that map to an action or meeting, UI includes a deep link (`/actions/$id` or `/meeting/$id`).
+
+**I201: Live proactive suggestions via query layer (ADR-0062)**
+Week artifact suggestions are point-in-time. For current-state recommendations, add a live query-backed suggestion path using the ADR-0062 boundary (live calendar + SQLite), not rewrites of briefing artifacts.
+
+Acceptance criteria:
+- New query functions compute current open blocks and action feasibility from live data sources.
+- A Tauri command returns live proactive suggestions without mutating `schedule.json`/`week-overview.json`.
+- Suggestion output includes deterministic scoring fields (capacity fit, urgency/impact, confidence) for UI ordering.
+- Tests cover stale-artifact vs live-data divergence (meeting added/removed after morning run).
+
+**I202: Prep prefill + draft agenda actions (ADR-0065-aware)**
+Implement Phase 3 prep-side suggestions as explicit actions: draft agenda message and prefill prep content. Must respect ADR-0065 editability model (`userAgenda`/`userNotes`) and avoid overwriting generated prep fields.
+
+Acceptance criteria:
+- User can trigger "Draft agenda message" from week/meeting context and copy or send via explicit confirmation flow.
+- User can apply "Prefill prep" suggestions into `userAgenda` and/or `userNotes`.
+- Applying prefill is additive and idempotent (no clobber of `proposedAgenda`/`talkingPoints`).
+- Conflict behavior is explicit when user-edited content already exists (append, merge, or confirm replace).
 
 ### Entity Management
 
