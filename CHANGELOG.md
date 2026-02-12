@@ -4,26 +4,77 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.7.1] - 2026-02-12
 
-### Changed
+Six sprints of work across meeting intelligence, entity relationships, security hardening, and app responsiveness. 574 Rust tests. 69 Architecture Decision Records.
 
-- Meeting permanence foundation implemented: `meetings_history` now carries DB-authoritative user layer (`user_agenda_json`, `user_notes`), frozen prep metadata, and transcript metadata.
-- Archive lifecycle reordered so reconciliation persistence and prep freezing happen before `_today/data` cleanup, with immutable prep snapshot writes to entity `Meeting-Notes/` (fallback `_archive/meetings/...`).
-- Meeting identity hardening completed across poller/reconcile/DB migrations using event ID as canonical key (sanitized), with fallback slug only when no calendar event exists.
-- Added unified backend meeting contract `get_meeting_intelligence(meeting_id)` and moved `get_meeting_prep` to compatibility wrapper status.
-- Outcomes durability fixed: `get_meeting_outcomes` now returns DB-backed outcomes/transcript metadata without relying on `transcript_records.json` as the sole gate.
-- Focus capacity now computes from live calendar events; schedule artifact is retained for briefing narrative only with `startIso` fallback when live events are unavailable.
-- OAuth hardening shipped: PKCE (`S256`) + state validation, macOS Keychain token storage with legacy-file migration, and secretless default token exchange/refresh behavior.
-- Frontend meeting detail now consumes the unified meeting contract and standardizes canonical route usage to `/meeting/$meetingId` (history route is alias/redirect).
-- Meeting Prep (`MeetingDetailPage`) redesigned from dashboard-stack to report layout with executive brief hero, agenda-first flow, right-rail navigation, and appendix-style deep context.
-- Meeting metadata hierarchy tightened: lifecycle promoted to header badge; noisy snapshot fields (CSM, assessment/risk narrative) removed from primary prep surface.
-- Agenda/wins content normalization: inline markdown/source artifacts are stripped for display, talking-point output is treated as Recent Wins, and sidebar wins can be filtered against agenda topics to reduce duplication.
-- Prep snapshot generation in Rust (`deliver.rs`) made compact and sanitized for inline rendering (cleaned lifecycle/health/ARR/renewal values).
-- Prep semantics completed end-to-end: `recentWins` + `recentWinSources` are now first-class fields in prep payloads, with legacy `talkingPoints` retained as compatibility fallback.
-- Prep enrichment contract updated so Agenda and Wins are parsed separately (`AGENDA` + `WINS` blocks), with source provenance captured structurally instead of inline `source:` tails.
-- Added one-time Tauri migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
-- Backlog closures recorded for Meeting Intelligence tracks: I173, I185, I186, I187, I189, I190, I191, I196, I159.
+### Meeting Intelligence
+
+- Meeting prep redesigned as a report: executive brief hero, agenda-first flow, right-rail navigation, appendix-style deep context
+- Agenda and Wins are now semantically separate enrichment blocks with structured source provenance (replaces flat talking points)
+- User-authored prep fields (`userAgenda`, `userNotes`) are DB-authoritative with freeze/editability rules (ADR-0065)
+- Meeting identity hardened: calendar event ID is canonical primary key across poller, reconcile, and DB (ADR-0061)
+- Unified meeting intelligence contract (`get_meeting_intelligence`) combines prep, outcomes, and transcript metadata in a single backend call (ADR-0066)
+- Enriched prep context persisted to `meetings_history` for durable post-meeting records
+- Meeting search across entities via Cmd+K command menu with debounced cross-entity lookup
+- Calendar description pipeline extracted and exposed in prep as `calendarNotes`
+- Account snapshot enrichment with compact, sanitized prep rendering
+- People-aware prep support for internal meeting types
+- Immutable prep snapshots written to entity `Meeting-Notes/` during archive
+
+### Entity Relationships
+
+- Person-entity auto-linking via meeting attendance with full cascade
+- Multi-entity MeetingCard: add/remove entity associations with people + intelligence queue cascade
+- Multi-domain user configuration with tag/chip input UX, auto-reclassification of people and meeting types on domain change
+- Entity archive/unarchive with parent cascade (DB flag only, filesystem untouched)
+- Strategic programs inline editing on AccountDetailPage with debounced auto-save
+- People merge and delete with full cascade across attendees, entities, actions, intelligence, and filesystem
+
+### Focus & Capacity
+
+- Focus page redesigned with live capacity engine computing from calendar events
+- Deterministic action prioritization with urgency/impact scoring, top-3 recommendations, risk radar
+- Focus capacity computes from live calendar, schedule artifact retained for briefing narrative only (ADR-0062)
+
+### Security & Auth
+
+- OAuth hardened with PKCE (`S256`) challenge + state parameter validation (ADR-0068)
+- macOS Keychain token storage with one-time legacy file migration and removal
+- Secretless token exchange and refresh with compatibility fallback for legacy clients
+- IPC input validation DTOs for action create/update with centralized validators
+- CI gates: `cargo clippy -D warnings`, `cargo audit`, `pnpm audit` enforced on every build
+
+### Email
+
+- Email sync status tracking with structured health metadata on `emails.json`
+- Sticky sync banner with retry affordance when fetch or delivery fails
+- Model fallback: email enrichment retries with synthesis model when extraction model unavailable
+- Last-known-good email preservation on delivery failures
+
+### Reliability & Performance
+
+- App responsiveness: `check_claude_status` moved to async with `spawn_blocking`, background tasks open own SQLite connections instead of competing for shared Mutex
+- Google API retry policy with exponential backoff wired into auth, calendar, and Gmail
+- Resume latency instrumentation with p50/p95/max rollups and budget violation tracking (ADR-0067)
+- Split-lock enrichment pattern with `nice -n 10` PTY execution for background AI operations
+- Archive lifecycle reordered: reconciliation and prep freezing happen before `_today/data` cleanup
+- Claude auth check timeout reduced from 8s to 3s, focus debounce intervals increased
+
+### AI Operations
+
+- Model tiering for AI operations: Synthesis/Extraction/Mechanical tiers with configurable model names per tier
+- Prep enrichment contract splits Agenda and Wins parsing with separate blocks and source governance
+- One-time migration command `backfill_prep_semantics` for upgrading existing prep files
+
+### UX & Polish
+
+- Frontend meeting routes consolidated to canonical `/meeting/$meetingId` with history route as redirect
+- Theme toggle fixed: replaced broken dropdown (Radix dual-install issue) with segmented button group
+- Radix UI components migrated to explicit standalone packages, resolving dual-install portal bug (ADR-0069)
+- Calendar poller polls immediately on startup (5s auth delay) instead of sleeping first
+- Empty prep page shows "generating" message instead of blank
+- Binary size and bundle measurement scripts for repeatable performance tracking
 
 ## [0.7.0] - 2026-02-09
 
