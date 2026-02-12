@@ -64,14 +64,22 @@ No open ship blockers. Last blocker closed: **I158** (OAuth PKCE + Keychain toke
 
 | Priority | Issue | Scope | Status |
 |----------|-------|-------|--------|
-| P0 | I149 | Cargo clippy sweep (70+ warnings) | Open |
-| P0 | I150 | Dependency security audit | Open |
-| P0 | I151 | Input validation (Tauri IPC boundary) | Open |
-| P0 | I152 | Error handling (eliminate panics) | Open |
-| P1 | I153 | Binary size + startup perf | Open |
-| P1 | I154 | Frontend bundle audit | Open |
-| P1 | I155 | Rate limiting + retry hardening | Open |
-| P1 | I157 | Frontend component audit (radix-ui) | Open |
+| P0 | I149 | Cargo clippy sweep (70+ warnings) | Closed |
+| P0 | I150 | Dependency security audit | In Progress |
+| P0 | I151 | Input validation (Tauri IPC boundary) | In Progress |
+| P0 | I152 | Error handling (eliminate panics) | In Progress |
+| P1 | I153 | Binary size + startup perf | In Progress |
+| P1 | I154 | Frontend bundle audit | In Progress |
+| P1 | I155 | Rate limiting + retry hardening | In Progress |
+| P1 | I157 | Frontend component audit (radix-ui) | In Progress |
+
+Fast-follow progress (2026-02-12):
+- I149 closed: production-target clippy now passes with `-D warnings`.
+- I150 in progress: CI workflow now includes Rust/Node audit steps and `audit.toml`.
+- I151 in progress: action create/update commands moved to request DTOs with centralized validators in `util.rs`.
+- I155 in progress: shared retry policy + retry helper added in `google_api` and wired into auth/calendar/gmail request paths.
+- I157 in progress: `src/components/ui` migrated off `radix-ui` umbrella imports to explicit `@radix-ui/react-*` packages.
+- I153/I154 in progress: added repeatable measurement scripts (`scripts/measure_binary_size.sh`, `scripts/measure_bundle_size.sh`) and metrics doc scaffold (`docs/0.7.1-fast-follow-metrics.md`).
 
 ---
 

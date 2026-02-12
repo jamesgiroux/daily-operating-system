@@ -252,7 +252,7 @@ impl Executor {
         // Step 2: Persist meetings + freeze prep snapshots BEFORE archive cleanup.
         if let Ok(db_guard) = self.state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
-                reconcile::persist_meetings(db, &recon, &workspace);
+                reconcile::persist_meetings(db, &recon, workspace);
             }
         }
 
@@ -510,7 +510,7 @@ impl Executor {
             .read()
             .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext {
+            .unwrap_or(crate::types::UserContext {
                 name: None,
                 company: None,
                 title: None,
@@ -523,7 +523,7 @@ impl Executor {
             &synthesis_pty,
             workspace,
             &user_ctx,
-            &*self.state,
+            &self.state,
         ) {
             log::warn!("Week enrichment failed (non-fatal): {}", e);
         }
@@ -738,7 +738,7 @@ impl Executor {
             .read()
             .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext {
+            .unwrap_or(crate::types::UserContext {
                 name: None,
                 company: None,
                 title: None,
@@ -754,7 +754,7 @@ impl Executor {
         if email_enabled {
             if let Err(e) = self.enrich_emails_with_fallback(
                 &data_dir,
-                &workspace,
+                workspace,
                 &user_ctx,
                 &extraction_pty,
                 &synthesis_pty,
@@ -786,7 +786,7 @@ impl Executor {
         // AI: Enrich prep agendas (feature-gated I39)
         if prep_enabled {
             if let Err(e) =
-                crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, &workspace)
+                crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, workspace)
             {
                 log::warn!("Prep enrichment failed (non-fatal): {}", e);
             }
@@ -799,9 +799,9 @@ impl Executor {
         if let Err(e) = crate::workflow::deliver::enrich_briefing(
             &data_dir,
             &synthesis_pty,
-            &workspace,
+            workspace,
             &user_ctx,
-            &*self.state,
+            &self.state,
         ) {
             log::warn!("Briefing narrative failed (non-fatal): {}", e);
         }
@@ -1005,7 +1005,7 @@ impl Executor {
             .read()
             .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext {
+            .unwrap_or(crate::types::UserContext {
                 name: None,
                 company: None,
                 title: None,

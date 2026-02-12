@@ -472,8 +472,7 @@ fn sanitize_inline_text(value: &str) -> String {
     value
         .replace("**", "")
         .replace("__", "")
-        .replace('`', "")
-        .replace('*', "")
+        .replace(['`', '*'], "")
         .replace('_', " ")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -529,8 +528,7 @@ fn derive_recent_wins_from_talking_points(
                 seen_sources.insert(source_key);
                 let filename = source
                     .split(['/', '\\'])
-                    .filter(|s| !s.is_empty())
-                    .last()
+                    .rfind(|s| !s.is_empty())
                     .unwrap_or(&source)
                     .to_string();
                 sources.push(crate::types::SourceReference {
@@ -646,7 +644,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
 
     let recent_wins = explicit_recent_wins
         .and_then(|wins| if wins.is_empty() { None } else { Some(wins) })
-        .or_else(|| {
+        .or({
             if derived_recent_wins.is_empty() {
                 None
             } else {
@@ -655,7 +653,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         });
     let recent_win_sources = recent_win_sources
         .and_then(|refs| if refs.is_empty() { None } else { Some(refs) })
-        .or_else(|| {
+        .or({
             if derived_recent_sources.is_empty() {
                 None
             } else {
