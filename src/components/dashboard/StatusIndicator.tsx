@@ -16,6 +16,7 @@ import { Loader2, CheckCircle, XCircle, Clock } from "lucide-react";
 interface StatusIndicatorProps {
   status: WorkflowStatus;
   nextRunTime?: string | null;
+  aiUnavailable?: boolean;
   className?: string;
 }
 
@@ -31,6 +32,7 @@ interface StatusIndicatorProps {
 export function StatusIndicator({
   status,
   nextRunTime,
+  aiUnavailable,
   className,
 }: StatusIndicatorProps) {
   return (
@@ -42,7 +44,11 @@ export function StatusIndicator({
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="max-w-xs">
-          <StatusTooltip status={status} nextRunTime={nextRunTime} />
+          <StatusTooltip
+            status={status}
+            nextRunTime={nextRunTime}
+            aiUnavailable={aiUnavailable}
+          />
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -69,7 +75,7 @@ function StatusBadge({ status }: { status: WorkflowStatus }) {
 
     case "completed":
       return (
-        <Badge className="gap-1.5 bg-sage text-white hover:bg-sage/90">
+        <Badge className="gap-1.5 bg-sage/15 text-sage hover:bg-sage/20">
           <CheckCircle className="h-3 w-3" />
           Ready
         </Badge>
@@ -88,9 +94,11 @@ function StatusBadge({ status }: { status: WorkflowStatus }) {
 function StatusTooltip({
   status,
   nextRunTime,
+  aiUnavailable,
 }: {
   status: WorkflowStatus;
   nextRunTime?: string | null;
+  aiUnavailable?: boolean;
 }) {
   switch (status.status) {
     case "idle":
@@ -100,6 +108,11 @@ function StatusTooltip({
           {nextRunTime && (
             <p className="text-muted-foreground text-sm">
               Next: {formatNextRunTime(nextRunTime)}
+            </p>
+          )}
+          {aiUnavailable && (
+            <p className="text-muted-foreground text-xs">
+              AI enrichment unavailable. Briefing will run in base prep mode.
             </p>
           )}
         </div>
@@ -112,6 +125,11 @@ function StatusTooltip({
           <p className="text-muted-foreground text-sm">
             Started {formatStartTime(status.startedAt)}
           </p>
+          {aiUnavailable && status.phase === "enriching" && (
+            <p className="text-muted-foreground text-xs">
+              Enrichment may be limited. Core schedule, actions, and prep still deliver.
+            </p>
+          )}
         </div>
       );
 
@@ -122,6 +140,11 @@ function StatusTooltip({
           <p className="text-muted-foreground text-sm">
             Completed in {formatDuration(status.durationSecs)}
           </p>
+          {aiUnavailable && (
+            <p className="text-muted-foreground text-xs">
+              Delivered in base prep mode.
+            </p>
+          )}
         </div>
       );
 
@@ -133,6 +156,11 @@ function StatusTooltip({
           {status.error.canRetry && (
             <p className="text-muted-foreground text-xs">
               Click "Run Now" to retry
+            </p>
+          )}
+          {aiUnavailable && (
+            <p className="text-muted-foreground text-xs">
+              You can still run core briefing output without AI enrichment.
             </p>
           )}
         </div>
