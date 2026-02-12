@@ -19,7 +19,10 @@ use crate::notification::send_notification;
 use crate::pty::{ModelTier, PtyManager};
 use crate::scheduler::SchedulerMessage;
 use crate::state::{create_execution_record, AppState};
-use crate::types::{AiModelConfig, ExecutionTrigger, WorkflowId, WorkflowPhase, WorkflowStatus};
+use crate::types::{
+    AiModelConfig, EmailSyncStage, EmailSyncState, EmailSyncStatus, ExecutionTrigger, WorkflowId,
+    WorkflowPhase, WorkflowStatus,
+};
 
 /// Executor manages workflow execution
 pub struct Executor {
@@ -40,6 +43,73 @@ impl Executor {
             .ok()
             .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
             .unwrap_or_default()
+    }
+
+    fn emit_email_sync_status(&self, status: &EmailSyncStatus) {
+        let _ = self.app_handle.emit("email-sync-status", status);
+    }
+
+    fn build_email_sync_status(
+        &self,
+        state: EmailSyncState,
+        stage: EmailSyncStage,
+        code: Option<String>,
+        message: Option<String>,
+        using_last_known_good: Option<bool>,
+    ) -> EmailSyncStatus {
+        EmailSyncStatus {
+            state,
+            stage,
+            code,
+            message,
+            using_last_known_good,
+            can_retry: Some(true),
+            last_attempt_at: Some(Utc::now().to_rfc3339()),
+            last_success_at: None,
+        }
+    }
+
+    fn is_model_unavailable_error(err: &str) -> bool {
+        err.to_lowercase().contains("model_unavailable")
+    }
+
+    fn enrich_emails_with_fallback(
+        &self,
+        data_dir: &Path,
+        workspace: &Path,
+        user_ctx: &crate::types::UserContext,
+        extraction_pty: &PtyManager,
+        synthesis_pty: &PtyManager,
+    ) -> Result<(), String> {
+        match crate::workflow::deliver::enrich_emails(data_dir, extraction_pty, workspace, user_ctx)
+        {
+            Ok(()) => Ok(()),
+            Err(err) if Self::is_model_unavailable_error(&err) => {
+                log::warn!(
+                    "Email enrichment extraction model unavailable, retrying with synthesis tier: {}",
+                    err
+                );
+                match crate::workflow::deliver::enrich_emails(
+                    data_dir,
+                    synthesis_pty,
+                    workspace,
+                    user_ctx,
+                ) {
+                    Ok(()) => {
+                        let _ = self.app_handle.emit(
+                            "email-enrichment-warning",
+                            "Email enrichment used synthesis fallback model",
+                        );
+                        Ok(())
+                    }
+                    Err(fallback_err) => Err(format!(
+                        "Email enrichment fallback failed after extraction model error: {}",
+                        fallback_err
+                    )),
+                }
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Start the executor loop
@@ -606,24 +676,38 @@ impl Executor {
                     .map(|c| crate::types::is_feature_enabled(c, "emailTriage"))
             })
             .unwrap_or(true);
-        let emails_data = if email_enabled {
+        let mut emails_data = if email_enabled {
             match crate::workflow::deliver::deliver_emails(&directive, &data_dir) {
                 Ok(data) => {
                     let _ = self.app_handle.emit("operation-delivered", "emails");
                     log::info!("Today pipeline: emails delivered");
+                    if let Some(sync) = crate::workflow::deliver::extract_email_sync_status(&data) {
+                        self.emit_email_sync_status(&sync);
+                    }
                     data
                 }
                 Err(e) => {
                     log::warn!("Email delivery failed (non-fatal): {}", e);
+                    let sync = self.build_email_sync_status(
+                        EmailSyncState::Error,
+                        EmailSyncStage::Deliver,
+                        Some("email_delivery_failed".to_string()),
+                        Some(format!("Email delivery failed: {}", e)),
+                        Some(data_dir.join("emails.json").exists()),
+                    );
+                    self.emit_email_sync_status(&sync);
                     let _ = self
                         .app_handle
                         .emit("email-error", format!("Email delivery failed: {}", e));
-                    json!({})
+                    crate::workflow::deliver::set_email_sync_status(&data_dir, &sync)
+                        .unwrap_or_else(|_| {
+                            crate::workflow::deliver::empty_emails_payload(Some(&sync))
+                        })
                 }
             }
         } else {
             log::info!("Today pipeline: emails skipped (feature disabled)");
-            json!({})
+            crate::workflow::deliver::empty_emails_payload(None)
         };
 
         // Write manifest (partial: true — AI enrichment not yet done)
@@ -669,13 +753,27 @@ impl Executor {
 
         // AI: Enrich emails (high-priority only, feature-gated I39)
         if email_enabled {
-            if let Err(e) = crate::workflow::deliver::enrich_emails(
+            if let Err(e) = self.enrich_emails_with_fallback(
                 &data_dir,
-                &extraction_pty,
                 &workspace,
                 &user_ctx,
+                &extraction_pty,
+                &synthesis_pty,
             ) {
                 log::warn!("Email enrichment failed (non-fatal): {}", e);
+                let sync = self.build_email_sync_status(
+                    EmailSyncState::Warning,
+                    EmailSyncStage::Enrich,
+                    Some("email_enrichment_failed".to_string()),
+                    Some(format!("Email AI summaries unavailable: {}", e)),
+                    Some(true),
+                );
+                if let Ok(updated) =
+                    crate::workflow::deliver::set_email_sync_status(&data_dir, &sync)
+                {
+                    emails_data = updated;
+                }
+                self.emit_email_sync_status(&sync);
                 let _ = self.app_handle.emit(
                     "email-enrichment-warning",
                     format!("Email AI summaries unavailable: {}", e),
@@ -793,15 +891,27 @@ impl Executor {
         if matches!(today_status, WorkflowStatus::Running { .. }) {
             return Err("Cannot refresh emails while /today pipeline is running".to_string());
         }
+        let data_dir = workspace.join("_today").join("data");
 
         // Step 1: Rust-native email fetch + classify
         log::info!("Email refresh: Rust-native fetch + classify");
-        crate::prepare::orchestrate::refresh_emails(&self.state, workspace)
-            .await
-            .map_err(|e| format!("Email refresh failed: {}", e))?;
+        if let Err(e) = crate::prepare::orchestrate::refresh_emails(&self.state, workspace).await {
+            let sync = self.build_email_sync_status(
+                EmailSyncState::Error,
+                EmailSyncStage::Refresh,
+                Some("email_refresh_failed".to_string()),
+                Some(format!("Email refresh failed: {}", e)),
+                Some(data_dir.join("emails.json").exists()),
+            );
+            let _ = crate::workflow::deliver::set_email_sync_status(&data_dir, &sync);
+            self.emit_email_sync_status(&sync);
+            let _ = self
+                .app_handle
+                .emit("email-error", format!("Email refresh failed: {}", e));
+            return Err(format!("Email refresh failed: {}", e));
+        }
 
         // Step 2: Read refresh directive
-        let data_dir = workspace.join("_today").join("data");
         let refresh_path = data_dir.join("email-refresh-directive.json");
 
         if !refresh_path.exists() {
@@ -854,6 +964,17 @@ impl Executor {
             }
         }
 
+        let now = Utc::now().to_rfc3339();
+        let sync = EmailSyncStatus {
+            state: EmailSyncState::Ok,
+            stage: EmailSyncStage::Refresh,
+            code: None,
+            message: None,
+            using_last_known_good: Some(false),
+            can_retry: Some(true),
+            last_attempt_at: Some(now.clone()),
+            last_success_at: Some(now),
+        };
         let emails_json = json!({
             "highPriority": high_priority,
             "mediumPriority": medium_priority,
@@ -863,11 +984,14 @@ impl Executor {
                 "mediumCount": medium_priority.len(),
                 "lowCount": low_priority.len(),
                 "total": high_priority.len() + medium_priority.len() + low_priority.len(),
-            }
+            },
+            "sync": serde_json::to_value(&sync)
+                .map_err(|e| format!("Failed to serialize email sync status: {}", e))?,
         });
 
         crate::workflow::deliver::write_json(&data_dir.join("emails.json"), &emails_json)?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
+        self.emit_email_sync_status(&sync);
         log::info!(
             "Email refresh: emails.json written ({} high, {} medium, {} low)",
             high_priority.len(),
@@ -888,14 +1012,26 @@ impl Executor {
                 title: None,
                 focus: None,
             });
-        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &self.ai_model_config());
-        if let Err(e) = crate::workflow::deliver::enrich_emails(
+        let ai_config = self.ai_model_config();
+        let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config);
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+        if let Err(e) = self.enrich_emails_with_fallback(
             &data_dir,
-            &extraction_pty,
             workspace,
             &user_ctx,
+            &extraction_pty,
+            &synthesis_pty,
         ) {
             log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
+            let sync = self.build_email_sync_status(
+                EmailSyncState::Warning,
+                EmailSyncStage::Enrich,
+                Some("email_enrichment_failed".to_string()),
+                Some(format!("Email AI summaries unavailable: {}", e)),
+                Some(true),
+            );
+            let _ = crate::workflow::deliver::set_email_sync_status(&data_dir, &sync);
+            self.emit_email_sync_status(&sync);
             let _ = self.app_handle.emit(
                 "email-enrichment-warning",
                 format!("Email AI summaries unavailable: {}", e),
@@ -944,4 +1080,19 @@ pub fn request_workflow_execution(
             trigger: ExecutionTrigger::Manual,
         })
         .map_err(|e| format!("Failed to queue workflow: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Executor;
+
+    #[test]
+    fn test_model_unavailable_error_detection() {
+        assert!(Executor::is_model_unavailable_error(
+            "Configuration error: model_unavailable: unknown model"
+        ));
+        assert!(!Executor::is_model_unavailable_error(
+            "Claude enrichment failed: timeout"
+        ));
+    }
 }
