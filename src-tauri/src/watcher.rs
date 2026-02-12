@@ -420,11 +420,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates person.md.
 fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return,
-    };
-    let db = match db_guard.as_ref() {
+    // Own DB connection to avoid holding state.db Mutex during watcher I/O
+    let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
         None => return,
     };
@@ -457,7 +454,7 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                     for entity_id in &linked_entities {
                         let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
                     }
-                    let _ = people::write_person_markdown(workspace, &person, db);
+                    let _ = people::write_person_markdown(workspace, &person, &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
@@ -471,12 +468,9 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
 /// Handle detected changes to Accounts/*/dashboard.json files (I75).
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
-fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return,
-    };
-    let db = match db_guard.as_ref() {
+fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+    // Own DB connection to avoid holding state.db Mutex during watcher I/O
+    let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
         None => return,
     };
@@ -489,7 +483,7 @@ fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
         match accounts::read_account_json(path) {
             Ok(accounts::ReadAccountResult { account, json }) => {
                 if db.upsert_account(&account).is_ok() {
-                    let _ = accounts::write_account_markdown(workspace, &account, Some(&json), db);
+                    let _ = accounts::write_account_markdown(workspace, &account, Some(&json), &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
@@ -503,12 +497,9 @@ fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
 /// Handle detected changes to Projects/*/dashboard.json files (I50).
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
-fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return,
-    };
-    let db = match db_guard.as_ref() {
+fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+    // Own DB connection to avoid holding state.db Mutex during watcher I/O
+    let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
         None => return,
     };
@@ -521,7 +512,7 @@ fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
         match projects::read_project_json(path) {
             Ok(projects::ReadProjectResult { project, json }) => {
                 if db.upsert_project(&project).is_ok() {
-                    let _ = projects::write_project_markdown(workspace, &project, Some(&json), db);
+                    let _ = projects::write_project_markdown(workspace, &project, Some(&json), &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
@@ -538,17 +529,11 @@ fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
 /// and returns a payload for the frontend event.
 fn handle_account_content_changes(
     paths: &[PathBuf],
-    state: &AppState,
+    _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return None,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return None,
-    };
+    // Own DB connection to avoid holding state.db Mutex during content indexing
+    let db = crate::db::ActionDb::open().ok()?;
 
     let accounts_dir = workspace.join("Accounts");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -567,7 +552,7 @@ fn handle_account_content_changes(
     let mut total_changes = 0;
     for entity_id in &affected_entity_ids {
         if let Ok(Some(account)) = db.get_account(entity_id) {
-            match accounts::sync_content_index_for_account(workspace, db, &account) {
+            match accounts::sync_content_index_for_account(workspace, &db, &account) {
                 Ok((added, updated, removed)) => {
                     total_changes += added + updated + removed;
                     log::debug!(
@@ -605,17 +590,11 @@ fn handle_account_content_changes(
 /// syncs their content index, and returns a payload for the frontend event.
 fn handle_project_content_changes(
     paths: &[PathBuf],
-    state: &AppState,
+    _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
-    let db_guard = match state.db.lock().ok() {
-        Some(g) => g,
-        None => return None,
-    };
-    let db = match db_guard.as_ref() {
-        Some(db) => db,
-        None => return None,
-    };
+    // Own DB connection to avoid holding state.db Mutex during content indexing
+    let db = crate::db::ActionDb::open().ok()?;
 
     let projects_dir = workspace.join("Projects");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -634,7 +613,7 @@ fn handle_project_content_changes(
     let mut total_changes = 0;
     for entity_id in &affected_entity_ids {
         if let Ok(Some(project)) = db.get_project(entity_id) {
-            match projects::sync_content_index_for_project(workspace, db, &project) {
+            match projects::sync_content_index_for_project(workspace, &db, &project) {
                 Ok((added, updated, removed)) => {
                     total_changes += added + updated + removed;
                     log::debug!(

@@ -255,7 +255,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
     }
 }
 
-/// Phase 1: Lock DB briefly to gather all context needed for enrichment.
+/// Phase 1: Open own DB connection to gather all context needed for enrichment.
+/// Uses `ActionDb::open()` instead of `state.db.lock()` to avoid blocking
+/// foreground IPC commands while background enrichment runs.
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 pub fn gather_enrichment_input(
     state: &AppState,
@@ -267,8 +269,7 @@ pub fn gather_enrichment_input(
         PathBuf::from(&config.workspace_path)
     };
 
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
 
     // Look up the entity
     let account = if request.entity_type == "account" {
@@ -317,7 +318,7 @@ pub fn gather_enrichment_input(
     // Build context (reads from DB)
     let ctx = build_intelligence_context(
         &workspace,
-        db,
+        &db,
         &request.entity_id,
         &request.entity_type,
         account.as_ref(),
@@ -331,7 +332,7 @@ pub fn gather_enrichment_input(
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
 
-    // DB lock drops here when db_guard goes out of scope
+    // Own DB connection drops here when db goes out of scope
     Ok(EnrichmentInput {
         workspace,
         entity_dir,
@@ -365,20 +366,19 @@ pub fn run_enrichment(
     )
 }
 
-/// Phase 3: Lock DB briefly to write results.
+/// Phase 3: Write enrichment results to disk and DB.
+/// Opens own DB connection to avoid blocking foreground IPC commands.
 /// Public so manual enrichment commands can reuse the split-lock pattern (I173).
 pub fn write_enrichment_results(
-    state: &AppState,
+    _state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
 ) -> Result<(), String> {
     // Write intelligence.json to disk (no DB needed)
     write_intelligence_json(&input.entity_dir, intel)?;
 
-    // Brief DB lock for cache update
-    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
+    // Own DB connection for cache update
+    let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
     let _ = db.upsert_entity_intelligence(intel);
 
     log::debug!(
