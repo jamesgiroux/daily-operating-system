@@ -11,6 +11,8 @@ use std::path::Path;
 
 use chrono::{Local, NaiveTime, Utc};
 use serde::Serialize;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use rusqlite::params;
 
@@ -208,11 +210,28 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
     for ms in &result.meetings.details {
         let meeting_id = ms
             .calendar_event_id
-            .clone()
+            .as_deref()
+            .map(sanitize_calendar_event_id)
             .unwrap_or_else(|| format!("archive-{}-{}", result.date, slug(&ms.title)));
 
-        // Read corresponding prep file if it exists (I181)
-        let prep_context_json = read_prep_context(&preps_dir, &meeting_id);
+        let prep_source =
+            read_prep_source(&preps_dir, &meeting_id, ms.calendar_event_id.as_deref());
+        let prep_context_json = prep_source
+            .as_ref()
+            .and_then(|v| serde_json::to_string(v).ok())
+            .filter(|raw| is_prep_substantive(raw));
+        let prep_user_agenda = prep_source.as_ref().and_then(extract_user_agenda_json);
+        let prep_user_notes = prep_source.as_ref().and_then(extract_user_notes);
+
+        let existing = db
+            .get_meeting_by_id(&meeting_id)
+            .ok()
+            .flatten()
+            .or_else(|| {
+                ms.calendar_event_id
+                    .as_deref()
+                    .and_then(|eid| db.get_meeting_by_calendar_event_id(eid).ok().flatten())
+            });
 
         let meeting = DbMeeting {
             id: meeting_id,
@@ -235,34 +254,243 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             calendar_event_id: ms.calendar_event_id.clone(),
             description: None,
             prep_context_json,
+            user_agenda_json: existing
+                .as_ref()
+                .and_then(|m| m.user_agenda_json.clone())
+                .or(prep_user_agenda),
+            user_notes: existing
+                .as_ref()
+                .and_then(|m| m.user_notes.clone())
+                .or(prep_user_notes),
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
 
         if let Err(e) = db.upsert_meeting(&meeting) {
             log::warn!("Failed to persist meeting '{}': {}", ms.title, e);
+            continue;
+        }
+        if let Err(e) = freeze_meeting_snapshot(db, workspace, &meeting, prep_source) {
+            log::warn!("Failed to freeze meeting snapshot '{}': {}", ms.title, e);
         }
     }
 }
 
-/// Read and validate a prep context JSON file for a meeting (I181).
-fn read_prep_context(preps_dir: &Path, meeting_id: &str) -> Option<String> {
-    let prep_path = preps_dir.join(format!("{}.json", meeting_id));
-    if !prep_path.exists() {
-        return None;
-    }
+fn sanitize_calendar_event_id(calendar_event_id: &str) -> String {
+    calendar_event_id.replace('@', "_at_")
+}
 
-    let content = match fs::read_to_string(&prep_path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::debug!("Could not read prep file {:?}: {}", prep_path, e);
-            return None;
+fn read_prep_source(
+    preps_dir: &Path,
+    meeting_id: &str,
+    calendar_event_id: Option<&str>,
+) -> Option<Value> {
+    let direct_path = preps_dir.join(format!("{}.json", meeting_id));
+    if direct_path.exists() {
+        return read_prep_value(&direct_path);
+    }
+    let raw_calendar_id = calendar_event_id.unwrap_or_default();
+    let normalized_calendar_id = sanitize_calendar_event_id(raw_calendar_id);
+    let entries = fs::read_dir(preps_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
+            continue;
         }
-    };
-
-    if is_prep_substantive(&content) {
-        Some(content)
-    } else {
-        None
+        let Some(value) = read_prep_value(&path) else {
+            continue;
+        };
+        let event_id = value
+            .get("calendarEventId")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if event_id == meeting_id
+            || event_id == raw_calendar_id
+            || event_id == normalized_calendar_id
+        {
+            return Some(value);
+        }
     }
+    None
+}
+
+fn read_prep_value(path: &Path) -> Option<Value> {
+    let content = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<Value>(&content).ok()
+}
+
+fn extract_user_agenda_json(prep: &Value) -> Option<String> {
+    let agenda = prep.get("userAgenda")?.as_array()?;
+    let items: Vec<String> = agenda
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .collect();
+    if items.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&items).ok()
+    }
+}
+
+fn extract_user_notes(prep: &Value) -> Option<String> {
+    prep.get("userNotes")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn freeze_meeting_snapshot(
+    db: &ActionDb,
+    workspace: &Path,
+    meeting: &DbMeeting,
+    prep_source: Option<Value>,
+) -> Result<(), String> {
+    let persisted = db
+        .get_meeting_by_id(&meeting.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting missing after upsert: {}", meeting.id))?;
+    if persisted.prep_frozen_at.is_some() {
+        return Ok(());
+    }
+
+    let mut prep = prep_source
+        .or_else(|| {
+            persisted
+                .prep_context_json
+                .as_deref()
+                .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        })
+        .unwrap_or_else(|| serde_json::json!({}));
+    let user_agenda = persisted
+        .user_agenda_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Vec<String>>(raw).ok());
+    let user_notes = persisted.user_notes.clone();
+
+    if prep.as_object().is_none() && user_agenda.is_none() && user_notes.is_none() {
+        return Ok(());
+    }
+    if let Some(ref agenda) = user_agenda {
+        prep["userAgenda"] = serde_json::json!(agenda);
+    }
+    if let Some(ref notes) = user_notes {
+        prep["userNotes"] = serde_json::json!(notes);
+    }
+
+    let frozen_at = Utc::now().to_rfc3339();
+    let account_name = resolve_account_name(db, persisted.account_id.as_deref());
+    let base_snapshot = serde_json::json!({
+        "schemaVersion": 1,
+        "meetingId": persisted.id,
+        "calendarEventId": persisted.calendar_event_id,
+        "title": persisted.title,
+        "meetingType": persisted.meeting_type,
+        "startTime": persisted.start_time,
+        "endTime": persisted.end_time,
+        "accountId": persisted.account_id,
+        "accountName": account_name,
+        "frozenAt": frozen_at,
+        "prep": prep,
+        "userAgenda": user_agenda,
+        "userNotes": user_notes,
+        "outcomesSummary": persisted.summary,
+    });
+    let hash = hex::encode(Sha256::digest(
+        &serde_json::to_vec(&base_snapshot).map_err(|e| e.to_string())?,
+    ));
+    let mut snapshot = base_snapshot;
+    snapshot["snapshotHash"] = serde_json::json!(hash.clone());
+
+    let snapshot_path = resolve_snapshot_path(workspace, db, &persisted)?;
+    if let Some(parent) = snapshot_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+    }
+    let snapshot_str = serde_json::to_string_pretty(&snapshot).map_err(|e| e.to_string())?;
+    crate::util::atomic_write_str(&snapshot_path, &snapshot_str).map_err(|e| e.to_string())?;
+    let _ = db
+        .freeze_meeting_prep_snapshot(
+            &persisted.id,
+            &snapshot_str,
+            &frozen_at,
+            &snapshot_path.to_string_lossy(),
+            &hash,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn resolve_account_name(db: &ActionDb, account_id: Option<&str>) -> Option<String> {
+    let Some(account_id) = account_id else {
+        return None;
+    };
+    if let Ok(Some(account)) = db.get_account(account_id) {
+        return Some(account.name);
+    }
+    db.get_account_by_name(account_id)
+        .ok()
+        .flatten()
+        .map(|a| a.name)
+}
+
+fn resolve_snapshot_path(
+    workspace: &Path,
+    db: &ActionDb,
+    meeting: &DbMeeting,
+) -> Result<std::path::PathBuf, String> {
+    let date_prefix = meeting
+        .start_time
+        .get(0..10)
+        .unwrap_or("unknown-date")
+        .to_string();
+    let file_name = format!(
+        "{}-{}-prep.snapshot.json",
+        date_prefix,
+        crate::util::sanitize_for_filesystem(&meeting.id)
+    );
+
+    if let Ok(linked) = db.get_meeting_entities(&meeting.id) {
+        if let Some(entity) = linked.first() {
+            match entity.entity_type {
+                crate::entity::EntityType::Account => {
+                    if let Ok(Some(account)) = db.get_account(&entity.id) {
+                        let dir = crate::accounts::resolve_account_dir(workspace, &account)
+                            .join("Meeting-Notes");
+                        return Ok(dir.join(file_name));
+                    }
+                }
+                crate::entity::EntityType::Project => {
+                    if let Ok(Some(project)) = db.get_project(&entity.id) {
+                        let dir = crate::projects::project_dir(workspace, &project.name)
+                            .join("Meeting-Notes");
+                        return Ok(dir.join(file_name));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let (year, month) = if date_prefix.len() >= 7 {
+        (&date_prefix[0..4], &date_prefix[5..7])
+    } else {
+        ("unknown", "00")
+    };
+    Ok(workspace
+        .join("_archive")
+        .join("meetings")
+        .join(year)
+        .join(month)
+        .join(file_name))
 }
 
 /// Check if a prep JSON has meaningful content worth persisting.
@@ -661,5 +889,94 @@ mod tests {
         let result = run_reconciliation(temp.path(), None);
         assert!(result.flags.is_empty());
         assert_eq!(result.meetings.completed, 0);
+    }
+
+    #[test]
+    fn test_persist_meetings_freezes_snapshot_and_is_idempotent() {
+        let temp = tempfile::TempDir::new().expect("temp dir");
+        let workspace = temp.path();
+        let preps_dir = workspace.join("_today").join("data").join("preps");
+        fs::create_dir_all(&preps_dir).expect("create preps dir");
+
+        let calendar_event_id = "evt-123@google.com";
+        let meeting_id = sanitize_calendar_event_id(calendar_event_id);
+        let prep_json = serde_json::json!({
+            "meetingId": meeting_id,
+            "calendarEventId": calendar_event_id,
+            "title": "Acme Weekly",
+            "talkingPoints": ["Recent win: Stakeholder alignment"],
+            "userAgenda": ["Confirm launch timeline"],
+            "userNotes": "Need legal follow-up"
+        });
+        fs::write(
+            preps_dir.join(format!("{}.json", meeting_id)),
+            serde_json::to_string_pretty(&prep_json).unwrap(),
+        )
+        .expect("write prep");
+
+        let db_dir = tempfile::TempDir::new().expect("db temp dir");
+        let db = ActionDb::open_at(db_dir.path().join("actions.db")).expect("open db");
+
+        let recon = ReconciliationResult {
+            date: "2026-02-12".to_string(),
+            reconciled_at: Utc::now().to_rfc3339(),
+            meetings: MeetingReconciliation {
+                completed: 1,
+                details: vec![MeetingStatus {
+                    title: "Acme Weekly".to_string(),
+                    meeting_type: "customer".to_string(),
+                    time: "9:00 AM".to_string(),
+                    end_time: Some("10:00 AM".to_string()),
+                    account: None,
+                    calendar_event_id: Some(calendar_event_id.to_string()),
+                    transcript_status: TranscriptStatus::NoTranscript,
+                }],
+            },
+            actions: ActionStats {
+                completed_today: 0,
+                pending: 0,
+            },
+            flags: vec![],
+        };
+
+        persist_meetings(&db, &recon, workspace);
+        let first = db
+            .get_meeting_by_id(&meeting_id)
+            .expect("query")
+            .expect("meeting exists");
+        assert!(first.user_agenda_json.is_some());
+        assert_eq!(first.user_notes.as_deref(), Some("Need legal follow-up"));
+        assert!(first.prep_frozen_at.is_some());
+        let first_hash = first
+            .prep_snapshot_hash
+            .clone()
+            .expect("snapshot hash populated");
+        let snapshot_path = std::path::PathBuf::from(
+            first
+                .prep_snapshot_path
+                .clone()
+                .expect("snapshot path populated"),
+        );
+        assert!(snapshot_path.exists());
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&snapshot_path).expect("read snapshot"))
+                .expect("parse snapshot");
+        assert_eq!(snapshot["meetingId"], meeting_id);
+        assert_eq!(snapshot["schemaVersion"], 1);
+
+        // Re-run persist to verify freeze idempotency.
+        persist_meetings(&db, &recon, workspace);
+        let second = db
+            .get_meeting_by_id(&meeting_id)
+            .expect("query second")
+            .expect("meeting exists");
+        assert_eq!(
+            second.prep_snapshot_hash.as_deref(),
+            Some(first_hash.as_str())
+        );
+        assert_eq!(
+            second.prep_snapshot_path.as_deref(),
+            first.prep_snapshot_path.as_deref()
+        );
     }
 }

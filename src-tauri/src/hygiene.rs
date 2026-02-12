@@ -720,6 +720,14 @@ pub fn check_upcoming_meeting_readiness(
                     calendar_event_id: row.get(10)?,
                     description: None,
                     prep_context_json: None,
+                    user_agenda_json: None,
+                    user_notes: None,
+                    prep_frozen_json: None,
+                    prep_frozen_at: None,
+                    prep_snapshot_path: None,
+                    prep_snapshot_hash: None,
+                    transcript_path: None,
+                    transcript_processed_at: None,
                 })
             })?;
             Ok(rows.filter_map(|r| r.ok()).collect())

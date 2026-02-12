@@ -173,10 +173,11 @@ impl Executor {
 
     /// Execute archive workflow (pure Rust, silent operation)
     ///
-    /// Sequence (ADR-0040):
+    /// Sequence (ADR-0040 / permanence hardening):
     /// 1. Reconcile: read schedule.json, check transcript status, compute stats
-    /// 2. Archive: move files, clean data/
-    /// 3. Persist: write day-summary.json, next-morning-flags.json, meetings to DB
+    /// 2. Persist/freeze meetings while prep JSON still exists
+    /// 3. Archive: move files, clean data/
+    /// 4. Write day-summary + next-morning flags
     async fn execute_archive(
         &self,
         workspace: &Path,
@@ -252,7 +253,14 @@ impl Executor {
             }
         }
 
-        // Step 2: Archive (move files, clean data/)
+        // Step 2: Persist meetings + freeze prep snapshots BEFORE archive cleanup.
+        if let Ok(db_guard) = self.state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                reconcile::persist_meetings(db, &recon, &workspace);
+            }
+        }
+
+        // Step 3: Archive (move files, clean data/)
         let result = run_archive(workspace)
             .await
             .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
@@ -267,7 +275,7 @@ impl Executor {
             }
         );
 
-        // Step 3: Persist reconciliation results
+        // Step 4: Persist reconciliation summary artifacts
         // Write day-summary.json to archive directory (if files were archived)
         if !result.archive_path.is_empty() {
             let archive_path = std::path::Path::new(&result.archive_path);
@@ -282,13 +290,6 @@ impl Executor {
         let today_dir = workspace.join("_today");
         if let Err(e) = reconcile::write_morning_flags(&today_dir, &recon) {
             log::warn!("Failed to write morning flags: {}", e);
-        }
-
-        // Re-lock DB briefly to persist meetings
-        if let Ok(db_guard) = self.state.db.lock() {
-            if let Some(db) = db_guard.as_ref() {
-                reconcile::persist_meetings(db, &recon, &workspace);
-            }
         }
 
         // Update execution record
