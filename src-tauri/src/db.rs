@@ -567,6 +567,58 @@ impl ActionDb {
         Ok(actions)
     }
 
+    /// Query pending + waiting actions for focus prioritization.
+    ///
+    /// Includes actions with no due date so the ranker can decide feasibility.
+    /// Ordered by urgency first, then priority/due date.
+    pub fn get_focus_candidate_actions(&self, days_ahead: i32) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at, person_id
+             FROM actions
+             WHERE status IN ('pending', 'waiting')
+               AND (due_date IS NULL OR due_date <= date('now', ?1 || ' days'))
+             ORDER BY
+               CASE
+                 WHEN due_date < date('now') THEN 0
+                 WHEN due_date = date('now') THEN 1
+                 WHEN due_date IS NULL THEN 3
+                 ELSE 2
+               END,
+               priority,
+               due_date",
+        )?;
+
+        let days_param = format!("+{days_ahead}");
+        let rows = stmt.query_map(params![days_param], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+                person_id: row.get(15)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
     /// Query pending and waiting actions for a specific account.
     pub fn get_account_actions(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
