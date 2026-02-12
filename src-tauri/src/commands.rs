@@ -3241,13 +3241,17 @@ struct ClaudeStatusCacheEntry {
 }
 
 /// Cache Claude status checks to avoid shelling out on every focus event.
+///
+/// The subprocess spawn (`claude --print hello`) runs on a blocking thread
+/// via `spawn_blocking` so it never ties up a Tauri IPC thread.
 #[tauri::command]
-pub fn check_claude_status() -> ClaudeStatus {
+pub async fn check_claude_status() -> ClaudeStatus {
     let started = std::time::Instant::now();
     static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
     let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
     let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
 
+    // Fast path: return cached result without blocking
     if let Ok(guard) = cache.lock() {
         if let Some(entry) = guard.as_ref() {
             if entry.checked_at.elapsed() < ttl {
@@ -3261,16 +3265,24 @@ pub fn check_claude_status() -> ClaudeStatus {
         }
     }
 
-    let installed = crate::pty::PtyManager::is_claude_available();
-    let authenticated = if installed {
-        crate::pty::PtyManager::is_claude_authenticated().unwrap_or(false)
-    } else {
-        false
-    };
-    let status = ClaudeStatus {
-        installed,
-        authenticated,
-    };
+    // Slow path: spawn subprocess on a blocking thread so IPC stays responsive
+    let status = tokio::task::spawn_blocking(|| {
+        let installed = crate::pty::PtyManager::is_claude_available();
+        let authenticated = if installed {
+            crate::pty::PtyManager::is_claude_authenticated().unwrap_or(false)
+        } else {
+            false
+        };
+        ClaudeStatus {
+            installed,
+            authenticated,
+        }
+    })
+    .await
+    .unwrap_or(ClaudeStatus {
+        installed: false,
+        authenticated: false,
+    });
 
     if let Ok(mut guard) = cache.lock() {
         *guard = Some(ClaudeStatusCacheEntry {

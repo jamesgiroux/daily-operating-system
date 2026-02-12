@@ -87,7 +87,7 @@ export function useDashboardData(): {
   useEffect(() => {
     const onFocus = () => {
       const now = Date.now();
-      if (now - lastFocusRefreshRef.current < 30_000) {
+      if (now - lastFocusRefreshRef.current < 60_000) {
         return;
       }
       lastFocusRefreshRef.current = now;
