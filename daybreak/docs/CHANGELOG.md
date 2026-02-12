@@ -23,6 +23,7 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 *Calendar/plumbing reliability work that unblocked the report redesign.*
 
 ### Closed
+- **I177:** Email sync reliability completed end-to-end. `emails.json` now carries structured `sync` health metadata, fetch/delivery failures preserve last-known-good email lists, dashboard surfaces persistent email sync state, and manual refresh now returns blocking failures with explicit retry. Email enrichment retries once with synthesis model when extraction model is unavailable.
 - **I173:** Enrichment responsiveness fixed with split-lock enrichment path reuse and `nice -n 10` PTY execution support.
 - **I185:** Calendar description pipeline completed end-to-end and exposed in prep as `calendarNotes`.
 - **I186:** Account snapshot enrichment completed with compact prep snapshot rendering and sanitization.
