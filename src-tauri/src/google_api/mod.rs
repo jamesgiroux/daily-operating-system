@@ -14,6 +14,7 @@ pub mod auth;
 pub mod calendar;
 pub mod classify;
 pub mod gmail;
+pub mod token_store;
 
 use std::path::{Path, PathBuf};
 
@@ -34,7 +35,7 @@ pub const SCOPES: &[&str] = &[
 // Token types — must be compatible with Python's google-auth token format
 // ============================================================================
 
-/// OAuth2 token persisted to ~/.dailyos/google/token.json.
+/// OAuth2 token payload persisted via the token storage backend.
 ///
 /// Field names match what Python's `google.oauth2.credentials.Credentials.to_json()`
 /// produces. Both `token` and `access_token` are accepted on read for compat.
@@ -50,8 +51,9 @@ pub struct GoogleToken {
     pub token_uri: String,
     /// OAuth2 client ID
     pub client_id: String,
-    /// OAuth2 client secret
-    pub client_secret: String,
+    /// OAuth2 client secret (legacy; optional for PKCE clients)
+    #[serde(default)]
+    pub client_secret: Option<String>,
     /// Authorized scopes
     #[serde(default)]
     pub scopes: Vec<String>,
@@ -79,7 +81,8 @@ pub struct ClientCredentials {
 #[derive(Debug, Clone, Deserialize)]
 pub struct InstalledAppCredentials {
     pub client_id: String,
-    pub client_secret: String,
+    #[serde(default)]
+    pub client_secret: Option<String>,
     pub auth_uri: String,
     pub token_uri: String,
     #[serde(default)]
@@ -112,13 +115,19 @@ pub enum GoogleApiError {
     FlowCancelled,
     #[error("Invalid credentials format: {0}")]
     InvalidCredentials(String),
+    #[error("Keychain error: {0}")]
+    Keychain(String),
+    #[error("OAuth state mismatch")]
+    OAuthStateMismatch,
 }
 
 // ============================================================================
 // Token I/O
 // ============================================================================
 
-/// Canonical path to the Google token file.
+/// Legacy plaintext Google token file path.
+///
+/// On macOS this path is migration-only; canonical storage is Keychain.
 pub fn token_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
@@ -136,44 +145,14 @@ pub fn credentials_path() -> PathBuf {
         .join("credentials.json")
 }
 
-/// Load token from disk. Returns None if file doesn't exist.
+/// Load token from storage backend.
 pub fn load_token() -> Result<GoogleToken, GoogleApiError> {
-    let path = token_path();
-    if !path.exists() {
-        return Err(GoogleApiError::TokenNotFound(path));
-    }
-    let content = std::fs::read_to_string(&path)?;
-    let token: GoogleToken = serde_json::from_str(&content)?;
-    Ok(token)
+    token_store::load_token()
 }
 
-/// Save token to disk atomically with 0o600 permissions.
+/// Save token to storage backend.
 pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
-    let path = token_path();
-
-    // Ensure directory exists with 0o700 permissions
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
-            }
-        }
-    }
-
-    let content = serde_json::to_string_pretty(token)?;
-    crate::util::atomic_write_str(&path, &content)?;
-
-    // Set 0o600 on the token file
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-    }
-
-    Ok(())
+    token_store::save_token(token)
 }
 
 /// Load client credentials.
@@ -218,7 +197,7 @@ fn embedded_credentials() -> ClientCredentials {
         installed: InstalledAppCredentials {
             client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
                 .to_string(),
-            client_secret: "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".to_string(),
+            client_secret: None,
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uris: vec!["http://localhost".to_string()],
@@ -270,30 +249,24 @@ pub async fn refresh_access_token(token: &GoogleToken) -> Result<GoogleToken, Go
         .ok_or(GoogleApiError::AuthExpired)?;
 
     let client = reqwest::Client::new();
-    let resp = client
-        .post(&token.token_uri)
-        .form(&[
-            ("client_id", token.client_id.as_str()),
-            ("client_secret", token.client_secret.as_str()),
-            ("refresh_token", refresh_token.as_str()),
-            ("grant_type", "refresh_token"),
-        ])
-        .send()
-        .await?;
 
-    if !resp.status().is_success() {
-        let status = resp.status().as_u16();
-        let body = resp.text().await.unwrap_or_default();
-        if status == 400 || status == 401 {
-            return Err(GoogleApiError::AuthExpired);
+    let (status, body_text) =
+        refresh_access_token_request(&client, token, refresh_token, false).await?;
+    let body: serde_json::Value = if status.is_success() {
+        serde_json::from_str(&body_text)?
+    } else if status.as_u16() == 400
+        && body_text.contains("invalid_client")
+        && token.client_secret.is_some()
+    {
+        let (retry_status, retry_body_text) =
+            refresh_access_token_request(&client, token, refresh_token, true).await?;
+        if !retry_status.is_success() {
+            return Err(map_refresh_error(retry_status.as_u16(), &retry_body_text));
         }
-        return Err(GoogleApiError::RefreshFailed(format!(
-            "HTTP {}: {}",
-            status, body
-        )));
-    }
-
-    let body: serde_json::Value = resp.json().await?;
+        serde_json::from_str(&retry_body_text)?
+    } else {
+        return Err(map_refresh_error(status.as_u16(), &body_text));
+    };
 
     let access_token = body["access_token"]
         .as_str()
@@ -305,11 +278,45 @@ pub async fn refresh_access_token(token: &GoogleToken) -> Result<GoogleToken, Go
     let mut new_token = token.clone();
     new_token.token = access_token.to_string();
     new_token.expiry = Some(expiry.to_rfc3339());
+    // Strip legacy secret from persisted token once refresh succeeds.
+    new_token.client_secret = None;
 
     // Persist the refreshed token
     save_token(&new_token)?;
 
     Ok(new_token)
+}
+
+async fn refresh_access_token_request(
+    client: &reqwest::Client,
+    token: &GoogleToken,
+    refresh_token: &str,
+    include_client_secret: bool,
+) -> Result<(reqwest::StatusCode, String), GoogleApiError> {
+    let mut form = vec![
+        ("client_id", token.client_id.as_str()),
+        ("refresh_token", refresh_token),
+        ("grant_type", "refresh_token"),
+    ];
+    if include_client_secret {
+        if let Some(secret) = token.client_secret.as_deref() {
+            form.push(("client_secret", secret));
+        }
+    }
+    let resp = client.post(&token.token_uri).form(&form).send().await?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    Ok((status, body))
+}
+
+fn map_refresh_error(status: u16, body: &str) -> GoogleApiError {
+    let lowered = body.to_lowercase();
+    if status == 400 || status == 401 {
+        if lowered.contains("invalid_grant") || lowered.contains("token has been expired") {
+            return GoogleApiError::AuthExpired;
+        }
+    }
+    GoogleApiError::RefreshFailed(format!("HTTP {}: {}", status, body))
 }
 
 /// Get a valid access token, refreshing if expired.
@@ -341,7 +348,7 @@ mod tests {
             refresh_token: Some("1//test-refresh-token".to_string()),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             client_id: "12345.apps.googleusercontent.com".to_string(),
-            client_secret: "test-secret".to_string(),
+            client_secret: Some("test-secret".to_string()),
             scopes: vec!["https://www.googleapis.com/auth/calendar".to_string()],
             expiry: Some("2026-02-08T12:00:00Z".to_string()),
             account: Some("user@example.com".to_string()),
@@ -381,6 +388,7 @@ mod tests {
         let token: GoogleToken = serde_json::from_str(python_json).unwrap();
         assert_eq!(token.token, "ya29.python-token");
         assert_eq!(token.account.as_deref(), Some("user@company.com"));
+        assert_eq!(token.client_secret.as_deref(), Some("secret"));
         assert_eq!(token.scopes.len(), 2);
     }
 
@@ -405,7 +413,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: "s".to_string(),
+            client_secret: Some("s".to_string()),
             scopes: vec![],
             expiry: None,
             account: None,
@@ -422,7 +430,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: "s".to_string(),
+            client_secret: Some("s".to_string()),
             scopes: vec![],
             expiry: Some(future.to_rfc3339()),
             account: None,
@@ -439,7 +447,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: "s".to_string(),
+            client_secret: Some("s".to_string()),
             scopes: vec![],
             expiry: Some(past.to_rfc3339()),
             account: None,
@@ -465,6 +473,26 @@ mod tests {
             creds.installed.client_id,
             "12345.apps.googleusercontent.com"
         );
+        assert_eq!(creds.installed.client_secret.as_deref(), Some("secret"));
         assert_eq!(creds.installed.redirect_uris, vec!["http://localhost"]);
+    }
+
+    #[test]
+    fn test_credentials_json_parsing_without_secret() {
+        let json = r#"{
+            "installed": {
+                "client_id": "12345.apps.googleusercontent.com",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost"]
+            }
+        }"#;
+
+        let creds: ClientCredentials = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            creds.installed.client_id,
+            "12345.apps.googleusercontent.com"
+        );
+        assert!(creds.installed.client_secret.is_none());
     }
 }
