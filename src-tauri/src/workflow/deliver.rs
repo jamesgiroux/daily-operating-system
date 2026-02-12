@@ -60,7 +60,7 @@ const EMAILS_FILE: &str = "emails.json";
 /// Normalise a meeting type string to a valid enum value.
 /// Defaults to "internal" for unrecognised values.
 pub fn normalise_meeting_type(raw: &str) -> &'static str {
-    let normalised = raw.to_lowercase().replace(' ', "_").replace('-', "_");
+    let normalised = raw.to_lowercase().replace([' ', '-'], "_");
     for &valid in VALID_MEETING_TYPES {
         if normalised == valid {
             return valid;
@@ -182,7 +182,7 @@ fn find_meeting_entry<'a>(
     event_id: &str,
     meetings_by_type: &'a HashMap<String, Vec<DirectiveMeeting>>,
 ) -> (Option<&'a DirectiveMeeting>, Option<String>) {
-    for (_mtype, meeting_list) in meetings_by_type {
+    for meeting_list in meetings_by_type.values() {
         for m in meeting_list {
             let mid = m.event_id.as_deref().or(m.id.as_deref()).unwrap_or("");
             if mid == event_id {
@@ -540,7 +540,7 @@ pub fn deliver_actions(
         if title.to_lowercase().trim().is_empty() {
             return;
         }
-        if existing_titles.contains(&title.to_lowercase().trim().to_string()) {
+        if existing_titles.contains(title.to_lowercase().trim()) {
             return;
         }
         let id = make_action_id(title, account, due);
@@ -719,12 +719,12 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
                     if let Ok(existing_json) = serde_json::from_str::<Value>(&existing) {
                         if let Some(obj) = prep_data.as_object_mut() {
                             if let Some(ua) = existing_json.get("userAgenda") {
-                                if ua.is_array() && ua.as_array().map_or(false, |a| !a.is_empty()) {
+                                if ua.is_array() && ua.as_array().is_some_and(|a| !a.is_empty()) {
                                     obj.insert("userAgenda".to_string(), ua.clone());
                                 }
                             }
                             if let Some(un) = existing_json.get("userNotes") {
-                                if un.is_string() && un.as_str().map_or(false, |s| !s.is_empty()) {
+                                if un.is_string() && un.as_str().is_some_and(|s| !s.is_empty()) {
                                     obj.insert("userNotes".to_string(), un.clone());
                                 }
                             }
@@ -793,11 +793,11 @@ pub fn is_substantive_prep(prep_path: &Path) -> bool {
         "personPrep",
     ];
     content_keys.iter().any(|key| {
-        json.get(key).map_or(false, |v| {
+        json.get(key).is_some_and(|v| {
             !v.is_null()
-                && v.as_str().map_or(true, |s| !s.is_empty())
-                && v.as_array().map_or(true, |a| !a.is_empty())
-                && v.as_object().map_or(true, |o| !o.is_empty())
+                && v.as_str().is_none_or(|s| !s.is_empty())
+                && v.as_array().is_none_or(|a| !a.is_empty())
+                && v.as_object().is_none_or(|o| !o.is_empty())
         })
     })
 }
@@ -891,8 +891,7 @@ fn sanitize_inline_markdown(value: &str) -> String {
         .replace(">", "")
         .replace("**", "")
         .replace("__", "")
-        .replace('`', "")
-        .replace('*', "")
+        .replace(['`', '*'], "")
         .replace('_', " ")
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -960,8 +959,7 @@ fn source_reference_value(source: &str) -> Option<Value> {
     }
     let label = cleaned
         .split(['/', '\\'])
-        .filter(|part| !part.trim().is_empty())
-        .last()
+        .rfind(|part| !part.trim().is_empty())
         .unwrap_or(cleaned.as_str())
         .to_string();
     Some(json!({
@@ -3179,11 +3177,11 @@ pub fn enrich_week(
         .map(|shapes| {
             shapes
                 .iter()
-                .filter_map(|s| {
+                .map(|s| {
                     let day = s.get("dayName").and_then(|v| v.as_str()).unwrap_or("?");
                     let count = s.get("meetingCount").and_then(|v| v.as_u64()).unwrap_or(0);
                     let density = s.get("density").and_then(|v| v.as_str()).unwrap_or("?");
-                    Some(format!("{}: {} meetings ({})", day, count, density))
+                    format!("{}: {} meetings ({})", day, count, density)
                 })
                 .collect()
         })
