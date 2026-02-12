@@ -252,7 +252,10 @@ fn compute_cancelable(meetings: &[Meeting]) -> Vec<CancelableSignal> {
 /// A meeting is a cancellation candidate if it's internal/team_sync,
 /// has no prep, and isn't already cancelled.
 fn is_cancelable_candidate(m: &Meeting) -> bool {
-    let is_internal = matches!(m.meeting_type, MeetingType::Internal | MeetingType::TeamSync);
+    let is_internal = matches!(
+        m.meeting_type,
+        MeetingType::Internal | MeetingType::TeamSync
+    );
     let no_prep = !m.has_prep;
     let not_cancelled = m.overlay_status.as_ref() != Some(&OverlayStatus::Cancelled);
 
@@ -430,11 +433,7 @@ mod tests {
 
     #[test]
     fn test_cancelable_team_sync() {
-        let meetings = vec![sample_meeting(
-            "m1",
-            "Weekly sync",
-            MeetingType::TeamSync,
-        )];
+        let meetings = vec![sample_meeting("m1", "Weekly sync", MeetingType::TeamSync)];
 
         let db = test_db();
         let result = compute_executive_intelligence(&db, &meetings, "customer-success", vec![]);

@@ -120,8 +120,14 @@ pub fn move_file(source: &Path, destination: &Path) -> Result<RouteResult, Strin
     // Move the file (rename if same filesystem, copy+delete otherwise)
     if std::fs::rename(source, &final_dest).is_err() {
         // Cross-filesystem: copy then delete
-        std::fs::copy(source, &final_dest)
-            .map_err(|e| format!("Failed to copy {} to {}: {}", source.display(), final_dest.display(), e))?;
+        std::fs::copy(source, &final_dest).map_err(|e| {
+            format!(
+                "Failed to copy {} to {}: {}",
+                source.display(),
+                final_dest.display(),
+                e
+            )
+        })?;
         std::fs::remove_file(source)
             .map_err(|e| format!("Failed to remove source file {}: {}", source.display(), e))?;
     }
@@ -177,9 +183,7 @@ mod tests {
     #[test]
     fn test_resolve_meeting_notes_no_account() {
         let workspace = Path::new("/workspace");
-        let classification = Classification::MeetingNotes {
-            account: None,
-        };
+        let classification = Classification::MeetingNotes { account: None };
         let dest = resolve_destination(&classification, workspace, "notes.md");
         assert!(dest.is_some());
         let dest = dest.unwrap();

@@ -86,8 +86,7 @@ mod tests {
         // The backup function uses a hardcoded path (~/.dailyos/actions.db.bak),
         // so we test the Backup API directly with a custom path.
         let backup_path = dir.path().join("test.db.bak");
-        let mut backup_conn =
-            rusqlite::Connection::open(&backup_path).expect("open backup");
+        let mut backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup");
         let backup =
             rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn).expect("init backup");
         backup.step(-1).expect("backup step");
