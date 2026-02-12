@@ -7,7 +7,7 @@
 //! - Open actions for account
 //! - File references (account tracker, summaries, archive)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use regex::Regex;
@@ -74,10 +74,10 @@ fn gather_meeting_context(
     match meeting_type {
         "customer" | "qbr" | "training" => {
             if accounts_dir.is_dir() {
-                // I168: filesystem match first, then DB fallback
-                let matched = guess_account_name(meeting, &accounts_dir).or_else(|| {
-                    db.and_then(|db| resolve_account_from_db(db, event_id, &accounts_dir))
-                });
+                // Prefer DB-linked/account-attendee evidence, then heuristic fallback.
+                let matched = db
+                    .and_then(|db| resolve_account_from_db(db, event_id, meeting, &accounts_dir))
+                    .or_else(|| guess_account_name(meeting, &accounts_dir));
                 if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
                     let account_path = accounts_dir.join(&matched.relative_path);
@@ -185,10 +185,10 @@ fn gather_meeting_context(
 
         "partnership" => {
             if accounts_dir.is_dir() {
-                // I168: filesystem match first, then DB fallback
-                let matched = guess_account_name(meeting, &accounts_dir).or_else(|| {
-                    db.and_then(|db| resolve_account_from_db(db, event_id, &accounts_dir))
-                });
+                // Prefer DB-linked/account-attendee evidence, then heuristic fallback.
+                let matched = db
+                    .and_then(|db| resolve_account_from_db(db, event_id, meeting, &accounts_dir))
+                    .or_else(|| guess_account_name(meeting, &accounts_dir));
                 if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
                     let account_path = accounts_dir.join(&matched.relative_path);
@@ -300,87 +300,323 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
 fn resolve_account_from_db(
     db: &crate::db::ActionDb,
     event_id: &str,
+    meeting: &Value,
     accounts_dir: &Path,
 ) -> Option<AccountMatch> {
     let meeting_id = crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
+    let title_lower = meeting
+        .get("title")
+        .or_else(|| meeting.get("summary"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let external_domains: Vec<String> = meeting
+        .get("external_domains")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
 
-    // Step 1: Direct meeting_entities junction lookup
-    if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
-        for entity in &entities {
-            if entity.entity_type == crate::entity::EntityType::Account {
-                if let Some(matched) = find_account_dir_by_name(&entity.name, accounts_dir) {
-                    return Some(matched);
+    // Load meeting row by calendar_event_id when available.
+    let meeting_row = if event_id.is_empty() {
+        None
+    } else {
+        db.get_meeting_by_calendar_event_id(event_id).ok().flatten()
+    };
+
+    // Step 0: Explicit account assignment on meetings_history is highest-confidence.
+    if let Some(ref row) = meeting_row {
+        if let Some(ref account_id) = row.account_id {
+            if let Some(matched) = resolve_account_identifier(db, account_id, accounts_dir) {
+                return Some(matched);
+            }
+        }
+    }
+
+    // Step 1: Direct meeting_entities junction lookup (meeting id and calendar-backed id).
+    let mut direct_candidates: Vec<AccountMatch> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for lookup_id in [
+        (!meeting_id.is_empty()).then_some(meeting_id.as_str()),
+        meeting_row
+            .as_ref()
+            .and_then(|m| (!m.id.is_empty() && m.id != meeting_id).then_some(m.id.as_str())),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Ok(entities) = db.get_meeting_entities(lookup_id) {
+            for entity in entities {
+                if entity.entity_type != crate::entity::EntityType::Account {
+                    continue;
+                }
+                if let Some(matched) = find_account_dir_by_id_hint(&entity.id, accounts_dir)
+                    .or_else(|| find_account_dir_by_name(&entity.name, accounts_dir))
+                {
+                    let key = normalize_account_key(&matched.name);
+                    if seen.insert(key) {
+                        direct_candidates.push(matched);
+                    }
                 }
             }
         }
     }
 
-    // Step 2: Attendee inference from meetings_history
-    // Look up the meeting by calendar_event_id, get attendees, resolve person→entity
-    if let Ok(Some(meeting)) = db.get_meeting_by_calendar_event_id(event_id) {
-        if let Some(ref attendees_str) = meeting.attendees {
-            let emails: Vec<&str> = attendees_str.split(',').map(|s| s.trim()).collect();
-            let mut votes: HashMap<String, usize> = HashMap::new();
+    let attendee_votes = meeting_row
+        .as_ref()
+        .and_then(|row| row.attendees.as_deref())
+        .map(|attendees| build_attendee_account_votes(db, attendees))
+        .unwrap_or_default();
 
-            for email in &emails {
-                if let Ok(Some(person)) = db.get_person_by_email(email) {
-                    if let Ok(entities) = db.get_entities_for_person(&person.id) {
-                        for entity in entities {
-                            if entity.entity_type == crate::entity::EntityType::Account {
-                                *votes.entry(entity.name.clone()).or_insert(0) += 1;
-                            }
-                        }
-                    }
-                }
-            }
+    if !direct_candidates.is_empty() {
+        if direct_candidates.len() == 1 {
+            return direct_candidates.into_iter().next();
+        }
 
-            if let Some((top_name, _)) = votes.into_iter().max_by_key(|(_, c)| *c) {
-                if let Some(matched) = find_account_dir_by_name(&top_name, accounts_dir) {
-                    return Some(matched);
-                }
+        // Multiple linked accounts: use deterministic scoring.
+        let mut best: Option<(i32, String, AccountMatch)> = None;
+        for candidate in direct_candidates {
+            let mut score = 0;
+            if matches_meeting(&candidate.name, &title_lower, &external_domains) {
+                score += 100;
             }
+            if candidate.relative_path.contains('/') {
+                score += 5;
+            }
+            score += attendee_votes
+                .get(&normalize_account_key(&candidate.name))
+                .copied()
+                .unwrap_or(0) as i32
+                * 10;
+
+            let tie_name = candidate.name.to_lowercase();
+            let should_replace = match &best {
+                None => true,
+                Some((best_score, best_name, _)) => {
+                    score > *best_score || (score == *best_score && tie_name < *best_name)
+                }
+            };
+            if should_replace {
+                best = Some((score, tie_name, candidate));
+            }
+        }
+
+        if let Some((_, _, matched)) = best {
+            return Some(matched);
+        }
+    }
+
+    // Step 2: Attendee inference fallback (majority vote from person↔entity links).
+    if let Some((top_key, _)) = attendee_votes.into_iter().max_by_key(|(_, c)| *c) {
+        if let Some(matched) = find_account_dir_by_name(&top_key, accounts_dir) {
+            return Some(matched);
         }
     }
 
     None
 }
 
-/// Find an account directory by name (exact, case-insensitive match).
-/// Checks both top-level and child BU directories.
-fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<AccountMatch> {
-    let name_lower = name.to_lowercase();
-    let entries = std::fs::read_dir(accounts_dir).ok()?;
+/// Resolve an account identifier that may be an entity/account ID or name.
+fn resolve_account_identifier(
+    db: &crate::db::ActionDb,
+    account_ref: &str,
+    accounts_dir: &Path,
+) -> Option<AccountMatch> {
+    let trimmed = account_ref.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
 
+    // Prefer path resolution from slug-like IDs (e.g., "salesforce--digital-marketing-technology")
+    // to disambiguate duplicate names across top-level and BU child folders.
+    if let Some(matched) = find_account_dir_by_id_hint(trimmed, accounts_dir) {
+        return Some(matched);
+    }
+
+    if let Ok(Some(entity)) = db.get_entity(trimmed) {
+        if entity.entity_type == crate::entity::EntityType::Account {
+            if let Some(matched) = find_account_dir_by_name(&entity.name, accounts_dir) {
+                return Some(matched);
+            }
+        }
+    }
+
+    if let Ok(Some(account)) = db.get_account(trimmed) {
+        if let Some(matched) = find_account_dir_by_name(&account.name, accounts_dir) {
+            return Some(matched);
+        }
+    }
+
+    find_account_dir_by_name(trimmed, accounts_dir)
+}
+
+/// Try resolving an account from an ID hint that encodes parent/child slugs.
+///
+/// Example: `salesforce--digital-marketing-technology` -> `Salesforce/Digital-Marketing-Technology`.
+fn find_account_dir_by_id_hint(account_ref: &str, accounts_dir: &Path) -> Option<AccountMatch> {
+    let (parent_hint, child_hint) = account_ref.split_once("--")?;
+    let parent_key = normalize_account_key(parent_hint);
+    let child_key = normalize_account_key(child_hint);
+    if parent_key.is_empty() || child_key.is_empty() {
+        return None;
+    }
+
+    let entries = std::fs::read_dir(accounts_dir).ok()?;
     for entry in entries.flatten() {
         if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
             continue;
         }
-        let dir_name = entry.file_name().to_string_lossy().to_string();
-
-        // Exact top-level match
-        if dir_name.to_lowercase() == name_lower {
-            return Some(AccountMatch {
-                name: dir_name.clone(),
-                relative_path: dir_name,
-            });
+        let parent_name = entry.file_name().to_string_lossy().to_string();
+        if normalize_account_key(&parent_name) != parent_key {
+            continue;
         }
-
-        // Check child BU directories
         if let Ok(children) = std::fs::read_dir(entry.path()) {
             for child in children.flatten() {
+                if !child.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+                    continue;
+                }
                 let child_name = child.file_name().to_string_lossy().to_string();
-                if child.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
-                    && child_name.to_lowercase() == name_lower
-                {
+                if normalize_account_key(&child_name) == child_key {
                     return Some(AccountMatch {
                         name: child_name.clone(),
-                        relative_path: format!("{}/{}", dir_name, child_name),
+                        relative_path: format!("{}/{}", parent_name, child_name),
                     });
                 }
             }
         }
     }
     None
+}
+
+/// Compute attendee-based account votes keyed by normalized account name.
+fn build_attendee_account_votes(
+    db: &crate::db::ActionDb,
+    attendees_csv: &str,
+) -> HashMap<String, usize> {
+    let emails: Vec<&str> = attendees_csv
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut votes: HashMap<String, usize> = HashMap::new();
+
+    for email in emails {
+        if let Ok(Some(person)) = db.get_person_by_email(email) {
+            if let Ok(entities) = db.get_entities_for_person(&person.id) {
+                for entity in entities {
+                    if entity.entity_type == crate::entity::EntityType::Account {
+                        let key = normalize_account_key(&entity.name);
+                        if !key.is_empty() {
+                            *votes.entry(key).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    votes
+}
+
+/// Normalize account-like labels for fuzzy matching.
+///
+/// Examples:
+/// - "Digital-Marketing-Technology" -> "digitalmarketingtechnology"
+/// - "Digital Marketing Technology" -> "digitalmarketingtechnology"
+fn normalize_account_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+/// Find an account directory by name (exact, case-insensitive match).
+/// Checks both top-level and child BU directories.
+fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<AccountMatch> {
+    let target_key = normalize_account_key(name);
+    let mut matches: Vec<AccountMatch> = Vec::new();
+
+    let entries = std::fs::read_dir(accounts_dir).ok()?;
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let parent_name = entry.file_name().to_string_lossy().to_string();
+        if let Ok(children) = std::fs::read_dir(entry.path()) {
+            for child in children.flatten() {
+                let child_name = child.file_name().to_string_lossy().to_string();
+                if child.file_type().map(|ft| ft.is_dir()).unwrap_or(false)
+                    && normalize_account_key(&child_name) == target_key
+                {
+                    matches.push(AccountMatch {
+                        name: child_name.clone(),
+                        relative_path: format!("{}/{}", parent_name, child_name),
+                    });
+                }
+            }
+        }
+    }
+
+    let entries = std::fs::read_dir(accounts_dir).ok()?;
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        if normalize_account_key(&dir_name) == target_key {
+            matches.push(AccountMatch {
+                name: dir_name.clone(),
+                relative_path: dir_name,
+            });
+        }
+    }
+
+    if matches.is_empty() {
+        return None;
+    }
+    if matches.len() == 1 {
+        return matches.into_iter().next();
+    }
+
+    // Guardrail: if multiple folders match the same normalized name, choose
+    // deterministically with a BU/context bias and log the ambiguity.
+    let mut best_idx = 0usize;
+    let mut best_score = i32::MIN;
+    for (idx, m) in matches.iter().enumerate() {
+        let path = accounts_dir.join(&m.relative_path);
+        let mut score = 0;
+        if m.relative_path.contains('/') {
+            score += 10; // BU child paths are usually more specific.
+        }
+        if path.join("intelligence.json").is_file() {
+            score += 5;
+        }
+        if path.join("dashboard.md").is_file() {
+            score += 3;
+        }
+        if score > best_score {
+            best_score = score;
+            best_idx = idx;
+        }
+    }
+
+    let chosen = matches.remove(best_idx);
+    let all_paths = matches
+        .iter()
+        .map(|m| m.relative_path.clone())
+        .chain(std::iter::once(chosen.relative_path.clone()))
+        .collect::<Vec<_>>();
+    log::warn!(
+        "account resolution ambiguity for '{}': matches={:?}; chosen='{}'",
+        name,
+        all_paths,
+        chosen.relative_path
+    );
+    Some(chosen)
 }
 
 /// Result of matching a meeting to an account directory.
@@ -463,12 +699,15 @@ fn guess_account_name(meeting: &Value, accounts_dir: &Path) -> Option<AccountMat
 
 /// Check if an account/BU name matches a meeting by title or external domain.
 fn matches_meeting(name: &str, title_lower: &str, external_domains: &[String]) -> bool {
-    if title_lower.contains(&name.to_lowercase()) {
+    let name_key = normalize_account_key(name);
+    let title_key = normalize_account_key(title_lower);
+    if !name_key.is_empty() && title_key.contains(&name_key) {
         return true;
     }
     for domain in external_domains {
-        let domain_base = domain.split('.').next().unwrap_or("").to_lowercase();
-        if domain_base == name.to_lowercase() || name.to_lowercase().contains(&domain_base) {
+        let domain_base = domain.split('.').next().unwrap_or("");
+        let domain_key = normalize_account_key(domain_base);
+        if !domain_key.is_empty() && (domain_key == name_key || name_key.contains(&domain_key)) {
             return true;
         }
     }
@@ -1016,6 +1255,25 @@ mod tests {
     }
 
     #[test]
+    fn test_guess_account_name_child_by_title_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+            .unwrap();
+
+        // Title uses spaces while directory uses hyphens.
+        let meeting = json!({
+            "title": "Digital Marketing Technology Weekly",
+            "external_domains": [],
+        });
+        let matched = guess_account_name(&meeting, dir.path()).unwrap();
+        assert_eq!(matched.name, "Digital-Marketing-Technology");
+        assert_eq!(
+            matched.relative_path,
+            "Salesforce/Digital-Marketing-Technology"
+        );
+    }
+
+    #[test]
     fn test_guess_account_name_child_by_domain() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("Salesforce/Engineering")).unwrap();
@@ -1027,6 +1285,57 @@ mod tests {
         let matched = guess_account_name(&meeting, dir.path()).unwrap();
         assert_eq!(matched.name, "Engineering");
         assert_eq!(matched.relative_path, "Salesforce/Engineering");
+    }
+
+    #[test]
+    fn test_find_account_dir_by_name_normalized() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+            .unwrap();
+
+        let matched = find_account_dir_by_name("Digital Marketing Technology", dir.path())
+            .expect("should match normalized BU name");
+
+        assert_eq!(matched.name, "Digital-Marketing-Technology");
+        assert_eq!(
+            matched.relative_path,
+            "Salesforce/Digital-Marketing-Technology"
+        );
+    }
+
+    #[test]
+    fn test_find_account_dir_by_name_prefers_child_over_top_level_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+            .unwrap();
+
+        let matched = find_account_dir_by_name("Digital-Marketing-Technology", dir.path())
+            .expect("should match child BU dir first");
+
+        assert_eq!(matched.name, "Digital-Marketing-Technology");
+        assert_eq!(
+            matched.relative_path,
+            "Salesforce/Digital-Marketing-Technology"
+        );
+    }
+
+    #[test]
+    fn test_find_account_dir_by_id_hint_prefers_parent_child_path() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Digital-marketing-technology")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Salesforce/Digital-Marketing-Technology"))
+            .unwrap();
+
+        let matched =
+            find_account_dir_by_id_hint("salesforce--digital-marketing-technology", dir.path())
+                .expect("should resolve parent/child from id hint");
+
+        assert_eq!(matched.name, "Digital-Marketing-Technology");
+        assert_eq!(
+            matched.relative_path,
+            "Salesforce/Digital-Marketing-Technology"
+        );
     }
 
     #[test]
@@ -1042,6 +1351,74 @@ mod tests {
         });
         // Should NOT match the numbered internal dir
         assert!(guess_account_name(&meeting, dir.path()).is_none());
+    }
+
+    #[test]
+    fn test_resolve_account_from_db_prefers_meeting_account_id() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(
+            dir.path()
+                .join("Accounts/Salesforce/Digital-Marketing-Technology"),
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts/Slack")).unwrap();
+
+        let db = crate::db::ActionDb::open_at(dir.path().join("actions.db")).expect("open test db");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        db.upsert_entity(&crate::entity::DbEntity {
+            id: "dmt-entity".to_string(),
+            name: "Digital Marketing Technology".to_string(),
+            entity_type: crate::entity::EntityType::Account,
+            tracker_path: None,
+            updated_at: now.clone(),
+        })
+        .expect("upsert dmt entity");
+
+        db.upsert_entity(&crate::entity::DbEntity {
+            id: "slack-entity".to_string(),
+            name: "Slack".to_string(),
+            entity_type: crate::entity::EntityType::Account,
+            tracker_path: None,
+            updated_at: now.clone(),
+        })
+        .expect("upsert slack entity");
+
+        db.upsert_meeting(&crate::db::DbMeeting {
+            id: "evt-1".to_string(),
+            title: "Weekly Sync".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: "2026-02-12T10:00:00Z".to_string(),
+            end_time: None,
+            account_id: Some("dmt-entity".to_string()),
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: Some("evt-1".to_string()),
+            description: None,
+            prep_context_json: None,
+        })
+        .expect("upsert meeting");
+
+        // Stale direct link that should not win over explicit meeting.account_id.
+        db.link_meeting_entity("evt-1", "slack-entity", "account")
+            .expect("link stale account");
+
+        let meeting = json!({
+            "id": "evt-1",
+            "title": "Weekly Sync",
+            "external_domains": ["slack.com"],
+        });
+
+        let matched = resolve_account_from_db(&db, "evt-1", &meeting, &dir.path().join("Accounts"))
+            .expect("should resolve account");
+
+        assert_eq!(matched.name, "Digital-Marketing-Technology");
+        assert_eq!(
+            matched.relative_path,
+            "Salesforce/Digital-Marketing-Technology"
+        );
     }
 
     #[test]
