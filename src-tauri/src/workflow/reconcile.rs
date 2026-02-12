@@ -430,9 +430,7 @@ fn freeze_meeting_snapshot(
 }
 
 fn resolve_account_name(db: &ActionDb, account_id: Option<&str>) -> Option<String> {
-    let Some(account_id) = account_id else {
-        return None;
-    };
+    let account_id = account_id?;
     if let Ok(Some(account)) = db.get_account(account_id) {
         return Some(account.name);
     }
@@ -514,7 +512,7 @@ fn is_prep_substantive(json_str: &str) -> bool {
     .any(|key| {
         v.get(key).is_some_and(|val| {
             !val.is_null()
-                && (val.as_str().map_or(true, |s| !s.is_empty())
+                && (val.as_str().is_none_or(|s| !s.is_empty())
                     || val.as_array().is_some_and(|a| !a.is_empty()))
         })
     })

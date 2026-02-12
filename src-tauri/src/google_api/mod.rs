@@ -17,6 +17,7 @@ pub mod gmail;
 pub mod token_store;
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -119,6 +120,117 @@ pub enum GoogleApiError {
     Keychain(String),
     #[error("OAuth state mismatch")]
     OAuthStateMismatch,
+}
+
+#[derive(Debug, Clone)]
+pub struct RetryPolicy {
+    pub max_attempts: u32,
+    pub initial_backoff_ms: u64,
+    pub max_backoff_ms: u64,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            initial_backoff_ms: 250,
+            max_backoff_ms: 2_000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryDecision {
+    Retryable,
+    NonRetryable,
+}
+
+fn retry_decision_for_status(status: reqwest::StatusCode) -> RetryDecision {
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status == reqwest::StatusCode::REQUEST_TIMEOUT
+        || status.is_server_error()
+    {
+        RetryDecision::Retryable
+    } else {
+        RetryDecision::NonRetryable
+    }
+}
+
+fn retry_delay(
+    attempt: u32,
+    policy: &RetryPolicy,
+    retry_after: Option<&reqwest::header::HeaderValue>,
+) -> Duration {
+    if let Some(value) = retry_after.and_then(|v| v.to_str().ok()) {
+        if let Ok(secs) = value.parse::<u64>() {
+            return Duration::from_secs(secs.min(30));
+        }
+    }
+
+    let exponent = 2u64.saturating_pow(attempt.saturating_sub(1));
+    let base = policy
+        .initial_backoff_ms
+        .saturating_mul(exponent)
+        .min(policy.max_backoff_ms);
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0))
+        % 150;
+    Duration::from_millis(base.saturating_add(jitter))
+}
+
+pub async fn send_with_retry(
+    request: reqwest::RequestBuilder,
+    policy: &RetryPolicy,
+) -> Result<reqwest::Response, GoogleApiError> {
+    let attempts = policy.max_attempts.max(1);
+    for attempt in 1..=attempts {
+        let Some(cloned) = request.try_clone() else {
+            return request.send().await.map_err(GoogleApiError::Http);
+        };
+
+        match cloned.send().await {
+            Ok(response) => {
+                let status = response.status();
+                let decision = retry_decision_for_status(status);
+                if decision == RetryDecision::Retryable && attempt < attempts {
+                    let delay =
+                        retry_delay(attempt, policy, response.headers().get(reqwest::header::RETRY_AFTER));
+                    log::warn!(
+                        "google_api retry {}/{} after status {} (sleep {:?})",
+                        attempt,
+                        attempts,
+                        status,
+                        delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                return Ok(response);
+            }
+            Err(err) => {
+                let retryable_transport = err.is_timeout() || err.is_connect();
+                if retryable_transport && attempt < attempts {
+                    let delay = retry_delay(attempt, policy, None);
+                    log::warn!(
+                        "google_api retry {}/{} after transport error: {} (sleep {:?})",
+                        attempt,
+                        attempts,
+                        err,
+                        delay
+                    );
+                    tokio::time::sleep(delay).await;
+                    continue;
+                }
+                return Err(GoogleApiError::Http(err));
+            }
+        }
+    }
+
+    Err(GoogleApiError::RefreshFailed(
+        "request exhausted retries".to_string(),
+    ))
 }
 
 // ============================================================================
@@ -311,10 +423,10 @@ async fn refresh_access_token_request(
 
 fn map_refresh_error(status: u16, body: &str) -> GoogleApiError {
     let lowered = body.to_lowercase();
-    if status == 400 || status == 401 {
-        if lowered.contains("invalid_grant") || lowered.contains("token has been expired") {
-            return GoogleApiError::AuthExpired;
-        }
+    if (status == 400 || status == 401)
+        && (lowered.contains("invalid_grant") || lowered.contains("token has been expired"))
+    {
+        return GoogleApiError::AuthExpired;
     }
     GoogleApiError::RefreshFailed(format!("HTTP {}: {}", status, body))
 }

@@ -69,7 +69,9 @@ export default function ActionDetailPage() {
 
   async function saveField(updates: Record<string, unknown>) {
     if (!detail) return;
-    await invoke("update_action", { id: detail.id, ...updates });
+    await invoke("update_action", {
+      request: { id: detail.id, ...updates },
+    });
     await load();
   }
 

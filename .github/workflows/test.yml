@@ -27,6 +27,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
@@ -45,5 +48,14 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      - name: Run Rust clippy (production targets)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+
+      - name: Run Rust dependency audit (high+)
+        run: cargo audit --file audit.toml
+
       - name: Run frontend tests
         run: pnpm test
+
+      - name: Run frontend dependency audit (high+)
+        run: pnpm audit --audit-level high

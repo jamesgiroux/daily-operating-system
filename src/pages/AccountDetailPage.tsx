@@ -1005,8 +1005,10 @@ export default function AccountDetailPage() {
                             setCreatingAction(true);
                             try {
                               await invoke("create_action", {
-                                title: newActionTitle.trim(),
-                                accountId: detail.id,
+                                request: {
+                                  title: newActionTitle.trim(),
+                                  accountId: detail.id,
+                                },
                               });
                               setNewActionTitle("");
                               setAddingAction(false);
