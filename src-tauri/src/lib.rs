@@ -68,6 +68,13 @@ pub fn run() {
             // Manage the state
             app.manage(state.clone());
 
+            // Run startup workspace sync/indexing in the background.
+            // Keep setup responsive by moving file+DB scans off the startup path.
+            let startup_state = state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::state::run_startup_sync(&startup_state);
+            });
+
             // Spawn scheduler
             let scheduler_state = state.clone();
             let scheduler_sender = scheduler_tx.clone();
