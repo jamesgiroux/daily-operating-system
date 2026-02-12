@@ -29,6 +29,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I161** | Auto-unarchive on meeting detection | P2 | Entity |
 | **I162** | Bulk account creation | P2 | Entity |
 | **I172** | Duplicate people detection | P2 | Entity |
+| **I198** | Account merge + transcript reassignment | P2 | Entity |
+| **I199** | Archived account recovery UX (restore + relink) | P2 | Entity |
 | **I110** | Portfolio alerts on sidebar | P2 | UX |
 | **I115** | Multi-line action extraction | P2 | Data |
 | **I122** | Sunday briefing mislabeled as "today" | P2 | Meetings |
@@ -145,6 +147,12 @@ Multi-line textarea mode on AccountsPage/ProjectsPage inline create. One name pe
 
 **I172: Duplicate people detection**
 Hygiene scanner heuristics: group by email domain → compare normalized names. `DuplicateCandidate` type. PeoplePage banner + PersonDetailPage merge shortcut. Phase 3 of merge/dedup.
+
+**I198: Account merge + transcript reassignment**
+No account-level merge path today (unlike people). Need source→target merge with deterministic cascade across `meeting_entities`, `meetings_history.account_id`, `actions`, `captures`, and intelligence queue refresh. Include filesystem move/relink strategy for account folders/transcripts and conflict policy.
+
+**I199: Archived account recovery UX (restore + relink)**
+Unarchive exists but recovery flow is fragmented when users need to restore an account and reattach meetings/files. Add direct "Restore and Link" flow from meeting/account surfaces with clear archived-state affordances and post-restore reassignment actions.
 
 **I142: Account Plan — leadership-facing artifact**
 Structured Account Plan (exec summary, 90-day focus, risk table, products/adoption) generated from intelligence.json + dashboard.json. Markdown output in account directory. UI entry point on AccountDetailPage.
