@@ -472,7 +472,7 @@ export default function PersonDetailPage() {
                       {detail.recentMeetings.map((m) => (
                         <Link
                           key={m.id}
-                          to="/meeting/history/$meetingId"
+                          to="/meeting/$meetingId"
                           params={{ meetingId: m.id }}
                           className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-muted"
                         >
