@@ -24,13 +24,13 @@ import type {
   AgendaItem,
   AccountSnapshotItem,
   MeetingOutcomeData,
+  MeetingIntelligence,
   CalendarEvent,
   StakeholderInsight,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { useMeetingOutcomes } from "@/hooks/useMeetingOutcomes";
 import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
 import {
   AlertCircle,
@@ -52,26 +52,59 @@ import {
   Loader2,
 } from "lucide-react";
 
-interface MeetingPrepResult {
-  status: "success" | "not_found" | "error";
-  data?: FullMeetingPrep;
-  message?: string;
-}
-
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const [data, setData] = useState<FullMeetingPrep | null>(null);
+  const [outcomes, setOutcomes] = useState<MeetingOutcomeData | null>(null);
+  const [canEditUserLayer, setCanEditUserLayer] = useState(false);
+  const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load outcomes alongside prep (I195 — unified view)
-  const {
-    outcomes,
-    refresh: refreshOutcomes,
-  } = useMeetingOutcomes(meetingId ?? "");
-
   // Transcript attach (from MeetingDetailPage)
   const [attaching, setAttaching] = useState(false);
+
+  const loadMeetingIntelligence = useCallback(async () => {
+    if (!meetingId) {
+      setError("No meeting ID specified");
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const intel = await invoke<MeetingIntelligence>("get_meeting_intelligence", {
+        meetingId,
+      });
+      setMeetingMeta(intel.meeting);
+      setOutcomes(intel.outcomes ?? null);
+      setCanEditUserLayer(intel.canEditUserLayer);
+      const formatRange = (startRaw?: string, endRaw?: string) => {
+        if (!startRaw) return "";
+        const start = new Date(startRaw);
+        const startLabel = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        if (!endRaw) return startLabel;
+        const end = new Date(endRaw);
+        const endLabel = end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+        return `${startLabel} - ${endLabel}`;
+      };
+      const basePrep: FullMeetingPrep = intel.prep ?? {
+        filePath: "",
+        calendarEventId: intel.meeting.calendarEventId,
+        title: intel.meeting.title,
+        timeRange: formatRange(intel.meeting.startTime, intel.meeting.endTime),
+      };
+      setData({
+        ...basePrep,
+        userAgenda: intel.userAgenda ?? basePrep.userAgenda,
+        userNotes: intel.userNotes ?? basePrep.userNotes,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }, [meetingId]);
 
   const handleAttachTranscript = useCallback(async () => {
     if (!meetingId || !data) return;
@@ -89,28 +122,11 @@ export default function MeetingDetailPage() {
 
     setAttaching(true);
     try {
-      // Build CalendarEvent from prep data. Prep JSON has limited metadata
-      // so we construct approximate timestamps from timeRange for today's date.
-      const parseTimeFromRange = (range: string, which: "start" | "end"): string => {
-        const parts = range.split(" - ");
-        const timeStr = which === "start" ? parts[0] : parts[1] || parts[0];
-        const match = timeStr?.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-        if (!match) return new Date().toISOString();
-        let h = parseInt(match[1], 10);
-        const m = parseInt(match[2], 10);
-        const period = match[3].toUpperCase();
-        if (period === "PM" && h !== 12) h += 12;
-        if (period === "AM" && h === 12) h = 0;
-        const d = new Date();
-        d.setHours(h, m, 0, 0);
-        return d.toISOString();
-      };
-
       const calendarEvent: CalendarEvent = {
-        id: meetingId,
-        title: data.title,
-        start: parseTimeFromRange(data.timeRange || "", "start"),
-        end: parseTimeFromRange(data.timeRange || "", "end"),
+        id: meetingMeta?.id || meetingId,
+        title: meetingMeta?.title || data.title,
+        start: meetingMeta?.startTime || new Date().toISOString(),
+        end: meetingMeta?.endTime || meetingMeta?.startTime || new Date().toISOString(),
         type: "internal",
         attendees: [],
         isAllDay: false,
@@ -119,45 +135,21 @@ export default function MeetingDetailPage() {
         filePath: selected,
         meeting: calendarEvent,
       });
-      await refreshOutcomes();
+      await loadMeetingIntelligence();
     } catch (err) {
       console.error("Failed to attach transcript:", err);
     } finally {
       setAttaching(false);
     }
-  }, [meetingId, data, refreshOutcomes]);
+  }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
 
   useEffect(() => {
-    async function loadPrep() {
-      if (!meetingId) {
-        setError("No meeting ID specified");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const result = await invoke<MeetingPrepResult>("get_meeting_prep", {
-          meetingId,
-        });
-        if (result.status === "success" && result.data) {
-          setData(result.data);
-        } else if (result.status === "not_found") {
-          setError(result.message || "Prep file not found");
-        } else if (result.status === "error") {
-          setError(result.message || "Failed to load prep");
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadPrep();
-  }, [meetingId]);
+    loadMeetingIntelligence();
+  }, [loadMeetingIntelligence]);
 
   // Determine meeting time state for editability (I194)
-  const isPastMeeting = data ? isMeetingPast(data.timeRange) : false;
-  const isEditable = !isPastMeeting;
+  const isPastMeeting = !canEditUserLayer;
+  const isEditable = canEditUserLayer;
 
   if (loading) {
     return (
@@ -277,7 +269,7 @@ export default function MeetingDetailPage() {
           {/* Post-meeting: outcomes first (I195) */}
           {isPastMeeting && outcomes && (
             <>
-              <OutcomesSection outcomes={outcomes} onRefresh={refreshOutcomes} />
+              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} />
               <Separator className="my-8" />
               <p className="text-sm font-medium text-muted-foreground mb-4">
                 Pre-Meeting Context
@@ -756,7 +748,7 @@ export default function MeetingDetailPage() {
           {!isPastMeeting && outcomes && (
             <>
               <Separator className="my-8" />
-              <OutcomesSection outcomes={outcomes} onRefresh={refreshOutcomes} />
+              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} />
             </>
           )}
         </div>
@@ -1226,26 +1218,6 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
 // =============================================================================
 // Helpers
 // =============================================================================
-
-function isMeetingPast(timeRange: string): boolean {
-  // Parse "9:00 AM - 10:00 AM" format — extract end time
-  const parts = timeRange.split(" - ");
-  const endStr = parts.length > 1 ? parts[1]?.trim() : parts[0]?.trim();
-  if (!endStr) return false;
-
-  const match = endStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return false;
-
-  let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const period = match[3].toUpperCase();
-  if (period === "PM" && hours !== 12) hours += 12;
-  if (period === "AM" && hours === 12) hours = 0;
-
-  const endDate = new Date();
-  endDate.setHours(hours, minutes, 0, 0);
-  return new Date() > endDate;
-}
 
 function hasReferenceContent(data: FullMeetingPrep): boolean {
   return Boolean(

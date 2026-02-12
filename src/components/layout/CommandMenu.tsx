@@ -86,7 +86,7 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
                 <CommandItem
                   key={m.id}
                   value={`meeting-${m.id}-${m.title}`}
-                  onSelect={() => go(`/meeting/history/${m.id}`)}
+                  onSelect={() => go(`/meeting/${m.id}`)}
                 >
                   <Search className="mr-2 size-4 shrink-0" />
                   <div className="flex min-w-0 flex-col">
