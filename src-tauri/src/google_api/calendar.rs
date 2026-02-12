@@ -5,7 +5,7 @@
 use chrono::{DateTime, NaiveDate, Offset, Utc};
 use serde::Deserialize;
 
-use super::GoogleApiError;
+use super::{send_with_retry, GoogleApiError, RetryPolicy};
 
 // ============================================================================
 // API response types (deserialized from Google Calendar JSON)
@@ -137,7 +137,7 @@ pub async fn fetch_events(
             request = request.query(&[("pageToken", token.as_str())]);
         }
 
-        let resp = request.send().await?;
+        let resp = send_with_retry(request, &RetryPolicy::default()).await?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -221,11 +221,13 @@ pub async fn fetch_events(
 /// Fetch the owner's domain from the primary calendar metadata.
 pub async fn get_owner_domain(access_token: &str) -> Result<Option<String>, GoogleApiError> {
     let client = reqwest::Client::new();
-    let resp = client
-        .get("https://www.googleapis.com/calendar/v3/calendars/primary")
-        .bearer_auth(access_token)
-        .send()
-        .await?;
+    let resp = send_with_retry(
+        client
+            .get("https://www.googleapis.com/calendar/v3/calendars/primary")
+            .bearer_auth(access_token),
+        &RetryPolicy::default(),
+    )
+    .await?;
 
     if !resp.status().is_success() {
         return Ok(None);
