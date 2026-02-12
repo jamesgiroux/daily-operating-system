@@ -13,8 +13,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I158** | OAuth PKCE + Keychain storage | Blocker | Security |
-| **I178** | Focus page available time is incorrect | P0 | UX |
-| **I179** | Focus page action prioritization intelligence | P0 | UX |
 | **I149** | Cargo clippy zero warnings | P0 | Infra |
 | **I150** | Dependency security audit | P0 | Security |
 | **I151** | Input validation (IPC boundary) | P0 | Security |
@@ -58,12 +56,6 @@ Three layers: (1) PKCE flow (RFC 7636) — eliminates `client_secret` from sourc
 ---
 
 ## P0 Critical Issues
-
-**I178: Focus page available time is incorrect — doesn't read actual calendar**
-Focus page shows full-day available time even when schedule is packed with meetings. Root causes: (1) **No calendar integration:** available time calculation doesn't reference actual calendar/schedule. (2) **No definition of "available":** unclear what the metric means (contiguous blocks? fragmented gaps? excludes prep time?). (3) **No deep work concept:** doesn't distinguish between meeting gaps (15 min) and meaningful work blocks (60+ min). (4) **Silent failure:** if calculation breaks, user doesn't know. Impact: User can't assess actual capacity for the day. Architectural decision: ADR-0062 (query from live layer, not schedule.json). Fix: (a) Wire available time to actual calendar events from schedule.json. (b) Define rules (e.g., "contiguous blocks 30+ min," exclude buffer before/after meetings, account for context switching). (c) Add concept of "deep work" blocks (e.g., 60+ min uninterrupted). (d) Show breakdown (X meetings, Y hours in meetings, Z hours available, W hours deep work potential).
-
-**I179: Focus page actions are not prioritized — missing intelligence layer**
-Focus page lists all top actions but doesn't prioritize based on time/capacity. Three problems: (1) **No top 3:** shows a flat list, not "if you do nothing else, these 3 things." (2) **Ignores actual available time:** doesn't filter/rank by feasibility given meeting load. (3) **Missing implications:** no synthesis about what's achievable vs. at-risk. If user has 2 hours and 5 actions, which ones matter? If day is 90% meetings, which 1 action is critical? Impact: User stares at 8 actions with no guidance on what to prioritize. Scope: (a) Calculate achievable action count given available time (I178 feeds this). (b) AI-enrich action list with urgency/impact signals (due date, blocking other actions, customer-facing). (c) Synthesize top 3 with rationale ("You have 90 min; recommend these 3 because..."). (d) Flag at-risk items (blocked by unavailable time or dependencies). Depends on I178 (available time calculation).
 
 ---
 
