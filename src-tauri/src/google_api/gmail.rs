@@ -6,7 +6,7 @@
 
 use serde::Deserialize;
 
-use super::GoogleApiError;
+use super::{send_with_retry, GoogleApiError, RetryPolicy};
 
 // ============================================================================
 // API response types
@@ -90,15 +90,17 @@ pub async fn fetch_unread_emails(
     let client = reqwest::Client::new();
 
     // Step 1: List unread messages
-    let resp = client
-        .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
-        .bearer_auth(access_token)
-        .query(&[
-            ("q", "is:unread newer_than:1d"),
-            ("maxResults", &max_results.to_string()),
-        ])
-        .send()
-        .await?;
+    let resp = send_with_retry(
+        client
+            .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+            .bearer_auth(access_token)
+            .query(&[
+                ("q", "is:unread newer_than:1d"),
+                ("maxResults", &max_results.to_string()),
+            ]),
+        &RetryPolicy::default(),
+    )
+    .await?;
 
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED {
@@ -145,19 +147,18 @@ async fn fetch_message_metadata(
         message_id
     );
 
-    let resp = client
-        .get(&url)
-        .bearer_auth(access_token)
-        .query(&[
+    let resp = send_with_retry(
+        client.get(&url).bearer_auth(access_token).query(&[
             ("format", "metadata"),
             ("metadataHeaders", "From"),
             ("metadataHeaders", "Subject"),
             ("metadataHeaders", "Date"),
             ("metadataHeaders", "List-Unsubscribe"),
             ("metadataHeaders", "Precedence"),
-        ])
-        .send()
-        .await?;
+        ]),
+        &RetryPolicy::default(),
+    )
+    .await?;
 
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -220,12 +221,14 @@ pub async fn archive_emails(
             "removeLabelIds": ["INBOX"]
         });
 
-        let resp = client
-            .post("https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify")
-            .bearer_auth(access_token)
-            .json(&body)
-            .send()
-            .await?;
+        let resp = send_with_retry(
+            client
+                .post("https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify")
+                .bearer_auth(access_token)
+                .json(&body),
+            &RetryPolicy::default(),
+        )
+        .await?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
