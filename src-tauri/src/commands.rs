@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -44,6 +45,25 @@ pub enum DashboardResult {
     },
 }
 
+/// p95 latency budgets for hot read commands.
+const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
+const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
+const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
+
+fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
+    let elapsed_ms = started.elapsed().as_millis();
+    if elapsed_ms > budget_ms {
+        log::warn!(
+            "{} exceeded latency budget: {}ms > {}ms",
+            command,
+            elapsed_ms,
+            budget_ms
+        );
+    } else {
+        log::debug!("{} completed in {}ms", command, elapsed_ms);
+    }
+}
+
 /// Get current configuration
 #[tauri::command]
 pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
@@ -62,207 +82,240 @@ pub fn reload_configuration(state: State<Arc<AppState>>) -> Result<Config, Strin
 /// Get dashboard data from workspace _today/data/ JSON files
 #[tauri::command]
 pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
-    // Get Google auth status for frontend
-    let google_auth = state
-        .google_auth
-        .lock()
-        .map(|g| g.clone())
-        .unwrap_or(GoogleAuthStatus::NotConfigured);
+    let started = std::time::Instant::now();
+    let mut db_busy = false;
 
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
+    let result = (|| {
+        // Get Google auth status for frontend
+        let google_auth = state
+            .google_auth
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or(GoogleAuthStatus::NotConfigured);
+
+        // Get config
+        let config = match state.config.read() {
+            Ok(guard) => match guard.clone() {
+                Some(c) => c,
+                None => {
+                    return DashboardResult::Error {
+                        message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
+                    }
+                }
+            },
+            Err(_) => {
                 return DashboardResult::Error {
-                    message: "No configuration. Create ~/.dailyos/config.json with { \"workspacePath\": \"/path/to/workspace\" }".to_string(),
+                    message: "Internal error: config lock poisoned".to_string(),
                 }
             }
-        },
-        Err(_) => {
-            return DashboardResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
-        }
-    };
-
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    // Check if _today directory exists
-    if !today_dir.exists() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
         };
-    }
 
-    // Check for data directory
-    let data_dir = today_dir.join("data");
-    if !data_dir.exists() {
-        return DashboardResult::Empty {
-            message: "Your daily briefing will appear here once generated.".to_string(),
-            google_auth,
-        };
-    }
+        let workspace = Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
 
-    // Load from JSON
-    let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
-        Ok(data) => data,
-        Err(_) => {
+        // Check if _today directory exists
+        if !today_dir.exists() {
             return DashboardResult::Empty {
                 message: "Your daily briefing will appear here once generated.".to_string(),
                 google_auth,
-            }
+            };
         }
-    };
 
-    // Merge briefing meetings with live calendar events (ADR-0032)
-    let live_events = state
-        .calendar_events
-        .read()
-        .map(|g| g.clone())
-        .unwrap_or_default();
-    let tz: chrono_tz::Tz = config
-        .schedules
-        .today
-        .timezone
-        .parse()
-        .unwrap_or(chrono_tz::America::New_York);
-    let mut meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
+        // Check for data directory
+        let data_dir = today_dir.join("data");
+        if !data_dir.exists() {
+            return DashboardResult::Empty {
+                message: "Your daily briefing will appear here once generated.".to_string(),
+                google_auth,
+            };
+        }
 
-    // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(reviewed) = db.get_reviewed_preps() {
-                for m in &mut meetings {
-                    if let Some(ref pf) = m.prep_file {
-                        if reviewed.contains_key(pf) {
-                            m.prep_reviewed = Some(true);
-                        }
-                    }
+        // Load from JSON
+        let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
+            Ok(data) => data,
+            Err(_) => {
+                return DashboardResult::Empty {
+                    message: "Your daily briefing will appear here once generated.".to_string(),
+                    google_auth,
                 }
             }
-        }
-    }
+        };
 
-    // Annotate meetings with linked entities from junction table (I52)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
-                for m in &mut meetings {
-                    if let Some(entities) = entity_map.get(&m.id) {
-                        m.linked_entities = Some(entities.clone());
-                        // First account entity also populates account_id + account name
-                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
-                            m.account_id = Some(acct.id.clone());
-                            m.account = Some(acct.name.clone());
-                        }
-                    }
-                }
-            }
-        }
-    }
+        // Merge briefing meetings with live calendar events (ADR-0032)
+        let live_events = state
+            .calendar_events
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let tz: chrono_tz::Tz = config
+            .schedules
+            .today
+            .timezone
+            .parse()
+            .unwrap_or(chrono_tz::America::New_York);
+        let mut meetings =
+            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
-    // Flag meetings that matched an archived account for unarchive suggestion (I161)
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(archived) = db.get_archived_accounts() {
-                let archived_ids: HashSet<String> =
-                    archived.iter().map(|a| a.id.to_lowercase()).collect();
-                if !archived_ids.is_empty() {
+        // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(reviewed) = db.get_reviewed_preps() {
                     for m in &mut meetings {
-                        // Resolve the account identifier: prefer account_id (junction table),
-                        // fall back to account (classification hint slug)
-                        let resolved = m
-                            .account_id
-                            .as_deref()
-                            .or(m.account.as_deref())
-                            .map(str::to_lowercase);
-                        if let Some(ref id) = resolved {
-                            if archived_ids.contains(id) {
-                                // Find the canonical (original-case) account ID
-                                let canonical = archived
-                                    .iter()
-                                    .find(|a| a.id.to_lowercase() == *id)
-                                    .map(|a| a.id.clone())
-                                    .unwrap_or_else(|| id.clone());
-                                m.suggested_unarchive_account_id = Some(canonical);
+                        if let Some(ref pf) = m.prep_file {
+                            if reviewed.contains_key(pf) {
+                                m.prep_reviewed = Some(true);
                             }
                         }
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
-    }
 
-    let mut actions = load_actions_json(&today_dir).unwrap_or_default();
-
-    // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
-                let json_titles: HashSet<String> = actions
-                    .iter()
-                    .map(|a| a.title.to_lowercase().trim().to_string())
-                    .collect();
-                for dba in db_actions {
-                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                        let priority = match dba.priority.as_str() {
-                            "P1" => Priority::P1,
-                            "P3" => Priority::P3,
-                            _ => Priority::P2,
-                        };
-                        actions.push(Action {
-                            id: dba.id,
-                            title: dba.title,
-                            account: dba.account_id,
-                            due_date: dba.due_date,
-                            priority,
-                            status: crate::types::ActionStatus::Pending,
-                            is_overdue: None,
-                            context: dba.context,
-                            source: dba.source_label,
-                            days_overdue: None,
-                        });
+        // Annotate meetings with linked entities from junction table (I52)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+                if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
+                    for m in &mut meetings {
+                        if let Some(entities) = entity_map.get(&m.id) {
+                            m.linked_entities = Some(entities.clone());
+                            // First account entity also populates account_id + account name
+                            if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
+                            {
+                                m.account_id = Some(acct.id.clone());
+                                m.account = Some(acct.name.clone());
+                            }
+                        }
                     }
                 }
             }
+        } else {
+            db_busy = true;
         }
-    }
 
-    let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
+        // Flag meetings that matched an archived account for unarchive suggestion (I161)
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(archived) = db.get_archived_accounts() {
+                    let archived_ids: HashSet<String> =
+                        archived.iter().map(|a| a.id.to_lowercase()).collect();
+                    if !archived_ids.is_empty() {
+                        for m in &mut meetings {
+                            // Resolve the account identifier: prefer account_id (junction table),
+                            // fall back to account (classification hint slug)
+                            let resolved = m
+                                .account_id
+                                .as_deref()
+                                .or(m.account.as_deref())
+                                .map(str::to_lowercase);
+                            if let Some(ref id) = resolved {
+                                if archived_ids.contains(id) {
+                                    // Find the canonical (original-case) account ID
+                                    let canonical = archived
+                                        .iter()
+                                        .find(|a| a.id.to_lowercase() == *id)
+                                        .map(|a| a.id.clone())
+                                        .unwrap_or_else(|| id.clone());
+                                    m.suggested_unarchive_account_id = Some(canonical);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            db_busy = true;
+        }
 
-    // Calculate stats (exclude cancelled meetings)
-    let inbox_count = count_inbox(workspace);
-    let active_meetings: Vec<_> = meetings
-        .iter()
-        .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-        .collect();
-    let stats = DayStats {
-        total_meetings: active_meetings.len(),
-        customer_meetings: active_meetings
+        let mut actions = load_actions_json(&today_dir).unwrap_or_default();
+
+        // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
+        if let Ok(db_guard) = state.db.try_lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
+                    let json_titles: HashSet<String> = actions
+                        .iter()
+                        .map(|a| a.title.to_lowercase().trim().to_string())
+                        .collect();
+                    for dba in db_actions {
+                        if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                            let priority = match dba.priority.as_str() {
+                                "P1" => Priority::P1,
+                                "P3" => Priority::P3,
+                                _ => Priority::P2,
+                            };
+                            actions.push(Action {
+                                id: dba.id,
+                                title: dba.title,
+                                account: dba.account_id,
+                                due_date: dba.due_date,
+                                priority,
+                                status: crate::types::ActionStatus::Pending,
+                                is_overdue: None,
+                                context: dba.context,
+                                source: dba.source_label,
+                                days_overdue: None,
+                            });
+                        }
+                    }
+                }
+            }
+        } else {
+            db_busy = true;
+        }
+
+        let emails = load_emails_json(&today_dir).ok().filter(|e| !e.is_empty());
+
+        // Calculate stats (exclude cancelled meetings)
+        let inbox_count = count_inbox(workspace);
+        let active_meetings: Vec<_> = meetings
             .iter()
-            .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
-            .count(),
-        actions_due: actions.len(),
-        inbox_count,
-    };
+            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
+            .collect();
+        let stats = DayStats {
+            total_meetings: active_meetings.len(),
+            customer_meetings: active_meetings
+                .iter()
+                .filter(|m| matches!(m.meeting_type, MeetingType::Customer | MeetingType::Qbr))
+                .count(),
+            actions_due: actions.len(),
+            inbox_count,
+        };
 
-    let freshness = check_data_freshness(&today_dir);
+        let freshness = check_data_freshness(&today_dir);
 
-    DashboardResult::Success {
-        data: DashboardData {
-            overview,
-            stats,
-            meetings,
-            actions,
-            emails,
-        },
-        freshness,
-        google_auth,
+        DashboardResult::Success {
+            data: DashboardData {
+                overview,
+                stats,
+                meetings,
+                actions,
+                emails,
+            },
+            freshness,
+            google_auth,
+        }
+    })();
+
+    let elapsed_ms = started.elapsed().as_millis();
+    if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
+        log::warn!(
+            "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
+            elapsed_ms,
+            DASHBOARD_LATENCY_BUDGET_MS,
+            db_busy
+        );
+    } else {
+        log::debug!(
+            "get_dashboard_data completed in {}ms (db_busy={})",
+            elapsed_ms,
+            db_busy
+        );
     }
+
+    result
 }
 
 /// Trigger a workflow execution
@@ -281,8 +334,17 @@ pub fn get_workflow_status(
     workflow: String,
     state: State<Arc<AppState>>,
 ) -> Result<WorkflowStatus, String> {
-    let workflow_id: WorkflowId = workflow.parse()?;
-    Ok(state.get_workflow_status(workflow_id))
+    let started = std::time::Instant::now();
+    let result = (|| {
+        let workflow_id: WorkflowId = workflow.parse()?;
+        Ok(state.get_workflow_status(workflow_id))
+    })();
+    log_command_latency(
+        "get_workflow_status",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Get execution history
@@ -291,7 +353,14 @@ pub fn get_execution_history(
     limit: Option<usize>,
     state: State<Arc<AppState>>,
 ) -> Vec<ExecutionRecord> {
-    state.get_execution_history(limit.unwrap_or(10))
+    let started = std::time::Instant::now();
+    let result = state.get_execution_history(limit.unwrap_or(10));
+    log_command_latency(
+        "get_execution_history",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Get the next scheduled run time for a workflow
@@ -300,29 +369,34 @@ pub fn get_next_run_time(
     workflow: String,
     state: State<Arc<AppState>>,
 ) -> Result<Option<String>, String> {
-    let workflow_id: WorkflowId = workflow.parse()?;
+    let started = std::time::Instant::now();
+    let result = (|| {
+        let workflow_id: WorkflowId = workflow.parse()?;
 
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
+        let config = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("No configuration loaded")?;
 
-    let entry = match workflow_id {
-        WorkflowId::Today => &config.schedules.today,
-        WorkflowId::Archive => &config.schedules.archive,
-        WorkflowId::InboxBatch => &config.schedules.inbox_batch,
-        WorkflowId::Week => &config.schedules.week,
-    };
+        let entry = match workflow_id {
+            WorkflowId::Today => &config.schedules.today,
+            WorkflowId::Archive => &config.schedules.archive,
+            WorkflowId::InboxBatch => &config.schedules.inbox_batch,
+            WorkflowId::Week => &config.schedules.week,
+        };
 
-    if !entry.enabled {
-        return Ok(None);
-    }
+        if !entry.enabled {
+            return Ok(None);
+        }
 
-    scheduler_get_next_run_time(entry)
-        .map(|dt| Some(dt.to_rfc3339()))
-        .map_err(|e| e.to_string())
+        scheduler_get_next_run_time(entry)
+            .map(|dt| Some(dt.to_rfc3339()))
+            .map_err(|e| e.to_string())
+    })();
+    log_command_latency("get_next_run_time", started, READ_CMD_LATENCY_BUDGET_MS);
+    result
 }
 
 // =============================================================================
@@ -3141,25 +3215,63 @@ pub fn populate_workspace(
 // =============================================================================
 
 /// Check whether Claude Code CLI is installed and authenticated.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeStatus {
     pub installed: bool,
     pub authenticated: bool,
 }
 
+#[derive(Debug, Clone)]
+struct ClaudeStatusCacheEntry {
+    status: ClaudeStatus,
+    checked_at: std::time::Instant,
+}
+
 #[tauri::command]
 pub fn check_claude_status() -> ClaudeStatus {
+    let started = std::time::Instant::now();
+    static STATUS_CACHE: OnceLock<Mutex<Option<ClaudeStatusCacheEntry>>> = OnceLock::new();
+    let cache = STATUS_CACHE.get_or_init(|| Mutex::new(None));
+    let ttl = std::time::Duration::from_secs(CLAUDE_STATUS_CACHE_TTL_SECS);
+
+    if let Ok(guard) = cache.lock() {
+        if let Some(entry) = guard.as_ref() {
+            if entry.checked_at.elapsed() < ttl {
+                log_command_latency(
+                    "check_claude_status(cache_hit)",
+                    started,
+                    READ_CMD_LATENCY_BUDGET_MS,
+                );
+                return entry.status.clone();
+            }
+        }
+    }
+
     let installed = crate::pty::PtyManager::is_claude_available();
     let authenticated = if installed {
         crate::pty::PtyManager::is_claude_authenticated().unwrap_or(false)
     } else {
         false
     };
-    ClaudeStatus {
+    let status = ClaudeStatus {
         installed,
         authenticated,
+    };
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(ClaudeStatusCacheEntry {
+            status: status.clone(),
+            checked_at: std::time::Instant::now(),
+        });
     }
+
+    log_command_latency(
+        "check_claude_status(cache_miss)",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    status
 }
 
 // =============================================================================
@@ -3317,51 +3429,61 @@ fn build_outcome_data(
 pub fn get_executive_intelligence(
     state: State<Arc<AppState>>,
 ) -> Result<crate::intelligence::ExecutiveIntelligence, String> {
-    // Load config for profile + workspace
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let workspace = std::path::Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
-
-    // Load schedule meetings (merged with live calendar)
-    let meetings = if today_dir.join("data").exists() {
-        let briefing_meetings = load_schedule_json(&today_dir)
-            .map(|(_overview, meetings)| meetings)
-            .unwrap_or_default();
-        let live_events = state
-            .calendar_events
+    let started = std::time::Instant::now();
+    let result = (|| {
+        // Load config for profile + workspace
+        let config = state
+            .config
             .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
-    } else {
-        Vec::new()
-    };
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("No configuration loaded")?;
 
-    // Load cached skip-today from AI enrichment (if available)
-    let skip_today = load_skip_today(&today_dir);
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
 
-    // Compute intelligence from DB
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        // Load schedule meetings (merged with live calendar)
+        let meetings = if today_dir.join("data").exists() {
+            let briefing_meetings = load_schedule_json(&today_dir)
+                .map(|(_overview, meetings)| meetings)
+                .unwrap_or_default();
+            let live_events = state
+                .calendar_events
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_default();
+            let tz: chrono_tz::Tz = config
+                .schedules
+                .today
+                .timezone
+                .parse()
+                .unwrap_or(chrono_tz::America::New_York);
+            crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz)
+        } else {
+            Vec::new()
+        };
 
-    Ok(crate::intelligence::compute_executive_intelligence(
-        db,
-        &meetings,
-        &config.profile,
-        skip_today,
-    ))
+        // Load cached skip-today from AI enrichment (if available)
+        let skip_today = load_skip_today(&today_dir);
+
+        // Compute intelligence from DB
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        Ok(crate::intelligence::compute_executive_intelligence(
+            db,
+            &meetings,
+            &config.profile,
+            skip_today,
+        ))
+    })();
+
+    log_command_latency(
+        "get_executive_intelligence",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
+    result
 }
 
 /// Load cached SKIP TODAY results from `_today/data/intelligence.json`.
