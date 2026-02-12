@@ -4,6 +4,28 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 ---
 
+## Sprint 16 — Meeting Permanence + Identity Hardening
+
+*Prelaunch refactor for durable meeting records, stable identity, and unified current/historical detail access.*
+
+### Lifecycle + Durability
+- **ADR-0065 completion:** User-authored prep fields (`userAgenda`, `userNotes`) are now DB-authoritative in `meetings_history` and protected by freeze/past editability rules.
+- **Archive freeze ordering:** archive executor now persists and freezes meetings before `_today/data` cleanup, preventing prep loss.
+- **Immutable snapshots:** archive path writes one frozen prep snapshot per meeting to entity `Meeting-Notes/` (fallback `_archive/meetings/YYYY/MM/`), with hash/path/frozen metadata persisted in SQLite.
+
+### Identity + Contract
+- **ADR-0066 completion:** Added unified `get_meeting_intelligence(meeting_id)` backend contract and converted `get_meeting_prep` into compatibility wrapper mode.
+- **Meeting identity normalization:** event ID (sanitized) is now the canonical meeting key across poller, DB persistence, reviewed state, and dependent references (`captures`, `meeting_entities`, `meeting_attendees`, transcript actions).
+- **Single meeting route behavior:** frontend now resolves historical/current meeting detail through canonical `/meeting/$meetingId`; `/meeting/history/$meetingId` now redirects.
+
+### Focus/Capacity
+- **I178:** Closed. Focus available blocks now compute from live calendar events with schedule `startIso` fallback only when live events are unavailable (ADR-0062 completion).
+
+### Outcomes
+- Outcomes retrieval no longer requires transcript-record file state; DB transcript metadata + captures/actions now drive outcomes durability.
+
+---
+
 ## Sprint 15 — Meeting Intelligence Report
 
 *Report-grade prep UX and semantic cleanup built on Sprint 14 foundation.*
