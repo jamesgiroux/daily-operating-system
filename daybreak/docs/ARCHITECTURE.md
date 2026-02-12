@@ -700,7 +700,7 @@ flowchart TB
     "show_on_failure": true
   },
   "integrations": {
-    "google_token_path": ".config/google/token.json"
+    "google_auth_storage": "macos:keychain;fallback:file(~/.dailyos/google/token.json)"
   },
   "advanced": {
     "claude_timeout_seconds": 300,
@@ -720,7 +720,7 @@ flowchart TB
 
 - DailyOS only accesses configured workspace directory
 - No network access except through DailyOS scripts
-- Credentials remain in workspace `.config/` directory
+- OAuth token storage is local-first and platform-aware (macOS Keychain canonical; file fallback on non-macOS)
 
 ### Claude Code Authentication
 
@@ -739,7 +739,7 @@ flowchart TB
 
 - Config file has user-only permissions (600)
 - Sensitive paths validated before use
-- No secrets stored in DailyOS config (Google token stays in workspace)
+- No secrets stored in DailyOS config (Google token is not persisted in config files)
 
 ---
 

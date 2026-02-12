@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Added unified backend meeting contract `get_meeting_intelligence(meeting_id)` and moved `get_meeting_prep` to compatibility wrapper status.
 - Outcomes durability fixed: `get_meeting_outcomes` now returns DB-backed outcomes/transcript metadata without relying on `transcript_records.json` as the sole gate.
 - Focus capacity now computes from live calendar events; schedule artifact is retained for briefing narrative only with `startIso` fallback when live events are unavailable.
+- OAuth hardening shipped: PKCE (`S256`) + state validation, macOS Keychain token storage with legacy-file migration, and secretless default token exchange/refresh behavior.
 - Frontend meeting detail now consumes the unified meeting contract and standardizes canonical route usage to `/meeting/$meetingId` (history route is alias/redirect).
 - Meeting Prep (`MeetingDetailPage`) redesigned from dashboard-stack to report layout with executive brief hero, agenda-first flow, right-rail navigation, and appendix-style deep context.
 - Meeting metadata hierarchy tightened: lifecycle promoted to header badge; noisy snapshot fields (CSM, assessment/risk narrative) removed from primary prep surface.
