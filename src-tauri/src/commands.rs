@@ -666,13 +666,9 @@ fn sanitize_backfill_text(value: &str) -> String {
     value
         .replace("**", "")
         .replace("__", "")
-        .replace('`', "")
-        .replace('*', "")
+        .replace(['`', '*'], "")
         .replace('_', " ")
-        .replace('[', "")
-        .replace(']', "")
-        .replace('(', "")
-        .replace(')', "")
+        .replace(['[', ']', '(', ')'], "")
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -723,8 +719,7 @@ fn source_reference_from_raw(source: &str) -> Option<SourceReference> {
     }
     let label = cleaned
         .split(['/', '\\'])
-        .filter(|part| !part.trim().is_empty())
-        .last()
+        .rfind(|part| !part.trim().is_empty())
         .unwrap_or(cleaned.as_str())
         .to_string();
     Some(SourceReference {
@@ -756,7 +751,7 @@ fn parse_source_reference_value(value: &serde_json::Value) -> Option<SourceRefer
         .filter(|s| !s.is_empty());
     let resolved_label = if label.is_empty() {
         path.as_deref()
-            .and_then(|p| p.split(['/', '\\']).filter(|s| !s.is_empty()).last())
+            .and_then(|p| p.split(['/', '\\']).rfind(|s| !s.is_empty()))
             .unwrap_or("")
             .to_string()
     } else {
@@ -1319,7 +1314,7 @@ pub fn get_all_actions(state: State<Arc<AppState>>) -> ActionsResult {
                     .map(|a| a.title.to_lowercase().trim().to_string())
                     .collect();
                 for dba in db_actions {
-                    if !json_titles.contains(&dba.title.to_lowercase().trim().to_string()) {
+                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
                         let priority = match dba.priority.as_str() {
                             "P1" => Priority::P1,
                             "P3" => Priority::P3,
@@ -2787,7 +2782,7 @@ pub async fn attach_meeting_transcript(
     // On success, overwrite sentinel with real record.
     // On failure, remove sentinel so retry is possible (I61).
     let has_outcomes = result.status == "success"
-        && (result.summary.as_ref().map_or(false, |s| !s.is_empty())
+        && (result.summary.as_ref().is_some_and(|s| !s.is_empty())
             || !result.wins.is_empty()
             || !result.risks.is_empty()
             || !result.decisions.is_empty()
@@ -2897,24 +2892,55 @@ pub fn update_action_priority(
 /// Create a new action manually (not from briefing/transcript/inbox).
 ///
 /// Returns the new action's UUID. Priority defaults to P2 if not provided.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateActionRequest {
+    pub title: String,
+    pub priority: Option<String>,
+    pub due_date: Option<String>,
+    pub account_id: Option<String>,
+    pub project_id: Option<String>,
+    pub person_id: Option<String>,
+    pub context: Option<String>,
+    pub source_label: Option<String>,
+}
+
 #[tauri::command]
 pub fn create_action(
-    title: String,
-    priority: Option<String>,
-    due_date: Option<String>,
-    account_id: Option<String>,
-    project_id: Option<String>,
-    person_id: Option<String>,
-    context: Option<String>,
-    source_label: Option<String>,
+    request: CreateActionRequest,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
+    let CreateActionRequest {
+        title,
+        priority,
+        due_date,
+        account_id,
+        project_id,
+        person_id,
+        context,
+        source_label,
+    } = request;
+
+    let title = crate::util::validate_bounded_string(&title, "title", 1, 280)?;
     let priority = priority.unwrap_or_else(|| "P2".to_string());
-    if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
-        return Err(format!(
-            "Invalid priority: {}. Must be P1, P2, or P3.",
-            priority
-        ));
+    crate::util::validate_enum_string(priority.as_str(), "priority", &["P1", "P2", "P3"])?;
+    if let Some(ref date) = due_date {
+        crate::util::validate_yyyy_mm_dd(date, "due_date")?;
+    }
+    if let Some(ref id) = account_id {
+        crate::util::validate_id_slug(id, "account_id")?;
+    }
+    if let Some(ref id) = project_id {
+        crate::util::validate_id_slug(id, "project_id")?;
+    }
+    if let Some(ref id) = person_id {
+        crate::util::validate_id_slug(id, "person_id")?;
+    }
+    if let Some(ref value) = context {
+        crate::util::validate_bounded_string(value, "context", 1, 2000)?;
+    }
+    if let Some(ref value) = source_label {
+        crate::util::validate_bounded_string(value, "source_label", 1, 200)?;
     }
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -2949,29 +2975,73 @@ pub fn create_action(
 ///
 /// Only provided fields are updated; `None` means "don't touch".
 /// To clear a nullable field, pass the corresponding `clear_*` flag.
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateActionRequest {
+    pub id: String,
+    pub title: Option<String>,
+    pub due_date: Option<String>,
+    pub clear_due_date: Option<bool>,
+    pub context: Option<String>,
+    pub clear_context: Option<bool>,
+    pub source_label: Option<String>,
+    pub clear_source_label: Option<bool>,
+    pub account_id: Option<String>,
+    pub clear_account: Option<bool>,
+    pub project_id: Option<String>,
+    pub clear_project: Option<bool>,
+    pub person_id: Option<String>,
+    pub clear_person: Option<bool>,
+    pub priority: Option<String>,
+}
+
 #[tauri::command]
 pub fn update_action(
-    id: String,
-    title: Option<String>,
-    due_date: Option<String>,
-    clear_due_date: Option<bool>,
-    context: Option<String>,
-    clear_context: Option<bool>,
-    source_label: Option<String>,
-    clear_source_label: Option<bool>,
-    account_id: Option<String>,
-    clear_account: Option<bool>,
-    project_id: Option<String>,
-    clear_project: Option<bool>,
-    person_id: Option<String>,
-    clear_person: Option<bool>,
-    priority: Option<String>,
+    request: UpdateActionRequest,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
+    let UpdateActionRequest {
+        id,
+        title,
+        due_date,
+        clear_due_date,
+        context,
+        clear_context,
+        source_label,
+        clear_source_label,
+        account_id,
+        clear_account,
+        project_id,
+        clear_project,
+        person_id,
+        clear_person,
+        priority,
+    } = request;
+
+    crate::util::validate_id_slug(&id, "id")?;
     if let Some(ref p) = priority {
-        if !matches!(p.as_str(), "P1" | "P2" | "P3") {
-            return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", p));
-        }
+        crate::util::validate_enum_string(p.as_str(), "priority", &["P1", "P2", "P3"])?;
+    }
+    if let Some(ref t) = title {
+        crate::util::validate_bounded_string(t, "title", 1, 280)?;
+    }
+    if let Some(ref d) = due_date {
+        crate::util::validate_yyyy_mm_dd(d, "due_date")?;
+    }
+    if let Some(ref c) = context {
+        crate::util::validate_bounded_string(c, "context", 1, 2000)?;
+    }
+    if let Some(ref s) = source_label {
+        crate::util::validate_bounded_string(s, "source_label", 1, 200)?;
+    }
+    if let Some(ref a) = account_id {
+        crate::util::validate_id_slug(a, "account_id")?;
+    }
+    if let Some(ref p) = project_id {
+        crate::util::validate_id_slug(p, "project_id")?;
+    }
+    if let Some(ref p) = person_id {
+        crate::util::validate_id_slug(p, "person_id")?;
     }
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
@@ -3911,15 +3981,15 @@ pub fn update_meeting_entity(
             .collect();
 
         // Ensure meeting exists without clobbering existing metadata.
-        db.ensure_meeting_in_history(
-            &meeting_id,
-            &meeting_title,
-            &meeting_type_str,
-            &start_time,
-            None,
-            None,
-            None,
-        )
+        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+            id: &meeting_id,
+            title: &meeting_title,
+            meeting_type: &meeting_type_str,
+            start_time: &start_time,
+            end_time: None,
+            account_id: None,
+            calendar_event_id: None,
+        })
         .map_err(|e| e.to_string())?;
 
         // Clear all existing entity links
@@ -3996,15 +4066,15 @@ pub fn add_meeting_entity(
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
         // Ensure meeting exists without clobbering existing metadata.
-        db.ensure_meeting_in_history(
-            &meeting_id,
-            &meeting_title,
-            &meeting_type_str,
-            &start_time,
-            None,
-            None,
-            None,
-        )
+        db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+            id: &meeting_id,
+            title: &meeting_title,
+            meeting_type: &meeting_type_str,
+            start_time: &start_time,
+            end_time: None,
+            account_id: None,
+            calendar_event_id: None,
+        })
         .map_err(|e| e.to_string())?;
 
         // Add entity link (idempotent)

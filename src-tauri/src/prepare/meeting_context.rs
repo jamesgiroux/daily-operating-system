@@ -794,7 +794,7 @@ fn find_recent_summaries(
         .flatten()
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
         .collect();
-    date_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    date_dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
     date_dirs.truncate(30);
 
     for date_dir in date_dirs {
@@ -840,7 +840,7 @@ fn search_archive(query: &str, archive_dir: &Path, max_results: usize) -> Vec<st
         .flatten()
         .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
         .collect();
-    date_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    date_dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
     date_dirs.truncate(14);
 
     for date_dir in date_dirs {
@@ -958,7 +958,7 @@ fn extract_section_items(content: &str, section_name: &str) -> Vec<String> {
                 || stripped.starts_with("• ")
             {
                 let item = stripped
-                    .trim_start_matches(|c: char| c == '-' || c == '*' || c == '•' || c == ' ')
+                    .trim_start_matches(['-', '*', '•', ' '])
                     .trim();
                 if !item.is_empty() {
                     Some(item.to_string())
