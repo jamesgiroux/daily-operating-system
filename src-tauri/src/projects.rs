@@ -117,10 +117,9 @@ pub fn write_project_json(
     };
 
     let path = dir.join("dashboard.json");
-    let content = serde_json::to_string_pretty(&json)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
+    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
 }
@@ -146,11 +145,11 @@ pub fn write_project_markdown(
 
     // Status badge
     let status_emoji = match project.status.as_str() {
-        "active" => "\u{1f7e2}",      // green circle
-        "on_hold" => "\u{1f7e1}",     // yellow circle
-        "completed" => "\u{2705}",     // check mark
-        "archived" => "\u{1f4e6}",     // package
-        _ => "\u{26aa}",              // white circle
+        "active" => "\u{1f7e2}",   // green circle
+        "on_hold" => "\u{1f7e1}",  // yellow circle
+        "completed" => "\u{2705}", // check mark
+        "archived" => "\u{1f4e6}", // package
+        _ => "\u{26aa}",           // white circle
     };
     md.push_str(&format!(
         "**Status:** {} {}  \n",
@@ -253,10 +252,7 @@ pub fn write_project_markdown(
                     .as_deref()
                     .map(|d| format!(" (due {})", d))
                     .unwrap_or_default();
-                md.push_str(&format!(
-                    "- [{}] **{}**{}\n",
-                    a.priority, a.title, due,
-                ));
+                md.push_str(&format!("- [{}] **{}**{}\n", a.priority, a.title, due,));
             }
             md.push('\n');
         }
@@ -333,8 +329,7 @@ pub struct ReadProjectResult {
 
 /// Read a dashboard.json file and convert to DbProject + narrative fields.
 pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
     let json: ProjectJson =
         serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
 
@@ -357,15 +352,13 @@ pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
         })
         .unwrap_or_else(|| Utc::now().to_rfc3339());
 
-    let tracker_path = path
-        .parent()
-        .and_then(|p| {
-            // Build relative path like "Projects/Widget v2"
-            let projects_parent = p.parent()?;
-            let dir_name = projects_parent.file_name()?.to_str()?;
-            let project_name = p.file_name()?.to_str()?;
-            Some(format!("{}/{}", dir_name, project_name))
-        });
+    let tracker_path = path.parent().and_then(|p| {
+        // Build relative path like "Projects/Widget v2"
+        let projects_parent = p.parent()?;
+        let dir_name = projects_parent.file_name()?.to_str()?;
+        let project_name = p.file_name()?.to_str()?;
+        Some(format!("{}/{}", dir_name, project_name))
+    });
 
     let status = json
         .structured
@@ -400,10 +393,7 @@ pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
 /// If SQLite is newer: regenerate dashboard.json + dashboard.md from SQLite.
 ///
 /// Returns the number of projects synced.
-pub fn sync_projects_from_workspace(
-    workspace: &Path,
-    db: &ActionDb,
-) -> Result<usize, String> {
+pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
     let projects_dir = workspace.join("Projects");
     let mut synced = 0;
 
@@ -478,39 +468,20 @@ pub fn sync_projects_from_workspace(
                         if file_project.updated_at > db_project.updated_at {
                             // File is newer -- update SQLite, regen markdown
                             let _ = db.upsert_project(&file_project);
-                            let _ = write_project_markdown(
-                                workspace,
-                                &file_project,
-                                Some(&json),
-                                db,
-                            );
+                            let _ =
+                                write_project_markdown(workspace, &file_project, Some(&json), db);
                             synced += 1;
                         } else if db_project.updated_at > file_project.updated_at {
                             // SQLite is newer -- regen both files
-                            let _ = write_project_json(
-                                workspace,
-                                &db_project,
-                                Some(&json),
-                                db,
-                            );
-                            let _ = write_project_markdown(
-                                workspace,
-                                &db_project,
-                                Some(&json),
-                                db,
-                            );
+                            let _ = write_project_json(workspace, &db_project, Some(&json), db);
+                            let _ = write_project_markdown(workspace, &db_project, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
                         // New project from file -- insert to SQLite
                         let _ = db.upsert_project(&file_project);
-                        let _ = write_project_markdown(
-                            workspace,
-                            &file_project,
-                            Some(&json),
-                            db,
-                        );
+                        let _ = write_project_markdown(workspace, &file_project, Some(&json), db);
                         synced += 1;
                     }
                     Err(_) => continue,
@@ -553,16 +524,11 @@ pub fn sync_content_index_for_project(
     project: &DbProject,
 ) -> Result<(usize, usize, usize), String> {
     let dir = project_dir(workspace, &project.name);
-    crate::entity_intel::sync_content_index_for_entity(
-        &dir, &project.id, "project", workspace, db,
-    )
+    crate::entity_intel::sync_content_index_for_entity(&dir, &project.id, "project", workspace, db)
 }
 
 /// Sync content indexes for all projects. Returns total files indexed.
-pub fn sync_all_project_content_indexes(
-    workspace: &Path,
-    db: &ActionDb,
-) -> Result<usize, String> {
+pub fn sync_all_project_content_indexes(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
     let projects = db
         .get_all_projects()
         .map_err(|e| format!("DB error: {}", e))?;
@@ -749,10 +715,7 @@ mod tests {
         assert_eq!(result.project.id, "widget-v2");
         assert_eq!(result.project.name, "Widget v2");
         assert_eq!(result.project.status, "active");
-        assert_eq!(
-            result.project.milestone,
-            Some("Beta Launch".to_string())
-        );
+        assert_eq!(result.project.milestone, Some("Beta Launch".to_string()));
     }
 
     #[test]

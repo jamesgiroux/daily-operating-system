@@ -57,14 +57,8 @@ pub fn compute_gaps(events: &[Value], day_date: NaiveDate) -> Vec<Value> {
     // Parse and sort event intervals
     let mut intervals: Vec<(NaiveDateTime, NaiveDateTime)> = Vec::new();
     for ev in events {
-        let start_str = ev
-            .get("start")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
-        let end_str = ev
-            .get("end")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default();
+        let start_str = ev.get("start").and_then(|v| v.as_str()).unwrap_or_default();
+        let end_str = ev.get("end").and_then(|v| v.as_str()).unwrap_or_default();
         if let (Some(s), Some(e)) = (parse_event_dt(start_str), parse_event_dt(end_str)) {
             intervals.push((s, e));
         }
@@ -107,10 +101,7 @@ pub fn compute_gaps(events: &[Value], day_date: NaiveDate) -> Vec<Value> {
 }
 
 /// Compute gaps for each weekday.
-pub fn compute_all_gaps(
-    events_by_day: &Value,
-    monday: NaiveDate,
-) -> Value {
+pub fn compute_all_gaps(events_by_day: &Value, monday: NaiveDate) -> Value {
     let mut result = serde_json::Map::new();
     for (i, day_name) in DAY_NAMES.iter().enumerate() {
         let day_date = monday + chrono::Duration::days(i as i64);

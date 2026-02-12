@@ -83,7 +83,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Emit initial count so sidebar badge is correct on launch
         let initial_count = count_inbox(&workspace);
-        let _ = app_handle.emit("inbox-updated", InboxUpdate { count: initial_count });
+        let _ = app_handle.emit(
+            "inbox-updated",
+            InboxUpdate {
+                count: initial_count,
+            },
+        );
 
         // Channel for forwarding notify events to the async debouncer
         let (fs_tx, mut fs_rx) = mpsc::channel::<WatchSource>(64);
@@ -134,14 +139,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         let is_account_content = !is_accounts
                             && event.paths.iter().any(|p| {
                                 p.starts_with(&accounts_dir_clone)
-                                    && p.file_name()
-                                        .and_then(|n| n.to_str())
-                                        .is_some_and(|n| {
-                                            n != "dashboard.json"
-                                                && n != "dashboard.md"
-                                                && !n.starts_with('.')
-                                                && !n.starts_with('_')
-                                        })
+                                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                                        n != "dashboard.json"
+                                            && n != "dashboard.md"
+                                            && !n.starts_with('.')
+                                            && !n.starts_with('_')
+                                    })
                                     && p.is_file()
                             });
 
@@ -156,15 +159,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         let is_project_content = !is_projects
                             && event.paths.iter().any(|p| {
                                 p.starts_with(&projects_dir_clone)
-                                    && p.file_name()
-                                        .and_then(|n| n.to_str())
-                                        .is_some_and(|n| {
-                                            n != "dashboard.json"
-                                                && n != "dashboard.md"
-                                                && n != "intelligence.json"
-                                                && !n.starts_with('.')
-                                                && !n.starts_with('_')
-                                        })
+                                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                                        n != "dashboard.json"
+                                            && n != "dashboard.md"
+                                            && n != "intelligence.json"
+                                            && !n.starts_with('.')
+                                            && !n.starts_with('_')
+                                    })
                                     && p.is_file()
                             });
 
@@ -209,11 +210,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
-                        } else if event
-                            .paths
-                            .iter()
-                            .any(|p| p.starts_with(&inbox_dir_clone))
-                        {
+                        } else if event.paths.iter().any(|p| p.starts_with(&inbox_dir_clone)) {
                             let _ = tx.try_send(WatchSource::Inbox);
                         }
                     }
@@ -371,22 +368,17 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
             // Process account content changes (I125: non-dashboard files)
             if !account_content_dirty.is_empty() {
-                let payload = handle_account_content_changes(
-                    &account_content_dirty,
-                    &state,
-                    &workspace,
-                );
+                let payload =
+                    handle_account_content_changes(&account_content_dirty, &state, &workspace);
                 if let Some(ref payload) = payload {
                     // I132: Queue intelligence refresh for affected entities
                     for entity_id in &payload.entity_ids {
-                        state.intel_queue.enqueue(
-                            crate::intel_queue::IntelRequest {
-                                entity_id: entity_id.clone(),
-                                entity_type: "account".to_string(),
-                                priority: crate::intel_queue::IntelPriority::ContentChange,
-                                requested_at: std::time::Instant::now(),
-                            },
-                        );
+                        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+                            entity_id: entity_id.clone(),
+                            entity_type: "account".to_string(),
+                            priority: crate::intel_queue::IntelPriority::ContentChange,
+                            requested_at: std::time::Instant::now(),
+                        });
                     }
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
@@ -402,22 +394,17 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
             // Process project content changes (I138: non-dashboard files in Projects/)
             if !project_content_dirty.is_empty() {
-                let payload = handle_project_content_changes(
-                    &project_content_dirty,
-                    &state,
-                    &workspace,
-                );
+                let payload =
+                    handle_project_content_changes(&project_content_dirty, &state, &workspace);
                 if let Some(ref payload) = payload {
                     // Queue intelligence refresh for affected project entities
                     for entity_id in &payload.entity_ids {
-                        state.intel_queue.enqueue(
-                            crate::intel_queue::IntelRequest {
-                                entity_id: entity_id.clone(),
-                                entity_type: "project".to_string(),
-                                priority: crate::intel_queue::IntelPriority::ContentChange,
-                                requested_at: std::time::Instant::now(),
-                            },
-                        );
+                        state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+                            entity_id: entity_id.clone(),
+                            entity_type: "project".to_string(),
+                            priority: crate::intel_queue::IntelPriority::ContentChange,
+                            requested_at: std::time::Instant::now(),
+                        });
                     }
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
@@ -455,27 +442,23 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
         }
 
         match people::read_person_json(path) {
-            Ok(people::ReadPersonResult { mut person, linked_entities }) => {
+            Ok(people::ReadPersonResult {
+                mut person,
+                linked_entities,
+            }) => {
                 // Classify relationship if unknown
                 if person.relationship == "unknown" {
-                    person.relationship = crate::util::classify_relationship_multi(
-                        &person.email,
-                        &user_domains,
-                    );
+                    person.relationship =
+                        crate::util::classify_relationship_multi(&person.email, &user_domains);
                 }
 
                 if db.upsert_person(&person).is_ok() {
                     // Restore entity links from JSON (ADR-0048)
                     for entity_id in &linked_entities {
-                        let _ = db.link_person_to_entity(
-                            &person.id, entity_id, "associated",
-                        );
+                        let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
                     }
                     let _ = people::write_person_markdown(workspace, &person, db);
-                    log::info!(
-                        "Watcher: synced external edit to {}",
-                        path.display()
-                    );
+                    log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
             Err(e) => {
@@ -506,13 +489,8 @@ fn handle_account_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
         match accounts::read_account_json(path) {
             Ok(accounts::ReadAccountResult { account, json }) => {
                 if db.upsert_account(&account).is_ok() {
-                    let _ = accounts::write_account_markdown(
-                        workspace, &account, Some(&json), db,
-                    );
-                    log::info!(
-                        "Watcher: synced external edit to {}",
-                        path.display()
-                    );
+                    let _ = accounts::write_account_markdown(workspace, &account, Some(&json), db);
+                    log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
             Err(e) => {
@@ -543,13 +521,8 @@ fn handle_project_changes(paths: &[PathBuf], state: &AppState, workspace: &Path)
         match projects::read_project_json(path) {
             Ok(projects::ReadProjectResult { project, json }) => {
                 if db.upsert_project(&project).is_ok() {
-                    let _ = projects::write_project_markdown(
-                        workspace, &project, Some(&json), db,
-                    );
-                    log::info!(
-                        "Watcher: synced external edit to {}",
-                        path.display()
-                    );
+                    let _ = projects::write_project_markdown(workspace, &project, Some(&json), db);
+                    log::info!("Watcher: synced external edit to {}", path.display());
                 }
             }
             Err(e) => {
@@ -606,7 +579,11 @@ fn handle_account_content_changes(
                     );
                 }
                 Err(e) => {
-                    log::warn!("Watcher: content index sync failed for {}: {}", entity_id, e);
+                    log::warn!(
+                        "Watcher: content index sync failed for {}: {}",
+                        entity_id,
+                        e
+                    );
                 }
             }
         }
@@ -669,7 +646,11 @@ fn handle_project_content_changes(
                     );
                 }
                 Err(e) => {
-                    log::warn!("Watcher: content index sync failed for project {}: {}", entity_id, e);
+                    log::warn!(
+                        "Watcher: content index sync failed for project {}: {}",
+                        entity_id,
+                        e
+                    );
                 }
             }
         }
