@@ -976,8 +976,6 @@ pub fn parse_emails_from_overview(overview_path: &Path) -> Result<Vec<Email>, St
                 let priority = if notes.contains("🔴") || notes.to_lowercase().contains("customer")
                 {
                     EmailPriority::High
-                } else if notes.contains("🟡") || notes.to_lowercase().contains("review") {
-                    EmailPriority::Medium
                 } else {
                     EmailPriority::Medium
                 };
@@ -1058,10 +1056,10 @@ fn parse_email_line(line: &str, id: usize) -> Option<EmailBuilder> {
     let rest = line.strip_prefix("- ")?.trim();
 
     // Extract sender name (may be in **bold**)
-    let (sender, rest) = if rest.starts_with("**") {
-        let end = rest[2..].find("**")?;
-        let name = rest[2..2 + end].to_string();
-        (name, rest[4 + end..].trim())
+    let (sender, rest) = if let Some(stripped) = rest.strip_prefix("**") {
+        let end = stripped.find("**")?;
+        let name = stripped[..end].to_string();
+        (name, stripped[2 + end..].trim())
     } else {
         // No bold, sender ends at <
         let end = rest.find('<')?;
@@ -1713,17 +1711,7 @@ pub fn parse_email_summary(path: &Path) -> Result<EmailSummaryData, String> {
                 );
             } else if line_trimmed.starts_with("**Action for")
                 || line_trimmed.starts_with("**Specific Ask")
-            {
-                builder.recommended_action = Some(
-                    line_trimmed
-                        .split(':')
-                        .skip(1)
-                        .collect::<Vec<_>>()
-                        .join(":")
-                        .trim()
-                        .to_string(),
-                );
-            } else if line_trimmed.starts_with("**Recommended Action:**")
+                || line_trimmed.starts_with("**Recommended Action:**")
                 || line_trimmed.starts_with("**Recommended Action**:")
             {
                 builder.recommended_action = Some(
@@ -1978,8 +1966,8 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
         }
 
         // Focus areas (list)
-        if current_section.contains("priorit") || current_section.contains("focus") {
-            if line_trimmed.starts_with("1.") || line_trimmed.starts_with("- ") {
+        if (current_section.contains("priorit") || current_section.contains("focus"))
+            && (line_trimmed.starts_with("1.") || line_trimmed.starts_with("- ")) {
                 let item = line_trimmed.trim_start_matches(|c: char| {
                     c.is_ascii_digit() || c == '.' || c == '-' || c == ' '
                 });
@@ -1994,7 +1982,6 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
                     focus_areas.push(item.to_string());
                 }
             }
-        }
     }
 
     // Build action summary
@@ -2149,7 +2136,7 @@ fn parse_time_block_row(line: &str) -> Option<TimeBlock> {
 
     // Parse time range "9:00 AM - 4:00 PM"
     let time_parts: Vec<&str> = time_range.split(" - ").collect();
-    let start = time_parts.get(0).unwrap_or(&"").to_string();
+    let start = time_parts.first().unwrap_or(&"").to_string();
     let end = time_parts.get(1).unwrap_or(&"").to_string();
 
     // Parse duration
