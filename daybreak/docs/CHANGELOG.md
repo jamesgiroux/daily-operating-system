@@ -21,6 +21,9 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 ### Backlog & ADR Alignment
 - **I95:** Week proactive suggestions scope split into three executable tracks in `BACKLOG.md`: `I200` (Week UI rendering from week artifact), `I201` (live proactive suggestions via ADR-0062 query boundary), and `I202` (prep prefill/draft agenda actions aligned with ADR-0065 additive edit model). ADR-0052 now includes a dated alignment note recording shipped vs remaining Phase 3 scope.
 
+### Runtime Reliability
+- **I197:** Resume responsiveness hardening completed. Added in-memory command latency rollups (`p50`/`p95`/max, budget violations, degraded counters) via `get_latency_rollups` + devtools panel, expanded instrumentation for startup/resume-sensitive commands, and standardized hot-path DB access with `AppState` helper methods (`with_db_try_read`/`with_db_read`/`with_db_write`) plus staged split-lock migration guidance (ADR-0067).
+
 ---
 
 ## Sprint 14 — Meeting Intelligence Foundation

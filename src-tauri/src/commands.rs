@@ -15,7 +15,7 @@ use crate::json_loader::{
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
-use crate::state::{reload_config, AppState};
+use crate::state::{reload_config, AppState, DbTryRead};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
     ExecutionRecord, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile,
@@ -49,9 +49,12 @@ pub enum DashboardResult {
 const READ_CMD_LATENCY_BUDGET_MS: u128 = 100;
 const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
+// TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
+// helpers in passes, prioritizing frequent reads before one-off write paths.
 
 fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
     let elapsed_ms = started.elapsed().as_millis();
+    crate::latency::record_latency(command, elapsed_ms, budget_ms);
     if elapsed_ms > budget_ms {
         log::warn!(
             "{} exceeded latency budget: {}ms > {}ms",
@@ -156,27 +159,28 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
         // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
-        if let Ok(db_guard) = state.db.try_lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Ok(reviewed) = db.get_reviewed_preps() {
-                    for m in &mut meetings {
-                        if let Some(ref pf) = m.prep_file {
-                            if reviewed.contains_key(pf) {
-                                m.prep_reviewed = Some(true);
-                            }
+        match state.with_db_try_read(|db| db.get_reviewed_preps()) {
+            DbTryRead::Ok(Ok(reviewed)) => {
+                for m in &mut meetings {
+                    if let Some(ref pf) = m.prep_file {
+                        if reviewed.contains_key(pf) {
+                            m.prep_reviewed = Some(true);
                         }
                     }
                 }
             }
-        } else {
-            db_busy = true;
+            DbTryRead::Busy => db_busy = true,
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         // Annotate meetings with linked entities from junction table (I52)
-        if let Ok(db_guard) = state.db.try_lock() {
-            if let Some(db) = db_guard.as_ref() {
+        match state.with_db_try_read(|db| {
+            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+            db.get_meeting_entity_map(&meeting_ids)
+        }) {
+            DbTryRead::Ok(Ok(entity_map)) => {
                 let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-                if let Ok(entity_map) = db.get_meeting_entity_map(&meeting_ids) {
+                if !meeting_ids.is_empty() {
                     for m in &mut meetings {
                         if let Some(entities) = entity_map.get(&m.id) {
                             m.linked_entities = Some(entities.clone());
@@ -190,79 +194,75 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
-        } else {
-            db_busy = true;
+            DbTryRead::Busy => db_busy = true,
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         // Flag meetings that matched an archived account for unarchive suggestion (I161)
-        if let Ok(db_guard) = state.db.try_lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Ok(archived) = db.get_archived_accounts() {
-                    let archived_ids: HashSet<String> =
-                        archived.iter().map(|a| a.id.to_lowercase()).collect();
-                    if !archived_ids.is_empty() {
-                        for m in &mut meetings {
-                            // Resolve the account identifier: prefer account_id (junction table),
-                            // fall back to account (classification hint slug)
-                            let resolved = m
-                                .account_id
-                                .as_deref()
-                                .or(m.account.as_deref())
-                                .map(str::to_lowercase);
-                            if let Some(ref id) = resolved {
-                                if archived_ids.contains(id) {
-                                    // Find the canonical (original-case) account ID
-                                    let canonical = archived
-                                        .iter()
-                                        .find(|a| a.id.to_lowercase() == *id)
-                                        .map(|a| a.id.clone())
-                                        .unwrap_or_else(|| id.clone());
-                                    m.suggested_unarchive_account_id = Some(canonical);
-                                }
+        match state.with_db_try_read(|db| db.get_archived_accounts()) {
+            DbTryRead::Ok(Ok(archived)) => {
+                let archived_ids: HashSet<String> =
+                    archived.iter().map(|a| a.id.to_lowercase()).collect();
+                if !archived_ids.is_empty() {
+                    for m in &mut meetings {
+                        // Resolve the account identifier: prefer account_id (junction table),
+                        // fall back to account (classification hint slug)
+                        let resolved = m
+                            .account_id
+                            .as_deref()
+                            .or(m.account.as_deref())
+                            .map(str::to_lowercase);
+                        if let Some(ref id) = resolved {
+                            if archived_ids.contains(id) {
+                                // Find the canonical (original-case) account ID
+                                let canonical = archived
+                                    .iter()
+                                    .find(|a| a.id.to_lowercase() == *id)
+                                    .map(|a| a.id.clone())
+                                    .unwrap_or_else(|| id.clone());
+                                m.suggested_unarchive_account_id = Some(canonical);
                             }
                         }
                     }
                 }
             }
-        } else {
-            db_busy = true;
+            DbTryRead::Busy => db_busy = true,
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         let mut actions = load_actions_json(&today_dir).unwrap_or_default();
 
         // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-        if let Ok(db_guard) = state.db.try_lock() {
-            if let Some(db) = db_guard.as_ref() {
-                if let Ok(db_actions) = db.get_non_briefing_pending_actions() {
-                    let json_titles: HashSet<String> = actions
-                        .iter()
-                        .map(|a| a.title.to_lowercase().trim().to_string())
-                        .collect();
-                    for dba in db_actions {
-                        if !json_titles.contains(dba.title.to_lowercase().trim()) {
-                            let priority = match dba.priority.as_str() {
-                                "P1" => Priority::P1,
-                                "P3" => Priority::P3,
-                                _ => Priority::P2,
-                            };
-                            actions.push(Action {
-                                id: dba.id,
-                                title: dba.title,
-                                account: dba.account_id,
-                                due_date: dba.due_date,
-                                priority,
-                                status: crate::types::ActionStatus::Pending,
-                                is_overdue: None,
-                                context: dba.context,
-                                source: dba.source_label,
-                                days_overdue: None,
-                            });
-                        }
+        match state.with_db_try_read(|db| db.get_non_briefing_pending_actions()) {
+            DbTryRead::Ok(Ok(db_actions)) => {
+                let json_titles: HashSet<String> = actions
+                    .iter()
+                    .map(|a| a.title.to_lowercase().trim().to_string())
+                    .collect();
+                for dba in db_actions {
+                    if !json_titles.contains(dba.title.to_lowercase().trim()) {
+                        let priority = match dba.priority.as_str() {
+                            "P1" => Priority::P1,
+                            "P3" => Priority::P3,
+                            _ => Priority::P2,
+                        };
+                        actions.push(Action {
+                            id: dba.id,
+                            title: dba.title,
+                            account: dba.account_id,
+                            due_date: dba.due_date,
+                            priority,
+                            status: crate::types::ActionStatus::Pending,
+                            is_overdue: None,
+                            context: dba.context,
+                            source: dba.source_label,
+                            days_overdue: None,
+                        });
                     }
                 }
             }
-        } else {
-            db_busy = true;
+            DbTryRead::Busy => db_busy = true,
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
@@ -314,6 +314,14 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
     })();
 
     let elapsed_ms = started.elapsed().as_millis();
+    crate::latency::record_latency(
+        "get_dashboard_data",
+        elapsed_ms,
+        DASHBOARD_LATENCY_BUDGET_MS,
+    );
+    if db_busy {
+        crate::latency::increment_degraded("get_dashboard_data");
+    }
     if elapsed_ms > DASHBOARD_LATENCY_BUDGET_MS {
         log::warn!(
             "get_dashboard_data exceeded latency budget: {}ms > {}ms (db_busy={})",
@@ -353,11 +361,7 @@ pub fn get_workflow_status(
         let workflow_id: WorkflowId = workflow.parse()?;
         Ok(state.get_workflow_status(workflow_id))
     })();
-    log_command_latency(
-        "get_workflow_status",
-        started,
-        READ_CMD_LATENCY_BUDGET_MS,
-    );
+    log_command_latency("get_workflow_status", started, READ_CMD_LATENCY_BUDGET_MS);
     result
 }
 
@@ -369,11 +373,7 @@ pub fn get_execution_history(
 ) -> Vec<ExecutionRecord> {
     let started = std::time::Instant::now();
     let result = state.get_execution_history(limit.unwrap_or(10));
-    log_command_latency(
-        "get_execution_history",
-        started,
-        READ_CMD_LATENCY_BUDGET_MS,
-    );
+    log_command_latency("get_execution_history", started, READ_CMD_LATENCY_BUDGET_MS);
     result
 }
 
@@ -1037,139 +1037,149 @@ pub enum FocusResult {
 /// Get focus/priority data — assembled from schedule.json + SQLite actions + gap analysis
 #[tauri::command]
 pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
+    let started = std::time::Instant::now();
+    let mut db_busy = false;
+
+    let result = (|| {
+        // Get config
+        let config = match state.config.read() {
+            Ok(guard) => match guard.clone() {
+                Some(c) => c,
+                None => {
+                    return FocusResult::Error {
+                        message: "No configuration loaded".to_string(),
+                    }
+                }
+            },
+            Err(_) => {
                 return FocusResult::Error {
-                    message: "No configuration loaded".to_string(),
+                    message: "Internal error: config lock poisoned".to_string(),
                 }
             }
-        },
-        Err(_) => {
-            return FocusResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
+        };
+
+        let workspace = Path::new(&config.workspace_path);
+        let today_dir = workspace.join("_today");
+
+        // 1. Load schedule.json — if missing, nothing to show
+        let (overview, meetings) = match load_schedule_json(&today_dir) {
+            Ok(data) => data,
+            Err(_) => {
+                return FocusResult::NotFound {
+                    message: "No briefing data available. Run a briefing first.".to_string(),
+                }
             }
-        }
-    };
+        };
 
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
+        // 2. Focus statement from schedule
+        let focus_statement = overview.focus;
 
-    // 1. Load schedule.json — if missing, nothing to show
-    let (overview, meetings) = match load_schedule_json(&today_dir) {
-        Ok(data) => data,
-        Err(_) => {
-            return FocusResult::NotFound {
-                message: "No briefing data available. Run a briefing first.".to_string(),
-            }
-        }
-    };
-
-    // 2. Focus statement from schedule
-    let focus_statement = overview.focus;
-
-    // 3. Filter meetings to "key" types (where prep matters)
-    let key_meetings: Vec<FocusMeeting> = meetings
-        .iter()
-        .filter(|m| {
-            matches!(
-                m.meeting_type,
-                MeetingType::Customer
-                    | MeetingType::Qbr
-                    | MeetingType::Partnership
-                    | MeetingType::External
-                    | MeetingType::OneOnOne
-            )
-        })
-        .map(|m| {
-            let type_str = match m.meeting_type {
-                MeetingType::Customer => "customer",
-                MeetingType::Qbr => "qbr",
-                MeetingType::Partnership => "partnership",
-                MeetingType::External => "external",
-                MeetingType::OneOnOne => "one_on_one",
-                MeetingType::Training => "training",
-                MeetingType::Internal => "internal",
-                MeetingType::TeamSync => "team_sync",
-                MeetingType::AllHands => "all_hands",
-                MeetingType::Personal => "personal",
-            };
-            FocusMeeting {
-                id: m.id.clone(),
-                title: m.title.clone(),
-                time: m.time.clone(),
-                end_time: m.end_time.clone(),
-                meeting_type: type_str.to_string(),
-                has_prep: m.has_prep,
-                account: m.account.clone(),
-                prep_file: m.prep_file.clone(),
-            }
-        })
-        .collect();
-
-    // 4. Priority actions from SQLite (due today or overdue)
-    let priorities = if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            db.get_due_actions(1).unwrap_or_default()
-        } else {
-            Vec::new()
-        }
-    } else {
-        Vec::new()
-    };
-
-    // 5. Compute available time blocks from today's meetings
-    let today_date = chrono::Local::now().date_naive();
-    let meeting_events: Vec<serde_json::Value> = meetings
-        .iter()
-        .filter_map(|m| {
-            // Need start + end times for gap computation
-            let end = m.end_time.as_ref()?;
-            Some(serde_json::json!({
-                "start": m.time,
-                "end": end,
-            }))
-        })
-        .collect();
-    let gaps = crate::prepare::gaps::compute_gaps(&meeting_events, today_date);
-    let available_blocks: Vec<TimeBlock> = gaps
-        .iter()
-        .filter_map(|g| {
-            let start = g.get("start")?.as_str()?;
-            let end = g.get("end")?.as_str()?;
-            let duration = g.get("duration_minutes")?.as_u64()? as u32;
-            let hour: u32 = start
-                .find('T')
-                .and_then(|t| start[t + 1..].split(':').next())
-                .and_then(|h| h.parse().ok())
-                .unwrap_or(12);
-            let suggested_use = if hour < 12 {
-                "Deep Work"
-            } else {
-                "Admin / Follow-up"
-            };
-            Some(TimeBlock {
-                day: String::new(),
-                start: start.to_string(),
-                end: end.to_string(),
-                duration_minutes: duration,
-                suggested_use: Some(suggested_use.to_string()),
+        // 3. Filter meetings to "key" types (where prep matters)
+        let key_meetings: Vec<FocusMeeting> = meetings
+            .iter()
+            .filter(|m| {
+                matches!(
+                    m.meeting_type,
+                    MeetingType::Customer
+                        | MeetingType::Qbr
+                        | MeetingType::Partnership
+                        | MeetingType::External
+                        | MeetingType::OneOnOne
+                )
             })
-        })
-        .collect();
-    let total_focus_minutes: u32 = available_blocks.iter().map(|b| b.duration_minutes).sum();
+            .map(|m| {
+                let type_str = match m.meeting_type {
+                    MeetingType::Customer => "customer",
+                    MeetingType::Qbr => "qbr",
+                    MeetingType::Partnership => "partnership",
+                    MeetingType::External => "external",
+                    MeetingType::OneOnOne => "one_on_one",
+                    MeetingType::Training => "training",
+                    MeetingType::Internal => "internal",
+                    MeetingType::TeamSync => "team_sync",
+                    MeetingType::AllHands => "all_hands",
+                    MeetingType::Personal => "personal",
+                };
+                FocusMeeting {
+                    id: m.id.clone(),
+                    title: m.title.clone(),
+                    time: m.time.clone(),
+                    end_time: m.end_time.clone(),
+                    meeting_type: type_str.to_string(),
+                    has_prep: m.has_prep,
+                    account: m.account.clone(),
+                    prep_file: m.prep_file.clone(),
+                }
+            })
+            .collect();
 
-    FocusResult::Success {
-        data: FocusData {
-            focus_statement,
-            priorities,
-            key_meetings,
-            available_blocks,
-            total_focus_minutes,
-        },
+        // 4. Priority actions from SQLite (due today or overdue)
+        let priorities = match state.with_db_try_read(|db| db.get_due_actions(1)) {
+            DbTryRead::Ok(Ok(actions)) => actions,
+            DbTryRead::Busy => {
+                db_busy = true;
+                Vec::new()
+            }
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => Vec::new(),
+        };
+
+        // 5. Compute available time blocks from today's meetings
+        let today_date = chrono::Local::now().date_naive();
+        let meeting_events: Vec<serde_json::Value> = meetings
+            .iter()
+            .filter_map(|m| {
+                // Need start + end times for gap computation
+                let end = m.end_time.as_ref()?;
+                Some(serde_json::json!({
+                    "start": m.time,
+                    "end": end,
+                }))
+            })
+            .collect();
+        let gaps = crate::prepare::gaps::compute_gaps(&meeting_events, today_date);
+        let available_blocks: Vec<TimeBlock> = gaps
+            .iter()
+            .filter_map(|g| {
+                let start = g.get("start")?.as_str()?;
+                let end = g.get("end")?.as_str()?;
+                let duration = g.get("duration_minutes")?.as_u64()? as u32;
+                let hour: u32 = start
+                    .find('T')
+                    .and_then(|t| start[t + 1..].split(':').next())
+                    .and_then(|h| h.parse().ok())
+                    .unwrap_or(12);
+                let suggested_use = if hour < 12 {
+                    "Deep Work"
+                } else {
+                    "Admin / Follow-up"
+                };
+                Some(TimeBlock {
+                    day: String::new(),
+                    start: start.to_string(),
+                    end: end.to_string(),
+                    duration_minutes: duration,
+                    suggested_use: Some(suggested_use.to_string()),
+                })
+            })
+            .collect();
+        let total_focus_minutes: u32 = available_blocks.iter().map(|b| b.duration_minutes).sum();
+
+        FocusResult::Success {
+            data: FocusData {
+                focus_statement,
+                priorities,
+                key_meetings,
+                available_blocks,
+                total_focus_minutes,
+            },
+        }
+    })();
+
+    log_command_latency("get_focus_data", started, READ_CMD_LATENCY_BUDGET_MS);
+    if db_busy {
+        crate::latency::increment_degraded("get_focus_data");
     }
+    result
 }
 
 // =============================================================================
@@ -2315,6 +2325,7 @@ pub fn get_action_detail(
 /// so the UI picks up tokens written by external flows (e.g. manual auth).
 #[tauri::command]
 pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
+    let started = std::time::Instant::now();
     let cached = state
         .google_auth
         .lock()
@@ -2329,10 +2340,20 @@ pub fn get_google_auth_status(state: State<Arc<AppState>>) -> GoogleAuthStatus {
             if let Ok(mut guard) = state.google_auth.lock() {
                 *guard = fresh.clone();
             }
+            log_command_latency(
+                "get_google_auth_status",
+                started,
+                READ_CMD_LATENCY_BUDGET_MS,
+            );
             return fresh;
         }
     }
 
+    log_command_latency(
+        "get_google_auth_status",
+        started,
+        READ_CMD_LATENCY_BUDGET_MS,
+    );
     cached
 }
 
@@ -3240,6 +3261,12 @@ struct ClaudeStatusCacheEntry {
     checked_at: std::time::Instant,
 }
 
+/// Return in-memory command latency rollups for diagnostics/devtools.
+#[tauri::command]
+pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
+    crate::latency::get_rollups()
+}
+
 /// Cache Claude status checks to avoid shelling out on every focus event.
 ///
 /// The subprocess spawn (`claude --print hello`) runs on a blocking thread
@@ -3255,11 +3282,7 @@ pub async fn check_claude_status() -> ClaudeStatus {
     if let Ok(guard) = cache.lock() {
         if let Some(entry) = guard.as_ref() {
             if entry.checked_at.elapsed() < ttl {
-                log_command_latency(
-                    "check_claude_status(cache_hit)",
-                    started,
-                    READ_CMD_LATENCY_BUDGET_MS,
-                );
+                log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
                 return entry.status.clone();
             }
         }
@@ -3291,11 +3314,7 @@ pub async fn check_claude_status() -> ClaudeStatus {
         });
     }
 
-    log_command_latency(
-        "check_claude_status(cache_miss)",
-        started,
-        READ_CMD_LATENCY_BUDGET_MS,
-    );
+    log_command_latency("check_claude_status", started, READ_CMD_LATENCY_BUDGET_MS);
     status
 }
 
