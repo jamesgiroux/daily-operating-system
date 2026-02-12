@@ -1,11 +1,13 @@
 import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { ModeToggle } from "@/components/mode-toggle";
 import { StatusIndicator } from "./StatusIndicator";
 import { RunNowIconButton } from "./RunNowButton";
 import { useWorkflow } from "@/hooks/useWorkflow";
+import { useClaudeStatus } from "@/hooks/useClaudeStatus";
 
 interface HeaderProps {
   onCommandMenuOpen: () => void;
@@ -13,6 +15,8 @@ interface HeaderProps {
 
 export function Header({ onCommandMenuOpen }: HeaderProps) {
   const { status, nextRunTime, runNow, isRunning } = useWorkflow();
+  const { aiUnavailable, checking } = useClaudeStatus();
+  const showBasePrep = !checking && aiUnavailable;
 
   return (
     <header className="relative flex h-14 shrink-0 items-center gap-2 border-b px-4">
@@ -25,11 +29,24 @@ export function Header({ onCommandMenuOpen }: HeaderProps) {
       <div className="relative flex flex-1 items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">Today</h1>
-          <StatusIndicator status={status} nextRunTime={nextRunTime} />
+          <StatusIndicator
+            status={status}
+            nextRunTime={nextRunTime}
+            aiUnavailable={showBasePrep}
+          />
+          {showBasePrep && (
+            <Badge variant="outline" className="text-xs text-muted-foreground">
+              Base Prep
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
-          <RunNowIconButton onClick={runNow} isRunning={isRunning} />
+          <RunNowIconButton
+            onClick={runNow}
+            isRunning={isRunning}
+            aiUnavailable={showBasePrep}
+          />
           <Button
             variant="outline"
             size="sm"

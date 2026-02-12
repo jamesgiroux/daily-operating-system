@@ -12,6 +12,7 @@ interface RunNowButtonProps {
   onClick: () => void;
   isRunning: boolean;
   disabled?: boolean;
+  aiUnavailable?: boolean;
   className?: string;
   variant?: "default" | "ghost" | "outline";
   size?: "default" | "sm" | "lg" | "icon";
@@ -27,6 +28,7 @@ export function RunNowButton({
   onClick,
   isRunning,
   disabled,
+  aiUnavailable,
   className,
   variant = "outline",
   size = "sm",
@@ -60,6 +62,8 @@ export function RunNowButton({
         <TooltipContent>
           {isRunning
             ? "Workflow is currently running"
+            : aiUnavailable
+            ? "Run the daily briefing in base prep mode"
             : "Run the daily briefing workflow now"}
         </TooltipContent>
       </Tooltip>
@@ -74,6 +78,7 @@ export function RunNowIconButton({
   onClick,
   isRunning,
   disabled,
+  aiUnavailable,
   className,
 }: Omit<RunNowButtonProps, "variant" | "size">) {
   const isDisabled = isRunning || disabled;
@@ -105,6 +110,8 @@ export function RunNowIconButton({
         <TooltipContent>
           {isRunning
             ? "Workflow is currently running"
+            : aiUnavailable
+            ? "Run the daily briefing in base prep mode"
             : "Run the daily briefing workflow now"}
         </TooltipContent>
       </Tooltip>
