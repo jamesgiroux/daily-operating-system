@@ -121,6 +121,64 @@ pub fn validate_entity_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
+/// Validate a slug/identifier passed across IPC boundaries.
+pub fn validate_id_slug(value: &str, field: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(format!("{field} cannot be empty"));
+    }
+    if trimmed.len() > 128 {
+        return Err(format!("{field} is too long (max 128 chars)"));
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    {
+        return Err(format!(
+            "{field} contains invalid characters (allowed: a-z, A-Z, 0-9, -, _)"
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validate and normalize a user-facing string from IPC.
+pub fn validate_bounded_string(
+    value: &str,
+    field: &str,
+    min_len: usize,
+    max_len: usize,
+) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.len() < min_len {
+        return Err(format!("{field} is too short (min {min_len} chars)"));
+    }
+    if trimmed.len() > max_len {
+        return Err(format!("{field} is too long (max {max_len} chars)"));
+    }
+    Ok(trimmed.to_string())
+}
+
+pub fn validate_enum_string<'a>(
+    value: &'a str,
+    field: &str,
+    allowed: &[&str],
+) -> Result<&'a str, String> {
+    if allowed.contains(&value) {
+        Ok(value)
+    } else {
+        Err(format!(
+            "Invalid {field}: {value}. Allowed values: {}",
+            allowed.join(", ")
+        ))
+    }
+}
+
+pub fn validate_yyyy_mm_dd(value: &str, field: &str) -> Result<String, String> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map(|_| value.to_string())
+        .map_err(|_| format!("Invalid {field}: expected YYYY-MM-DD"))
+}
+
 /// Writes content to a file atomically: write to .tmp, then rename.
 /// Rename is atomic on the same filesystem (POSIX guarantee).
 pub fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
@@ -148,7 +206,7 @@ pub fn person_id_from_email(email: &str) -> String {
 pub fn name_from_email(email: &str) -> String {
     let local = email.split('@').next().unwrap_or(email);
     local
-        .split(|c: char| c == '.' || c == '_' || c == '-' || c == '+')
+        .split(['.', '_', '-', '+'])
         .filter(|s| !s.is_empty())
         .map(|s| {
             let mut chars = s.chars();

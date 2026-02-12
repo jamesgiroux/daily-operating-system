@@ -340,7 +340,9 @@ impl std::fmt::Display for WorkflowPhase {
 /// Current status of a workflow
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
+#[derive(Default)]
 pub enum WorkflowStatus {
+    #[default]
     Idle,
     Running {
         #[serde(rename = "startedAt")]
@@ -364,11 +366,6 @@ pub enum WorkflowStatus {
     },
 }
 
-impl Default for WorkflowStatus {
-    fn default() -> Self {
-        WorkflowStatus::Idle
-    }
-}
 
 /// Record of a workflow execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1230,17 +1227,14 @@ impl Default for GoogleConfig {
 /// Google authentication status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "lowercase")]
+#[derive(Default)]
 pub enum GoogleAuthStatus {
+    #[default]
     NotConfigured,
     Authenticated { email: String },
     TokenExpired,
 }
 
-impl Default for GoogleAuthStatus {
-    fn default() -> Self {
-        GoogleAuthStatus::NotConfigured
-    }
-}
 
 /// A calendar event from Google Calendar
 #[derive(Debug, Clone, Serialize, Deserialize)]

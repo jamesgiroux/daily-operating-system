@@ -445,15 +445,15 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             &event.start.to_rfc3339(),
             event.meeting_type.as_str(),
         );
-        if let Err(e) = db.ensure_meeting_in_history(
-            &meeting_id,
-            &event.title,
-            event.meeting_type.as_str(),
-            &event.start.to_rfc3339(),
-            Some(&event.end.to_rfc3339()),
-            event.account.as_deref(),
-            Some(&event.id),
-        ) {
+        if let Err(e) = db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
+            id: &meeting_id,
+            title: &event.title,
+            meeting_type: event.meeting_type.as_str(),
+            start_time: &event.start.to_rfc3339(),
+            end_time: Some(&event.end.to_rfc3339()),
+            account_id: event.account.as_deref(),
+            calendar_event_id: Some(&event.id),
+        }) {
             log::warn!(
                 "Failed to ensure meeting '{}' in history: {}",
                 event.title,
