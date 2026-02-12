@@ -637,6 +637,45 @@ pub enum EmailPriority {
     Low,
 }
 
+/// Health status for email sync operations.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EmailSyncState {
+    Ok,
+    Warning,
+    Error,
+}
+
+/// Pipeline stage associated with an email sync status.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EmailSyncStage {
+    Fetch,
+    Deliver,
+    Enrich,
+    Refresh,
+}
+
+/// Structured status payload for email sync and enrichment health.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailSyncStatus {
+    pub state: EmailSyncState,
+    pub stage: EmailSyncStage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub using_last_known_good: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_retry: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_attempt_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_success_at: Option<String>,
+}
+
 /// A single email needing attention
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -674,6 +713,8 @@ pub struct DashboardData {
     pub actions: Vec<Action>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emails: Option<Vec<Email>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_sync: Option<EmailSyncStatus>,
 }
 
 // =============================================================================
