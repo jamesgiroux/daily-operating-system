@@ -16,6 +16,8 @@ pub mod entity;
 pub mod entity_intel;
 mod error;
 mod executor;
+mod focus_capacity;
+mod focus_prioritization;
 mod google;
 pub mod google_api;
 mod hygiene;
