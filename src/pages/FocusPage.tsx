@@ -1,19 +1,25 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { FocusData, FocusMeeting, DbAction } from "@/types";
+import type {
+  FocusData,
+  FocusMeeting,
+  PrioritizedFocusAction,
+} from "@/types";
+import { buildFocusViewModel } from "./focusViewModel";
 import { PageEmpty, PageError } from "@/components/PageState";
 import { cn, stripMarkdown } from "@/lib/utils";
 import {
-  ArrowLeft,
-  Target,
-  Clock,
   AlertCircle,
+  ArrowLeft,
+  Clock,
   Circle,
+  ShieldAlert,
+  Target,
 } from "lucide-react";
 
 interface FocusResult {
@@ -65,7 +71,7 @@ export default function FocusPage() {
         if (result.status === "success" && result.data) {
           setData(result.data);
         } else if (result.status === "not_found") {
-          // No briefing run yet — show empty state (data stays null)
+          // No briefing run yet — show empty state
         } else if (result.status === "error") {
           setError(result.message || "Failed to load focus data");
         }
@@ -77,6 +83,8 @@ export default function FocusPage() {
     }
     loadFocus();
   }, []);
+
+  const viewModel = useMemo(() => (data ? buildFocusViewModel(data) : null), [data]);
 
   if (loading) {
     return (
@@ -118,39 +126,56 @@ export default function FocusPage() {
     <main className="flex-1 overflow-hidden">
       <ScrollArea className="h-full">
         <div className="mx-auto max-w-2xl p-6">
-          {/* Header */}
           <div className="mb-6">
             <div className="flex items-center gap-3">
               <Link
                 to="/"
-                className="text-muted-foreground hover:text-foreground transition-colors"
+                className="text-muted-foreground transition-colors hover:text-foreground"
               >
                 <ArrowLeft className="size-5" />
               </Link>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Today's Focus
-              </h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Today's Focus</h1>
             </div>
           </div>
 
-          {/* Focus hero */}
           {data.focusStatement && (
-            <div className="mb-8 rounded-lg border border-success/15 bg-success/10 p-5">
-              <p className="text-lg font-medium leading-relaxed">
-                {data.focusStatement}
-              </p>
+            <div className="mb-6 rounded-lg border border-success/15 bg-success/10 p-5">
+              <p className="text-lg font-medium leading-relaxed">{data.focusStatement}</p>
             </div>
           )}
 
-          {/* Priorities */}
-          <PrioritiesSection priorities={data.priorities} />
-
-          {/* Key meetings */}
-          {data.keyMeetings.length > 0 && (
-            <KeyMeetingsSection meetings={data.keyMeetings} />
+          {data.availability.warnings.length > 0 && (
+            <section className="mb-6 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+              <div className="mb-1 flex items-center gap-2 text-sm font-semibold">
+                <AlertCircle className="size-4" />
+                Capacity is in degraded mode
+              </div>
+              {data.availability.warnings.map((warning, idx) => (
+                <p key={idx} className="text-sm text-muted-foreground">
+                  {warning}
+                </p>
+              ))}
+            </section>
           )}
 
-          {/* Available time */}
+          <CapacitySection data={data} />
+
+          <TopThreeSection
+            actions={viewModel?.topThree ?? []}
+            summary={data.implications.summary}
+          />
+
+          {(viewModel?.atRisk.length ?? 0) > 0 && (
+            <AtRiskSection actions={viewModel?.atRisk ?? []} />
+          )}
+
+          <OtherPrioritiesSection
+            actions={viewModel?.otherPriorities ?? []}
+            total={data.prioritizedActions.length}
+          />
+
+          {data.keyMeetings.length > 0 && <KeyMeetingsSection meetings={data.keyMeetings} />}
+
           {data.availableBlocks.length > 0 && (
             <AvailableTimeSection
               blocks={data.availableBlocks}
@@ -158,7 +183,6 @@ export default function FocusPage() {
             />
           )}
 
-          {/* Explicit end — breathing room */}
           <div className="h-12" />
         </div>
       </ScrollArea>
@@ -166,10 +190,111 @@ export default function FocusPage() {
   );
 }
 
-function PrioritiesSection({ priorities }: { priorities: DbAction[] }) {
-  const MAX_VISIBLE = 8;
-  const visible = priorities.slice(0, MAX_VISIBLE);
-  const hasMore = priorities.length > MAX_VISIBLE;
+function CapacitySection({ data }: { data: FocusData }) {
+  return (
+    <section className="mb-6">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Clock className="size-4" />
+            Capacity Snapshot
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Metric label="Meetings" value={`${data.availability.meetingCount}`} />
+            <Metric
+              label="In meetings"
+              value={formatDuration(data.availability.meetingMinutes)}
+            />
+            <Metric
+              label="Available"
+              value={formatDuration(data.availability.availableMinutes)}
+            />
+            <Metric
+              label="Deep work"
+              value={formatDuration(data.availability.deepWorkMinutes)}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Source: {data.availability.source === "live" ? "Live calendar" : "Briefing fallback"}
+          </p>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-muted/40 p-2.5">
+      <div className="text-muted-foreground">{label}</div>
+      <div className="font-medium text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function TopThreeSection({
+  actions,
+  summary,
+}: {
+  actions: PrioritizedFocusAction[];
+  summary: string;
+}) {
+  return (
+    <section className="mb-6">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Target className="size-4" />
+            Top 3 If You Do Nothing Else
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {actions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No actions to prioritize.</p>
+          ) : (
+            <div className="space-y-1">
+              {actions.map((action) => (
+                <PrioritizedActionRow key={action.action.id} item={action} showReason />
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-xs text-muted-foreground">{summary}</p>
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function AtRiskSection({ actions }: { actions: PrioritizedFocusAction[] }) {
+  return (
+    <section className="mb-6">
+      <Card className="border-destructive/25">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base text-destructive">
+            <ShieldAlert className="size-4" />
+            At Risk Today
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          {actions.map((action) => (
+            <PrioritizedActionRow key={action.action.id} item={action} showReason />
+          ))}
+        </CardContent>
+      </Card>
+    </section>
+  );
+}
+
+function OtherPrioritiesSection({
+  actions,
+  total,
+}: {
+  actions: PrioritizedFocusAction[];
+  total: number;
+}) {
+  if (actions.length === 0) return null;
 
   return (
     <section className="mb-6">
@@ -177,37 +302,34 @@ function PrioritiesSection({ priorities }: { priorities: DbAction[] }) {
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <Target className="size-4" />
-            Today's Priorities
+            Other Priorities
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {visible.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              No actions due today.
-            </p>
-          ) : (
-            <div className="space-y-1">
-              {visible.map((action) => (
-                <PriorityRow key={action.id} action={action} />
-              ))}
-              {hasMore && (
-                <Link
-                  to="/actions"
-                  search={{ search: undefined }}
-                  className="mt-2 block text-center text-sm text-primary hover:underline"
-                >
-                  View all {priorities.length} actions
-                </Link>
-              )}
-            </div>
-          )}
+        <CardContent className="space-y-1">
+          {actions.map((action) => (
+            <PrioritizedActionRow key={action.action.id} item={action} />
+          ))}
+          <Link
+            to="/actions"
+            search={{ search: undefined }}
+            className="mt-2 block text-center text-sm text-primary hover:underline"
+          >
+            View ranked list ({total} total)
+          </Link>
         </CardContent>
       </Card>
     </section>
   );
 }
 
-function PriorityRow({ action }: { action: DbAction }) {
+function PrioritizedActionRow({
+  item,
+  showReason = false,
+}: {
+  item: PrioritizedFocusAction;
+  showReason?: boolean;
+}) {
+  const action = item.action;
   const isOverdue =
     action.dueDate && new Date(action.dueDate) < new Date(new Date().toDateString());
   const style = priorityStyles[action.priority] || priorityStyles.P3;
@@ -216,35 +338,44 @@ function PriorityRow({ action }: { action: DbAction }) {
     <Link
       to="/actions/$actionId"
       params={{ actionId: action.id }}
-      className="flex items-start gap-3 rounded-md p-2.5 transition-colors hover:bg-muted/50"
+      className="block rounded-md p-2.5 transition-colors hover:bg-muted/50"
     >
-      <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <span className="text-sm font-medium">
-            {stripMarkdown(action.title)}
-          </span>
-          <Badge
-            className={cn("shrink-0 text-xs", style)}
-            variant="secondary"
-          >
-            {action.priority}
-          </Badge>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {action.accountId && (
-            <span className="text-primary">{action.accountId}</span>
-          )}
-          {action.dueDate && (
-            <span
-              className={cn(
-                "flex items-center gap-1",
-                isOverdue ? "text-destructive" : "text-muted-foreground"
+      <div className="flex items-start gap-3">
+        <Circle className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-sm font-medium">{stripMarkdown(action.title)}</span>
+            <div className="flex items-center gap-2">
+              <Badge className={cn("shrink-0 text-xs", style)} variant="secondary">
+                {action.priority}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {formatDuration(item.effortMinutes)}
+              </span>
+              {!item.feasible && (
+                <Badge variant="outline" className="text-xs">
+                  Stretch
+                </Badge>
               )}
-            >
-              {isOverdue && <AlertCircle className="size-3" />}
-              {action.dueDate}
-            </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {action.accountId && <span className="text-primary">{action.accountId}</span>}
+            {action.dueDate && (
+              <span
+                className={cn(
+                  "flex items-center gap-1",
+                  isOverdue ? "text-destructive" : "text-muted-foreground",
+                )}
+              >
+                {isOverdue && <AlertCircle className="size-3" />}
+                {action.dueDate}
+              </span>
+            )}
+            <span className="text-muted-foreground">Score {item.score}</span>
+          </div>
+          {showReason && (
+            <p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
           )}
         </div>
       </div>
@@ -275,8 +406,7 @@ function KeyMeetingsSection({ meetings }: { meetings: FocusMeeting[] }) {
 }
 
 function MeetingRow({ meeting }: { meeting: FocusMeeting }) {
-  const label =
-    meetingTypeLabels[meeting.meetingType] || meeting.meetingType;
+  const label = meetingTypeLabels[meeting.meetingType] || meeting.meetingType;
 
   return (
     <div className="flex items-center gap-3 rounded-md p-2.5 transition-colors hover:bg-muted/50">
@@ -285,21 +415,14 @@ function MeetingRow({ meeting }: { meeting: FocusMeeting }) {
       </span>
       <div className="min-w-0 flex-1">
         <span className="text-sm font-medium">{meeting.title}</span>
-        {meeting.account && (
-          <span className="ml-2 text-xs text-primary">
-            {meeting.account}
-          </span>
-        )}
+        {meeting.account && <span className="ml-2 text-xs text-primary">{meeting.account}</span>}
       </div>
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="text-xs">
           {label}
         </Badge>
         {meeting.hasPrep && (
-          <Badge
-            variant="secondary"
-            className="bg-success/15 text-success text-xs"
-          >
+          <Badge variant="secondary" className="bg-success/15 text-xs text-success">
             Prepped
           </Badge>
         )}
@@ -320,11 +443,9 @@ function AvailableTimeSection({
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Clock className="size-4 text-muted-foreground" />
-          Available Time
+          Available Time Blocks
         </h2>
-        <span className="text-sm text-muted-foreground">
-          {formatDuration(totalMinutes)} total
-        </span>
+        <span className="text-sm text-muted-foreground">{formatDuration(totalMinutes)} total</span>
       </div>
       <div className="space-y-2">
         {blocks.map((block, i) => (
@@ -334,18 +455,13 @@ function AvailableTimeSection({
           >
             <div>
               <span className="font-mono text-sm">
-                {formatTimeFromIso(block.start)} –{" "}
-                {formatTimeFromIso(block.end)}
+                {formatTimeFromIso(block.start)} - {formatTimeFromIso(block.end)}
               </span>
               {block.suggestedUse && (
-                <span className="ml-3 text-xs text-muted-foreground">
-                  {block.suggestedUse}
-                </span>
+                <span className="ml-3 text-xs text-muted-foreground">{block.suggestedUse}</span>
               )}
             </div>
-            <span className="text-xs text-muted-foreground">
-              {formatDuration(block.durationMinutes)}
-            </span>
+            <span className="text-xs text-muted-foreground">{formatDuration(block.durationMinutes)}</span>
           </div>
         ))}
       </div>
