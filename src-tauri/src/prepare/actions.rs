@@ -19,6 +19,12 @@ pub struct ActionResult {
     pub waiting_on: Vec<Value>,
 }
 
+impl Default for ActionResult {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActionResult {
     pub fn new() -> Self {
         Self {
@@ -81,6 +87,7 @@ pub fn parse_workspace_actions(workspace: &Path, db: Option<&crate::db::ActionDb
     let account_re = Regex::new(r"@(\S+)").unwrap();
     let context_re = Regex::new(r"#(\S+)").unwrap();
     let waiting_re = Regex::new(r"(?i)\b(waiting|blocked|pending)\b").unwrap();
+    let whitespace_re = Regex::new(r"\s+").unwrap();
 
     for line in content.lines() {
         let caps = match checkbox_re.captures(line) {
@@ -114,7 +121,6 @@ pub fn parse_workspace_actions(workspace: &Path, db: Option<&crate::db::ActionDb
         title = account_re.replace_all(&title, "").to_string();
         title = context_re.replace_all(&title, "").to_string();
         // Collapse whitespace
-        let whitespace_re = Regex::new(r"\s+").unwrap();
         title = whitespace_re.replace_all(&title, " ").trim().to_string();
 
         // I23: Skip if this action already exists in SQLite
