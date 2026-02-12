@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 581 Rust tests. v0.7.0-alpha shipped. Sprints 1-14 complete. Sprint 15 closed (I188 carryover). Sprint 16 in progress. 0.7.1 fast-follow parallel.
+**Current state:** 581 Rust tests. v0.7.0-alpha shipped. Sprints 1-16 complete. Sprint 17 planning. 0.7.1 fast-follow parallel.
 
 ---
 
@@ -17,13 +17,13 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I150** | Dependency security audit | P0 | Security |
 | **I151** | Input validation (IPC boundary) | P0 | Security |
 | **I152** | Error handling (eliminate panics) | P0 | Infra |
-| **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P1 | Meetings |
 | **I153** | Binary size + startup perf | P1 | Infra |
-| **I197** | Resume responsiveness hardening (startup + auth checks) | P1 | Infra |
 | **I154** | Frontend bundle audit | P1 | Infra |
 | **I155** | Rate limiting + retry hardening | P1 | Infra |
 | **I157** | Frontend component audit (radix-ui) | P1 | UX |
 | **I164** | Inbox processing status indicators | P1 | UX |
+| **I203** | Inbox dropzone duplicate file bug | P1 | UX |
+| **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P2 | Meetings |
 | **I161** | Auto-unarchive on meeting detection | P2 | Entity |
 | **I162** | Bulk account creation | P2 | Entity |
 | **I172** | Duplicate people detection | P2 | Entity |
@@ -69,60 +69,9 @@ No open ship blockers. Last blocker closed: **I158** (OAuth PKCE + Keychain toke
 | P0 | I151 | Input validation (Tauri IPC boundary) | Open |
 | P0 | I152 | Error handling (eliminate panics) | Open |
 | P1 | I153 | Binary size + startup perf | Open |
-| P1 | I197 | Resume responsiveness hardening (startup + auth checks) | Closed |
 | P1 | I154 | Frontend bundle audit | Open |
 | P1 | I155 | Rate limiting + retry hardening | Open |
 | P1 | I157 | Frontend component audit (radix-ui) | Open |
-
----
-
-## Sprint 14 — Meeting Intelligence Foundation
-
-*Calendar descriptions, enriched account snapshots, route migration, email fix. The data layer and plumbing that enables the prep page redesign (ADR-0064/0065/0066).*
-
-| Priority | Issue | Scope | Depends On | Status |
-|----------|-------|-------|------------|--------|
-| Blocker | I177 | Email sync fix — surface failures, fallback to mechanical | — | Closed |
-| Blocker | I173 | Enrichment responsiveness — split-lock pattern + nice | — | Closed |
-| P0 | I185 | Calendar description pipeline — schema + plumb through 5 stages | — | Closed |
-| P0 | I186 | Account Snapshot enrichment — intelligence signals in prep | — | Closed |
-<a name="i190"></a>| P0 | I190 | Meeting route migration — /meeting/$meetingId + unified command | — | Closed |
-| P1 | I159 | People-aware prep for internal meetings | — | Closed |
-
-**Rationale:** Phases 1-2 of ADR-0064 and Phase 1 of ADR-0066 are pure plumbing — mechanical schema changes, data flow fixes, and route migration. No AI prompt redesign, no layout overhaul. They unblock Sprint 15 (the visual redesign + agenda-anchored enrichment). The two blockers (I177, I173) ship alongside because they affect daily usability. I159 extends prep coverage to internal meetings while we're already in the prep pipeline.
-
-**Closed in Sprint 14:** I177, I173, I185, I186, I190, I159.  
-**Carryover to Sprint 15:** I188 (partial).
-
----
-
-## Sprint 15 — Meeting Intelligence Report
-
-*Report-style prep UX and semantic cleanup on top of Sprint 14 plumbing.*
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-<a name="i187"></a>| P1 | I187 | Prep page three-tier layout (ADR-0064 P3) | Closed |
-<a name="i188"></a>| P1 | I188 | Agenda-anchored AI enrichment (ADR-0064 P4) | Partial |
-<a name="i189"></a>| P1 | I189 | Meeting prep editability (ADR-0065) | Closed |
-| P1 | I191 | Card-detail visual unification (ADR-0066 P2-3) | Closed |
-| P1 | I196 | Prep agenda/wins semantic split + source governance | Closed |
-
-### Meeting Preview Context (ADR-0063)
-
-Recent Meetings cards now surface a trimmed `prepContext` (intelligence summary, agenda excerpt, and risk/action/question counts) so the account detail page surfaces evaluation-ready context without navigating to the prep detail. This builds on the `/meeting/$meetingId` migration (I190) to fetch the prep context for each meeting.
-
-## Sprint 16 — Meeting Permanence + Identity Hardening
-
-*Prelaunch contract-hardening for durable meeting records, canonical identity, and unified historical/current reads.*
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| P0 | I178 | Focus available-time correctness via live calendar query module (ADR-0062 completion) | Closed |
-| P0 | ADR-0065 | DB-authoritative user agenda/notes + freeze-aware editability | Closed |
-| P0 | ADR-0066 | Unified `get_meeting_intelligence` backend payload + single meeting detail path | Closed |
-| P0 | ADR-0061 | Event ID canonicalization/backfill across meeting-linked tables | Closed |
-| P0 | Permanence | Immutable prep snapshot freeze at archive with SQLite metadata | Closed |
 
 ---
 
@@ -191,24 +140,6 @@ Structured Account Plan (exec summary, 90-day focus, risk table, products/adopti
 **I143: Renewal lifecycle tracking**
 (a) Auto-rollover when renewal passes without churn. (b) Lifecycle event markers (churn, expansion, renewal) in `account_events` table. (c) UI for recording events on AccountDetailPage.
 
-### Infra & Runtime
-
-**I197: Resume responsiveness hardening (startup + auth checks)**
-Goal: eliminate avoidable UI stalls after focus return and on cold startup.
-
-Phase 1 completed (2026-02-12):
-- moved startup sync/indexing off `AppState::new()` onto a background task
-- bounded Claude auth check with timeout + forced process cleanup
-- applied lock-scope reductions and non-blocking reads in dashboard/focus paths
-- added lock-contention fallbacks + latency instrumentation for focus-polled commands
-- throttled/deduped focus refresh requests in dashboard hook
-
-Phase 2 completed (2026-02-12):
-- added in-memory latency rollups (`p50`/`p95`/max, budget violations, degraded counters) and exposed diagnostics via `get_latency_rollups` + devtools panel
-- expanded instrumentation coverage for startup/resume-sensitive commands (`get_dashboard_data`, `get_focus_data`, `check_claude_status`, `get_google_auth_status`, workflow status/history scheduling reads)
-- introduced `AppState` DB helper API (`with_db_try_read`, `with_db_read`, `with_db_write`) and migrated highest-contention hot reads to helper-based non-blocking access
-- documented staged split-lock DB strategy and migration roadmap in ADR-0067
-
 ### UX & Polish
 
 **I157: Frontend component audit**
@@ -219,6 +150,14 @@ IntelligenceCard removed (ADR-0055). Renewal + stale contact alerts need a new h
 
 **I164: Inbox file processing status**
 Processing state lives only in React memory. Cross-reference inbox files with `processing_log` on load. Show status indicators (unprocessed vs processed). Make Process button visible by default.
+
+**I203: Inbox dropzone duplicate file bug**
+When dragging and dropping a new document into the Inbox dropzone, the file appears twice in the inbox list. Likely due to double-handling in the drop event handler or sync conflict between UI state and file watcher. Root cause and fix needed.
+
+Acceptance criteria:
+- Single drag-drop of a new file adds exactly one entry to the inbox list.
+- No duplicate entries appear on subsequent file syncs.
+- Drop handler and file watcher don't trigger conflicting updates.
 
 **I140: Branded Google OAuth success page**
 Static HTML on localhost callback — on-brand confirmation + "what happens next" guidance. DailyOS design tokens.
