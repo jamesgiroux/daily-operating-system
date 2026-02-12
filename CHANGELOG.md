@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Prep semantics completed end-to-end: `recentWins` + `recentWinSources` are now first-class fields in prep payloads, with legacy `talkingPoints` retained as compatibility fallback.
 - Prep enrichment contract updated so Agenda and Wins are parsed separately (`AGENDA` + `WINS` blocks), with source provenance captured structurally instead of inline `source:` tails.
 - Added one-time Tauri migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
+- Backlog closures recorded for Meeting Intelligence tracks: I173, I185, I186, I187, I189, I190, I191, I196, I159.
 
 ## [0.7.0] - 2026-02-09
 
