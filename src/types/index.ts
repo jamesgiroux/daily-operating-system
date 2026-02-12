@@ -137,6 +137,19 @@ export interface DayStats {
 }
 
 export type EmailPriority = "high" | "medium" | "low";
+export type EmailSyncState = "ok" | "warning" | "error";
+export type EmailSyncStage = "fetch" | "deliver" | "enrich" | "refresh";
+
+export interface EmailSyncStatus {
+  state: EmailSyncState;
+  stage: EmailSyncStage;
+  code?: string;
+  message?: string;
+  usingLastKnownGood?: boolean;
+  canRetry?: boolean;
+  lastAttemptAt?: string;
+  lastSuccessAt?: string;
+}
 
 export interface Email {
   id: string;
@@ -192,6 +205,7 @@ export interface DashboardData {
   meetings: Meeting[];
   actions: Action[];
   emails?: Email[];
+  emailSync?: EmailSyncStatus;
 }
 
 // =============================================================================
