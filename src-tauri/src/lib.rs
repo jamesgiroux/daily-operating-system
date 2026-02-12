@@ -30,6 +30,7 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
+mod queries;
 mod scheduler;
 mod state;
 mod types;
@@ -196,6 +197,7 @@ pub fn run() {
             commands::get_workflow_status,
             commands::get_execution_history,
             commands::get_next_run_time,
+            commands::get_meeting_intelligence,
             commands::get_meeting_prep,
             commands::backfill_prep_semantics,
             commands::get_all_actions,
