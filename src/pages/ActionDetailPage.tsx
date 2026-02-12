@@ -204,7 +204,7 @@ export default function ActionDetailPage() {
                       From meeting:{" "}
                     </span>
                     <Link
-                      to="/meeting/history/$meetingId"
+                      to="/meeting/$meetingId"
                       params={{ meetingId: detail.sourceId! }}
                       className="text-primary transition-colors hover:underline"
                     >

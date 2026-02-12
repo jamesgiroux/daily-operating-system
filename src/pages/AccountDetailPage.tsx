@@ -1182,7 +1182,7 @@ export default function AccountDetailPage() {
                         {detail.recentCaptures.slice(0, 3).map((c) => (
                           <Link
                             key={c.id}
-                            to="/meeting/history/$meetingId"
+                            to="/meeting/$meetingId"
                             params={{ meetingId: c.meetingId }}
                             className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
                           >
@@ -1203,7 +1203,7 @@ export default function AccountDetailPage() {
                               {detail.recentCaptures.slice(3).map((c) => (
                                 <Link
                                   key={c.id}
-                                  to="/meeting/history/$meetingId"
+                                  to="/meeting/$meetingId"
                                   params={{ meetingId: c.meetingId }}
                                   className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
                                 >
@@ -1732,7 +1732,7 @@ function MeetingPreviewCard({ meeting }: { meeting: MeetingPreview }) {
 
   return (
     <Link
-      to="/meeting/history/$meetingId"
+      to="/meeting/$meetingId"
       params={{ meetingId: meeting.id }}
       className="block rounded-lg border transition-colors hover:bg-muted"
     >
