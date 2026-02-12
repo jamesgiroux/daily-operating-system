@@ -40,6 +40,7 @@ hex = "0.4"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 url = "2"
 open = "5"
+base64 = "0.22"
 
 # Document text extraction (ADR-0050)
 pdf-extract = "0.10"
