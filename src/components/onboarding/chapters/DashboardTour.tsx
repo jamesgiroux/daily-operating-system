@@ -110,6 +110,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
 
   const stop = TOUR_STOPS[currentStop];
   const emails = data.emails ?? [];
+  const emailSync = data.emailSync;
 
   return (
     <>
@@ -161,7 +162,7 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(3)} active={stop.key === "emails"}>
-            <EmailList emails={emails} />
+            <EmailList emails={emails} emailSync={emailSync} />
           </TourHighlight>
         </div>
       </div>
