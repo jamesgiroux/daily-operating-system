@@ -145,3 +145,17 @@ actionSummary?: {
 **Trade-offs:**
 - Calendar grid view is lost — users who wanted a visual calendar now see density bars instead. Acceptable because Google Calendar already serves this need; DailyOS should differentiate on intelligence, not duplication.
 - The wizard removal means no manual priority input. If users want to set their own priority, they'll need to use the actions system directly. The AI-generated top priority may disagree with the user — but per Principle 4, it's an opinionated default that's overridable.
+
+## 2026-02-12 Alignment Note
+
+Implementation status and follow-on scope were clarified after ADR acceptance:
+
+- **Shipped:** Phase 1 and Phase 2 are in production (`I93`, `I94`, `I96`).
+- **Partially shipped from Phase 3:** backend week enrichment already supports time-block `suggestedUse` generation.
+- **Not yet shipped:** complete user-facing proactive suggestions flow (rendering/actionability in Week UI), live-query proactive suggestions path, and prep prefill/draft agenda actions.
+
+To avoid scope ambiguity, Phase 3 implementation is tracked as three issues:
+
+1. **I200** — Week UI rendering of proactive suggestions from `week-overview.json`.
+2. **I201** — Live proactive suggestions via query-layer pattern from ADR-0062 (no briefing artifact rewrites).
+3. **I202** — Prep prefill + draft agenda actions aligned with ADR-0065 editability (`userAgenda`/`userNotes` additive writes).
