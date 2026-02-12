@@ -68,6 +68,12 @@ pub fn run() {
             // Manage the state
             app.manage(state.clone());
 
+            // Defer startup workspace sync/indexing so app setup stays responsive.
+            let startup_state = state.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::state::run_startup_sync(&startup_state);
+            });
+
             // Spawn scheduler
             let scheduler_state = state.clone();
             let scheduler_sender = scheduler_tx.clone();
