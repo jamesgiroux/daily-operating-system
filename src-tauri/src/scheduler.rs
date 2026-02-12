@@ -113,9 +113,7 @@ impl Scheduler {
 
         // Check week workflow
         if config.schedules.week.enabled {
-            if let Ok(true) =
-                self.should_run_now(&config.schedules.week, WorkflowId::Week, now)
-            {
+            if let Ok(true) = self.should_run_now(&config.schedules.week, WorkflowId::Week, now) {
                 self.trigger_workflow(WorkflowId::Week, ExecutionTrigger::Scheduled)
                     .await;
             }
@@ -130,10 +128,9 @@ impl Scheduler {
         now: DateTime<Utc>,
     ) -> Result<bool, ExecutionError> {
         let schedule = parse_cron(&entry.cron)?;
-        let tz: Tz = entry
-            .timezone
-            .parse()
-            .map_err(|_| ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone)))?;
+        let tz: Tz = entry.timezone.parse().map_err(|_| {
+            ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone))
+        })?;
 
         // Convert now to the configured timezone
         let now_local = now.with_timezone(&tz);
@@ -208,8 +205,7 @@ impl Scheduler {
 
         // Check week workflow
         if config.schedules.week.enabled {
-            if let Ok(Some(_)) =
-                self.find_missed_job(&config.schedules.week, WorkflowId::Week, now)
+            if let Ok(Some(_)) = self.find_missed_job(&config.schedules.week, WorkflowId::Week, now)
             {
                 log::info!("Found missed 'week' job, running now");
                 self.trigger_workflow(WorkflowId::Week, ExecutionTrigger::Missed)
@@ -226,10 +222,9 @@ impl Scheduler {
         now: DateTime<Utc>,
     ) -> Result<Option<DateTime<Utc>>, ExecutionError> {
         let schedule = parse_cron(&entry.cron)?;
-        let tz: Tz = entry
-            .timezone
-            .parse()
-            .map_err(|_| ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone)))?;
+        let tz: Tz = entry.timezone.parse().map_err(|_| {
+            ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone))
+        })?;
 
         let now_local = now.with_timezone(&tz);
         let grace_period = chrono::Duration::seconds(MISSED_JOB_GRACE_PERIOD_SECS);
@@ -282,24 +277,22 @@ pub fn parse_cron(expr: &str) -> Result<Schedule, ExecutionError> {
     // Add "0" for seconds at the start
     let full_expr = format!("0 {}", expr);
 
-    full_expr
-        .parse::<Schedule>()
-        .map_err(|e| ExecutionError::ConfigurationError(format!("Invalid cron expression '{}': {}", expr, e)))
+    full_expr.parse::<Schedule>().map_err(|e| {
+        ExecutionError::ConfigurationError(format!("Invalid cron expression '{}': {}", expr, e))
+    })
 }
 
 /// Get the next scheduled time for a workflow
 pub fn get_next_run_time(entry: &ScheduleEntry) -> Result<DateTime<Utc>, ExecutionError> {
     let schedule = parse_cron(&entry.cron)?;
-    let tz: Tz = entry
-        .timezone
-        .parse()
-        .map_err(|_| ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone)))?;
+    let tz: Tz = entry.timezone.parse().map_err(|_| {
+        ExecutionError::ConfigurationError(format!("Invalid timezone: {}", entry.timezone))
+    })?;
 
     let _now_local = Utc::now().with_timezone(&tz);
-    let next = schedule
-        .upcoming(tz)
-        .next()
-        .ok_or_else(|| ExecutionError::ConfigurationError("No upcoming scheduled time".to_string()))?;
+    let next = schedule.upcoming(tz).next().ok_or_else(|| {
+        ExecutionError::ConfigurationError("No upcoming scheduled time".to_string())
+    })?;
 
     Ok(next.with_timezone(&Utc))
 }

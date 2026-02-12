@@ -171,9 +171,7 @@ fn load_existing_titles(db: &crate::db::ActionDb) -> HashSet<String> {
         Ok(s) => s,
         Err(_) => return titles,
     };
-    let rows = stmt.query_map([], |row: &rusqlite::Row| {
-        row.get::<_, Option<String>>(0)
-    });
+    let rows = stmt.query_map([], |row: &rusqlite::Row| row.get::<_, Option<String>>(0));
     if let Ok(rows) = rows {
         for row in rows.flatten().flatten() {
             titles.insert(row);
@@ -467,11 +465,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let yesterday = Utc::now().date_naive() - chrono::Duration::days(3);
         let actions_path = dir.path().join("actions.md");
-        std::fs::write(
-            &actions_path,
-            format!("- [ ] Old task due:{}\n", yesterday),
-        )
-        .unwrap();
+        std::fs::write(&actions_path, format!("- [ ] Old task due:{}\n", yesterday)).unwrap();
 
         let result = parse_workspace_actions(dir.path(), None);
         assert_eq!(result.overdue.len(), 1);

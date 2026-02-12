@@ -34,7 +34,11 @@ pub fn notify_workflow_complete(app: &AppHandle, workflow_name: &str) -> Result<
 }
 
 /// Send an error notification
-pub fn notify_workflow_error(app: &AppHandle, workflow_name: &str, error: &str) -> Result<(), String> {
+pub fn notify_workflow_error(
+    app: &AppHandle,
+    workflow_name: &str,
+    error: &str,
+) -> Result<(), String> {
     let title = format!("{} workflow failed", workflow_name);
     let body = if error.len() > 100 {
         format!("{}...", &error[..100])

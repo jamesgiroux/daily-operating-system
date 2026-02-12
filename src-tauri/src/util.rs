@@ -260,7 +260,10 @@ mod tests {
 
     #[test]
     fn test_slugify_special_chars() {
-        assert_eq!(slugify("Weekly Sync — Team Alpha"), "weekly-sync-team-alpha");
+        assert_eq!(
+            slugify("Weekly Sync — Team Alpha"),
+            "weekly-sync-team-alpha"
+        );
     }
 
     #[test]
@@ -272,7 +275,10 @@ mod tests {
 
     #[test]
     fn test_person_id_from_email() {
-        assert_eq!(person_id_from_email("sarah.chen@acme.com"), "sarah-chen-acme-com");
+        assert_eq!(
+            person_id_from_email("sarah.chen@acme.com"),
+            "sarah-chen-acme-com"
+        );
         assert_eq!(person_id_from_email("JOE@BIGCORP.IO"), "joe-bigcorp-io");
     }
 
@@ -291,8 +297,14 @@ mod tests {
 
     #[test]
     fn test_classify_relationship() {
-        assert_eq!(classify_relationship("me@myco.com", Some("myco.com")), "internal");
-        assert_eq!(classify_relationship("them@other.com", Some("myco.com")), "external");
+        assert_eq!(
+            classify_relationship("me@myco.com", Some("myco.com")),
+            "internal"
+        );
+        assert_eq!(
+            classify_relationship("them@other.com", Some("myco.com")),
+            "external"
+        );
         assert_eq!(classify_relationship("anyone@any.com", None), "unknown");
         assert_eq!(classify_relationship("anyone@any.com", Some("")), "unknown");
     }
@@ -300,11 +312,26 @@ mod tests {
     #[test]
     fn test_classify_relationship_multi() {
         let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
-        assert_eq!(classify_relationship_multi("me@myco.com", &domains), "internal");
-        assert_eq!(classify_relationship_multi("you@subsidiary.com", &domains), "internal");
-        assert_eq!(classify_relationship_multi("them@other.com", &domains), "external");
-        assert_eq!(classify_relationship_multi("anyone@any.com", &[]), "unknown");
-        assert_eq!(classify_relationship_multi("no-at-sign", &domains), "unknown");
+        assert_eq!(
+            classify_relationship_multi("me@myco.com", &domains),
+            "internal"
+        );
+        assert_eq!(
+            classify_relationship_multi("you@subsidiary.com", &domains),
+            "internal"
+        );
+        assert_eq!(
+            classify_relationship_multi("them@other.com", &domains),
+            "external"
+        );
+        assert_eq!(
+            classify_relationship_multi("anyone@any.com", &[]),
+            "unknown"
+        );
+        assert_eq!(
+            classify_relationship_multi("no-at-sign", &domains),
+            "unknown"
+        );
     }
 
     // Path traversal guard tests (I60)

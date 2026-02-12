@@ -161,8 +161,7 @@ pub async fn fetch_events(
 
             // Skip declined events (self declined)
             let self_declined = item.attendees.iter().any(|a| {
-                a.is_self == Some(true)
-                    && a.response_status.as_deref() == Some("declined")
+                a.is_self == Some(true) && a.response_status.as_deref() == Some("declined")
             });
             if self_declined {
                 continue;
@@ -282,7 +281,10 @@ mod tests {
     fn test_parse_event_datetime_date_only() {
         let dt = parse_event_datetime("2026-02-08").unwrap();
         assert_eq!(dt.hour(), 0);
-        assert_eq!(dt.date_naive(), chrono::NaiveDate::from_ymd_opt(2026, 2, 8).unwrap());
+        assert_eq!(
+            dt.date_naive(),
+            chrono::NaiveDate::from_ymd_opt(2026, 2, 8).unwrap()
+        );
     }
 
     #[test]
@@ -356,9 +358,10 @@ mod tests {
         }"#;
 
         let resp: CalendarListResponse = serde_json::from_str(json).unwrap();
-        let self_declined = resp.items[0].attendees.iter().any(|a| {
-            a.is_self == Some(true) && a.response_status.as_deref() == Some("declined")
-        });
+        let self_declined = resp.items[0]
+            .attendees
+            .iter()
+            .any(|a| a.is_self == Some(true) && a.response_status.as_deref() == Some("declined"));
         assert!(self_declined);
     }
 

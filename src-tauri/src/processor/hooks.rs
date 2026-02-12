@@ -125,10 +125,7 @@ fn sync_completion_to_markdown(ctx: &EnrichmentContext, db: &ActionDb) -> HookRe
             continue;
         }
 
-        let updated = content.replace(
-            &needle_unchecked,
-            &format!("- [x] {}", match_text),
-        );
+        let updated = content.replace(&needle_unchecked, &format!("- [x] {}", match_text));
 
         if updated != content {
             if let Err(e) = std::fs::write(&file_path, &updated) {
@@ -402,11 +399,7 @@ mod tests {
         let result = entity_intelligence(&ctx, &db);
 
         assert!(result.success);
-        assert!(result
-            .message
-            .as_ref()
-            .unwrap()
-            .contains("no entity"));
+        assert!(result.message.as_ref().unwrap().contains("no entity"));
     }
 
     #[test]

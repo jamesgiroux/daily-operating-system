@@ -101,7 +101,11 @@ pub fn process_transcript(
     let output = match pty.spawn_claude(workspace, &prompt) {
         Ok(o) => o.stdout,
         Err(e) => {
-            log::error!("AI transcript processing failed for '{}': {}", meeting.title, e);
+            log::error!(
+                "AI transcript processing failed for '{}': {}",
+                meeting.title,
+                e
+            );
             // Return partial success — file was routed, but no AI extraction
             return TranscriptResult {
                 status: "success".to_string(),
@@ -431,10 +435,7 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
         content.push_str("# Impact Log\n\n");
     }
 
-    let label = meeting
-        .account
-        .as_deref()
-        .unwrap_or(&meeting.title);
+    let label = meeting.account.as_deref().unwrap_or(&meeting.title);
     let now = Utc::now();
 
     for win in wins {
@@ -585,7 +586,10 @@ mod tests {
     #[test]
     fn test_slugify() {
         assert_eq!(slugify("Acme QBR"), "acme-qbr");
-        assert_eq!(slugify("Weekly Sync — Team Alpha"), "weekly-sync-team-alpha");
+        assert_eq!(
+            slugify("Weekly Sync — Team Alpha"),
+            "weekly-sync-team-alpha"
+        );
         assert_eq!(slugify("simple"), "simple");
     }
 

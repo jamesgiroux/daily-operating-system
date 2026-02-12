@@ -98,7 +98,9 @@ pub struct StrategicProgram {
 
 /// Resolve the directory for an account's workspace files (I70: sanitized name).
 pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
-    workspace.join("Accounts").join(crate::util::sanitize_for_filesystem(name))
+    workspace
+        .join("Accounts")
+        .join(crate::util::sanitize_for_filesystem(name))
 }
 
 /// Resolve the directory for an account, preferring `tracker_path` when set (I114).
@@ -166,10 +168,9 @@ pub fn write_account_json(
     };
 
     let path = dir.join("dashboard.json");
-    let content = serde_json::to_string_pretty(&json)
-        .map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&path, &content)
-        .map_err(|e| format!("Write error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
+    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
 
     Ok(())
 }
@@ -224,9 +225,8 @@ pub fn write_account_markdown(
     md.push('\n');
 
     // Read intelligence.json once (used for Company Overview skip + intelligence sections)
-    let intel_data = crate::entity_intel::read_intelligence_json(
-        &resolve_account_dir(workspace, account),
-    ).ok();
+    let intel_data =
+        crate::entity_intel::read_intelligence_json(&resolve_account_dir(workspace, account)).ok();
 
     // Company Overview (from JSON — skipped when intelligence.json has company_context)
     let intel_has_company = intel_data
@@ -309,7 +309,10 @@ pub fn write_account_markdown(
                 .arr
                 .map(|a| format!(" — ${:.0}", a))
                 .unwrap_or_default();
-            md.push_str(&format!("- {} **{}**{}\n", health_badge, child.name, arr_str));
+            md.push_str(&format!(
+                "- {} **{}**{}\n",
+                health_badge, child.name, arr_str
+            ));
         }
         md.push('\n');
     }
@@ -344,10 +347,7 @@ pub fn write_account_markdown(
                     .as_deref()
                     .map(|d| format!(" (due {})", d))
                     .unwrap_or_default();
-                md.push_str(&format!(
-                    "- [{}] **{}**{}\n",
-                    a.priority, a.title, due,
-                ));
+                md.push_str(&format!("- [{}] **{}**{}\n", a.priority, a.title, due,));
             }
             md.push('\n');
         }
@@ -369,10 +369,7 @@ pub fn write_account_markdown(
                 };
                 md.push_str(&format!(
                     "- {} **{}** — {} ({})\n",
-                    icon,
-                    c.capture_type,
-                    c.content,
-                    c.meeting_title,
+                    icon, c.capture_type, c.content, c.meeting_title,
                 ));
             }
             md.push('\n');
@@ -457,8 +454,7 @@ pub struct ReadAccountResult {
 /// a flat account. If it's deeper, the immediate parent dir is the BU name and
 /// the grandparent is the parent account name.
 pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
+    let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
     let json: AccountJson =
         serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
 
@@ -558,10 +554,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
 /// If SQLite is newer: regenerate dashboard.json + dashboard.md from SQLite.
 ///
 /// Returns the number of accounts synced.
-pub fn sync_accounts_from_workspace(
-    workspace: &Path,
-    db: &ActionDb,
-) -> Result<usize, String> {
+pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
     let accounts_dir = workspace.join("Accounts");
     let mut synced = 0;
 
@@ -632,7 +625,10 @@ pub fn sync_accounts_from_workspace(
         }
 
         match read_account_json(&json_path) {
-            Ok(ReadAccountResult { account: file_account, json }) => {
+            Ok(ReadAccountResult {
+                account: file_account,
+                json,
+            }) => {
                 match db.get_account(&file_account.id) {
                     Ok(Some(db_account)) => {
                         if file_account.updated_at > db_account.updated_at {
@@ -641,39 +637,19 @@ pub fn sync_accounts_from_workspace(
                             // Preserve DB-only fields
                             merged.contract_start = db_account.contract_start.clone();
                             let _ = db.upsert_account(&merged);
-                            let _ = write_account_markdown(
-                                workspace,
-                                &merged,
-                                Some(&json),
-                                db,
-                            );
+                            let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
                             // SQLite is newer — regen both files
-                            let _ = write_account_json(
-                                workspace,
-                                &db_account,
-                                Some(&json),
-                                db,
-                            );
-                            let _ = write_account_markdown(
-                                workspace,
-                                &db_account,
-                                Some(&json),
-                                db,
-                            );
+                            let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                            let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
                         // New account from file — insert to SQLite
                         let _ = db.upsert_account(&file_account);
-                        let _ = write_account_markdown(
-                            workspace,
-                            &file_account,
-                            Some(&json),
-                            db,
-                        );
+                        let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
                         synced += 1;
                     }
                     Err(_) => continue,
@@ -739,29 +715,32 @@ pub fn sync_accounts_from_workspace(
             if child_json_path.exists() {
                 // BU has dashboard.json — use depth-aware read_account_json
                 match read_account_json(&child_json_path) {
-                    Ok(ReadAccountResult { account: file_account, json }) => {
-                        match db.get_account(&file_account.id) {
-                            Ok(Some(db_account)) => {
-                                if file_account.updated_at > db_account.updated_at {
-                                    let mut merged = file_account;
-                                    merged.contract_start = db_account.contract_start.clone();
-                                    let _ = db.upsert_account(&merged);
-                                    let _ = write_account_markdown(workspace, &merged, Some(&json), db);
-                                    synced += 1;
-                                } else if db_account.updated_at > file_account.updated_at {
-                                    let _ = write_account_json(workspace, &db_account, Some(&json), db);
-                                    let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
-                                    synced += 1;
-                                }
-                            }
-                            Ok(None) => {
-                                let _ = db.upsert_account(&file_account);
-                                let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
+                    Ok(ReadAccountResult {
+                        account: file_account,
+                        json,
+                    }) => match db.get_account(&file_account.id) {
+                        Ok(Some(db_account)) => {
+                            if file_account.updated_at > db_account.updated_at {
+                                let mut merged = file_account;
+                                merged.contract_start = db_account.contract_start.clone();
+                                let _ = db.upsert_account(&merged);
+                                let _ = write_account_markdown(workspace, &merged, Some(&json), db);
+                                synced += 1;
+                            } else if db_account.updated_at > file_account.updated_at {
+                                let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                                let _ =
+                                    write_account_markdown(workspace, &db_account, Some(&json), db);
                                 synced += 1;
                             }
-                            Err(_) => continue,
                         }
-                    }
+                        Ok(None) => {
+                            let _ = db.upsert_account(&file_account);
+                            let _ =
+                                write_account_markdown(workspace, &file_account, Some(&json), db);
+                            synced += 1;
+                        }
+                        Err(_) => continue,
+                    },
                     Err(e) => {
                         log::warn!("Failed to read child {}: {}", child_json_path.display(), e);
                         continue;
@@ -782,7 +761,10 @@ pub fn sync_accounts_from_workspace(
                         csm: None,
                         champion: None,
                         nps: None,
-                        tracker_path: Some(format!("Accounts/{}/{}", parent_name_str, sub_name_str)),
+                        tracker_path: Some(format!(
+                            "Accounts/{}/{}",
+                            parent_name_str, sub_name_str
+                        )),
                         parent_id: Some(parent_id.clone()),
                         updated_at: now,
                         archived: false,
@@ -792,7 +774,8 @@ pub fn sync_accounts_from_workspace(
                         let _ = write_account_markdown(workspace, &new_child, None, db);
                         log::info!(
                             "Bootstrapped child account '{}/{}' from BU folder",
-                            parent_name_str, sub_name_str
+                            parent_name_str,
+                            sub_name_str
                         );
                         synced += 1;
                     }
@@ -894,15 +877,16 @@ pub fn sync_content_index_for_account(
 ) -> Result<(usize, usize, usize), String> {
     let account_dir = resolve_account_dir(workspace, account);
     crate::entity_intel::sync_content_index_for_entity(
-        &account_dir, &account.id, "account", workspace, db,
+        &account_dir,
+        &account.id,
+        "account",
+        workspace,
+        db,
     )
 }
 
 /// Sync content indexes for all accounts and projects. Returns total files indexed.
-pub fn sync_all_content_indexes(
-    workspace: &Path,
-    db: &ActionDb,
-) -> Result<usize, String> {
+pub fn sync_all_content_indexes(workspace: &Path, db: &ActionDb) -> Result<usize, String> {
     let accounts = db
         .get_all_accounts()
         .map_err(|e| format!("DB error: {}", e))?;
@@ -914,18 +898,13 @@ pub fn sync_all_content_indexes(
                 total += added + updated;
             }
             Err(e) => {
-                log::warn!(
-                    "Content index sync failed for '{}': {}",
-                    account.name,
-                    e
-                );
+                log::warn!("Content index sync failed for '{}': {}", account.name, e);
             }
         }
     }
 
     // I138: Also sync project content indexes
-    total += crate::projects::sync_all_project_content_indexes(workspace, db)
-        .unwrap_or(0);
+    total += crate::projects::sync_all_project_content_indexes(workspace, db).unwrap_or(0);
 
     Ok(total)
 }
@@ -935,11 +914,7 @@ pub fn sync_all_content_indexes(
 /// Uses pre-computed summaries from SQLite when available, falling back to
 /// text extraction for files without summaries. Priority-ordered (highest first).
 /// Capped at 10K chars total.
-pub fn build_file_context(
-    _workspace: &Path,
-    db: &ActionDb,
-    account_id: &str,
-) -> String {
+pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) -> String {
     let files = match db.get_entity_files(account_id) {
         Ok(f) => f,
         Err(_) => return String::new(),
@@ -969,7 +944,9 @@ pub fn build_file_context(
             match crate::processor::extract::extract_text(path) {
                 Ok(t) => {
                     let summary = crate::entity_intel::mechanical_summary(&t, 500);
-                    if summary.is_empty() { continue; }
+                    if summary.is_empty() {
+                        continue;
+                    }
                     summary
                 }
                 Err(_) => continue,
@@ -1058,7 +1035,10 @@ pub fn enrich_account(
     write_account_json(workspace, &account, Some(&json), db)?;
     write_account_markdown(workspace, &account, Some(&json), db)?;
 
-    log::info!("Enriched account '{}' via Claude Code websearch", account.name);
+    log::info!(
+        "Enriched account '{}' via Claude Code websearch",
+        account.name
+    );
     Ok(overview)
 }
 
@@ -1232,7 +1212,8 @@ mod tests {
         std::fs::write(
             acct_dir.join("dashboard.json"),
             serde_json::to_string_pretty(&json_content).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let synced = sync_accounts_from_workspace(workspace, &db).unwrap();
         assert_eq!(synced, 1);
@@ -1288,7 +1269,10 @@ mod tests {
             result.json.company_overview.unwrap().description,
             Some("Important context.".to_string())
         );
-        assert_eq!(result.json.notes, Some("Don't lose these notes.".to_string()));
+        assert_eq!(
+            result.json.notes,
+            Some("Don't lose these notes.".to_string())
+        );
     }
 
     #[test]
@@ -1398,7 +1382,10 @@ END_ENRICHMENT";
         // Critical invariant: exactly one record, not two
         let all = db.get_all_accounts().unwrap();
         let delta_count = all.iter().filter(|a| a.name == "Delta Co").count();
-        assert_eq!(delta_count, 1, "bootstrap must not create duplicates on re-sync");
+        assert_eq!(
+            delta_count, 1,
+            "bootstrap must not create duplicates on re-sync"
+        );
     }
 
     // ── I114: Parent-Child tests ────────────────────────────────────────────
@@ -1443,7 +1430,10 @@ END_ENRICHMENT";
         assert_eq!(result.account.id, "acme");
         assert_eq!(result.account.name, "Acme");
         assert!(result.account.parent_id.is_none());
-        assert_eq!(result.account.tracker_path, Some("Accounts/Acme".to_string()));
+        assert_eq!(
+            result.account.tracker_path,
+            Some("Accounts/Acme".to_string())
+        );
     }
 
     #[test]
@@ -1513,7 +1503,8 @@ END_ENRICHMENT";
         std::fs::write(
             parent_dir.join("dashboard.json"),
             r#"{"structured":{"arr":1000000}}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         // Create BU child dir (no dashboard.json — should be bootstrapped)
         let child_dir = parent_dir.join("TestChild");
@@ -1541,7 +1532,9 @@ END_ENRICHMENT";
         );
 
         // Internal dir should NOT be an account
-        let internal = db.get_account("testparent--01-customer-information").unwrap();
+        let internal = db
+            .get_account("testparent--01-customer-information")
+            .unwrap();
         assert!(internal.is_none(), "Numbered dir should not be an account");
     }
 
@@ -1752,8 +1745,7 @@ END_ENRICHMENT";
         std::fs::write(acct_dir.join("dashboard.md"), "generated markdown").unwrap();
         std::fs::write(acct_dir.join("real-file.md"), "# Actual content").unwrap();
 
-        let (added, _, _) =
-            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        let (added, _, _) = sync_content_index_for_account(workspace, &db, &account).unwrap();
         assert_eq!(added, 1);
 
         let files = db.get_entity_files(&account.id).unwrap();
@@ -1775,16 +1767,14 @@ END_ENRICHMENT";
         std::fs::write(&temp_file, "temporary content").unwrap();
 
         // First scan — file found
-        let (added, _, _) =
-            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        let (added, _, _) = sync_content_index_for_account(workspace, &db, &account).unwrap();
         assert_eq!(added, 1);
 
         // Delete the file
         std::fs::remove_file(&temp_file).unwrap();
 
         // Rescan — file removed
-        let (_, _, removed) =
-            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        let (_, _, removed) = sync_content_index_for_account(workspace, &db, &account).unwrap();
         assert_eq!(removed, 1);
 
         let files = db.get_entity_files(&account.id).unwrap();
@@ -1804,8 +1794,7 @@ END_ENRICHMENT";
         std::fs::write(acct_dir.join("stable.md"), "# Stable content").unwrap();
 
         // First scan
-        let (added1, _, _) =
-            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        let (added1, _, _) = sync_content_index_for_account(workspace, &db, &account).unwrap();
         assert_eq!(added1, 1);
 
         // Second scan — file unchanged
@@ -1840,8 +1829,7 @@ END_ENRICHMENT";
         std::fs::create_dir_all(&sub2).unwrap();
         std::fs::write(sub2.join("2025-07-call.md"), "transcript").unwrap();
 
-        let (added, _, _) =
-            sync_content_index_for_account(workspace, &db, &account).unwrap();
+        let (added, _, _) = sync_content_index_for_account(workspace, &db, &account).unwrap();
         // 00-Index.md + success-plan.md + commercial-summary.md + 2025-07-call.md = 4
         assert_eq!(added, 4);
 
@@ -1850,8 +1838,12 @@ END_ENRICHMENT";
 
         // Verify relative paths include subdir structure
         let rel_paths: Vec<&str> = files.iter().map(|f| f.relative_path.as_str()).collect();
-        assert!(rel_paths.iter().any(|p| p.contains("01-Customer-Information/success-plan.md")));
-        assert!(rel_paths.iter().any(|p| p.contains("03-Call-Transcripts/2025-07-call.md")));
+        assert!(rel_paths
+            .iter()
+            .any(|p| p.contains("01-Customer-Information/success-plan.md")));
+        assert!(rel_paths
+            .iter()
+            .any(|p| p.contains("03-Call-Transcripts/2025-07-call.md")));
     }
 
     #[test]
@@ -1878,8 +1870,7 @@ END_ENRICHMENT";
         std::fs::write(child_dir.join("dashboard.json"), "{}").unwrap();
         std::fs::write(child_dir.join("child-notes.md"), "# Child notes").unwrap();
 
-        let (added, _, _) =
-            sync_content_index_for_account(workspace, &db, &parent).unwrap();
+        let (added, _, _) = sync_content_index_for_account(workspace, &db, &parent).unwrap();
         // parent-notes.md + info.md = 2 (child-notes.md excluded)
         assert_eq!(added, 2);
 

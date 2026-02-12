@@ -8,9 +8,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
-use super::{
-    load_credentials, save_token, GoogleApiError, GoogleToken, SCOPES,
-};
+use super::{load_credentials, save_token, GoogleApiError, GoogleToken, SCOPES};
 
 /// Run the full OAuth2 consent flow.
 ///
@@ -28,8 +26,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     let installed = &creds.installed;
 
     // Bind to a random port
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| GoogleApiError::Io(e))?;
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| GoogleApiError::Io(e))?;
     let port = listener
         .local_addr()
         .map_err(|e| GoogleApiError::Io(e))?
@@ -113,9 +110,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
 /// Wait for the OAuth redirect and extract the auth code from the URL.
 fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GoogleApiError> {
-    let (mut stream, _) = listener
-        .accept()
-        .map_err(|e| GoogleApiError::Io(e))?;
+    let (mut stream, _) = listener.accept().map_err(|e| GoogleApiError::Io(e))?;
 
     let mut buffer = [0u8; 4096];
     let n = stream
@@ -144,7 +139,10 @@ fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GoogleApiError> 
             send_response(&mut stream, "Authorization denied. You can close this tab.");
             return Err(GoogleApiError::FlowCancelled);
         }
-        send_response(&mut stream, "No authorization code received. You can close this tab.");
+        send_response(
+            &mut stream,
+            "No authorization code received. You can close this tab.",
+        );
         return Err(GoogleApiError::FlowCancelled);
     }
 
