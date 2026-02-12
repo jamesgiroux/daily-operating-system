@@ -15,7 +15,7 @@ use tauri::{AppHandle, Emitter};
 use crate::db::DbPerson;
 use crate::google_api;
 use crate::people;
-use crate::state::{google_token_path, AppState};
+use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{name_from_email, org_from_email, person_id_from_email};
 #[cfg(test)]
@@ -32,12 +32,10 @@ pub async fn start_auth(workspace: &Path) -> Result<String, String> {
         .map_err(|e| format!("Google auth failed: {}", e))
 }
 
-/// Disconnect Google by removing the token file.
+/// Disconnect Google by clearing stored OAuth credentials.
 pub fn disconnect() -> Result<(), String> {
-    let token_path = google_token_path();
-    if token_path.exists() {
-        std::fs::remove_file(&token_path).map_err(|e| format!("Failed to remove token: {}", e))?;
-    }
+    google_api::token_store::delete_token()
+        .map_err(|e| format!("Failed to clear token storage: {}", e))?;
     Ok(())
 }
 
