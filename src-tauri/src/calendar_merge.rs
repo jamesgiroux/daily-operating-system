@@ -20,11 +20,7 @@ fn format_time_display(dt: DateTime<Utc>, tz: &Tz) -> String {
 /// Merge briefing meetings with live calendar events.
 ///
 /// Returns a unified `Vec<Meeting>` with `overlay_status` set on each entry.
-pub fn merge_meetings(
-    briefing: Vec<Meeting>,
-    live: &[CalendarEvent],
-    tz: &Tz,
-) -> Vec<Meeting> {
+pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -> Vec<Meeting> {
     // If no live data, return briefing as-is with BriefingOnly status
     if live.is_empty() {
         return briefing
@@ -210,7 +206,10 @@ mod tests {
         let live = vec![make_live_event("evt2", "Other Meeting", 14, 15)];
         let result = merge_meetings(briefing, &live, &make_tz());
         assert_eq!(result.len(), 2);
-        let cancelled = result.iter().find(|m| m.calendar_event_id == Some("evt1".to_string())).unwrap();
+        let cancelled = result
+            .iter()
+            .find(|m| m.calendar_event_id == Some("evt1".to_string()))
+            .unwrap();
         assert_eq!(cancelled.overlay_status, Some(OverlayStatus::Cancelled));
     }
 

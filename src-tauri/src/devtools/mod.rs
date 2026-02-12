@@ -74,7 +74,12 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
     // is the dev sandbox or not yet configured.
     let destructive = matches!(
         scenario,
-        "reset" | "mock_full" | "mock_no_auth" | "mock_empty" | "simulate_briefing" | "mock_enriched"
+        "reset"
+            | "mock_full"
+            | "mock_no_auth"
+            | "mock_empty"
+            | "simulate_briefing"
+            | "mock_enriched"
     );
     if destructive && !is_dev_workspace(state) {
         return Err(
@@ -124,11 +129,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         return Err("Dev tools not available in release builds".into());
     }
 
-    let has_config = state
-        .config
-        .read()
-        .map(|g| g.is_some())
-        .unwrap_or(false);
+    let has_config = state.config.read().map(|g| g.is_some()).unwrap_or(false);
 
     let workspace_path = state
         .config
@@ -138,7 +139,13 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
 
     let has_today_data = workspace_path
         .as_ref()
-        .map(|wp| Path::new(wp).join("_today").join("data").join("manifest.json").exists())
+        .map(|wp| {
+            Path::new(wp)
+                .join("_today")
+                .join("data")
+                .join("manifest.json")
+                .exists()
+        })
         .unwrap_or(false);
 
     let (has_database, action_count, account_count, project_count, meeting_count, people_count) =
@@ -151,11 +158,15 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
                         .unwrap_or(0);
                     let accounts = db
                         .conn_ref()
-                        .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get::<_, usize>(0))
+                        .query_row("SELECT COUNT(*) FROM accounts", [], |r| {
+                            r.get::<_, usize>(0)
+                        })
                         .unwrap_or(0);
                     let projects = db
                         .conn_ref()
-                        .query_row("SELECT COUNT(*) FROM projects", [], |r| r.get::<_, usize>(0))
+                        .query_row("SELECT COUNT(*) FROM projects", [], |r| {
+                            r.get::<_, usize>(0)
+                        })
                         .unwrap_or(0);
                     let meetings = db
                         .conn_ref()
@@ -396,7 +407,10 @@ fn install_simulate_briefing(state: &AppState) -> Result<(), String> {
 /// If the directive JSON is missing, seed everything automatically.
 fn ensure_briefing_seeded(state: &AppState) -> Result<(), String> {
     let workspace = get_workspace(state)?;
-    let directive_path = workspace.join("_today").join("data").join("today-directive.json");
+    let directive_path = workspace
+        .join("_today")
+        .join("data")
+        .join("today-directive.json");
     if !directive_path.exists() {
         log::info!("Directive not found — auto-seeding simulate_briefing scenario");
         install_simulate_briefing(state)?;
@@ -425,8 +439,7 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
     let db_ref = db_guard.as_ref();
 
-    let schedule_data =
-        crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
+    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
 
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
     if let Some(db) = db_ref {
@@ -440,7 +453,13 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
         .unwrap_or_else(|_| serde_json::json!({}));
 
     crate::workflow::deliver::deliver_manifest(
-        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, false,
+        &directive,
+        &schedule_data,
+        &actions_data,
+        &emails_data,
+        &prep_paths,
+        &data_dir,
+        false,
     )?;
 
     Ok(format!(
@@ -471,8 +490,7 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
     let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
     let db_ref = db_guard.as_ref();
 
-    let schedule_data =
-        crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
+    let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
 
     let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)?;
     if let Some(db) = db_ref {
@@ -487,22 +505,42 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
 
     // Partial manifest (AI enrichment pending)
     crate::workflow::deliver::deliver_manifest(
-        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, true,
+        &directive,
+        &schedule_data,
+        &actions_data,
+        &emails_data,
+        &prep_paths,
+        &data_dir,
+        true,
     )?;
 
     // --- AI enrichment ---
-    let ai_config = state.config.read().ok()
+    let ai_config = state
+        .config
+        .read()
+        .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let extraction_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config);
-    let synthesis_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
-    let user_ctx = state.config.read().ok()
+    let extraction_pty =
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Extraction, &ai_config);
+    let synthesis_pty =
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
+    let user_ctx = state
+        .config
+        .read()
+        .ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-        .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+        .unwrap_or_else(|| crate::types::UserContext {
+            name: None,
+            company: None,
+            title: None,
+            focus: None,
+        });
 
     let mut enriched = Vec::new();
 
-    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx) {
+    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx)
+    {
         Ok(()) => enriched.push("emails"),
         Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
     }
@@ -512,14 +550,26 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         Err(e) => log::warn!("Prep enrichment failed (non-fatal): {}", e),
     }
 
-    match crate::workflow::deliver::enrich_briefing(&data_dir, &synthesis_pty, &workspace, &user_ctx, state) {
+    match crate::workflow::deliver::enrich_briefing(
+        &data_dir,
+        &synthesis_pty,
+        &workspace,
+        &user_ctx,
+        state,
+    ) {
         Ok(()) => enriched.push("briefing"),
         Err(e) => log::warn!("Briefing enrichment failed (non-fatal): {}", e),
     }
 
     // Final manifest
     crate::workflow::deliver::deliver_manifest(
-        &directive, &schedule_data, &actions_data, &emails_data, &prep_paths, &data_dir, false,
+        &directive,
+        &schedule_data,
+        &actions_data,
+        &emails_data,
+        &prep_paths,
+        &data_dir,
+        false,
     )?;
 
     Ok(format!(
@@ -562,19 +612,40 @@ pub fn run_week_full(state: &AppState) -> Result<String, String> {
     crate::prepare::orchestrate::deliver_week(&workspace)?;
 
     // Phase 3: AI enrichment (fault-tolerant)
-    let ai_config = state.config.read().ok()
+    let ai_config = state
+        .config
+        .read()
+        .ok()
         .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
         .unwrap_or_default();
-    let synthesis_pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
-    let user_ctx = state.config.read().ok()
+    let synthesis_pty =
+        crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config);
+    let user_ctx = state
+        .config
+        .read()
+        .ok()
         .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-        .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+        .unwrap_or_else(|| crate::types::UserContext {
+            name: None,
+            company: None,
+            title: None,
+            focus: None,
+        });
 
-    match crate::workflow::deliver::enrich_week(&data_dir, &synthesis_pty, &workspace, &user_ctx, state) {
+    match crate::workflow::deliver::enrich_week(
+        &data_dir,
+        &synthesis_pty,
+        &workspace,
+        &user_ctx,
+        state,
+    ) {
         Ok(()) => Ok("Week (full): week-overview.json + AI enrichment delivered".into()),
         Err(e) => {
             log::warn!("Week AI enrichment failed (non-fatal): {}", e);
-            Ok(format!("Week (full): week-overview.json delivered. AI enrichment failed: {}", e))
+            Ok(format!(
+                "Week (full): week-overview.json delivered. AI enrichment failed: {}",
+                e
+            ))
         }
     }
 }
@@ -585,7 +656,10 @@ fn get_workspace(state: &AppState) -> Result<std::path::PathBuf, String> {
         .config
         .read()
         .ok()
-        .and_then(|g| g.as_ref().map(|c| std::path::PathBuf::from(&c.workspace_path)))
+        .and_then(|g| {
+            g.as_ref()
+                .map(|c| std::path::PathBuf::from(&c.workspace_path))
+        })
         .ok_or_else(|| "No workspace configured".to_string())
 }
 
@@ -684,9 +758,7 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let today = now.to_rfc3339();
 
     // Helper to format relative dates
-    let days_ago = |n: i64| -> String {
-        (now - chrono::Duration::days(n)).to_rfc3339()
-    };
+    let days_ago = |n: i64| -> String { (now - chrono::Duration::days(n)).to_rfc3339() };
     let date_only = |n: i64| -> String {
         (chrono::Local::now() + chrono::Duration::days(n))
             .format("%Y-%m-%d")
@@ -761,23 +833,40 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Projects ---
     // 3 projects across different statuses, linked to accounts where relevant.
-    let project_rows: Vec<(&str, &str, &str, Option<&str>, Option<&str>, Option<String>, &str)> = vec![
+    let project_rows: Vec<(
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<String>,
+        &str,
+    )> = vec![
         // (id, name, status, milestone, owner, target_date, tracker_path)
         (
-            "acme-phase-2", "Acme Phase 2 Expansion", "active",
-            Some("Scope Finalization"), Some("You"),
+            "acme-phase-2",
+            "Acme Phase 2 Expansion",
+            "active",
+            Some("Scope Finalization"),
+            Some("You"),
             Some(date_only(30)),
             "Projects/Acme Phase 2 Expansion/dashboard.md",
         ),
         (
-            "globex-team-b-recovery", "Globex Team B Recovery", "active",
-            Some("Root Cause Analysis"), Some("You"),
+            "globex-team-b-recovery",
+            "Globex Team B Recovery",
+            "active",
+            Some("Root Cause Analysis"),
+            Some("You"),
             Some(date_only(14)),
             "Projects/Globex Team B Recovery/dashboard.md",
         ),
         (
-            "platform-migration", "Platform Migration v3", "on_hold",
-            Some("Architecture Review"), Some("Lisa Park"),
+            "platform-migration",
+            "Platform Migration v3",
+            "on_hold",
+            Some("Architecture Review"),
+            Some("Lisa Park"),
             Some(date_only(60)),
             "Projects/Platform Migration v3/dashboard.md",
         ),
@@ -800,28 +889,48 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let project_action_rows: Vec<(&str, &str, &str, &str, Option<&str>, Option<String>, &str)> = vec![
         // (id, title, priority, status, account_id, due_date, project_id)
         (
-            "act-phase2-scope", "Finalize Phase 2 scope document", "P1", "pending",
-            Some("acme-corp"), Some(date_only(5)),
+            "act-phase2-scope",
+            "Finalize Phase 2 scope document",
+            "P1",
+            "pending",
+            Some("acme-corp"),
+            Some(date_only(5)),
             "acme-phase-2",
         ),
         (
-            "act-phase2-stakeholders", "Identify Phase 2 stakeholder group", "P2", "pending",
-            Some("acme-corp"), Some(date_only(10)),
+            "act-phase2-stakeholders",
+            "Identify Phase 2 stakeholder group",
+            "P2",
+            "pending",
+            Some("acme-corp"),
+            Some(date_only(10)),
             "acme-phase-2",
         ),
         (
-            "act-teamb-usage-audit", "Run Team B usage audit", "P1", "pending",
-            Some("globex-industries"), Some(date_only(3)),
+            "act-teamb-usage-audit",
+            "Run Team B usage audit",
+            "P1",
+            "pending",
+            Some("globex-industries"),
+            Some(date_only(3)),
             "globex-team-b-recovery",
         ),
         (
-            "act-teamb-interview", "Schedule interviews with Team B leads", "P2", "pending",
-            Some("globex-industries"), Some(date_only(7)),
+            "act-teamb-interview",
+            "Schedule interviews with Team B leads",
+            "P2",
+            "pending",
+            Some("globex-industries"),
+            Some(date_only(7)),
             "globex-team-b-recovery",
         ),
         (
-            "act-migration-arch", "Draft v3 architecture proposal", "P2", "pending",
-            None, Some(date_only(14)),
+            "act-migration-arch",
+            "Draft v3 architecture proposal",
+            "P2",
+            "pending",
+            None,
+            Some(date_only(14)),
             "platform-migration",
         ),
     ];
@@ -854,10 +963,22 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     let project_people: Vec<(&str, &str, &str)> = vec![
         ("acme-phase-2", "sarah-chen-acme-com", "stakeholder"),
         ("acme-phase-2", "alex-torres-acme-com", "contributor"),
-        ("globex-team-b-recovery", "jamie-morrison-globex-com", "stakeholder"),
-        ("globex-team-b-recovery", "casey-lee-globex-com", "stakeholder"),
+        (
+            "globex-team-b-recovery",
+            "jamie-morrison-globex-com",
+            "stakeholder",
+        ),
+        (
+            "globex-team-b-recovery",
+            "casey-lee-globex-com",
+            "stakeholder",
+        ),
         ("platform-migration", "lisa-park-dailyos-test", "owner"),
-        ("platform-migration", "mike-chen-dailyos-test", "stakeholder"),
+        (
+            "platform-migration",
+            "mike-chen-dailyos-test",
+            "stakeholder",
+        ),
     ];
 
     for (entity_id, person_id, rel) in &project_people {
@@ -902,7 +1023,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ),
     ];
 
-    for (id, title, priority, status, account_id, due_date, source_type, source_id, context) in &action_rows {
+    for (id, title, priority, status, account_id, due_date, source_type, source_id, context) in
+        &action_rows
+    {
         conn.execute(
             "INSERT OR REPLACE INTO actions (id, title, priority, status, created_at, due_date, account_id, source_type, source_id, context, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![id, title, priority, status, &today, due_date, account_id, source_type, source_id, context, &today],
@@ -946,10 +1069,38 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Captures ---
     let capture_rows: Vec<(&str, &str, &str, Option<&str>, &str, &str)> = vec![
         // Historical captures (past meetings)
-        ("cap-acme-win-1", "mh-acme-7d", "Acme Corp Weekly Sync", Some("acme-corp"), "win", "Completed Phase 1 migration ahead of schedule"),
-        ("cap-acme-risk-1", "mh-acme-7d", "Acme Corp Weekly Sync", Some("acme-corp"), "risk", "NPS trending down — 3 detractors identified"),
-        ("cap-globex-win-1", "mh-globex-3d", "Globex Check-in", Some("globex-industries"), "win", "Expanded to 3 new teams this quarter"),
-        ("cap-globex-risk-1", "mh-globex-3d", "Globex Check-in", Some("globex-industries"), "risk", "Key stakeholder (Pat Reynolds) departing Q2"),
+        (
+            "cap-acme-win-1",
+            "mh-acme-7d",
+            "Acme Corp Weekly Sync",
+            Some("acme-corp"),
+            "win",
+            "Completed Phase 1 migration ahead of schedule",
+        ),
+        (
+            "cap-acme-risk-1",
+            "mh-acme-7d",
+            "Acme Corp Weekly Sync",
+            Some("acme-corp"),
+            "risk",
+            "NPS trending down — 3 detractors identified",
+        ),
+        (
+            "cap-globex-win-1",
+            "mh-globex-3d",
+            "Globex Check-in",
+            Some("globex-industries"),
+            "win",
+            "Expanded to 3 new teams this quarter",
+        ),
+        (
+            "cap-globex-risk-1",
+            "mh-globex-3d",
+            "Globex Check-in",
+            Some("globex-industries"),
+            "risk",
+            "Key stakeholder (Pat Reynolds) departing Q2",
+        ),
     ];
 
     for (id, meeting_id, meeting_title, account_id, ctype, content) in &capture_rows {
@@ -962,11 +1113,31 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // --- Transcript-sourced captures for today's Acme meeting (meeting #1) ---
     let today_acme_id = format!("mtg-acme-weekly-{}", date_only(0));
     let transcript_captures: Vec<(&str, &str, &str)> = vec![
-        ("cap-today-acme-win-1", "win", "Phase 1 performance benchmarks exceeded targets by 15%"),
-        ("cap-today-acme-win-2", "win", "Sarah confirmed executive sponsorship for Phase 2"),
-        ("cap-today-acme-risk-1", "risk", "Alex Torres leaving in March — need knowledge transfer plan by next week"),
-        ("cap-today-acme-decision-1", "decision", "Phase 2 kickoff moved to April to allow proper scoping"),
-        ("cap-today-acme-decision-2", "decision", "Will pursue APAC expansion as separate workstream in Q3"),
+        (
+            "cap-today-acme-win-1",
+            "win",
+            "Phase 1 performance benchmarks exceeded targets by 15%",
+        ),
+        (
+            "cap-today-acme-win-2",
+            "win",
+            "Sarah confirmed executive sponsorship for Phase 2",
+        ),
+        (
+            "cap-today-acme-risk-1",
+            "risk",
+            "Alex Torres leaving in March — need knowledge transfer plan by next week",
+        ),
+        (
+            "cap-today-acme-decision-1",
+            "decision",
+            "Phase 2 kickoff moved to April to allow proper scoping",
+        ),
+        (
+            "cap-today-acme-decision-2",
+            "decision",
+            "Will pursue APAC expansion as separate workstream in Q3",
+        ),
     ];
 
     for (id, ctype, content) in &transcript_captures {
@@ -978,8 +1149,18 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
 
     // --- Transcript-sourced actions for today's Acme meeting ---
     let transcript_actions: Vec<(&str, &str, &str, &str)> = vec![
-        ("act-transcript-kt-plan", "Create knowledge transfer plan for Alex Torres departure", "P1", "acme-corp"),
-        ("act-transcript-phase2-scope", "Draft Phase 2 scope document for April kickoff", "P2", "acme-corp"),
+        (
+            "act-transcript-kt-plan",
+            "Create knowledge transfer plan for Alex Torres departure",
+            "P1",
+            "acme-corp",
+        ),
+        (
+            "act-transcript-phase2-scope",
+            "Draft Phase 2 scope document for April kickoff",
+            "P2",
+            "acme-corp",
+        ),
     ];
 
     for (id, title, priority, account_id) in &transcript_actions {
@@ -1011,25 +1192,124 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
     // | Taylor Nguyen    | external | hot  | increasing | (none)        | (none)            |
 
     // Person ID = slugified lowercase email
-    let people: Vec<(&str, &str, &str, Option<&str>, Option<&str>, &str, Option<&str>)> = vec![
+    let people: Vec<(
+        &str,
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        &str,
+        Option<&str>,
+    )> = vec![
         // (id, email, name, org, role, relationship, notes)
-        ("sarah-chen-acme-com", "sarah.chen@acme.com", "Sarah Chen", Some("Acme Corp"), Some("VP Engineering"), "external",
-            Some("Executive sponsor for Phase 2. Strong advocate — secured budget approval.")),
-        ("alex-torres-acme-com", "alex.torres@acme.com", "Alex Torres", Some("Acme Corp"), Some("Tech Lead"), "external",
-            Some("Departing March 2025. Knowledge transfer plan needed urgently.")),
-        ("pat-kim-acme-com", "pat.kim@acme.com", "Pat Kim", Some("Acme Corp"), Some("CTO"), "external", None),
-        ("pat-reynolds-globex-com", "pat.reynolds@globex.com", "Pat Reynolds", Some("Globex Industries"), Some("VP Product"), "external",
-            Some("Departing Q2. Key exec sponsor — renewal risk if successor isn't aligned.")),
-        ("jamie-morrison-globex-com", "jamie.morrison@globex.com", "Jamie Morrison", Some("Globex Industries"), Some("Eng Director"), "external", None),
-        ("casey-lee-globex-com", "casey.lee@globex.com", "Casey Lee", Some("Globex Industries"), Some("Head of Ops"), "external", None),
-        ("dana-patel-initech-com", "dana.patel@initech.com", "Dana Patel", Some("Initech"), Some("CTO"), "external", None),
-        ("priya-sharma-initech-com", "priya.sharma@initech.com", "Priya Sharma", Some("Initech"), Some("VP Product"), "external",
-            Some("Phase 2 scope lead. Prefers async updates over meetings.")),
-        ("mike-chen-dailyos-test", "mike.chen@dailyos.test", "Mike Chen", Some("DailyOS"), Some("Product Manager"), "internal", None),
-        ("lisa-park-dailyos-test", "lisa.park@dailyos.test", "Lisa Park", Some("DailyOS"), Some("Eng Manager"), "internal",
-            Some("Manages the platform team. Key partner for infrastructure decisions.")),
-        ("jordan-wells-example-com", "jordan.wells@example.com", "Jordan Wells", None, None, "unknown", None),
-        ("taylor-nguyen-contractor-io", "taylor.nguyen@contractor.io", "Taylor Nguyen", None, None, "external", None),
+        (
+            "sarah-chen-acme-com",
+            "sarah.chen@acme.com",
+            "Sarah Chen",
+            Some("Acme Corp"),
+            Some("VP Engineering"),
+            "external",
+            Some("Executive sponsor for Phase 2. Strong advocate — secured budget approval."),
+        ),
+        (
+            "alex-torres-acme-com",
+            "alex.torres@acme.com",
+            "Alex Torres",
+            Some("Acme Corp"),
+            Some("Tech Lead"),
+            "external",
+            Some("Departing March 2025. Knowledge transfer plan needed urgently."),
+        ),
+        (
+            "pat-kim-acme-com",
+            "pat.kim@acme.com",
+            "Pat Kim",
+            Some("Acme Corp"),
+            Some("CTO"),
+            "external",
+            None,
+        ),
+        (
+            "pat-reynolds-globex-com",
+            "pat.reynolds@globex.com",
+            "Pat Reynolds",
+            Some("Globex Industries"),
+            Some("VP Product"),
+            "external",
+            Some("Departing Q2. Key exec sponsor — renewal risk if successor isn't aligned."),
+        ),
+        (
+            "jamie-morrison-globex-com",
+            "jamie.morrison@globex.com",
+            "Jamie Morrison",
+            Some("Globex Industries"),
+            Some("Eng Director"),
+            "external",
+            None,
+        ),
+        (
+            "casey-lee-globex-com",
+            "casey.lee@globex.com",
+            "Casey Lee",
+            Some("Globex Industries"),
+            Some("Head of Ops"),
+            "external",
+            None,
+        ),
+        (
+            "dana-patel-initech-com",
+            "dana.patel@initech.com",
+            "Dana Patel",
+            Some("Initech"),
+            Some("CTO"),
+            "external",
+            None,
+        ),
+        (
+            "priya-sharma-initech-com",
+            "priya.sharma@initech.com",
+            "Priya Sharma",
+            Some("Initech"),
+            Some("VP Product"),
+            "external",
+            Some("Phase 2 scope lead. Prefers async updates over meetings."),
+        ),
+        (
+            "mike-chen-dailyos-test",
+            "mike.chen@dailyos.test",
+            "Mike Chen",
+            Some("DailyOS"),
+            Some("Product Manager"),
+            "internal",
+            None,
+        ),
+        (
+            "lisa-park-dailyos-test",
+            "lisa.park@dailyos.test",
+            "Lisa Park",
+            Some("DailyOS"),
+            Some("Eng Manager"),
+            "internal",
+            Some("Manages the platform team. Key partner for infrastructure decisions."),
+        ),
+        (
+            "jordan-wells-example-com",
+            "jordan.wells@example.com",
+            "Jordan Wells",
+            None,
+            None,
+            "unknown",
+            None,
+        ),
+        (
+            "taylor-nguyen-contractor-io",
+            "taylor.nguyen@contractor.io",
+            "Taylor Nguyen",
+            None,
+            None,
+            "external",
+            None,
+        ),
     ];
 
     for (id, email, name, org, role, relationship, notes) in &people {
@@ -1039,12 +1319,19 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 tracker_path, last_seen, first_seen, meeting_count, updated_at
              ) VALUES (?1, LOWER(?2), ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, 0, ?10)",
             rusqlite::params![
-                id, email, name, org, role, relationship, notes,
+                id,
+                email,
+                name,
+                org,
+                role,
+                relationship,
+                notes,
                 format!("People/{}/person.json", name),
                 &today, // first_seen
                 &today, // updated_at
             ],
-        ).map_err(|e| format!("People insert: {}", e))?;
+        )
+        .map_err(|e| format!("People insert: {}", e))?;
     }
 
     // --- Meeting attendees ---
@@ -1146,7 +1433,8 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         conn.execute(
             "INSERT OR IGNORE INTO meeting_attendees (meeting_id, person_id) VALUES (?1, ?2)",
             rusqlite::params![meeting_id, person_id],
-        ).map_err(|e| format!("Attendees insert: {}", e))?;
+        )
+        .map_err(|e| format!("Attendees insert: {}", e))?;
     }
 
     // Bulk-update meeting_count and last_seen from the junction table.
@@ -1160,8 +1448,9 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
                 JOIN meeting_attendees ma ON m.id = ma.meeting_id
                 WHERE ma.person_id = people.id
             )
-        "
-    ).map_err(|e| format!("People stats update: {}", e))?;
+        ",
+    )
+    .map_err(|e| format!("People stats update: {}", e))?;
 
     // --- Entity-people links ---
     let entity_links: Vec<(&str, &str, &str)> = vec![
@@ -1169,8 +1458,16 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("acme-corp", "sarah-chen-acme-com", "stakeholder"),
         ("acme-corp", "alex-torres-acme-com", "stakeholder"),
         ("acme-corp", "pat-kim-acme-com", "stakeholder"),
-        ("globex-industries", "pat-reynolds-globex-com", "stakeholder"),
-        ("globex-industries", "jamie-morrison-globex-com", "stakeholder"),
+        (
+            "globex-industries",
+            "pat-reynolds-globex-com",
+            "stakeholder",
+        ),
+        (
+            "globex-industries",
+            "jamie-morrison-globex-com",
+            "stakeholder",
+        ),
         ("globex-industries", "casey-lee-globex-com", "stakeholder"),
         ("initech", "dana-patel-initech-com", "stakeholder"),
         ("initech", "priya-sharma-initech-com", "stakeholder"),
@@ -1198,9 +1495,7 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
             .format("%Y-%m-%d")
             .to_string()
     };
-    let days_ago_rfc = |n: i64| -> String {
-        (now - chrono::Duration::days(n)).to_rfc3339()
-    };
+    let days_ago_rfc = |n: i64| -> String { (now - chrono::Duration::days(n)).to_rfc3339() };
 
     let conn = db.conn_ref();
 
@@ -1209,7 +1504,8 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     conn.execute(
         "UPDATE actions SET needs_decision = 1 WHERE id IN ('act-sow-acme', 'act-qbr-deck-globex')",
         [],
-    ).map_err(|e| format!("Flag decisions: {}", e))?;
+    )
+    .map_err(|e| format!("Flag decisions: {}", e))?;
 
     // --- Stale delegation actions (new inserts) ---
     // status='waiting' + created_at old enough to exceed STALE_DELEGATION_DAYS (3d).
@@ -1252,14 +1548,16 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     conn.execute(
         "UPDATE accounts SET contract_end = ?1 WHERE id = 'globex-industries'",
         rusqlite::params![date_only(45)],
-    ).map_err(|e| format!("Set Globex contract_end: {}", e))?;
+    )
+    .map_err(|e| format!("Set Globex contract_end: {}", e))?;
 
     // --- Portfolio alerts: stale account ---
     // Set Initech updated_at to 35 days ago → triggers get_stale_accounts(30).
     conn.execute(
         "UPDATE accounts SET updated_at = ?1 WHERE id = 'initech'",
         rusqlite::params![days_ago_rfc(35)],
-    ).map_err(|e| format!("Set Initech stale: {}", e))?;
+    )
+    .map_err(|e| format!("Set Initech stale: {}", e))?;
 
     // --- Skip-today signals via intelligence.json ---
     // The loader expects a flat JSON array of { item, reason } objects.
@@ -1275,8 +1573,7 @@ fn seed_intelligence_data(db: &ActionDb, workspace: &Path) -> Result<(), String>
     ]);
 
     let data_dir = workspace.join("_today").join("data");
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data dir: {}", e))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("Failed to create data dir: {}", e))?;
     std::fs::write(
         data_dir.join("intelligence.json"),
         serde_json::to_string_pretty(&skip_today).unwrap(),
@@ -1297,23 +1594,27 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
     // Helper: build a CalendarEvent from hour/minute (UTC — merge will convert to tz).
     // For mock purposes we use today's date at the given UTC hour.
     let today = Utc::now().date_naive();
-    let make_event =
-        |id: &str, title: &str, start_h: u32, start_m: u32, end_h: u32, end_m: u32, mtype: MeetingType, account: Option<&str>, attendees: Vec<&str>| -> CalendarEvent {
-            CalendarEvent {
-                id: id.to_string(),
-                title: title.to_string(),
-                start: Utc.from_utc_datetime(
-                    &today.and_hms_opt(start_h, start_m, 0).unwrap(),
-                ),
-                end: Utc.from_utc_datetime(
-                    &today.and_hms_opt(end_h, end_m, 0).unwrap(),
-                ),
-                meeting_type: mtype,
-                account: account.map(|s| s.to_string()),
-                attendees: attendees.into_iter().map(String::from).collect(),
-                is_all_day: false,
-            }
-        };
+    let make_event = |id: &str,
+                      title: &str,
+                      start_h: u32,
+                      start_m: u32,
+                      end_h: u32,
+                      end_m: u32,
+                      mtype: MeetingType,
+                      account: Option<&str>,
+                      attendees: Vec<&str>|
+     -> CalendarEvent {
+        CalendarEvent {
+            id: id.to_string(),
+            title: title.to_string(),
+            start: Utc.from_utc_datetime(&today.and_hms_opt(start_h, start_m, 0).unwrap()),
+            end: Utc.from_utc_datetime(&today.and_hms_opt(end_h, end_m, 0).unwrap()),
+            meeting_type: mtype,
+            account: account.map(|s| s.to_string()),
+            attendees: attendees.into_iter().map(String::from).collect(),
+            is_all_day: false,
+        }
+    };
 
     // Use the same calendar event IDs as schedule.json.tmpl (after {{DATE}} patching).
     // Attendee emails match the people seeded in seed_database().
@@ -1322,26 +1623,43 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         make_event(
             &format!("cal-acme-weekly-{}", today_str),
             "Acme Corp Weekly Sync",
-            13, 0, 13, 45, // 8:00-8:45 AM ET = 13:00-13:45 UTC
+            13,
+            0,
+            13,
+            45, // 8:00-8:45 AM ET = 13:00-13:45 UTC
             MeetingType::Customer,
             Some("Acme Corp"),
-            vec!["sarah.chen@acme.com", "alex.torres@acme.com", "mike.chen@dailyos.test"],
+            vec![
+                "sarah.chen@acme.com",
+                "alex.torres@acme.com",
+                "mike.chen@dailyos.test",
+            ],
         ),
         // #2: Eng Standup (past, 9:30 AM) — internal team
         make_event(
             &format!("cal-eng-standup-{}", today_str),
             "Engineering Standup",
-            14, 30, 14, 45, // 9:30-9:45 AM ET
+            14,
+            30,
+            14,
+            45, // 9:30-9:45 AM ET
             MeetingType::TeamSync,
             None,
-            vec!["mike.chen@dailyos.test", "lisa.park@dailyos.test", "taylor.nguyen@contractor.io"],
+            vec![
+                "mike.chen@dailyos.test",
+                "lisa.park@dailyos.test",
+                "taylor.nguyen@contractor.io",
+            ],
         ),
         // #3: Initech Kickoff OMITTED — will become "cancelled"
         // #4: 1:1 with Sarah (11:00 AM) — manager
         make_event(
             &format!("cal-1on1-sarah-{}", today_str),
             "1:1 with Sarah (Manager)",
-            16, 0, 16, 30, // 11:00-11:30 AM ET
+            16,
+            0,
+            16,
+            30, // 11:00-11:30 AM ET
             MeetingType::OneOnOne,
             None,
             vec!["lisa.park@dailyos.test"],
@@ -1350,16 +1668,27 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         make_event(
             &format!("cal-globex-qbr-{}", today_str),
             "Globex Industries QBR",
-            18, 0, 19, 0, // 1:00-2:00 PM ET
+            18,
+            0,
+            19,
+            0, // 1:00-2:00 PM ET
             MeetingType::Qbr,
             Some("Globex Industries"),
-            vec!["pat.reynolds@globex.com", "jamie.morrison@globex.com", "casey.lee@globex.com", "taylor.nguyen@contractor.io"],
+            vec![
+                "pat.reynolds@globex.com",
+                "jamie.morrison@globex.com",
+                "casey.lee@globex.com",
+                "taylor.nguyen@contractor.io",
+            ],
         ),
         // #6: Sprint Review (2:30 PM) — internal team
         make_event(
             &format!("cal-sprint-review-{}", today_str),
             "Product Team Sprint Review",
-            19, 30, 20, 15, // 2:30-3:15 PM ET
+            19,
+            30,
+            20,
+            15, // 2:30-3:15 PM ET
             MeetingType::Internal,
             None,
             vec!["mike.chen@dailyos.test", "lisa.park@dailyos.test"],
@@ -1368,7 +1697,10 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         make_event(
             &format!("cal-initech-onboarding-{}", today_str),
             "Initech Onboarding Call",
-            20, 30, 21, 30, // 3:30-4:30 PM ET
+            20,
+            30,
+            21,
+            30, // 3:30-4:30 PM ET
             MeetingType::Training,
             Some("Initech"),
             vec!["dana.patel@initech.com", "priya.sharma@initech.com"],
@@ -1377,7 +1709,10 @@ fn seed_calendar_events(state: &AppState) -> Result<(), String> {
         make_event(
             &format!("cal-all-hands-{}", today_str),
             "Company All Hands",
-            21, 30, 22, 30, // 4:30-5:30 PM ET
+            21,
+            30,
+            22,
+            30, // 4:30-5:30 PM ET
             MeetingType::AllHands,
             None,
             vec![],
@@ -1442,8 +1777,7 @@ fn write_workspace_markdown(workspace: &Path) -> Result<(), String> {
 
     // Acme Corp
     let acme_dir = accounts_dir.join("Acme Corp");
-    std::fs::create_dir_all(&acme_dir)
-        .map_err(|e| format!("Failed to create Acme dir: {}", e))?;
+    std::fs::create_dir_all(&acme_dir).map_err(|e| format!("Failed to create Acme dir: {}", e))?;
 
     let acme_dashboard = r#"# Acme Corp
 
@@ -1685,8 +2019,7 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
 
     // Contoso SMB (child BU)
     let smb_dir = contoso_dir.join("SMB");
-    std::fs::create_dir_all(&smb_dir)
-        .map_err(|e| format!("Failed to create SMB dir: {}", e))?;
+    std::fs::create_dir_all(&smb_dir).map_err(|e| format!("Failed to create SMB dir: {}", e))?;
 
     let smb_json = serde_json::json!({
         "version": 1,
@@ -1716,71 +2049,107 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
     let people_dir = workspace.join("People");
 
     let people_fixtures: Vec<(&str, serde_json::Value)> = vec![
-        ("Sarah Chen", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "sarah.chen@acme.com", "organization": "Acme Corp", "role": "VP Engineering", "relationship": "external" },
-            "notes": "Executive sponsor for Phase 2. Strong advocate — secured budget approval.",
-            "linkedEntities": ["acme-corp"]
-        })),
-        ("Alex Torres", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "alex.torres@acme.com", "organization": "Acme Corp", "role": "Tech Lead", "relationship": "external" },
-            "notes": "Departing March 2025. Knowledge transfer plan needed urgently.",
-            "linkedEntities": ["acme-corp"]
-        })),
-        ("Pat Kim", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "pat.kim@acme.com", "organization": "Acme Corp", "role": "CTO", "relationship": "external" },
-            "linkedEntities": ["acme-corp"]
-        })),
-        ("Pat Reynolds", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "pat.reynolds@globex.com", "organization": "Globex Industries", "role": "VP Product", "relationship": "external" },
-            "notes": "Departing Q2. Key exec sponsor — renewal risk if successor isn't aligned.",
-            "linkedEntities": ["globex-industries"]
-        })),
-        ("Jamie Morrison", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "jamie.morrison@globex.com", "organization": "Globex Industries", "role": "Eng Director", "relationship": "external" },
-            "linkedEntities": ["globex-industries"]
-        })),
-        ("Casey Lee", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "casey.lee@globex.com", "organization": "Globex Industries", "role": "Head of Ops", "relationship": "external" },
-            "linkedEntities": ["globex-industries"]
-        })),
-        ("Dana Patel", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "dana.patel@initech.com", "organization": "Initech", "role": "CTO", "relationship": "external" },
-            "linkedEntities": ["initech"]
-        })),
-        ("Priya Sharma", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "priya.sharma@initech.com", "organization": "Initech", "role": "VP Product", "relationship": "external" },
-            "notes": "Phase 2 scope lead. Prefers async updates over meetings.",
-            "linkedEntities": ["initech"]
-        })),
-        ("Mike Chen", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "mike.chen@dailyos.test", "organization": "DailyOS", "role": "Product Manager", "relationship": "internal" },
-            "linkedEntities": []
-        })),
-        ("Lisa Park", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "lisa.park@dailyos.test", "organization": "DailyOS", "role": "Eng Manager", "relationship": "internal" },
-            "notes": "Manages the platform team. Key partner for infrastructure decisions.",
-            "linkedEntities": []
-        })),
-        ("Jordan Wells", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "jordan.wells@example.com", "relationship": "unknown" },
-            "linkedEntities": []
-        })),
-        ("Taylor Nguyen", serde_json::json!({
-            "version": 1, "entityType": "person",
-            "structured": { "email": "taylor.nguyen@contractor.io", "relationship": "external" },
-            "linkedEntities": []
-        })),
+        (
+            "Sarah Chen",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "sarah.chen@acme.com", "organization": "Acme Corp", "role": "VP Engineering", "relationship": "external" },
+                "notes": "Executive sponsor for Phase 2. Strong advocate — secured budget approval.",
+                "linkedEntities": ["acme-corp"]
+            }),
+        ),
+        (
+            "Alex Torres",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "alex.torres@acme.com", "organization": "Acme Corp", "role": "Tech Lead", "relationship": "external" },
+                "notes": "Departing March 2025. Knowledge transfer plan needed urgently.",
+                "linkedEntities": ["acme-corp"]
+            }),
+        ),
+        (
+            "Pat Kim",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "pat.kim@acme.com", "organization": "Acme Corp", "role": "CTO", "relationship": "external" },
+                "linkedEntities": ["acme-corp"]
+            }),
+        ),
+        (
+            "Pat Reynolds",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "pat.reynolds@globex.com", "organization": "Globex Industries", "role": "VP Product", "relationship": "external" },
+                "notes": "Departing Q2. Key exec sponsor — renewal risk if successor isn't aligned.",
+                "linkedEntities": ["globex-industries"]
+            }),
+        ),
+        (
+            "Jamie Morrison",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "jamie.morrison@globex.com", "organization": "Globex Industries", "role": "Eng Director", "relationship": "external" },
+                "linkedEntities": ["globex-industries"]
+            }),
+        ),
+        (
+            "Casey Lee",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "casey.lee@globex.com", "organization": "Globex Industries", "role": "Head of Ops", "relationship": "external" },
+                "linkedEntities": ["globex-industries"]
+            }),
+        ),
+        (
+            "Dana Patel",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "dana.patel@initech.com", "organization": "Initech", "role": "CTO", "relationship": "external" },
+                "linkedEntities": ["initech"]
+            }),
+        ),
+        (
+            "Priya Sharma",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "priya.sharma@initech.com", "organization": "Initech", "role": "VP Product", "relationship": "external" },
+                "notes": "Phase 2 scope lead. Prefers async updates over meetings.",
+                "linkedEntities": ["initech"]
+            }),
+        ),
+        (
+            "Mike Chen",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "mike.chen@dailyos.test", "organization": "DailyOS", "role": "Product Manager", "relationship": "internal" },
+                "linkedEntities": []
+            }),
+        ),
+        (
+            "Lisa Park",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "lisa.park@dailyos.test", "organization": "DailyOS", "role": "Eng Manager", "relationship": "internal" },
+                "notes": "Manages the platform team. Key partner for infrastructure decisions.",
+                "linkedEntities": []
+            }),
+        ),
+        (
+            "Jordan Wells",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "jordan.wells@example.com", "relationship": "unknown" },
+                "linkedEntities": []
+            }),
+        ),
+        (
+            "Taylor Nguyen",
+            serde_json::json!({
+                "version": 1, "entityType": "person",
+                "structured": { "email": "taylor.nguyen@contractor.io", "relationship": "external" },
+                "linkedEntities": []
+            }),
+        ),
     ];
 
     for (name, json) in &people_fixtures {
@@ -1800,8 +2169,7 @@ Phase 1 complete. Phase 2 kickoff meeting to align on scope and confirm executiv
 /// Write directive JSON fixtures for pipeline testing (bypass Phase 1).
 fn write_directive_fixtures(workspace: &Path) -> Result<(), String> {
     let data_dir = workspace.join("_today").join("data");
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data dir: {}", e))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("Failed to create data dir: {}", e))?;
 
     // Today directive
     let today_content = patch_dates(TODAY_DIRECTIVE_TMPL);
@@ -1832,7 +2200,8 @@ fn write_directive_fixtures(workspace: &Path) -> Result<(), String> {
     std::fs::write(
         preps_dir.join(&acme_prep_name),
         serde_json::to_string_pretty(&acme_prep).unwrap(),
-    ).map_err(|e| format!("Failed to write Acme prep: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to write Acme prep: {}", e))?;
 
     // Globex QBR (Wednesday) — has proposedAgenda + risks → prep_ready
     let globex_prep_name = patch_dates("cal-globex-qbr-{{WED}}.json");
@@ -1853,7 +2222,8 @@ fn write_directive_fixtures(workspace: &Path) -> Result<(), String> {
     std::fs::write(
         preps_dir.join(&globex_prep_name),
         serde_json::to_string_pretty(&globex_prep).unwrap(),
-    ).map_err(|e| format!("Failed to write Globex QBR prep: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to write Globex QBR prep: {}", e))?;
 
     Ok(())
 }
@@ -1897,7 +2267,8 @@ fn write_project_workspace_files(workspace: &Path) -> Result<(), String> {
     std::fs::write(
         phase2_dir.join("dashboard.json"),
         serde_json::to_string_pretty(&phase2_json).unwrap(),
-    ).map_err(|e| format!("Failed to write Phase 2 dashboard.json: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to write Phase 2 dashboard.json: {}", e))?;
 
     let phase2_md = format!(
         r#"# Acme Phase 2 Expansion
@@ -1918,10 +2289,14 @@ Phase 2 expansion of Acme Corp deployment. Extends coverage from engineering to 
 ## Notes
 Dependent on SOW and legal review. Sarah Chen is executive sponsor.
 "#,
-        "\u{1f7e2}", date_only(30),
-        "\u{1f7e2}", date_only(10),
-        "\u{26aa}", date_only(30),
-        "\u{26aa}", date_only(90),
+        "\u{1f7e2}",
+        date_only(30),
+        "\u{1f7e2}",
+        date_only(10),
+        "\u{26aa}",
+        date_only(30),
+        "\u{26aa}",
+        date_only(90),
     );
     std::fs::write(phase2_dir.join("dashboard.md"), phase2_md)
         .map_err(|e| format!("Failed to write Phase 2 dashboard.md: {}", e))?;
@@ -1951,7 +2326,8 @@ Dependent on SOW and legal review. Sarah Chen is executive sponsor.
     std::fs::write(
         teamb_dir.join("dashboard.json"),
         serde_json::to_string_pretty(&teamb_json).unwrap(),
-    ).map_err(|e| format!("Failed to write Team B dashboard.json: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to write Team B dashboard.json: {}", e))?;
 
     let teamb_md = format!(
         r#"# Globex Team B Recovery
@@ -1972,10 +2348,14 @@ Intervention project to reverse declining usage in Globex Team B. Usage down 20%
 ## Notes
 Must show progress before QBR. Renewal depends on this.
 "#,
-        "\u{1f7e2}", date_only(14),
-        "\u{1f7e2}", date_only(7),
-        "\u{26aa}", date_only(14),
-        "\u{26aa}", date_only(45),
+        "\u{1f7e2}",
+        date_only(14),
+        "\u{1f7e2}",
+        date_only(7),
+        "\u{26aa}",
+        date_only(14),
+        "\u{26aa}",
+        date_only(45),
     );
     std::fs::write(teamb_dir.join("dashboard.md"), teamb_md)
         .map_err(|e| format!("Failed to write Team B dashboard.md: {}", e))?;
@@ -2005,7 +2385,8 @@ Must show progress before QBR. Renewal depends on this.
     std::fs::write(
         migration_dir.join("dashboard.json"),
         serde_json::to_string_pretty(&migration_json).unwrap(),
-    ).map_err(|e| format!("Failed to write Migration dashboard.json: {}", e))?;
+    )
+    .map_err(|e| format!("Failed to write Migration dashboard.json: {}", e))?;
 
     let migration_md = format!(
         r#"# Platform Migration v3
@@ -2026,10 +2407,14 @@ Internal platform migration from v2 to v3 architecture. On hold pending architec
 ## Notes
 On hold until Q2. Architecture proposal draft needed first.
 "#,
-        "\u{1f7e1}", date_only(60),
-        "\u{1f7e1}", date_only(21),
-        "\u{26aa}", date_only(45),
-        "\u{26aa}", date_only(60),
+        "\u{1f7e1}",
+        date_only(60),
+        "\u{1f7e1}",
+        date_only(21),
+        "\u{26aa}",
+        date_only(45),
+        "\u{26aa}",
+        date_only(60),
     );
     std::fs::write(migration_dir.join("dashboard.md"), migration_md)
         .map_err(|e| format!("Failed to write Migration dashboard.md: {}", e))?;

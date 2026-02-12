@@ -240,10 +240,11 @@ impl AppState {
             .clone();
 
         let path = get_state_dir()?.join("execution_history.json");
-        let content =
-            serde_json::to_string_pretty(&history).map_err(|e| format!("Serialize error: {}", e))?;
+        let content = serde_json::to_string_pretty(&history)
+            .map_err(|e| format!("Serialize error: {}", e))?;
 
-        crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
+        crate::util::atomic_write_str(&path, &content)
+            .map_err(|e| format!("Write error: {}", e))?;
 
         Ok(())
     }
@@ -435,19 +436,16 @@ fn load_transcript_records() -> Result<HashMap<String, TranscriptRecord>, String
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let content =
-        fs::read_to_string(&path).map_err(|e| format!("Failed to read transcript records: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse transcript records: {}", e))
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read transcript records: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse transcript records: {}", e))
 }
 
 /// Save transcript records to `~/.dailyos/transcript_records.json`.
-pub fn save_transcript_records(
-    records: &HashMap<String, TranscriptRecord>,
-) -> Result<(), String> {
+pub fn save_transcript_records(records: &HashMap<String, TranscriptRecord>) -> Result<(), String> {
     let path = get_state_dir()?.join("transcript_records.json");
-    let content = serde_json::to_string_pretty(records)
-        .map_err(|e| format!("Serialize error: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(records).map_err(|e| format!("Serialize error: {}", e))?;
     crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
     Ok(())
 }
@@ -479,8 +477,8 @@ pub fn detect_google_auth() -> GoogleAuthStatus {
             if let Ok(token) = serde_json::from_str::<serde_json::Value>(&content) {
                 // A valid Google OAuth token must have at least a refresh_token or token field.
                 // An empty {} or missing fields means auth never completed.
-                let has_token = token.get("token").is_some()
-                    || token.get("refresh_token").is_some();
+                let has_token =
+                    token.get("token").is_some() || token.get("refresh_token").is_some();
                 if !has_token {
                     return GoogleAuthStatus::NotConfigured;
                 }
@@ -554,21 +552,17 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
         let trimmed = lines[i].trim();
 
         // Match checkbox lines
-        let (is_completed, raw_title) =
-            if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
-                (false, rest.trim())
-            } else if let Some(rest) = trimmed.strip_prefix("- [x] ") {
-                (true, rest.trim())
-            } else {
-                i += 1;
-                continue;
-            };
+        let (is_completed, raw_title) = if let Some(rest) = trimmed.strip_prefix("- [ ] ") {
+            (false, rest.trim())
+        } else if let Some(rest) = trimmed.strip_prefix("- [x] ") {
+            (true, rest.trim())
+        } else {
+            i += 1;
+            continue;
+        };
 
         // Parse title: strip **bold** markers and `backtick-id`
-        let title = raw_title
-            .replace("**", "")
-            .trim()
-            .to_string();
+        let title = raw_title.replace("**", "").trim().to_string();
         // Extract the backtick ID if present
         let (clean_title, task_id) = if let Some(bt_start) = title.rfind('`') {
             let before = &title[..title[..bt_start].rfind('`').unwrap_or(bt_start)];
@@ -601,8 +595,7 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
                 let due_text = v.trim();
                 if due_text.len() >= 10 {
                     let date_part = &due_text[..10];
-                    if date_part.chars().filter(|c| *c == '-').count() == 2
-                        && date_part.len() == 10
+                    if date_part.chars().filter(|c| *c == '-').count() == 2 && date_part.len() == 10
                     {
                         due_date = Some(date_part.to_string());
                     }
@@ -706,7 +699,13 @@ fn import_master_task_list(workspace: &Path, db: &crate::db::ActionDb) {
     }
 
     // Write marker so this never runs again
-    let _ = fs::write(&marker, format!("Imported {} actions, skipped {} completed on {}", imported, skipped_completed, now));
+    let _ = fs::write(
+        &marker,
+        format!(
+            "Imported {} actions, skipped {} completed on {}",
+            imported, skipped_completed, now
+        ),
+    );
     log::info!(
         "master-task-list.md import complete: {} actions imported, {} completed skipped",
         imported,
