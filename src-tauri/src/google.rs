@@ -18,7 +18,9 @@ use crate::people;
 use crate::state::{google_token_path, AppState};
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType};
 use crate::util::{name_from_email, org_from_email, person_id_from_email};
-use crate::workflow::deliver::{make_meeting_id, write_json};
+#[cfg(test)]
+use crate::workflow::deliver::make_meeting_id;
+use crate::workflow::deliver::{meeting_primary_id, write_json};
 
 /// Run the Google OAuth flow via native Rust.
 ///
@@ -253,7 +255,12 @@ fn generate_preps_for_new_meetings(
 
         let meeting_type_str = event.meeting_type.as_str();
 
-        let meeting_id = make_meeting_id(&event.title, &event.start.to_rfc3339(), meeting_type_str);
+        let meeting_id = meeting_primary_id(
+            Some(&event.id),
+            &event.title,
+            &event.start.to_rfc3339(),
+            meeting_type_str,
+        );
 
         let prep_path = preps_dir.join(format!("{}.json", meeting_id));
         if prep_path.exists() {
@@ -261,7 +268,7 @@ fn generate_preps_for_new_meetings(
         }
 
         // Also check by event ID (different meeting_id but same event)
-        let already_prepped = has_existing_prep_for_event(&preps_dir, &event.id);
+        let already_prepped = has_existing_prep_for_event(&preps_dir, &meeting_id);
         if already_prepped {
             continue;
         }
@@ -327,7 +334,10 @@ fn has_existing_prep_for_event(preps_dir: &Path, event_id: &str) -> bool {
         }
         if let Ok(content) = std::fs::read_to_string(entry.path()) {
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(&content) {
-                if data.get("calendarEventId").and_then(|v| v.as_str()) == Some(event_id) {
+                let prep_event_id = data.get("calendarEventId").and_then(|v| v.as_str());
+                if prep_event_id == Some(event_id)
+                    || prep_event_id == Some(&event_id.replace("_at_", "@"))
+                {
                     return true;
                 }
             }
@@ -429,13 +439,20 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
         }
 
         // Ensure meeting exists in DB so record_meeting_attendance can query start_time
+        let meeting_id = meeting_primary_id(
+            Some(&event.id),
+            &event.title,
+            &event.start.to_rfc3339(),
+            event.meeting_type.as_str(),
+        );
         if let Err(e) = db.ensure_meeting_in_history(
-            &event.id,
+            &meeting_id,
             &event.title,
             event.meeting_type.as_str(),
             &event.start.to_rfc3339(),
             Some(&event.end.to_rfc3339()),
             event.account.as_deref(),
+            Some(&event.id),
         ) {
             log::warn!(
                 "Failed to ensure meeting '{}' in history: {}",
@@ -460,7 +477,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                     let _ = db.link_person_to_entity(&person.id, account, "associated");
                 }
                 // Record attendance (idempotent — safe across repeated polls)
-                let _ = db.record_meeting_attendance(&event.id, &person.id);
+                let _ = db.record_meeting_attendance(&meeting_id, &person.id);
                 continue;
             }
 
@@ -502,7 +519,7 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 }
 
                 // Record attendance for the new person
-                let _ = db.record_meeting_attendance(&event.id, &id);
+                let _ = db.record_meeting_attendance(&meeting_id, &id);
             }
         }
     }
@@ -695,5 +712,45 @@ mod tests {
         // Different inputs produce different IDs
         let id3 = make_meeting_id("Acme QBR", "2026-02-07T10:00:00Z", "customer");
         assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn test_meeting_primary_id_stable_across_rename_reschedule() {
+        let id1 = meeting_primary_id(
+            Some("evt-123@google.com"),
+            "Acme Weekly Sync",
+            "2026-02-12T09:00:00Z",
+            "customer",
+        );
+        let id2 = meeting_primary_id(
+            Some("evt-123@google.com"),
+            "Acme Strategy Review",
+            "2026-02-12T11:00:00Z",
+            "customer",
+        );
+        assert_eq!(id1, id2);
+        assert_eq!(id1, "evt-123_at_google.com");
+    }
+
+    #[test]
+    fn test_has_existing_prep_for_event_match_sanitized_id() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let preps_dir = dir.path();
+
+        let prep = serde_json::json!({
+            "meetingId": "evt-123_at_google.com",
+            "calendarEventId": "evt-123@google.com",
+            "title": "Acme QBR"
+        });
+        std::fs::write(
+            preps_dir.join("evt-123_at_google.com.json"),
+            serde_json::to_string_pretty(&prep).unwrap(),
+        )
+        .unwrap();
+
+        assert!(has_existing_prep_for_event(
+            preps_dir,
+            "evt-123_at_google.com"
+        ));
     }
 }

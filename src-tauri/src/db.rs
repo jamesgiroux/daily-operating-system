@@ -103,6 +103,30 @@ pub struct DbMeeting {
     /// Enriched prep context JSON (I181). Only populated by get_meeting_by_id.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_context_json: Option<String>,
+    /// User-authored agenda items (JSON array).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agenda_json: Option<String>,
+    /// User-authored notes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_notes: Option<String>,
+    /// Frozen prep JSON captured during archive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_frozen_json: Option<String>,
+    /// UTC timestamp when prep was frozen.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_frozen_at: Option<String>,
+    /// Absolute path to immutable prep snapshot JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_snapshot_path: Option<String>,
+    /// SHA-256 hash of snapshot payload.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_snapshot_hash: Option<String>,
+    /// Absolute path to transcript destination.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
+    /// UTC timestamp when transcript was processed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_processed_at: Option<String>,
 }
 
 /// A row from the `processing_log` table.
@@ -463,6 +487,30 @@ impl ActionDb {
         // Migration: add description to meetings_history (I185)
         let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN description TEXT;");
 
+        // Meeting permanence/user-layer migrations (ADR-0065 / ADR-0066)
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_agenda_json TEXT;");
+        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_notes TEXT;");
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_json TEXT;");
+        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_at TEXT;");
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_path TEXT;");
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_hash TEXT;");
+        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_path TEXT;");
+        let _ = conn
+            .execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_processed_at TEXT;");
+
+        // Normalize reviewed-prep state to canonical meeting IDs.
+        let _ = Self::normalize_reviewed_prep_keys(&conn);
+
+        // Comprehensive ID backfill for calendar-backed meetings.
+        let _ = Self::backfill_meeting_identity(&conn);
+
+        // Import user-authored prep fields from persisted prep context JSON.
+        let _ = Self::backfill_meeting_user_layer(&conn);
+
         Ok(Self { conn })
     }
 
@@ -514,6 +562,239 @@ impl ActionDb {
             CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);",
         )?;
 
+        Ok(())
+    }
+
+    /// Convert reviewed-prep keys from legacy prep file paths to meeting IDs.
+    fn normalize_reviewed_prep_keys(conn: &Connection) -> Result<(), DbError> {
+        let rows: Vec<(String, Option<String>, String, Option<String>)> = {
+            let mut stmt = conn.prepare(
+                "SELECT prep_file, calendar_event_id, reviewed_at, title
+                 FROM meeting_prep_state",
+            )?;
+            let mapped = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?;
+            let mut items = Vec::new();
+            for row in mapped {
+                items.push(row?);
+            }
+            items
+        };
+
+        for (legacy_key, calendar_event_id, reviewed_at, title) in rows {
+            let canonical = if let Some(ref cal_id) = calendar_event_id {
+                if !cal_id.trim().is_empty() {
+                    Self::sanitize_calendar_event_id(cal_id)
+                } else {
+                    Self::extract_meeting_id_from_review_key(&legacy_key)
+                }
+            } else {
+                Self::extract_meeting_id_from_review_key(&legacy_key)
+            };
+            if canonical.is_empty() || canonical == legacy_key {
+                continue;
+            }
+            conn.execute(
+                "INSERT INTO meeting_prep_state (prep_file, calendar_event_id, reviewed_at, title)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(prep_file) DO UPDATE SET
+                    reviewed_at = CASE
+                        WHEN excluded.reviewed_at > meeting_prep_state.reviewed_at
+                        THEN excluded.reviewed_at
+                        ELSE meeting_prep_state.reviewed_at
+                    END,
+                    calendar_event_id = COALESCE(excluded.calendar_event_id, meeting_prep_state.calendar_event_id),
+                    title = COALESCE(excluded.title, meeting_prep_state.title)",
+                params![canonical, calendar_event_id, reviewed_at, title],
+            )?;
+            conn.execute(
+                "DELETE FROM meeting_prep_state WHERE prep_file = ?1",
+                params![legacy_key],
+            )?;
+        }
+        Ok(())
+    }
+
+    fn extract_meeting_id_from_review_key(key: &str) -> String {
+        let trimmed = key.trim();
+        let without_prefix = trimmed.strip_prefix("preps/").unwrap_or(trimmed);
+        without_prefix
+            .trim_end_matches(".json")
+            .trim_end_matches(".md")
+            .to_string()
+    }
+
+    fn sanitize_calendar_event_id(calendar_event_id: &str) -> String {
+        calendar_event_id.replace('@', "_at_")
+    }
+
+    /// Re-key meeting IDs to canonical event IDs and update dependent references.
+    fn backfill_meeting_identity(conn: &Connection) -> Result<(), DbError> {
+        let rows: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, calendar_event_id
+                 FROM meetings_history
+                 WHERE calendar_event_id IS NOT NULL
+                   AND trim(calendar_event_id) != ''",
+            )?;
+            let mapped = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            let mut items = Vec::new();
+            for row in mapped {
+                items.push(row?);
+            }
+            items
+        };
+
+        for (old_id, calendar_event_id) in rows {
+            let canonical_id = Self::sanitize_calendar_event_id(&calendar_event_id);
+            if canonical_id.is_empty() || canonical_id == old_id {
+                continue;
+            }
+
+            let canonical_exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM meetings_history WHERE id = ?1",
+                params![canonical_id],
+                |r| r.get(0),
+            )?;
+
+            if canonical_exists > 0 {
+                // Merge sparse fields from old row into canonical row.
+                conn.execute(
+                    "UPDATE meetings_history
+                     SET title = COALESCE(title, (SELECT title FROM meetings_history WHERE id = ?1)),
+                         meeting_type = COALESCE(meeting_type, (SELECT meeting_type FROM meetings_history WHERE id = ?1)),
+                         start_time = COALESCE(start_time, (SELECT start_time FROM meetings_history WHERE id = ?1)),
+                         end_time = COALESCE(end_time, (SELECT end_time FROM meetings_history WHERE id = ?1)),
+                         account_id = COALESCE(account_id, (SELECT account_id FROM meetings_history WHERE id = ?1)),
+                         attendees = COALESCE(attendees, (SELECT attendees FROM meetings_history WHERE id = ?1)),
+                         notes_path = COALESCE(notes_path, (SELECT notes_path FROM meetings_history WHERE id = ?1)),
+                         summary = COALESCE(summary, (SELECT summary FROM meetings_history WHERE id = ?1)),
+                         prep_context_json = COALESCE(prep_context_json, (SELECT prep_context_json FROM meetings_history WHERE id = ?1)),
+                         description = COALESCE(description, (SELECT description FROM meetings_history WHERE id = ?1)),
+                         user_agenda_json = COALESCE(user_agenda_json, (SELECT user_agenda_json FROM meetings_history WHERE id = ?1)),
+                         user_notes = COALESCE(user_notes, (SELECT user_notes FROM meetings_history WHERE id = ?1)),
+                         prep_frozen_json = COALESCE(prep_frozen_json, (SELECT prep_frozen_json FROM meetings_history WHERE id = ?1)),
+                         prep_frozen_at = COALESCE(prep_frozen_at, (SELECT prep_frozen_at FROM meetings_history WHERE id = ?1)),
+                         prep_snapshot_path = COALESCE(prep_snapshot_path, (SELECT prep_snapshot_path FROM meetings_history WHERE id = ?1)),
+                         prep_snapshot_hash = COALESCE(prep_snapshot_hash, (SELECT prep_snapshot_hash FROM meetings_history WHERE id = ?1)),
+                         transcript_path = COALESCE(transcript_path, (SELECT transcript_path FROM meetings_history WHERE id = ?1)),
+                         transcript_processed_at = COALESCE(transcript_processed_at, (SELECT transcript_processed_at FROM meetings_history WHERE id = ?1))
+                     WHERE id = ?2",
+                    params![old_id, canonical_id],
+                )?;
+            } else {
+                conn.execute(
+                    "UPDATE meetings_history
+                     SET id = ?1
+                     WHERE id = ?2",
+                    params![canonical_id, old_id],
+                )?;
+            }
+
+            // Update foreign references.
+            conn.execute(
+                "UPDATE captures SET meeting_id = ?1 WHERE meeting_id = ?2",
+                params![canonical_id, old_id],
+            )?;
+            conn.execute(
+                "UPDATE meeting_entities SET meeting_id = ?1 WHERE meeting_id = ?2",
+                params![canonical_id, old_id],
+            )?;
+            conn.execute(
+                "UPDATE meeting_attendees SET meeting_id = ?1 WHERE meeting_id = ?2",
+                params![canonical_id, old_id],
+            )?;
+            conn.execute(
+                "UPDATE actions
+                 SET source_id = ?1
+                 WHERE source_type = 'transcript' AND source_id = ?2",
+                params![canonical_id, old_id],
+            )?;
+
+            // Update reviewed state keys.
+            conn.execute(
+                "UPDATE meeting_prep_state
+                 SET prep_file = ?1
+                 WHERE prep_file = ?2 OR prep_file = ?3",
+                params![canonical_id, old_id, format!("preps/{}.json", old_id)],
+            )?;
+
+            if canonical_exists > 0 {
+                conn.execute(
+                    "DELETE FROM meetings_history WHERE id = ?1",
+                    params![old_id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn backfill_meeting_user_layer(conn: &Connection) -> Result<(), DbError> {
+        let rows: Vec<(String, String, Option<String>, Option<String>)> = {
+            let mut stmt = conn.prepare(
+                "SELECT id, prep_context_json, user_agenda_json, user_notes
+                 FROM meetings_history
+                 WHERE prep_context_json IS NOT NULL
+                   AND trim(prep_context_json) != ''",
+            )?;
+            let mapped = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?;
+            let mut items = Vec::new();
+            for row in mapped {
+                items.push(row?);
+            }
+            items
+        };
+
+        for (meeting_id, prep_json, agenda_existing, notes_existing) in rows {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&prep_json) else {
+                continue;
+            };
+            let agenda_from_prep = value
+                .get("userAgenda")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<String>>()
+                })
+                .filter(|v| !v.is_empty())
+                .and_then(|v| serde_json::to_string(&v).ok());
+            let notes_from_prep = value
+                .get("userNotes")
+                .and_then(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+
+            let agenda_target = agenda_existing.or(agenda_from_prep);
+            let notes_target = notes_existing.or(notes_from_prep);
+            if agenda_target.is_none() && notes_target.is_none() {
+                continue;
+            }
+
+            conn.execute(
+                "UPDATE meetings_history
+                 SET user_agenda_json = COALESCE(user_agenda_json, ?1),
+                     user_notes = COALESCE(user_notes, ?2)
+                 WHERE id = ?3",
+                params![agenda_target, notes_target, meeting_id],
+            )?;
+        }
         Ok(())
     }
 
@@ -1089,6 +1370,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1125,6 +1414,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: row.get(11)?,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1160,6 +1457,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1474,6 +1779,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1780,6 +2093,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -2011,6 +2332,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
 
@@ -2026,7 +2355,9 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
                     account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id, prep_context_json
+                    calendar_event_id, description, prep_context_json,
+                    user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
+                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
              FROM meetings_history
              WHERE id = ?1",
         )?;
@@ -2044,8 +2375,16 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
-                description: None,
-                prep_context_json: row.get(11)?,
+                description: row.get(11)?,
+                prep_context_json: row.get(12)?,
+                user_agenda_json: row.get(13)?,
+                user_notes: row.get(14)?,
+                prep_frozen_json: row.get(15)?,
+                prep_frozen_at: row.get(16)?,
+                prep_snapshot_path: row.get(17)?,
+                prep_snapshot_hash: row.get(18)?,
+                transcript_path: row.get(19)?,
+                transcript_processed_at: row.get(20)?,
             })
         })?;
 
@@ -2054,6 +2393,14 @@ impl ActionDb {
             Some(Err(e)) => Err(DbError::Sqlite(e)),
             None => Ok(None),
         }
+    }
+
+    /// Look up a single meeting row with all permanence/transcript columns.
+    pub fn get_meeting_intelligence_row(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<DbMeeting>, DbError> {
+        self.get_meeting_by_id(meeting_id)
     }
 
     /// Return all meetings that have persisted prep context JSON.
@@ -2088,6 +2435,70 @@ impl ActionDb {
              SET prep_context_json = ?1
              WHERE id = ?2",
             params![prep_context_json, meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Persist user-authored agenda/notes in the meeting row.
+    pub fn update_meeting_user_layer(
+        &self,
+        meeting_id: &str,
+        user_agenda_json: Option<&str>,
+        user_notes: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history
+             SET user_agenda_json = ?1,
+                 user_notes = ?2
+             WHERE id = ?3",
+            params![user_agenda_json, user_notes, meeting_id],
+        )?;
+        Ok(())
+    }
+
+    /// Freeze immutable prep snapshot metadata once. No-op when already frozen.
+    pub fn freeze_meeting_prep_snapshot(
+        &self,
+        meeting_id: &str,
+        frozen_json: &str,
+        frozen_at: &str,
+        snapshot_path: &str,
+        snapshot_hash: &str,
+    ) -> Result<bool, DbError> {
+        let affected = self.conn.execute(
+            "UPDATE meetings_history
+             SET prep_frozen_json = ?1,
+                 prep_frozen_at = ?2,
+                 prep_snapshot_path = ?3,
+                 prep_snapshot_hash = ?4
+             WHERE id = ?5
+               AND prep_frozen_at IS NULL",
+            params![
+                frozen_json,
+                frozen_at,
+                snapshot_path,
+                snapshot_hash,
+                meeting_id
+            ],
+        )?;
+        Ok(affected > 0)
+    }
+
+    /// Persist transcript metadata directly on the meeting row.
+    pub fn update_meeting_transcript_metadata(
+        &self,
+        meeting_id: &str,
+        transcript_path: &str,
+        processed_at: &str,
+        summary_opt: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history
+             SET transcript_path = ?1,
+                 transcript_processed_at = ?2,
+                 summary = COALESCE(?3, summary)
+             WHERE id = ?4",
+            params![transcript_path, processed_at, summary_opt, meeting_id],
         )?;
         Ok(())
     }
@@ -2465,8 +2876,10 @@ impl ActionDb {
             "INSERT INTO meetings_history (
                 id, title, meeting_type, start_time, end_time,
                 account_id, attendees, notes_path, summary, created_at,
-                calendar_event_id, description, prep_context_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                calendar_event_id, description, prep_context_json,
+                user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
+                prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
@@ -2478,7 +2891,15 @@ impl ActionDb {
                 summary = excluded.summary,
                 calendar_event_id = excluded.calendar_event_id,
                 description = excluded.description,
-                prep_context_json = COALESCE(excluded.prep_context_json, meetings_history.prep_context_json)",
+                prep_context_json = COALESCE(excluded.prep_context_json, meetings_history.prep_context_json),
+                user_agenda_json = COALESCE(excluded.user_agenda_json, meetings_history.user_agenda_json),
+                user_notes = COALESCE(excluded.user_notes, meetings_history.user_notes),
+                prep_frozen_json = COALESCE(meetings_history.prep_frozen_json, excluded.prep_frozen_json),
+                prep_frozen_at = COALESCE(meetings_history.prep_frozen_at, excluded.prep_frozen_at),
+                prep_snapshot_path = COALESCE(meetings_history.prep_snapshot_path, excluded.prep_snapshot_path),
+                prep_snapshot_hash = COALESCE(meetings_history.prep_snapshot_hash, excluded.prep_snapshot_hash),
+                transcript_path = COALESCE(excluded.transcript_path, meetings_history.transcript_path),
+                transcript_processed_at = COALESCE(excluded.transcript_processed_at, meetings_history.transcript_processed_at)",
             params![
                 meeting.id,
                 meeting.title,
@@ -2493,6 +2914,14 @@ impl ActionDb {
                 meeting.calendar_event_id,
                 meeting.description,
                 meeting.prep_context_json,
+                meeting.user_agenda_json,
+                meeting.user_notes,
+                meeting.prep_frozen_json,
+                meeting.prep_frozen_at,
+                meeting.prep_snapshot_path,
+                meeting.prep_snapshot_hash,
+                meeting.transcript_path,
+                meeting.transcript_processed_at,
             ],
         )?;
 
@@ -2517,7 +2946,9 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
                     account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
+                    calendar_event_id, description, prep_context_json,
+                    user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
+                    prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
              FROM meetings_history
              WHERE calendar_event_id = ?1
              LIMIT 1",
@@ -2535,8 +2966,16 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
-                description: None,
-                prep_context_json: None,
+                description: row.get(11)?,
+                prep_context_json: row.get(12)?,
+                user_agenda_json: row.get(13)?,
+                user_notes: row.get(14)?,
+                prep_frozen_json: row.get(15)?,
+                prep_frozen_at: row.get(16)?,
+                prep_snapshot_path: row.get(17)?,
+                prep_snapshot_hash: row.get(18)?,
+                transcript_path: row.get(19)?,
+                transcript_processed_at: row.get(20)?,
             })
         })?;
         match rows.next() {
@@ -2557,11 +2996,12 @@ impl ActionDb {
         start_time: &str,
         end_time: Option<&str>,
         account_id: Option<&str>,
+        calendar_event_id: Option<&str>,
     ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO meetings_history
-                (id, title, meeting_type, start_time, end_time, account_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (id, title, meeting_type, start_time, end_time, account_id, created_at, calendar_event_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id,
                 title,
@@ -2569,7 +3009,8 @@ impl ActionDb {
                 start_time,
                 end_time,
                 account_id,
-                Utc::now().to_rfc3339()
+                Utc::now().to_rfc3339(),
+                calendar_event_id,
             ],
         )?;
         Ok(())
@@ -2580,9 +3021,11 @@ impl ActionDb {
     // =========================================================================
 
     /// Record that a meeting prep has been reviewed.
+    ///
+    /// `meeting_id` is the canonical meeting identity (event-id primary).
     pub fn mark_prep_reviewed(
         &self,
-        prep_file: &str,
+        meeting_id: &str,
         calendar_event_id: Option<&str>,
         title: &str,
     ) -> Result<(), DbError> {
@@ -2593,12 +3036,12 @@ impl ActionDb {
              ON CONFLICT(prep_file) DO UPDATE SET
                 reviewed_at = excluded.reviewed_at,
                 calendar_event_id = excluded.calendar_event_id",
-            params![prep_file, calendar_event_id, now, title],
+            params![meeting_id, calendar_event_id, now, title],
         )?;
         Ok(())
     }
 
-    /// Get all reviewed prep files. Returns a map of prep_file → reviewed_at.
+    /// Get all reviewed meeting IDs. Returns a map of meeting_id → reviewed_at.
     pub fn get_reviewed_preps(&self) -> Result<std::collections::HashMap<String, String>, DbError> {
         let mut stmt = self
             .conn
@@ -3069,6 +3512,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3359,6 +3810,14 @@ impl ActionDb {
                 calendar_event_id: row.get(10)?,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3956,6 +4415,14 @@ mod tests {
             calendar_event_id: Some("gcal-evt-001".to_string()),
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
 
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -3988,6 +4455,14 @@ mod tests {
                 calendar_event_id: None,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
         }
@@ -4026,25 +4501,81 @@ mod tests {
     fn test_mark_prep_reviewed() {
         let db = test_db();
 
-        db.mark_prep_reviewed("preps/0900-acme-sync.json", Some("gcal-evt-1"), "Acme Sync")
+        db.mark_prep_reviewed("gcal-evt-1", Some("gcal-evt-1"), "Acme Sync")
             .expect("mark reviewed");
 
         let reviewed = db.get_reviewed_preps().expect("get reviewed");
         assert_eq!(reviewed.len(), 1);
-        assert!(reviewed.contains_key("preps/0900-acme-sync.json"));
+        assert!(reviewed.contains_key("gcal-evt-1"));
     }
 
     #[test]
     fn test_mark_prep_reviewed_upsert() {
         let db = test_db();
 
-        db.mark_prep_reviewed("preps/0900-acme.json", None, "Acme")
+        db.mark_prep_reviewed("0900-acme", None, "Acme")
             .expect("first mark");
-        db.mark_prep_reviewed("preps/0900-acme.json", Some("evt-1"), "Acme")
+        db.mark_prep_reviewed("0900-acme", Some("evt-1"), "Acme")
             .expect("second mark (upsert)");
 
         let reviewed = db.get_reviewed_preps().expect("get reviewed");
         assert_eq!(reviewed.len(), 1);
+    }
+
+    #[test]
+    fn test_freeze_meeting_prep_snapshot_is_idempotent() {
+        let db = test_db();
+        let meeting = DbMeeting {
+            id: "evt-1".to_string(),
+            title: "Acme Sync".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: Utc::now().to_rfc3339(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: Some("evt-1".to_string()),
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+
+        let first = db
+            .freeze_meeting_prep_snapshot(
+                "evt-1",
+                "{\"k\":\"v\"}",
+                "2026-02-12T10:00:00Z",
+                "/tmp/snapshot.json",
+                "hash-1",
+            )
+            .expect("first freeze");
+        let second = db
+            .freeze_meeting_prep_snapshot(
+                "evt-1",
+                "{\"k\":\"override\"}",
+                "2026-02-12T11:00:00Z",
+                "/tmp/snapshot-2.json",
+                "hash-2",
+            )
+            .expect("second freeze");
+        assert!(first);
+        assert!(!second);
+
+        let persisted = db
+            .get_meeting_by_id("evt-1")
+            .expect("query")
+            .expect("row exists");
+        assert_eq!(persisted.prep_snapshot_hash.as_deref(), Some("hash-1"));
     }
 
     #[test]
@@ -4770,6 +5301,14 @@ mod tests {
                 calendar_event_id: None,
                 description: None,
                 prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
             };
             db.upsert_meeting(&meeting).expect("insert meeting");
         }
@@ -4976,6 +5515,14 @@ mod tests {
             calendar_event_id: None,
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
         db.record_meeting_attendance("mtg-attend-001", &person.id)
@@ -5102,6 +5649,14 @@ mod tests {
             calendar_event_id: None,
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
     }
@@ -5703,6 +6258,14 @@ mod tests {
             calendar_event_id: None,
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert");
 
@@ -6227,6 +6790,14 @@ mod tests {
             calendar_event_id: None,
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
     }

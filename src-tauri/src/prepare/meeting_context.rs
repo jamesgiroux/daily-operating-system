@@ -1398,6 +1398,14 @@ mod tests {
             calendar_event_id: Some("evt-1".to_string()),
             description: None,
             prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         })
         .expect("upsert meeting");
 
