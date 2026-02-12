@@ -9,6 +9,7 @@ Related backlog: I149, I150, I151, I152, I153, I155, I177, I197.
 1. Never hold DB lock across expensive work
 - Do not hold `state.db.lock()` during AI calls, network calls, filesystem scans, or long loops.
 - Use split-lock phases: gather -> compute -> persist.
+- Prefer `AppState` DB helpers (`with_db_try_read`, `with_db_read`, `with_db_write`) over direct lock handling in commands.
 
 2. Hot read commands must not block UI on DB contention
 - For focus/render paths, prefer `try_lock()` and partial/degraded results over blocking.
@@ -28,6 +29,7 @@ Related backlog: I149, I150, I151, I152, I153, I155, I177, I197.
   - hot read/status commands: <100ms
   - dashboard load: <300ms
 - Emit warning logs when budgets are exceeded.
+- Record in-memory rollups (`p50`/`p95`/max + degraded counters) for diagnostics.
 
 6. IPC boundary validation is mandatory
 - Validate command args for path traversal, enums, IDs, and size limits.
