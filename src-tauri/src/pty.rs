@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -17,6 +17,8 @@ use crate::types::AiModelConfig;
 
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
+/// Timeout for CLI auth checks.
+const CLAUDE_AUTH_CHECK_TIMEOUT_SECS: u64 = 8;
 
 /// Model tier for AI operations (I174).
 ///
@@ -96,15 +98,41 @@ impl PtyManager {
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
         use std::process::Stdio;
 
-        let output = Command::new("claude")
+        let mut child = Command::new("claude")
             .args(["--print", "hello"])
             .env("TERM", "dumb")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|_| ExecutionError::ClaudeCodeNotFound)?;
 
-        Ok(output.status.success())
+        let deadline = Duration::from_secs(CLAUDE_AUTH_CHECK_TIMEOUT_SECS);
+        let started_at = Instant::now();
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Ok(status.success()),
+                Ok(None) => {
+                    if started_at.elapsed() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        log::warn!(
+                            "Claude auth check timed out after {}s",
+                            CLAUDE_AUTH_CHECK_TIMEOUT_SECS
+                        );
+                        return Ok(false);
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(ExecutionError::IoError(format!(
+                        "Claude auth check failed: {}",
+                        e
+                    )));
+                }
+            }
+        }
     }
 
     /// Spawn Claude Code with a command in the given workspace
