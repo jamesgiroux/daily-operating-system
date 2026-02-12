@@ -3683,24 +3683,16 @@ pub fn update_meeting_entity(
             .map(|e| (e.id, e.entity_type.as_str().to_string()))
             .collect();
 
-        // Ensure meeting exists in meetings_history (may not exist for today's unreconciled meetings)
-        let now = chrono::Utc::now().to_rfc3339();
-        let meeting = crate::db::DbMeeting {
-            id: meeting_id.clone(),
-            title: meeting_title,
-            meeting_type: meeting_type_str,
-            start_time,
-            end_time: None,
-            account_id: None,
-            attendees: None,
-            notes_path: None,
-            summary: None,
-            created_at: now,
-            calendar_event_id: None,
-            description: None,
-            prep_context_json: None,
-        };
-        db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
+        // Ensure meeting exists without clobbering existing metadata.
+        db.ensure_meeting_in_history(
+            &meeting_id,
+            &meeting_title,
+            &meeting_type_str,
+            &start_time,
+            None,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
 
         // Clear all existing entity links
         db.clear_meeting_entities(&meeting_id)
@@ -3775,24 +3767,16 @@ pub fn add_meeting_entity(
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-        // Ensure meeting exists (today's meetings may not be in history yet)
-        let now = chrono::Utc::now().to_rfc3339();
-        let meeting = crate::db::DbMeeting {
-            id: meeting_id.clone(),
-            title: meeting_title,
-            meeting_type: meeting_type_str,
-            start_time,
-            end_time: None,
-            account_id: None,
-            attendees: None,
-            notes_path: None,
-            summary: None,
-            created_at: now,
-            calendar_event_id: None,
-            description: None,
-            prep_context_json: None,
-        };
-        db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
+        // Ensure meeting exists without clobbering existing metadata.
+        db.ensure_meeting_in_history(
+            &meeting_id,
+            &meeting_title,
+            &meeting_type_str,
+            &start_time,
+            None,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
 
         // Add entity link (idempotent)
         db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
