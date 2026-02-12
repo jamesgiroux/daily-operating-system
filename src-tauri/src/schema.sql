@@ -71,7 +71,17 @@ CREATE TABLE IF NOT EXISTS meetings_history (
     notes_path TEXT,
     summary TEXT,
     created_at TEXT NOT NULL,
-    prep_context_json TEXT
+    prep_context_json TEXT,
+    calendar_event_id TEXT,
+    description TEXT,
+    user_agenda_json TEXT,
+    user_notes TEXT,
+    prep_frozen_json TEXT,
+    prep_frozen_at TEXT,
+    prep_snapshot_path TEXT,
+    prep_snapshot_hash TEXT,
+    transcript_path TEXT,
+    transcript_processed_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_meetings_account ON meetings_history(account_id);
