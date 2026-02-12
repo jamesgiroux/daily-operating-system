@@ -38,6 +38,14 @@ pub struct PtyManager {
     nice_priority: Option<i32>,
 }
 
+fn is_model_unavailable_output(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    (lower.contains("model") && lower.contains("not available"))
+        || lower.contains("unknown model")
+        || lower.contains("invalid model")
+        || (lower.contains("model") && lower.contains("not found"))
+}
+
 impl Default for PtyManager {
     fn default() -> Self {
         Self::new()
@@ -209,6 +217,14 @@ impl PtyManager {
             return Err(ExecutionError::ClaudeCodeNotAuthenticated);
         }
 
+        if is_model_unavailable_output(&output) {
+            let first_line = output.lines().next().unwrap_or("Model unavailable");
+            return Err(ExecutionError::ConfigurationError(format!(
+                "model_unavailable: {}",
+                first_line
+            )));
+        }
+
         if output.contains("rate limit") || output.contains("too many requests") {
             return Err(ExecutionError::ApiRateLimit);
         }
@@ -229,4 +245,20 @@ impl PtyManager {
 pub struct ClaudeOutput {
     pub stdout: String,
     pub exit_code: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_model_unavailable_output;
+
+    #[test]
+    fn detects_model_unavailable_output() {
+        assert!(is_model_unavailable_output(
+            "Error: model sonnet-4 not available for this account"
+        ));
+        assert!(is_model_unavailable_output(
+            "unknown model: custom-model-name"
+        ));
+        assert!(!is_model_unavailable_output("rate limit exceeded"));
+    }
 }
