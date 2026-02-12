@@ -1,13 +1,16 @@
 use std::collections::HashSet;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::OnceLock;
 
+use regex::Regex;
 use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
 use crate::json_loader::{
-    check_data_freshness, load_actions_json, load_emails_json, load_prep_json,
-    load_schedule_json, DataFreshness,
+    check_data_freshness, load_actions_json, load_emails_json, load_prep_json, load_schedule_json,
+    DataFreshness,
 };
 use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
@@ -15,7 +18,7 @@ use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, ExecutionRecord,
     FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile, MeetingType,
-    OverlayStatus, PostMeetingCaptureConfig, Priority, TimeBlock, WeekOverview,
+    OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock, WeekOverview,
     WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
@@ -36,16 +39,18 @@ pub enum DashboardResult {
         #[serde(rename = "googleAuth")]
         google_auth: GoogleAuthStatus,
     },
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 /// Get current configuration
 #[tauri::command]
 pub fn get_config(state: State<Arc<AppState>>) -> Result<Config, String> {
     let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-    guard.clone().ok_or_else(|| {
-        "No configuration loaded. Create ~/.dailyos/config.json".to_string()
-    })
+    guard
+        .clone()
+        .ok_or_else(|| "No configuration loaded. Create ~/.dailyos/config.json".to_string())
 }
 
 /// Reload configuration from disk
@@ -262,13 +267,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
 
 /// Trigger a workflow execution
 #[tauri::command]
-pub fn run_workflow(
-    workflow: String,
-    sender: State<SchedulerSender>,
-) -> Result<String, String> {
-    let workflow_id: WorkflowId = workflow
-        .parse()
-        .map_err(|e: String| e)?;
+pub fn run_workflow(workflow: String, sender: State<SchedulerSender>) -> Result<String, String> {
+    let workflow_id: WorkflowId = workflow.parse().map_err(|e: String| e)?;
 
     request_workflow_execution(&sender.0, workflow_id)?;
 
@@ -339,12 +339,12 @@ pub enum MeetingPrepResult {
     Error { message: String },
 }
 
-/// Get full meeting prep data by filename
+/// Get full meeting prep data by meeting ID (I190).
+///
+/// Tries disk first (today's prep files), then falls back to DB (past meetings).
+/// Replaces the old `prep_file`-based command with an ID-based one.
 #[tauri::command]
-pub fn get_meeting_prep(
-    prep_file: String,
-    state: State<Arc<AppState>>,
-) -> MeetingPrepResult {
+pub fn get_meeting_prep(meeting_id: String, state: State<Arc<AppState>>) -> MeetingPrepResult {
     // Get config
     let config = match state.config.read() {
         Ok(guard) => match guard.clone() {
@@ -365,73 +365,104 @@ pub fn get_meeting_prep(
     let workspace = Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    match load_prep_json(&today_dir, &prep_file) {
-        Ok(mut prep) => {
-            // Record that this prep was reviewed (ADR-0033)
-            // Also compute stakeholder signals from DB (I43)
+    // Try 1: Load from disk (today's meetings) — file is preps/{meetingId}.json
+    let disk_result = load_prep_json(&today_dir, &meeting_id);
+
+    // Try 2: If disk fails, try DB (past meetings with stored prep context)
+    let mut prep = match disk_result {
+        Ok(p) => p,
+        Err(_disk_err) => {
+            // Attempt DB fallback
             if let Ok(db_guard) = state.db.lock() {
                 if let Some(db) = db_guard.as_ref() {
-                    let _ = db.mark_prep_reviewed(
-                        &prep_file,
-                        prep.calendar_event_id.as_deref(),
-                        &prep.title,
-                    );
-
-                    // Compute stakeholder signals if prep has an account
-                    if let Some(account) = extract_account_from_prep(&prep_file, &today_dir) {
-                        match db.get_stakeholder_signals(&account) {
-                            Ok(signals) => {
-                                // Only attach if there's meaningful data
-                                if signals.meeting_frequency_90d > 0
-                                    || signals.last_contact.is_some()
-                                {
-                                    prep.stakeholder_signals = Some(signals);
+                    if let Ok(Some(meeting)) = db.get_meeting_by_id(&meeting_id) {
+                        if let Some(ref prep_json) = meeting.prep_context_json {
+                            match serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    return MeetingPrepResult::NotFound {
+                                        message: format!("Meeting prep not found: {}", meeting_id),
+                                    };
                                 }
                             }
-                            Err(e) => {
-                                log::warn!("Failed to compute stakeholder signals: {}", e);
-                            }
+                        } else {
+                            return MeetingPrepResult::NotFound {
+                                message: format!(
+                                    "Meeting found but has no prep data: {}",
+                                    meeting_id
+                                ),
+                            };
+                        }
+                    } else {
+                        return MeetingPrepResult::NotFound {
+                            message: format!("Meeting not found: {}", meeting_id),
+                        };
+                    }
+                } else {
+                    return MeetingPrepResult::NotFound {
+                        message: format!("Prep not found: {}", meeting_id),
+                    };
+                }
+            } else {
+                return MeetingPrepResult::NotFound {
+                    message: format!("Prep not found: {}", meeting_id),
+                };
+            }
+        }
+    };
+
+    // Enrich with live data
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            let _ =
+                db.mark_prep_reviewed(&meeting_id, prep.calendar_event_id.as_deref(), &prep.title);
+
+            // Compute stakeholder signals if prep has an account
+            if let Some(account) = extract_account_from_prep(&meeting_id, &today_dir) {
+                match db.get_stakeholder_signals(&account) {
+                    Ok(signals) => {
+                        if signals.meeting_frequency_90d > 0 || signals.last_contact.is_some() {
+                            prep.stakeholder_signals = Some(signals);
                         }
                     }
+                    Err(e) => {
+                        log::warn!("Failed to compute stakeholder signals: {}", e);
+                    }
+                }
+            }
 
-                    // Enrich attendees with person context (I51)
-                    if let Some(ref cal_id) = prep.calendar_event_id {
-                        if let Ok(events_guard) = state.calendar_events.read() {
-                            if let Some(event) = events_guard.iter().find(|e| e.id == *cal_id) {
-                                let mut attendee_ctx = Vec::new();
-                                for email in &event.attendees {
-                                    if let Ok(Some(person)) = db.get_person_by_email(email) {
-                                        let signals = db.get_person_signals(&person.id).ok();
-                                        attendee_ctx.push(crate::types::AttendeeContext {
-                                            name: person.name,
-                                            email: Some(person.email),
-                                            role: person.role,
-                                            organization: person.organization,
-                                            relationship: Some(person.relationship),
-                                            meeting_count: Some(person.meeting_count),
-                                            last_seen: person.last_seen,
-                                            temperature: signals
-                                                .as_ref()
-                                                .map(|s| s.temperature.clone()),
-                                            notes: person.notes,
-                                            person_id: Some(person.id),
-                                        });
-                                    }
-                                }
-                                if !attendee_ctx.is_empty() {
-                                    prep.attendee_context = Some(attendee_ctx);
-                                }
+            // Enrich attendees with person context (I51)
+            if let Some(ref cal_id) = prep.calendar_event_id {
+                if let Ok(events_guard) = state.calendar_events.read() {
+                    if let Some(event) = events_guard.iter().find(|e| e.id == *cal_id) {
+                        let mut attendee_ctx = Vec::new();
+                        for email in &event.attendees {
+                            if let Ok(Some(person)) = db.get_person_by_email(email) {
+                                let signals = db.get_person_signals(&person.id).ok();
+                                attendee_ctx.push(crate::types::AttendeeContext {
+                                    name: person.name,
+                                    email: Some(person.email),
+                                    role: person.role,
+                                    organization: person.organization,
+                                    relationship: Some(person.relationship),
+                                    meeting_count: Some(person.meeting_count),
+                                    last_seen: person.last_seen,
+                                    temperature: signals.as_ref().map(|s| s.temperature.clone()),
+                                    notes: person.notes,
+                                    person_id: Some(person.id),
+                                });
                             }
+                        }
+                        if !attendee_ctx.is_empty() {
+                            prep.attendee_context = Some(attendee_ctx);
                         }
                     }
                 }
             }
-            MeetingPrepResult::Success { data: prep }
         }
-        Err(e) => MeetingPrepResult::NotFound {
-            message: format!("Prep not found: {}", e),
-        },
     }
+
+    MeetingPrepResult::Success { data: prep }
 }
 
 /// Extract the account name from a prep JSON file (for stakeholder signal lookup).
@@ -439,21 +470,421 @@ fn extract_account_from_prep(prep_file: &str, today_dir: &Path) -> Option<String
     let prep_path = if prep_file.starts_with("preps/") {
         today_dir.join("data").join(prep_file)
     } else {
-        today_dir
-            .join("data")
-            .join("preps")
-            .join(format!(
-                "{}.json",
-                prep_file
-                    .trim_end_matches(".json")
-                    .trim_end_matches(".md")
-            ))
+        today_dir.join("data").join("preps").join(format!(
+            "{}.json",
+            prep_file.trim_end_matches(".json").trim_end_matches(".md")
+        ))
     };
     let content = std::fs::read_to_string(prep_path).ok()?;
     let data: serde_json::Value = serde_json::from_str(&content).ok()?;
     data.get("account")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillReport {
+    pub dry_run: bool,
+    pub candidate_file_count: usize,
+    pub candidate_db_row_count: usize,
+    pub transformed_file_count: usize,
+    pub transformed_db_row_count: usize,
+    pub skipped_file_count: usize,
+    pub skipped_db_row_count: usize,
+    pub parse_error_file_count: usize,
+    pub parse_error_db_row_count: usize,
+}
+
+fn backfill_source_tail_regex() -> &'static Regex {
+    static SOURCE_TAIL_RE: OnceLock<Regex> = OnceLock::new();
+    SOURCE_TAIL_RE.get_or_init(|| {
+        Regex::new(r"(?i)(?:^|\s)[_*]*\(?\s*source:\s*([^)]+?)\s*\)?[_*\s]*$")
+            .expect("source tail regex should compile")
+    })
+}
+
+fn backfill_recent_win_prefix_regex() -> &'static Regex {
+    static RECENT_WIN_PREFIX_RE: OnceLock<Regex> = OnceLock::new();
+    RECENT_WIN_PREFIX_RE.get_or_init(|| {
+        Regex::new(r"(?i)^(recent\s+win|win)\s*:\s*")
+            .expect("recent win prefix regex should compile")
+    })
+}
+
+fn sanitize_backfill_text(value: &str) -> String {
+    value
+        .replace("**", "")
+        .replace("__", "")
+        .replace('`', "")
+        .replace('*', "")
+        .replace('_', " ")
+        .replace('[', "")
+        .replace(']', "")
+        .replace('(', "")
+        .replace(')', "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn split_backfill_inline_source(value: &str) -> (String, Option<String>) {
+    let raw = value.trim();
+    if let Some(caps) = backfill_source_tail_regex().captures(raw) {
+        if let Some(full_match) = caps.get(0) {
+            let cleaned = raw[..full_match.start()].trim().to_string();
+            let source = caps
+                .get(1)
+                .map(|m| sanitize_backfill_text(m.as_str()))
+                .and_then(|s| if s.is_empty() { None } else { Some(s) });
+            return (cleaned, source);
+        }
+    }
+    (raw.to_string(), None)
+}
+
+fn clean_recent_win_for_backfill(value: &str) -> Option<String> {
+    let (without_source, _) = split_backfill_inline_source(value);
+    let cleaned = backfill_recent_win_prefix_regex()
+        .replace(&without_source, "")
+        .to_string();
+    let cleaned = sanitize_backfill_text(&cleaned);
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn clean_generic_prep_line(value: &str) -> Option<String> {
+    let (without_source, _) = split_backfill_inline_source(value);
+    let cleaned = sanitize_backfill_text(&without_source);
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn source_reference_from_raw(source: &str) -> Option<SourceReference> {
+    let cleaned = sanitize_backfill_text(source);
+    if cleaned.is_empty() {
+        return None;
+    }
+    let label = cleaned
+        .split(['/', '\\'])
+        .filter(|part| !part.trim().is_empty())
+        .last()
+        .unwrap_or(cleaned.as_str())
+        .to_string();
+    Some(SourceReference {
+        label,
+        path: Some(cleaned),
+        last_updated: None,
+    })
+}
+
+fn normalized_source_key(source: &SourceReference) -> String {
+    source
+        .path
+        .as_deref()
+        .unwrap_or(&source.label)
+        .to_lowercase()
+}
+
+fn parse_source_reference_value(value: &serde_json::Value) -> Option<SourceReference> {
+    let obj = value.as_object()?;
+    let label = obj
+        .get("label")
+        .and_then(|v| v.as_str())
+        .map(sanitize_backfill_text)
+        .unwrap_or_default();
+    let path = obj
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(sanitize_backfill_text)
+        .filter(|s| !s.is_empty());
+    let resolved_label = if label.is_empty() {
+        path.as_deref()
+            .and_then(|p| p.split(['/', '\\']).filter(|s| !s.is_empty()).last())
+            .unwrap_or("")
+            .to_string()
+    } else {
+        label
+    };
+    if resolved_label.is_empty() {
+        return None;
+    }
+    Some(SourceReference {
+        label: resolved_label,
+        path,
+        last_updated: None,
+    })
+}
+
+fn backfill_prep_semantics_value(prep: &mut serde_json::Value) -> bool {
+    let Some(obj) = prep.as_object_mut() else {
+        return false;
+    };
+
+    let mut changed = false;
+    let mut win_keys: HashSet<String> = HashSet::new();
+    let mut source_keys: HashSet<String> = HashSet::new();
+    let mut normalized_wins: Vec<String> = Vec::new();
+    let mut normalized_sources: Vec<SourceReference> = Vec::new();
+
+    if let Some(existing_sources) = obj.get("recentWinSources").and_then(|v| v.as_array()) {
+        for source in existing_sources {
+            if let Some(src) = parse_source_reference_value(source) {
+                let key = normalized_source_key(&src);
+                if !source_keys.contains(&key) {
+                    source_keys.insert(key);
+                    normalized_sources.push(src);
+                }
+            }
+        }
+    }
+
+    if let Some(existing_wins) = obj.get("recentWins").and_then(|v| v.as_array()) {
+        for win in existing_wins {
+            let Some(raw) = win.as_str() else { continue };
+            let (without_source, extracted_source) = split_backfill_inline_source(raw);
+            if let Some(cleaned) = clean_recent_win_for_backfill(&without_source) {
+                let key = cleaned.to_lowercase();
+                if !win_keys.contains(&key) {
+                    win_keys.insert(key);
+                    normalized_wins.push(cleaned);
+                }
+            }
+            if let Some(source) = extracted_source {
+                if let Some(src_ref) = source_reference_from_raw(&source) {
+                    let key = normalized_source_key(&src_ref);
+                    if !source_keys.contains(&key) {
+                        source_keys.insert(key);
+                        normalized_sources.push(src_ref);
+                    }
+                }
+            }
+        }
+    }
+
+    let talking_points_original: Vec<String> = obj
+        .get("talkingPoints")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(ToString::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !talking_points_original.is_empty() {
+        let mut cleaned_points: Vec<String> = Vec::new();
+        let mut talking_point_seen: HashSet<String> = HashSet::new();
+        let derive_wins_from_talking_points = normalized_wins.is_empty();
+
+        for point in &talking_points_original {
+            let (without_source, extracted_source) = split_backfill_inline_source(point);
+
+            if let Some(source) = extracted_source {
+                if let Some(src_ref) = source_reference_from_raw(&source) {
+                    let key = normalized_source_key(&src_ref);
+                    if !source_keys.contains(&key) {
+                        source_keys.insert(key);
+                        normalized_sources.push(src_ref);
+                    }
+                }
+            }
+
+            if let Some(cleaned_point) = clean_generic_prep_line(&without_source) {
+                let key = cleaned_point.to_lowercase();
+                if !talking_point_seen.contains(&key) {
+                    talking_point_seen.insert(key);
+                    cleaned_points.push(cleaned_point);
+                }
+            }
+
+            if derive_wins_from_talking_points {
+                if let Some(cleaned_win) = clean_recent_win_for_backfill(&without_source) {
+                    let win_key = cleaned_win.to_lowercase();
+                    if !win_keys.contains(&win_key) {
+                        win_keys.insert(win_key);
+                        normalized_wins.push(cleaned_win);
+                    }
+                }
+            }
+        }
+
+        if cleaned_points != talking_points_original {
+            obj.insert(
+                "talkingPoints".to_string(),
+                serde_json::json!(cleaned_points),
+            );
+            changed = true;
+        }
+    }
+
+    if !normalized_wins.is_empty() {
+        let wins_value = serde_json::json!(normalized_wins);
+        if obj.get("recentWins") != Some(&wins_value) {
+            obj.insert("recentWins".to_string(), wins_value);
+            changed = true;
+        }
+    }
+
+    if !normalized_sources.is_empty() {
+        let sources_value =
+            serde_json::to_value(&normalized_sources).unwrap_or(serde_json::json!([]));
+        if obj.get("recentWinSources") != Some(&sources_value) {
+            obj.insert("recentWinSources".to_string(), sources_value);
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn write_json_atomic(path: &Path, value: &serde_json::Value) -> Result<(), String> {
+    let temp_path = path.with_extension("json.tmp");
+    let payload = serde_json::to_string_pretty(value)
+        .map_err(|e| format!("Failed to serialize JSON for {}: {}", path.display(), e))?;
+    fs::write(&temp_path, payload)
+        .map_err(|e| format!("Failed to write temp file {}: {}", temp_path.display(), e))?;
+    fs::rename(&temp_path, path).map_err(|e| format!("Failed to replace {}: {}", path.display(), e))
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct BackfillCounts {
+    candidate: usize,
+    transformed: usize,
+    skipped: usize,
+    parse_errors: usize,
+}
+
+fn backfill_prep_files_in_dir(preps_dir: &Path, dry_run: bool) -> Result<BackfillCounts, String> {
+    let mut counts = BackfillCounts::default();
+    if !preps_dir.exists() {
+        return Ok(counts);
+    }
+
+    let entries = fs::read_dir(preps_dir).map_err(|e| {
+        format!(
+            "Failed to read preps directory {}: {}",
+            preps_dir.display(),
+            e
+        )
+    })?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+
+        counts.candidate += 1;
+        let raw = match fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(_) => {
+                counts.parse_errors += 1;
+                continue;
+            }
+        };
+        let mut prep: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(value) => value,
+            Err(_) => {
+                counts.parse_errors += 1;
+                continue;
+            }
+        };
+
+        if backfill_prep_semantics_value(&mut prep) {
+            counts.transformed += 1;
+            if !dry_run {
+                write_json_atomic(&path, &prep)?;
+            }
+        } else {
+            counts.skipped += 1;
+        }
+    }
+
+    Ok(counts)
+}
+
+fn backfill_db_prep_contexts(
+    db: &crate::db::ActionDb,
+    dry_run: bool,
+) -> Result<BackfillCounts, String> {
+    let mut counts = BackfillCounts::default();
+    let rows = db
+        .list_meeting_prep_contexts()
+        .map_err(|e| format!("Failed to query prep context rows: {}", e))?;
+    counts.candidate = rows.len();
+
+    for (meeting_id, prep_json) in rows {
+        let mut prep: serde_json::Value = match serde_json::from_str(&prep_json) {
+            Ok(value) => value,
+            Err(_) => {
+                counts.parse_errors += 1;
+                continue;
+            }
+        };
+        if backfill_prep_semantics_value(&mut prep) {
+            counts.transformed += 1;
+            if !dry_run {
+                let updated_json = serde_json::to_string(&prep)
+                    .map_err(|e| format!("Failed to serialize backfilled prep context: {}", e))?;
+                db.update_meeting_prep_context(&meeting_id, &updated_json)
+                    .map_err(|e| {
+                        format!("Failed to update prep context for {}: {}", meeting_id, e)
+                    })?;
+            }
+        } else {
+            counts.skipped += 1;
+        }
+    }
+
+    Ok(counts)
+}
+
+/// One-time semantic backfill for prep payloads (I196).
+///
+/// Targets:
+/// - `_today/data/preps/*.json`
+/// - `meetings_history.prep_context_json`
+#[tauri::command]
+pub fn backfill_prep_semantics(
+    dry_run: bool,
+    state: State<Arc<AppState>>,
+) -> Result<BackfillReport, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let preps_dir = workspace.join("_today").join("data").join("preps");
+
+    let mut report = BackfillReport {
+        dry_run,
+        ..Default::default()
+    };
+
+    let file_counts = backfill_prep_files_in_dir(&preps_dir, dry_run)?;
+    report.candidate_file_count = file_counts.candidate;
+    report.transformed_file_count = file_counts.transformed;
+    report.skipped_file_count = file_counts.skipped;
+    report.parse_error_file_count = file_counts.parse_errors;
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let db_counts = backfill_db_prep_contexts(db, dry_run)?;
+    report.candidate_db_row_count = db_counts.candidate;
+    report.transformed_db_row_count = db_counts.transformed;
+    report.skipped_db_row_count = db_counts.skipped;
+    report.parse_error_db_row_count = db_counts.parse_errors;
+
+    Ok(report)
 }
 
 // =============================================================================
@@ -554,14 +985,16 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
     // 3. Filter meetings to "key" types (where prep matters)
     let key_meetings: Vec<FocusMeeting> = meetings
         .iter()
-        .filter(|m| matches!(
-            m.meeting_type,
-            MeetingType::Customer
-                | MeetingType::Qbr
-                | MeetingType::Partnership
-                | MeetingType::External
-                | MeetingType::OneOnOne
-        ))
+        .filter(|m| {
+            matches!(
+                m.meeting_type,
+                MeetingType::Customer
+                    | MeetingType::Qbr
+                    | MeetingType::Partnership
+                    | MeetingType::External
+                    | MeetingType::OneOnOne
+            )
+        })
         .map(|m| {
             let type_str = match m.meeting_type {
                 MeetingType::Customer => "customer",
@@ -901,7 +1334,14 @@ pub async fn enrich_inbox_file(
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::enrich::enrich_file(workspace, &filename, db_ref, &profile, Some(&user_ctx), Some(&ai_config))
+        crate::processor::enrich::enrich_file(
+            workspace,
+            &filename,
+            db_ref,
+            &profile,
+            Some(&user_ctx),
+            Some(&ai_config),
+        )
     })
     .await
     .map_err(|e| format!("AI processing task failed: {}", e))
@@ -933,9 +1373,7 @@ pub fn get_inbox_file_content(
     let format = extract::detect_format(&file_path);
     if matches!(format, extract::SupportedFormat::Unsupported) {
         // Truly unsupported format — show descriptive message
-        let size = std::fs::metadata(&file_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
         let ext = file_path
             .extension()
             .and_then(|e| e.to_str())
@@ -950,9 +1388,7 @@ pub fn get_inbox_file_content(
         Ok(content) => Ok(content),
         Err(e) => {
             // Extraction failed — show error with fallback info
-            let size = std::fs::metadata(&file_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
+            let size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
             let ext = file_path
                 .extension()
                 .and_then(|e| e.to_str())
@@ -974,10 +1410,7 @@ pub fn get_inbox_file_content(
 /// Accepts absolute file paths from the drag-drop event.
 /// Returns the number of files successfully copied.
 #[tauri::command]
-pub fn copy_to_inbox(
-    paths: Vec<String>,
-    state: State<Arc<AppState>>,
-) -> Result<usize, String> {
+pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<usize, String> {
     let config = state
         .config
         .read()
@@ -1013,8 +1446,16 @@ pub fn copy_to_inbox(
 
         // Handle duplicates: append (1), (2), etc.
         if dest.exists() {
-            let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file").to_string();
-            let ext = dest.extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
+            let stem = dest
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("file")
+                .to_string();
+            let ext = dest
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_string();
             let mut counter = 1;
             loop {
                 let new_name = if ext.is_empty() {
@@ -1131,9 +1572,7 @@ pub async fn refresh_emails(
 /// batchModify to remove the INBOX label, then rewrites emails.json
 /// without the archived entries.
 #[tauri::command]
-pub async fn archive_low_priority_emails(
-    state: State<'_, Arc<AppState>>,
-) -> Result<usize, String> {
+pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let config = state
         .config
         .read()
@@ -1151,10 +1590,7 @@ pub async fn archive_low_priority_emails(
         .map_err(|e| format!("Failed to parse emails.json: {}", e))?;
 
     // Collect low-priority email IDs
-    let low_emails = data["lowPriority"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let low_emails = data["lowPriority"].as_array().cloned().unwrap_or_default();
 
     let ids: Vec<String> = low_emails
         .iter()
@@ -1196,13 +1632,13 @@ pub async fn archive_low_priority_emails(
 
 /// Set user profile (customer-success or general)
 #[tauri::command]
-pub fn set_profile(
-    profile: String,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_profile(profile: String, state: State<Arc<AppState>>) -> Result<Config, String> {
     // Validate profile value
     if profile != "customer-success" && profile != "general" {
-        return Err(format!("Invalid profile: {}. Must be 'customer-success' or 'general'.", profile));
+        return Err(format!(
+            "Invalid profile: {}. Must be 'customer-success' or 'general'.",
+            profile
+        ));
     }
 
     crate::state::create_or_update_config(&state, |config| {
@@ -1215,10 +1651,7 @@ pub fn set_profile(
 /// Also derives the correct profile for backend compatibility.
 /// Creates Accounts/ dir if switching to account/both mode.
 #[tauri::command]
-pub fn set_entity_mode(
-    mode: String,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_entity_mode(mode: String, state: State<Arc<AppState>>) -> Result<Config, String> {
     crate::types::validate_entity_mode(&mode)?;
 
     let config = crate::state::create_or_update_config(&state, |config| {
@@ -1250,10 +1683,7 @@ pub fn set_entity_mode(
 
 /// Set workspace path and scaffold directory structure
 #[tauri::command]
-pub fn set_workspace_path(
-    path: String,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_workspace_path(path: String, state: State<Arc<AppState>>) -> Result<Config, String> {
     let workspace = std::path::Path::new(&path);
 
     // Validate path is absolute
@@ -1294,10 +1724,7 @@ pub fn set_workspace_path(
 
 /// Toggle developer mode (shows/hides devtools panel)
 #[tauri::command]
-pub fn set_developer_mode(
-    enabled: bool,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.developer_mode = enabled;
     })
@@ -1399,7 +1826,11 @@ pub fn set_user_profile(
         fn clean(val: Option<String>) -> Option<String> {
             val.and_then(|s| {
                 let trimmed = s.trim().to_string();
-                if trimmed.is_empty() { None } else { Some(trimmed) }
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                }
             })
         }
 
@@ -1409,7 +1840,11 @@ pub fn set_user_profile(
         config.user_focus = clean(focus);
         if let Some(d) = domain {
             let trimmed = d.trim().to_lowercase();
-            config.user_domain = if trimmed.is_empty() { None } else { Some(trimmed) };
+            config.user_domain = if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            };
         }
     })?;
 
@@ -1476,9 +1911,7 @@ pub fn get_actions_from_db(
     let mut actions = db
         .get_due_actions(days_ahead.unwrap_or(7))
         .map_err(|e| e.to_string())?;
-    let completed = db
-        .get_completed_actions(48)
-        .map_err(|e| e.to_string())?;
+    let completed = db.get_completed_actions(48).map_err(|e| e.to_string())?;
     actions.extend(completed);
 
     // Batch-resolve account names: collect unique IDs, single query each
@@ -1515,10 +1948,7 @@ pub fn get_actions_from_db(
 ///
 /// Sets `status = 'completed'` and `completed_at` to the current UTC timestamp.
 #[tauri::command]
-pub fn complete_action(
-    id: String,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
+pub fn complete_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.complete_action(&id).map_err(|e| e.to_string())
@@ -1526,10 +1956,7 @@ pub fn complete_action(
 
 /// Reopen a completed action, setting it back to pending.
 #[tauri::command]
-pub fn reopen_action(
-    id: String,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
+pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.reopen_action(&id).map_err(|e| e.to_string())
@@ -1579,6 +2006,8 @@ pub struct PrepContext {
     pub entity_risks: Option<Vec<serde_json::Value>>,
     pub entity_readiness: Option<Vec<String>>,
     pub talking_points: Option<Vec<String>>,
+    pub recent_wins: Option<Vec<String>>,
+    pub recent_win_sources: Option<Vec<SourceReference>>,
     pub proposed_agenda: Option<Vec<serde_json::Value>>,
     pub open_items: Option<Vec<serde_json::Value>>,
     pub questions: Option<Vec<String>>,
@@ -1611,10 +2040,7 @@ pub fn get_meeting_history_detail(
 
     // Resolve account name from account_id
     let account_name = if let Some(ref aid) = meeting.account_id {
-        db.get_account(aid)
-            .ok()
-            .flatten()
-            .map(|a| a.name)
+        db.get_account(aid).ok().flatten().map(|a| a.name)
     } else {
         None
     };
@@ -1914,33 +2340,25 @@ pub fn get_calendar_events(state: State<Arc<AppState>>) -> Vec<CalendarEvent> {
 #[tauri::command]
 pub fn get_current_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state
-        .calendar_events
-        .read()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .iter()
-                .find(|e| e.start <= now && e.end > now && !e.is_all_day)
-                .cloned()
-        })
+    state.calendar_events.read().ok().and_then(|guard| {
+        guard
+            .iter()
+            .find(|e| e.start <= now && e.end > now && !e.is_all_day)
+            .cloned()
+    })
 }
 
 /// Get the next upcoming meeting
 #[tauri::command]
 pub fn get_next_meeting(state: State<Arc<AppState>>) -> Option<CalendarEvent> {
     let now = chrono::Utc::now();
-    state
-        .calendar_events
-        .read()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .iter()
-                .filter(|e| e.start > now && !e.is_all_day)
-                .min_by_key(|e| e.start)
-                .cloned()
-        })
+    state.calendar_events.read().ok().and_then(|guard| {
+        guard
+            .iter()
+            .filter(|e| e.start > now && !e.is_all_day)
+            .min_by_key(|e| e.start)
+            .cloned()
+    })
 }
 
 // =============================================================================
@@ -2030,10 +2448,7 @@ pub fn capture_meeting_outcome(
         for win in &outcome.wins {
             content.push_str(&format!(
                 "- **{}**: {} ({})\n",
-                outcome
-                    .account
-                    .as_deref()
-                    .unwrap_or(&outcome.meeting_title),
+                outcome.account.as_deref().unwrap_or(&outcome.meeting_title),
                 win,
                 outcome.captured_at.format("%H:%M")
             ));
@@ -2075,10 +2490,7 @@ pub fn get_capture_settings(state: State<Arc<AppState>>) -> PostMeetingCaptureCo
 
 /// Toggle post-meeting capture on/off
 #[tauri::command]
-pub fn set_capture_enabled(
-    enabled: bool,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_capture_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.post_meeting_capture.enabled = enabled;
     })?;
@@ -2087,10 +2499,7 @@ pub fn set_capture_enabled(
 
 /// Set post-meeting capture delay (minutes before prompt appears)
 #[tauri::command]
-pub fn set_capture_delay(
-    delay_minutes: u32,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
+pub fn set_capture_delay(delay_minutes: u32, state: State<Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.post_meeting_capture.delay_minutes = delay_minutes;
     })?;
@@ -2296,7 +2705,10 @@ pub fn update_action_priority(
 ) -> Result<(), String> {
     // Validate priority
     if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
-        return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", priority));
+        return Err(format!(
+            "Invalid priority: {}. Must be P1, P2, or P3.",
+            priority
+        ));
     }
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
@@ -2325,7 +2737,10 @@ pub fn create_action(
 ) -> Result<String, String> {
     let priority = priority.unwrap_or_else(|| "P2".to_string());
     if !matches!(priority.as_str(), "P1" | "P2" | "P3") {
-        return Err(format!("Invalid priority: {}. Must be P1, P2, or P3.", priority));
+        return Err(format!(
+            "Invalid priority: {}. Must be P1, P2, or P3.",
+            priority
+        ));
     }
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -2478,14 +2893,54 @@ pub fn get_features(state: State<Arc<AppState>>) -> Result<Vec<FeatureDefinition
         .ok_or("No configuration loaded")?;
 
     let definitions = vec![
-        ("emailTriage", "Email Triage", "Fetch and classify Gmail messages", false),
-        ("postMeetingCapture", "Post-Meeting Capture", "Prompt for outcomes after meetings end", false),
-        ("meetingPrep", "Meeting Prep", "Generate prep context for upcoming meetings", false),
-        ("weeklyPlanning", "Weekly Planning", "Weekly overview and focus block suggestions", false),
-        ("inboxProcessing", "Inbox Processing", "Classify and route files from _inbox", false),
-        ("accountTracking", "Account Tracking", "Track customer accounts, health, and ARR", true),
-        ("projectTracking", "Project Tracking", "Track projects, milestones, and deliverables", false),
-        ("impactRollup", "Impact Rollup", "Roll up daily wins and risks to account files", true),
+        (
+            "emailTriage",
+            "Email Triage",
+            "Fetch and classify Gmail messages",
+            false,
+        ),
+        (
+            "postMeetingCapture",
+            "Post-Meeting Capture",
+            "Prompt for outcomes after meetings end",
+            false,
+        ),
+        (
+            "meetingPrep",
+            "Meeting Prep",
+            "Generate prep context for upcoming meetings",
+            false,
+        ),
+        (
+            "weeklyPlanning",
+            "Weekly Planning",
+            "Weekly overview and focus block suggestions",
+            false,
+        ),
+        (
+            "inboxProcessing",
+            "Inbox Processing",
+            "Classify and route files from _inbox",
+            false,
+        ),
+        (
+            "accountTracking",
+            "Account Tracking",
+            "Track customer accounts, health, and ARR",
+            true,
+        ),
+        (
+            "projectTracking",
+            "Project Tracking",
+            "Track projects, milestones, and deliverables",
+            false,
+        ),
+        (
+            "impactRollup",
+            "Impact Rollup",
+            "Roll up daily wins and risks to account files",
+            true,
+        ),
     ];
 
     Ok(definitions
@@ -2522,9 +2977,7 @@ pub fn set_feature_enabled(
 /// with mock accounts, actions, and meeting history. The demo data is
 /// replaced on the first real briefing run.
 #[tauri::command]
-pub fn install_demo_data(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
         .config
         .read()
@@ -2663,11 +3116,13 @@ pub fn populate_workspace(
                 }
                 // Write dashboard.json + dashboard.md
                 let json = crate::projects::default_project_json(&db_project);
-                let _ = crate::projects::write_project_json(
-                    workspace, &db_project, Some(&json), db,
-                );
+                let _ =
+                    crate::projects::write_project_json(workspace, &db_project, Some(&json), db);
                 let _ = crate::projects::write_project_markdown(
-                    workspace, &db_project, Some(&json), db,
+                    workspace,
+                    &db_project,
+                    Some(&json),
+                    db,
                 );
             }
         }
@@ -2715,9 +3170,7 @@ pub fn check_claude_status() -> ClaudeStatus {
 ///
 /// Returns the filename of the installed sample.
 #[tauri::command]
-pub fn install_inbox_sample(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn install_inbox_sample(state: State<Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state
         .config
         .read()
@@ -2739,8 +3192,7 @@ pub fn install_inbox_sample(
     let content = include_str!("../resources/sample-meeting-notes.md");
     let dest = inbox_dir.join(filename);
 
-    std::fs::write(&dest, content)
-        .map_err(|e| format!("Failed to write sample file: {}", e))?;
+    std::fs::write(&dest, content).map_err(|e| format!("Failed to write sample file: {}", e))?;
 
     Ok(filename.to_string())
 }
@@ -2754,10 +3206,7 @@ pub fn install_inbox_sample(
 /// Returns an error in release builds. In debug builds, delegates to
 /// `devtools::apply_scenario` which orchestrates the scenario switch.
 #[tauri::command]
-pub fn dev_apply_scenario(
-    scenario: String,
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn dev_apply_scenario(scenario: String, state: State<Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2769,9 +3218,7 @@ pub fn dev_apply_scenario(
 /// Returns an error in release builds. In debug builds, returns counts
 /// and status for config, database, today data, and Google auth.
 #[tauri::command]
-pub fn dev_get_state(
-    state: State<Arc<AppState>>,
-) -> Result<crate::devtools::DevState, String> {
+pub fn dev_get_state(state: State<Arc<AppState>>) -> Result<crate::devtools::DevState, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2783,9 +3230,7 @@ pub fn dev_get_state(
 /// Requires `simulate_briefing` scenario first. Delivers schedule, actions,
 /// preps, emails, manifest from the seeded today-directive.json.
 #[tauri::command]
-pub fn dev_run_today_mechanical(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn dev_run_today_mechanical(state: State<Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2797,9 +3242,7 @@ pub fn dev_run_today_mechanical(
 /// Requires `simulate_briefing` scenario + Claude Code CLI installed.
 /// Mechanical delivery + enrich_emails, enrich_preps, enrich_briefing.
 #[tauri::command]
-pub fn dev_run_today_full(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn dev_run_today_full(state: State<Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2811,9 +3254,7 @@ pub fn dev_run_today_full(
 /// Requires `simulate_briefing` scenario first. Delivers week-overview.json
 /// from the seeded week-directive.json.
 #[tauri::command]
-pub fn dev_run_week_mechanical(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn dev_run_week_mechanical(state: State<Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2825,9 +3266,7 @@ pub fn dev_run_week_mechanical(
 /// Requires `simulate_briefing` scenario + Claude Code CLI installed.
 /// Runs Claude /week then delivers week-overview.json.
 #[tauri::command]
-pub fn dev_run_week_full(
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn dev_run_week_full(state: State<Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
     }
@@ -2986,6 +3425,19 @@ pub struct MeetingSummary {
     pub meeting_type: String,
 }
 
+/// Richer meeting summary with optional prep context (ADR-0063).
+/// Used on account detail pages where prep preview is needed.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingPreview {
+    pub id: String,
+    pub title: String,
+    pub start_time: String,
+    pub meeting_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_context: Option<PrepContext>,
+}
+
 /// Get full detail for a person (person + signals + entities + recent meetings).
 #[tauri::command]
 pub fn get_person_detail(
@@ -3029,10 +3481,8 @@ pub fn get_person_detail(
     let intelligence = {
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
-            let person_dir = crate::people::person_dir(
-                Path::new(&config.workspace_path),
-                &person.name,
-            );
+            let person_dir =
+                crate::people::person_dir(Path::new(&config.workspace_path), &person.name);
             crate::entity_intel::read_intelligence_json(&person_dir).ok()
         } else {
             None
@@ -3247,6 +3697,7 @@ pub fn update_meeting_entity(
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
@@ -3338,6 +3789,7 @@ pub fn add_meeting_entity(
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).map_err(|e| e.to_string())?;
@@ -3500,10 +3952,7 @@ pub fn merge_people(
 
 /// Delete a person and all their references. Also removes their filesystem directory.
 #[tauri::command]
-pub fn delete_person(
-    person_id: String,
-    state: State<Arc<AppState>>,
-) -> Result<(), String> {
+pub fn delete_person(person_id: String, state: State<Arc<AppState>>) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -3534,40 +3983,40 @@ pub fn delete_person(
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
+/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_person(
     person_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::entity_intel::IntelligenceJson, String> {
-    let workspace_path = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        let config = guard.as_ref().ok_or("Config not loaded")?;
-        config.workspace_path.clone()
+    use crate::intel_queue::{
+        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
+        IntelRequest,
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let person = db
-        .get_person(&person_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Person not found: {}", person_id))?;
-
-    let ai_config = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    let request = IntelRequest {
+        entity_id: person_id,
+        entity_type: "person".to_string(),
+        priority: IntelPriority::Manual,
+        requested_at: std::time::Instant::now(),
     };
-    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
-    crate::entity_intel::enrich_entity_intelligence(
-        std::path::Path::new(&workspace_path),
-        db,
-        &person_id,
-        &person.name,
-        "person",
-        None,
-        None,
-        &pty,
-    )
+
+    // Phase 1: Brief DB lock — gather context
+    let input = gather_enrichment_input(&state, &request)?;
+
+    // Phase 2: No lock — PTY enrichment
+    let ai_config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+    let intel = run_enrichment(&input, &ai_config)?;
+
+    // Phase 3: Brief DB lock — write results
+    write_enrichment_results(&state, &input, &intel)?;
+
+    Ok(intel)
 }
 
 // =============================================================================
@@ -3614,7 +4063,8 @@ pub struct AccountDetailResult {
     pub notes: Option<String>,
     pub open_actions: Vec<crate::db::DbAction>,
     pub upcoming_meetings: Vec<MeetingSummary>,
-    pub recent_meetings: Vec<MeetingSummary>,
+    /// ADR-0063: richer type with optional prep context for preview cards.
+    pub recent_meetings: Vec<MeetingPreview>,
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::StakeholderSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
@@ -3643,9 +4093,7 @@ pub struct AccountChildSummary {
 /// Returns only accounts where `parent_id IS NULL`. Each parent account
 /// includes a `child_count` so the UI can show an expand chevron.
 #[tauri::command]
-pub fn get_accounts_list(
-    state: State<Arc<AppState>>,
-) -> Result<Vec<AccountListItem>, String> {
+pub fn get_accounts_list(state: State<Arc<AppState>>) -> Result<Vec<AccountListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -3654,10 +4102,7 @@ pub fn get_accounts_list(
     let items: Vec<AccountListItem> = accounts
         .into_iter()
         .map(|a| {
-            let child_count = db
-                .get_child_accounts(&a.id)
-                .map(|c| c.len())
-                .unwrap_or(0);
+            let child_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
 
             account_to_list_item(&a, db, child_count)
         })
@@ -3676,9 +4121,7 @@ pub struct PickerAccount {
 }
 
 #[tauri::command]
-pub fn get_accounts_for_picker(
-    state: State<Arc<AppState>>,
-) -> Result<Vec<PickerAccount>, String> {
+pub fn get_accounts_for_picker(state: State<Arc<AppState>>) -> Result<Vec<PickerAccount>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -3694,7 +4137,10 @@ pub fn get_accounts_for_picker(
     let items: Vec<PickerAccount> = all
         .into_iter()
         .map(|a| {
-            let parent_name = a.parent_id.as_ref().and_then(|pid| parent_names.get(pid).cloned());
+            let parent_name = a
+                .parent_id
+                .as_ref()
+                .and_then(|pid| parent_names.get(pid).cloned());
             PickerAccount {
                 id: a.id,
                 name: a.name,
@@ -3715,14 +4161,12 @@ pub fn get_child_accounts_list(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let children = db.get_child_accounts(&parent_id).map_err(|e| e.to_string())?;
+    let children = db
+        .get_child_accounts(&parent_id)
+        .map_err(|e| e.to_string())?;
 
     // Look up parent name for breadcrumb context
-    let parent_name = db
-        .get_account(&parent_id)
-        .ok()
-        .flatten()
-        .map(|a| a.name);
+    let parent_name = db.get_account(&parent_id).ok().flatten().map(|a| a.name);
 
     let items: Vec<AccountListItem> = children
         .into_iter()
@@ -3752,14 +4196,13 @@ fn account_to_list_item(
         s.last_meeting.as_ref().and_then(|lm| {
             chrono::DateTime::parse_from_rfc3339(lm)
                 .or_else(|_| {
-                    chrono::DateTime::parse_from_rfc3339(
-                        &format!("{}+00:00", lm.trim_end_matches('Z')),
-                    )
+                    chrono::DateTime::parse_from_rfc3339(&format!(
+                        "{}+00:00",
+                        lm.trim_end_matches('Z')
+                    ))
                 })
                 .ok()
-                .map(|dt| {
-                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days()
-                })
+                .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
         })
     });
 
@@ -3815,14 +4258,16 @@ pub fn get_account_detail(
             (None, Vec::new(), None)
         };
         // Read intelligence.json (ADR-0057), migrate from CompanyOverview if needed
-        let intel = crate::entity_intel::read_intelligence_json(&account_dir).ok().or_else(|| {
-            // Auto-migrate from legacy CompanyOverview on first access
-            ov.as_ref().and_then(|overview| {
-                crate::entity_intel::migrate_company_overview_to_intelligence(
-                    workspace, &account, overview,
-                )
-            })
-        });
+        let intel = crate::entity_intel::read_intelligence_json(&account_dir)
+            .ok()
+            .or_else(|| {
+                // Auto-migrate from legacy CompanyOverview on first access
+                ov.as_ref().and_then(|overview| {
+                    crate::entity_intel::migrate_company_overview_to_intelligence(
+                        workspace, &account, overview,
+                    )
+                })
+            });
         (ov, prg, nt, intel)
     } else {
         (None, Vec::new(), None, None)
@@ -3845,21 +4290,26 @@ pub fn get_account_detail(
         })
         .collect();
 
-    let recent_meetings = db
-        .get_meetings_for_account(&account_id, 10)
+    let recent_meetings: Vec<MeetingPreview> = db
+        .get_meetings_for_account_with_prep(&account_id, 10)
         .map_err(|e| e.to_string())?
         .into_iter()
-        .map(|m| MeetingSummary {
-            id: m.id,
-            title: m.title,
-            start_time: m.start_time,
-            meeting_type: m.meeting_type,
+        .map(|m| {
+            let prep_context = m
+                .prep_context_json
+                .as_ref()
+                .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
+            MeetingPreview {
+                id: m.id,
+                title: m.title,
+                start_time: m.start_time,
+                meeting_type: m.meeting_type,
+                prep_context,
+            }
         })
         .collect();
 
-    let linked_people = db
-        .get_people_for_entity(&account_id)
-        .unwrap_or_default();
+    let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
 
     let signals = db.get_stakeholder_signals(&account_id).ok();
 
@@ -3868,9 +4318,10 @@ pub fn get_account_detail(
         .unwrap_or_default();
 
     // I114: Resolve parent name for child accounts, children for parent accounts
-    let parent_name = account.parent_id.as_ref().and_then(|pid| {
-        db.get_account(pid).ok().flatten().map(|a| a.name)
-    });
+    let parent_name = account
+        .parent_id
+        .as_ref()
+        .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
 
     let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
     let parent_aggregate = if !child_accounts.is_empty() {
@@ -3944,8 +4395,8 @@ pub fn update_account_field(
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
             // Read existing JSON to preserve narrative fields
-            let json_path = crate::accounts::resolve_account_dir(workspace, &account)
-                .join("dashboard.json");
+            let json_path =
+                crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
             let existing = if json_path.exists() {
                 crate::accounts::read_account_json(&json_path)
                     .ok()
@@ -3953,18 +4404,9 @@ pub fn update_account_field(
             } else {
                 None
             };
-            let _ = crate::accounts::write_account_json(
-                workspace,
-                &account,
-                existing.as_ref(),
-                db,
-            );
-            let _ = crate::accounts::write_account_markdown(
-                workspace,
-                &account,
-                existing.as_ref(),
-                db,
-            );
+            let _ = crate::accounts::write_account_json(workspace, &account, existing.as_ref(), db);
+            let _ =
+                crate::accounts::write_account_markdown(workspace, &account, existing.as_ref(), db);
         }
     }
 
@@ -3992,8 +4434,8 @@ pub fn update_account_notes(
     let workspace = Path::new(&config.workspace_path);
 
     // Read existing JSON
-    let json_path = crate::accounts::resolve_account_dir(workspace, &account)
-        .join("dashboard.json");
+    let json_path =
+        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
     let mut existing = if json_path.exists() {
         crate::accounts::read_account_json(&json_path)
             .map(|r| r.json)
@@ -4027,16 +4469,15 @@ pub fn update_account_programs(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-    let programs: Vec<crate::accounts::StrategicProgram> =
-        serde_json::from_str(&programs_json)
-            .map_err(|e| format!("Invalid programs JSON: {}", e))?;
+    let programs: Vec<crate::accounts::StrategicProgram> = serde_json::from_str(&programs_json)
+        .map_err(|e| format!("Invalid programs JSON: {}", e))?;
 
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     let config = config.as_ref().ok_or("Config not loaded")?;
     let workspace = Path::new(&config.workspace_path);
 
-    let json_path = crate::accounts::resolve_account_dir(workspace, &account)
-        .join("dashboard.json");
+    let json_path =
+        crate::accounts::resolve_account_dir(workspace, &account).join("dashboard.json");
     let mut existing = if json_path.exists() {
         crate::accounts::read_account_json(&json_path)
             .map(|r| r.json)
@@ -4074,7 +4515,9 @@ pub fn create_account(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Parent account not found: {}", pid))?;
         let child_id = format!("{}--{}", pid, crate::util::slugify(&name));
-        let parent_dir = parent.tracker_path.unwrap_or_else(|| format!("Accounts/{}", parent.name));
+        let parent_dir = parent
+            .tracker_path
+            .unwrap_or_else(|| format!("Accounts/{}", parent.name));
         let tp = format!("{}/{}", parent_dir, name);
         (child_id, tp)
     } else {
@@ -4171,40 +4614,40 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
 
 // ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
 
+/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_account(
     account_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::entity_intel::IntelligenceJson, String> {
-    let workspace_path = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        let config = guard.as_ref().ok_or("Config not loaded")?;
-        config.workspace_path.clone()
+    use crate::intel_queue::{
+        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
+        IntelRequest,
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let account = db
-        .get_account(&account_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Account not found: {}", account_id))?;
-
-    let ai_config = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    let request = IntelRequest {
+        entity_id: account_id,
+        entity_type: "account".to_string(),
+        priority: IntelPriority::Manual,
+        requested_at: std::time::Instant::now(),
     };
-    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
-    crate::entity_intel::enrich_entity_intelligence(
-        std::path::Path::new(&workspace_path),
-        db,
-        &account_id,
-        &account.name,
-        "account",
-        Some(&account),
-        None,
-        &pty,
-    )
+
+    // Phase 1: Brief DB lock — gather context
+    let input = gather_enrichment_input(&state, &request)?;
+
+    // Phase 2: No lock — PTY enrichment
+    let ai_config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+    let intel = run_enrichment(&input, &ai_config)?;
+
+    // Phase 3: Brief DB lock — write results
+    write_enrichment_results(&state, &input, &intel)?;
+
+    Ok(intel)
 }
 
 // =============================================================================
@@ -4250,9 +4693,7 @@ pub struct ProjectDetailResult {
 
 /// Get all projects with computed summary fields for the list page.
 #[tauri::command]
-pub fn get_projects_list(
-    state: State<Arc<AppState>>,
-) -> Result<Vec<ProjectListItem>, String> {
+pub fn get_projects_list(state: State<Arc<AppState>>) -> Result<Vec<ProjectListItem>, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -4261,25 +4702,14 @@ pub fn get_projects_list(
     let items: Vec<ProjectListItem> = projects
         .into_iter()
         .map(|p| {
-            let open_action_count = db
-                .get_project_actions(&p.id)
-                .map(|a| a.len())
-                .unwrap_or(0);
-            let days_since_last_meeting = db
-                .get_project_signals(&p.id)
-                .ok()
-                .and_then(|s| {
-                    s.last_meeting
-                        .as_ref()
-                        .and_then(|lm| {
-                            chrono::DateTime::parse_from_rfc3339(lm)
-                                .ok()
-                                .map(|dt| {
-                                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc))
-                                        .num_days()
-                                })
-                        })
-                });
+            let open_action_count = db.get_project_actions(&p.id).map(|a| a.len()).unwrap_or(0);
+            let days_since_last_meeting = db.get_project_signals(&p.id).ok().and_then(|s| {
+                s.last_meeting.as_ref().and_then(|lm| {
+                    chrono::DateTime::parse_from_rfc3339(lm)
+                        .ok()
+                        .map(|dt| (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_days())
+                })
+            });
             ProjectListItem {
                 id: p.id,
                 name: p.name,
@@ -4351,14 +4781,14 @@ pub fn get_project_detail(
         })
         .collect();
 
-    let linked_people = db
-        .get_people_for_entity(&project_id)
-        .unwrap_or_default();
+    let linked_people = db.get_people_for_entity(&project_id).unwrap_or_default();
 
     let signals = db.get_project_signals(&project_id).ok();
 
     // Get captures linked to project meetings
-    let recent_captures = db.get_captures_for_project(&project_id, 90).unwrap_or_default();
+    let recent_captures = db
+        .get_captures_for_project(&project_id, 90)
+        .unwrap_or_default();
 
     Ok(ProjectDetailResult {
         id: project.id,
@@ -4381,10 +4811,7 @@ pub fn get_project_detail(
 
 /// Create a new project.
 #[tauri::command]
-pub fn create_project(
-    name: String,
-    state: State<Arc<AppState>>,
-) -> Result<String, String> {
+pub fn create_project(name: String, state: State<Arc<AppState>>) -> Result<String, String> {
     let validated_name = crate::util::validate_entity_name(&name)?;
     let id = crate::util::slugify(validated_name);
     let now = chrono::Utc::now().to_rfc3339();
@@ -4444,8 +4871,8 @@ pub fn update_project_field(
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
-            let json_path = crate::projects::project_dir(workspace, &project.name)
-                .join("dashboard.json");
+            let json_path =
+                crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
             let existing_json = if json_path.exists() {
                 crate::projects::read_project_json(&json_path)
                     .ok()
@@ -4489,8 +4916,8 @@ pub fn update_project_notes(
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
-        let json_path = crate::projects::project_dir(workspace, &project.name)
-            .join("dashboard.json");
+        let json_path =
+            crate::projects::project_dir(workspace, &project.name).join("dashboard.json");
 
         let mut json = if json_path.exists() {
             crate::projects::read_project_json(&json_path)
@@ -4510,40 +4937,40 @@ pub fn update_project_notes(
 }
 
 /// Enrich a project via Claude Code intelligence enrichment.
+/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_project(
     project_id: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<crate::entity_intel::IntelligenceJson, String> {
-    let workspace_path = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        let config = guard.as_ref().ok_or("Config not loaded")?;
-        config.workspace_path.clone()
+    use crate::intel_queue::{
+        gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority,
+        IntelRequest,
     };
 
-    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
-    let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let project = db
-        .get_project(&project_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Project not found: {}", project_id))?;
-
-    let ai_config = {
-        let guard = state.config.read().map_err(|_| "Lock poisoned")?;
-        guard.as_ref().map(|c| c.ai_models.clone()).unwrap_or_default()
+    let request = IntelRequest {
+        entity_id: project_id,
+        entity_type: "project".to_string(),
+        priority: IntelPriority::Manual,
+        requested_at: std::time::Instant::now(),
     };
-    let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_config).with_timeout(180);
-    crate::entity_intel::enrich_entity_intelligence(
-        std::path::Path::new(&workspace_path),
-        db,
-        &project_id,
-        &project.name,
-        "project",
-        None,
-        Some(&project),
-        &pty,
-    )
+
+    // Phase 1: Brief DB lock — gather context
+    let input = gather_enrichment_input(&state, &request)?;
+
+    // Phase 2: No lock — PTY enrichment
+    let ai_config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.ai_models.clone()))
+        .unwrap_or_default();
+    let intel = run_enrichment(&input, &ai_config)?;
+
+    // Phase 3: Brief DB lock — write results
+    write_enrichment_results(&state, &input, &intel)?;
+
+    Ok(intel)
 }
 
 // ── I76: Database Backup & Rebuild ──────────────────────────────────
@@ -4556,11 +4983,16 @@ pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<S
 }
 
 #[tauri::command]
-pub async fn rebuild_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(usize, usize, usize), String> {
+pub async fn rebuild_database(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(usize, usize, usize), String> {
     let (workspace_path, user_domains) = {
         let guard = state.config.read().map_err(|_| "Lock poisoned")?;
         let config = guard.as_ref().ok_or("Config not loaded")?;
-        (config.workspace_path.clone(), config.resolved_user_domains())
+        (
+            config.workspace_path.clone(),
+            config.resolved_user_domains(),
+        )
     };
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
@@ -4700,10 +5132,7 @@ pub fn get_archived_people(
 /// Set multiple user domains for multi-org meeting classification.
 /// After saving, reclassifies existing people and meetings to reflect the new domains.
 #[tauri::command]
-pub fn set_user_domains(
-    domains: String,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_user_domains(domains: String, state: State<Arc<AppState>>) -> Result<Config, String> {
     let parsed: Vec<String> = domains
         .split(',')
         .map(|s| s.trim().to_lowercase())
@@ -4883,8 +5312,14 @@ pub fn record_account_event(
 ) -> Result<i64, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    db.record_account_event(&account_id, &event_type, &event_date, arr_impact, notes.as_deref())
-        .map_err(|e| e.to_string())
+    db.record_account_event(
+        &account_id,
+        &event_type,
+        &event_date,
+        arr_impact,
+        notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Get account events for a given account.
@@ -4897,4 +5332,224 @@ pub fn get_account_events(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_account_events(&account_id)
         .map_err(|e| e.to_string())
+}
+
+// =============================================================================
+// I194: User Agenda + Notes Editability (ADR-0065)
+// =============================================================================
+
+/// Update user-authored agenda items on a meeting prep file.
+#[tauri::command]
+pub fn update_meeting_user_agenda(
+    meeting_id: String,
+    agenda: Vec<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let prep_path = resolve_prep_path(&meeting_id, &state)?;
+
+    let content =
+        std::fs::read_to_string(&prep_path).map_err(|e| format!("Failed to read prep: {}", e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse prep: {}", e))?;
+
+    if agenda.is_empty() {
+        json.as_object_mut().map(|o| o.remove("userAgenda"));
+    } else {
+        json["userAgenda"] = serde_json::json!(agenda);
+    }
+
+    let updated =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Failed to serialize: {}", e))?;
+    std::fs::write(&prep_path, updated).map_err(|e| format!("Failed to write prep: {}", e))?;
+
+    Ok(())
+}
+
+/// Update user-authored notes on a meeting prep file.
+#[tauri::command]
+pub fn update_meeting_user_notes(
+    meeting_id: String,
+    notes: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let prep_path = resolve_prep_path(&meeting_id, &state)?;
+
+    let content =
+        std::fs::read_to_string(&prep_path).map_err(|e| format!("Failed to read prep: {}", e))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse prep: {}", e))?;
+
+    if notes.is_empty() {
+        json.as_object_mut().map(|o| o.remove("userNotes"));
+    } else {
+        json["userNotes"] = serde_json::json!(notes);
+    }
+
+    let updated =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("Failed to serialize: {}", e))?;
+    std::fs::write(&prep_path, updated).map_err(|e| format!("Failed to write prep: {}", e))?;
+
+    Ok(())
+}
+
+/// Resolve the on-disk path for a meeting's prep JSON file.
+fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::PathBuf, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let preps_dir = workspace.join("_today").join("data").join("preps");
+    let clean_id = meeting_id.trim_end_matches(".json").trim_end_matches(".md");
+    let path = preps_dir.join(format!("{}.json", clean_id));
+
+    if path.exists() {
+        Ok(path)
+    } else {
+        Err(format!("Prep file not found: {}", path.display()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::{ActionDb, DbMeeting};
+    use chrono::Utc;
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_backfill_prep_semantics_value_derives_recent_wins_and_sources() {
+        let mut prep = json!({
+            "talkingPoints": [
+                "Recent win: Sponsor re-engaged _(source: 2026-02-11-sync.md)_",
+                "Win: Tier upgrade requested"
+            ]
+        });
+
+        let changed = backfill_prep_semantics_value(&mut prep);
+        assert!(changed);
+        assert_eq!(prep["recentWins"][0], "Sponsor re-engaged");
+        assert_eq!(prep["recentWins"][1], "Tier upgrade requested");
+        assert_eq!(prep["recentWinSources"][0]["label"], "2026-02-11-sync.md");
+        assert_eq!(prep["talkingPoints"][0], "Recent win: Sponsor re-engaged");
+    }
+
+    #[test]
+    fn test_backfill_prep_files_in_dir_dry_run_counts() {
+        let dir = tempdir().expect("tempdir");
+        let preps_dir = dir.path().join("preps");
+        fs::create_dir_all(&preps_dir).expect("create preps dir");
+
+        fs::write(
+            preps_dir.join("needs-backfill.json"),
+            serde_json::to_string_pretty(&json!({
+                "talkingPoints": ["Recent win: Sponsor re-engaged (source: notes.md)"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            preps_dir.join("already-new.json"),
+            serde_json::to_string_pretty(&json!({
+                "recentWins": ["Sponsor re-engaged"],
+                "recentWinSources": [{"label": "notes.md", "path": "notes.md"}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(preps_dir.join("bad.json"), "{").unwrap();
+
+        let counts = backfill_prep_files_in_dir(&preps_dir, true).expect("dry-run should succeed");
+        assert_eq!(counts.candidate, 3);
+        assert_eq!(counts.transformed, 1);
+        assert_eq!(counts.skipped, 1);
+        assert_eq!(counts.parse_errors, 1);
+
+        let unchanged = fs::read_to_string(preps_dir.join("needs-backfill.json")).unwrap();
+        assert!(unchanged.contains("talkingPoints"));
+        assert!(!unchanged.contains("recentWins"));
+    }
+
+    #[test]
+    fn test_backfill_prep_files_in_dir_apply_updates_file() {
+        let dir = tempdir().expect("tempdir");
+        let preps_dir = dir.path().join("preps");
+        fs::create_dir_all(&preps_dir).expect("create preps dir");
+        let path = preps_dir.join("meeting.json");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&json!({
+                "talkingPoints": ["Recent win: Expansion approved (source: expansion.md)"]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let counts = backfill_prep_files_in_dir(&preps_dir, false).expect("apply should succeed");
+        assert_eq!(counts.transformed, 1);
+
+        let updated: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(updated["recentWins"][0], "Expansion approved");
+        assert_eq!(updated["recentWinSources"][0]["label"], "expansion.md");
+    }
+
+    #[test]
+    fn test_backfill_db_prep_contexts_apply_updates_rows() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("actions.db");
+        let db = ActionDb::open_at(db_path).expect("open db");
+
+        let meeting = DbMeeting {
+            id: "mtg-1".to_string(),
+            title: "Test Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: Utc::now().to_rfc3339(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: Some(
+                serde_json::to_string(&json!({
+                    "talkingPoints": ["Recent win: Champion re-engaged (source: call.md)"]
+                }))
+                .unwrap(),
+            ),
+        };
+        db.upsert_meeting(&meeting).expect("insert meeting");
+
+        let dry_counts = backfill_db_prep_contexts(&db, true).expect("dry-run");
+        assert_eq!(dry_counts.candidate, 1);
+        assert_eq!(dry_counts.transformed, 1);
+
+        let before = db
+            .get_meeting_by_id("mtg-1")
+            .expect("meeting lookup")
+            .expect("meeting exists")
+            .prep_context_json
+            .unwrap();
+        assert!(!before.contains("recentWins"));
+
+        let apply_counts = backfill_db_prep_contexts(&db, false).expect("apply");
+        assert_eq!(apply_counts.candidate, 1);
+        assert_eq!(apply_counts.transformed, 1);
+
+        let after = db
+            .get_meeting_by_id("mtg-1")
+            .expect("meeting lookup")
+            .expect("meeting exists")
+            .prep_context_json
+            .unwrap();
+        assert!(after.contains("recentWins"));
+        assert!(after.contains("recentWinSources"));
+    }
+
 }

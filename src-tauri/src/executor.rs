@@ -29,10 +29,7 @@ pub struct Executor {
 
 impl Executor {
     pub fn new(state: Arc<AppState>, app_handle: AppHandle) -> Self {
-        Self {
-            state,
-            app_handle,
-        }
+        Self { state, app_handle }
     }
 
     /// Read AI model config from current config, falling back to defaults.
@@ -145,7 +142,10 @@ impl Executor {
                 .config
                 .read()
                 .ok()
-                .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "impactRollup")))
+                .and_then(|g| {
+                    g.as_ref()
+                        .map(|c| crate::types::is_feature_enabled(c, "impactRollup"))
+                })
                 .unwrap_or(false);
 
             if impact_enabled {
@@ -156,7 +156,10 @@ impl Executor {
                             db,
                             &recon.date,
                         ) {
-                            Ok(r) if !r.skipped && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) => {
+                            Ok(r)
+                                if !r.skipped
+                                    && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) =>
+                            {
                                 log::info!(
                                     "Impact rollup: {} wins, {} risks → {}",
                                     r.wins_rolled_up,
@@ -180,12 +183,9 @@ impl Executor {
         }
 
         // Step 2: Archive (move files, clean data/)
-        let result = run_archive(workspace).await.map_err(|e| {
-            ExecutionError::ScriptFailed {
-                code: 1,
-                stderr: e,
-            }
-        })?;
+        let result = run_archive(workspace)
+            .await
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
 
         log::info!(
             "Archive complete: {} files moved{}",
@@ -201,7 +201,9 @@ impl Executor {
         // Write day-summary.json to archive directory (if files were archived)
         if !result.archive_path.is_empty() {
             let archive_path = std::path::Path::new(&result.archive_path);
-            if let Err(e) = reconcile::write_day_summary(archive_path, &recon, result.files_archived) {
+            if let Err(e) =
+                reconcile::write_day_summary(archive_path, &recon, result.files_archived)
+            {
                 log::warn!("Failed to write day summary: {}", e);
             }
         }
@@ -227,7 +229,10 @@ impl Executor {
         });
 
         // Update last scheduled run time
-        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+        if matches!(
+            trigger,
+            ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+        ) {
             self.state
                 .set_last_scheduled_run(WorkflowId::Archive, Utc::now());
         }
@@ -256,7 +261,10 @@ impl Executor {
             .config
             .read()
             .ok()
-            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "inboxProcessing")))
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|c| crate::types::is_feature_enabled(c, "inboxProcessing"))
+            })
             .unwrap_or(true);
         if !inbox_enabled {
             log::info!("Inbox batch skipped (feature disabled)");
@@ -308,14 +316,25 @@ impl Executor {
         let mut enriched_count = 0;
 
         // Build user context and AI model config for AI prompts
-        let user_ctx = self.state.config.read().ok()
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
             .unwrap_or_default();
         let ai_config = self.ai_model_config();
 
         for filename in to_enrich {
             log::info!("AI enriching '{}'", filename);
-            let result = crate::processor::enrich::enrich_file(workspace, filename, db_ref, &profile, Some(&user_ctx), Some(&ai_config));
+            let result = crate::processor::enrich::enrich_file(
+                workspace,
+                filename,
+                db_ref,
+                &profile,
+                Some(&user_ctx),
+                Some(&ai_config),
+            );
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
                     log::info!("Enriched '{}' → routed as {}", filename, classification);
@@ -352,7 +371,10 @@ impl Executor {
         });
 
         // Update last scheduled run time
-        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+        if matches!(
+            trigger,
+            ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+        ) {
             self.state
                 .set_last_scheduled_run(WorkflowId::InboxBatch, Utc::now());
         }
@@ -377,21 +399,27 @@ impl Executor {
         record: &crate::types::ExecutionRecord,
     ) -> Result<(), ExecutionError> {
         // --- Phase 1: Prepare (Rust-native) ---
-        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
-            started_at: record.started_at,
-            phase: WorkflowPhase::Preparing,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Week,
+            WorkflowStatus::Running {
+                started_at: record.started_at,
+                phase: WorkflowPhase::Preparing,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         log::info!("Week pipeline Phase 1: Rust-native prepare");
         crate::prepare::orchestrate::prepare_week(&self.state, workspace).await?;
 
         // --- Phase 2: Mechanical delivery (instant) ---
-        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Delivering,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Week,
+            WorkflowStatus::Running {
+                started_at: Utc::now(),
+                phase: WorkflowPhase::Delivering,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         log::info!("Week pipeline Phase 2: mechanical delivery");
         crate::prepare::orchestrate::deliver_week(workspace)
@@ -399,16 +427,28 @@ impl Executor {
         let _ = self.app_handle.emit("operation-delivered", "week-overview");
 
         // --- Phase 3: AI enrichment (fault-tolerant) ---
-        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Enriching,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Week,
+            WorkflowStatus::Running {
+                started_at: Utc::now(),
+                phase: WorkflowPhase::Enriching,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         let data_dir = workspace.join("_today").join("data");
-        let user_ctx = self.state.config.read().ok()
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+            .unwrap_or_else(|| crate::types::UserContext {
+                name: None,
+                company: None,
+                title: None,
+                focus: None,
+            });
 
         let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
         if let Err(e) = crate::workflow::deliver::enrich_week(
@@ -432,16 +472,22 @@ impl Executor {
             r.success = true;
         });
 
-        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+        if matches!(
+            trigger,
+            ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+        ) {
             self.state
                 .set_last_scheduled_run(WorkflowId::Week, record.started_at);
         }
 
-        self.emit_status_event(WorkflowId::Week, WorkflowStatus::Completed {
-            finished_at,
-            duration_secs,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Week,
+            WorkflowStatus::Completed {
+                finished_at,
+                duration_secs,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         let _ = send_notification(
             &self.app_handle,
@@ -472,29 +518,34 @@ impl Executor {
         record: &crate::types::ExecutionRecord,
     ) -> Result<(), ExecutionError> {
         // --- Phase 1: Prepare (Rust-native, ADR-0049) ---
-        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
-            started_at: record.started_at,
-            phase: WorkflowPhase::Preparing,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Today,
+            WorkflowStatus::Running {
+                started_at: record.started_at,
+                phase: WorkflowPhase::Preparing,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         log::info!("Today pipeline Phase 1: Rust-native prepare");
         crate::prepare::orchestrate::prepare_today(&self.state, workspace).await?;
 
         // --- Phase 2+3: Rust-native mechanical delivery ---
-        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Delivering,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Today,
+            WorkflowStatus::Running {
+                started_at: Utc::now(),
+                phase: WorkflowPhase::Delivering,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         let today_dir = workspace.join("_today");
         let data_dir = today_dir.join("data");
 
         // Load the directive produced by Phase 1
-        let directive = crate::json_loader::load_directive(&today_dir).map_err(|e| {
-            ExecutionError::ParseError(format!("Failed to load directive: {}", e))
-        })?;
+        let directive = crate::json_loader::load_directive(&today_dir)
+            .map_err(|e| ExecutionError::ParseError(format!("Failed to load directive: {}", e)))?;
 
         // Deliver schedule + actions (with DB for entity ID resolution + dedup)
         let db_guard = self.state.db.lock().ok();
@@ -505,9 +556,8 @@ impl Executor {
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
         let _ = self.app_handle.emit("operation-delivered", "schedule");
         log::info!("Today pipeline: schedule delivered");
-        let actions_data =
-            crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
-                .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        let actions_data = crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
+            .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
         let _ = self.app_handle.emit("operation-delivered", "actions");
         log::info!("Today pipeline: actions delivered");
 
@@ -527,7 +577,10 @@ impl Executor {
             .config
             .read()
             .ok()
-            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "meetingPrep")))
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|c| crate::types::is_feature_enabled(c, "meetingPrep"))
+            })
             .unwrap_or(true);
         let prep_paths = if prep_enabled {
             let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
@@ -548,17 +601,26 @@ impl Executor {
             .config
             .read()
             .ok()
-            .and_then(|g| g.as_ref().map(|c| crate::types::is_feature_enabled(c, "emailTriage")))
+            .and_then(|g| {
+                g.as_ref()
+                    .map(|c| crate::types::is_feature_enabled(c, "emailTriage"))
+            })
             .unwrap_or(true);
         let emails_data = if email_enabled {
-            let data = crate::workflow::deliver::deliver_emails(&directive, &data_dir)
-                .unwrap_or_else(|e| {
+            match crate::workflow::deliver::deliver_emails(&directive, &data_dir) {
+                Ok(data) => {
+                    let _ = self.app_handle.emit("operation-delivered", "emails");
+                    log::info!("Today pipeline: emails delivered");
+                    data
+                }
+                Err(e) => {
                     log::warn!("Email delivery failed (non-fatal): {}", e);
+                    let _ = self
+                        .app_handle
+                        .emit("email-error", format!("Email delivery failed: {}", e));
                     json!({})
-                });
-            let _ = self.app_handle.emit("operation-delivered", "emails");
-            log::info!("Today pipeline: emails delivered");
-            data
+                }
+            }
         } else {
             log::info!("Today pipeline: emails skipped (feature disabled)");
             json!({})
@@ -577,16 +639,28 @@ impl Executor {
         .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
 
         // --- AI enrichment (progressive, fault-tolerant) ---
-        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Running {
-            started_at: Utc::now(),
-            phase: WorkflowPhase::Enriching,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Today,
+            WorkflowStatus::Running {
+                started_at: Utc::now(),
+                phase: WorkflowPhase::Enriching,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         // Build user context for AI enrichment prompts
-        let user_ctx = self.state.config.read().ok()
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+            .unwrap_or_else(|| crate::types::UserContext {
+                name: None,
+                company: None,
+                title: None,
+                focus: None,
+            });
 
         // Create per-tier PtyManagers (I174)
         let ai_config = self.ai_model_config();
@@ -602,20 +676,26 @@ impl Executor {
                 &user_ctx,
             ) {
                 log::warn!("Email enrichment failed (non-fatal): {}", e);
+                let _ = self.app_handle.emit(
+                    "email-enrichment-warning",
+                    format!("Email AI summaries unavailable: {}", e),
+                );
             }
-            let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
+            let _ = self
+                .app_handle
+                .emit("operation-delivered", "emails-enriched");
         }
 
         // AI: Enrich prep agendas (feature-gated I39)
         if prep_enabled {
-            if let Err(e) = crate::workflow::deliver::enrich_preps(
-                &data_dir,
-                &extraction_pty,
-                &workspace,
-            ) {
+            if let Err(e) =
+                crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, &workspace)
+            {
                 log::warn!("Prep enrichment failed (non-fatal): {}", e);
             }
-            let _ = self.app_handle.emit("operation-delivered", "preps-enriched");
+            let _ = self
+                .app_handle
+                .emit("operation-delivered", "preps-enriched");
         }
 
         // AI: Generate briefing narrative
@@ -652,16 +732,22 @@ impl Executor {
             r.success = true;
         });
 
-        if matches!(trigger, ExecutionTrigger::Scheduled | ExecutionTrigger::Missed) {
+        if matches!(
+            trigger,
+            ExecutionTrigger::Scheduled | ExecutionTrigger::Missed
+        ) {
             self.state
                 .set_last_scheduled_run(WorkflowId::Today, record.started_at);
         }
 
-        self.emit_status_event(WorkflowId::Today, WorkflowStatus::Completed {
-            finished_at,
-            duration_secs,
-            execution_id: execution_id.to_string(),
-        });
+        self.emit_status_event(
+            WorkflowId::Today,
+            WorkflowStatus::Completed {
+                finished_at,
+                duration_secs,
+                execution_id: execution_id.to_string(),
+            },
+        );
 
         let _ = send_notification(
             &self.app_handle,
@@ -681,9 +767,9 @@ impl Executor {
             .read()
             .map_err(|_| ExecutionError::ConfigurationError("Lock poisoned".to_string()))?;
 
-        let config = config
-            .as_ref()
-            .ok_or_else(|| ExecutionError::ConfigurationError("No configuration loaded".to_string()))?;
+        let config = config.as_ref().ok_or_else(|| {
+            ExecutionError::ConfigurationError("No configuration loaded".to_string())
+        })?;
 
         let path = PathBuf::from(&config.workspace_path);
         if !path.exists() {
@@ -701,10 +787,7 @@ impl Executor {
     /// 4. Optionally run AI enrichment (fault-tolerant)
     /// 5. Emit operation-delivered for frontend refresh
     /// 6. Clean up refresh directive
-    pub async fn execute_email_refresh(
-        &self,
-        workspace: &Path,
-    ) -> Result<(), String> {
+    pub async fn execute_email_refresh(&self, workspace: &Path) -> Result<(), String> {
         // Guard: reject if /today pipeline is currently running
         let today_status = self.state.get_workflow_status(WorkflowId::Today);
         if matches!(today_status, WorkflowStatus::Running { .. }) {
@@ -760,7 +843,10 @@ impl Executor {
         let mut medium_priority: Vec<serde_json::Value> = Vec::new();
         let mut low_priority: Vec<serde_json::Value> = Vec::new();
         for e in &classified {
-            let prio = e.get("priority").and_then(serde_json::Value::as_str).unwrap_or("medium");
+            let prio = e
+                .get("priority")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("medium");
             let mapped = map_email(e, prio);
             match prio {
                 "low" => low_priority.push(mapped),
@@ -780,18 +866,28 @@ impl Executor {
             }
         });
 
-        crate::workflow::deliver::write_json(
-            &data_dir.join("emails.json"),
-            &emails_json,
-        )?;
+        crate::workflow::deliver::write_json(&data_dir.join("emails.json"), &emails_json)?;
         let _ = self.app_handle.emit("operation-delivered", "emails");
-        log::info!("Email refresh: emails.json written ({} high, {} medium, {} low)",
-            high_priority.len(), medium_priority.len(), low_priority.len());
+        log::info!(
+            "Email refresh: emails.json written ({} high, {} medium, {} low)",
+            high_priority.len(),
+            medium_priority.len(),
+            low_priority.len()
+        );
 
         // Step 4: AI enrichment (fault-tolerant)
-        let user_ctx = self.state.config.read().ok()
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
             .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
-            .unwrap_or_else(|| crate::types::UserContext { name: None, company: None, title: None, focus: None });
+            .unwrap_or_else(|| crate::types::UserContext {
+                name: None,
+                company: None,
+                title: None,
+                focus: None,
+            });
         let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &self.ai_model_config());
         if let Err(e) = crate::workflow::deliver::enrich_emails(
             &data_dir,
@@ -800,8 +896,14 @@ impl Executor {
             &user_ctx,
         ) {
             log::warn!("Email refresh: AI enrichment failed (non-fatal): {}", e);
+            let _ = self.app_handle.emit(
+                "email-enrichment-warning",
+                format!("Email AI summaries unavailable: {}", e),
+            );
         }
-        let _ = self.app_handle.emit("operation-delivered", "emails-enriched");
+        let _ = self
+            .app_handle
+            .emit("operation-delivered", "emails-enriched");
 
         // Step 5: Clean up refresh directive
         let _ = std::fs::remove_file(&refresh_path);

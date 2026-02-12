@@ -185,7 +185,7 @@ const focusRoute = createRoute({
 
 const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/meeting/$prepFile",
+  path: "/meeting/$meetingId",
   component: MeetingDetailPage,
 });
 
