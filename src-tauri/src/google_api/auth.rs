@@ -8,7 +8,10 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 
-use super::{load_credentials, save_token, GoogleApiError, GoogleToken, SCOPES};
+use super::{
+    load_credentials, save_token, send_with_retry, GoogleApiError, GoogleToken, RetryPolicy,
+    SCOPES,
+};
 
 /// Run the full OAuth2 consent flow.
 ///
@@ -26,10 +29,10 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     let installed = &creds.installed;
 
     // Bind to a random port
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| GoogleApiError::Io(e))?;
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(GoogleApiError::Io)?;
     let port = listener
         .local_addr()
-        .map_err(|e| GoogleApiError::Io(e))?
+        .map_err(GoogleApiError::Io)?
         .port();
     let redirect_uri = format!("http://localhost:{}", port);
 
@@ -52,23 +55,23 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     // Wait for the redirect with a timeout
     listener
         .set_nonblocking(false)
-        .map_err(|e| GoogleApiError::Io(e))?;
+        .map_err(GoogleApiError::Io)?;
 
     let auth_code = wait_for_auth_code(&listener)?;
 
     // Exchange auth code for tokens
     let client = reqwest::Client::new();
-    let resp = client
-        .post(&installed.token_uri)
-        .form(&[
+    let resp = send_with_retry(
+        client.post(&installed.token_uri).form(&[
             ("code", auth_code.as_str()),
             ("client_id", installed.client_id.as_str()),
             ("client_secret", installed.client_secret.as_str()),
             ("redirect_uri", redirect_uri.as_str()),
             ("grant_type", "authorization_code"),
-        ])
-        .send()
-        .await?;
+        ]),
+        &RetryPolicy::default(),
+    )
+    .await?;
 
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -110,12 +113,12 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
 /// Wait for the OAuth redirect and extract the auth code from the URL.
 fn wait_for_auth_code(listener: &TcpListener) -> Result<String, GoogleApiError> {
-    let (mut stream, _) = listener.accept().map_err(|e| GoogleApiError::Io(e))?;
+    let (mut stream, _) = listener.accept().map_err(GoogleApiError::Io)?;
 
     let mut buffer = [0u8; 4096];
     let n = stream
         .read(&mut buffer)
-        .map_err(|e| GoogleApiError::Io(e))?;
+        .map_err(GoogleApiError::Io)?;
     let request = String::from_utf8_lossy(&buffer[..n]);
 
     // Extract the code parameter from GET /?code=xxx&scope=... HTTP/1.1
@@ -180,11 +183,13 @@ async fn fetch_user_email(access_token: &str) -> String {
     let client = reqwest::Client::new();
 
     // Try Gmail users.getProfile first
-    match client
-        .get("https://gmail.googleapis.com/gmail/v1/users/me/profile")
-        .bearer_auth(access_token)
-        .send()
-        .await
+    match send_with_retry(
+        client
+            .get("https://gmail.googleapis.com/gmail/v1/users/me/profile")
+            .bearer_auth(access_token),
+        &RetryPolicy::default(),
+    )
+    .await
     {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
@@ -197,11 +202,13 @@ async fn fetch_user_email(access_token: &str) -> String {
     }
 
     // Fallback: OAuth2 userinfo endpoint
-    match client
-        .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .bearer_auth(access_token)
-        .send()
-        .await
+    match send_with_retry(
+        client
+            .get("https://www.googleapis.com/oauth2/v2/userinfo")
+            .bearer_auth(access_token),
+        &RetryPolicy::default(),
+    )
+    .await
     {
         Ok(resp) if resp.status().is_success() => {
             if let Ok(body) = resp.json::<serde_json::Value>().await {
