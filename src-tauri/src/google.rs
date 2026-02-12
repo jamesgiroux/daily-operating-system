@@ -34,8 +34,7 @@ pub async fn start_auth(workspace: &Path) -> Result<String, String> {
 pub fn disconnect() -> Result<(), String> {
     let token_path = google_token_path();
     if token_path.exists() {
-        std::fs::remove_file(&token_path)
-            .map_err(|e| format!("Failed to remove token: {}", e))?;
+        std::fs::remove_file(&token_path).map_err(|e| format!("Failed to remove token: {}", e))?;
     }
     Ok(())
 }
@@ -76,11 +75,8 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
     let events: Vec<CalendarEvent> = raw_events
         .iter()
         .map(|raw| {
-            let classified = google_api::classify::classify_meeting_multi(
-                raw,
-                &user_domains,
-                &account_hints,
-            );
+            let classified =
+                google_api::classify::classify_meeting_multi(raw, &user_domains, &account_hints);
             classified.to_calendar_event()
         })
         .collect();
@@ -95,12 +91,7 @@ fn build_account_hints(state: &AppState) -> HashSet<String> {
         .lock()
         .ok()
         .and_then(|g| g.as_ref().and_then(|db| db.get_all_accounts().ok()))
-        .map(|accounts| {
-            accounts
-                .iter()
-                .map(|a| a.id.to_lowercase())
-                .collect()
-        })
+        .map(|accounts| accounts.iter().map(|a| a.id.to_lowercase()).collect())
         .unwrap_or_default()
 }
 
@@ -138,11 +129,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
         match poll_calendar(&state).await {
             Ok(events) => {
                 // Check for new prep-eligible meetings before storing (I41)
-                let new_preps = generate_preps_for_new_meetings(
-                    &events,
-                    &state,
-                    &workspace,
-                );
+                let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace);
                 if new_preps > 0 {
                     log::info!("Calendar poll: generated {} new preps", new_preps);
                 }
@@ -157,8 +144,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Pre-meeting intelligence refresh (I147 — ADR-0058)
                 if let Ok(db_guard) = state.db.lock() {
                     if let Some(db) = db_guard.as_ref() {
-                        let refreshed =
-                            crate::hygiene::check_upcoming_meeting_readiness(db, &state.intel_queue);
+                        let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
+                            db,
+                            &state.intel_queue,
+                        );
                         if !refreshed.is_empty() {
                             log::info!(
                                 "Calendar poll: enqueued {} pre-meeting intelligence refreshes",
@@ -180,10 +169,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 if let Ok(mut guard) = state.google_auth.lock() {
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
-                let _ = app_handle.emit(
-                    "google-auth-changed",
-                    GoogleAuthStatus::TokenExpired,
-                );
+                let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
             }
             Err(PollError::ApiError(e)) => {
                 log::warn!("Calendar poll error: {}", e);
@@ -231,11 +217,14 @@ fn get_poll_interval(state: &AppState) -> u64 {
         .unwrap_or(5)
 }
 
-/// Prep-eligible meeting types (same as PREP_ELIGIBLE_TYPES in deliver.rs)
+/// Prep-eligible meeting types (same as PREP_ELIGIBLE_TYPES + PERSON_PREP_TYPES in deliver.rs)
 const PREP_ELIGIBLE_TYPES: &[MeetingType] = &[
     MeetingType::Customer,
     MeetingType::Qbr,
     MeetingType::Partnership,
+    MeetingType::Internal,
+    MeetingType::TeamSync,
+    MeetingType::OneOnOne,
 ];
 
 /// Generate lightweight prep files for new calendar events that don't already have preps.
@@ -264,11 +253,7 @@ fn generate_preps_for_new_meetings(
 
         let meeting_type_str = event.meeting_type.as_str();
 
-        let meeting_id = make_meeting_id(
-            &event.title,
-            &event.start.to_rfc3339(),
-            meeting_type_str,
-        );
+        let meeting_id = make_meeting_id(&event.title, &event.start.to_rfc3339(), meeting_type_str);
 
         let prep_path = preps_dir.join(format!("{}.json", meeting_id));
         if prep_path.exists() {
@@ -352,11 +337,7 @@ fn has_existing_prep_for_event(preps_dir: &Path, event_id: &str) -> bool {
 }
 
 /// Enrich a prep JSON with account data from SQLite (quick context + open actions).
-fn enrich_prep_from_db(
-    prep: &mut serde_json::Value,
-    account_id: &str,
-    db: &crate::db::ActionDb,
-) {
+fn enrich_prep_from_db(prep: &mut serde_json::Value, account_id: &str, db: &crate::db::ActionDb) {
     // Quick context from account data
     if let Ok(Some(account)) = db.get_account(account_id) {
         let mut qc = serde_json::Map::new();
@@ -364,7 +345,10 @@ fn enrich_prep_from_db(
             qc.insert("Lifecycle".to_string(), serde_json::json!(lifecycle));
         }
         if let Some(arr) = account.arr {
-            qc.insert("ARR".to_string(), serde_json::json!(format!("${:.0}k", arr / 1000.0)));
+            qc.insert(
+                "ARR".to_string(),
+                serde_json::json!(format!("${:.0}k", arr / 1000.0)),
+            );
         }
         if let Some(ref health) = account.health {
             qc.insert("Health".to_string(), serde_json::json!(health));
@@ -387,10 +371,7 @@ fn enrich_prep_from_db(
                 .iter()
                 .take(5)
                 .map(|a| {
-                    let is_overdue = a
-                        .due_date
-                        .as_deref()
-                        .is_some_and(|d| d < today.as_str());
+                    let is_overdue = a.due_date.as_deref().is_some_and(|d| d < today.as_str());
                     serde_json::json!({
                         "title": a.title,
                         "dueDate": a.due_date,
@@ -418,14 +399,10 @@ fn enrich_prep_from_db(
 /// - Auto-link to entity if meeting has an account field
 fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, workspace: &Path) {
     // Acquire config/auth locks first (short-lived), then DB lock
-    let self_email = state
-        .google_auth
-        .lock()
-        .ok()
-        .and_then(|g| match &*g {
-            GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
-            _ => None,
-        });
+    let self_email = state.google_auth.lock().ok().and_then(|g| match &*g {
+        GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
+        _ => None,
+    });
 
     let user_domains = state
         .config
@@ -460,7 +437,11 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             Some(&event.end.to_rfc3339()),
             event.account.as_deref(),
         ) {
-            log::warn!("Failed to ensure meeting '{}' in history: {}", event.title, e);
+            log::warn!(
+                "Failed to ensure meeting '{}' in history: {}",
+                event.title,
+                e
+            );
         }
 
         for email in &event.attendees {
@@ -487,7 +468,8 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             let id = person_id_from_email(&email_lower);
             let name = name_from_email(&email_lower);
             let org = org_from_email(&email_lower);
-            let relationship = crate::util::classify_relationship_multi(&email_lower, &user_domains);
+            let relationship =
+                crate::util::classify_relationship_multi(&email_lower, &user_domains);
 
             let person = DbPerson {
                 id: id.clone(),
@@ -672,15 +654,17 @@ mod tests {
 
     #[test]
     fn test_prep_eligible_types_filter() {
-        // Customer, QBR, Partnership are eligible
+        // Account-based prep types
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Customer));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Qbr));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Partnership));
-        // Others are not
-        assert!(!PREP_ELIGIBLE_TYPES.contains(&MeetingType::Internal));
+        // I159: Person-prep types
+        assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Internal));
+        assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::TeamSync));
+        assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::OneOnOne));
+        // Not eligible
         assert!(!PREP_ELIGIBLE_TYPES.contains(&MeetingType::Personal));
         assert!(!PREP_ELIGIBLE_TYPES.contains(&MeetingType::AllHands));
-        assert!(!PREP_ELIGIBLE_TYPES.contains(&MeetingType::TeamSync));
     }
 
     #[test]

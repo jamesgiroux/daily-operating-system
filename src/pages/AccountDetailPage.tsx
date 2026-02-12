@@ -38,7 +38,6 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   ExternalLink,
   File,
   FileText,
@@ -63,10 +62,16 @@ import type {
   ContentFile,
   IntelRisk,
   IntelWin,
+  MeetingPreview,
   StakeholderInsight,
   StrategicProgram,
   ParentAggregate,
 } from "@/types";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
 
@@ -111,18 +116,34 @@ function AssessmentBody({ text }: { text: string }) {
           </p>
         ))}
       </div>
-      {sourcesRaw && (
-        <div className="text-[11px] text-muted-foreground/70 border-t border-border/40 pt-3 mt-4 space-y-0.5">
-          {sourcesRaw
-            .split("\n")
-            .filter((l) => l.trim())
-            .map((line, i) => (
-              <p key={i} className="m-0">
-                {line.trim()}
-              </p>
+      {sourcesRaw && (() => {
+        const sourceLines = sourcesRaw.split("\n").filter((l) => l.trim());
+        const visible = sourceLines.slice(0, 2);
+        const overflow = sourceLines.slice(2);
+        return (
+          <div className="text-[11px] text-muted-foreground/70 border-t border-border/40 pt-3 mt-4 space-y-0.5">
+            {visible.map((line, i) => (
+              <p key={i} className="m-0">{line.trim()}</p>
             ))}
-        </div>
-      )}
+            {overflow.length > 0 && (
+              <Collapsible>
+                <CollapsibleContent>
+                  <div className="space-y-0.5">
+                    {overflow.map((line, i) => (
+                      <p key={i + 2} className="m-0">{line.trim()}</p>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+                <CollapsibleTrigger asChild>
+                  <button className="text-muted-foreground/50 hover:text-muted-foreground transition-colors mt-1">
+                    +{overflow.length} more sources
+                  </button>
+                </CollapsibleTrigger>
+              </Collapsible>
+            )}
+          </div>
+        );
+      })()}
     </>
   );
 }
@@ -163,7 +184,7 @@ export default function AccountDetailPage() {
   const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
 
   // Evidence section collapse state
-  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [recentMeetingsExpanded, setRecentMeetingsExpanded] = useState(false);
 
   // I163: Strategic programs inline editing
   const [programs, setPrograms] = useState<StrategicProgram[]>([]);
@@ -738,27 +759,86 @@ export default function AccountDetailPage() {
           {/* Asymmetric Grid: Main (3fr) + Sidebar (2fr) */}
           <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
             {/* ═══ Main Column ═══ */}
-            <div className="space-y-6">
-              {/* Attention Items: Risks + Wins + Unknowns */}
-              {intelligence && (intelligence.risks?.length || intelligence.recentWins?.length || intelligence.currentState?.unknowns?.length) && (
-                <div className="space-y-3">
-                  {intelligence.risks?.map((risk, i) => (
-                    <AttentionRisk key={`risk-${i}`} risk={risk} />
-                  ))}
-                  {intelligence.recentWins?.map((win, i) => (
-                    <AttentionWin key={`win-${i}`} win={win} />
-                  ))}
-                  {intelligence.currentState?.unknowns?.map((unknown, i) => (
-                    <div
-                      key={`unknown-${i}`}
-                      className="flex items-start gap-3 rounded-lg bg-primary/8 px-4 py-3"
-                    >
-                      <HelpCircle className="mt-0.5 size-4 shrink-0 text-primary" />
-                      <span className="text-sm">{unknown}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="min-w-0 space-y-6">
+              {/* Strategic Attention: Risks + Wins + Unknowns (capped at 3, expandable) */}
+              {intelligence && (() => {
+                const risks = intelligence.risks ?? [];
+                const wins = intelligence.recentWins ?? [];
+                const unknowns = intelligence.currentState?.unknowns ?? [];
+                const allItems = [
+                  ...risks.map((r, i) => ({ type: "risk" as const, key: `risk-${i}`, item: r })),
+                  ...wins.map((w, i) => ({ type: "win" as const, key: `win-${i}`, item: w })),
+                  ...unknowns.map((u, i) => ({ type: "unknown" as const, key: `unknown-${i}`, item: u })),
+                ];
+                if (allItems.length === 0) return null;
+                const visible = allItems.slice(0, 3);
+                const overflow = allItems.slice(3);
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base font-semibold">
+                        Strategic Attention
+                        <span className="ml-1 text-muted-foreground">
+                          ({allItems.length})
+                        </span>
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground">
+                        Synthesized from intelligence, meetings, and signals
+                      </p>
+                    </CardHeader>
+                    <CardContent>
+                      <Collapsible>
+                        <div className="space-y-3">
+                          {visible.map((entry) =>
+                            entry.type === "risk" ? (
+                              <AttentionRisk key={entry.key} risk={entry.item as IntelRisk} />
+                            ) : entry.type === "win" ? (
+                              <AttentionWin key={entry.key} win={entry.item as IntelWin} />
+                            ) : (
+                              <div
+                                key={entry.key}
+                                className="flex items-start gap-3 rounded-lg bg-primary/8 px-4 py-3"
+                              >
+                                <HelpCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+                                <span className="text-sm">{entry.item as string}</span>
+                              </div>
+                            )
+                          )}
+                        </div>
+                        {overflow.length > 0 && (
+                          <>
+                            <CollapsibleContent>
+                              <div className="space-y-3 mt-3 pt-3 border-t">
+                                {overflow.map((entry) =>
+                                  entry.type === "risk" ? (
+                                    <AttentionRisk key={entry.key} risk={entry.item as IntelRisk} />
+                                  ) : entry.type === "win" ? (
+                                    <AttentionWin key={entry.key} win={entry.item as IntelWin} />
+                                  ) : (
+                                    <div
+                                      key={entry.key}
+                                      className="flex items-start gap-3 rounded-lg bg-primary/8 px-4 py-3"
+                                    >
+                                      <HelpCircle className="mt-0.5 size-4 shrink-0 text-primary" />
+                                      <span className="text-sm">{entry.item as string}</span>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            </CollapsibleContent>
+                            <CollapsibleTrigger asChild>
+                              <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-3 pt-3 border-t w-full justify-center">
+                                <ChevronDown className="size-4" />
+                                Show {overflow.length} more items
+                              </button>
+                            </CollapsibleTrigger>
+                          </>
+                        )}
+                      </Collapsible>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
 
               {/* Meeting Readiness */}
               {intelligence?.nextMeetingReadiness && intelligence.nextMeetingReadiness.prepItems.length > 0 && (
@@ -825,6 +905,55 @@ export default function AccountDetailPage() {
                     <EmptyState
                       icon={CalendarClock}
                       message="No upcoming meetings scheduled"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Recent Meetings — show 3, expand for all (ADR-0063) */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Recent Meetings
+                    {detail.recentMeetings.length > 0 && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.recentMeetings.length})
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {detail.recentMeetings.length > 0 ? (
+                    <Collapsible open={recentMeetingsExpanded} onOpenChange={setRecentMeetingsExpanded}>
+                      <div className="space-y-3">
+                        {detail.recentMeetings.slice(0, 3).map((m) => (
+                          <MeetingPreviewCard key={m.id} meeting={m} />
+                        ))}
+                      </div>
+                      {detail.recentMeetings.length > 3 && (
+                        <>
+                          <CollapsibleContent>
+                            <div className="space-y-3 mt-3 pt-3 border-t">
+                              {detail.recentMeetings.slice(3).map((m) => (
+                                <MeetingPreviewCard key={m.id} meeting={m} />
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                          <CollapsibleTrigger asChild>
+                            <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-3 pt-3 border-t w-full justify-center">
+                              <ChevronDown className={cn("size-4 transition-transform", recentMeetingsExpanded && "rotate-180")} />
+                              {recentMeetingsExpanded
+                                ? "Show fewer"
+                                : `Show ${detail.recentMeetings.length - 3} more meetings`}
+                            </button>
+                          </CollapsibleTrigger>
+                        </>
+                      )}
+                    </Collapsible>
+                  ) : (
+                    <EmptyState
+                      icon={CalendarClock}
+                      message="No past meetings recorded"
                     />
                   )}
                 </CardContent>
@@ -1033,229 +1162,114 @@ export default function AccountDetailPage() {
                 </Card>
               )}
 
-              {/* Evidence History (collapsed) */}
-              <div className="rounded-lg border">
-                <button
-                  onClick={() => setEvidenceOpen(!evidenceOpen)}
-                  className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  {evidenceOpen ? (
-                    <ChevronDown className="size-4" />
-                  ) : (
-                    <ChevronRight className="size-4" />
-                  )}
-                  Evidence &amp; History
-                  <span className="text-xs font-normal">
-                    {[
-                      detail.recentMeetings.length > 0 &&
-                        `${detail.recentMeetings.length} meetings`,
-                      detail.recentCaptures.length > 0 &&
-                        `${detail.recentCaptures.length} captures`,
-                      files.length > 0 && `${files.length} files`,
-                      intelligence?.valueDelivered?.length &&
-                        `${intelligence.valueDelivered.length} value items`,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </button>
-                {evidenceOpen && (
-                  <div className="space-y-6 border-t px-4 py-4">
-                    {/* Value Delivered */}
-                    {(intelligence?.valueDelivered?.length ?? 0) > 0 && (
-                      <div>
-                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Value Delivered
-                        </h4>
-                        <div className="space-y-2">
-                          {intelligence!.valueDelivered.map((v, i) => (
-                            <div
-                              key={i}
-                              className="flex items-start gap-2 text-sm"
-                            >
-                              {v.date && (
-                                <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                                  {v.date}
-                                </span>
-                              )}
-                              <span>{v.statement}</span>
-                              {v.source && (
-                                <span className="shrink-0 text-xs text-muted-foreground">
-                                  ({v.source})
-                                </span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Recent Meetings */}
-                    {detail.recentMeetings.length > 0 && (
-                      <div>
-                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Recent Meetings
-                        </h4>
-                        <div className="space-y-2">
-                          {detail.recentMeetings.map((m) => (
-                            <Link
-                              key={m.id}
-                              to="/meeting/history/$meetingId"
-                              params={{ meetingId: m.id }}
-                              className="flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors hover:bg-muted"
-                            >
-                              <Badge
-                                variant="outline"
-                                className="shrink-0 text-xs"
-                              >
-                                {formatMeetingType(m.meetingType)}
-                              </Badge>
-                              <span className="flex-1 truncate font-medium">
-                                {m.title}
-                              </span>
-                              <span className="shrink-0 text-sm text-muted-foreground">
-                                {formatRelativeDate(m.startTime)}
-                              </span>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Recent Captures */}
-                    {detail.recentCaptures.length > 0 && (
-                      <div>
-                        <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Recent Captures
-                        </h4>
-                        <div className="space-y-2">
-                          {detail.recentCaptures.map((c) => (
-                            <Link
-                              key={c.id}
-                              to="/meeting/history/$meetingId"
-                              params={{ meetingId: c.meetingId }}
-                              className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
-                            >
-                              <CaptureIcon type={c.captureType} />
-                              <div className="min-w-0">
-                                <span className="truncate">{c.content}</span>
-                                <div className="text-xs text-muted-foreground">
-                                  {c.meetingTitle}
-                                </div>
+              {/* Meeting Outcomes — captures from transcripts, capped at 3 */}
+              {detail.recentCaptures.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Meeting Outcomes
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.recentCaptures.length})
+                      </span>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Captured from recent meeting transcripts
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <Collapsible>
+                      <div className="space-y-2">
+                        {detail.recentCaptures.slice(0, 3).map((c) => (
+                          <Link
+                            key={c.id}
+                            to="/meeting/history/$meetingId"
+                            params={{ meetingId: c.meetingId }}
+                            className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                          >
+                            <CaptureIcon type={c.captureType} />
+                            <div className="min-w-0">
+                              <span className="truncate">{c.content}</span>
+                              <div className="text-xs text-muted-foreground">
+                                {c.meetingTitle}
                               </div>
-                            </Link>
-                          ))}
-                        </div>
+                            </div>
+                          </Link>
+                        ))}
                       </div>
-                    )}
+                      {detail.recentCaptures.length > 3 && (
+                        <>
+                          <CollapsibleContent>
+                            <div className="space-y-2 mt-2 pt-2 border-t">
+                              {detail.recentCaptures.slice(3).map((c) => (
+                                <Link
+                                  key={c.id}
+                                  to="/meeting/history/$meetingId"
+                                  params={{ meetingId: c.meetingId }}
+                                  className="flex items-start gap-2 rounded-md px-1 py-0.5 text-sm transition-colors hover:bg-muted"
+                                >
+                                  <CaptureIcon type={c.captureType} />
+                                  <div className="min-w-0">
+                                    <span className="truncate">{c.content}</span>
+                                    <div className="text-xs text-muted-foreground">
+                                      {c.meetingTitle}
+                                    </div>
+                                  </div>
+                                </Link>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                          <CollapsibleTrigger asChild>
+                            <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 pt-2 border-t w-full justify-center">
+                              <ChevronDown className="size-4" />
+                              Show {detail.recentCaptures.length - 3} more outcomes
+                            </button>
+                          </CollapsibleTrigger>
+                        </>
+                      )}
+                    </Collapsible>
+                  </CardContent>
+                </Card>
+              )}
 
-                    {/* Files (I124) */}
-                    <div>
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Files
-                          {files.length > 0 && (
-                            <span className="ml-1">({files.length})</span>
-                          )}
-                        </h4>
-                        <div className="flex items-center gap-2">
-                          {indexFeedback && (
-                            <span className="text-xs text-muted-foreground animate-in fade-in">
-                              {indexFeedback}
+              {/* Value Delivered (from intelligence) */}
+              {(intelligence?.valueDelivered?.length ?? 0) > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Value Delivered
+                      <span className="ml-1 text-muted-foreground">
+                        ({intelligence!.valueDelivered.length})
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {intelligence!.valueDelivered.map((v, i) => (
+                        <div
+                          key={i}
+                          className="flex items-start gap-2 text-sm"
+                        >
+                          {v.date && (
+                            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                              {v.date}
                             </span>
                           )}
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-6"
-                                  onClick={handleIndexFiles}
-                                  disabled={indexing}
-                                >
-                                  <RefreshCw
-                                    className={cn(
-                                      "size-3",
-                                      indexing && "animate-spin"
-                                    )}
-                                  />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                Re-scan directory for files
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          <span>{v.statement}</span>
+                          {v.source && (
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              ({v.source})
+                            </span>
+                          )}
                         </div>
-                      </div>
-
-                      {/* I125: New files banner */}
-                      {newFileCount > 0 && !bannerDismissed && (
-                        <div className="mb-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm">
-                          <FileText className="size-4 shrink-0 text-primary" />
-                          <span className="flex-1">
-                            {newFileCount} new file
-                            {newFileCount !== 1 ? "s" : ""} detected
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 text-xs"
-                            onClick={handleIndexFiles}
-                            disabled={indexing}
-                          >
-                            Index now
-                          </Button>
-                          <button
-                            onClick={() => setBannerDismissed(true)}
-                            className="text-muted-foreground hover:text-foreground"
-                          >
-                            <X className="size-3.5" />
-                          </button>
-                        </div>
-                      )}
-
-                      {files.length > 0 ? (
-                        <div className="space-y-1">
-                          {files.map((f) => (
-                            <div
-                              key={f.id}
-                              className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
-                              onClick={() =>
-                                invoke("reveal_in_finder", {
-                                  path: f.absolutePath,
-                                })
-                              }
-                            >
-                              <File className="size-3.5 shrink-0 text-muted-foreground" />
-                              <span className="flex-1 truncate">
-                                {f.filename}
-                              </span>
-                              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                                {formatFileSize(f.fileSize)}
-                              </span>
-                              <span className="shrink-0 text-xs text-muted-foreground">
-                                {formatRelativeDateShort(f.modifiedAt)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <EmptyState
-                          icon={FileText}
-                          message="No files indexed"
-                        />
-                      )}
+                      ))}
                     </div>
-
-                  </div>
-                )}
-              </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* ═══ Sidebar Column ═══ */}
-            <div className="space-y-6">
+            <div className="min-w-0 space-y-6">
               {/* Account Details (read-first with edit toggle) */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between pb-3">
@@ -1373,10 +1387,10 @@ export default function AccountDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <EmptyState
-                      icon={Target}
-                      message="No strategic programs"
-                    />
+                    <div className="text-sm text-muted-foreground space-y-2">
+                      <p className="font-medium">Track strategic initiatives that cross multiple deals or drive account-level outcomes.</p>
+                      <p className="text-xs">Examples: QBR prep, EBR planning, executive alignment campaigns, product adoption programs, expansion plays, renewal strategy</p>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -1554,6 +1568,110 @@ export default function AccountDetailPage() {
                 </Card>
               )}
 
+              {/* Files (moved from Evidence section to sidebar) */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold">
+                      Files
+                      {files.length > 0 && (
+                        <span className="ml-1 text-muted-foreground">
+                          ({files.length})
+                        </span>
+                      )}
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {indexFeedback && (
+                        <span className="text-xs text-muted-foreground animate-in fade-in">
+                          {indexFeedback}
+                        </span>
+                      )}
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-6"
+                              onClick={handleIndexFiles}
+                              disabled={indexing}
+                            >
+                              <RefreshCw
+                                className={cn(
+                                  "size-3",
+                                  indexing && "animate-spin"
+                                )}
+                              />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Re-scan directory for files
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {/* I125: New files banner */}
+                  {newFileCount > 0 && !bannerDismissed && (
+                    <div className="mb-3 flex items-center gap-2 rounded-md bg-primary/10 px-3 py-2 text-sm">
+                      <FileText className="size-4 shrink-0 text-primary" />
+                      <span className="flex-1">
+                        {newFileCount} new file
+                        {newFileCount !== 1 ? "s" : ""} detected
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={handleIndexFiles}
+                        disabled={indexing}
+                      >
+                        Index now
+                      </Button>
+                      <button
+                        onClick={() => setBannerDismissed(true)}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {files.length > 0 ? (
+                    <Collapsible>
+                      <div className="space-y-1">
+                        {files.slice(0, 10).map((f) => (
+                          <FileRow key={f.id} file={f} />
+                        ))}
+                      </div>
+                      {files.length > 10 && (
+                        <>
+                          <CollapsibleContent>
+                            <div className="space-y-1 mt-1">
+                              {files.slice(10).map((f) => (
+                                <FileRow key={f.id} file={f} />
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                          <CollapsibleTrigger asChild>
+                            <button className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mt-2 pt-2 border-t w-full justify-center">
+                              <ChevronDown className="size-4" />
+                              Show {files.length - 10} more files
+                            </button>
+                          </CollapsibleTrigger>
+                        </>
+                      )}
+                    </Collapsible>
+                  ) : (
+                    <EmptyState
+                      icon={FileText}
+                      message="No files indexed"
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
               {/* Stakeholder Map (when no intelligence stakeholders) */}
               {(!intelligence?.stakeholderInsights?.length) && (
                 <Card>
@@ -1601,6 +1719,78 @@ export default function AccountDetailPage() {
         </div>
       </ScrollArea>
     </main>
+  );
+}
+
+// ─── Meeting Preview Card (ADR-0063) ─────────────────────────────────────────
+
+function MeetingPreviewCard({ meeting }: { meeting: MeetingPreview }) {
+  const prep = meeting.prepContext;
+  const riskCount = prep?.entityRisks?.length ?? 0;
+  const actionCount = prep?.openItems?.length ?? 0;
+  const questionCount = prep?.questions?.length ?? 0;
+
+  return (
+    <Link
+      to="/meeting/history/$meetingId"
+      params={{ meetingId: meeting.id }}
+      className="block rounded-lg border transition-colors hover:bg-muted"
+    >
+      {/* Header row */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Badge variant="outline" className="shrink-0 text-xs">
+          {formatMeetingType(meeting.meetingType)}
+        </Badge>
+        <span className="flex-1 truncate font-medium">{meeting.title}</span>
+        <span className="shrink-0 text-sm text-muted-foreground">
+          {formatRelativeDate(meeting.startTime)}
+        </span>
+      </div>
+
+      {/* Prep context preview (only if exists) */}
+      {prep && (prep.intelligenceSummary || prep.proposedAgenda?.length) && (
+        <div className="border-t px-4 py-2.5 space-y-1.5">
+          {prep.intelligenceSummary && (
+            <p className="text-xs text-muted-foreground line-clamp-2">
+              {prep.intelligenceSummary}
+            </p>
+          )}
+          {prep.proposedAgenda && prep.proposedAgenda.length > 0 && (
+            <div className="flex gap-1.5 text-xs text-muted-foreground">
+              <span className="shrink-0">Agenda:</span>
+              <span className="truncate">
+                {prep.proposedAgenda
+                  .slice(0, 2)
+                  .map((a) => a.topic)
+                  .join(" · ")}
+                {prep.proposedAgenda.length > 2 &&
+                  ` +${prep.proposedAgenda.length - 2} more`}
+              </span>
+            </div>
+          )}
+          {(riskCount > 0 || actionCount > 0 || questionCount > 0) && (
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              {riskCount > 0 && (
+                <span>
+                  {riskCount} risk{riskCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              {actionCount > 0 && (
+                <span>
+                  {actionCount} action{actionCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              {questionCount > 0 && (
+                <span>
+                  {questionCount} question{questionCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              <span className="ml-auto text-primary">View full prep &rarr;</span>
+            </div>
+          )}
+        </div>
+      )}
+    </Link>
   );
 }
 
@@ -2213,6 +2403,24 @@ function ChildAccountRow({ child }: { child: AccountChildSummary }) {
         </Badge>
       )}
     </Link>
+  );
+}
+
+function FileRow({ file }: { file: ContentFile }) {
+  return (
+    <div
+      className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted"
+      onClick={() => invoke("reveal_in_finder", { path: file.absolutePath })}
+    >
+      <File className="size-3.5 shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate">{file.filename}</span>
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+        {formatFileSize(file.fileSize)}
+      </span>
+      <span className="shrink-0 text-xs text-muted-foreground">
+        {formatRelativeDateShort(file.modifiedAt)}
+      </span>
+    </div>
   );
 }
 

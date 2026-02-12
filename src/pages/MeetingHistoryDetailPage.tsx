@@ -402,7 +402,10 @@ export default function MeetingHistoryDetailPage() {
 
 function PrepContextCard({ prep }: { prep: PrepContext }) {
   const hasAgenda = prep.proposedAgenda && prep.proposedAgenda.length > 0;
-  const hasTalkingPoints = prep.talkingPoints && prep.talkingPoints.length > 0;
+  const recentWins = prep.recentWins && prep.recentWins.length > 0
+    ? prep.recentWins
+    : (prep.talkingPoints ?? []);
+  const hasRecentWins = recentWins.length > 0;
   const hasRisks = prep.entityRisks && prep.entityRisks.length > 0;
   const hasOpenItems = prep.openItems && prep.openItems.length > 0;
   const hasQuestions = prep.questions && prep.questions.length > 0;
@@ -444,13 +447,13 @@ function PrepContextCard({ prep }: { prep: PrepContext }) {
           </div>
         )}
 
-        {hasTalkingPoints && (
+        {hasRecentWins && (
           <div>
             <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Talking Points
+              Recent Wins
             </h4>
             <ul className="list-disc space-y-1 pl-4">
-              {prep.talkingPoints!.map((point, i) => (
+              {recentWins.map((point, i) => (
                 <li key={i} className="text-sm text-muted-foreground">
                   {point}
                 </li>

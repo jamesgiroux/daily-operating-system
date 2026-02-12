@@ -91,10 +91,7 @@ pub enum FlagType {
 /// Reads schedule.json (must be called BEFORE archive cleans data/),
 /// checks transcript status, computes action stats from SQLite.
 /// Returns structured data for summary and flag files.
-pub fn run_reconciliation(
-    workspace: &Path,
-    db: Option<&ActionDb>,
-) -> ReconciliationResult {
+pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> ReconciliationResult {
     let today_dir = workspace.join("_today");
     let today_str = Local::now().format("%Y-%m-%d").to_string();
     let now = Local::now().time();
@@ -164,9 +161,9 @@ pub fn run_reconciliation(
                     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                         // Skip hidden files and already-flagged transcripts
                         if !name.starts_with('.') {
-                            let already_flagged = flags.iter().any(|f| {
-                                matches!(f.flag_type, FlagType::UnprocessedInbox)
-                            });
+                            let already_flagged = flags
+                                .iter()
+                                .any(|f| matches!(f.flag_type, FlagType::UnprocessedInbox));
                             if !already_flagged {
                                 flags.push(MorningFlag {
                                     flag_type: FlagType::UnprocessedInbox,
@@ -196,10 +193,7 @@ pub fn run_reconciliation(
     ReconciliationResult {
         date: today_str,
         reconciled_at: Utc::now().to_rfc3339(),
-        meetings: MeetingReconciliation {
-            completed,
-            details,
-        },
+        meetings: MeetingReconciliation { completed, details },
         actions,
         flags,
     }
@@ -208,11 +202,7 @@ pub fn run_reconciliation(
 /// Record completed meetings in SQLite meetings_history.
 ///
 /// Also persists enriched prep context (I181) so prep data survives archival.
-pub fn persist_meetings(
-    db: &ActionDb,
-    result: &ReconciliationResult,
-    workspace: &Path,
-) {
+pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace: &Path) {
     let preps_dir = workspace.join("_today").join("data").join("preps");
 
     for ms in &result.meetings.details {
@@ -229,7 +219,10 @@ pub fn persist_meetings(
             title: ms.title.clone(),
             meeting_type: ms.meeting_type.clone(),
             start_time: format!("{} {}", result.date, ms.time),
-            end_time: ms.end_time.as_ref().map(|t| format!("{} {}", result.date, t)),
+            end_time: ms
+                .end_time
+                .as_ref()
+                .map(|t| format!("{} {}", result.date, t)),
             account_id: ms.account.clone(),
             attendees: None,
             notes_path: match &ms.transcript_status {
@@ -240,6 +233,7 @@ pub fn persist_meetings(
             summary: None,
             created_at: Utc::now().to_rfc3339(),
             calendar_event_id: ms.calendar_event_id.clone(),
+            description: None,
             prep_context_json,
         };
 
@@ -280,7 +274,9 @@ fn is_prep_substantive(json_str: &str) -> bool {
         "intelligenceSummary",
         "entityRisks",
         "entityReadiness",
+        "recentWins",
         "talkingPoints",
+        "recentWinSources",
         "proposedAgenda",
         "openItems",
         "questions",
@@ -328,10 +324,7 @@ pub fn write_day_summary(
 }
 
 /// Write next-morning-flags.json to _today/data/ for tomorrow's briefing.
-pub fn write_morning_flags(
-    today_dir: &Path,
-    result: &ReconciliationResult,
-) -> Result<(), String> {
+pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> Result<(), String> {
     if result.flags.is_empty() {
         return Ok(()); // No flags, no file
     }
@@ -569,7 +562,10 @@ mod tests {
     #[test]
     fn test_slug() {
         assert_eq!(slug("Acme Corp"), "acme-corp");
-        assert_eq!(slug("Follow-up with Engineering"), "follow-up-with-engineering");
+        assert_eq!(
+            slug("Follow-up with Engineering"),
+            "follow-up-with-engineering"
+        );
         assert_eq!(slug("Q1 2026 Review!"), "q1-2026-review");
     }
 

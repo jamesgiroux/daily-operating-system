@@ -44,6 +44,8 @@ pub struct ClassifiedMeeting {
     pub account: Option<String>,
     /// External domains found in attendees.
     pub external_domains: Vec<String>,
+    /// Calendar event description (I185).
+    pub description: String,
 }
 
 /// Classify a calendar event using the multi-signal algorithm.
@@ -89,6 +91,7 @@ pub fn classify_meeting_multi(
         meeting_type: "internal".to_string(),
         account: None,
         external_domains: Vec::new(),
+        description: event.description.clone(),
     };
 
     // ---- Step 1: Personal (no attendees or only organizer) ----
@@ -110,7 +113,10 @@ pub fn classify_meeting_multi(
     }
 
     // Track title overrides that still need domain matching for account
-    let title_override = if contains_any(&title_lower, &["qbr", "business review", "quarterly review"]) {
+    let title_override = if contains_any(
+        &title_lower,
+        &["qbr", "business review", "quarterly review"],
+    ) {
         Some("qbr")
     } else if contains_any(&title_lower, &["training", "enablement", "workshop"]) {
         Some("training")
@@ -128,7 +134,9 @@ pub fn classify_meeting_multi(
             .filter(|a| a.contains('@'))
             .partition(|a| {
                 let lower = a.to_lowercase();
-                !user_domains.iter().any(|d| !d.is_empty() && lower.ends_with(&format!("@{}", d)))
+                !user_domains
+                    .iter()
+                    .any(|d| !d.is_empty() && lower.ends_with(&format!("@{}", d)))
             })
     } else {
         // Without known domains, treat all as potentially external
@@ -235,10 +243,9 @@ impl ClassifiedMeeting {
             _ => MeetingType::Internal,
         };
 
-        let start = super::calendar::parse_event_datetime(&self.start)
-            .unwrap_or_else(chrono::Utc::now);
-        let end = super::calendar::parse_event_datetime(&self.end)
-            .unwrap_or_else(chrono::Utc::now);
+        let start =
+            super::calendar::parse_event_datetime(&self.start).unwrap_or_else(chrono::Utc::now);
+        let end = super::calendar::parse_event_datetime(&self.end).unwrap_or_else(chrono::Utc::now);
 
         crate::types::CalendarEvent {
             id: self.id.clone(),
@@ -261,11 +268,7 @@ impl ClassifiedMeeting {
 mod tests {
     use super::*;
 
-    fn make_event(
-        title: &str,
-        attendees: Vec<&str>,
-        is_recurring: bool,
-    ) -> GoogleCalendarEvent {
+    fn make_event(title: &str, attendees: Vec<&str>, is_recurring: bool) -> GoogleCalendarEvent {
         GoogleCalendarEvent {
             id: "test-id".to_string(),
             summary: title.to_string(),
@@ -397,11 +400,7 @@ mod tests {
     // Step 6: External — personal email domains
     #[test]
     fn test_classify_personal_email_external() {
-        let event = make_event(
-            "Catch up",
-            vec!["me@co.com", "friend@gmail.com"],
-            false,
-        );
+        let event = make_event("Catch up", vec!["me@co.com", "friend@gmail.com"], false);
         let result = classify_meeting(&event, "co.com", &empty_hints());
         assert_eq!(result.meeting_type, "personal");
     }
@@ -442,7 +441,11 @@ mod tests {
     // No domain: treats all as external
     #[test]
     fn test_classify_no_user_domain() {
-        let event = make_event("Unknown", vec!["a@foo.com", "b@bar.com", "c@baz.com"], false);
+        let event = make_event(
+            "Unknown",
+            vec!["a@foo.com", "b@bar.com", "c@baz.com"],
+            false,
+        );
         let result = classify_meeting(&event, "", &empty_hints());
         assert_eq!(result.meeting_type, "customer");
     }

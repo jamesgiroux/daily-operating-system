@@ -54,7 +54,9 @@ pub struct ManifestStats {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "freshness", rename_all = "camelCase")]
 pub enum DataFreshness {
-    Fresh { generated_at: String },
+    Fresh {
+        generated_at: String,
+    },
     Stale {
         data_date: String,
         generated_at: String,
@@ -87,8 +89,7 @@ pub fn load_manifest(today_dir: &Path) -> Result<Manifest, String> {
     let manifest_path = today_dir.join("data").join("manifest.json");
     let content = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("Failed to read manifest: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse manifest: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse manifest: {}", e))
 }
 
 /// JSON schedule format
@@ -136,64 +137,70 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
     let schedule_path = today_dir.join("data").join("schedule.json");
     let content = fs::read_to_string(&schedule_path)
         .map_err(|e| format!("Failed to read schedule: {}", e))?;
-    let schedule: JsonSchedule = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse schedule: {}", e))?;
+    let schedule: JsonSchedule =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse schedule: {}", e))?;
 
     let overview = DayOverview {
-        greeting: schedule.greeting.unwrap_or_else(|| "Good morning".to_string()),
+        greeting: schedule
+            .greeting
+            .unwrap_or_else(|| "Good morning".to_string()),
         date: schedule.date,
         summary: schedule.summary.unwrap_or_default(),
         focus: schedule.focus,
     };
 
-    let meetings: Vec<Meeting> = schedule.meetings.into_iter().map(|m| {
-        let meeting_type = match m.meeting_type.as_str() {
-            "customer" => crate::types::MeetingType::Customer,
-            "qbr" => crate::types::MeetingType::Qbr,
-            "training" => crate::types::MeetingType::Training,
-            "internal" => crate::types::MeetingType::Internal,
-            "team_sync" => crate::types::MeetingType::TeamSync,
-            "one_on_one" => crate::types::MeetingType::OneOnOne,
-            "partnership" => crate::types::MeetingType::Partnership,
-            "all_hands" => crate::types::MeetingType::AllHands,
-            "external" => crate::types::MeetingType::External,
-            "personal" => crate::types::MeetingType::Personal,
-            _ => crate::types::MeetingType::Internal,
-        };
+    let meetings: Vec<Meeting> = schedule
+        .meetings
+        .into_iter()
+        .map(|m| {
+            let meeting_type = match m.meeting_type.as_str() {
+                "customer" => crate::types::MeetingType::Customer,
+                "qbr" => crate::types::MeetingType::Qbr,
+                "training" => crate::types::MeetingType::Training,
+                "internal" => crate::types::MeetingType::Internal,
+                "team_sync" => crate::types::MeetingType::TeamSync,
+                "one_on_one" => crate::types::MeetingType::OneOnOne,
+                "partnership" => crate::types::MeetingType::Partnership,
+                "all_hands" => crate::types::MeetingType::AllHands,
+                "external" => crate::types::MeetingType::External,
+                "personal" => crate::types::MeetingType::Personal,
+                _ => crate::types::MeetingType::Internal,
+            };
 
-        let prep = m.prep_summary.map(|ps| MeetingPrep {
-            metrics: ps.at_a_glance,
-            risks: ps.watch,
-            wins: ps.wins,
-            actions: ps.discuss,
-            context: None,
-            stakeholders: None,
-            questions: None,
-            open_items: None,
-            historical_context: None,
-            source_references: None,
-        });
+            let prep = m.prep_summary.map(|ps| MeetingPrep {
+                metrics: ps.at_a_glance,
+                risks: ps.watch,
+                wins: ps.wins,
+                actions: ps.discuss,
+                context: None,
+                stakeholders: None,
+                questions: None,
+                open_items: None,
+                historical_context: None,
+                source_references: None,
+            });
 
-        Meeting {
-            id: m.id,
-            calendar_event_id: m.calendar_event_id,
-            time: m.time,
-            end_time: m.end_time,
-            start_iso: m.start_iso,
-            title: m.title,
-            meeting_type,
-            account: m.account,
-            prep,
-            is_current: if m.is_current { Some(true) } else { None },
-            prep_file: m.prep_file,
-            has_prep: m.has_prep,
-            overlay_status: None,
-            prep_reviewed: None,
-            account_id: None,
-            linked_entities: None,
-            suggested_unarchive_account_id: None,
-        }
-    }).collect();
+            Meeting {
+                id: m.id,
+                calendar_event_id: m.calendar_event_id,
+                time: m.time,
+                end_time: m.end_time,
+                start_iso: m.start_iso,
+                title: m.title,
+                meeting_type,
+                account: m.account,
+                prep,
+                is_current: if m.is_current { Some(true) } else { None },
+                prep_file: m.prep_file,
+                has_prep: m.has_prep,
+                overlay_status: None,
+                prep_reviewed: None,
+                account_id: None,
+                linked_entities: None,
+                suggested_unarchive_account_id: None,
+            }
+        })
+        .collect();
 
     Ok((overview, meetings))
 }
@@ -234,36 +241,40 @@ pub struct JsonAction {
 /// Load actions from JSON
 pub fn load_actions_json(today_dir: &Path) -> Result<Vec<Action>, String> {
     let actions_path = today_dir.join("data").join("actions.json");
-    let content = fs::read_to_string(&actions_path)
-        .map_err(|e| format!("Failed to read actions: {}", e))?;
-    let data: JsonActions = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse actions: {}", e))?;
+    let content =
+        fs::read_to_string(&actions_path).map_err(|e| format!("Failed to read actions: {}", e))?;
+    let data: JsonActions =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse actions: {}", e))?;
 
-    let actions = data.actions.into_iter().map(|a| {
-        let priority = match a.priority.as_str() {
-            "P1" => crate::types::Priority::P1,
-            "P2" => crate::types::Priority::P2,
-            _ => crate::types::Priority::P3,
-        };
+    let actions = data
+        .actions
+        .into_iter()
+        .map(|a| {
+            let priority = match a.priority.as_str() {
+                "P1" => crate::types::Priority::P1,
+                "P2" => crate::types::Priority::P2,
+                _ => crate::types::Priority::P3,
+            };
 
-        let status = match a.status.as_str() {
-            "completed" => crate::types::ActionStatus::Completed,
-            _ => crate::types::ActionStatus::Pending,
-        };
+            let status = match a.status.as_str() {
+                "completed" => crate::types::ActionStatus::Completed,
+                _ => crate::types::ActionStatus::Pending,
+            };
 
-        Action {
-            id: a.id,
-            title: a.title,
-            account: a.account,
-            due_date: a.due_date,
-            priority,
-            status,
-            is_overdue: if a.is_overdue { Some(true) } else { None },
-            context: a.context,
-            source: a.source,
-            days_overdue: a.days_overdue.map(|d| d as i32),
-        }
-    }).collect();
+            Action {
+                id: a.id,
+                title: a.title,
+                account: a.account,
+                due_date: a.due_date,
+                priority,
+                status,
+                is_overdue: if a.is_overdue { Some(true) } else { None },
+                context: a.context,
+                source: a.source,
+                days_overdue: a.days_overdue.map(|d| d as i32),
+            }
+        })
+        .collect();
 
     Ok(actions)
 }
@@ -313,39 +324,43 @@ pub struct JsonEmail {
 /// Load emails from JSON
 pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
     let emails_path = today_dir.join("data").join("emails.json");
-    let content = fs::read_to_string(&emails_path)
-        .map_err(|e| format!("Failed to read emails: {}", e))?;
-    let data: JsonEmails = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse emails: {}", e))?;
+    let content =
+        fs::read_to_string(&emails_path).map_err(|e| format!("Failed to read emails: {}", e))?;
+    let data: JsonEmails =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse emails: {}", e))?;
 
-    let all_emails = data.high_priority.into_iter()
+    let all_emails = data
+        .high_priority
+        .into_iter()
         .chain(data.medium_priority)
         .chain(data.low_priority);
 
-    let emails = all_emails.map(|e| {
-        let priority = match e.priority.as_str() {
-            "high" => crate::types::EmailPriority::High,
-            "medium" => crate::types::EmailPriority::Medium,
-            "low" => crate::types::EmailPriority::Low,
-            // Legacy "normal" maps to medium
-            "normal" => crate::types::EmailPriority::Medium,
-            _ => crate::types::EmailPriority::Low,
-        };
+    let emails = all_emails
+        .map(|e| {
+            let priority = match e.priority.as_str() {
+                "high" => crate::types::EmailPriority::High,
+                "medium" => crate::types::EmailPriority::Medium,
+                "low" => crate::types::EmailPriority::Low,
+                // Legacy "normal" maps to medium
+                "normal" => crate::types::EmailPriority::Medium,
+                _ => crate::types::EmailPriority::Low,
+            };
 
-        Email {
-            id: e.id,
-            sender: e.sender,
-            sender_email: e.sender_email.unwrap_or_default(),
-            subject: e.subject,
-            snippet: e.snippet,
-            priority,
-            avatar_url: None,
-            summary: e.summary,
-            recommended_action: e.recommended_action,
-            conversation_arc: e.conversation_arc,
-            email_type: e.email_type,
-        }
-    }).collect();
+            Email {
+                id: e.id,
+                sender: e.sender,
+                sender_email: e.sender_email.unwrap_or_default(),
+                subject: e.subject,
+                snippet: e.snippet,
+                priority,
+                avatar_url: None,
+                summary: e.summary,
+                recommended_action: e.recommended_action,
+                conversation_arc: e.conversation_arc,
+                email_type: e.email_type,
+            }
+        })
+        .collect();
 
     Ok(emails)
 }
@@ -369,11 +384,29 @@ pub struct JsonPrep {
     pub current_state: Option<Vec<String>>,
     pub risks: Option<Vec<String>>,
     pub talking_points: Option<Vec<String>>,
+    pub recent_wins: Option<Vec<String>>,
+    pub recent_win_sources: Option<Vec<JsonReference>>,
     pub open_items: Option<Vec<JsonActionItem>>,
     pub questions: Option<Vec<String>>,
     pub key_principles: Option<Vec<String>>,
     pub references: Option<Vec<JsonReference>>,
     pub proposed_agenda: Option<Vec<JsonAgendaItem>>,
+    /// Calendar event description from Google Calendar (I185)
+    pub calendar_notes: Option<String>,
+    /// Intelligence-enriched account snapshot (I186)
+    pub account_snapshot: Option<Vec<crate::types::AccountSnapshotItem>>,
+    /// User-authored agenda items (I194)
+    pub user_agenda: Option<Vec<String>>,
+    /// User-authored notes (I194)
+    pub user_notes: Option<String>,
+    /// Intelligence summary — executive assessment from intelligence.json (I135)
+    pub intelligence_summary: Option<String>,
+    /// Entity-level risks from intelligence.json (I135)
+    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    /// Entity meeting readiness items from intelligence.json (I135)
+    pub entity_readiness: Option<Vec<String>>,
+    /// Stakeholder insights from intelligence.json (I135)
+    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -417,67 +450,210 @@ pub struct JsonReference {
     pub last_updated: Option<String>,
 }
 
+fn sanitize_inline_text(value: &str) -> String {
+    value
+        .replace("**", "")
+        .replace("__", "")
+        .replace('`', "")
+        .replace('*', "")
+        .replace('_', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn split_inline_source_tail(value: &str) -> (String, Option<String>) {
+    let raw = value.trim();
+    let re = regex::Regex::new(r"(?i)(?:^|\s)[_*]*\(?\s*source:\s*([^)]+?)\s*\)?[_*\s]*$")
+        .expect("valid inline source regex");
+    if let Some(caps) = re.captures(raw) {
+        if let Some(m) = caps.get(0) {
+            let cleaned = raw[..m.start()].trim().to_string();
+            let source = caps.get(1).map(|s| sanitize_inline_text(s.as_str()));
+            return (
+                cleaned,
+                source.and_then(|s| if s.is_empty() { None } else { Some(s) }),
+            );
+        }
+    }
+    (raw.to_string(), None)
+}
+
+fn clean_recent_win(value: &str) -> Option<String> {
+    let (without_source, _) = split_inline_source_tail(value);
+    let cleaned = sanitize_inline_text(&without_source)
+        .replace("Recent win:", "")
+        .replace("recent win:", "")
+        .replace("Win:", "")
+        .replace("win:", "")
+        .trim()
+        .to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn derive_recent_wins_from_talking_points(
+    talking_points: &[String],
+) -> (Vec<String>, Vec<crate::types::SourceReference>) {
+    let mut wins = Vec::new();
+    let mut sources = Vec::new();
+    let mut seen_wins: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_sources: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for point in talking_points {
+        let (_, source_opt) = split_inline_source_tail(point);
+        if let Some(source) = source_opt {
+            let source_key = source.to_lowercase();
+            if !seen_sources.contains(&source_key) {
+                seen_sources.insert(source_key);
+                let filename = source
+                    .split(['/', '\\'])
+                    .filter(|s| !s.is_empty())
+                    .last()
+                    .unwrap_or(&source)
+                    .to_string();
+                sources.push(crate::types::SourceReference {
+                    label: filename,
+                    path: Some(source),
+                    last_updated: None,
+                });
+            }
+        }
+
+        if let Some(cleaned) = clean_recent_win(point) {
+            let key = cleaned.to_lowercase();
+            if !seen_wins.contains(&key) {
+                seen_wins.insert(key);
+                wins.push(cleaned);
+            }
+        }
+    }
+
+    (wins, sources)
+}
+
 /// Load meeting prep from JSON
 pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPrep, String> {
     // prep_file is like "preps/0900-acme-sync.json" or just the filename
     let prep_path = if prep_file.starts_with("preps/") {
         today_dir.join("data").join(prep_file)
     } else {
-        today_dir.join("data").join("preps").join(format!("{}.json", prep_file.trim_end_matches(".json").trim_end_matches(".md")))
+        today_dir.join("data").join("preps").join(format!(
+            "{}.json",
+            prep_file.trim_end_matches(".json").trim_end_matches(".md")
+        ))
     };
 
-    let content = fs::read_to_string(&prep_path)
-        .map_err(|e| format!("Failed to read prep: {}", e))?;
-    let data: JsonPrep = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse prep: {}", e))?;
+    let content =
+        fs::read_to_string(&prep_path).map_err(|e| format!("Failed to read prep: {}", e))?;
+    let data: JsonPrep =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse prep: {}", e))?;
 
     // Convert quick_context HashMap to Vec<(String, String)>
-    let quick_context = data.quick_context.map(|qc| {
-        qc.into_iter().collect::<Vec<_>>()
-    });
+    let quick_context = data
+        .quick_context
+        .map(|qc| qc.into_iter().collect::<Vec<_>>());
 
     // Convert strategic_programs to strings with status markers
     let strategic_programs = data.strategic_programs.map(|programs| {
-        programs.into_iter().map(|p| {
-            if p.status == "completed" {
-                format!("✓ {}", p.name)
-            } else {
-                p.name
-            }
-        }).collect()
+        programs
+            .into_iter()
+            .map(|p| {
+                if p.status == "completed" {
+                    format!("✓ {}", p.name)
+                } else {
+                    p.name
+                }
+            })
+            .collect()
     });
 
     let attendees = data.attendees.map(|att| {
-        att.into_iter().map(|a| crate::types::Stakeholder {
-            name: a.name,
-            role: a.role,
-            focus: a.focus,
-        }).collect()
+        att.into_iter()
+            .map(|a| crate::types::Stakeholder {
+                name: a.name,
+                role: a.role,
+                focus: a.focus,
+            })
+            .collect()
     });
 
     let open_items = data.open_items.map(|items| {
-        items.into_iter().map(|i| crate::types::ActionWithContext {
-            title: i.title,
-            due_date: i.due_date,
-            context: i.context,
-            is_overdue: i.is_overdue,
-        }).collect()
+        items
+            .into_iter()
+            .map(|i| crate::types::ActionWithContext {
+                title: i.title,
+                due_date: i.due_date,
+                context: i.context,
+                is_overdue: i.is_overdue,
+            })
+            .collect()
     });
 
     let references = data.references.map(|refs| {
-        refs.into_iter().map(|r| crate::types::SourceReference {
-            label: r.label,
-            path: r.path,
-            last_updated: r.last_updated,
-        }).collect()
+        refs.into_iter()
+            .map(|r| crate::types::SourceReference {
+                label: r.label,
+                path: r.path,
+                last_updated: r.last_updated,
+            })
+            .collect()
     });
 
+    let recent_win_sources = data.recent_win_sources.map(|refs| {
+        refs.into_iter()
+            .map(|r| crate::types::SourceReference {
+                label: sanitize_inline_text(&r.label),
+                path: r.path.map(|p| sanitize_inline_text(&p)),
+                last_updated: r.last_updated,
+            })
+            .filter(|r| !r.label.is_empty())
+            .collect::<Vec<_>>()
+    });
+
+    let (derived_recent_wins, derived_recent_sources) = data
+        .talking_points
+        .as_ref()
+        .map(|points| derive_recent_wins_from_talking_points(points))
+        .unwrap_or_else(|| (Vec::new(), Vec::new()));
+
+    let explicit_recent_wins = data.recent_wins.map(|wins| {
+        wins.into_iter()
+            .filter_map(|w| clean_recent_win(&w))
+            .collect::<Vec<_>>()
+    });
+
+    let recent_wins = explicit_recent_wins
+        .and_then(|wins| if wins.is_empty() { None } else { Some(wins) })
+        .or_else(|| {
+            if derived_recent_wins.is_empty() {
+                None
+            } else {
+                Some(derived_recent_wins)
+            }
+        });
+    let recent_win_sources = recent_win_sources
+        .and_then(|refs| if refs.is_empty() { None } else { Some(refs) })
+        .or_else(|| {
+            if derived_recent_sources.is_empty() {
+                None
+            } else {
+                Some(derived_recent_sources)
+            }
+        });
+
     let proposed_agenda = data.proposed_agenda.map(|items| {
-        items.into_iter().map(|a| crate::types::AgendaItem {
-            topic: a.topic,
-            why: a.why,
-            source: a.source,
-        }).collect()
+        items
+            .into_iter()
+            .map(|a| crate::types::AgendaItem {
+                topic: a.topic,
+                why: a.why,
+                source: a.source,
+            })
+            .collect()
     });
 
     Ok(FullMeetingPrep {
@@ -486,7 +662,11 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         title: data.title,
         time_range: data.time_range.unwrap_or_default(),
         meeting_context: data.meeting_context,
+        calendar_notes: data.calendar_notes,
+        account_snapshot: data.account_snapshot,
         quick_context,
+        user_agenda: data.user_agenda,
+        user_notes: data.user_notes,
         attendees,
         since_last: data.since_last,
         strategic_programs,
@@ -494,6 +674,8 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         open_items,
         risks: data.risks,
         talking_points: data.talking_points,
+        recent_wins,
+        recent_win_sources,
         questions: data.questions,
         key_principles: data.key_principles,
         references,
@@ -501,6 +683,10 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         stakeholder_signals: None,
         attendee_context: None,
         proposed_agenda,
+        intelligence_summary: data.intelligence_summary,
+        entity_risks: data.entity_risks,
+        entity_readiness: data.entity_readiness,
+        stakeholder_insights: data.stakeholder_insights,
     })
 }
 
@@ -632,6 +818,9 @@ pub struct DirectiveMeetingContext {
     pub entity_readiness: Option<Vec<String>>,
     #[serde(default)]
     pub stakeholder_insights: Option<Vec<serde_json::Value>>,
+    /// Calendar event description (I185).
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -667,9 +856,7 @@ pub struct DirectiveAction {
 impl DirectiveAction {
     /// Get the due date, trying due_date first then due
     pub fn effective_due_date(&self) -> Option<&str> {
-        self.due_date
-            .as_deref()
-            .or(self.due.as_deref())
+        self.due_date.as_deref().or(self.due.as_deref())
     }
 }
 
@@ -731,10 +918,9 @@ pub fn load_directive(today_dir: &Path) -> Result<Directive, String> {
         ));
     };
 
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read directive: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse directive: {}", e))
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read directive: {}", e))?;
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse directive: {}", e))
 }
 
 // =============================================================================
@@ -746,6 +932,83 @@ pub fn load_week_json(today_dir: &Path) -> Result<WeekOverview, String> {
     let week_path = today_dir.join("data").join("week-overview.json");
     let content = fs::read_to_string(&week_path)
         .map_err(|e| format!("Failed to read week overview: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse week overview: {}", e))
+    serde_json::from_str(&content).map_err(|e| format!("Failed to parse week overview: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_load_prep_json_derives_recent_wins_from_legacy_talking_points() {
+        let dir = tempdir().expect("tempdir");
+        let today_dir = dir.path();
+        let preps_dir = today_dir.join("data").join("preps");
+        fs::create_dir_all(&preps_dir).expect("create preps dir");
+
+        let prep_path = preps_dir.join("legacy.json");
+        fs::write(
+            &prep_path,
+            serde_json::to_string_pretty(&json!({
+                "meetingId": "legacy",
+                "title": "Legacy Prep",
+                "type": "customer",
+                "talkingPoints": [
+                    "Recent win: Expansion signal from sponsor (source: notes.md)"
+                ]
+            }))
+            .unwrap(),
+        )
+        .expect("write prep");
+
+        let prep = load_prep_json(today_dir, "legacy").expect("load prep");
+        assert_eq!(
+            prep.recent_wins,
+            Some(vec!["Expansion signal from sponsor".to_string()])
+        );
+        assert_eq!(
+            prep.recent_win_sources
+                .as_ref()
+                .and_then(|s| s.first())
+                .map(|s| s.label.clone()),
+            Some("notes.md".to_string())
+        );
+    }
+
+    #[test]
+    fn test_load_prep_json_reads_structured_recent_wins() {
+        let dir = tempdir().expect("tempdir");
+        let today_dir = dir.path();
+        let preps_dir = today_dir.join("data").join("preps");
+        fs::create_dir_all(&preps_dir).expect("create preps dir");
+
+        let prep_path = preps_dir.join("new-format.json");
+        fs::write(
+            &prep_path,
+            serde_json::to_string_pretty(&json!({
+                "meetingId": "new-format",
+                "title": "New Prep",
+                "type": "customer",
+                "recentWins": ["Tier upgrade approved"],
+                "recentWinSources": [{"label": "sync.md", "path": "notes/sync.md"}]
+            }))
+            .unwrap(),
+        )
+        .expect("write prep");
+
+        let prep = load_prep_json(today_dir, "new-format").expect("load prep");
+        assert_eq!(
+            prep.recent_wins,
+            Some(vec!["Tier upgrade approved".to_string()])
+        );
+        assert_eq!(
+            prep.recent_win_sources
+                .as_ref()
+                .and_then(|s| s.first())
+                .and_then(|s| s.path.clone()),
+            Some("notes/sync.md".to_string())
+        );
+    }
 }

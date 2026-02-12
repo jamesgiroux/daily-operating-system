@@ -121,7 +121,7 @@ export function computeMeetingDisplayState(
 ): MeetingDisplayState {
   const isCancelled = meeting.overlayStatus === "cancelled";
   const isNew = meeting.overlayStatus === "new";
-  const hasPrepFile = meeting.hasPrep && meeting.prepFile;
+  const hasPrepFile = meeting.hasPrep && meeting.id;
 
   // Dot styling (always computed — used by MeetingTimeline)
   const dotBg = isCancelled
@@ -175,7 +175,7 @@ export function computeMeetingDisplayState(
     liveRing,
   );
 
-  // 2. Past + outcomes loaded → "processed"
+  // 2. Past + outcomes loaded → "processed" badge + View Prep (if available)
   if (ctx.isPast && ctx.outcomesStatus === "loaded") {
     primaryStatus = "processed";
     badges.push({
@@ -185,6 +185,13 @@ export function computeMeetingDisplayState(
       className: "text-success border-success/30",
       icon: "check",
     });
+    if (hasPrepFile) {
+      actions.push({
+        key: "view-prep",
+        label: "View Prep",
+        linkTo: meeting.id,
+      });
+    }
   }
   // 3. Past + outcomes loading → no badge, no buttons (prevents flash)
   else if (ctx.isPast && ctx.outcomesStatus === "loading") {
@@ -197,7 +204,7 @@ export function computeMeetingDisplayState(
       actions.push({
         key: "view-prep",
         label: "View Prep",
-        linkTo: meeting.prepFile!,
+        linkTo: meeting.id,
       });
     }
     actions.push(
@@ -221,7 +228,7 @@ export function computeMeetingDisplayState(
     actions.push({
       key: "view-prep",
       label: "View Prep",
-      linkTo: meeting.prepFile!,
+      linkTo: meeting.id,
     });
     if (!ctx.hasEnrichedPrep) {
       badges.push({
@@ -492,142 +499,186 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
   return (
     <div className={displayState.card.className}>
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-        <div className="flex items-start justify-between p-5">
-          <div className="space-y-1">
+        <div className="p-5">
+          {/* Row 1: Time + badges + actions */}
+          <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm text-muted-foreground">
+              <span className="font-mono text-xs text-muted-foreground/70">
                 {meeting.time}
               </span>
               {meeting.endTime && (
                 <>
-                  <span className="text-muted-foreground/50">—</span>
-                  <span className="font-mono text-sm text-muted-foreground/70">
+                  <span className="text-muted-foreground/30">—</span>
+                  <span className="font-mono text-xs text-muted-foreground/50">
                     {meeting.endTime}
                   </span>
                 </>
               )}
-            </div>
-            <h3 className={cn("font-semibold", displayState.title.lineThrough && "line-through")}>
-              {meeting.title}
-            </h3>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {localEntities.map((entity) => {
-                const Icon = entity.entityType === "project" ? FolderKanban : Building2;
-                return (
-                  <span
-                    key={entity.id}
-                    className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs"
-                  >
-                    <Icon className="size-3 text-muted-foreground" />
-                    {entity.name}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveEntity(entity.id, entity.entityType);
-                      }}
-                      className="ml-0.5 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                );
-              })}
-              <EntityPicker
-                value={null}
-                onChange={handleAddEntity}
-                entityType="account"
-                placeholder="Link account..."
-              />
-            </div>
-            {meeting.suggestedUnarchiveAccountId && (
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-primary/70">Matches archived account</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-5 px-2 text-xs text-primary hover:text-primary"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    try {
-                      await invoke("archive_account", {
-                        id: meeting.suggestedUnarchiveAccountId,
-                        archived: false,
-                      });
-                      await invoke("add_meeting_entity", {
-                        meetingId: meeting.id,
-                        entityId: meeting.suggestedUnarchiveAccountId,
-                        entityType: "account",
-                        meetingTitle: meeting.title,
-                        startTime: meeting.startIso ?? meeting.time,
-                        meetingTypeStr: meeting.type,
-                      });
-                      emit("entity-updated");
-                    } catch (err) {
-                      console.error("Failed to unarchive:", err);
-                    }
-                  }}
-                >
-                  Restore
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            {displayState.badges.map((badge) => (
-              <Badge key={badge.key} variant={badge.variant} className={badge.className}>
-                {badge.icon === "check" && <Check className="mr-1 size-3" />}
-                {badge.label}
+              <Badge className={cn(badgeStyles[meeting.type], "text-[10px] px-1.5 py-0")} variant="secondary">
+                {badgeLabels[meeting.type]}
               </Badge>
-            ))}
+              {displayState.badges.map((badge) => (
+                <Badge key={badge.key} variant={badge.variant} className={cn(badge.className, "text-[10px] px-1.5 py-0")}>
+                  {badge.icon === "check" && <Check className="mr-0.5 size-2.5" />}
+                  {badge.label}
+                </Badge>
+              ))}
+            </div>
 
-            <Badge className={badgeStyles[meeting.type]} variant="secondary">
-              {badgeLabels[meeting.type]}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {displayState.actions.map((action) => (
+                <ActionButton
+                  key={action.key}
+                  action={action}
+                  meeting={meeting}
+                  attaching={attaching}
+                  onAttach={handleAttachTranscript}
+                  onCapture={handleCaptureOutcomes}
+                />
+              ))}
 
-            {displayState.actions.map((action) => (
-              <ActionButton
-                key={action.key}
-                action={action}
-                meeting={meeting}
-                attaching={attaching}
-                onAttach={handleAttachTranscript}
-                onCapture={handleCaptureOutcomes}
-              />
-            ))}
-
-            {displayState.showExpander && (
-              <CollapsibleTrigger asChild>
-                <button
-                  className={cn(
-                    "rounded-md p-1.5 transition-colors hover:bg-muted",
-                    isOpen && "bg-muted"
-                  )}
-                >
-                  <ChevronDown
+              {displayState.showExpander && (
+                <CollapsibleTrigger asChild>
+                  <button
                     className={cn(
-                      "size-4 text-muted-foreground transition-transform duration-200",
-                      isOpen && "rotate-180"
+                      "rounded-md p-1 transition-colors hover:bg-muted",
+                      isOpen && "bg-muted"
                     )}
-                  />
-                </button>
-              </CollapsibleTrigger>
-            )}
+                  >
+                    <ChevronDown
+                      className={cn(
+                        "size-3.5 text-muted-foreground transition-transform duration-200",
+                        isOpen && "rotate-180"
+                      )}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+              )}
+            </div>
           </div>
+
+          {/* Row 2: Title */}
+          <h3 className={cn("text-[15px] font-semibold leading-snug", displayState.title.lineThrough && "line-through")}>
+            {meeting.title}
+          </h3>
+
+          {/* Row 3: Entity chips */}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {localEntities.map((entity) => {
+              const Icon = entity.entityType === "project" ? FolderKanban : Building2;
+              return (
+                <span
+                  key={entity.id}
+                  className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs"
+                >
+                  <Icon className="size-3 text-muted-foreground" />
+                  {entity.name}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveEntity(entity.id, entity.entityType);
+                    }}
+                    className="ml-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              );
+            })}
+            <EntityPicker
+              value={null}
+              onChange={handleAddEntity}
+              entityType="account"
+              placeholder="Link account..."
+            />
+          </div>
+
+          {meeting.suggestedUnarchiveAccountId && (
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-xs text-primary/70">Matches archived account</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 px-2 text-xs text-primary hover:text-primary"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await invoke("archive_account", {
+                      id: meeting.suggestedUnarchiveAccountId,
+                      archived: false,
+                    });
+                    await invoke("add_meeting_entity", {
+                      meetingId: meeting.id,
+                      entityId: meeting.suggestedUnarchiveAccountId,
+                      entityType: "account",
+                      meetingTitle: meeting.title,
+                      startTime: meeting.startIso ?? meeting.time,
+                      meetingTypeStr: meeting.type,
+                    });
+                    emit("entity-updated");
+                  } catch (err) {
+                    console.error("Failed to unarchive:", err);
+                  }
+                }}
+              >
+                Restore
+              </Button>
+            </div>
+          )}
+
+          {/* Row 4: Intelligence brief — surfaced on card, no expansion needed */}
+          {meeting.prep?.context && (
+            <p className="mt-2.5 text-[13px] leading-relaxed text-muted-foreground line-clamp-2">
+              {meeting.prep.context}
+            </p>
+          )}
+
+          {/* Row 5: Signal pills — top risk + top win visible at a glance */}
+          {meeting.prep && (meeting.prep.risks?.length || meeting.prep.wins?.length) && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {meeting.prep.wins?.[0] && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-success/8 px-2 py-0.5 text-[11px] text-success">
+                  <span className="size-1.5 rounded-full bg-success" />
+                  <span className="line-clamp-1">{meeting.prep.wins[0]}</span>
+                </span>
+              )}
+              {meeting.prep.risks?.[0] && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-destructive/8 px-2 py-0.5 text-[11px] text-destructive">
+                  <span className="size-1.5 rounded-full bg-destructive" />
+                  <span className="line-clamp-1">{meeting.prep.risks[0]}</span>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {displayState.showExpander && (
           <CollapsibleContent>
-            <div className="border-t bg-muted/30 p-5">
+            <div className="border-t p-5 space-y-4">
+              {/* Always show outcomes if they exist */}
               {outcomes !== null && (
                 <MeetingOutcomes
                   outcomes={outcomes}
                   onRefresh={refreshOutcomes}
                 />
               )}
-              {outcomes === null && meeting.prep && Object.keys(meeting.prep).length > 0 && (
-                <MeetingPrepContent prep={meeting.prep} />
+
+              {/* Show prep: standalone if no outcomes, collapsible underneath if outcomes exist */}
+              {meeting.prep && Object.keys(meeting.prep).length > 0 && (
+                outcomes !== null ? (
+                  <Collapsible defaultOpen={false}>
+                    <CollapsibleTrigger className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground w-full">
+                      <ChevronDown className="size-3" />
+                      Pre-Meeting Context
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-3">
+                      <MeetingPrepContent prep={meeting.prep} />
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : (
+                  <MeetingPrepContent prep={meeting.prep} />
+                )
               )}
             </div>
           </CollapsibleContent>
@@ -654,7 +705,7 @@ function ActionButton({
     case "view-prep":
       return (
         <Button variant="ghost" size="sm" className="text-primary hover:text-primary" asChild>
-          <Link to="/meeting/$prepFile" params={{ prepFile: action.linkTo! }}>
+          <Link to="/meeting/$meetingId" params={{ meetingId: action.linkTo! }}>
             {meeting.prepReviewed ? (
               <Check className="mr-1 size-3.5 text-success" />
             ) : (

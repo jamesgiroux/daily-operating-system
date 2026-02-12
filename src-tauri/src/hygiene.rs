@@ -92,14 +92,11 @@ pub fn run_hygiene_scan(
         .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
         .map(|v| v.len())
         .unwrap_or(0);
-    report.duplicate_people = detect_duplicate_people(db)
-        .map(|v| v.len())
-        .unwrap_or(0);
+    report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
 
     // --- Phase 1: Mechanical fixes (free, instant) ---
     let user_domains = config.resolved_user_domains();
-    report.fixes.relationships_reclassified =
-        fix_unknown_relationships(db, &user_domains);
+    report.fixes.relationships_reclassified = fix_unknown_relationships(db, &user_domains);
     report.fixes.summaries_extracted = backfill_file_summaries(db);
     report.fixes.orphaned_meetings_linked = fix_orphaned_meetings(db);
     report.fixes.meeting_counts_updated = fix_meeting_counts(db);
@@ -309,10 +306,8 @@ pub fn resolve_names_from_emails(db: &ActionDb, workspace: &Path) -> usize {
         Ok(p) if !p.is_empty() => p,
         _ => return 0,
     };
-    let unnamed_emails: std::collections::HashSet<String> = unnamed
-        .iter()
-        .map(|p| p.email.to_lowercase())
-        .collect();
+    let unnamed_emails: std::collections::HashSet<String> =
+        unnamed.iter().map(|p| p.email.to_lowercase()).collect();
 
     let mut resolved = 0;
 
@@ -509,7 +504,11 @@ pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>,
     }
 
     // Sort by confidence descending
-    candidates.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(candidates)
 }
 
@@ -579,9 +578,7 @@ fn score_name_similarity(name1: &str, name2: &str) -> Option<(f32, String)> {
         if last1_initial == last2_initial {
             return Some((
                 0.70,
-                format!(
-                    "Same first name \"{first1}\" + last initial '{last1_initial}'"
-                ),
+                format!("Same first name \"{first1}\" + last initial '{last1_initial}'"),
             ));
         }
     }
@@ -600,18 +597,13 @@ fn score_name_similarity(name1: &str, name2: &str) -> Option<(f32, String)> {
     {
         return Some((
             0.60,
-            format!(
-                "Similar names: \"{first1} {last1}\" ~ \"{first2} {last2}\""
-            ),
+            format!("Similar names: \"{first1} {last1}\" ~ \"{first2} {last2}\""),
         ));
     }
 
     // Same last name (at least 3 chars) on same domain
     if last1.len() >= 3 && last1 == last2 {
-        return Some((
-            0.40,
-            format!("Same last name \"{last1}\" on same domain"),
-        ));
+        return Some((0.40, format!("Same last name \"{last1}\" on same domain")));
     }
 
     None
@@ -633,7 +625,10 @@ fn enqueue_ai_enrichments(
     if let Ok(missing) = db.get_entities_without_intelligence() {
         for (entity_id, entity_type) in missing {
             if !budget.try_consume() {
-                log::debug!("HygieneLoop: AI budget exhausted ({} used)", budget.used_today());
+                log::debug!(
+                    "HygieneLoop: AI budget exhausted ({} used)",
+                    budget.used_today()
+                );
                 return enqueued;
             }
             queue.enqueue(IntelRequest {
@@ -650,7 +645,10 @@ fn enqueue_ai_enrichments(
     if let Ok(stale) = db.get_stale_entity_intelligence(14) {
         for (entity_id, entity_type, _enriched_at) in stale {
             if !budget.try_consume() {
-                log::debug!("HygieneLoop: AI budget exhausted ({} used)", budget.used_today());
+                log::debug!(
+                    "HygieneLoop: AI budget exhausted ({} used)",
+                    budget.used_today()
+                );
                 return enqueued;
             }
             queue.enqueue(IntelRequest {
@@ -707,25 +705,23 @@ pub fn check_upcoming_meeting_readiness(
              ORDER BY start_time ASC",
         )
         .and_then(|mut stmt| {
-            let rows = stmt.query_map(
-                rusqlite::params![window_end.to_rfc3339()],
-                |row| {
-                    Ok(crate::db::DbMeeting {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        meeting_type: row.get(2)?,
-                        start_time: row.get(3)?,
-                        end_time: row.get(4)?,
-                        account_id: row.get(5)?,
-                        attendees: row.get(6)?,
-                        notes_path: row.get(7)?,
-                        summary: row.get(8)?,
-                        created_at: row.get(9)?,
-                        calendar_event_id: row.get(10)?,
-                        prep_context_json: None,
-                    })
-                },
-            )?;
+            let rows = stmt.query_map(rusqlite::params![window_end.to_rfc3339()], |row| {
+                Ok(crate::db::DbMeeting {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    meeting_type: row.get(2)?,
+                    start_time: row.get(3)?,
+                    end_time: row.get(4)?,
+                    account_id: row.get(5)?,
+                    attendees: row.get(6)?,
+                    notes_path: row.get(7)?,
+                    summary: row.get(8)?,
+                    created_at: row.get(9)?,
+                    calendar_event_id: row.get(10)?,
+                    description: None,
+                    prep_context_json: None,
+                })
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
@@ -818,7 +814,11 @@ pub fn run_overnight_scan(
 
 /// Check if current time is in the overnight window (2-3 AM UTC).
 fn is_overnight_window() -> bool {
-    let hour = Utc::now().format("%H").to_string().parse::<u32>().unwrap_or(12);
+    let hour = Utc::now()
+        .format("%H")
+        .to_string()
+        .parse::<u32>()
+        .unwrap_or(12);
     (2..=3).contains(&hour)
 }
 
@@ -902,7 +902,12 @@ fn try_run_overnight(state: &AppState) -> Option<OvernightReport> {
     let db = db_guard.as_ref()?;
 
     let workspace = std::path::Path::new(&config.workspace_path);
-    Some(run_overnight_scan(db, &config, workspace, &state.intel_queue))
+    Some(run_overnight_scan(
+        db,
+        &config,
+        workspace,
+        &state.intel_queue,
+    ))
 }
 
 /// Synchronous scan attempt — acquires locks, runs scan, releases everything.
@@ -985,7 +990,13 @@ mod tests {
     fn test_get_unnamed_people_single_word() {
         let db = test_db();
         seed_person(&db, "jdoe", "jdoe@acme.com", "Jdoe", "external");
-        seed_person(&db, "sarah-chen", "sarah@acme.com", "Sarah Chen", "external");
+        seed_person(
+            &db,
+            "sarah-chen",
+            "sarah@acme.com",
+            "Sarah Chen",
+            "external",
+        );
 
         let unnamed = db.get_unnamed_people().unwrap();
         assert_eq!(unnamed.len(), 1);
@@ -1126,10 +1137,7 @@ mod tests {
 
         // Manually set a wrong meeting count
         db.conn_ref()
-            .execute(
-                "UPDATE people SET meeting_count = 99 WHERE id = 'p1'",
-                [],
-            )
+            .execute("UPDATE people SET meeting_count = 99 WHERE id = 'p1'", [])
             .unwrap();
 
         let fixed = fix_meeting_counts(&db);
@@ -1199,7 +1207,13 @@ mod tests {
     #[test]
     fn test_resolve_names_from_emails() {
         let db = test_db();
-        seed_person(&db, "jane-customer-com", "jane@customer.com", "Jane", "external");
+        seed_person(
+            &db,
+            "jane-customer-com",
+            "jane@customer.com",
+            "Jane",
+            "external",
+        );
 
         // Create workspace with emails.json
         let workspace = tempfile::tempdir().unwrap();
@@ -1228,7 +1242,13 @@ mod tests {
     #[test]
     fn test_resolve_names_skips_already_named() {
         let db = test_db();
-        seed_person(&db, "jane-customer-com", "jane@customer.com", "Jane Doe", "external");
+        seed_person(
+            &db,
+            "jane-customer-com",
+            "jane@customer.com",
+            "Jane Doe",
+            "external",
+        );
 
         let workspace = tempfile::tempdir().unwrap();
         let data_dir = workspace.path().join("_today").join("data");
@@ -1248,7 +1268,13 @@ mod tests {
     fn test_auto_link_people_by_domain() {
         let db = test_db();
         seed_account(&db, "acme-corp", "Acme Corp");
-        seed_person(&db, "jane-acme-com", "jane@acme.com", "Jane Doe", "external");
+        seed_person(
+            &db,
+            "jane-acme-com",
+            "jane@acme.com",
+            "Jane Doe",
+            "external",
+        );
 
         let linked = auto_link_people_by_domain(&db);
         assert_eq!(linked, 1);
@@ -1262,7 +1288,13 @@ mod tests {
     fn test_auto_link_people_idempotent() {
         let db = test_db();
         seed_account(&db, "acme-corp", "Acme Corp");
-        seed_person(&db, "jane-acme-com", "jane@acme.com", "Jane Doe", "external");
+        seed_person(
+            &db,
+            "jane-acme-com",
+            "jane@acme.com",
+            "Jane Doe",
+            "external",
+        );
 
         auto_link_people_by_domain(&db);
         let linked = auto_link_people_by_domain(&db);
@@ -1550,7 +1582,13 @@ mod tests {
     #[test]
     fn test_detect_duplicates_exact_name_different_emails() {
         let db = test_db();
-        seed_person(&db, "jane-doe-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(
+            &db,
+            "jane-doe-1",
+            "jane.doe@acme.com",
+            "Jane Doe",
+            "external",
+        );
         seed_person(&db, "jane-doe-2", "jdoe@acme.com", "Jane Doe", "external");
 
         let dupes = detect_duplicate_people(&db).unwrap();
@@ -1588,7 +1626,13 @@ mod tests {
     #[test]
     fn test_detect_duplicates_archived_excluded() {
         let db = test_db();
-        seed_person(&db, "jane-doe-1", "jane.doe@acme.com", "Jane Doe", "external");
+        seed_person(
+            &db,
+            "jane-doe-1",
+            "jane.doe@acme.com",
+            "Jane Doe",
+            "external",
+        );
         seed_person(&db, "jane-doe-2", "jdoe@acme.com", "Jane Doe", "external");
 
         // Archive one
@@ -1652,17 +1696,32 @@ mod tests {
     fn test_detect_duplicates_first_name_initial_match() {
         let db = test_db();
         seed_person(&db, "jane-doe", "jane.doe@acme.com", "Jane Doe", "external");
-        seed_person(&db, "jane-davis", "jane.davis@acme.com", "Jane Davis", "external");
+        seed_person(
+            &db,
+            "jane-davis",
+            "jane.davis@acme.com",
+            "Jane Davis",
+            "external",
+        );
 
         let dupes = detect_duplicate_people(&db).unwrap();
         // Should match: same first name + last initial 'D'
-        let matching: Vec<_> = dupes.iter().filter(|d| (d.confidence - 0.70).abs() < f32::EPSILON).collect();
+        let matching: Vec<_> = dupes
+            .iter()
+            .filter(|d| (d.confidence - 0.70).abs() < f32::EPSILON)
+            .collect();
         assert_eq!(matching.len(), 1);
     }
 
     // --- Renewal auto-rollover tests (I143) ---
 
-    fn seed_account_with_renewal(db: &ActionDb, id: &str, name: &str, contract_end: &str, arr: Option<f64>) {
+    fn seed_account_with_renewal(
+        db: &ActionDb,
+        id: &str,
+        name: &str,
+        contract_end: &str,
+        arr: Option<f64>,
+    ) {
         let now = Utc::now().to_rfc3339();
         let account = crate::db::DbAccount {
             id: id.to_string(),
@@ -1701,11 +1760,7 @@ mod tests {
         assert_eq!(events[0].event_type, "renewal");
         assert_eq!(events[0].event_date, past);
         assert_eq!(events[0].arr_impact, Some(120_000.0));
-        assert!(events[0]
-            .notes
-            .as_deref()
-            .unwrap()
-            .contains("Auto-renewed"));
+        assert!(events[0].notes.as_deref().unwrap().contains("Auto-renewed"));
 
         // Verify contract_end advanced by 12 months
         let past_date = chrono::NaiveDate::parse_from_str(&past, "%Y-%m-%d").unwrap();

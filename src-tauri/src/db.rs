@@ -97,6 +97,9 @@ pub struct DbMeeting {
     pub summary: Option<String>,
     pub created_at: String,
     pub calendar_event_id: Option<String>,
+    /// Calendar event description (I185). Plumbed from Google Calendar API.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Enriched prep context JSON (I181). Only populated by get_meeting_by_id.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_context_json: Option<String>,
@@ -132,7 +135,7 @@ pub struct DbCapture {
 }
 
 /// Stakeholder relationship signals computed from meeting history and account data (I43).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StakeholderSignals {
     /// Number of meetings in the last 30 days
@@ -295,7 +298,9 @@ fn compute_trend(count_30d: i32, count_90d: i32) -> String {
 /// Parse an ISO datetime string and return days since that date.
 fn days_since_iso(iso: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(iso)
-        .or_else(|_| chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", iso.trim_end_matches('Z'))))
+        .or_else(|_| {
+            chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", iso.trim_end_matches('Z')))
+        })
         .ok()
         .map(|dt| (Utc::now() - dt.with_timezone(&Utc)).num_days())
 }
@@ -339,9 +344,8 @@ impl ActionDb {
         conn.execute_batch(include_str!("schema.sql"))?;
 
         // Migration: add calendar_event_id to meetings_history (ignore if exists)
-        let _ = conn.execute_batch(
-            "ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;",
-        );
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;");
 
         // Migration: backfill entities from accounts (ADR-0045).
         // Idempotent — INSERT OR IGNORE skips existing rows.
@@ -351,19 +355,14 @@ impl ActionDb {
         );
 
         // Migration: add needs_decision flag to actions (I42 — Executive Intelligence)
-        let _ = conn.execute_batch(
-            "ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;",
-        );
+        let _ =
+            conn.execute_batch("ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;");
 
         // Migration: add nps column to accounts (I72 — Account Dashboards)
-        let _ = conn.execute_batch(
-            "ALTER TABLE accounts ADD COLUMN nps INTEGER;",
-        );
+        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN nps INTEGER;");
 
         // Migration: add parent_id to accounts (I114 — Parent-Child Accounts)
-        let _ = conn.execute_batch(
-            "ALTER TABLE accounts ADD COLUMN parent_id TEXT;",
-        );
+        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN parent_id TEXT;");
 
         // Migration: ring → lifecycle (ring was INTEGER 1-4, lifecycle is TEXT)
         let has_lifecycle: bool = conn
@@ -450,13 +449,19 @@ impl ActionDb {
                 FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
             );"
         );
-        let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);");
-        let _ = conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);");
+        let _ = conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);",
+        );
+        let _ = conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);",
+        );
 
         // Migration: add prep_context_json to meetings_history (I181)
-        let _ = conn.execute_batch(
-            "ALTER TABLE meetings_history ADD COLUMN prep_context_json TEXT;",
-        );
+        let _ =
+            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_context_json TEXT;");
+
+        // Migration: add description to meetings_history (I185)
+        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN description TEXT;");
 
         Ok(Self { conn })
     }
@@ -1023,10 +1028,7 @@ impl ActionDb {
     /// Aggregate child account signals for a parent account (I114).
     ///
     /// Returns total ARR, worst health, nearest renewal, and BU count.
-    pub fn get_parent_aggregate(
-        &self,
-        parent_id: &str,
-    ) -> Result<ParentAggregate, DbError> {
+    pub fn get_parent_aggregate(&self, parent_id: &str) -> Result<ParentAggregate, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT COUNT(*), COALESCE(SUM(arr), 0),
                     MIN(CASE health WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'green' THEN 2 ELSE 3 END),
@@ -1040,7 +1042,11 @@ impl ActionDb {
             let nearest_renewal: Option<String> = row.get(3)?;
             Ok(ParentAggregate {
                 bu_count,
-                total_arr: if total_arr > 0.0 { Some(total_arr) } else { None },
+                total_arr: if total_arr > 0.0 {
+                    Some(total_arr)
+                } else {
+                    None
+                },
                 worst_health: match worst_health_int {
                     0 => Some("red".to_string()),
                     1 => Some("yellow".to_string()),
@@ -1081,7 +1087,44 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get past meetings for an account with prep context (ADR-0063).
+    /// Used only on account detail page where prep preview cards are needed.
+    pub fn get_meetings_for_account_with_prep(
+        &self,
+        account_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, meeting_type, start_time, end_time,
+                    account_id, attendees, notes_path, summary, created_at,
+                    calendar_event_id, prep_context_json
+             FROM meetings_history
+             WHERE account_id = ?1
+             ORDER BY start_time DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![account_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                account_id: row.get(5)?,
+                attendees: row.get(6)?,
+                notes_path: row.get(7)?,
+                summary: row.get(8)?,
+                created_at: row.get(9)?,
+                calendar_event_id: row.get(10)?,
+                description: None,
+                prep_context_json: row.get(11)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1115,6 +1158,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -1122,12 +1166,7 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on an account.
-    pub fn update_account_field(
-        &self,
-        id: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<(), DbError> {
+    pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let sql = match field {
             "name" => "UPDATE accounts SET name = ?1, updated_at = ?3 WHERE id = ?2",
@@ -1272,7 +1311,9 @@ impl ActionDb {
         Ok(DbProject {
             id: row.get(0)?,
             name: row.get(1)?,
-            status: row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "active".to_string()),
+            status: row
+                .get::<_, Option<String>>(2)?
+                .unwrap_or_else(|| "active".to_string()),
             milestone: row.get(3)?,
             owner: row.get(4)?,
             target_date: row.get(5)?,
@@ -1365,21 +1406,14 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on a project.
-    pub fn update_project_field(
-        &self,
-        id: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<(), DbError> {
+    pub fn update_project_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let sql = match field {
             "name" => "UPDATE projects SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "status" => "UPDATE projects SET status = ?1, updated_at = ?3 WHERE id = ?2",
             "milestone" => "UPDATE projects SET milestone = ?1, updated_at = ?3 WHERE id = ?2",
             "owner" => "UPDATE projects SET owner = ?1, updated_at = ?3 WHERE id = ?2",
-            "target_date" => {
-                "UPDATE projects SET target_date = ?1, updated_at = ?3 WHERE id = ?2"
-            }
+            "target_date" => "UPDATE projects SET target_date = ?1, updated_at = ?3 WHERE id = ?2",
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
                     format!("Field '{}' is not updatable", field),
@@ -1438,6 +1472,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -1469,11 +1504,7 @@ impl ActionDb {
     }
 
     /// Remove a meeting-entity link from the junction table.
-    pub fn unlink_meeting_entity(
-        &self,
-        meeting_id: &str,
-        entity_id: &str,
-    ) -> Result<(), DbError> {
+    pub fn unlink_meeting_entity(&self, meeting_id: &str, entity_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2",
             params![meeting_id, entity_id],
@@ -1511,7 +1542,9 @@ impl ActionDb {
         if meeting_ids.is_empty() {
             return Ok(HashMap::new());
         }
-        let placeholders: Vec<String> = (0..meeting_ids.len()).map(|i| format!("?{}", i + 1)).collect();
+        let placeholders: Vec<String> = (0..meeting_ids.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect();
         let sql = format!(
             "SELECT me.meeting_id, e.id, e.name, me.entity_type
              FROM meeting_entities me
@@ -1662,10 +1695,7 @@ impl ActionDb {
             if domain.is_empty() {
                 continue;
             }
-            let new_rel = if user_domains
-                .iter()
-                .any(|d| d.eq_ignore_ascii_case(domain))
-            {
+            let new_rel = if user_domains.iter().any(|d| d.eq_ignore_ascii_case(domain)) {
                 "internal"
             } else {
                 "external"
@@ -1748,6 +1778,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -1978,6 +2009,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -2012,6 +2044,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: row.get(11)?,
             })
         })?;
@@ -2021,6 +2054,42 @@ impl ActionDb {
             Some(Err(e)) => Err(DbError::Sqlite(e)),
             None => Ok(None),
         }
+    }
+
+    /// Return all meetings that have persisted prep context JSON.
+    pub fn list_meeting_prep_contexts(&self) -> Result<Vec<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, prep_context_json
+             FROM meetings_history
+             WHERE prep_context_json IS NOT NULL
+               AND trim(prep_context_json) != ''",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let id: String = row.get(0)?;
+            let prep_context_json: String = row.get(1)?;
+            Ok((id, prep_context_json))
+        })?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row?);
+        }
+        Ok(result)
+    }
+
+    /// Update prep context JSON for a single meeting.
+    pub fn update_meeting_prep_context(
+        &self,
+        meeting_id: &str,
+        prep_context_json: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "UPDATE meetings_history
+             SET prep_context_json = ?1
+             WHERE id = ?2",
+            params![prep_context_json, meeting_id],
+        )?;
+        Ok(())
     }
 
     // =========================================================================
@@ -2208,7 +2277,14 @@ impl ActionDb {
         capture_type: &str,
         content: &str,
     ) -> Result<(), DbError> {
-        self.insert_capture_with_project(meeting_id, meeting_title, account_id, None, capture_type, content)
+        self.insert_capture_with_project(
+            meeting_id,
+            meeting_title,
+            account_id,
+            None,
+            capture_type,
+            content,
+        )
     }
 
     /// Insert a capture with optional project_id (I52).
@@ -2389,8 +2465,8 @@ impl ActionDb {
             "INSERT INTO meetings_history (
                 id, title, meeting_type, start_time, end_time,
                 account_id, attendees, notes_path, summary, created_at,
-                calendar_event_id, prep_context_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                calendar_event_id, description, prep_context_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
@@ -2401,6 +2477,7 @@ impl ActionDb {
                 notes_path = excluded.notes_path,
                 summary = excluded.summary,
                 calendar_event_id = excluded.calendar_event_id,
+                description = excluded.description,
                 prep_context_json = COALESCE(excluded.prep_context_json, meetings_history.prep_context_json)",
             params![
                 meeting.id,
@@ -2414,6 +2491,7 @@ impl ActionDb {
                 meeting.summary,
                 meeting.created_at,
                 meeting.calendar_event_id,
+                meeting.description,
                 meeting.prep_context_json,
             ],
         )?;
@@ -2457,6 +2535,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -2483,7 +2562,15 @@ impl ActionDb {
             "INSERT OR IGNORE INTO meetings_history
                 (id, title, meeting_type, start_time, end_time, account_id, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, title, meeting_type, start_time, end_time, account_id, Utc::now().to_rfc3339()],
+            params![
+                id,
+                title,
+                meeting_type,
+                start_time,
+                end_time,
+                account_id,
+                Utc::now().to_rfc3339()
+            ],
         )?;
         Ok(())
     }
@@ -2980,6 +3067,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -3054,27 +3142,20 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on a person.
-    pub fn update_person_field(
-        &self,
-        id: &str,
-        field: &str,
-        value: &str,
-    ) -> Result<(), DbError> {
+    pub fn update_person_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // Whitelist fields to prevent SQL injection
         let sql = match field {
             "name" => "UPDATE people SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "notes" => "UPDATE people SET notes = ?1, updated_at = ?3 WHERE id = ?2",
             "role" => "UPDATE people SET role = ?1, updated_at = ?3 WHERE id = ?2",
-            "organization" => {
-                "UPDATE people SET organization = ?1, updated_at = ?3 WHERE id = ?2"
+            "organization" => "UPDATE people SET organization = ?1, updated_at = ?3 WHERE id = ?2",
+            "relationship" => "UPDATE people SET relationship = ?1, updated_at = ?3 WHERE id = ?2",
+            _ => {
+                return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                    format!("Field '{}' is not updatable", field),
+                )))
             }
-            "relationship" => {
-                "UPDATE people SET relationship = ?1, updated_at = ?3 WHERE id = ?2"
-            }
-            _ => return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
-                format!("Field '{}' is not updatable", field),
-            ))),
         };
         self.conn.execute(sql, params![value, id, now])?;
         Ok(())
@@ -3276,6 +3357,7 @@ impl ActionDb {
                 summary: row.get(8)?,
                 created_at: row.get(9)?,
                 calendar_event_id: row.get(10)?,
+                description: None,
                 prep_context_json: None,
             })
         })?;
@@ -3283,7 +3365,11 @@ impl ActionDb {
     }
 
     /// Update a person's relationship classification.
-    pub fn update_person_relationship(&self, person_id: &str, relationship: &str) -> Result<(), DbError> {
+    pub fn update_person_relationship(
+        &self,
+        person_id: &str,
+        relationship: &str,
+    ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "UPDATE people SET relationship = ?1, updated_at = ?3 WHERE id = ?2",
@@ -3321,9 +3407,11 @@ impl ActionDb {
     /// Uses INSERT OR IGNORE to handle overlapping meeting/entity links gracefully.
     pub fn merge_people(&self, keep_id: &str, remove_id: &str) -> Result<(), DbError> {
         // Verify both exist
-        let keep = self.get_person(keep_id)?
+        let keep = self
+            .get_person(keep_id)?
             .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
-        let _remove = self.get_person(remove_id)?
+        let _remove = self
+            .get_person(remove_id)?
             .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
 
         // 1. Transfer meeting_attendees (INSERT OR IGNORE handles shared meetings)
@@ -3373,10 +3461,8 @@ impl ActionDb {
         )?;
 
         // 7. Delete removed person
-        self.conn.execute(
-            "DELETE FROM people WHERE id = ?1",
-            params![remove_id],
-        )?;
+        self.conn
+            .execute("DELETE FROM people WHERE id = ?1", params![remove_id])?;
 
         // 8. Recompute kept person's meeting count
         self.recompute_person_meeting_count(keep_id)?;
@@ -3386,7 +3472,10 @@ impl ActionDb {
             if !remove_notes.is_empty() {
                 let merged_notes = match &keep.notes {
                     Some(existing) if !existing.is_empty() => {
-                        format!("{}\n\n--- Merged from {} ---\n{}", existing, _remove.name, remove_notes)
+                        format!(
+                            "{}\n\n--- Merged from {} ---\n{}",
+                            existing, _remove.name, remove_notes
+                        )
                     }
                     _ => format!("--- Merged from {} ---\n{}", _remove.name, remove_notes),
                 };
@@ -3404,7 +3493,8 @@ impl ActionDb {
     /// Delete a person and all their references (attendance, entity links, actions, intelligence).
     pub fn delete_person(&self, person_id: &str) -> Result<(), DbError> {
         // Verify exists
-        let _person = self.get_person(person_id)?
+        let _person = self
+            .get_person(person_id)?
             .ok_or_else(|| DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows))?;
 
         // Cascade deletes
@@ -3432,10 +3522,8 @@ impl ActionDb {
             "DELETE FROM content_index WHERE entity_id = ?1",
             params![person_id],
         )?;
-        self.conn.execute(
-            "DELETE FROM people WHERE id = ?1",
-            params![person_id],
-        )?;
+        self.conn
+            .execute("DELETE FROM people WHERE id = ?1", params![person_id])?;
 
         Ok(())
     }
@@ -3711,7 +3799,9 @@ mod tests {
 
         let count: i32 = db
             .conn
-            .query_row("SELECT COUNT(*) FROM meetings_history", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM meetings_history", [], |row| {
+                row.get(0)
+            })
             .expect("meetings_history table should exist");
         assert_eq!(count, 0);
     }
@@ -3800,9 +3890,7 @@ mod tests {
         action3.waiting_on = Some("John".to_string());
         db.upsert_action(&action3).expect("upsert 3");
 
-        let results = db
-            .get_account_actions("acme-corp")
-            .expect("account query");
+        let results = db.get_account_actions("acme-corp").expect("account query");
         assert_eq!(results.len(), 2);
         // Both pending and waiting should appear
         let statuses: Vec<&str> = results.iter().map(|a| a.status.as_str()).collect();
@@ -3866,6 +3954,7 @@ mod tests {
             summary: Some("Discussed renewal".to_string()),
             created_at: now,
             calendar_event_id: Some("gcal-evt-001".to_string()),
+            description: None,
             prep_context_json: None,
         };
 
@@ -3897,14 +3986,13 @@ mod tests {
                 summary: None,
                 created_at: now.clone(),
                 calendar_event_id: None,
+                description: None,
                 prep_context_json: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
         }
 
-        let results = db
-            .get_meeting_history("acme-corp", 30, 3)
-            .expect("history");
+        let results = db.get_meeting_history("acme-corp", 30, 3).expect("history");
         assert_eq!(results.len(), 3);
     }
 
@@ -4041,9 +4129,7 @@ mod tests {
         waiting_action.waiting_on = Some("true".to_string());
         db.upsert_action(&waiting_action).expect("insert");
 
-        let results = db
-            .get_non_briefing_pending_actions()
-            .expect("query");
+        let results = db.get_non_briefing_pending_actions().expect("query");
         assert_eq!(results.len(), 3);
         let ids: Vec<&str> = results.iter().map(|a| a.id.as_str()).collect();
         assert!(ids.contains(&"pm-001"));
@@ -4056,12 +4142,24 @@ mod tests {
         let db = test_db();
 
         // Insert captures for two accounts
-        db.insert_capture("mtg-1", "Acme QBR", Some("acme"), "win", "Expanded deployment")
-            .expect("insert capture 1");
+        db.insert_capture(
+            "mtg-1",
+            "Acme QBR",
+            Some("acme"),
+            "win",
+            "Expanded deployment",
+        )
+        .expect("insert capture 1");
         db.insert_capture("mtg-1", "Acme QBR", Some("acme"), "risk", "Budget freeze")
             .expect("insert capture 2");
-        db.insert_capture("mtg-2", "Beta Sync", Some("beta"), "win", "New champion identified")
-            .expect("insert capture 3");
+        db.insert_capture(
+            "mtg-2",
+            "Beta Sync",
+            Some("beta"),
+            "win",
+            "New champion identified",
+        )
+        .expect("insert capture 3");
 
         // Query for acme — should get 2
         let results = db
@@ -4161,9 +4259,7 @@ mod tests {
         db.upsert_account(&account).expect("upsert");
 
         // Touch by name (case-insensitive)
-        let matched = db
-            .touch_account_last_contact("acme corp")
-            .expect("touch");
+        let matched = db.touch_account_last_contact("acme corp").expect("touch");
         assert!(matched, "Should match by case-insensitive name");
 
         // Verify updated_at changed
@@ -4201,9 +4297,7 @@ mod tests {
     #[test]
     fn test_touch_account_last_contact_no_match() {
         let db = test_db();
-        let matched = db
-            .touch_account_last_contact("nonexistent")
-            .expect("touch");
+        let matched = db.touch_account_last_contact("nonexistent").expect("touch");
         assert!(!matched, "Should return false when no account matches");
     }
 
@@ -4263,9 +4357,7 @@ mod tests {
         assert!(matched_id);
 
         // No match
-        let no_match = db
-            .touch_entity_last_contact("nonexistent")
-            .expect("touch");
+        let no_match = db.touch_entity_last_contact("nonexistent").expect("touch");
         assert!(!no_match);
     }
 
@@ -4352,7 +4444,8 @@ mod tests {
         {
             let conn = rusqlite::Connection::open(&path).expect("open");
             conn.execute_batch("PRAGMA journal_mode=WAL;").expect("wal");
-            conn.execute_batch(include_str!("schema.sql")).expect("schema");
+            conn.execute_batch(include_str!("schema.sql"))
+                .expect("schema");
             conn.execute(
                 "INSERT INTO accounts (id, name, lifecycle, tracker_path, updated_at)
                  VALUES ('legacy-acct', 'Legacy Corp', 'steady-state', 'Accounts/legacy', '2025-01-01T00:00:00Z')",
@@ -4364,7 +4457,10 @@ mod tests {
         // Second open via ActionDb: backfill migration should run
         let db = ActionDb::open_at(path).expect("reopen");
         let entity = db.get_entity("legacy-acct").expect("get entity");
-        assert!(entity.is_some(), "Backfill should create entity from account");
+        assert!(
+            entity.is_some(),
+            "Backfill should create entity from account"
+        );
         let e = entity.unwrap();
         assert_eq!(e.name, "Legacy Corp");
         assert_eq!(e.entity_type, EntityType::Account);
@@ -4672,14 +4768,13 @@ mod tests {
                 summary: None,
                 created_at: now.to_rfc3339(),
                 calendar_event_id: None,
+                description: None,
                 prep_context_json: None,
             };
             db.upsert_meeting(&meeting).expect("insert meeting");
         }
 
-        let signals = db
-            .get_stakeholder_signals("acme-corp")
-            .expect("signals");
+        let signals = db.get_stakeholder_signals("acme-corp").expect("signals");
         assert_eq!(signals.meeting_frequency_30d, 5);
         assert_eq!(signals.meeting_frequency_90d, 5);
         assert!(signals.last_meeting.is_some());
@@ -4708,9 +4803,7 @@ mod tests {
         };
         db.upsert_account(&account).expect("insert account");
 
-        let signals = db
-            .get_stakeholder_signals("acme-corp")
-            .expect("signals");
+        let signals = db.get_stakeholder_signals("acme-corp").expect("signals");
         assert!(signals.last_contact.is_some());
     }
 
@@ -4786,7 +4879,9 @@ mod tests {
         let person = sample_person("bob@example.com");
         db.upsert_person(&person).expect("upsert");
 
-        let result = db.get_person_by_email("BOB@EXAMPLE.COM").expect("get by email");
+        let result = db
+            .get_person_by_email("BOB@EXAMPLE.COM")
+            .expect("get by email");
         assert!(result.is_some());
         assert_eq!(result.unwrap().id, person.id);
     }
@@ -4841,16 +4936,21 @@ mod tests {
         db.link_person_to_entity(&person.id, "acme-corp", "associated")
             .expect("link");
 
-        let people = db.get_people_for_entity("acme-corp").expect("people for entity");
+        let people = db
+            .get_people_for_entity("acme-corp")
+            .expect("people for entity");
         assert_eq!(people.len(), 1);
         assert_eq!(people[0].id, person.id);
 
-        let entities = db.get_entities_for_person(&person.id).expect("entities for person");
+        let entities = db
+            .get_entities_for_person(&person.id)
+            .expect("entities for person");
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].id, "acme-corp");
 
         // Unlink
-        db.unlink_person_from_entity(&person.id, "acme-corp").expect("unlink");
+        db.unlink_person_from_entity(&person.id, "acme-corp")
+            .expect("unlink");
         let people_after = db.get_people_for_entity("acme-corp").expect("after unlink");
         assert_eq!(people_after.len(), 0);
     }
@@ -4874,6 +4974,7 @@ mod tests {
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -4881,12 +4982,16 @@ mod tests {
             .expect("record attendance");
 
         // Check attendees for meeting
-        let attendees = db.get_meeting_attendees("mtg-attend-001").expect("get attendees");
+        let attendees = db
+            .get_meeting_attendees("mtg-attend-001")
+            .expect("get attendees");
         assert_eq!(attendees.len(), 1);
         assert_eq!(attendees[0].id, person.id);
 
         // Check meetings for person
-        let meetings = db.get_person_meetings(&person.id, 10).expect("person meetings");
+        let meetings = db
+            .get_person_meetings(&person.id, 10)
+            .expect("person meetings");
         assert_eq!(meetings.len(), 1);
         assert_eq!(meetings[0].id, "mtg-attend-001");
 
@@ -4895,7 +5000,8 @@ mod tests {
         assert_eq!(updated.meeting_count, 1);
 
         // Idempotent: recording again should not increment
-        db.record_meeting_attendance("mtg-attend-001", &person.id).expect("re-record");
+        db.record_meeting_attendance("mtg-attend-001", &person.id)
+            .expect("re-record");
         let same = db.get_person(&person.id).expect("get same").unwrap();
         assert_eq!(same.meeting_count, 1);
     }
@@ -4903,8 +5009,10 @@ mod tests {
     #[test]
     fn test_search_people() {
         let db = test_db();
-        db.upsert_person(&sample_person("alice@acme.com")).expect("upsert");
-        db.upsert_person(&sample_person("bob@bigcorp.io")).expect("upsert");
+        db.upsert_person(&sample_person("alice@acme.com"))
+            .expect("upsert");
+        db.upsert_person(&sample_person("bob@bigcorp.io"))
+            .expect("upsert");
 
         let results = db.search_people("acme", 10).expect("search");
         assert_eq!(results.len(), 1);
@@ -4920,7 +5028,8 @@ mod tests {
         let person = sample_person("field@test.com");
         db.upsert_person(&person).expect("upsert");
 
-        db.update_person_field(&person.id, "role", "VP Engineering").expect("update role");
+        db.update_person_field(&person.id, "role", "VP Engineering")
+            .expect("update role");
         let updated = db.get_person(&person.id).expect("get").unwrap();
         assert_eq!(updated.role, Some("VP Engineering".to_string()));
 
@@ -4952,7 +5061,9 @@ mod tests {
 
         let count: i32 = db
             .conn
-            .query_row("SELECT COUNT(*) FROM meeting_attendees", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM meeting_attendees", [], |row| {
+                row.get(0)
+            })
             .expect("meeting_attendees table should exist");
         assert_eq!(count, 0);
 
@@ -4964,7 +5075,9 @@ mod tests {
 
         let count: i32 = db
             .conn
-            .query_row("SELECT COUNT(*) FROM meeting_entities", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM meeting_entities", [], |row| {
+                row.get(0)
+            })
             .expect("meeting_entities table should exist");
         assert_eq!(count, 0);
     }
@@ -4987,6 +5100,7 @@ mod tests {
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -5002,8 +5116,10 @@ mod tests {
 
         make_meeting(&db, "mtg-a");
         make_meeting(&db, "mtg-b");
-        db.record_meeting_attendance("mtg-a", &keep.id).expect("attend");
-        db.record_meeting_attendance("mtg-b", &remove.id).expect("attend");
+        db.record_meeting_attendance("mtg-a", &keep.id)
+            .expect("attend");
+        db.record_meeting_attendance("mtg-b", &remove.id)
+            .expect("attend");
 
         db.merge_people(&keep.id, &remove.id).expect("merge");
 
@@ -5022,14 +5138,22 @@ mod tests {
         let account = DbAccount {
             id: "acme".to_string(),
             name: "Acme".to_string(),
-            lifecycle: None, arr: None, health: None, contract_start: None,
-            contract_end: None, csm: None, champion: None, nps: None,
-            tracker_path: None, parent_id: None,
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
-        db.link_person_to_entity(&remove.id, "acme", "associated").expect("link");
+        db.link_person_to_entity(&remove.id, "acme", "associated")
+            .expect("link");
 
         db.merge_people(&keep.id, &remove.id).expect("merge");
 
@@ -5065,11 +5189,14 @@ mod tests {
         db.upsert_person(&remove).expect("upsert");
 
         make_meeting(&db, "mtg-shared");
-        db.record_meeting_attendance("mtg-shared", &keep.id).expect("attend");
-        db.record_meeting_attendance("mtg-shared", &remove.id).expect("attend");
+        db.record_meeting_attendance("mtg-shared", &keep.id)
+            .expect("attend");
+        db.record_meeting_attendance("mtg-shared", &remove.id)
+            .expect("attend");
 
         // Should not fail despite both attending the same meeting
-        db.merge_people(&keep.id, &remove.id).expect("merge should succeed with shared meetings");
+        db.merge_people(&keep.id, &remove.id)
+            .expect("merge should succeed with shared meetings");
 
         let attendees = db.get_meeting_attendees("mtg-shared").expect("attendees");
         assert_eq!(attendees.len(), 1, "only kept person remains");
@@ -5086,8 +5213,14 @@ mod tests {
 
         db.merge_people(&keep.id, &remove.id).expect("merge");
 
-        assert!(db.get_person(&remove.id).expect("get").is_none(), "removed person should be gone");
-        assert!(db.get_person(&keep.id).expect("get").is_some(), "kept person should still exist");
+        assert!(
+            db.get_person(&remove.id).expect("get").is_none(),
+            "removed person should be gone"
+        );
+        assert!(
+            db.get_person(&keep.id).expect("get").is_some(),
+            "kept person should still exist"
+        );
     }
 
     #[test]
@@ -5101,9 +5234,12 @@ mod tests {
         make_meeting(&db, "mtg-1");
         make_meeting(&db, "mtg-2");
         make_meeting(&db, "mtg-3");
-        db.record_meeting_attendance("mtg-1", &keep.id).expect("attend");
-        db.record_meeting_attendance("mtg-2", &remove.id).expect("attend");
-        db.record_meeting_attendance("mtg-3", &remove.id).expect("attend");
+        db.record_meeting_attendance("mtg-1", &keep.id)
+            .expect("attend");
+        db.record_meeting_attendance("mtg-2", &remove.id)
+            .expect("attend");
+        db.record_meeting_attendance("mtg-3", &remove.id)
+            .expect("attend");
 
         db.merge_people(&keep.id, &remove.id).expect("merge");
 
@@ -5118,7 +5254,10 @@ mod tests {
         db.upsert_person(&keep).expect("upsert");
 
         let err = db.merge_people(&keep.id, "nonexistent-id");
-        assert!(err.is_err(), "merge should fail when remove_id doesn't exist");
+        assert!(
+            err.is_err(),
+            "merge should fail when remove_id doesn't exist"
+        );
 
         let err = db.merge_people("nonexistent-id", &keep.id);
         assert!(err.is_err(), "merge should fail when keep_id doesn't exist");
@@ -5131,19 +5270,28 @@ mod tests {
         db.upsert_person(&person).expect("upsert");
 
         make_meeting(&db, "mtg-doom");
-        db.record_meeting_attendance("mtg-doom", &person.id).expect("attend");
+        db.record_meeting_attendance("mtg-doom", &person.id)
+            .expect("attend");
 
         let account = DbAccount {
             id: "doom-corp".to_string(),
             name: "Doom Corp".to_string(),
-            lifecycle: None, arr: None, health: None, contract_start: None,
-            contract_end: None, csm: None, champion: None, nps: None,
-            tracker_path: None, parent_id: None,
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
         db.upsert_account(&account).expect("upsert account");
-        db.link_person_to_entity(&person.id, "doom-corp", "associated").expect("link");
+        db.link_person_to_entity(&person.id, "doom-corp", "associated")
+            .expect("link");
 
         let mut action = sample_action("act-doom", "Doomed action");
         action.person_id = Some(person.id.clone());
@@ -5163,8 +5311,14 @@ mod tests {
         assert_eq!(people.len(), 0);
 
         // Action person_id nulled
-        let action = db.get_action_by_id("act-doom").expect("get action").unwrap();
-        assert!(action.person_id.is_none(), "person_id should be nulled, not left dangling");
+        let action = db
+            .get_action_by_id("act-doom")
+            .expect("get action")
+            .unwrap();
+        assert!(
+            action.person_id.is_none(),
+            "person_id should be nulled, not left dangling"
+        );
     }
 
     // =========================================================================
@@ -5503,9 +5657,13 @@ mod tests {
         assert_eq!(entities.len(), 2);
 
         // Generic get_meetings_for_entity works for both
-        let acme_meetings = db.get_meetings_for_entity("acme-m2m", 10).expect("acme meetings");
+        let acme_meetings = db
+            .get_meetings_for_entity("acme-m2m", 10)
+            .expect("acme meetings");
         assert_eq!(acme_meetings.len(), 1);
-        let proj_meetings = db.get_meetings_for_entity("proj-m2m", 10).expect("proj meetings");
+        let proj_meetings = db
+            .get_meetings_for_entity("proj-m2m", 10)
+            .expect("proj meetings");
         assert_eq!(proj_meetings.len(), 1);
     }
 
@@ -5543,6 +5701,7 @@ mod tests {
             summary: None,
             created_at: now.clone(),
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert");
@@ -5563,8 +5722,15 @@ mod tests {
     fn test_captures_with_project_id() {
         let db = test_db();
 
-        db.insert_capture_with_project("mtg-p1", "Sprint Review", None, Some("proj-cap"), "win", "Feature shipped")
-            .expect("insert");
+        db.insert_capture_with_project(
+            "mtg-p1",
+            "Sprint Review",
+            None,
+            Some("proj-cap"),
+            "win",
+            "Feature shipped",
+        )
+        .expect("insert");
 
         let captures = db.get_captures_for_project("proj-cap", 30).expect("query");
         assert_eq!(captures.len(), 1);
@@ -5714,7 +5880,7 @@ mod tests {
             modified_at: now.clone(),
             indexed_at: now.clone(),
             extracted_at: None, // Not re-extracted
-            summary: None,     // Not re-extracted
+            summary: None,      // Not re-extracted
             content_type: "general".to_string(),
             priority: 5,
         };
@@ -6059,6 +6225,7 @@ mod tests {
             summary: None,
             created_at: now,
             calendar_event_id: None,
+            description: None,
             prep_context_json: None,
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
@@ -6126,9 +6293,7 @@ mod tests {
         assert_eq!(linked, 0);
 
         // Still only one link
-        let entities = db
-            .get_entities_for_person(&person.id)
-            .expect("entities");
+        let entities = db.get_entities_for_person(&person.id).expect("entities");
         assert_eq!(entities.len(), 1);
     }
 
@@ -6169,7 +6334,9 @@ mod tests {
 
         // Add subsidiary.com as internal domain
         let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
-        let changed = db.reclassify_people_for_domains(&domains).expect("reclassify");
+        let changed = db
+            .reclassify_people_for_domains(&domains)
+            .expect("reclassify");
 
         // alice should flip to internal, bob stays external
         assert_eq!(changed, 1);
@@ -6202,10 +6369,13 @@ mod tests {
 
         // Now reclassify alice as internal
         let domains = vec!["myco.com".to_string(), "subsidiary.com".to_string()];
-        db.reclassify_people_for_domains(&domains).expect("reclassify people");
+        db.reclassify_people_for_domains(&domains)
+            .expect("reclassify people");
 
         // Reclassify meetings
-        let changed = db.reclassify_meeting_types_from_attendees().expect("reclassify meetings");
+        let changed = db
+            .reclassify_meeting_types_from_attendees()
+            .expect("reclassify meetings");
         assert_eq!(changed, 1);
 
         let meeting: String = db
@@ -6232,7 +6402,9 @@ mod tests {
             )
             .expect("set type");
 
-        let changed = db.reclassify_meeting_types_from_attendees().expect("reclassify");
+        let changed = db
+            .reclassify_meeting_types_from_attendees()
+            .expect("reclassify");
         assert_eq!(changed, 0);
 
         let meeting_type: String = db

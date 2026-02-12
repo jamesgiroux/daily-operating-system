@@ -23,10 +23,7 @@ pub fn gather_all_meeting_contexts(
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
-        let meeting_type = meeting
-            .get("type")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
         if meeting_type == "personal" || meeting_type == "all_hands" {
             continue;
         }
@@ -41,21 +38,17 @@ fn gather_meeting_context(
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
 ) -> Value {
-    let meeting_type = meeting
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let event_id = meeting
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let event_id = meeting.get("id").and_then(|v| v.as_str()).unwrap_or("");
     let title = meeting
         .get("title")
         .or_else(|| meeting.get("summary"))
         .and_then(|v| v.as_str())
         .unwrap_or("");
-    let start = meeting
-        .get("start")
+    let start = meeting.get("start").and_then(|v| v.as_str()).unwrap_or("");
+
+    let description = meeting
+        .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
@@ -66,6 +59,9 @@ fn gather_meeting_context(
         "type": meeting_type,
         "refs": {},
     });
+    if !description.is_empty() {
+        ctx["description"] = json!(description);
+    }
 
     // Skip meetings that don't benefit from prep
     if meeting_type == "personal" || meeting_type == "all_hands" {
@@ -96,8 +92,7 @@ fn gather_meeting_context(
                         }
                     }
 
-                    if let Some(stakeholders) = find_file_in_dir(&account_path, "stakeholders.md")
-                    {
+                    if let Some(stakeholders) = find_file_in_dir(&account_path, "stakeholders.md") {
                         ctx["refs"]["stakeholder_map"] = json!(stakeholders.to_string_lossy());
                     }
 
@@ -115,11 +110,9 @@ fn gather_meeting_context(
 
                     // SQLite enrichment
                     if let Some(db) = db {
-                        ctx["recent_captures"] =
-                            get_captures_for_account(db, &matched.name, 14);
+                        ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
-                        ctx["meeting_history"] =
-                            get_meeting_history(db, &matched.name, 30, 3);
+                        ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -163,10 +156,8 @@ fn gather_meeting_context(
 
             if let Some(db) = db {
                 if !title.is_empty() {
-                    ctx["meeting_history"] =
-                        get_meeting_history_by_title(db, title, 30, 2);
-                    ctx["recent_captures"] =
-                        get_captures_by_meeting_title(db, title, 14);
+                    ctx["meeting_history"] = get_meeting_history_by_title(db, title, 30, 2);
+                    ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 14);
                 }
                 ctx["open_actions"] = get_all_pending_actions(db, 10);
             }
@@ -185,10 +176,8 @@ fn gather_meeting_context(
 
             if let Some(db) = db {
                 if !title.is_empty() {
-                    ctx["meeting_history"] =
-                        get_meeting_history_by_title(db, title, 60, 3);
-                    ctx["recent_captures"] =
-                        get_captures_by_meeting_title(db, title, 30);
+                    ctx["meeting_history"] = get_meeting_history_by_title(db, title, 60, 3);
+                    ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 30);
                 }
                 ctx["open_actions"] = get_all_pending_actions(db, 10);
             }
@@ -211,11 +200,9 @@ fn gather_meeting_context(
                     }
 
                     if let Some(db) = db {
-                        ctx["recent_captures"] =
-                            get_captures_for_account(db, &matched.name, 14);
+                        ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
-                        ctx["meeting_history"] =
-                            get_meeting_history(db, &matched.name, 30, 3);
+                        ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -236,10 +223,8 @@ fn gather_meeting_context(
                     if ctx.get("account").is_none()
                         || ctx["account"].as_str().unwrap_or("").is_empty()
                     {
-                        ctx["meeting_history"] =
-                            get_meeting_history_by_title(db, title, 30, 3);
-                        ctx["recent_captures"] =
-                            get_captures_by_meeting_title(db, title, 14);
+                        ctx["meeting_history"] = get_meeting_history_by_title(db, title, 30, 3);
+                        ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 14);
                     }
                 }
             }
@@ -268,13 +253,17 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
     }
 
     if !intel.risks.is_empty() {
-        ctx["entity_risks"] = json!(intel.risks.iter().map(|r| {
-            json!({
-                "text": r.text,
-                "urgency": r.urgency,
-                "source": r.source,
+        ctx["entity_risks"] = json!(intel
+            .risks
+            .iter()
+            .map(|r| {
+                json!({
+                    "text": r.text,
+                    "urgency": r.urgency,
+                    "source": r.source,
+                })
             })
-        }).collect::<Vec<_>>());
+            .collect::<Vec<_>>());
     }
 
     if let Some(ref readiness) = intel.next_meeting_readiness {
@@ -284,14 +273,18 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
     }
 
     if !intel.stakeholder_insights.is_empty() {
-        ctx["stakeholder_insights"] = json!(intel.stakeholder_insights.iter().map(|s| {
-            json!({
-                "name": s.name,
-                "role": s.role,
-                "assessment": s.assessment,
-                "engagement": s.engagement,
+        ctx["stakeholder_insights"] = json!(intel
+            .stakeholder_insights
+            .iter()
+            .map(|s| {
+                json!({
+                    "name": s.name,
+                    "role": s.role,
+                    "assessment": s.assessment,
+                    "engagement": s.engagement,
+                })
             })
-        }).collect::<Vec<_>>());
+            .collect::<Vec<_>>());
     }
 }
 
@@ -309,12 +302,7 @@ fn resolve_account_from_db(
     event_id: &str,
     accounts_dir: &Path,
 ) -> Option<AccountMatch> {
-    let meeting_id = crate::workflow::deliver::meeting_primary_id(
-        Some(event_id),
-        "",
-        "",
-        "",
-    );
+    let meeting_id = crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
 
     // Step 1: Direct meeting_entities junction lookup
     if let Ok(entities) = db.get_meeting_entities(&meeting_id) {
@@ -539,7 +527,11 @@ fn find_file_in_dir(directory: &Path, filename: &str) -> Option<std::path::PathB
 }
 
 /// Find recent meeting summaries mentioning a search term in the archive.
-fn find_recent_summaries(search_term: &str, archive_dir: &Path, limit: usize) -> Vec<std::path::PathBuf> {
+fn find_recent_summaries(
+    search_term: &str,
+    archive_dir: &Path,
+    limit: usize,
+) -> Vec<std::path::PathBuf> {
     if !archive_dir.is_dir() {
         return Vec::new();
     }
@@ -647,11 +639,23 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
     let mut data = serde_json::Map::new();
 
     let patterns = [
-        (r"(?i)(?:ARR|Annual Revenue|MRR)\s*[:\|]\s*\$?([\d,\.]+[KMB]?)", "arr"),
+        (
+            r"(?i)(?:ARR|Annual Revenue|MRR)\s*[:\|]\s*\$?([\d,\.]+[KMB]?)",
+            "arr",
+        ),
         (r"(?i)(?:Health\s*(?:Score)?)\s*[:\|]\s*(\w+)", "health"),
-        (r"(?i)(?:Renewal\s*(?:Date)?)\s*[:\|]\s*([\d\-/]+)", "renewal"),
-        (r"(?i)(?:Lifecycle|Stage)\s*[:\|]\s*(.+?)(?:\n|\|)", "lifecycle"),
-        (r"(?i)(?:CSM|Account Manager)\s*[:\|]\s*(.+?)(?:\n|\|)", "csm"),
+        (
+            r"(?i)(?:Renewal\s*(?:Date)?)\s*[:\|]\s*([\d\-/]+)",
+            "renewal",
+        ),
+        (
+            r"(?i)(?:Lifecycle|Stage)\s*[:\|]\s*(.+?)(?:\n|\|)",
+            "lifecycle",
+        ),
+        (
+            r"(?i)(?:CSM|Account Manager)\s*[:\|]\s*(.+?)(?:\n|\|)",
+            "csm",
+        ),
     ];
 
     for (pattern, key) in &patterns {
@@ -667,13 +671,19 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
     // Extract Recent Wins section
     let wins = extract_section_items(&content, "Recent Wins");
     if !wins.is_empty() {
-        data.insert("recent_wins".to_string(), json!(wins.into_iter().take(5).collect::<Vec<_>>()));
+        data.insert(
+            "recent_wins".to_string(),
+            json!(wins.into_iter().take(5).collect::<Vec<_>>()),
+        );
     }
 
     // Extract Current Risks section
     let risks = extract_section_items(&content, "Current Risks");
     if !risks.is_empty() {
-        data.insert("current_risks".to_string(), json!(risks.into_iter().take(5).collect::<Vec<_>>()));
+        data.insert(
+            "current_risks".to_string(),
+            json!(risks.into_iter().take(5).collect::<Vec<_>>()),
+        );
     }
 
     if data.is_empty() {
@@ -685,7 +695,10 @@ fn parse_dashboard(dashboard_path: &Path) -> Option<Value> {
 
 /// Extract bullet items from a markdown section.
 fn extract_section_items(content: &str, section_name: &str) -> Vec<String> {
-    let pattern = format!(r"(?i)#+\s*{}.*?\n([\s\S]*?)(?:\n#|\z)", regex::escape(section_name));
+    let pattern = format!(
+        r"(?i)#+\s*{}.*?\n([\s\S]*?)(?:\n#|\z)",
+        regex::escape(section_name)
+    );
     let re = match Regex::new(&pattern) {
         Ok(r) => r,
         Err(_) => return Vec::new(),
@@ -727,158 +740,198 @@ fn extract_section_items(content: &str, section_name: &str) -> Vec<String> {
 fn get_captures_for_account(db: &crate::db::ActionDb, account_id: &str, days_back: i64) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, meeting_title, capture_type, content, captured_at
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, meeting_id, meeting_title, capture_type, content, captured_at
              FROM captures
              WHERE account_id = ?1
                AND captured_at >= date('now', ?2)
              ORDER BY captured_at DESC",
-        ).ok()?;
-        let rows = stmt.query_map(
-            rusqlite::params![account_id, format!("-{} days", days_back)],
-            |row: &rusqlite::Row| {
-                Ok(json!({
-                    "id": row.get::<_, Option<String>>(0)?,
-                    "meeting_title": row.get::<_, Option<String>>(2)?,
-                    "type": row.get::<_, Option<String>>(3)?,
-                    "content": row.get::<_, Option<String>>(4)?,
-                    "captured_at": row.get::<_, Option<String>>(5)?,
-                }))
-            },
-        ).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![account_id, format!("-{} days", days_back)],
+                |row: &rusqlite::Row| {
+                    Ok(json!({
+                        "id": row.get::<_, Option<String>>(0)?,
+                        "meeting_title": row.get::<_, Option<String>>(2)?,
+                        "type": row.get::<_, Option<String>>(3)?,
+                        "content": row.get::<_, Option<String>>(4)?,
+                        "captured_at": row.get::<_, Option<String>>(5)?,
+                    }))
+                },
+            )
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 
 fn get_account_actions(db: &crate::db::ActionDb, account_id: &str) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, title, priority, status, due_date
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, priority, status, due_date
              FROM actions
              WHERE account_id = ?1
                AND status IN ('pending', 'waiting')
              ORDER BY priority, due_date",
-        ).ok()?;
-        let rows = stmt.query_map([account_id], |row: &rusqlite::Row| {
-            Ok(json!({
-                "id": row.get::<_, Option<String>>(0)?,
-                "title": row.get::<_, Option<String>>(1)?,
-                "priority": row.get::<_, Option<String>>(2)?,
-                "status": row.get::<_, Option<String>>(3)?,
-                "due_date": row.get::<_, Option<String>>(4)?,
-            }))
-        }).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map([account_id], |row: &rusqlite::Row| {
+                Ok(json!({
+                    "id": row.get::<_, Option<String>>(0)?,
+                    "title": row.get::<_, Option<String>>(1)?,
+                    "priority": row.get::<_, Option<String>>(2)?,
+                    "status": row.get::<_, Option<String>>(3)?,
+                    "due_date": row.get::<_, Option<String>>(4)?,
+                }))
+            })
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 
-fn get_meeting_history(db: &crate::db::ActionDb, account_id: &str, lookback_days: i64, limit: usize) -> Value {
+fn get_meeting_history(
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    lookback_days: i64,
+    limit: usize,
+) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, title, meeting_type, start_time, summary
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, meeting_type, start_time, summary
              FROM meetings_history
              WHERE account_id = ?1
                AND start_time >= date('now', ?2)
              ORDER BY start_time DESC
              LIMIT ?3",
-        ).ok()?;
-        let rows = stmt.query_map(
-            rusqlite::params![account_id, format!("-{} days", lookback_days), limit as i64],
-            |row: &rusqlite::Row| {
-                Ok(json!({
-                    "id": row.get::<_, Option<String>>(0)?,
-                    "title": row.get::<_, Option<String>>(1)?,
-                    "type": row.get::<_, Option<String>>(2)?,
-                    "start_time": row.get::<_, Option<String>>(3)?,
-                    "summary": row.get::<_, Option<String>>(4)?,
-                }))
-            },
-        ).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![account_id, format!("-{} days", lookback_days), limit as i64],
+                |row: &rusqlite::Row| {
+                    Ok(json!({
+                        "id": row.get::<_, Option<String>>(0)?,
+                        "title": row.get::<_, Option<String>>(1)?,
+                        "type": row.get::<_, Option<String>>(2)?,
+                        "start_time": row.get::<_, Option<String>>(3)?,
+                        "summary": row.get::<_, Option<String>>(4)?,
+                    }))
+                },
+            )
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 
-fn get_meeting_history_by_title(db: &crate::db::ActionDb, title: &str, lookback_days: i64, limit: usize) -> Value {
+fn get_meeting_history_by_title(
+    db: &crate::db::ActionDb,
+    title: &str,
+    lookback_days: i64,
+    limit: usize,
+) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, title, meeting_type, start_time, summary
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, meeting_type, start_time, summary
              FROM meetings_history
              WHERE LOWER(title) = LOWER(?1)
                AND start_time >= date('now', ?2)
              ORDER BY start_time DESC
              LIMIT ?3",
-        ).ok()?;
-        let rows = stmt.query_map(
-            rusqlite::params![title, format!("-{} days", lookback_days), limit as i64],
-            |row: &rusqlite::Row| {
-                Ok(json!({
-                    "id": row.get::<_, Option<String>>(0)?,
-                    "title": row.get::<_, Option<String>>(1)?,
-                    "type": row.get::<_, Option<String>>(2)?,
-                    "start_time": row.get::<_, Option<String>>(3)?,
-                    "summary": row.get::<_, Option<String>>(4)?,
-                }))
-            },
-        ).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![title, format!("-{} days", lookback_days), limit as i64],
+                |row: &rusqlite::Row| {
+                    Ok(json!({
+                        "id": row.get::<_, Option<String>>(0)?,
+                        "title": row.get::<_, Option<String>>(1)?,
+                        "type": row.get::<_, Option<String>>(2)?,
+                        "start_time": row.get::<_, Option<String>>(3)?,
+                        "summary": row.get::<_, Option<String>>(4)?,
+                    }))
+                },
+            )
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 
 fn get_captures_by_meeting_title(db: &crate::db::ActionDb, title: &str, days_back: i64) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, meeting_id, meeting_title, capture_type, content, captured_at
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, meeting_id, meeting_title, capture_type, content, captured_at
              FROM captures
              WHERE LOWER(meeting_title) = LOWER(?1)
                AND captured_at >= date('now', ?2)
              ORDER BY captured_at DESC",
-        ).ok()?;
-        let rows = stmt.query_map(
-            rusqlite::params![title, format!("-{} days", days_back)],
-            |row: &rusqlite::Row| {
-                Ok(json!({
-                    "id": row.get::<_, Option<String>>(0)?,
-                    "meeting_title": row.get::<_, Option<String>>(2)?,
-                    "type": row.get::<_, Option<String>>(3)?,
-                    "content": row.get::<_, Option<String>>(4)?,
-                    "captured_at": row.get::<_, Option<String>>(5)?,
-                }))
-            },
-        ).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![title, format!("-{} days", days_back)],
+                |row: &rusqlite::Row| {
+                    Ok(json!({
+                        "id": row.get::<_, Option<String>>(0)?,
+                        "meeting_title": row.get::<_, Option<String>>(2)?,
+                        "type": row.get::<_, Option<String>>(3)?,
+                        "content": row.get::<_, Option<String>>(4)?,
+                        "captured_at": row.get::<_, Option<String>>(5)?,
+                    }))
+                },
+            )
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 
 fn get_all_pending_actions(db: &crate::db::ActionDb, limit: usize) -> Value {
     let result: Vec<Value> = (|| {
         let conn = db.conn_ref();
-        let mut stmt = conn.prepare(
-            "SELECT id, title, priority, status, due_date
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, priority, status, due_date
              FROM actions
              WHERE status IN ('pending', 'waiting')
              ORDER BY priority, due_date
              LIMIT ?1",
-        ).ok()?;
-        let rows = stmt.query_map([limit as i64], |row: &rusqlite::Row| {
-            Ok(json!({
-                "id": row.get::<_, Option<String>>(0)?,
-                "title": row.get::<_, Option<String>>(1)?,
-                "priority": row.get::<_, Option<String>>(2)?,
-                "status": row.get::<_, Option<String>>(3)?,
-                "due_date": row.get::<_, Option<String>>(4)?,
-            }))
-        }).ok()?;
+            )
+            .ok()?;
+        let rows = stmt
+            .query_map([limit as i64], |row: &rusqlite::Row| {
+                Ok(json!({
+                    "id": row.get::<_, Option<String>>(0)?,
+                    "title": row.get::<_, Option<String>>(1)?,
+                    "priority": row.get::<_, Option<String>>(2)?,
+                    "status": row.get::<_, Option<String>>(3)?,
+                    "due_date": row.get::<_, Option<String>>(4)?,
+                }))
+            })
+            .ok()?;
         Some(rows.flatten().collect())
-    })().unwrap_or_default();
+    })()
+    .unwrap_or_default();
     json!(result)
 }
 

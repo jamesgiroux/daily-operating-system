@@ -11,22 +11,23 @@ mod capture;
 mod commands;
 mod db;
 mod db_backup;
+mod devtools;
 pub mod entity;
 pub mod entity_intel;
 mod error;
-mod intel_queue;
-pub mod intelligence;
 mod executor;
 mod google;
 pub mod google_api;
 mod hygiene;
+mod intel_queue;
+pub mod intelligence;
 mod json_loader;
-pub mod prepare;
 mod notification;
 mod parser;
 pub mod people;
-pub mod projects;
+pub mod prepare;
 mod processor;
+pub mod projects;
 mod pty;
 mod scheduler;
 mod state;
@@ -34,7 +35,6 @@ mod types;
 pub mod util;
 mod watcher;
 mod workflow;
-mod devtools;
 
 use std::sync::Arc;
 
@@ -190,6 +190,7 @@ pub fn run() {
             commands::get_execution_history,
             commands::get_next_run_time,
             commands::get_meeting_prep,
+            commands::backfill_prep_semantics,
             commands::get_all_actions,
             commands::get_all_emails,
             commands::get_inbox_files,
@@ -327,6 +328,9 @@ pub fn run() {
             // I143: Account Events
             commands::record_account_event,
             commands::get_account_events,
+            // I194: User Agenda + Notes (ADR-0065)
+            commands::update_meeting_user_agenda,
+            commands::update_meeting_user_notes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
