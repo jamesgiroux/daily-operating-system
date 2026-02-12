@@ -129,6 +129,16 @@ pub struct DbMeeting {
     pub transcript_processed_at: Option<String>,
 }
 
+pub struct EnsureMeetingHistoryInput<'a> {
+    pub id: &'a str,
+    pub title: &'a str,
+    pub meeting_type: &'a str,
+    pub start_time: &'a str,
+    pub end_time: Option<&'a str>,
+    pub account_id: Option<&'a str>,
+    pub calendar_event_id: Option<&'a str>,
+}
+
 /// A row from the `processing_log` table.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -3042,27 +3052,21 @@ impl ActionDb {
     /// Does NOT overwrite existing rows — reconcile.rs owns updates.
     pub fn ensure_meeting_in_history(
         &self,
-        id: &str,
-        title: &str,
-        meeting_type: &str,
-        start_time: &str,
-        end_time: Option<&str>,
-        account_id: Option<&str>,
-        calendar_event_id: Option<&str>,
+        input: EnsureMeetingHistoryInput<'_>,
     ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO meetings_history
                 (id, title, meeting_type, start_time, end_time, account_id, created_at, calendar_event_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                id,
-                title,
-                meeting_type,
-                start_time,
-                end_time,
-                account_id,
+                input.id,
+                input.title,
+                input.meeting_type,
+                input.start_time,
+                input.end_time,
+                input.account_id,
                 Utc::now().to_rfc3339(),
-                calendar_event_id,
+                input.calendar_event_id,
             ],
         )?;
         Ok(())
