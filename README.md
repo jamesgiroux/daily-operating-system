@@ -54,15 +54,11 @@ There are approximately 500 Rust tests covering the backend.
 
 Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows through three tiers: filesystem (durable markdown + JSON), SQLite (working store), and app memory (ephemeral). AI enrichment runs through Claude Code CLI spawned as a PTY subprocess.
 
-See [ARCHITECTURE.md](daybreak/docs/ARCHITECTURE.md) for full details and 59 [Architecture Decision Records](daybreak/docs/decisions/).
-
 ## Documentation
 
 - [PHILOSOPHY.md](design/PHILOSOPHY.md) -- Why we exist
 - [PRINCIPLES.md](design/PRINCIPLES.md) -- Design principles
 - [VISION.md](design/VISION.md) -- Product vision
-- [ARCHITECTURE.md](daybreak/docs/ARCHITECTURE.md) -- Technical architecture
-- [decisions/](daybreak/docs/decisions/) -- Architecture Decision Records
 
 Product website: [daily-os.com](https://daily-os.com)
 
