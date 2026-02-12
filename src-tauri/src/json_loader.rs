@@ -12,7 +12,8 @@ use std::fs;
 use std::path::Path;
 
 use crate::types::{
-    Action, DayOverview, Email, FullMeetingPrep, Meeting, MeetingPrep, WeekOverview,
+    Action, DayOverview, Email, EmailSyncStatus, FullMeetingPrep, Meeting, MeetingPrep,
+    WeekOverview,
 };
 
 /// Check if JSON data directory exists
@@ -291,6 +292,8 @@ pub struct JsonEmails {
     #[serde(default)]
     pub low_priority: Vec<JsonEmail>,
     pub stats: Option<JsonEmailStats>,
+    #[serde(default)]
+    pub sync: Option<EmailSyncStatus>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -321,8 +324,20 @@ pub struct JsonEmail {
     pub email_type: Option<String>,
 }
 
+/// Loaded email payload with optional sync status metadata.
+#[derive(Debug)]
+pub struct LoadedEmailsData {
+    pub emails: Vec<Email>,
+    pub sync: Option<EmailSyncStatus>,
+}
+
 /// Load emails from JSON
 pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
+    load_emails_json_with_sync(today_dir).map(|d| d.emails)
+}
+
+/// Load emails from JSON with sync metadata.
+pub fn load_emails_json_with_sync(today_dir: &Path) -> Result<LoadedEmailsData, String> {
     let emails_path = today_dir.join("data").join("emails.json");
     let content =
         fs::read_to_string(&emails_path).map_err(|e| format!("Failed to read emails: {}", e))?;
@@ -362,7 +377,10 @@ pub fn load_emails_json(today_dir: &Path) -> Result<Vec<Email>, String> {
         })
         .collect();
 
-    Ok(emails)
+    Ok(LoadedEmailsData {
+        emails,
+        sync: data.sync,
+    })
 }
 
 /// JSON prep format
@@ -880,6 +898,8 @@ pub struct DirectiveEmails {
     pub medium_count: u32,
     #[serde(default)]
     pub low_count: u32,
+    #[serde(default, alias = "syncError")]
+    pub sync_error: Option<DirectiveEmailSyncError>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
@@ -896,6 +916,17 @@ pub struct DirectiveEmail {
     pub snippet: Option<String>,
     #[serde(default)]
     pub priority: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectiveEmailSyncError {
+    #[serde(default)]
+    pub stage: Option<String>,
+    #[serde(default)]
+    pub code: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
 }
 
 /// Load the today-directive.json produced by Phase 1.
@@ -1010,5 +1041,61 @@ mod tests {
                 .and_then(|s| s.path.clone()),
             Some("notes/sync.md".to_string())
         );
+    }
+
+    #[test]
+    fn test_load_emails_json_with_sync_supports_legacy_without_sync() {
+        let dir = tempdir().expect("tempdir");
+        let today_dir = dir.path();
+        let data_dir = today_dir.join("data");
+        fs::create_dir_all(&data_dir).expect("create data dir");
+
+        fs::write(
+            data_dir.join("emails.json"),
+            serde_json::to_string_pretty(&json!({
+                "highPriority": [],
+                "mediumPriority": [],
+                "lowPriority": [],
+                "stats": { "highCount": 0, "mediumCount": 0, "lowCount": 0, "total": 0 }
+            }))
+            .unwrap(),
+        )
+        .expect("write emails");
+
+        let loaded = load_emails_json_with_sync(today_dir).expect("load emails");
+        assert!(loaded.emails.is_empty());
+        assert!(loaded.sync.is_none());
+    }
+
+    #[test]
+    fn test_load_emails_json_with_sync_reads_structured_status() {
+        let dir = tempdir().expect("tempdir");
+        let today_dir = dir.path();
+        let data_dir = today_dir.join("data");
+        fs::create_dir_all(&data_dir).expect("create data dir");
+
+        fs::write(
+            data_dir.join("emails.json"),
+            serde_json::to_string_pretty(&json!({
+                "highPriority": [],
+                "mediumPriority": [],
+                "lowPriority": [],
+                "stats": { "highCount": 0, "mediumCount": 0, "lowCount": 0, "total": 0 },
+                "sync": {
+                    "state": "error",
+                    "stage": "fetch",
+                    "code": "gmail_auth_failed",
+                    "message": "Auth failed",
+                    "usingLastKnownGood": true
+                }
+            }))
+            .unwrap(),
+        )
+        .expect("write emails");
+
+        let loaded = load_emails_json_with_sync(today_dir).expect("load emails");
+        let sync = loaded.sync.expect("sync should be present");
+        assert_eq!(sync.code.as_deref(), Some("gmail_auth_failed"));
+        assert_eq!(sync.using_last_known_good, Some(true));
     }
 }
