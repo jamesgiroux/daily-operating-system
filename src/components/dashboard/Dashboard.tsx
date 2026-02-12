@@ -37,6 +37,7 @@ function formatRelativeDate(isoString: string): string {
 
 export function Dashboard({ data, freshness }: DashboardProps) {
   const emails = data.emails ?? [];
+  const emailSync = data.emailSync;
   const formattedDate = getFormattedDate();
 
   return (
@@ -75,7 +76,7 @@ export function Dashboard({ data, freshness }: DashboardProps) {
             </div>
 
             <div className="animate-fade-in-up opacity-0 animate-delay-4">
-              <EmailList emails={emails} />
+              <EmailList emails={emails} emailSync={emailSync} />
             </div>
           </div>
         </div>

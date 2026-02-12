@@ -248,6 +248,7 @@ export default function MeetingDetailPage() {
   const { wins: recentWins } = deriveRecentWins(data);
   const agendaNonWinItems = agendaItems.filter((item) => item.source !== "talking_point");
   const agendaDisplayItems = agendaNonWinItems.length > 0 ? agendaNonWinItems : agendaItems;
+  const calendarNotes = normalizeCalendarNotes(data.calendarNotes);
   const agendaTopics = new Set(agendaDisplayItems.map((item) => normalizePersonKey(item.topic)));
   const recentWinsForSidebar = recentWins.filter(
     (win) => !agendaTopics.has(normalizePersonKey(win))
@@ -465,11 +466,11 @@ export default function MeetingDetailPage() {
                         isEditable={isEditable}
                       />
                     )}
-                    {data.calendarNotes && (
+                    {calendarNotes && (
                       <section>
                         <SectionLabel label="Calendar Notes" icon={<CalendarDays className="size-3.5" />} />
                         <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
-                          {data.calendarNotes}
+                          {calendarNotes}
                         </p>
                       </section>
                     )}
@@ -1360,6 +1361,42 @@ function sanitizeInlineText(value: string): string {
     .trim();
 }
 
+function normalizeCalendarNotes(notes: string | undefined): string | undefined {
+  if (!notes) return undefined;
+
+  const raw = notes.trim();
+  if (!raw) return undefined;
+
+  if (!/[<>]/.test(raw)) return raw;
+
+  const withStructure = raw
+    .replace(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi, "$2 ($1)")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "- ")
+    .replace(/<\/\s*(p|div|section|article|li|tr|h[1-6])\s*>/gi, "\n");
+
+  try {
+    const doc = new DOMParser().parseFromString(withStructure, "text/html");
+    const text = (doc.body?.textContent ?? "").replace(/\u00a0/g, " ");
+    const normalized = text
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line, i, arr) => line.length > 0 || (i > 0 && arr[i - 1].length > 0))
+      .join("\n")
+      .trim();
+
+    if (normalized) return normalized;
+  } catch {
+    // Fall through to regex fallback.
+  }
+
+  const fallback = withStructure
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return fallback || raw;
+}
+
 function splitInlineSourceTail(value: string): { text: string; source?: string } {
   const sourceMatch = value.match(/(?:^|\s)[_*]*\(?\s*source:\s*([^)]+?)\s*\)?[_*\s]*$/i);
   if (!sourceMatch || sourceMatch.index == null) {
@@ -1525,8 +1562,9 @@ function formatFullPrep(data: FullMeetingPrep): string {
     sections.push(`\n## Context\n${data.meetingContext}`);
   }
 
-  if (data.calendarNotes) {
-    sections.push(`\n## Calendar Notes\n${data.calendarNotes}`);
+  const calendarNotes = normalizeCalendarNotes(data.calendarNotes);
+  if (calendarNotes) {
+    sections.push(`\n## Calendar Notes\n${calendarNotes}`);
   }
 
   if (data.proposedAgenda && data.proposedAgenda.length > 0) {
