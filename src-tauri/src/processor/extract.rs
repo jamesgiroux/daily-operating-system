@@ -227,7 +227,7 @@ fn extract_xlsx(path: &Path) -> Result<String, ExtractError> {
             // Render as markdown table
             let mut rows = range.rows();
             if let Some(header) = rows.next() {
-                let header_cells: Vec<String> = header.iter().map(|c| cell_to_string(c)).collect();
+                let header_cells: Vec<String> = header.iter().map(cell_to_string).collect();
                 output.push_str("| ");
                 output.push_str(&header_cells.join(" | "));
                 output.push_str(" |\n");
@@ -242,7 +242,7 @@ fn extract_xlsx(path: &Path) -> Result<String, ExtractError> {
                 output.push_str(" |\n");
 
                 for row in rows {
-                    let cells: Vec<String> = row.iter().map(|c| cell_to_string(c)).collect();
+                    let cells: Vec<String> = row.iter().map(cell_to_string).collect();
                     output.push_str("| ");
                     output.push_str(&cells.join(" | "));
                     output.push_str(" |\n");
