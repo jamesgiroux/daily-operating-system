@@ -1053,6 +1053,39 @@ pub struct FullMeetingPrep {
     pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
 }
 
+/// Unified meeting detail payload (ADR-0066).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MeetingIntelligence {
+    pub meeting: crate::db::DbMeeting,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep: Option<FullMeetingPrep>,
+    pub is_past: bool,
+    pub is_current: bool,
+    pub is_frozen: bool,
+    pub can_edit_user_layer: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agenda: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcomes: Option<MeetingOutcomeData>,
+    #[serde(default)]
+    pub captures: Vec<crate::db::DbCapture>,
+    #[serde(default)]
+    pub actions: Vec<crate::db::DbAction>,
+    #[serde(default)]
+    pub linked_entities: Vec<LinkedEntity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_snapshot_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prep_frozen_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript_processed_at: Option<String>,
+}
+
 /// Attendee context for meeting prep enrichment (I51).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
