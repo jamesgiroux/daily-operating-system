@@ -932,7 +932,7 @@ pub struct EmailStats {
 // =============================================================================
 
 /// Complete meeting prep from individual prep file
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FullMeetingPrep {
     pub file_path: String,
@@ -942,9 +942,21 @@ pub struct FullMeetingPrep {
     pub time_range: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_context: Option<String>,
-    /// Quick Context metrics (key-value pairs like Ring, ARR, Health)
+    /// Calendar event description from Google Calendar (I185)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calendar_notes: Option<String>,
+    /// Intelligence-enriched account snapshot (I186)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_snapshot: Option<Vec<AccountSnapshotItem>>,
+    /// Quick Context metrics (key-value pairs like Ring, ARR, Health) — legacy
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quick_context: Option<Vec<(String, String)>>,
+    /// User-authored agenda items (I194 / ADR-0065)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agenda: Option<Vec<String>>,
+    /// User-authored notes (I194 / ADR-0065)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_notes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attendees: Option<Vec<Stakeholder>>,
     /// Since Last Meeting section items
@@ -963,6 +975,12 @@ pub struct FullMeetingPrep {
     /// Suggested Talking Points
     #[serde(skip_serializing_if = "Option::is_none")]
     pub talking_points: Option<Vec<String>>,
+    /// Canonical recent wins for meeting prep (I196).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_wins: Option<Vec<String>>,
+    /// Structured provenance for recent wins (I196).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_win_sources: Option<Vec<SourceReference>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub questions: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -980,10 +998,22 @@ pub struct FullMeetingPrep {
     /// Proposed agenda synthesized from prep data (I80)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proposed_agenda: Option<Vec<AgendaItem>>,
+    /// Intelligence summary — executive assessment from intelligence.json (I135)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub intelligence_summary: Option<String>,
+    /// Entity-level risks from intelligence.json (I135)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_risks: Option<Vec<crate::entity_intel::IntelRisk>>,
+    /// Entity meeting readiness items from intelligence.json (I135)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_readiness: Option<Vec<String>>,
+    /// Stakeholder insights from intelligence.json (I135)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
 }
 
 /// Attendee context for meeting prep enrichment (I51).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttendeeContext {
     pub name: String,
@@ -1018,8 +1048,20 @@ pub struct AgendaItem {
     pub source: Option<String>,
 }
 
+/// Account snapshot item for intelligence-enriched Quick Context (I186)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSnapshotItem {
+    pub label: String,
+    pub value: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+}
+
 /// Action item with context (for prep files)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionWithContext {
     pub title: String,
