@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
+use chrono::TimeZone;
 use regex::Regex;
 use tauri::{Emitter, State};
 
@@ -19,8 +20,8 @@ use crate::state::{reload_config, AppState};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
     ExecutionRecord, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus, InboxFile,
-    MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority, SourceReference, TimeBlock,
-    WeekOverview, WorkflowId, WorkflowStatus,
+    MeetingIntelligence, MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority,
+    SourceReference, TimeBlock, WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -160,10 +161,8 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             if let Some(db) = db_guard.as_ref() {
                 if let Ok(reviewed) = db.get_reviewed_preps() {
                     for m in &mut meetings {
-                        if let Some(ref pf) = m.prep_file {
-                            if reviewed.contains_key(pf) {
-                                m.prep_reviewed = Some(true);
-                            }
+                        if reviewed.contains_key(&m.id) {
+                            m.prep_reviewed = Some(true);
                         }
                     }
                 }
@@ -353,11 +352,7 @@ pub fn get_workflow_status(
         let workflow_id: WorkflowId = workflow.parse()?;
         Ok(state.get_workflow_status(workflow_id))
     })();
-    log_command_latency(
-        "get_workflow_status",
-        started,
-        READ_CMD_LATENCY_BUDGET_MS,
-    );
+    log_command_latency("get_workflow_status", started, READ_CMD_LATENCY_BUDGET_MS);
     result
 }
 
@@ -369,11 +364,7 @@ pub fn get_execution_history(
 ) -> Vec<ExecutionRecord> {
     let started = std::time::Instant::now();
     let result = state.get_execution_history(limit.unwrap_or(10));
-    log_command_latency(
-        "get_execution_history",
-        started,
-        READ_CMD_LATENCY_BUDGET_MS,
-    );
+    log_command_latency("get_execution_history", started, READ_CMD_LATENCY_BUDGET_MS);
     result
 }
 
@@ -427,147 +418,210 @@ pub enum MeetingPrepResult {
     Error { message: String },
 }
 
-/// Get full meeting prep data by meeting ID (I190).
-///
-/// Tries disk first (today's prep files), then falls back to DB (past meetings).
-/// Replaces the old `prep_file`-based command with an ID-based one.
-#[tauri::command]
-pub fn get_meeting_prep(meeting_id: String, state: State<Arc<AppState>>) -> MeetingPrepResult {
-    // Get config
-    let config = match state.config.read() {
-        Ok(guard) => match guard.clone() {
-            Some(c) => c,
-            None => {
-                return MeetingPrepResult::Error {
-                    message: "No configuration loaded".to_string(),
-                }
+fn parse_meeting_datetime(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d %I:%M %p"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(value, fmt) {
+            if let Some(local_dt) = chrono::Local.from_local_datetime(&ndt).single() {
+                return Some(local_dt.with_timezone(&chrono::Utc));
             }
-        },
-        Err(_) => {
-            return MeetingPrepResult::Error {
-                message: "Internal error: config lock poisoned".to_string(),
-            }
+            return Some(chrono::Utc.from_utc_datetime(&ndt));
         }
-    };
+    }
+    None
+}
 
-    let workspace = Path::new(&config.workspace_path);
-    let today_dir = workspace.join("_today");
+fn parse_user_agenda_json(value: Option<&str>) -> Option<Vec<String>> {
+    value.and_then(|json| serde_json::from_str::<Vec<String>>(json).ok())
+}
 
-    // Try 1: Load from disk (today's meetings) — file is preps/{meetingId}.json
-    let disk_result = load_prep_json(&today_dir, &meeting_id);
-
-    // Try 2: If disk fails, try DB (past meetings with stored prep context)
-    let mut prep = match disk_result {
-        Ok(p) => p,
-        Err(_disk_err) => {
-            // Attempt DB fallback
-            if let Ok(db_guard) = state.db.lock() {
-                if let Some(db) = db_guard.as_ref() {
-                    if let Ok(Some(meeting)) = db.get_meeting_by_id(&meeting_id) {
-                        if let Some(ref prep_json) = meeting.prep_context_json {
-                            match serde_json::from_str::<crate::types::FullMeetingPrep>(prep_json) {
-                                Ok(p) => p,
-                                Err(_) => {
-                                    return MeetingPrepResult::NotFound {
-                                        message: format!("Meeting prep not found: {}", meeting_id),
-                                    };
-                                }
-                            }
-                        } else {
-                            return MeetingPrepResult::NotFound {
-                                message: format!(
-                                    "Meeting found but has no prep data: {}",
-                                    meeting_id
-                                ),
-                            };
-                        }
-                    } else {
-                        return MeetingPrepResult::NotFound {
-                            message: format!("Meeting not found: {}", meeting_id),
-                        };
-                    }
-                } else {
-                    return MeetingPrepResult::NotFound {
-                        message: format!("Prep not found: {}", meeting_id),
-                    };
-                }
-            } else {
-                return MeetingPrepResult::NotFound {
-                    message: format!("Prep not found: {}", meeting_id),
-                };
-            }
-        }
-    };
-
-    // Enrich with live data
-    if let Ok(db_guard) = state.db.lock() {
-        if let Some(db) = db_guard.as_ref() {
-            let _ =
-                db.mark_prep_reviewed(&meeting_id, prep.calendar_event_id.as_deref(), &prep.title);
-
-            // Compute stakeholder signals if prep has an account
-            if let Some(account) = extract_account_from_prep(&meeting_id, &today_dir) {
-                match db.get_stakeholder_signals(&account) {
-                    Ok(signals) => {
-                        if signals.meeting_frequency_90d > 0 || signals.last_contact.is_some() {
-                            prep.stakeholder_signals = Some(signals);
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to compute stakeholder signals: {}", e);
-                    }
+fn load_meeting_prep_from_sources(
+    today_dir: &Path,
+    meeting: &crate::db::DbMeeting,
+) -> Option<FullMeetingPrep> {
+    if let Ok(prep) = load_prep_json(today_dir, &meeting.id) {
+        return Some(prep);
+    }
+    if let Some(ref frozen) = meeting.prep_frozen_json {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(frozen) {
+            if let Some(prep_val) = value.get("prep") {
+                if let Ok(prep) = serde_json::from_value::<FullMeetingPrep>(prep_val.clone()) {
+                    return Some(prep);
                 }
             }
-
-            // Enrich attendees with person context (I51)
-            if let Some(ref cal_id) = prep.calendar_event_id {
-                if let Ok(events_guard) = state.calendar_events.read() {
-                    if let Some(event) = events_guard.iter().find(|e| e.id == *cal_id) {
-                        let mut attendee_ctx = Vec::new();
-                        for email in &event.attendees {
-                            if let Ok(Some(person)) = db.get_person_by_email(email) {
-                                let signals = db.get_person_signals(&person.id).ok();
-                                attendee_ctx.push(crate::types::AttendeeContext {
-                                    name: person.name,
-                                    email: Some(person.email),
-                                    role: person.role,
-                                    organization: person.organization,
-                                    relationship: Some(person.relationship),
-                                    meeting_count: Some(person.meeting_count),
-                                    last_seen: person.last_seen,
-                                    temperature: signals.as_ref().map(|s| s.temperature.clone()),
-                                    notes: person.notes,
-                                    person_id: Some(person.id),
-                                });
-                            }
-                        }
-                        if !attendee_ctx.is_empty() {
-                            prep.attendee_context = Some(attendee_ctx);
-                        }
-                    }
-                }
+            if let Ok(prep) = serde_json::from_value::<FullMeetingPrep>(value) {
+                return Some(prep);
             }
         }
     }
-
-    MeetingPrepResult::Success { data: prep }
+    if let Some(ref prep_json) = meeting.prep_context_json {
+        if let Ok(prep) = serde_json::from_str::<FullMeetingPrep>(prep_json) {
+            return Some(prep);
+        }
+    }
+    None
 }
 
-/// Extract the account name from a prep JSON file (for stakeholder signal lookup).
-fn extract_account_from_prep(prep_file: &str, today_dir: &Path) -> Option<String> {
-    let prep_path = if prep_file.starts_with("preps/") {
-        today_dir.join("data").join(prep_file)
+fn collect_meeting_outcomes_from_db(
+    db: &crate::db::ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Option<crate::types::MeetingOutcomeData> {
+    let captures = db.get_captures_for_meeting(&meeting.id).ok()?;
+    let actions = db.get_actions_for_meeting(&meeting.id).ok()?;
+
+    let mut wins = Vec::new();
+    let mut risks = Vec::new();
+    let mut decisions = Vec::new();
+    for cap in captures {
+        match cap.capture_type.as_str() {
+            "win" => wins.push(cap.content),
+            "risk" => risks.push(cap.content),
+            "decision" => decisions.push(cap.content),
+            _ => {}
+        }
+    }
+
+    if meeting.summary.is_none()
+        && meeting.transcript_path.is_none()
+        && meeting.transcript_processed_at.is_none()
+        && wins.is_empty()
+        && risks.is_empty()
+        && decisions.is_empty()
+        && actions.is_empty()
+    {
+        return None;
+    }
+
+    Some(crate::types::MeetingOutcomeData {
+        meeting_id: meeting.id.clone(),
+        summary: meeting.summary.clone(),
+        wins,
+        risks,
+        decisions,
+        actions,
+        transcript_path: meeting.transcript_path.clone(),
+        processed_at: meeting.transcript_processed_at.clone(),
+    })
+}
+
+/// Unified meeting detail payload for current + historical meetings.
+#[tauri::command]
+pub fn get_meeting_intelligence(
+    meeting_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<MeetingIntelligence, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let meeting = if let Some(row) = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+    {
+        row
     } else {
-        today_dir.join("data").join("preps").join(format!(
-            "{}.json",
-            prep_file.trim_end_matches(".json").trim_end_matches(".md")
-        ))
+        let raw_calendar_id = meeting_id.replace("_at_", "@");
+        db.get_meeting_by_calendar_event_id(&raw_calendar_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
     };
-    let content = std::fs::read_to_string(prep_path).ok()?;
-    let data: serde_json::Value = serde_json::from_str(&content).ok()?;
-    data.get("account")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+
+    let user_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref());
+    let user_notes = meeting.user_notes.clone();
+    let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+
+    if let Some(ref mut prep_data) = prep {
+        prep_data.user_agenda = user_agenda.clone();
+        prep_data.user_notes = user_notes.clone();
+        let _ = db.mark_prep_reviewed(
+            &meeting.id,
+            prep_data.calendar_event_id.as_deref(),
+            &prep_data.title,
+        );
+    }
+
+    let now = chrono::Utc::now();
+    let start_dt = parse_meeting_datetime(&meeting.start_time);
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or(start_dt.map(|s| s + chrono::Duration::hours(1)));
+    let is_current = start_dt
+        .zip(end_dt)
+        .is_some_and(|(s, e)| s <= now && now <= e);
+    let is_past = end_dt.is_some_and(|e| e < now);
+    let is_frozen = meeting.prep_frozen_at.is_some();
+    let can_edit_user_layer = !(is_past || is_frozen);
+
+    let captures = db
+        .get_captures_for_meeting(&meeting.id)
+        .map_err(|e| e.to_string())?;
+    let actions = db
+        .get_actions_for_meeting(&meeting.id)
+        .map_err(|e| e.to_string())?;
+    let linked_entities = db
+        .get_meeting_entities(&meeting.id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|e| crate::types::LinkedEntity {
+            id: e.id,
+            name: e.name,
+            entity_type: e.entity_type.as_str().to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    let outcomes = collect_meeting_outcomes_from_db(db, &meeting);
+    let prep_snapshot_path = meeting.prep_snapshot_path.clone();
+    let prep_frozen_at = meeting.prep_frozen_at.clone();
+    let transcript_path = meeting.transcript_path.clone();
+    let transcript_processed_at = meeting.transcript_processed_at.clone();
+
+    Ok(MeetingIntelligence {
+        meeting,
+        prep,
+        is_past,
+        is_current,
+        is_frozen,
+        can_edit_user_layer,
+        user_agenda,
+        user_notes,
+        outcomes,
+        captures,
+        actions,
+        linked_entities,
+        prep_snapshot_path,
+        prep_frozen_at,
+        transcript_path,
+        transcript_processed_at,
+    })
+}
+
+/// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
+#[tauri::command]
+pub fn get_meeting_prep(meeting_id: String, state: State<Arc<AppState>>) -> MeetingPrepResult {
+    match get_meeting_intelligence(meeting_id, state) {
+        Ok(intel) => match intel.prep {
+            Some(data) => MeetingPrepResult::Success { data },
+            None => MeetingPrepResult::NotFound {
+                message: "Meeting found but has no prep data".to_string(),
+            },
+        },
+        Err(message) => MeetingPrepResult::NotFound { message },
+    }
 }
 
 #[derive(Debug, Default, serde::Serialize)]
@@ -1120,45 +1174,19 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
         Vec::new()
     };
 
-    // 5. Compute available time blocks from today's meetings
+    // 5. Compute available time blocks from live calendar state.
+    // Fallback to schedule startIso timestamps when live events are unavailable.
     let today_date = chrono::Local::now().date_naive();
-    let meeting_events: Vec<serde_json::Value> = meetings
-        .iter()
-        .filter_map(|m| {
-            // Need start + end times for gap computation
-            let end = m.end_time.as_ref()?;
-            Some(serde_json::json!({
-                "start": m.time,
-                "end": end,
-            }))
-        })
-        .collect();
-    let gaps = crate::prepare::gaps::compute_gaps(&meeting_events, today_date);
-    let available_blocks: Vec<TimeBlock> = gaps
-        .iter()
-        .filter_map(|g| {
-            let start = g.get("start")?.as_str()?;
-            let end = g.get("end")?.as_str()?;
-            let duration = g.get("duration_minutes")?.as_u64()? as u32;
-            let hour: u32 = start
-                .find('T')
-                .and_then(|t| start[t + 1..].split(':').next())
-                .and_then(|h| h.parse().ok())
-                .unwrap_or(12);
-            let suggested_use = if hour < 12 {
-                "Deep Work"
-            } else {
-                "Admin / Follow-up"
-            };
-            Some(TimeBlock {
-                day: String::new(),
-                start: start.to_string(),
-                end: end.to_string(),
-                duration_minutes: duration,
-                suggested_use: Some(suggested_use.to_string()),
-            })
-        })
-        .collect();
+    let live_events = state
+        .calendar_events
+        .read()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    let available_blocks: Vec<TimeBlock> = if live_events.is_empty() {
+        crate::queries::schedule::available_blocks_from_schedule_start_iso(&meetings, today_date)
+    } else {
+        crate::queries::schedule::available_blocks_from_live(&live_events, today_date)
+    };
     let total_focus_minutes: u32 = available_blocks.iter().map(|b| b.duration_minutes).sum();
 
     FocusResult::Success {
@@ -2684,12 +2712,14 @@ pub async fn attach_meeting_transcript(
             || !result.actions.is_empty());
 
     if result.status == "success" && has_outcomes {
+        let processed_at = chrono::Utc::now().to_rfc3339();
+        let transcript_destination = result.destination.clone().unwrap_or_default();
         let record = crate::types::TranscriptRecord {
             meeting_id: meeting_id.clone(),
             file_path: file_path_for_record,
-            destination: result.destination.clone().unwrap_or_default(),
+            destination: transcript_destination.clone(),
             summary: result.summary.clone(),
-            processed_at: chrono::Utc::now().to_rfc3339(),
+            processed_at: processed_at.clone(),
         };
 
         if let Ok(mut guard) = state.transcript_processed.lock() {
@@ -2699,6 +2729,20 @@ pub async fn attach_meeting_transcript(
 
         if let Ok(mut guard) = state.capture_captured.lock() {
             guard.insert(meeting_id.clone());
+        }
+
+        // Persist transcript metadata in SQLite so outcomes are durable without map files.
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Err(e) = db.update_meeting_transcript_metadata(
+                    &meeting_id,
+                    &transcript_destination,
+                    &processed_at,
+                    result.summary.as_deref(),
+                ) {
+                    log::warn!("Failed to persist transcript metadata: {}", e);
+                }
+            }
         }
 
         // Build and emit outcome data for live frontend updates
@@ -2717,57 +2761,19 @@ pub async fn attach_meeting_transcript(
 
 /// Get meeting outcomes (from transcript processing or manual capture).
 ///
-/// Returns `None` if the meeting has no processed transcript.
+/// Returns `None` only when no outcomes/transcript metadata exist in SQLite.
 #[tauri::command]
 pub fn get_meeting_outcomes(
     meeting_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<Option<crate::types::MeetingOutcomeData>, String> {
-    // Check transcript records
-    let record = state
-        .transcript_processed
-        .lock()
-        .map_err(|_| "Lock poisoned")?
-        .get(&meeting_id)
-        .cloned();
-
-    let Some(record) = record else {
-        return Ok(None);
-    };
-
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-
-    let captures = db
-        .get_captures_for_meeting(&meeting_id)
-        .map_err(|e| e.to_string())?;
-    let actions = db
-        .get_actions_for_meeting(&meeting_id)
-        .map_err(|e| e.to_string())?;
-
-    let mut wins = Vec::new();
-    let mut risks = Vec::new();
-    let mut decisions = Vec::new();
-
-    for cap in captures {
-        match cap.capture_type.as_str() {
-            "win" => wins.push(cap.content),
-            "risk" => risks.push(cap.content),
-            "decision" => decisions.push(cap.content),
-            _ => {}
-        }
-    }
-
-    Ok(Some(crate::types::MeetingOutcomeData {
-        meeting_id,
-        summary: record.summary,
-        wins,
-        risks,
-        decisions,
-        actions,
-        transcript_path: Some(record.destination),
-        processed_at: Some(record.processed_at),
-    }))
+    let meeting = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+    Ok(collect_meeting_outcomes_from_db(db, &meeting))
 }
 
 /// Update the content of a capture (win/risk/decision) — I45 inline editing.
@@ -3416,12 +3422,6 @@ fn build_outcome_data(
         })
         .unwrap_or_default();
 
-    let transcript_path = state
-        .transcript_processed
-        .lock()
-        .ok()
-        .and_then(|guard| guard.get(meeting_id).map(|r| r.destination.clone()));
-
     crate::types::MeetingOutcomeData {
         meeting_id: meeting_id.to_string(),
         summary: result.summary.clone(),
@@ -3429,7 +3429,7 @@ fn build_outcome_data(
         risks: result.risks.clone(),
         decisions: result.decisions.clone(),
         actions,
-        transcript_path,
+        transcript_path: result.destination.clone(),
         processed_at: Some(chrono::Utc::now().to_rfc3339()),
     }
 }
@@ -3826,6 +3826,7 @@ pub fn update_meeting_entity(
             &start_time,
             None,
             None,
+            None,
         )
         .map_err(|e| e.to_string())?;
 
@@ -3908,6 +3909,7 @@ pub fn add_meeting_entity(
             &meeting_title,
             &meeting_type_str,
             &start_time,
+            None,
             None,
             None,
         )
@@ -5464,22 +5466,54 @@ pub fn update_meeting_user_agenda(
     agenda: Vec<String>,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let prep_path = resolve_prep_path(&meeting_id, &state)?;
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let content =
-        std::fs::read_to_string(&prep_path).map_err(|e| format!("Failed to read prep: {}", e))?;
-    let mut json: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse prep: {}", e))?;
-
-    if agenda.is_empty() {
-        json.as_object_mut().map(|o| o.remove("userAgenda"));
-    } else {
-        json["userAgenda"] = serde_json::json!(agenda);
+    let now = chrono::Utc::now();
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or_else(|| {
+            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
+        });
+    let is_past = end_dt.is_some_and(|e| e < now);
+    let is_frozen = meeting.prep_frozen_at.is_some();
+    if is_past || is_frozen {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
-    let updated =
-        serde_json::to_string_pretty(&json).map_err(|e| format!("Failed to serialize: {}", e))?;
-    std::fs::write(&prep_path, updated).map_err(|e| format!("Failed to write prep: {}", e))?;
+    let agenda_json = if agenda.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&agenda).map_err(|e| format!("Serialize error: {}", e))?)
+    };
+    db.update_meeting_user_layer(
+        &meeting_id,
+        agenda_json.as_deref(),
+        meeting.user_notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Optional mirror write to active prep file for same-session coherence.
+    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if agenda.is_empty() {
+                    json.as_object_mut().map(|o| o.remove("userAgenda"));
+                } else {
+                    json["userAgenda"] = serde_json::json!(agenda);
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -5491,22 +5525,50 @@ pub fn update_meeting_user_notes(
     notes: String,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
-    let prep_path = resolve_prep_path(&meeting_id, &state)?;
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let content =
-        std::fs::read_to_string(&prep_path).map_err(|e| format!("Failed to read prep: {}", e))?;
-    let mut json: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse prep: {}", e))?;
-
-    if notes.is_empty() {
-        json.as_object_mut().map(|o| o.remove("userNotes"));
-    } else {
-        json["userNotes"] = serde_json::json!(notes);
+    let now = chrono::Utc::now();
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or_else(|| {
+            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
+        });
+    let is_past = end_dt.is_some_and(|e| e < now);
+    let is_frozen = meeting.prep_frozen_at.is_some();
+    if is_past || is_frozen {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
-    let updated =
-        serde_json::to_string_pretty(&json).map_err(|e| format!("Failed to serialize: {}", e))?;
-    std::fs::write(&prep_path, updated).map_err(|e| format!("Failed to write prep: {}", e))?;
+    let notes_opt = if notes.trim().is_empty() {
+        None
+    } else {
+        Some(notes.as_str())
+    };
+    db.update_meeting_user_layer(&meeting_id, meeting.user_agenda_json.as_deref(), notes_opt)
+        .map_err(|e| e.to_string())?;
+
+    // Optional mirror write to active prep file for same-session coherence.
+    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if notes.is_empty() {
+                    json.as_object_mut().map(|o| o.remove("userNotes"));
+                } else {
+                    json["userNotes"] = serde_json::json!(notes);
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -5642,6 +5704,14 @@ mod tests {
                 }))
                 .unwrap(),
             ),
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("insert meeting");
 
