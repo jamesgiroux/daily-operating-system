@@ -158,14 +158,15 @@ pub struct IntelligenceUpdatedPayload {
 }
 
 /// Context gathered from the DB (held briefly, then released before PTY).
-struct EnrichmentInput {
-    workspace: PathBuf,
-    entity_dir: PathBuf,
-    entity_id: String,
-    entity_type: String,
-    prompt: String,
-    file_manifest: Vec<SourceManifestEntry>,
-    file_count: usize,
+/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+pub struct EnrichmentInput {
+    pub workspace: PathBuf,
+    pub entity_dir: PathBuf,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub prompt: String,
+    pub file_manifest: Vec<SourceManifestEntry>,
+    pub file_count: usize,
 }
 
 /// Background intelligence processor.
@@ -255,7 +256,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 }
 
 /// Phase 1: Lock DB briefly to gather all context needed for enrichment.
-fn gather_enrichment_input(
+/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+pub fn gather_enrichment_input(
     state: &AppState,
     request: &IntelRequest,
 ) -> Result<EnrichmentInput, String> {
@@ -281,11 +283,18 @@ fn gather_enrichment_input(
     } else {
         None
     };
+    let person = if request.entity_type == "person" {
+        db.get_person(&request.entity_id)
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
 
     let entity_name = account
         .as_ref()
         .map(|a| a.name.clone())
         .or_else(|| project.as_ref().map(|p| p.name.clone()))
+        .or_else(|| person.as_ref().map(|p| p.name.clone()))
         .ok_or_else(|| format!("Entity not found: {}", request.entity_id))?;
 
     // Resolve entity directory
@@ -298,6 +307,7 @@ fn gather_enrichment_input(
             }
         }
         "project" => crate::projects::project_dir(&workspace, &entity_name),
+        "person" => crate::people::person_dir(&workspace, &entity_name),
         _ => return Err(format!("Unsupported entity type: {}", request.entity_type)),
     };
 
@@ -334,8 +344,14 @@ fn gather_enrichment_input(
 }
 
 /// Phase 2: Run PTY enrichment (no DB lock held).
-fn run_enrichment(input: &EnrichmentInput, ai_config: &AiModelConfig) -> Result<IntelligenceJson, String> {
-    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config).with_timeout(180);
+/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+pub fn run_enrichment(
+    input: &EnrichmentInput,
+    ai_config: &AiModelConfig,
+) -> Result<IntelligenceJson, String> {
+    let pty = PtyManager::for_tier(ModelTier::Synthesis, ai_config)
+        .with_timeout(180)
+        .with_nice_priority(10);
     let output = pty
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
@@ -350,7 +366,8 @@ fn run_enrichment(input: &EnrichmentInput, ai_config: &AiModelConfig) -> Result<
 }
 
 /// Phase 3: Lock DB briefly to write results.
-fn write_enrichment_results(
+/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+pub fn write_enrichment_results(
     state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
