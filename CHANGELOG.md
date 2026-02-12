@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- Meeting permanence foundation implemented: `meetings_history` now carries DB-authoritative user layer (`user_agenda_json`, `user_notes`), frozen prep metadata, and transcript metadata.
+- Archive lifecycle reordered so reconciliation persistence and prep freezing happen before `_today/data` cleanup, with immutable prep snapshot writes to entity `Meeting-Notes/` (fallback `_archive/meetings/...`).
+- Meeting identity hardening completed across poller/reconcile/DB migrations using event ID as canonical key (sanitized), with fallback slug only when no calendar event exists.
+- Added unified backend meeting contract `get_meeting_intelligence(meeting_id)` and moved `get_meeting_prep` to compatibility wrapper status.
+- Outcomes durability fixed: `get_meeting_outcomes` now returns DB-backed outcomes/transcript metadata without relying on `transcript_records.json` as the sole gate.
+- Focus capacity now computes from live calendar events; schedule artifact is retained for briefing narrative only with `startIso` fallback when live events are unavailable.
+- Frontend meeting detail now consumes the unified meeting contract and standardizes canonical route usage to `/meeting/$meetingId` (history route is alias/redirect).
 - Meeting Prep (`MeetingDetailPage`) redesigned from dashboard-stack to report layout with executive brief hero, agenda-first flow, right-rail navigation, and appendix-style deep context.
 - Meeting metadata hierarchy tightened: lifecycle promoted to header badge; noisy snapshot fields (CSM, assessment/risk narrative) removed from primary prep surface.
 - Agenda/wins content normalization: inline markdown/source artifacts are stripped for display, talking-point output is treated as Recent Wins, and sidebar wins can be filtered against agenda topics to reduce duplication.
