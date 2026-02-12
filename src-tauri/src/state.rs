@@ -534,45 +534,25 @@ pub fn reload_config(state: &AppState) -> Result<Config, String> {
     Ok(config)
 }
 
-/// Get the default Google token path
+/// Get the legacy Google token file path (used for non-macOS storage and migration).
 pub fn google_token_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_default();
     home.join(".dailyos").join("google").join("token.json")
 }
 
-/// Detect existing Google authentication by checking the token file on disk.
+/// Detect existing Google authentication from the configured token store.
 pub fn detect_google_auth() -> GoogleAuthStatus {
-    let token_path = google_token_path();
-    if !token_path.exists() {
-        return GoogleAuthStatus::NotConfigured;
+    if let Some(email) = crate::google_api::token_store::peek_account_email() {
+        return GoogleAuthStatus::Authenticated { email };
     }
 
-    // Try to read the token file and validate it has real OAuth fields
-    match fs::read_to_string(&token_path) {
-        Ok(content) => {
-            if let Ok(token) = serde_json::from_str::<serde_json::Value>(&content) {
-                // A valid Google OAuth token must have at least a refresh_token or token field.
-                // An empty {} or missing fields means auth never completed.
-                let has_token =
-                    token.get("token").is_some() || token.get("refresh_token").is_some();
-                if !has_token {
-                    return GoogleAuthStatus::NotConfigured;
-                }
-                // google-auth-oauthlib stores email in the "account" field, not "email"
-                let email = token
-                    .get("email")
-                    .or_else(|| token.get("account"))
-                    .and_then(|e| e.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("connected")
-                    .to_string();
-                GoogleAuthStatus::Authenticated { email }
-            } else {
-                // Token file exists but is invalid JSON
-                GoogleAuthStatus::TokenExpired
-            }
-        }
-        Err(_) => GoogleAuthStatus::NotConfigured,
+    // Probe load for malformed payload cases that should surface as expired.
+    match crate::google_api::load_token() {
+        Ok(token) => GoogleAuthStatus::Authenticated {
+            email: token.account.unwrap_or_else(|| "connected".to_string()),
+        },
+        Err(crate::google_api::GoogleApiError::TokenNotFound(_)) => GoogleAuthStatus::NotConfigured,
+        Err(_) => GoogleAuthStatus::TokenExpired,
     }
 }
 
