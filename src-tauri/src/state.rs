@@ -109,46 +109,6 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
-        // Sync people from workspace files (I51: catches external edits while app was closed)
-        if let (Some(ref db_ref), Ok(ref cfg)) = (&db, load_config()) {
-            let workspace = std::path::Path::new(&cfg.workspace_path);
-            if workspace.exists() {
-                match crate::people::sync_people_from_workspace(
-                    workspace,
-                    db_ref,
-                    &cfg.resolved_user_domains(),
-                ) {
-                    Ok(n) if n > 0 => log::info!("Startup: synced {} people from workspace", n),
-                    Ok(_) => {}
-                    Err(e) => log::warn!("Startup: people sync failed: {}", e),
-                }
-
-                // Sync accounts from workspace files (I72: catches external edits)
-                match crate::accounts::sync_accounts_from_workspace(workspace, db_ref) {
-                    Ok(n) if n > 0 => log::info!("Startup: synced {} accounts from workspace", n),
-                    Ok(_) => {}
-                    Err(e) => log::warn!("Startup: accounts sync failed: {}", e),
-                }
-
-                // Sync projects from workspace files (I50: catches external edits)
-                match crate::projects::sync_projects_from_workspace(workspace, db_ref) {
-                    Ok(n) if n > 0 => log::info!("Startup: synced {} projects from workspace", n),
-                    Ok(_) => {}
-                    Err(e) => log::warn!("Startup: projects sync failed: {}", e),
-                }
-
-                // Sync content indexes for entity directories (I124)
-                match crate::accounts::sync_all_content_indexes(workspace, db_ref) {
-                    Ok(n) if n > 0 => log::info!("Startup: indexed {} content files", n),
-                    Ok(_) => {}
-                    Err(e) => log::warn!("Startup: content index sync failed: {}", e),
-                }
-
-                // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
-                import_master_task_list(workspace, db_ref);
-            }
-        }
-
         Self {
             config: RwLock::new(config),
             workflow_status: RwLock::new(HashMap::new()),
@@ -254,6 +214,65 @@ impl Default for AppState {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Run startup workspace sync in the background.
+///
+/// This intentionally uses a fresh DB connection rather than the global
+/// `AppState.db` mutex, so startup indexing does not block UI reads.
+pub fn run_startup_sync(state: &AppState) {
+    let config = match state.config.read().ok().and_then(|g| g.clone()) {
+        Some(cfg) => cfg,
+        None => {
+            log::debug!("Startup sync skipped: no config loaded");
+            return;
+        }
+    };
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    if !workspace.exists() {
+        log::debug!(
+            "Startup sync skipped: workspace does not exist ({})",
+            workspace.display()
+        );
+        return;
+    }
+
+    let db = match crate::db::ActionDb::open() {
+        Ok(db) => db,
+        Err(e) => {
+            log::warn!("Startup sync skipped: failed to open DB: {}", e);
+            return;
+        }
+    };
+
+    match crate::people::sync_people_from_workspace(workspace, &db, &config.resolved_user_domains())
+    {
+        Ok(n) if n > 0 => log::info!("Startup sync: synced {} people from workspace", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: people sync failed: {}", e),
+    }
+
+    match crate::accounts::sync_accounts_from_workspace(workspace, &db) {
+        Ok(n) if n > 0 => log::info!("Startup sync: synced {} accounts from workspace", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: accounts sync failed: {}", e),
+    }
+
+    match crate::projects::sync_projects_from_workspace(workspace, &db) {
+        Ok(n) if n > 0 => log::info!("Startup sync: synced {} projects from workspace", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: projects sync failed: {}", e),
+    }
+
+    match crate::accounts::sync_all_content_indexes(workspace, &db) {
+        Ok(n) if n > 0 => log::info!("Startup sync: indexed {} content files", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Startup sync: content index sync failed: {}", e),
+    }
+
+    // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
+    import_master_task_list(workspace, &db);
 }
 
 /// Get the canonical config file path (~/.dailyos/config.json)

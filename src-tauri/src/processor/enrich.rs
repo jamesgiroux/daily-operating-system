@@ -43,7 +43,7 @@ pub enum EnrichResult {
 pub fn enrich_file(
     workspace: &Path,
     filename: &str,
-    db: Option<&ActionDb>,
+    state: Option<&crate::state::AppState>,
     profile: &str,
     user_ctx: Option<&crate::types::UserContext>,
     ai_config: Option<&AiModelConfig>,
@@ -88,8 +88,12 @@ pub fn enrich_file(
 
     // Extract actions if any
     if let Some(ref actions_text) = parsed.actions_text {
-        if let Some(db) = db {
-            extract_actions_from_ai(actions_text, filename, db, parsed.account.as_deref());
+        if let Some(state) = state {
+            if let Ok(db_guard) = state.db.lock() {
+                if let Some(db) = db_guard.as_ref() {
+                    extract_actions_from_ai(actions_text, filename, db, parsed.account.as_deref());
+                }
+            }
         }
     }
 
@@ -193,63 +197,71 @@ pub fn enrich_file(
     };
 
     // Run post-enrichment hooks
-    if let Some(db) = db {
-        let ctx = super::hooks::EnrichmentContext {
-            workspace: workspace.to_path_buf(),
-            filename: filename.to_string(),
-            classification: file_type.clone(),
-            account: account.clone(),
-            summary: summary.clone(),
-            actions: Vec::new(), // actions already extracted by extract_actions_from_ai
-            destination_path: match &result {
-                EnrichResult::Routed { destination, .. }
-                | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
-                _ => None,
-            },
-            profile: profile.to_string(),
-            wins: wins.clone(),
-            risks: risks.clone(),
-            entity_type: None,
-        };
-        let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
-        for hr in &hook_results {
-            log::info!(
-                "Post-enrichment hook '{}': {} — {}",
-                hr.hook_name,
-                if hr.success { "OK" } else { "FAILED" },
-                hr.message.as_deref().unwrap_or("")
-            );
+    if let Some(state) = state {
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let ctx = super::hooks::EnrichmentContext {
+                    workspace: workspace.to_path_buf(),
+                    filename: filename.to_string(),
+                    classification: file_type.clone(),
+                    account: account.clone(),
+                    summary: summary.clone(),
+                    actions: Vec::new(), // actions already extracted by extract_actions_from_ai
+                    destination_path: match &result {
+                        EnrichResult::Routed { destination, .. }
+                        | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
+                        _ => None,
+                    },
+                    profile: profile.to_string(),
+                    wins: wins.clone(),
+                    risks: risks.clone(),
+                    entity_type: None,
+                };
+                let hook_results = super::hooks::run_post_enrichment_hooks(&ctx, db);
+                for hr in &hook_results {
+                    log::info!(
+                        "Post-enrichment hook '{}': {} — {}",
+                        hr.hook_name,
+                        if hr.success { "OK" } else { "FAILED" },
+                        hr.message.as_deref().unwrap_or("")
+                    );
+                }
+            }
         }
     }
 
     // Log to database
-    if let Some(db) = db {
-        let log_entry = DbProcessingLog {
-            id: uuid::Uuid::new_v4().to_string(),
-            filename: filename.to_string(),
-            source_path: file_path.display().to_string(),
-            destination_path: match &result {
-                EnrichResult::Routed { destination, .. }
-                | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
-                _ => None,
-            },
-            classification: file_type,
-            status: match &result {
-                EnrichResult::Routed { .. } | EnrichResult::Archived { .. } => {
-                    "completed".to_string()
-                }
-                EnrichResult::Error { .. } => "error".to_string(),
-            },
-            processed_at: Some(Utc::now().to_rfc3339()),
-            error_message: match &result {
-                EnrichResult::Error { message } => Some(message.clone()),
-                _ => None,
-            },
-            created_at: Utc::now().to_rfc3339(),
-        };
+    if let Some(state) = state {
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let log_entry = DbProcessingLog {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    filename: filename.to_string(),
+                    source_path: file_path.display().to_string(),
+                    destination_path: match &result {
+                        EnrichResult::Routed { destination, .. }
+                        | EnrichResult::Archived { destination, .. } => Some(destination.clone()),
+                        _ => None,
+                    },
+                    classification: file_type,
+                    status: match &result {
+                        EnrichResult::Routed { .. } | EnrichResult::Archived { .. } => {
+                            "completed".to_string()
+                        }
+                        EnrichResult::Error { .. } => "error".to_string(),
+                    },
+                    processed_at: Some(Utc::now().to_rfc3339()),
+                    error_message: match &result {
+                        EnrichResult::Error { message } => Some(message.clone()),
+                        _ => None,
+                    },
+                    created_at: Utc::now().to_rfc3339(),
+                };
 
-        if let Err(e) = db.insert_processing_log(&log_entry) {
-            log::warn!("Failed to log enrichment result: {}", e);
+                if let Err(e) = db.insert_processing_log(&log_entry) {
+                    log::warn!("Failed to log enrichment result: {}", e);
+                }
+            }
         }
     }
 

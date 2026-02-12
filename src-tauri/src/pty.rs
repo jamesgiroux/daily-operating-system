@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
@@ -17,6 +17,8 @@ use crate::types::AiModelConfig;
 
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
+/// Timeout for Claude auth health check commands.
+const CLAUDE_AUTH_CHECK_TIMEOUT_SECS: u64 = 8;
 
 /// Model tier for AI operations (I174).
 ///
@@ -36,6 +38,14 @@ pub struct PtyManager {
     timeout_secs: u64,
     model: Option<String>,
     nice_priority: Option<i32>,
+}
+
+fn is_model_unavailable_output(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    (lower.contains("model") && lower.contains("not available"))
+        || (lower.contains("unknown model"))
+        || (lower.contains("invalid model"))
+        || (lower.contains("model") && lower.contains("not found"))
 }
 
 impl Default for PtyManager {
@@ -96,15 +106,41 @@ impl PtyManager {
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
         use std::process::Stdio;
 
-        let output = Command::new("claude")
+        let mut child = Command::new("claude")
             .args(["--print", "hello"])
             .env("TERM", "dumb")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|_| ExecutionError::ClaudeCodeNotFound)?;
 
-        Ok(output.status.success())
+        let deadline = Duration::from_secs(CLAUDE_AUTH_CHECK_TIMEOUT_SECS);
+        let started_at = Instant::now();
+
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Ok(status.success()),
+                Ok(None) => {
+                    if started_at.elapsed() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        log::warn!(
+                            "Claude auth check timed out after {}s",
+                            CLAUDE_AUTH_CHECK_TIMEOUT_SECS
+                        );
+                        return Ok(false);
+                    }
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(ExecutionError::IoError(format!(
+                        "Claude auth check failed: {}",
+                        e
+                    )));
+                }
+            }
+        }
     }
 
     /// Spawn Claude Code with a command in the given workspace
@@ -209,6 +245,14 @@ impl PtyManager {
             return Err(ExecutionError::ClaudeCodeNotAuthenticated);
         }
 
+        if is_model_unavailable_output(&output) {
+            let first_line = output.lines().next().unwrap_or("Model unavailable");
+            return Err(ExecutionError::ConfigurationError(format!(
+                "model_unavailable: {}",
+                first_line
+            )));
+        }
+
         if output.contains("rate limit") || output.contains("too many requests") {
             return Err(ExecutionError::ApiRateLimit);
         }
@@ -229,4 +273,20 @@ impl PtyManager {
 pub struct ClaudeOutput {
     pub stdout: String,
     pub exit_code: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_model_unavailable_output;
+
+    #[test]
+    fn detects_model_unavailable_output() {
+        assert!(is_model_unavailable_output(
+            "Error: model sonnet-4 not available for this account"
+        ));
+        assert!(is_model_unavailable_output(
+            "unknown model: custom-model-name"
+        ));
+        assert!(!is_model_unavailable_output("rate limit exceeded"));
+    }
 }
