@@ -175,7 +175,7 @@ export function computeMeetingDisplayState(
     liveRing,
   );
 
-  // 2. Past + outcomes loaded → "processed" badge + View Prep (if available)
+  // 2. Past + outcomes loaded → "processed" badge (no actions)
   if (ctx.isPast && ctx.outcomesStatus === "loaded") {
     primaryStatus = "processed";
     badges.push({
@@ -185,13 +185,6 @@ export function computeMeetingDisplayState(
       className: "text-success border-success/30",
       icon: "check",
     });
-    if (hasPrepFile) {
-      actions.push({
-        key: "view-prep",
-        label: "View Prep",
-        linkTo: meeting.id,
-      });
-    }
   }
   // 3. Past + outcomes loading → no badge, no buttons (prevents flash)
   else if (ctx.isPast && ctx.outcomesStatus === "loading") {
@@ -204,7 +197,7 @@ export function computeMeetingDisplayState(
       actions.push({
         key: "view-prep",
         label: "View Prep",
-        linkTo: meeting.id,
+        linkTo: meeting.prepFile,
       });
     }
     actions.push(
@@ -228,7 +221,7 @@ export function computeMeetingDisplayState(
     actions.push({
       key: "view-prep",
       label: "View Prep",
-      linkTo: meeting.id,
+      linkTo: meeting.prepFile,
     });
     if (!ctx.hasEnrichedPrep) {
       badges.push({
