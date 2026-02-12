@@ -656,7 +656,7 @@ pub fn build_intelligence_context(
         }
 
         // In incremental mode, only include files modified since last enrichment
-        if is_incremental && !enriched_at.is_empty() && file.modified_at <= enriched_at.to_string()
+        if is_incremental && !enriched_at.is_empty() && file.modified_at.as_str() <= enriched_at
         {
             continue;
         }
@@ -832,7 +832,7 @@ pub fn build_intelligence_prompt(
                 f.modified_at
             ));
         }
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     // File summaries (pre-computed, priority-ordered)
@@ -992,7 +992,7 @@ pub fn parse_intelligence_response(
                 });
             readiness.prep_items.push(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_DESCRIPTION:") {
-            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+            let ctx = intel.company_context.get_or_insert(CompanyContext {
                 description: None,
                 industry: None,
                 size: None,
@@ -1001,7 +1001,7 @@ pub fn parse_intelligence_response(
             });
             ctx.description = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_INDUSTRY:") {
-            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+            let ctx = intel.company_context.get_or_insert(CompanyContext {
                 description: None,
                 industry: None,
                 size: None,
@@ -1010,7 +1010,7 @@ pub fn parse_intelligence_response(
             });
             ctx.industry = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_SIZE:") {
-            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+            let ctx = intel.company_context.get_or_insert(CompanyContext {
                 description: None,
                 industry: None,
                 size: None,
@@ -1019,7 +1019,7 @@ pub fn parse_intelligence_response(
             });
             ctx.size = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_HQ:") {
-            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+            let ctx = intel.company_context.get_or_insert(CompanyContext {
                 description: None,
                 industry: None,
                 size: None,
@@ -1028,7 +1028,7 @@ pub fn parse_intelligence_response(
             });
             ctx.headquarters = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_CONTEXT:") {
-            let ctx = intel.company_context.get_or_insert_with(|| CompanyContext {
+            let ctx = intel.company_context.get_or_insert(CompanyContext {
                 description: None,
                 industry: None,
                 size: None,
@@ -1077,10 +1077,10 @@ fn extract_multiline_field(block: &str, start_marker: &str) -> Option<String> {
 
     for line in block.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with(start_marker) {
+        if let Some(stripped) = trimmed.strip_prefix(start_marker) {
             in_field = true;
             // Include any content on the same line as the marker
-            let rest = trimmed[start_marker.len()..].trim();
+            let rest = stripped.trim();
             if !rest.is_empty() {
                 lines.push(rest.to_string());
             }
@@ -1208,16 +1208,28 @@ fn find_pipe_field(parts: &[&str], field: &str) -> Option<String> {
 /// 6. Write intelligence.json (atomic)
 /// 7. Update DB cache
 /// 8. Return IntelligenceJson
+pub struct EntityEnrichmentTarget<'a> {
+    pub entity_id: &'a str,
+    pub entity_name: &'a str,
+    pub entity_type: &'a str,
+    pub account: Option<&'a DbAccount>,
+    pub project: Option<&'a crate::db::DbProject>,
+}
+
 pub fn enrich_entity_intelligence(
     workspace: &Path,
     db: &ActionDb,
-    entity_id: &str,
-    entity_name: &str,
-    entity_type: &str,
-    account: Option<&DbAccount>,
-    project: Option<&crate::db::DbProject>,
+    target: EntityEnrichmentTarget<'_>,
     pty: &crate::pty::PtyManager,
 ) -> Result<IntelligenceJson, String> {
+    let EntityEnrichmentTarget {
+        entity_id,
+        entity_name,
+        entity_type,
+        account,
+        project,
+    } = target;
+
     // Resolve entity directory
     let entity_dir = match entity_type {
         "account" => {
@@ -1747,9 +1759,9 @@ pub(crate) fn sync_content_index_for_entity(
         let modified_at = metadata
             .modified()
             .ok()
-            .and_then(|t| {
+            .map(|t| {
                 let dt: chrono::DateTime<Utc> = t.into();
-                Some(dt.to_rfc3339())
+                dt.to_rfc3339()
             })
             .unwrap_or_else(|| now.clone());
 
@@ -1835,7 +1847,7 @@ pub(crate) fn sync_content_index_for_entity(
     }
 
     // Any records left in db_map no longer have matching files — remove them
-    for (id, _) in &db_map {
+    for id in db_map.keys() {
         let _ = db.delete_content_file(id);
         removed += 1;
     }

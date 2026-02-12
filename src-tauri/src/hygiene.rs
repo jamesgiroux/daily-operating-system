@@ -128,11 +128,10 @@ fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> usize {
     let mut fixed = 0;
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
-        if new_rel != "unknown" {
-            if db.update_person_relationship(&person.id, &new_rel).is_ok() {
+        if new_rel != "unknown"
+            && db.update_person_relationship(&person.id, &new_rel).is_ok() {
                 fixed += 1;
             }
-        }
     }
     fixed
 }
@@ -406,15 +405,14 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
 
         // Match against account hints
         for (hint, account_id) in &account_hints {
-            if &domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())) {
-                if db
+            if (&domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())))
+                && db
                     .link_person_to_entity(&person.id, account_id, "associated")
                     .is_ok()
                 {
                     linked += 1;
                     break; // One link per person
                 }
-            }
         }
     }
 
@@ -472,7 +470,7 @@ pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>,
 
     let mut candidates: Vec<DuplicateCandidate> = Vec::new();
 
-    for (_domain, group) in &domain_groups {
+    for group in domain_groups.values() {
         // Skip singleton groups — no possible duplicates
         if group.len() < 2 {
             continue;

@@ -553,7 +553,7 @@ async fn fetch_and_classify_today(
 
         let bucket = match (start_dt, end_dt) {
             (Some(_s), Some(e)) if now >= e => "past",
-            (Some(s), end_opt) if s <= now && end_opt.map_or(true, |e| now < e) => "in_progress",
+            (Some(s), end_opt) if s <= now && end_opt.is_none_or(|e| now < e) => "in_progress",
             _ => "upcoming",
         };
 
@@ -1080,7 +1080,7 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
         "dateRange": date_range,
         "days": days,
         "actionSummary": action_summary,
-        "hygieneAlerts": build_hygiene_alerts(&directive),
+        "hygieneAlerts": build_hygiene_alerts(directive),
         "focusAreas": focus_areas,
         "availableTimeBlocks": time_blocks,
         "dayShapes": day_shapes,
@@ -1152,11 +1152,11 @@ fn resolve_prep_status(meeting_id: &str, meeting_type: &str, data_dir: &Path) ->
                 let has_agenda = prep
                     .get("proposedAgenda")
                     .and_then(|v| v.as_array())
-                    .map_or(false, |a| !a.is_empty());
+                    .is_some_and(|a| !a.is_empty());
                 let has_talking_points = prep
                     .get("talkingPoints")
                     .and_then(|v| v.as_array())
-                    .map_or(false, |a| !a.is_empty());
+                    .is_some_and(|a| !a.is_empty());
                 if has_agenda || has_talking_points {
                     "prep_ready".to_string()
                 } else {
@@ -1973,7 +1973,7 @@ fn format_arr(raw: Option<&Value>) -> String {
 }
 
 fn normalise_meeting_type(raw: &str) -> String {
-    let normalised = raw.to_lowercase().replace(' ', "_").replace('-', "_");
+    let normalised = raw.to_lowercase().replace([' ', '-'], "_");
     let valid = [
         "customer",
         "qbr",
