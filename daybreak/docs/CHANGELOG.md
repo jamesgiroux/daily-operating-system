@@ -18,6 +18,9 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 ### Prep Semantics
 - **I196:** Prep agenda/wins semantic split + source governance completed. `recentWins` and `recentWinSources` added as first-class prep fields (additive/backward compatible with `talkingPoints`). Enrichment parser now supports distinct `AGENDA` and `WINS` blocks, strips inline `source:` tails from display text, and persists source provenance structurally. Mechanical agenda generation now prioritizes open items/risks/questions and only falls back to wins when needed. Added one-time migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
 
+### Backlog & ADR Alignment
+- **I95:** Week proactive suggestions scope split into three executable tracks in `BACKLOG.md`: `I200` (Week UI rendering from week artifact), `I201` (live proactive suggestions via ADR-0062 query boundary), and `I202` (prep prefill/draft agenda actions aligned with ADR-0065 additive edit model). ADR-0052 now includes a dated alignment note recording shipped vs remaining Phase 3 scope.
+
 ---
 
 ## Sprint 14 — Meeting Intelligence Foundation
