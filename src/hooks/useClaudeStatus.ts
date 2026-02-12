@@ -13,7 +13,7 @@ interface UseClaudeStatusReturn {
   refresh: () => Promise<void>;
 }
 
-const MIN_FOCUS_REFRESH_INTERVAL_MS = 60_000;
+const MIN_FOCUS_REFRESH_INTERVAL_MS = 300_000;
 
 /**
  * Lightweight Claude availability check for subtle UI affordances.

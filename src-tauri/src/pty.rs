@@ -18,7 +18,7 @@ use crate::types::AiModelConfig;
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
 /// Timeout for Claude CLI auth checks.
-const CLAUDE_AUTH_CHECK_TIMEOUT_SECS: u64 = 8;
+const CLAUDE_AUTH_CHECK_TIMEOUT_SECS: u64 = 3;
 
 /// Model tier for AI operations (I174).
 ///
