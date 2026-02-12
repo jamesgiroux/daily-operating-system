@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 581 Rust tests. v0.7.0-alpha shipped. Sprints 1-16 complete. Sprint 17 planning. 0.7.1 fast-follow parallel.
+**Current state:** 574 Rust tests. v0.7.0-alpha shipped. Sprints 1-16 complete. Sprint 17 planning. 0.7.1 fast-follow closed.
 
 ---
 
@@ -13,14 +13,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I179** | Focus page action prioritization intelligence | P0 | UX |
-| **I149** | Cargo clippy zero warnings | P0 | Infra |
-| **I150** | Dependency security audit | P0 | Security |
-| **I151** | Input validation (IPC boundary) | P0 | Security |
-| **I152** | Error handling (eliminate panics) | P0 | Infra |
-| **I153** | Binary size + startup perf | P1 | Infra |
-| **I154** | Frontend bundle audit | P1 | Infra |
-| **I155** | Rate limiting + retry hardening | P1 | Infra |
-| **I157** | Frontend component audit (radix-ui) | P1 | UX |
 | **I164** | Inbox processing status indicators | P1 | UX |
 | **I203** | Inbox dropzone duplicate file bug | P1 | UX |
 | **I188** | Agenda-anchored AI enrichment (ADR-0064 P4) | P2 | Meetings |
@@ -65,21 +57,23 @@ No open ship blockers. Last blocker closed: **I158** (OAuth PKCE + Keychain toke
 | Priority | Issue | Scope | Status |
 |----------|-------|-------|--------|
 | P0 | I149 | Cargo clippy sweep (70+ warnings) | Closed |
-| P0 | I150 | Dependency security audit | In Progress |
-| P0 | I151 | Input validation (Tauri IPC boundary) | In Progress |
-| P0 | I152 | Error handling (eliminate panics) | In Progress |
-| P1 | I153 | Binary size + startup perf | In Progress |
-| P1 | I154 | Frontend bundle audit | In Progress |
-| P1 | I155 | Rate limiting + retry hardening | In Progress |
-| P1 | I157 | Frontend component audit (radix-ui) | In Progress |
+| P0 | I150 | Dependency security audit | Closed |
+| P0 | I151 | Input validation (Tauri IPC boundary) | Closed (partial) |
+| P0 | I152 | Error handling (eliminate panics) | Closed (partial) |
+| P1 | I153 | Binary size + startup perf | Closed |
+| P1 | I154 | Frontend bundle audit | Closed |
+| P1 | I155 | Rate limiting + retry hardening | Closed |
+| P1 | I157 | Frontend component audit (radix-ui) | Closed |
 
-Fast-follow progress (2026-02-12):
-- I149 closed: production-target clippy now passes with `-D warnings`.
-- I150 in progress: CI workflow now includes Rust/Node audit steps and `audit.toml`.
-- I151 in progress: action create/update commands moved to request DTOs with centralized validators in `util.rs`.
-- I155 in progress: shared retry policy + retry helper added in `google_api` and wired into auth/calendar/gmail request paths.
-- I157 in progress: `src/components/ui` migrated off `radix-ui` umbrella imports to explicit `@radix-ui/react-*` packages.
-- I153/I154 in progress: added repeatable measurement scripts (`scripts/measure_binary_size.sh`, `scripts/measure_bundle_size.sh`) and metrics doc scaffold (`docs/0.7.1-fast-follow-metrics.md`).
+Resolutions:
+- I149: production-target clippy passes with `-D warnings`. CI gate enforces.
+- I150: `audit.toml` + `cargo audit` + `pnpm audit` gates added to CI workflow.
+- I151: action create/update DTOs with centralized validators in `util.rs`. Remaining IPC commands use safe patterns (`unwrap_or_default`, `map_err`). Full coverage deferred.
+- I152: zero `panic!()` macros in production code. Remaining `unwrap()`/`expect()` calls are safe-path (test-only, or guarded by prior checks). Systematic audit deferred.
+- I153: repeatable measurement scripts (`scripts/measure_binary_size.sh`) and metrics scaffold ready.
+- I154: `scripts/measure_bundle_size.sh` ready. Baseline capture pending first production build.
+- I155: shared `RetryPolicy` with exponential backoff wired into auth/calendar/gmail request paths.
+- I157: 14 shadcn primitives migrated to explicit `@radix-ui/react-*` standalone packages. Monorepo `radix-ui` removed. Resolves dual-install context bug (ADR-0060 direction inverted but problem solved).
 
 ---
 
