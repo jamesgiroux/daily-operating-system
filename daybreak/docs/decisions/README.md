@@ -84,6 +84,7 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0064](0064-meeting-intelligence-foundation.md) | Meeting intelligence report layout | Accepted |
 | [0065](0065-meeting-prep-editability.md) | Meeting prep editability | Accepted |
 | [0066](0066-meeting-outcomes-unification.md) | Meeting outcomes integrated with prep | Accepted |
+| [0067](0067-resume-latency-and-db-concurrency-guardrails.md) | Resume latency rollups + staged split-lock DB strategy | Accepted |
 
 ---
 

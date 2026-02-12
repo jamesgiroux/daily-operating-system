@@ -18,6 +18,9 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 ### Prep Semantics
 - **I196:** Prep agenda/wins semantic split + source governance completed. `recentWins` and `recentWinSources` added as first-class prep fields (additive/backward compatible with `talkingPoints`). Enrichment parser now supports distinct `AGENDA` and `WINS` blocks, strips inline `source:` tails from display text, and persists source provenance structurally. Mechanical agenda generation now prioritizes open items/risks/questions and only falls back to wins when needed. Added one-time migration command `backfill_prep_semantics(dry_run)` to upgrade `_today/data/preps/*.json` and `meetings_history.prep_context_json`.
 
+### Runtime Reliability
+- **I197:** Resume responsiveness hardening completed. Added in-memory command latency rollups (`p50`/`p95`/max, budget violations, degraded counters) via `get_latency_rollups` + devtools panel, expanded instrumentation for startup/resume-sensitive commands, and standardized hot-path DB access with `AppState` helper methods (`with_db_try_read`/`with_db_read`/`with_db_write`) plus staged split-lock migration guidance (ADR-0067).
+
 ---
 
 ## Sprint 14 — Meeting Intelligence Foundation
