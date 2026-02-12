@@ -46,6 +46,7 @@ Closed issues organized by sprint. For active work, see [BACKLOG.md](./BACKLOG.m
 
 ### Runtime Reliability
 - **I197:** Resume responsiveness hardening completed. Added in-memory command latency rollups (`p50`/`p95`/max, budget violations, degraded counters) via `get_latency_rollups` + devtools panel, expanded instrumentation for startup/resume-sensitive commands, and standardized hot-path DB access with `AppState` helper methods (`with_db_try_read`/`with_db_read`/`with_db_write`) plus staged split-lock migration guidance (ADR-0067).
+- **0.7.1 fast-follow (in progress):** Production-target Rust clippy now passes with `-D warnings` (I149). Added CI gates for clippy + dependency audit (`cargo audit`, `pnpm audit`) and repository `audit.toml` (I150). Began IPC boundary hardening by moving action create/update commands to request DTOs with centralized validators (I151). Added shared Google API retry/backoff helper and wired auth/calendar/gmail calls through it (I155). Migrated UI primitives off `radix-ui` umbrella imports to explicit `@radix-ui/react-*` imports in `src/components/ui` (I157). Added repeatable measurement scripts/docs scaffolding for binary/bundle metrics (I153/I154).
 
 ---
 
