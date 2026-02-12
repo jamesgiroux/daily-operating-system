@@ -2,37 +2,81 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Archive, ChevronRight, Loader2, Mail, RefreshCw } from "lucide-react";
+import { AlertCircle, Archive, ChevronRight, Loader2, Mail, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import type { Email } from "@/types";
+import type { Email, EmailSyncStatus } from "@/types";
 
 interface EmailListProps {
   emails: Email[];
+  emailSync?: EmailSyncStatus;
   maxVisible?: number;
 }
 
-export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
+export function EmailList({ emails, emailSync, maxVisible = 3 }: EmailListProps) {
   const [refreshing, setRefreshing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<EmailSyncStatus | null>(emailSync ?? null);
   const actionable = emails.filter((e) => e.priority === "high" || e.priority === "medium");
   const lowPriority = emails.filter((e) => e.priority === "low");
   const visibleEmails = actionable.slice(0, maxVisible);
   const hiddenCount = actionable.length - visibleEmails.length;
+  const showSyncBanner = Boolean(syncStatus && syncStatus.state !== "ok");
 
   useEffect(() => {
-    const unlisten = listen<string>("email-enrichment-warning", (event) => {
-      toast.warning(event.payload, { duration: 6000 });
+    if (emailSync) {
+      setSyncStatus(emailSync);
+    }
+  }, [emailSync]);
+
+  useEffect(() => {
+    const unlistenSync = listen<EmailSyncStatus>("email-sync-status", (event) => {
+      setSyncStatus(event.payload);
     });
-    return () => { unlisten.then((fn) => fn()); };
-  }, []);
+    const unlistenError = listen<string>("email-error", (event) => {
+      setSyncStatus({
+        state: "error",
+        stage: "deliver",
+        code: "legacy_email_error",
+        message: event.payload,
+        usingLastKnownGood: emails.length > 0,
+        canRetry: true,
+        lastAttemptAt: new Date().toISOString(),
+      });
+    });
+    const unlistenWarning = listen<string>("email-enrichment-warning", (event) => {
+      setSyncStatus({
+        state: "warning",
+        stage: "enrich",
+        code: "legacy_email_enrichment_warning",
+        message: event.payload,
+        usingLastKnownGood: true,
+        canRetry: true,
+        lastAttemptAt: new Date().toISOString(),
+      });
+    });
+    return () => {
+      unlistenSync.then((fn) => fn());
+      unlistenError.then((fn) => fn());
+      unlistenWarning.then((fn) => fn());
+    };
+  }, [emails.length]);
 
   async function handleRefresh() {
     setRefreshing(true);
     try {
       await invoke("refresh_emails");
+      setSyncStatus(null);
       toast.success("Emails refreshed");
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Email refresh failed");
+      setSyncStatus({
+        state: "error",
+        stage: "refresh",
+        code: "manual_refresh_failed",
+        message: normalizeErrorMessage(err),
+        usingLastKnownGood: emails.length > 0,
+        canRetry: true,
+        lastAttemptAt: new Date().toISOString(),
+      });
     } finally {
       setRefreshing(false);
     }
@@ -59,6 +103,37 @@ export function EmailList({ emails, maxVisible = 3 }: EmailListProps) {
           )}
         </Button>
       </div>
+      {showSyncBanner && syncStatus && (
+        <div className="mb-3 rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <AlertCircle className="size-3.5 text-foreground" />
+                <p className="text-xs font-semibold text-foreground">
+                  {syncStatus.state === "error" ? "Email Sync Issue" : "Email Enrichment Limited"}
+                </p>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-foreground">
+                {syncStatus.message || defaultSyncMessage(syncStatus)}
+              </p>
+            </div>
+            {syncStatus.canRetry !== false && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                onClick={handleRefresh}
+                disabled={refreshing}
+              >
+                {refreshing ? (
+                  <Loader2 className="mr-1 size-3 animate-spin" />
+                ) : null}
+                Retry
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
       {actionable.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-6 text-center">
           <Mail className="mb-2 size-8 text-muted-foreground/50" />
@@ -132,4 +207,20 @@ function EmailItem({ email }: { email: Email }) {
       </div>
     </div>
   );
+}
+
+function normalizeErrorMessage(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  return "Email refresh failed";
+}
+
+function defaultSyncMessage(status: EmailSyncStatus): string {
+  if (status.stage === "enrich") {
+    return "Email summaries are unavailable right now. Core email triage data is still available.";
+  }
+  if (status.stage === "fetch" || status.stage === "deliver" || status.stage === "refresh") {
+    return "Email sync failed. Retry to restore the latest inbox triage.";
+  }
+  return "Email sync is currently degraded.";
 }
