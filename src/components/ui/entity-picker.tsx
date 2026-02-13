@@ -21,6 +21,7 @@ interface EntityOption {
   name: string;
   type: "account" | "project";
   parentName?: string;
+  isInternal?: boolean;
 }
 
 interface EntityPickerProps {
@@ -51,7 +52,7 @@ export function EntityPicker({
       if (entityType !== "project") {
         try {
           const accounts = await invoke<
-            { id: string; name: string; parentName?: string }[]
+            { id: string; name: string; parentName?: string; isInternal: boolean }[]
           >("get_accounts_for_picker");
           items.push(
             ...accounts.map((a) => ({
@@ -59,6 +60,7 @@ export function EntityPicker({
               name: a.name,
               type: "account" as const,
               parentName: a.parentName ?? undefined,
+              isInternal: a.isInternal,
             }))
           );
         } catch {
@@ -92,11 +94,14 @@ export function EntityPicker({
     load();
   }, [entityType, value]);
 
-  const parentAccounts = entities.filter(
-    (e) => e.type === "account" && !e.parentName
+  const internalAccounts = entities.filter(
+    (e) => e.type === "account" && e.isInternal
   );
-  const childAccounts = entities.filter(
-    (e) => e.type === "account" && e.parentName
+  const externalParentAccounts = entities.filter(
+    (e) => e.type === "account" && !e.isInternal && !e.parentName
+  );
+  const externalChildAccounts = entities.filter(
+    (e) => e.type === "account" && !e.isInternal && e.parentName
   );
   const projects = entities.filter((e) => e.type === "project");
 
@@ -149,10 +154,28 @@ export function EntityPicker({
           <CommandInput placeholder="Search..." />
           <CommandList>
             <CommandEmpty>No entities found.</CommandEmpty>
-            {parentAccounts.length > 0 && (
-              <CommandGroup heading="Accounts">
-                {parentAccounts.map((a) => {
-                  const children = childAccounts.filter(
+            {internalAccounts.length > 0 && (
+              <CommandGroup heading="Internal Teams">
+                {internalAccounts.map((a) => (
+                  <CommandItem
+                    key={a.id}
+                    value={`internal ${a.name}`}
+                    onSelect={() => {
+                      onChange(a.id, a.name);
+                      setSelectedName(a.name);
+                      setOpen(false);
+                    }}
+                  >
+                    <Building2 className="mr-2 size-3.5 text-primary" />
+                    {a.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {externalParentAccounts.length > 0 && (
+              <CommandGroup heading="External Accounts">
+                {externalParentAccounts.map((a) => {
+                  const children = externalChildAccounts.filter(
                     (c) => c.parentName === a.name
                   );
                   return (
