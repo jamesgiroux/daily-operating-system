@@ -323,6 +323,8 @@ pub fn run() {
             commands::rebuild_database,
             // I148: Hygiene
             commands::get_hygiene_report,
+            commands::get_intelligence_hygiene_status,
+            commands::run_hygiene_scan_now,
             // I172: Duplicate People Detection
             commands::get_duplicate_people,
             // I176: Archive / Unarchive Entities

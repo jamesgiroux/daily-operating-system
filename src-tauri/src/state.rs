@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
 
 use chrono::{DateTime, Utc};
@@ -86,6 +86,12 @@ pub struct AppState {
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
     /// Last hygiene scan report (I145 — ADR-0058)
     pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
+    /// Indicates whether a hygiene scan is currently running.
+    pub hygiene_scan_running: AtomicBool,
+    /// ISO timestamp for the most recent completed hygiene scan.
+    pub last_hygiene_scan_at: Mutex<Option<String>>,
+    /// ISO timestamp for the next scheduled hygiene scan.
+    pub next_hygiene_scan_at: Mutex<Option<String>>,
     /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
     pub hygiene_budget: HygieneBudget,
 }
@@ -130,6 +136,9 @@ impl AppState {
             transcript_processed: Mutex::new(transcript_processed),
             intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
             last_hygiene_report: Mutex::new(None),
+            hygiene_scan_running: AtomicBool::new(false),
+            last_hygiene_scan_at: Mutex::new(None),
+            next_hygiene_scan_at: Mutex::new(None),
             hygiene_budget: HygieneBudget::new(10),
         }
     }

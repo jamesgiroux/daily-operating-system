@@ -366,7 +366,6 @@ pub enum WorkflowStatus {
     },
 }
 
-
 /// Record of a workflow execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1231,10 +1230,11 @@ impl Default for GoogleConfig {
 pub enum GoogleAuthStatus {
     #[default]
     NotConfigured,
-    Authenticated { email: String },
+    Authenticated {
+        email: String,
+    },
     TokenExpired,
 }
-
 
 /// A calendar event from Google Calendar
 #[derive(Debug, Clone, Serialize, Deserialize)]

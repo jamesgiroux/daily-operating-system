@@ -224,10 +224,7 @@ impl Executor {
                         &db,
                         &recon.date,
                     ) {
-                        Ok(r)
-                            if !r.skipped
-                                && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) =>
-                        {
+                        Ok(r) if !r.skipped && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) => {
                             log::info!(
                                 "Impact rollup: {} wins, {} risks → {}",
                                 r.wins_rolled_up,
