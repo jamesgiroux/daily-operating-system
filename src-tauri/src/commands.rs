@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -53,6 +53,30 @@ const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
 // TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
 // helpers in passes, prioritizing frequent reads before one-off write paths.
+
+fn normalize_match_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn attendee_domains(attendees: &[String]) -> HashSet<String> {
+    attendees
+        .iter()
+        .filter_map(|a| a.split('@').nth(1))
+        .map(|d| d.to_lowercase())
+        .collect()
+}
+
+fn build_live_event_domain_map(events: &[CalendarEvent]) -> HashMap<String, HashSet<String>> {
+    let mut map = HashMap::new();
+    for event in events {
+        map.insert(event.id.clone(), attendee_domains(&event.attendees));
+    }
+    map
+}
 
 fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
     let elapsed_ms = started.elapsed().as_millis();
@@ -199,29 +223,93 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
 
         // Flag meetings that matched an archived account for unarchive suggestion (I161)
-        match state.with_db_try_read(|db| db.get_archived_accounts()) {
-            DbTryRead::Ok(Ok(archived)) => {
+        match state.with_db_try_read(|db| -> Result<
+            (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
+            crate::db::DbError,
+        > {
+            let archived = db.get_archived_accounts()?;
+            let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
+            for account in &archived {
+                let domains = db
+                    .get_account_domains(&account.id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|d| d.to_lowercase())
+                    .collect::<HashSet<_>>();
+                domains_by_account.insert(account.id.clone(), domains);
+            }
+            Ok((archived, domains_by_account))
+        }) {
+            DbTryRead::Ok(Ok((archived, domains_by_account))) => {
                 let archived_ids: HashSet<String> =
                     archived.iter().map(|a| a.id.to_lowercase()).collect();
-                if !archived_ids.is_empty() {
-                    for m in &mut meetings {
-                        // Resolve the account identifier: prefer account_id (junction table),
-                        // fall back to account (classification hint slug)
-                        let resolved = m
-                            .account_id
-                            .as_deref()
-                            .or(m.account.as_deref())
-                            .map(str::to_lowercase);
-                        if let Some(ref id) = resolved {
-                            if archived_ids.contains(id) {
-                                // Find the canonical (original-case) account ID
-                                let canonical = archived
-                                    .iter()
-                                    .find(|a| a.id.to_lowercase() == *id)
-                                    .map(|a| a.id.clone())
-                                    .unwrap_or_else(|| id.clone());
-                                m.suggested_unarchive_account_id = Some(canonical);
+                let live_domains = build_live_event_domain_map(&live_events);
+                for m in &mut meetings {
+                    // Already linked to an active account; skip suggestion.
+                    if let Some(ref account_id) = m.account_id {
+                        if !archived_ids.contains(&account_id.to_lowercase()) {
+                            continue;
+                        }
+                    }
+
+                    let account_hint_key = m
+                        .account
+                        .as_deref()
+                        .map(normalize_match_key)
+                        .unwrap_or_default();
+                    let account_id_key = m
+                        .account_id
+                        .as_deref()
+                        .map(normalize_match_key)
+                        .unwrap_or_default();
+                    let meeting_domains = m
+                        .calendar_event_id
+                        .as_ref()
+                        .and_then(|id| live_domains.get(id))
+                        .or_else(|| live_domains.get(&m.id));
+
+                    let mut best: Option<(i32, String, String)> = None;
+                    for archived_account in &archived {
+                        let mut score = 0i32;
+                        let archived_id_key = normalize_match_key(&archived_account.id);
+                        let archived_name_key = normalize_match_key(&archived_account.name);
+
+                        if !account_id_key.is_empty() && account_id_key == archived_id_key {
+                            score = score.max(100);
+                        }
+                        if !account_hint_key.is_empty()
+                            && (account_hint_key == archived_id_key
+                                || account_hint_key == archived_name_key)
+                        {
+                            score = score.max(90);
+                        }
+                        if let Some(domains) = meeting_domains {
+                            if let Some(account_domains) = domains_by_account.get(&archived_account.id) {
+                                if !account_domains.is_empty()
+                                    && domains.iter().any(|d| account_domains.contains(d))
+                                {
+                                    score = score.max(80);
+                                }
                             }
+                        }
+
+                        if score == 0 {
+                            continue;
+                        }
+                        let tie = archived_account.id.to_lowercase();
+                        let candidate = (score, tie.clone(), archived_account.id.clone());
+                        if best
+                            .as_ref()
+                            .map(|(s, t, _)| score > *s || (score == *s && tie < *t))
+                            .unwrap_or(true)
+                        {
+                            best = Some(candidate);
+                        }
+                    }
+
+                    if let Some((score, _, account_id)) = best {
+                        if score >= 80 {
+                            m.suggested_unarchive_account_id = Some(account_id);
                         }
                     }
                 }
@@ -3409,8 +3497,6 @@ pub fn populate_workspace(
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
@@ -4579,8 +4665,8 @@ pub struct AccountListItem {
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_summary: Option<String>,
     pub renewal_date: Option<String>,
     pub open_action_count: usize,
     pub days_since_last_meeting: Option<i64>,
@@ -4601,8 +4687,6 @@ pub struct AccountDetailResult {
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
     pub renewal_date: Option<String>,
     pub contract_start: Option<String>,
     pub company_overview: Option<crate::accounts::CompanyOverview>,
@@ -4613,6 +4697,8 @@ pub struct AccountDetailResult {
     /// ADR-0063: richer type with optional prep context for preview cards.
     pub recent_meetings: Vec<MeetingPreview>,
     pub linked_people: Vec<crate::db::DbPerson>,
+    pub account_team: Vec<crate::db::DbAccountTeamMember>,
+    pub account_team_import_notes: Vec<crate::db::DbAccountTeamImportNote>,
     pub signals: Option<crate::db::StakeholderSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
     pub parent_id: Option<String>,
@@ -4756,6 +4842,24 @@ fn account_to_list_item(
         })
     });
 
+    let team_summary = db.get_account_team(&a.id).ok().and_then(|members| {
+        if members.is_empty() {
+            None
+        } else {
+            let labels: Vec<String> = members
+                .iter()
+                .take(2)
+                .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
+                .collect();
+            let suffix = if members.len() > 2 {
+                format!(" +{}", members.len() - 2)
+            } else {
+                String::new()
+            };
+            Some(format!("Team: {}{}", labels.join(", "), suffix))
+        }
+    });
+
     AccountListItem {
         id: a.id.clone(),
         name: a.name.clone(),
@@ -4763,8 +4867,7 @@ fn account_to_list_item(
         arr: a.arr,
         health: a.health.clone(),
         nps: a.nps,
-        csm: a.csm.clone(),
-        champion: a.champion.clone(),
+        team_summary,
         renewal_date: a.contract_end.clone(),
         open_action_count,
         days_since_last_meeting,
@@ -4861,6 +4964,10 @@ pub fn get_account_detail(
         .collect();
 
     let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
+    let account_team = db.get_account_team(&account_id).unwrap_or_default();
+    let account_team_import_notes = db
+        .get_account_team_import_notes(&account_id)
+        .unwrap_or_default();
 
     let signals = db.get_stakeholder_signals(&account_id).ok();
 
@@ -4904,8 +5011,6 @@ pub fn get_account_detail(
         arr: account.arr,
         health: account.health,
         nps: account.nps,
-        csm: account.csm,
-        champion: account.champion,
         renewal_date: account.contract_end,
         contract_start: account.contract_start,
         company_overview: overview,
@@ -4915,6 +5020,8 @@ pub fn get_account_detail(
         upcoming_meetings,
         recent_meetings,
         linked_people,
+        account_team,
+        account_team_import_notes,
         signals,
         recent_captures,
         parent_id: account.parent_id,
@@ -4924,6 +5031,49 @@ pub fn get_account_detail(
         is_internal: account.is_internal,
         intelligence,
     })
+}
+
+/// Get account-team members (I207).
+#[tauri::command]
+pub fn get_account_team(
+    account_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccountTeamMember>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_account_team(&account_id).map_err(|e| e.to_string())
+}
+
+/// Add a person-role pair to an account team (I207).
+#[tauri::command]
+pub fn add_account_team_member(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let role = role.trim().to_lowercase();
+    if role.is_empty() {
+        return Err("Role is required".to_string());
+    }
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.add_account_team_member(&account_id, &person_id, &role)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a person-role pair from an account team (I207).
+#[tauri::command]
+pub fn remove_account_team_member(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.remove_account_team_member(&account_id, &person_id, &role)
+        .map_err(|e| e.to_string())
 }
 
 /// Update a single structured field on an account.
@@ -5087,8 +5237,6 @@ pub fn create_account(
         health: None,
         contract_start: None,
         contract_end: None,
-        csm: None,
-        champion: None,
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id,
@@ -5217,8 +5365,6 @@ fn create_child_account_record(
         health: None,
         contract_start: None,
         contract_end: None,
-        csm: None,
-        champion: None,
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id: Some(parent.id.clone()),
@@ -5374,6 +5520,7 @@ pub fn create_internal_organization(
     domains: Vec<String>,
     team_name: String,
     colleagues: Vec<TeamColleagueInput>,
+    existing_person_ids: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<CreateInternalOrganizationResult, String> {
     let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
@@ -5418,8 +5565,6 @@ pub fn create_internal_organization(
         health: Some("green".to_string()),
         contract_start: None,
         contract_end: None,
-        csm: None,
-        champion: None,
         nps: None,
         tracker_path: Some(format!("Internal/{}", company_name)),
         parent_id: None,
@@ -5468,6 +5613,22 @@ pub fn create_internal_organization(
         let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
         let _ = crate::people::write_person_json(workspace, &person, db);
         let _ = crate::people::write_person_markdown(workspace, &person, db);
+    }
+
+    // Link existing people to the internal org and team
+    for person_id in existing_person_ids.unwrap_or_default() {
+        if let Ok(Some(mut person)) = db.get_person(&person_id) {
+            // Update relationship to internal if not already
+            if person.relationship != "internal" {
+                person.relationship = "internal".to_string();
+                person.organization = Some(company_name.clone());
+                let _ = db.upsert_person(&person);
+                let _ = crate::people::write_person_json(workspace, &person, db);
+                let _ = crate::people::write_person_markdown(workspace, &person, db);
+            }
+            let _ = db.link_person_to_entity(&person_id, &root_account.id, "member");
+            let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
+        }
     }
     drop(db_guard);
 
@@ -6052,8 +6213,9 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
             lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
-            csm: account.csm.clone(),
-            champion: account.champion.clone(),
+            account_team: Vec::new(),
+            csm: None,
+            champion: None,
         },
         company_overview: None,
         strategic_programs: Vec::new(),
@@ -6149,6 +6311,21 @@ pub fn get_duplicate_people(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     crate::hygiene::detect_duplicate_people(db)
+}
+
+/// Detect potential duplicate people for a specific person (I172).
+#[tauri::command]
+pub fn get_duplicate_people_for_person(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let dupes = crate::hygiene::detect_duplicate_people(db)?;
+    Ok(dupes
+        .into_iter()
+        .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
+        .collect())
 }
 
 // =============================================================================
@@ -6319,8 +6496,6 @@ pub fn bulk_create_accounts(
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,

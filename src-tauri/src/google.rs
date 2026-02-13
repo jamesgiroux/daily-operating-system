@@ -661,8 +661,6 @@ mod tests {
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: Some("2026-06-15".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,

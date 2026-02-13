@@ -41,7 +41,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { Person, PersonDetail } from "@/types";
+import type { DuplicateCandidate, Person, PersonDetail } from "@/types";
 
 const temperatureStyles: Record<string, { dot: string; badge: string }> = {
   hot: { dot: "bg-success", badge: "bg-success/15 text-success" },
@@ -73,6 +73,7 @@ export default function PersonDetailPage() {
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
   const [mergeSearchResults, setMergeSearchResults] = useState<Person[]>([]);
   const [merging, setMerging] = useState(false);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[]>([]);
 
   const load = useCallback(async () => {
     if (!personId) return;
@@ -97,6 +98,23 @@ export default function PersonDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadDuplicateCandidates = useCallback(async () => {
+    if (!personId) return;
+    try {
+      const candidates = await invoke<DuplicateCandidate[]>(
+        "get_duplicate_people_for_person",
+        { personId },
+      );
+      setDuplicateCandidates(candidates);
+    } catch {
+      setDuplicateCandidates([]);
+    }
+  }, [personId]);
+
+  useEffect(() => {
+    loadDuplicateCandidates();
+  }, [loadDuplicateCandidates]);
 
   async function saveField(field: string, value: string) {
     if (!detail) return;
@@ -185,6 +203,21 @@ export default function PersonDetailPage() {
     } catch (e) {
       setError(String(e));
       setMerging(false);
+    }
+  }
+
+  async function handleOpenSuggestedMerge(candidate: DuplicateCandidate) {
+    if (!detail) return;
+    const targetId =
+      candidate.person1Id === detail.id ? candidate.person2Id : candidate.person1Id;
+    try {
+      const suggested = await invoke<PersonDetail>("get_person_detail", {
+        personId: targetId,
+      });
+      setMergeTarget(suggested);
+      setMergeConfirmOpen(true);
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -448,6 +481,59 @@ export default function PersonDetailPage() {
                 </div>
               ))}
             </div>
+          )}
+
+          {duplicateCandidates.length > 0 && (
+            <Card className="border-primary/25 bg-primary/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">
+                  Potential Duplicates
+                  <span className="ml-1 text-muted-foreground">
+                    ({duplicateCandidates.length})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {duplicateCandidates.map((candidate) => {
+                  const targetId =
+                    candidate.person1Id === detail.id
+                      ? candidate.person2Id
+                      : candidate.person1Id;
+                  const targetName =
+                    candidate.person1Id === detail.id
+                      ? candidate.person2Name
+                      : candidate.person1Name;
+                  return (
+                    <div
+                      key={`${candidate.person1Id}-${candidate.person2Id}`}
+                      className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <Link
+                          to="/people/$personId"
+                          params={{ personId: targetId }}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          Merge into {targetName}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">
+                          {candidate.reason} · {Math.round(candidate.confidence * 100)}%
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 text-xs"
+                        disabled={merging}
+                        onClick={() => handleOpenSuggestedMerge(candidate)}
+                      >
+                        Merge
+                      </Button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
           )}
 
           {/* Asymmetric Grid: Main (3fr) + Sidebar (2fr) */}
