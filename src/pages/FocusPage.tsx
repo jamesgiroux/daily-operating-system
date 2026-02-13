@@ -245,7 +245,7 @@ export default function FocusPage() {
 
           <OtherPrioritiesSection
             actions={viewModel?.otherPrioritiesVisible ?? []}
-            total={viewModel?.totalPendingActions ?? 0}
+            total={viewModel?.otherPrioritiesP1Total ?? 0}
             showViewAll={viewModel?.showViewAllActions ?? false}
           />
 
