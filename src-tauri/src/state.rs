@@ -566,6 +566,8 @@ pub fn create_execution_record(workflow: WorkflowId, trigger: ExecutionTrigger) 
         duration_secs: None,
         success: false,
         error_message: None,
+        error_phase: None,
+        can_retry: None,
         trigger,
     }
 }
