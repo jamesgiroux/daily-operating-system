@@ -1181,7 +1181,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived
-             FROM accounts ORDER BY name",
+             FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -3316,7 +3316,7 @@ impl ActionDb {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
                             tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
-                     FROM people WHERE relationship = ?1 ORDER BY name",
+                     FROM people WHERE relationship = ?1 AND archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map(params![rel], Self::map_person_row)?;
                 rows.collect::<Result<Vec<_>, _>>()?
@@ -3325,7 +3325,7 @@ impl ActionDb {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
                             tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
-                     FROM people ORDER BY name",
+                     FROM people WHERE archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map([], Self::map_person_row)?;
                 rows.collect::<Result<Vec<_>, _>>()?
@@ -4443,6 +4443,52 @@ mod tests {
     }
 
     #[test]
+    fn test_get_all_accounts_excludes_archived() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let active = DbAccount {
+            id: "active-corp".to_string(),
+            name: "Active Corp".to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: now.clone(),
+            archived: false,
+        };
+
+        let archived = DbAccount {
+            id: "archived-corp".to_string(),
+            name: "Archived Corp".to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: now,
+            archived: true,
+        };
+
+        db.upsert_account(&active).expect("upsert active");
+        db.upsert_account(&archived).expect("upsert archived");
+
+        let results = db.get_all_accounts().expect("get all");
+        assert_eq!(results.len(), 1, "should only return active account");
+        assert_eq!(results[0].id, "active-corp");
+        assert!(!results[0].archived);
+    }
+
+    #[test]
     fn test_upsert_and_query_meeting() {
         let db = test_db();
 
@@ -5448,6 +5494,31 @@ mod tests {
         let external = db.get_people(Some("external")).expect("get external");
         assert_eq!(external.len(), 1);
         assert_eq!(external[0].name, "Bob");
+    }
+
+    #[test]
+    fn test_get_people_excludes_archived() {
+        let db = test_db();
+
+        let mut active = sample_person("active@test.com");
+        active.relationship = "external".to_string();
+
+        let mut archived = sample_person("archived@test.com");
+        archived.relationship = "external".to_string();
+        archived.archived = true;
+
+        db.upsert_person(&active).expect("upsert active");
+        db.upsert_person(&archived).expect("upsert archived");
+
+        // No filter — should exclude archived
+        let all = db.get_people(None).expect("get all");
+        assert_eq!(all.len(), 1, "should only return active person");
+        assert_eq!(all[0].email, "active@test.com");
+
+        // With relationship filter — should also exclude archived
+        let filtered = db.get_people(Some("external")).expect("get external");
+        assert_eq!(filtered.len(), 1, "should only return active external person");
+        assert_eq!(filtered[0].email, "active@test.com");
     }
 
     #[test]
