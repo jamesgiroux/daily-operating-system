@@ -42,6 +42,11 @@ pub struct Config {
     pub user_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_focus: Option<String>,
+    /// UI personality tone: "professional", "friendly", or "playful" (I216).
+    /// Affects UI chrome only (empty states, loading messages, celebrations).
+    /// Never affects intelligence content.
+    #[serde(default = "default_personality")]
+    pub personality: String,
     /// One-time gate: internal team setup completion state (Sprint 20 / ADR-0070).
     #[serde(default)]
     pub internal_team_setup_completed: bool,
@@ -84,6 +89,20 @@ fn default_history_count() -> u32 {
 
 fn default_profile() -> String {
     "customer-success".to_string()
+}
+
+fn default_personality() -> String {
+    "professional".to_string()
+}
+
+pub fn validate_personality(value: &str) -> Result<(), String> {
+    match value {
+        "professional" | "friendly" | "playful" => Ok(()),
+        _ => Err(format!(
+            "Invalid personality: '{}'. Must be 'professional', 'friendly', or 'playful'.",
+            value
+        )),
+    }
 }
 
 // =============================================================================
@@ -1486,6 +1505,7 @@ mod tests {
             internal_team_setup_version: 0,
             internal_org_account_id: None,
             developer_mode: false,
+            personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
         }
     }
@@ -1647,5 +1667,44 @@ mod tests {
         assert!(is_feature_enabled(&config, "projectTracking"));
         assert!(is_feature_enabled(&config, "accountTracking"));
         assert!(is_feature_enabled(&config, "impactRollup"));
+    }
+
+    // =========================================================================
+    // Personality validation tests (Sprint 24)
+    // =========================================================================
+
+    #[test]
+    fn test_validate_personality_valid_values() {
+        assert!(validate_personality("professional").is_ok());
+        assert!(validate_personality("friendly").is_ok());
+        assert!(validate_personality("playful").is_ok());
+    }
+
+    #[test]
+    fn test_validate_personality_rejects_invalid() {
+        assert!(validate_personality("casual").is_err());
+        assert!(validate_personality("").is_err());
+        assert!(validate_personality("Professional").is_err()); // case-sensitive
+    }
+
+    #[test]
+    fn test_config_deserializes_without_personality() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.personality, "professional"); // default
+    }
+
+    #[test]
+    fn test_config_deserializes_with_personality() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success",
+            "personality": "playful"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.personality, "playful");
     }
 }
