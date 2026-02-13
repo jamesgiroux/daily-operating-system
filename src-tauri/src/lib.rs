@@ -255,6 +255,7 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
+            commands::refresh_focus,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             // I39: Feature Toggles

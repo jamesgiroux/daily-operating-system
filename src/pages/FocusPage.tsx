@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { Link } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,11 +15,13 @@ import type {
 import { buildFocusViewModel } from "./focusViewModel";
 import { PageEmpty, PageError } from "@/components/PageState";
 import { cn, stripMarkdown } from "@/lib/utils";
+import { toast } from "sonner";
 import {
   AlertCircle,
   ArrowLeft,
   Clock,
   Circle,
+  RefreshCw,
   ShieldAlert,
   Target,
 } from "lucide-react";
@@ -63,26 +67,84 @@ export default function FocusPage() {
   const [data, setData] = useState<FocusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    async function loadFocus() {
-      try {
-        const result = await invoke<FocusResult>("get_focus_data");
-        if (result.status === "success" && result.data) {
-          setData(result.data);
-        } else if (result.status === "not_found") {
-          // No briefing run yet — show empty state
-        } else if (result.status === "error") {
-          setError(result.message || "Failed to load focus data");
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
+  const loadFocus = useCallback(async (showLoading = false) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+    setError(null);
+
+    try {
+      const result = await invoke<FocusResult>("get_focus_data");
+      if (result.status === "success" && result.data) {
+        setData(result.data);
+      } else if (result.status === "not_found") {
+        setData(null);
+      } else if (result.status === "error") {
+        setError(result.message || "Failed to load focus data");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      if (showLoading) {
         setLoading(false);
       }
     }
-    loadFocus();
   }, []);
+
+  useEffect(() => {
+    loadFocus(true);
+  }, [loadFocus]);
+
+  useEffect(() => {
+    let unlistenWorkflow: UnlistenFn | undefined;
+    let unlistenDelivered: UnlistenFn | undefined;
+    let cancelled = false;
+
+    listen<string>("workflow-completed", () => {
+      void loadFocus(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenWorkflow = fn;
+      }
+    });
+
+    listen<string>("operation-delivered", (event) => {
+      if (event.payload === "briefing") {
+        void loadFocus(false);
+      }
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenDelivered = fn;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenWorkflow?.();
+      unlistenDelivered?.();
+    };
+  }, [loadFocus]);
+
+  const refreshFocus = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await invoke<string>("refresh_focus");
+      await loadFocus(false);
+      toast.success("Focus refreshed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Focus refresh failed: ${message}`);
+      await loadFocus(false);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadFocus]);
 
   const viewModel = useMemo(() => (data ? buildFocusViewModel(data) : null), [data]);
 
@@ -127,14 +189,26 @@ export default function FocusPage() {
       <ScrollArea className="h-full">
         <div className="mx-auto max-w-2xl p-6">
           <div className="mb-6">
-            <div className="flex items-center gap-3">
-              <Link
-                to="/"
-                className="text-muted-foreground transition-colors hover:text-foreground"
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Link
+                  to="/"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ArrowLeft className="size-5" />
+                </Link>
+                <h1 className="text-2xl font-semibold tracking-tight">Today's Focus</h1>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={refreshFocus}
+                disabled={refreshing}
+                className="gap-2"
               >
-                <ArrowLeft className="size-5" />
-              </Link>
-              <h1 className="text-2xl font-semibold tracking-tight">Today's Focus</h1>
+                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+                Refresh Focus
+              </Button>
             </div>
           </div>
 
