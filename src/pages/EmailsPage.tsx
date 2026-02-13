@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { PageError } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
+import { PageError, SectionEmpty } from "@/components/PageState";
 import {
   ArrowLeft,
   Archive,
@@ -25,6 +26,7 @@ interface EmailsApiResult {
 }
 
 export default function EmailsPage() {
+  const { personality } = usePersonality();
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,25 +106,9 @@ export default function EmailsPage() {
           <PageHeader />
 
           {emails.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <Mail className="mb-4 size-12 text-muted-foreground/30" />
-                <p className="text-lg font-medium">No email data yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Emails are triaged as part of your morning briefing.
-                </p>
-              </CardContent>
-            </Card>
+            <SectionEmpty icon={Mail} {...getPersonalityCopy("emails-empty", personality)} />
           ) : highPriority.length === 0 && mediumPriority.length === 0 && lowPriority.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                <CheckCircle2 className="mb-4 size-12 text-sage" />
-                <p className="text-lg font-medium">All clear</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Nothing needs your attention right now.
-                </p>
-              </CardContent>
-            </Card>
+            <SectionEmpty icon={CheckCircle2} {...getPersonalityCopy("emails-clear", personality)} />
           ) : (
             <div className="space-y-6">
               {/* High priority — Needs Attention */}

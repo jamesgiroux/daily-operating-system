@@ -31,7 +31,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { PageError } from "@/components/PageState";
+import { PageError, InlineEmpty } from "@/components/PageState";
 import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import {
   Tooltip,
@@ -1153,7 +1153,7 @@ export default function AccountDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={CalendarClock}
                       message="No upcoming meetings scheduled"
                     />
@@ -1202,7 +1202,7 @@ export default function AccountDetailPage() {
                       )}
                     </Collapsible>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={CalendarClock}
                       message="No past meetings recorded"
                     />
@@ -1314,7 +1314,7 @@ export default function AccountDetailPage() {
                     </div>
                   ) : (
                     !addingAction && (
-                      <EmptyState
+                      <InlineEmpty
                         icon={CheckCircle2}
                         message="No open actions"
                       />
@@ -2118,7 +2118,7 @@ export default function AccountDetailPage() {
                       )}
                     </Collapsible>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={FileText}
                       message="No files indexed"
                     />
@@ -2160,7 +2160,7 @@ export default function AccountDetailPage() {
                         ))}
                       </div>
                     ) : (
-                      <EmptyState
+                      <InlineEmpty
                         icon={Users}
                         message="No people linked yet"
                       />
@@ -2475,21 +2475,6 @@ function ProgramRow({
 }
 
 // ─── Existing Sub-components ─────────────────────────────────────────────────
-
-function EmptyState({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ElementType;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center py-6 text-center">
-      <Icon className="mb-2 size-8 text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  );
-}
 
 function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
   const healthDotStyles: Record<string, string> = {

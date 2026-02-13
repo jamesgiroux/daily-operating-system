@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import {
   Building2,
   Check,
@@ -458,14 +459,32 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
     };
 
     try {
-      await invoke("attach_meeting_transcript", {
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript", {
         filePath: selected,
         meeting: calendarEvent,
       });
+      console.log("[transcript] Result:", result);
+      if (result.status !== "success") {
+        toast.error("Transcript processing failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Transcript processed");
+      }
       await refreshOutcomes();
       setIsOpen(true);
     } catch (err) {
-      console.error("Failed to attach transcript:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to attach transcript:", msg);
+      toast.error("Failed to attach transcript", { description: msg });
     } finally {
       setAttaching(false);
     }
