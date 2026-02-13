@@ -43,6 +43,8 @@ import WeekPage from "@/pages/WeekPage";
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
+import { useNotifications } from "@/hooks/useNotifications";
+import { PersonalityProvider } from "@/hooks/usePersonality";
 
 const settingsTabs = new Set([
   "profile",
@@ -58,6 +60,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
+  useNotifications();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
@@ -117,17 +120,19 @@ function RootLayout() {
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-      <SidebarProvider defaultOpen={false}>
-        <AppSidebar />
-        <SidebarInset>
-          <Header onCommandMenuOpen={() => setCommandOpen(true)} />
-          <Outlet />
-        </SidebarInset>
-        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-      </SidebarProvider>
-      <PostMeetingPrompt />
-      <Toaster position="bottom-right" />
-      <DevToolsPanel />
+      <PersonalityProvider>
+        <SidebarProvider defaultOpen={false}>
+          <AppSidebar />
+          <SidebarInset>
+            <Header onCommandMenuOpen={() => setCommandOpen(true)} />
+            <Outlet />
+          </SidebarInset>
+          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+        </SidebarProvider>
+        <PostMeetingPrompt />
+        <Toaster position="bottom-right" />
+        <DevToolsPanel />
+      </PersonalityProvider>
     </ThemeProvider>
   );
 }
