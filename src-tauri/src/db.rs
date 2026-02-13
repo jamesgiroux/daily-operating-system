@@ -66,14 +66,36 @@ pub struct DbAccount {
     pub health: Option<String>,
     pub contract_start: Option<String>,
     pub contract_end: Option<String>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
     pub nps: Option<i32>,
     pub tracker_path: Option<String>,
     pub parent_id: Option<String>,
     pub is_internal: bool,
     pub updated_at: String,
     pub archived: bool,
+}
+
+/// A row from `account_team`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTeamMember {
+    pub account_id: String,
+    pub person_id: String,
+    pub person_name: String,
+    pub person_email: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+/// A row from `account_team_import_notes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTeamImportNote {
+    pub id: i64,
+    pub account_id: String,
+    pub legacy_field: String,
+    pub legacy_value: String,
+    pub note: String,
+    pub created_at: String,
 }
 
 /// Aggregated signals for a parent account's children (I114).
@@ -1071,8 +1093,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, lifecycle, arr, health, contract_start, contract_end,
-                csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                nps, tracker_path, parent_id, is_internal, updated_at, archived
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 lifecycle = excluded.lifecycle,
@@ -1080,8 +1102,6 @@ impl ActionDb {
                 health = excluded.health,
                 contract_start = excluded.contract_start,
                 contract_end = excluded.contract_end,
-                csm = excluded.csm,
-                champion = excluded.champion,
                 nps = excluded.nps,
                 tracker_path = excluded.tracker_path,
                 parent_id = excluded.parent_id,
@@ -1095,8 +1115,6 @@ impl ActionDb {
                 account.health,
                 account.contract_start,
                 account.contract_end,
-                account.csm,
-                account.champion,
                 account.nps,
                 account.tracker_path,
                 account.parent_id,
@@ -1128,7 +1146,7 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -1145,7 +1163,7 @@ impl ActionDb {
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -1162,7 +1180,7 @@ impl ActionDb {
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1173,7 +1191,7 @@ impl ActionDb {
     pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1184,7 +1202,7 @@ impl ActionDb {
     pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
@@ -1233,7 +1251,7 @@ impl ActionDb {
     pub fn get_internal_root_account(&self) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0
              ORDER BY updated_at DESC
@@ -1250,12 +1268,97 @@ impl ActionDb {
     pub fn get_internal_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE is_internal = 1 AND archived = 0
              ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get account team members with person details.
+    pub fn get_account_team(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountTeamMember>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT at.account_id, at.person_id, p.name, p.email, at.role, at.created_at
+             FROM account_team at
+             JOIN people p ON p.id = at.person_id
+             WHERE at.account_id = ?1
+             ORDER BY at.role, p.name",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamMember {
+                account_id: row.get(0)?,
+                person_id: row.get(1)?,
+                person_name: row.get(2)?,
+                person_email: row.get(3)?,
+                role: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Add an account team member role link (idempotent).
+    pub fn add_account_team_member(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        role: &str,
+    ) -> Result<(), DbError> {
+        let role = role.trim().to_lowercase();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO account_team (account_id, person_id, role, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![account_id, person_id, role, Utc::now().to_rfc3339()],
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+             VALUES (?1, ?2, 'associated')",
+            params![account_id, person_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove an account team role link.
+    pub fn remove_account_team_member(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        role: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM account_team
+             WHERE account_id = ?1 AND person_id = ?2 AND LOWER(role) = LOWER(?3)",
+            params![account_id, person_id, role.trim()],
+        )?;
+        Ok(())
+    }
+
+    /// Import notes from migration for unmatched legacy account-team fields.
+    pub fn get_account_team_import_notes(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountTeamImportNote>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, legacy_field, legacy_value, note, created_at
+             FROM account_team_import_notes
+             WHERE account_id = ?1
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamImportNote {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                legacy_field: row.get(2)?,
+                legacy_value: row.get(3)?,
+                note: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -1432,8 +1535,6 @@ impl ActionDb {
             "lifecycle" => "UPDATE accounts SET lifecycle = ?1, updated_at = ?3 WHERE id = ?2",
             "arr" => "UPDATE accounts SET arr = CAST(?1 AS REAL), updated_at = ?3 WHERE id = ?2",
             "nps" => "UPDATE accounts SET nps = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
-            "csm" => "UPDATE accounts SET csm = ?1, updated_at = ?3 WHERE id = ?2",
-            "champion" => "UPDATE accounts SET champion = ?1, updated_at = ?3 WHERE id = ?2",
             "contract_start" => {
                 "UPDATE accounts SET contract_start = ?1, updated_at = ?3 WHERE id = ?2"
             }
@@ -3069,7 +3170,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -3089,7 +3190,7 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -3588,14 +3689,12 @@ impl ActionDb {
             health: row.get(4)?,
             contract_start: row.get(5)?,
             contract_end: row.get(6)?,
-            csm: row.get(7)?,
-            champion: row.get(8)?,
-            nps: row.get(9)?,
-            tracker_path: row.get(10)?,
-            parent_id: row.get(11)?,
-            is_internal: row.get::<_, i32>(12).unwrap_or(0) != 0,
-            updated_at: row.get(13)?,
-            archived: row.get::<_, i32>(14).unwrap_or(0) != 0,
+            nps: row.get(7)?,
+            tracker_path: row.get(8)?,
+            parent_id: row.get(9)?,
+            is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+            updated_at: row.get(11)?,
+            archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
         })
     }
 
@@ -3985,7 +4084,7 @@ impl ActionDb {
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, is_internal, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -4118,7 +4217,7 @@ impl ActionDb {
     pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.csm, a.champion, a.nps, a.tracker_path, a.parent_id, a.is_internal, a.updated_at, a.archived
+                    a.nps, a.tracker_path, a.parent_id, a.is_internal, a.updated_at, a.archived
              FROM accounts a
              WHERE a.contract_end IS NOT NULL
                AND a.contract_end < date('now')
@@ -4318,8 +4417,6 @@ mod tests {
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
             contract_end: Some("2026-01-01".to_string()),
-            csm: Some("Alice".to_string()),
-            champion: Some("Bob".to_string()),
             nps: None,
             tracker_path: Some("Accounts/acme-corp".to_string()),
             parent_id: None,
@@ -4728,8 +4825,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -4759,8 +4854,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             archived: false,
             tracker_path: None,
@@ -4855,8 +4948,6 @@ mod tests {
             health: Some("yellow".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/beta-inc".to_string()),
             parent_id: None,
@@ -5057,8 +5148,6 @@ mod tests {
                     .format("%Y-%m-%d")
                     .to_string(),
             ),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5077,8 +5166,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5097,8 +5184,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: Some("2020-01-01".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5126,8 +5211,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5146,8 +5229,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5254,8 +5335,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5385,8 +5464,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5622,8 +5699,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -5761,8 +5836,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -6686,8 +6759,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,

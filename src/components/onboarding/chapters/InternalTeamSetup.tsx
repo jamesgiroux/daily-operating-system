@@ -1,13 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowRight, Building2, Plus, Users } from "lucide-react";
+import { ArrowRight, Building2, Plus, Users, UserPlus, Link } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { PersonListItem } from "@/types";
 
 interface ColleagueInput {
+  /** Stable identity for React key — never changes after creation. */
+  _key: number;
   name: string;
   email: string;
   title?: string;
+}
+
+interface LinkedPerson {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
 }
 
 interface SetupStatus {
@@ -36,11 +46,18 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
   const [title, setTitle] = useState("");
   const [teamName, setTeamName] = useState("");
   const [colleagues, setColleagues] = useState<ColleagueInput[]>([]);
+  const [linkedPeople, setLinkedPeople] = useState<LinkedPerson[]>([]);
+  const [existingPeople, setExistingPeople] = useState<PersonListItem[]>([]);
+  const [peopleSearch, setPeopleSearch] = useState("");
+  const nextKey = useRef(0);
 
   useEffect(() => {
     async function load() {
       try {
-        const status = await invoke<SetupStatus>("get_internal_team_setup_status");
+        const [status, people] = await Promise.all([
+          invoke<SetupStatus>("get_internal_team_setup_status"),
+          invoke<PersonListItem[]>("get_people", { relationship: null }).catch(() => []),
+        ]);
         if (!status.required) {
           onNext();
           return;
@@ -49,7 +66,13 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
         setDomains(status.prefill.domains ?? []);
         setTitle(status.prefill.title ?? "");
         setTeamName(status.prefill.suggestedTeamName || "Core Team");
-        setColleagues(status.prefill.suggestedColleagues ?? []);
+        // Assign stable keys to prefilled colleagues
+        const keyed = (status.prefill.suggestedColleagues ?? []).map((c) => ({
+          ...c,
+          _key: nextKey.current++,
+        }));
+        setColleagues(keyed);
+        setExistingPeople(people);
       } finally {
         setLoading(false);
       }
@@ -79,8 +102,30 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
   }
 
   function addColleague() {
-    setColleagues((prev) => [...prev, { name: "", email: "", title: "" }]);
+    setColleagues((prev) => [...prev, { _key: nextKey.current++, name: "", email: "", title: "" }]);
   }
+
+  function linkExistingPerson(person: PersonListItem) {
+    // Don't double-add
+    if (linkedPeople.some((lp) => lp.id === person.id)) return;
+    setLinkedPeople((prev) => [
+      ...prev,
+      { id: person.id, name: person.name, email: person.email, role: person.role },
+    ]);
+    setPeopleSearch("");
+  }
+
+  function unlinkPerson(id: string) {
+    setLinkedPeople((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  // Filter existing people: exclude already-linked, match search
+  const filteredPeople = existingPeople.filter((p) => {
+    if (linkedPeople.some((lp) => lp.id === p.id)) return false;
+    if (!peopleSearch.trim()) return false;
+    const q = peopleSearch.toLowerCase();
+    return p.name.toLowerCase().includes(q) || p.email.toLowerCase().includes(q);
+  });
 
   async function handleCreate() {
     setSaving(true);
@@ -98,6 +143,7 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
         domains,
         teamName: teamName.trim(),
         colleagues: cleaned,
+        existingPersonIds: linkedPeople.map((lp) => lp.id),
       });
       onNext();
     } finally {
@@ -187,42 +233,92 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
       )}
 
       {step === 2 && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">Add initial teammates (name, email, title).</p>
-            <Button type="button" size="sm" variant="outline" onClick={addColleague}>
-              <Plus className="mr-1 size-4" /> Add
-            </Button>
-          </div>
-          {colleagues.length === 0 && (
-            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              No teammates added yet.
+        <div className="space-y-4">
+          {/* Link existing people */}
+          {existingPeople.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-sm font-medium flex items-center gap-1.5">
+                <Link className="size-3.5" /> Link existing people
+              </p>
+              <Input
+                placeholder="Search people by name or email..."
+                value={peopleSearch}
+                onChange={(e) => setPeopleSearch(e.target.value)}
+              />
+              {filteredPeople.length > 0 && (
+                <div className="max-h-36 overflow-y-auto rounded-md border divide-y">
+                  {filteredPeople.slice(0, 8).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-muted/50"
+                      onClick={() => linkExistingPerson(p)}
+                    >
+                      <span>{p.name} <span className="text-muted-foreground">({p.email})</span></span>
+                      <Plus className="size-3.5 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              {linkedPeople.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {linkedPeople.map((lp) => (
+                    <button
+                      key={lp.id}
+                      type="button"
+                      onClick={() => unlinkPerson(lp.id)}
+                      className="inline-flex items-center gap-1 rounded-full border bg-muted/50 px-2.5 py-0.5 text-xs hover:bg-destructive/10"
+                      title="Remove"
+                    >
+                      {lp.name}
+                      <span className="text-muted-foreground">&times;</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {colleagues.map((row, idx) => (
-            <div key={`${row.email}-${idx}`} className="grid grid-cols-1 gap-2 rounded-md border p-3 md:grid-cols-3">
-              <Input
-                placeholder="Name"
-                value={row.name}
-                onChange={(e) => updateColleague(idx, { name: e.target.value })}
-              />
-              <Input
-                placeholder="Email"
-                value={row.email}
-                onChange={(e) => updateColleague(idx, { email: e.target.value })}
-              />
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Title"
-                  value={row.title ?? ""}
-                  onChange={(e) => updateColleague(idx, { title: e.target.value })}
-                />
-                <Button type="button" variant="ghost" size="sm" onClick={() => removeColleague(idx)}>
-                  Remove
-                </Button>
-              </div>
+
+          {/* Add new people */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium flex items-center gap-1.5">
+                <UserPlus className="size-3.5" /> Add new teammates
+              </p>
+              <Button type="button" size="sm" variant="outline" onClick={addColleague}>
+                <Plus className="mr-1 size-4" /> Add
+              </Button>
             </div>
-          ))}
+            {colleagues.length === 0 && linkedPeople.length === 0 && (
+              <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                No teammates added yet.
+              </div>
+            )}
+            {colleagues.map((row, idx) => (
+              <div key={row._key} className="grid grid-cols-1 gap-2 rounded-md border p-3 md:grid-cols-3">
+                <Input
+                  placeholder="Name"
+                  value={row.name}
+                  onChange={(e) => updateColleague(idx, { name: e.target.value })}
+                />
+                <Input
+                  placeholder="Email"
+                  value={row.email}
+                  onChange={(e) => updateColleague(idx, { email: e.target.value })}
+                />
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Title"
+                    value={row.title ?? ""}
+                    onChange={(e) => updateColleague(idx, { title: e.target.value })}
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removeColleague(idx)}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -231,7 +327,13 @@ export function InternalTeamSetup({ onNext }: InternalTeamSetupProps) {
           <div className="flex items-center gap-2"><Building2 className="size-4" /> <span>{company}</span></div>
           <div className="text-muted-foreground">Domains: {domains.join(", ")}</div>
           <div className="text-muted-foreground">Team: {teamName}</div>
-          <div className="flex items-center gap-2"><Users className="size-4" /> <span>{colleagues.filter((c) => c.name && c.email).length} teammates</span></div>
+          <div className="flex items-center gap-2">
+            <Users className="size-4" />
+            <span>
+              {linkedPeople.length + colleagues.filter((c) => c.name && c.email).length} teammates
+              {linkedPeople.length > 0 && ` (${linkedPeople.length} existing)`}
+            </span>
+          </div>
         </div>
       )}
 

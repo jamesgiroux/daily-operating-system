@@ -788,8 +788,7 @@ export interface AccountListItem {
   arr?: number;
   health?: AccountHealth;
   nps?: number;
-  csm?: string;
-  champion?: string;
+  teamSummary?: string;
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
@@ -850,6 +849,24 @@ export interface AccountChildSummary {
   openActionCount: number;
 }
 
+export interface AccountTeamMember {
+  accountId: string;
+  personId: string;
+  personName: string;
+  personEmail: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface AccountTeamImportNote {
+  id: number;
+  accountId: string;
+  legacyField: string;
+  legacyValue: string;
+  note: string;
+  createdAt: string;
+}
+
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
@@ -861,6 +878,8 @@ export interface AccountDetail extends AccountListItem {
   recentMeetings: MeetingPreview[];
   openActions: Action[];
   linkedPeople: Person[];
+  accountTeam: AccountTeamMember[];
+  accountTeamImportNotes: AccountTeamImportNote[];
   signals?: {
     meetingFrequency30d: number;
     meetingFrequency90d: number;

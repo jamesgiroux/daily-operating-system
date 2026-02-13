@@ -113,6 +113,23 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
+                            if let Ok(team) = db.get_account_team(&acct.id) {
+                                if !team.is_empty() {
+                                    ctx["account_team"] = json!(team
+                                        .iter()
+                                        .map(|m| {
+                                            json!({
+                                                "personId": m.person_id,
+                                                "name": m.person_name,
+                                                "email": m.person_email,
+                                                "role": m.role,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>());
+                                }
+                            }
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -239,6 +256,23 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
+                            if let Ok(team) = db.get_account_team(&acct.id) {
+                                if !team.is_empty() {
+                                    ctx["account_team"] = json!(team
+                                        .iter()
+                                        .map(|m| {
+                                            json!({
+                                                "personId": m.person_id,
+                                                "name": m.person_name,
+                                                "email": m.person_email,
+                                                "role": m.role,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>());
+                                }
+                            }
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
