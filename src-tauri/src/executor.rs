@@ -166,12 +166,19 @@ impl Executor {
             let duration_secs = (finished_at - record.started_at)
                 .num_seconds()
                 .max(0) as u64;
+            let error_phase = match self.state.get_workflow_status(workflow_id) {
+                WorkflowStatus::Running { phase, .. } => Some(phase),
+                _ => None,
+            };
+            let can_retry = err.is_retryable();
 
             self.state.update_execution_record(&execution_id, |r| {
                 r.finished_at = Some(finished_at);
                 r.duration_secs = Some(duration_secs);
                 r.success = false;
                 r.error_message = Some(err.to_string());
+                r.error_phase = error_phase;
+                r.can_retry = Some(can_retry);
             });
 
             self.emit_status_event(
@@ -555,6 +562,16 @@ impl Executor {
             r.duration_secs = Some(duration_secs);
             r.success = true;
             r.error_message = enrichment_error.clone();
+            r.error_phase = if enrichment_error.is_some() {
+                Some(WorkflowPhase::Enriching)
+            } else {
+                None
+            };
+            r.can_retry = if enrichment_error.is_some() {
+                Some(true)
+            } else {
+                None
+            };
         });
 
         if matches!(

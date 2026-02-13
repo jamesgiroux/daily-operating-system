@@ -59,6 +59,8 @@ interface DeliveryExecutionRecord {
   durationSecs?: number;
   success: boolean;
   errorMessage?: string;
+  errorPhase?: "preparing" | "enriching" | "delivering";
+  canRetry?: boolean;
   trigger: string;
 }
 
@@ -887,11 +889,24 @@ function getDeliveryStatus(entry: DeliveryExecutionRecord): DeliveryStatus {
   return "success";
 }
 
-function inferFailureContext(errorMessage?: string): { phase?: string; retryable: boolean } {
-  if (!errorMessage) {
-    return { retryable: false };
+function phaseLabel(phase?: DeliveryExecutionRecord["errorPhase"]): string | undefined {
+  if (!phase) return undefined;
+  if (phase === "preparing") return "Preparing";
+  if (phase === "enriching") return "Enriching";
+  if (phase === "delivering") return "Delivering";
+  return phase;
+}
+
+function inferFailureContext(entry: DeliveryExecutionRecord): { phase?: string; retryable: boolean } {
+  const explicitPhase = phaseLabel(entry.errorPhase);
+  if (explicitPhase || typeof entry.canRetry === "boolean") {
+    return {
+      phase: explicitPhase,
+      retryable: entry.canRetry ?? false,
+    };
   }
-  const text = errorMessage.toLowerCase();
+
+  const text = (entry.errorMessage ?? "").toLowerCase();
   let phase: string | undefined;
   if (text.includes("prepar")) phase = "Preparing";
   else if (text.includes("enrich")) phase = "Enriching";
@@ -945,8 +960,20 @@ function DeliveryHistoryCard() {
   async function retryWorkflow(entry: DeliveryExecutionRecord) {
     setRetryingId(entry.id);
     try {
-      await invoke("run_workflow", { workflow: normalizeWorkflowId(entry.workflow) });
-      toast.success(`${workflowLabel(entry.workflow)} queued`);
+      const workflow = normalizeWorkflowId(entry.workflow);
+      const status = getDeliveryStatus(entry);
+      const retryEnrichmentOnly =
+        workflow === "week" &&
+        status === "partial" &&
+        (entry.errorPhase === "enriching" || entry.errorMessage?.toLowerCase().includes("enrich"));
+
+      if (retryEnrichmentOnly) {
+        await invoke("retry_week_enrichment");
+        toast.success("Week enrichment queued");
+      } else {
+        await invoke("run_workflow", { workflow });
+        toast.success(`${workflowLabel(entry.workflow)} queued`);
+      }
       setTimeout(() => {
         loadHistory();
       }, 500);
@@ -988,7 +1015,14 @@ function DeliveryHistoryCard() {
           <>
             {entries.map((entry) => {
               const status = getDeliveryStatus(entry);
-              const context = inferFailureContext(entry.errorMessage);
+              const context = inferFailureContext(entry);
+              const canRetry = context.retryable;
+              const retryLabel =
+                normalizeWorkflowId(entry.workflow) === "week" &&
+                status === "partial" &&
+                context.phase === "Enriching"
+                  ? "Retry Enrichment"
+                  : "Retry";
               const statusBadgeClass =
                 status === "success"
                   ? "bg-success/15 text-success"
@@ -1012,7 +1046,7 @@ function DeliveryHistoryCard() {
                       <span className="text-xs text-muted-foreground">
                         {formatRunDuration(entry.durationSecs)}
                       </span>
-                      {(status === "failed" || status === "partial") && (
+                      {(status === "failed" || status === "partial") && canRetry && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1025,7 +1059,7 @@ function DeliveryHistoryCard() {
                           ) : (
                             <Play className="mr-1 size-3" />
                           )}
-                          Retry
+                          {retryLabel}
                         </Button>
                       )}
                     </div>
@@ -1038,7 +1072,7 @@ function DeliveryHistoryCard() {
                       <p className="text-foreground">{entry.errorMessage}</p>
                       <p className="mt-1 text-muted-foreground">
                         {context.phase ? `Phase: ${context.phase}. ` : ""}
-                        {context.retryable ? "Likely retryable." : "May require config or data fixes."}
+                        {context.retryable ? "Retry available." : "Not retryable from UI; check config/data."}
                       </p>
                     </div>
                   )}
