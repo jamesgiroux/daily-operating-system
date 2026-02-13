@@ -27,7 +27,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageError, InlineEmpty } from "@/components/PageState";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
 import {
   Archive,
   ArrowLeft,
@@ -308,7 +308,7 @@ export default function PersonDetailPage() {
       metrics.push({ label: "Engagement", value: signals.temperature });
     }
     if (signals.lastMeeting) {
-      metrics.push({ label: "Last Meeting", value: formatDate(signals.lastMeeting) });
+      metrics.push({ label: "Last Meeting", value: formatShortDate(signals.lastMeeting) });
     }
   }
   if (detail.meetingCount > 0) {
@@ -569,7 +569,7 @@ export default function PersonDetailPage() {
                             {m.title}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatDate(m.startTime)}
+                            {formatShortDate(m.startTime)}
                           </span>
                         </Link>
                       ))}
@@ -848,10 +848,10 @@ function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
     fields.push({ label: "Email", value: detail.email });
   }
   if (detail.firstSeen) {
-    fields.push({ label: "First Seen", value: formatDate(detail.firstSeen) });
+    fields.push({ label: "First Seen", value: formatShortDate(detail.firstSeen) });
   }
   if (detail.lastSeen) {
-    fields.push({ label: "Last Seen", value: formatDate(detail.lastSeen) });
+    fields.push({ label: "Last Seen", value: formatShortDate(detail.lastSeen) });
   }
 
   if (fields.length === 0) {
@@ -963,18 +963,6 @@ function PersonDetailsEditForm({
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
 
 function formatMeetingType(meetingType: string): string {
   const labels: Record<string, string> = {
