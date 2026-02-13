@@ -1467,6 +1467,7 @@ pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
 #[tauri::command]
 pub async fn process_inbox_file(
     filename: String,
+    entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::processor::ProcessingResult, String> {
     let config = state
@@ -1479,6 +1480,7 @@ pub async fn process_inbox_file(
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
+    let entity_id = entity_id.clone();
 
     // Validate filename before processing (I60: path traversal guard)
     let workspace = Path::new(&workspace_path);
@@ -1488,7 +1490,18 @@ pub async fn process_inbox_file(
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::process_file(workspace, &filename, db_ref, &profile)
+        let entity_tracker_path = entity_id.as_deref().and_then(|eid| {
+            db_ref
+                .and_then(|db| db.get_entity(eid).ok().flatten())
+                .and_then(|e| e.tracker_path)
+        });
+        crate::processor::process_file(
+            workspace,
+            &filename,
+            db_ref,
+            &profile,
+            entity_tracker_path.as_deref(),
+        )
     })
     .await
     .map_err(|e| format!("Processing task failed: {}", e))
@@ -1529,6 +1542,7 @@ pub async fn process_all_inbox(
 #[tauri::command]
 pub async fn enrich_inbox_file(
     filename: String,
+    entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::processor::enrich::EnrichResult, String> {
     let config = state
@@ -1541,6 +1555,7 @@ pub async fn enrich_inbox_file(
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
+    let entity_id = entity_id.clone();
 
     // Validate filename before enriching (I60: path traversal guard)
     let workspace = Path::new(&workspace_path);
@@ -1551,6 +1566,18 @@ pub async fn enrich_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
+        let entity_tracker_path = state
+            .db
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.as_ref().and_then(|db| {
+                    entity_id
+                        .as_deref()
+                        .and_then(|eid| db.get_entity(eid).ok().flatten())
+                })
+            })
+            .and_then(|e| e.tracker_path);
         crate::processor::enrich::enrich_file(
             workspace,
             &filename,
@@ -1558,6 +1585,7 @@ pub async fn enrich_inbox_file(
             &profile,
             Some(&user_ctx),
             Some(&ai_config),
+            entity_tracker_path.as_deref(),
         )
     })
     .await
@@ -3386,6 +3414,7 @@ pub fn populate_workspace(
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
+            is_internal: false,
             updated_at: now.clone(),
             archived: false,
         };
@@ -3459,6 +3488,159 @@ pub fn populate_workspace(
         "Created {} accounts, {} projects",
         account_count, project_count
     ))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingPrimingCard {
+    pub id: String,
+    pub title: String,
+    pub start_time: Option<String>,
+    pub day_label: String,
+    pub suggested_entity_id: Option<String>,
+    pub suggested_entity_name: Option<String>,
+    pub suggested_action: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingPrimingContext {
+    pub google_connected: bool,
+    pub cards: Vec<OnboardingPrimingCard>,
+    pub prompt: String,
+}
+
+fn build_external_account_hints(db: &crate::db::ActionDb) -> HashSet<String> {
+    let mut hints = HashSet::new();
+    if let Ok(accounts) = db.get_all_accounts() {
+        for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
+            let id_key = normalize_key(&account.id);
+            if id_key.len() >= 3 {
+                hints.insert(id_key);
+            }
+            let name_key = normalize_key(&account.name);
+            if name_key.len() >= 3 {
+                hints.insert(name_key);
+            }
+            if let Ok(domains) = db.get_account_domains(&account.id) {
+                for domain in domains {
+                    let base = domain.split('.').next().unwrap_or("").to_lowercase();
+                    let base_key = normalize_key(&base);
+                    if base_key.len() >= 3 {
+                        hints.insert(base_key);
+                    }
+                }
+            }
+        }
+    }
+    hints
+}
+
+#[tauri::command]
+pub async fn get_onboarding_priming_context(
+    state: State<'_, Arc<AppState>>,
+) -> Result<OnboardingPrimingContext, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("Config not loaded")?;
+    let user_domains = config.resolved_user_domains();
+
+    let access_token = match crate::google_api::get_valid_access_token().await {
+        Ok(token) => token,
+        Err(_) => {
+            return Ok(OnboardingPrimingContext {
+                google_connected: false,
+                cards: Vec::new(),
+                prompt: "Connect Google Calendar to preview your first full briefing. You can still generate a first run now."
+                    .to_string(),
+            })
+        }
+    };
+
+    let today = chrono::Local::now().date_naive();
+    let tomorrow = today + chrono::Duration::days(1);
+    let raw_events = crate::google_api::calendar::fetch_events(&access_token, today, tomorrow)
+        .await
+        .map_err(|e| format!("Calendar fetch failed: {}", e))?;
+
+    let (hints, internal_root) = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        (
+            build_external_account_hints(db),
+            db.get_internal_root_account().ok().flatten(),
+        )
+    };
+
+    let mut cards = Vec::new();
+    for raw in raw_events.iter().filter(|e| !e.is_all_day).take(8) {
+        let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &hints);
+        let event = cm.to_calendar_event();
+        let start = event.start.with_timezone(&chrono::Local);
+        let day_label = if start.date_naive() == today {
+            "Today".to_string()
+        } else if start.date_naive() == tomorrow {
+            "Tomorrow".to_string()
+        } else {
+            start.format("%a").to_string()
+        };
+
+        let mut suggested_entity_id = None;
+        let mut suggested_entity_name = None;
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Some(ref account_hint) = cm.account {
+                    if let Ok(Some(account)) = db.get_account_by_name(account_hint) {
+                        suggested_entity_id = Some(account.id.clone());
+                        suggested_entity_name = Some(account.name.clone());
+                    }
+                } else if matches!(
+                    event.meeting_type,
+                    crate::types::MeetingType::Internal
+                        | crate::types::MeetingType::TeamSync
+                        | crate::types::MeetingType::OneOnOne
+                ) {
+                    if let Some(ref root) = internal_root {
+                        suggested_entity_id = Some(root.id.clone());
+                        suggested_entity_name = Some(root.name.clone());
+                    }
+                }
+            }
+        }
+
+        let suggested_action = match event.meeting_type {
+            crate::types::MeetingType::Customer
+            | crate::types::MeetingType::Qbr
+            | crate::types::MeetingType::Partnership => {
+                "Open context and prep follow-up questions".to_string()
+            }
+            crate::types::MeetingType::Internal
+            | crate::types::MeetingType::TeamSync
+            | crate::types::MeetingType::OneOnOne => "Capture decisions and owners in Inbox".to_string(),
+            _ => "Review context before kickoff".to_string(),
+        };
+
+        cards.push(OnboardingPrimingCard {
+            id: event.id,
+            title: event.title,
+            start_time: Some(start.to_rfc3339()),
+            day_label,
+            suggested_entity_id,
+            suggested_entity_name,
+            suggested_action,
+        });
+    }
+
+    Ok(OnboardingPrimingContext {
+        google_connected: true,
+        cards,
+        prompt:
+            "Prime your first briefing by reviewing high-priority meetings and running a full 'today' workflow preview."
+                .to_string(),
+    })
 }
 
 // =============================================================================
@@ -4406,6 +4588,7 @@ pub struct AccountListItem {
     pub parent_name: Option<String>,
     pub child_count: usize,
     pub is_parent: bool,
+    pub is_internal: bool,
 }
 
 /// Full account detail for the detail page.
@@ -4436,6 +4619,7 @@ pub struct AccountDetailResult {
     pub parent_name: Option<String>,
     pub children: Vec<AccountChildSummary>,
     pub parent_aggregate: Option<crate::db::ParentAggregate>,
+    pub is_internal: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -4482,6 +4666,7 @@ pub struct PickerAccount {
     pub id: String,
     pub name: String,
     pub parent_name: Option<String>,
+    pub is_internal: bool,
 }
 
 #[tauri::command]
@@ -4509,6 +4694,7 @@ pub fn get_accounts_for_picker(state: State<Arc<AppState>>) -> Result<Vec<Picker
                 id: a.id,
                 name: a.name,
                 parent_name,
+                is_internal: a.is_internal,
             }
         })
         .collect();
@@ -4586,6 +4772,7 @@ fn account_to_list_item(
         parent_name: None,
         child_count,
         is_parent: child_count > 0,
+        is_internal: a.is_internal,
     }
 }
 
@@ -4734,6 +4921,7 @@ pub fn get_account_detail(
         parent_name,
         children,
         parent_aggregate,
+        is_internal: account.is_internal,
         intelligence,
     })
 }
@@ -4873,7 +5061,7 @@ pub fn create_account(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
     // Derive ID and tracker_path based on whether this is a child account
-    let (id, tracker_path) = if let Some(ref pid) = parent_id {
+    let (id, tracker_path, is_internal) = if let Some(ref pid) = parent_id {
         let parent = db
             .get_account(pid)
             .map_err(|e| e.to_string())?
@@ -4883,10 +5071,10 @@ pub fn create_account(
             .tracker_path
             .unwrap_or_else(|| format!("Accounts/{}", parent.name));
         let tp = format!("{}/{}", parent_dir, name);
-        (child_id, tp)
+        (child_id, tp, parent.is_internal)
     } else {
         let id = crate::util::slugify(&name);
-        (id, format!("Accounts/{}", name))
+        (id, format!("Accounts/{}", name), false)
     };
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -4904,11 +5092,15 @@ pub fn create_account(
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id,
+        is_internal,
         updated_at: now,
         archived: false,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
+    if let Some(ref pid) = account.parent_id {
+        let _ = db.copy_account_domains(pid, &account.id);
+    }
 
     // Create workspace files + directory template (ADR-0059)
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -4922,6 +5114,487 @@ pub fn create_account(
     }
 
     Ok(id)
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamColleagueInput {
+    pub name: String,
+    pub email: String,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInternalOrganizationResult {
+    pub root_account_id: String,
+    pub initial_team_id: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalTeamSetupPrefill {
+    pub company: Option<String>,
+    pub domains: Vec<String>,
+    pub title: Option<String>,
+    pub suggested_team_name: String,
+    pub suggested_colleagues: Vec<TeamColleagueInput>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalTeamSetupStatus {
+    pub required: bool,
+    pub prefill: InternalTeamSetupPrefill,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateChildAccountResult {
+    pub id: String,
+}
+
+fn normalize_domains(domains: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = domains
+        .iter()
+        .map(|d| d.trim().to_lowercase())
+        .filter(|d| !d.is_empty())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn normalize_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn create_child_account_record(
+    db: &crate::db::ActionDb,
+    workspace: Option<&Path>,
+    parent: &crate::db::DbAccount,
+    name: &str,
+    description: Option<&str>,
+    owner_person_id: Option<&str>,
+) -> Result<crate::db::DbAccount, String> {
+    let children = db
+        .get_child_accounts(&parent.id)
+        .map_err(|e| e.to_string())?;
+    if children.iter().any(|c| c.name.eq_ignore_ascii_case(name)) {
+        return Err(format!(
+            "A child named '{}' already exists under '{}'",
+            name, parent.name
+        ));
+    }
+
+    let base_slug = crate::util::slugify(name);
+    let mut id = format!("{}--{}", parent.id, base_slug);
+    let mut suffix = 2usize;
+    while db.get_account(&id).map_err(|e| e.to_string())?.is_some() {
+        id = format!("{}--{}-{}", parent.id, base_slug, suffix);
+        suffix += 1;
+    }
+
+    let parent_tracker = parent.tracker_path.clone().unwrap_or_else(|| {
+        if parent.is_internal {
+            format!("Internal/{}", parent.name)
+        } else {
+            format!("Accounts/{}", parent.name)
+        }
+    });
+    let tracker_path = format!("{}/{}", parent_tracker, name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let account = crate::db::DbAccount {
+        id,
+        name: name.to_string(),
+        lifecycle: None,
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: None,
+        csm: None,
+        champion: None,
+        nps: None,
+        tracker_path: Some(tracker_path),
+        parent_id: Some(parent.id.clone()),
+        is_internal: parent.is_internal,
+        updated_at: now,
+        archived: false,
+    };
+
+    db.upsert_account(&account).map_err(|e| e.to_string())?;
+    db.copy_account_domains(&parent.id, &account.id)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(owner_id) = owner_person_id {
+        db.link_person_to_entity(owner_id, &account.id, "owner")
+            .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ws) = workspace {
+        let account_dir = crate::accounts::resolve_account_dir(ws, &account);
+        let _ = std::fs::create_dir_all(&account_dir);
+        let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
+
+        let mut json = default_account_json(&account);
+        if let Some(desc) = description {
+            let trimmed = desc.trim();
+            if !trimmed.is_empty() {
+                json.notes = Some(trimmed.to_string());
+            }
+        }
+        let _ = crate::accounts::write_account_json(ws, &account, Some(&json), db);
+        let _ = crate::accounts::write_account_markdown(ws, &account, Some(&json), db);
+    }
+
+    Ok(account)
+}
+
+fn infer_internal_account_for_meeting(
+    db: &crate::db::ActionDb,
+    title: &str,
+    attendees_csv: Option<&str>,
+) -> Option<crate::db::DbAccount> {
+    let internal_accounts = db.get_internal_accounts().ok()?;
+    if internal_accounts.is_empty() {
+        return None;
+    }
+    let root = internal_accounts
+        .iter()
+        .find(|a| a.parent_id.is_none())
+        .cloned();
+    let candidates: Vec<crate::db::DbAccount> = internal_accounts
+        .iter()
+        .filter(|a| a.parent_id.is_some())
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        return root;
+    }
+
+    let title_key = normalize_key(title);
+    let attendee_set: HashSet<String> = attendees_csv
+        .unwrap_or("")
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| s.contains('@'))
+        .collect();
+
+    let mut best: Option<(i32, crate::db::DbAccount)> = None;
+    for candidate in candidates {
+        let mut score = 0i32;
+        let name_key = normalize_key(&candidate.name);
+        if !name_key.is_empty() && title_key.contains(&name_key) {
+            score += 2;
+        }
+
+        let overlaps = db
+            .get_people_for_entity(&candidate.id)
+            .unwrap_or_default()
+            .iter()
+            .filter(|p| attendee_set.contains(&p.email.to_lowercase()))
+            .count() as i32;
+        score += overlaps * 3;
+
+        match &best {
+            None => best = Some((score, candidate)),
+            Some((best_score, best_acc)) => {
+                if score > *best_score
+                    || (score == *best_score
+                        && candidate.name.to_lowercase() < best_acc.name.to_lowercase())
+                {
+                    best = Some((score, candidate));
+                }
+            }
+        }
+    }
+
+    match best {
+        Some((score, account)) if score > 0 => Some(account),
+        _ => root,
+    }
+}
+
+#[tauri::command]
+pub fn get_internal_team_setup_status(
+    state: State<Arc<AppState>>,
+) -> Result<InternalTeamSetupStatus, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("Config not loaded")?;
+
+    let suggested_team_name = if let Some(title) = config.user_title.as_deref() {
+        if title.to_lowercase().contains("manager") || title.to_lowercase().contains("director") {
+            "Leadership Team".to_string()
+        } else {
+            "Core Team".to_string()
+        }
+    } else {
+        "Core Team".to_string()
+    };
+
+    let suggested_colleagues = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.get_people(Some("internal"))
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .take(5)
+            .map(|p| TeamColleagueInput {
+                name: p.name,
+                email: p.email,
+                title: p.role,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    Ok(InternalTeamSetupStatus {
+        required: !config.internal_team_setup_completed,
+        prefill: InternalTeamSetupPrefill {
+            company: config.user_company.clone(),
+            domains: config.resolved_user_domains(),
+            title: config.user_title.clone(),
+            suggested_team_name,
+            suggested_colleagues,
+        },
+    })
+}
+
+#[tauri::command]
+pub fn create_internal_organization(
+    company_name: String,
+    domains: Vec<String>,
+    team_name: String,
+    colleagues: Vec<TeamColleagueInput>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateInternalOrganizationResult, String> {
+    let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
+    let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
+    let domains = normalize_domains(&domains);
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("Config not loaded")?;
+    let workspace = Path::new(&workspace_path);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    if db
+        .get_internal_root_account()
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Err("Internal organization already exists".to_string());
+    }
+
+    let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
+    let mut suffix = 2usize;
+    while db.get_account(&root_id).map_err(|e| e.to_string())?.is_some() {
+        root_id = format!(
+            "internal-{}-{}",
+            crate::util::slugify(&company_name),
+            suffix
+        );
+        suffix += 1;
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let root_account = crate::db::DbAccount {
+        id: root_id.clone(),
+        name: company_name.clone(),
+        lifecycle: Some("active".to_string()),
+        arr: None,
+        health: Some("green".to_string()),
+        contract_start: None,
+        contract_end: None,
+        csm: None,
+        champion: None,
+        nps: None,
+        tracker_path: Some(format!("Internal/{}", company_name)),
+        parent_id: None,
+        is_internal: true,
+        updated_at: now,
+        archived: false,
+    };
+    db.upsert_account(&root_account).map_err(|e| e.to_string())?;
+    db.set_account_domains(&root_account.id, &domains)
+        .map_err(|e| e.to_string())?;
+
+    let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
+    let _ = std::fs::create_dir_all(&root_dir);
+    let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
+
+    let initial_team = create_child_account_record(db, Some(workspace), &root_account, &team_name, None, None)?;
+    db.copy_account_domains(&root_account.id, &initial_team.id)
+        .map_err(|e| e.to_string())?;
+
+    for colleague in colleagues {
+        let email = colleague.email.trim().to_lowercase();
+        if !email.contains('@') {
+            continue;
+        }
+        let person_id = crate::util::slugify(&email);
+        let now = chrono::Utc::now().to_rfc3339();
+        let person = crate::db::DbPerson {
+            id: person_id.clone(),
+            email: email.clone(),
+            name: colleague.name.trim().to_string(),
+            organization: Some(company_name.clone()),
+            role: colleague.title.clone(),
+            relationship: "internal".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: None,
+            first_seen: Some(now.clone()),
+            meeting_count: 0,
+            updated_at: now,
+            archived: false,
+        };
+        let _ = db.upsert_person(&person);
+        let _ = db.link_person_to_entity(&person_id, &root_account.id, "member");
+        let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
+        let _ = crate::people::write_person_json(workspace, &person, db);
+        let _ = crate::people::write_person_markdown(workspace, &person, db);
+    }
+    drop(db_guard);
+
+    crate::state::create_or_update_config(&state, |config| {
+        config.internal_team_setup_completed = true;
+        config.internal_team_setup_version = 1;
+        config.internal_org_account_id = Some(root_account.id.clone());
+        if config.user_company.is_none() {
+            config.user_company = Some(company_name.clone());
+        }
+        if !domains.is_empty() {
+            config.user_domain = domains.first().cloned();
+            config.user_domains = Some(domains.clone());
+        }
+    })?;
+
+    Ok(CreateInternalOrganizationResult {
+        root_account_id: root_account.id,
+        initial_team_id: initial_team.id,
+    })
+}
+
+#[tauri::command]
+pub fn create_child_account(
+    parent_id: String,
+    name: String,
+    description: Option<String>,
+    owner_person_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateChildAccountResult, String> {
+    let name = crate::util::validate_entity_name(&name)?.to_string();
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone());
+    let workspace = workspace_path.as_deref().map(Path::new);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let parent = db
+        .get_account(&parent_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
+    let child = create_child_account_record(
+        db,
+        workspace,
+        &parent,
+        &name,
+        description.as_deref(),
+        owner_person_id.as_deref(),
+    )?;
+    drop(db_guard);
+
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id: child.id.clone(),
+        entity_type: "account".to_string(),
+        priority: crate::intel_queue::IntelPriority::ContentChange,
+        requested_at: std::time::Instant::now(),
+    });
+
+    Ok(CreateChildAccountResult { id: child.id })
+}
+
+#[tauri::command]
+pub fn create_team(
+    name: String,
+    description: Option<String>,
+    owner_person_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateChildAccountResult, String> {
+    let root_id = {
+        let cfg = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("Config not loaded")?;
+        if let Some(id) = cfg.internal_org_account_id {
+            id
+        } else {
+            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            db.get_internal_root_account()
+                .map_err(|e| e.to_string())?
+                .map(|a| a.id)
+                .ok_or("No internal organization configured")?
+        }
+    };
+
+    create_child_account(root_id, name, description, owner_person_id, state)
+}
+
+#[tauri::command]
+pub fn backfill_internal_meeting_associations(state: State<Arc<AppState>>) -> Result<usize, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.id, m.title, m.attendees
+             FROM meetings_history m
+             LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
+             WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
+               AND me.meeting_id IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let meetings: Vec<(String, String, Option<String>)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut updated = 0usize;
+    for (meeting_id, title, attendees) in meetings {
+        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref()) else {
+            continue;
+        };
+        let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
+        let _ = db.update_meeting_account(&meeting_id, Some(&account.id));
+        let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
+        updated += 1;
+    }
+
+    Ok(updated)
 }
 
 // =============================================================================
@@ -5651,6 +6324,7 @@ pub fn bulk_create_accounts(
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
