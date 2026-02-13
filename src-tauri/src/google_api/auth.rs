@@ -145,7 +145,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         refresh_token,
         token_uri: installed.token_uri.clone(),
         client_id: installed.client_id.clone(),
-        client_secret: None,
+        client_secret: installed.client_secret.clone(),
         scopes: SCOPES.iter().map(|s| s.to_string()).collect(),
         expiry: Some(expiry.to_rfc3339()),
         account: Some(email.clone()),
