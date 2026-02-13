@@ -5,7 +5,7 @@
 //! the auth code for tokens, and fetches the user's email.
 
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 
 use base64::Engine;
@@ -64,14 +64,16 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         .set_nonblocking(false)
         .map_err(GoogleApiError::Io)?;
 
-    let callback = wait_for_auth_callback(&listener)?;
+    let CallbackResult { callback, mut stream } = wait_for_auth_callback(&listener)?;
     if callback.state.as_deref() != Some(oauth_state.as_str()) {
+        send_response(&mut stream, "Authorization failed: state mismatch. Please try again.");
         return Err(GoogleApiError::OAuthStateMismatch);
     }
 
-    // Exchange auth code for tokens
+    // Exchange auth code for tokens (browser is waiting — shows loading spinner)
+    log::info!("OAuth: exchanging auth code for tokens...");
     let client = reqwest::Client::new();
-    let (status, body_text) = exchange_auth_code(
+    let (status, body_text) = match exchange_auth_code(
         &client,
         installed,
         &callback.code,
@@ -79,13 +81,23 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         &pkce_verifier,
         false,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            log::error!("OAuth: token exchange request failed: {}", e);
+            send_response(&mut stream, "Authorization failed: could not reach Google. Please try again.");
+            return Err(e);
+        }
+    };
+    log::info!("OAuth: token exchange response status={}", status);
     let body: serde_json::Value = if status.is_success() {
         serde_json::from_str(&body_text)?
     } else if status.as_u16() == 400
         && body_text.contains("invalid_client")
         && installed.client_secret.is_some()
     {
+        log::info!("OAuth: retrying token exchange with client_secret...");
         let (retry_status, retry_body) = exchange_auth_code(
             &client,
             installed,
@@ -96,6 +108,8 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         )
         .await?;
         if !retry_status.is_success() {
+            log::error!("OAuth: retry token exchange failed: status={} body={}", retry_status, retry_body);
+            send_response(&mut stream, "Authorization failed: token exchange rejected by Google. Please try again.");
             return Err(GoogleApiError::RefreshFailed(format!(
                 "Token exchange failed: {}",
                 retry_body
@@ -103,6 +117,11 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         }
         serde_json::from_str(&retry_body)?
     } else {
+        log::error!("OAuth: token exchange failed: status={} body={}", status, body_text);
+        send_response(&mut stream, &format!(
+            "Authorization failed: Google returned {}. Please try again or check the app logs.",
+            status,
+        ));
         return Err(GoogleApiError::RefreshFailed(format!(
             "Token exchange failed: {}",
             body_text
@@ -119,6 +138,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
     // Fetch user email via Gmail API
     let email = fetch_user_email(&access_token).await;
+    log::info!("OAuth: authenticated as {}", email);
 
     let token = GoogleToken {
         token: access_token,
@@ -132,13 +152,35 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         universe_domain: Some("googleapis.com".to_string()),
     };
 
-    save_token(&token)?;
+    if let Err(e) = save_token(&token) {
+        log::error!("OAuth: failed to save token: {}", e);
+        send_response(&mut stream, "Authorization failed: could not save credentials. Check app logs.");
+        return Err(e);
+    }
+
+    // Token saved — NOW tell the browser it worked
+    send_response(
+        &mut stream,
+        "Authorization successful! You can close this tab and return to DailyOS.",
+    );
+    log::info!("OAuth: flow complete, token saved");
 
     Ok(email)
 }
 
+/// Result from waiting for the OAuth callback — includes the TCP stream so the
+/// caller can send the final response after the token exchange completes.
+struct CallbackResult {
+    callback: AuthCallback,
+    stream: TcpStream,
+}
+
 /// Wait for the OAuth redirect and extract the auth code from the URL.
-fn wait_for_auth_callback(listener: &TcpListener) -> Result<AuthCallback, GoogleApiError> {
+///
+/// Does NOT send a success response — the caller must do that after the token
+/// exchange succeeds. Error responses (denied, missing code) are sent immediately
+/// since those are terminal.
+fn wait_for_auth_callback(listener: &TcpListener) -> Result<CallbackResult, GoogleApiError> {
     let (mut stream, _) = listener.accept().map_err(GoogleApiError::Io)?;
 
     let mut buffer = [0u8; 4096];
@@ -176,12 +218,13 @@ fn wait_for_auth_callback(listener: &TcpListener) -> Result<AuthCallback, Google
         return Err(GoogleApiError::FlowCancelled);
     }
 
-    send_response(
-        &mut stream,
-        "Authorization successful! You can close this tab and return to DailyOS.",
-    );
+    log::info!("OAuth: received auth code from browser callback");
 
-    Ok(AuthCallback { code, state })
+    // Don't send success yet — caller will respond after token exchange
+    Ok(CallbackResult {
+        callback: AuthCallback { code, state },
+        stream,
+    })
 }
 
 /// Send an HTTP response to the browser.
