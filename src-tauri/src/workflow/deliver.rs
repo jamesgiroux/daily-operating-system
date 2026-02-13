@@ -913,6 +913,21 @@ fn recent_win_prefix_regex() -> &'static Regex {
     })
 }
 
+fn agenda_list_item_regex() -> &'static Regex {
+    static AGENDA_LIST_ITEM_RE: OnceLock<Regex> = OnceLock::new();
+    AGENDA_LIST_ITEM_RE.get_or_init(|| {
+        Regex::new(r"^(?:[-*•]\s+|\d+[.)]\s+)(.+)$")
+            .expect("agenda list item regex must compile")
+    })
+}
+
+fn inline_numbered_agenda_regex() -> &'static Regex {
+    static INLINE_NUMBERED_AGENDA_RE: OnceLock<Regex> = OnceLock::new();
+    INLINE_NUMBERED_AGENDA_RE.get_or_init(|| {
+        Regex::new(r"(?:^|\s)\d+[.)]\s+").expect("inline numbered agenda regex must compile")
+    })
+}
+
 fn split_inline_source_tail(value: &str) -> (String, Option<String>) {
     let raw = value.trim();
     if let Some(caps) = source_tail_regex().captures(raw) {
@@ -1399,12 +1414,127 @@ fn push_unique_agenda_item(
     agenda.push(item);
 }
 
+fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
+    let numbered = inline_numbered_agenda_regex().replace_all(value.trim(), "|");
+    let mut out = Vec::new();
+    for segment in numbered.split('|') {
+        for item in segment.split(';') {
+            let trimmed = item.trim();
+            if !trimmed.is_empty() {
+                out.push(trimmed.to_string());
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(value.trim().to_string());
+    }
+    out
+}
+
+fn push_calendar_agenda_candidate(
+    raw: &str,
+    agenda: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    for candidate in split_inline_agenda_candidates(raw) {
+        let Some(cleaned) = sanitize_prep_line(&candidate) else {
+            continue;
+        };
+        let key = cleaned.to_lowercase();
+        if !seen.contains(&key) {
+            seen.insert(key);
+            agenda.push(cleaned);
+        }
+    }
+}
+
+fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
+    let Some(calendar_notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) else {
+        return Vec::new();
+    };
+
+    let mut agenda = Vec::new();
+    let mut seen = HashSet::new();
+    let mut in_agenda_section = false;
+    let mut saw_agenda_header = false;
+
+    for line in calendar_notes.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let lower = trimmed.to_lowercase();
+        if lower.starts_with("agenda") || lower.starts_with("proposed agenda") {
+            saw_agenda_header = true;
+            in_agenda_section = true;
+            if let Some((_, rest)) = trimmed.split_once(':') {
+                push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
+            }
+            continue;
+        }
+
+        if in_agenda_section
+            && trimmed.ends_with(':')
+            && !trimmed.starts_with('-')
+            && !trimmed.starts_with('*')
+            && !trimmed.starts_with('•')
+            && !trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        {
+            break;
+        }
+
+        if in_agenda_section {
+            if let Some(caps) = agenda_list_item_regex().captures(trimmed) {
+                if let Some(item) = caps.get(1) {
+                    push_calendar_agenda_candidate(item.as_str(), &mut agenda, &mut seen);
+                }
+            } else {
+                push_calendar_agenda_candidate(trimmed, &mut agenda, &mut seen);
+            }
+        }
+    }
+
+    if !saw_agenda_header {
+        for line in calendar_notes.lines() {
+            let trimmed = line.trim();
+            let lower = trimmed.to_lowercase();
+            if lower.starts_with("agenda:") || lower.starts_with("agenda -") {
+                let rest = trimmed
+                    .split_once(':')
+                    .map(|(_, v)| v)
+                    .or_else(|| trimmed.split_once('-').map(|(_, v)| v))
+                    .unwrap_or("");
+                push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
+            }
+        }
+    }
+
+    agenda
+}
+
 fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
     let mut agenda: Vec<Value> = Vec::new();
     let mut seen_topics: HashSet<String> = HashSet::new();
     const MAX_ITEMS: usize = 7;
 
-    // 1. Overdue items first (most urgent)
+    // 1. Calendar agenda first (I188) — enrich around user/organizer agenda.
+    for item in extract_calendar_agenda_items(prep).iter().take(MAX_ITEMS) {
+        push_unique_agenda_item(
+            &mut agenda,
+            &mut seen_topics,
+            item,
+            Some("From calendar agenda"),
+            "calendar_note",
+            MAX_ITEMS,
+        );
+    }
+
+    // 2. Overdue items next (most urgent operational follow-up)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items {
             let is_overdue = item
@@ -1428,7 +1558,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 2. Risks (limit 2)
+    // 3. Risks (limit 2)
     if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
         for risk in risks.iter().take(2) {
             if let Some(text) = risk.as_str() {
@@ -1444,7 +1574,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 3. Questions (limit 2)
+    // 4. Questions (limit 2)
     if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
         for q in questions.iter().take(2) {
             if let Some(text) = q.as_str() {
@@ -1460,7 +1590,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 4. Non-overdue open items (limit 2)
+    // 5. Non-overdue open items (limit 2)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items.iter().take(4) {
             let is_overdue = item
@@ -1484,7 +1614,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 5. Wins are fallback only when agenda is still sparse.
+    // 6. Wins are fallback only when agenda is still sparse.
     if agenda.len() < 3 {
         if let Some(wins) = prep
             .get("recentWins")
@@ -2615,6 +2745,20 @@ pub fn enrich_preps(
                 }
             }
         }
+        if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
+            if !notes.trim().is_empty() {
+                prep_context.push_str("Calendar Notes:\n");
+                prep_context.push_str(notes.trim());
+                prep_context.push('\n');
+            }
+        }
+        let calendar_agenda = extract_calendar_agenda_items(&prep);
+        if !calendar_agenda.is_empty() {
+            prep_context.push_str("Calendar Agenda:\n");
+            for item in &calendar_agenda {
+                prep_context.push_str(&format!("- {}\n", item));
+            }
+        }
         if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
             prep_context.push_str("Risks:\n");
             for r in risks {
@@ -2659,11 +2803,12 @@ pub fn enrich_preps(
     let prompt = format!(
         "You are refining meeting prep reports for a Customer Success Manager.\n\n\
          For each meeting below, review recent wins, risks, open items, questions, \
-         and current mechanical agenda. Produce:\n\
+         calendar notes, and current mechanical agenda. Produce:\n\
          1) A refined agenda that:\n\
+         0. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
          1. Orders items by impact (highest-stakes first)\n\
          2. Adds a brief 'why' rationale for each item\n\
-         3. Uses source category (risk, talking_point, question, open_item)\n\
+         3. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
          4. Avoids duplicating recent wins unless there are no other substantive topics\n\
          5. Caps at 7 items per meeting\n\
          2) A clean recent wins list (max 4) with source provenance separated.\n\n\
@@ -4158,6 +4303,33 @@ END_AGENDA
         let response = "Here's some random output without markers.";
         let enrichments = parse_agenda_enrichment(response);
         assert!(enrichments.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_items_from_notes() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n1. Renewal decision timeline\n- Review Team B adoption risk\nQuestions:\n- Confirm legal review owner",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Renewal decision timeline");
+        assert_eq!(agenda[1], "Review Team B adoption risk");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_prefers_calendar_agenda() {
+        let prep = json!({
+            "calendarNotes": "Agenda: 1) Renewal timeline; 2) Expansion scope",
+            "openItems": [
+                {"title": "Send revised proposal", "isOverdue": true},
+            ],
+            "risks": ["Budget scrutiny from finance"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+        assert_eq!(agenda[0]["source"], "calendar_note");
+        assert_eq!(agenda[0]["topic"], "Renewal timeline");
+        assert_eq!(agenda[1]["source"], "calendar_note");
+        assert_eq!(agenda[1]["topic"], "Expansion scope");
     }
 
     #[test]

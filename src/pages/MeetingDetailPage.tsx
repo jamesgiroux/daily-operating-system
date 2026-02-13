@@ -423,13 +423,16 @@ export default function MeetingDetailPage() {
                               <span
                                 className={cn(
                                   "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                  item.source === "calendar_note" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
                                   item.source === "risk" && "bg-destructive/10 text-destructive",
                                   item.source === "question" && "bg-muted text-muted-foreground",
                                   item.source === "open_item" && "bg-primary/10 text-primary",
                                   item.source === "talking_point" && "bg-success/10 text-success",
                                 )}
                               >
-                                {item.source === "talking_point"
+                                {item.source === "calendar_note"
+                                  ? "calendar"
+                                  : item.source === "talking_point"
                                   ? "win"
                                   : item.source === "open_item"
                                     ? "action"
