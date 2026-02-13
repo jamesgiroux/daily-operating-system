@@ -10,6 +10,7 @@ use regex::Regex;
 use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
+use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
 use crate::json_loader::{
     check_data_freshness, load_actions_json, load_emails_json, load_emails_json_with_sync,
     load_prep_json, load_schedule_json, DataFreshness,
@@ -1169,15 +1170,16 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
         // 4. Compute capacity from merged meetings (live-first with fallback warning)
         let source = focus_capacity_source_for_live_events(&live_events);
         let day_date = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let capacity =
-            crate::focus_capacity::compute_focus_capacity(crate::focus_capacity::FocusCapacityInput {
+        let capacity = crate::focus_capacity::compute_focus_capacity(
+            crate::focus_capacity::FocusCapacityInput {
                 meetings: meetings.clone(),
                 source,
                 timezone: tz,
                 work_hours_start: config.google.work_hours_start,
                 work_hours_end: config.google.work_hours_end,
                 day_date,
-            });
+            },
+        );
 
         // 5. Filter meetings to "key" types (where prep matters)
         let key_meetings: Vec<FocusMeeting> = meetings
@@ -2403,6 +2405,12 @@ pub fn get_action_detail(
 // Phase 3.0: Google Auth Commands
 // =============================================================================
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleAuthFailedPayload {
+    message: String,
+}
+
 /// Get current Google authentication status.
 ///
 /// Re-checks persisted auth storage when cached state is NotConfigured,
@@ -2458,7 +2466,19 @@ pub async fn start_google_auth(
 
     // Run the native Rust OAuth flow
     let workspace = std::path::Path::new(&workspace_path);
-    let email = crate::google::start_auth(workspace).await?;
+    let email = match crate::google::start_auth(workspace).await {
+        Ok(email) => email,
+        Err(err) => {
+            let message = err.to_string();
+            let _ = app_handle.emit(
+                "google-auth-failed",
+                GoogleAuthFailedPayload {
+                    message: message.clone(),
+                },
+            );
+            return Err(message);
+        }
+    };
 
     let new_status = GoogleAuthStatus::Authenticated {
         email: email.clone(),
@@ -5319,6 +5339,72 @@ pub fn get_hygiene_report(
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
+}
+
+/// Get the current Intelligence Hygiene status view model.
+#[tauri::command]
+pub fn get_intelligence_hygiene_status(
+    state: State<Arc<AppState>>,
+) -> Result<HygieneStatusView, String> {
+    let report = state
+        .last_hygiene_report
+        .lock()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .clone();
+    Ok(build_intelligence_hygiene_status(&state, report.as_ref()))
+}
+
+/// Run a hygiene scan immediately and return the updated status.
+#[tauri::command]
+pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
+    if state.hygiene_scan_running.compare_exchange(
+        false,
+        true,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+    ).is_err() {
+        return Err("A hygiene scan is already running".to_string());
+    }
+
+    let scan_result = (|| -> Result<crate::hygiene::HygieneReport, String> {
+        let config = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned".to_string())?
+            .clone()
+            .ok_or("No configuration loaded".to_string())?;
+
+        let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let report = crate::hygiene::run_hygiene_scan(
+            &db,
+            &config,
+            workspace,
+            Some(&state.hygiene_budget),
+            Some(&state.intel_queue),
+        );
+
+        if let Ok(mut guard) = state.last_hygiene_report.lock() {
+            *guard = Some(report.clone());
+        }
+        if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+            *guard = Some(report.scanned_at.clone());
+        }
+        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+            *guard = Some(
+                (chrono::Utc::now()
+                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs() as i64))
+                .to_rfc3339(),
+            );
+        }
+
+        Ok(report)
+    })();
+
+    state.hygiene_scan_running.store(false, std::sync::atomic::Ordering::Release);
+
+    let report = scan_result?;
+    Ok(build_intelligence_hygiene_status(&state, Some(&report)))
 }
 
 /// Detect potential duplicate people (I172).
