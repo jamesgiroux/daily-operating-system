@@ -5321,6 +5321,37 @@ pub fn get_hygiene_report(
     Ok(guard.clone())
 }
 
+/// Run a hygiene scan on demand and return the report.
+#[tauri::command]
+pub fn trigger_hygiene_scan(
+    state: State<Arc<AppState>>,
+) -> Result<crate::hygiene::HygieneReport, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let workspace = std::path::Path::new(&config.workspace_path);
+
+    let report = crate::hygiene::run_hygiene_scan(
+        db,
+        &config,
+        workspace,
+        Some(&state.hygiene_budget),
+        Some(&state.intel_queue),
+    );
+
+    // Cache the report so get_hygiene_report returns it too.
+    if let Ok(mut guard) = state.last_hygiene_report.lock() {
+        *guard = Some(report.clone());
+    }
+
+    Ok(report)
+}
+
 /// Detect potential duplicate people (I172).
 #[tauri::command]
 pub fn get_duplicate_people(
