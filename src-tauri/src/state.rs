@@ -377,6 +377,7 @@ pub fn create_or_update_config(
                 user_company: None,
                 user_title: None,
                 user_focus: None,
+                personality: "professional".to_string(),
                 developer_mode: false,
                 ai_models: crate::types::AiModelConfig::default(),
                 internal_team_setup_completed: false,

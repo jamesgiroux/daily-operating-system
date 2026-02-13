@@ -2001,6 +2001,19 @@ pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<
     })
 }
 
+/// Set UI personality tone (professional, friendly, playful)
+#[tauri::command]
+pub fn set_personality(
+    personality: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    let normalized = personality.to_lowercase();
+    crate::types::validate_personality(&normalized)?;
+    crate::state::create_or_update_config(&state, |config| {
+        config.personality = normalized.clone();
+    })
+}
+
 /// Set AI model for a tier (synthesis, extraction, mechanical)
 #[tauri::command]
 pub fn set_ai_model(
