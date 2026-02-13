@@ -420,6 +420,7 @@ impl Executor {
                 &profile,
                 Some(&user_ctx),
                 Some(&ai_config),
+                None,
             );
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
