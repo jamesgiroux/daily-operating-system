@@ -379,6 +379,9 @@ pub fn create_or_update_config(
                 user_focus: None,
                 developer_mode: false,
                 ai_models: crate::types::AiModelConfig::default(),
+                internal_team_setup_completed: false,
+                internal_team_setup_version: 0,
+                internal_org_account_id: None,
             }
         }
     };

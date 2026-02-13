@@ -2001,6 +2001,7 @@ mod tests {
             nps: None,
             tracker_path: Some("Accounts/Acme Corp".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -2052,6 +2053,7 @@ mod tests {
             nps: None,
             tracker_path: Some("Accounts/Empty Corp".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -2371,6 +2373,7 @@ Some trailing text"#;
             nps: Some(75),
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
