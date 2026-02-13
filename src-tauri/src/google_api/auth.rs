@@ -74,7 +74,11 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     }
 
     // Exchange auth code for tokens (browser is waiting — shows loading spinner)
-    log::info!("OAuth: exchanging auth code for tokens...");
+    let include_secret = installed.client_secret.is_some();
+    log::info!(
+        "OAuth: exchanging auth code for tokens (client_secret={})",
+        if include_secret { "present" } else { "absent" },
+    );
     let client = reqwest::Client::new();
     let (status, body_text) = match exchange_auth_code(
         &client,
@@ -82,7 +86,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         &callback.code,
         &redirect_uri,
         &pkce_verifier,
-        false,
+        include_secret,
     )
     .await
     {
@@ -100,37 +104,6 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     log::info!("OAuth: token exchange response status={}", status);
     let body: serde_json::Value = if status.is_success() {
         serde_json::from_str(&body_text)?
-    } else if status.as_u16() == 400
-        && body_text.contains("invalid_client")
-        && installed.client_secret.is_some()
-    {
-        log::info!("OAuth: retrying token exchange with client_secret...");
-        let (retry_status, retry_body) = exchange_auth_code(
-            &client,
-            installed,
-            &callback.code,
-            &redirect_uri,
-            &pkce_verifier,
-            true,
-        )
-        .await?;
-        if !retry_status.is_success() {
-            log::error!(
-                "OAuth: retry token exchange failed: status={} body={}",
-                retry_status,
-                retry_body
-            );
-            send_error_response(
-                &mut stream,
-                "Authorization failed",
-                "Google rejected the token exchange. Please return to DailyOS and try again.",
-            );
-            return Err(GoogleApiError::RefreshFailed(format!(
-                "Token exchange failed: {}",
-                retry_body
-            )));
-        }
-        serde_json::from_str(&retry_body)?
     } else {
         log::error!(
             "OAuth: token exchange failed: status={} body={}",
@@ -146,8 +119,8 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
             ),
         );
         return Err(GoogleApiError::RefreshFailed(format!(
-            "Token exchange failed: {}",
-            body_text
+            "Token exchange failed ({}): {}",
+            status, body_text
         )));
     };
 
