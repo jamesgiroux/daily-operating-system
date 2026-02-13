@@ -3,409 +3,202 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Get Started — DailyOS</title>
-  <meta name="description" content="From download to your first briefing in under 10 minutes. macOS, Claude Code, Google Workspace.">
-  <meta property="og:title" content="Get Started — DailyOS">
-  <meta property="og:description" content="From download to your first briefing in under 10 minutes.">
+  <title>Get Started - DailyOS</title>
+  <meta name="description" content="Get from download to your first prepared day in under 10 minutes.">
+  <meta property="og:title" content="Get Started - DailyOS">
+  <meta property="og:description" content="Download to first briefing in under 10 minutes.">
   <meta property="og:image" content="https://daily-os.com/og-image.png">
   <meta property="og:url" content="https://daily-os.com/setup.html">
   <meta property="og:type" content="website">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Get Started - DailyOS">
+  <meta name="twitter:description" content="Download to first briefing in under 10 minutes.">
+  <meta name="twitter:image" content="https://daily-os.com/og-image.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-    :root {
-      --cream: #f5f2ef;
-      --charcoal: #1a1f24;
-      --charcoal-light: #2d343c;
-      --gold: #c9a227;
-      --sage: #7fb685;
-      --peach: #e8967a;
-      --text-primary: #1a1f24;
-      --text-secondary: #5a6068;
-      --text-on-dark: #f5f2ef;
-      --text-muted-on-dark: #a0a8b0;
-      --border-light: rgba(26, 31, 36, 0.08);
-      --border-dark: rgba(245, 242, 239, 0.1);
-    }
-
-    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text-primary); background: var(--cream); line-height: 1.6; overflow-x: hidden; }
-    code, .mono { font-family: 'JetBrains Mono', monospace; }
-
-    /* ---- Nav ---- */
-    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(26, 31, 36, 0.92); border-bottom: 1px solid var(--border-dark); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-    .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; height: 64px; display: flex; align-items: center; justify-content: space-between; }
-    .nav-logo { font-weight: 700; font-size: 1.15rem; color: var(--text-on-dark); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
-    .nav-logo-icon { width: 26px; height: 26px; }
-    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
-    .nav-links a { font-size: 0.875rem; font-weight: 500; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
-    .nav-links a:hover { color: var(--text-on-dark); }
-    .nav-links a.nav-cta { background: var(--gold); color: var(--charcoal); padding: 0.45rem 1.15rem; border-radius: 6px; font-weight: 600; transition: opacity 0.2s; }
-    .nav-links a.nav-cta:hover { opacity: 0.88; }
-    .nav-toggle { display: none; background: none; border: none; cursor: pointer; padding: 0.5rem; }
-    .nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text-on-dark); margin: 5px 0; transition: all 0.3s; }
-
-    /* ---- Layout ---- */
-    .section { padding: 140px 2rem; }
-    .section-inner { max-width: 700px; margin: 0 auto; }
-    .section--dark { background: var(--charcoal); color: var(--text-on-dark); }
-    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 2rem; }
-
-    /* ---- Typography ---- */
-    .section h2 { font-size: clamp(2.25rem, 5vw, 3.25rem); font-weight: 700; line-height: 1.12; letter-spacing: -0.03em; margin-bottom: 2rem; }
-    .section p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1.25rem; }
-    .section p:last-child { margin-bottom: 0; }
-    .section--dark p { color: var(--text-muted-on-dark); }
-
-    /* ---- Hero ---- */
-    .hero { padding: 180px 2rem 120px; text-align: center; background: var(--charcoal); color: var(--text-on-dark); }
-    .hero-inner { max-width: 700px; margin: 0 auto; }
-    .hero h1 { font-size: clamp(2.75rem, 7vw, 4.5rem); font-weight: 700; line-height: 1.08; letter-spacing: -0.035em; margin-bottom: 1.5rem; }
-    .hero p { font-size: 1.35rem; color: var(--text-muted-on-dark); line-height: 1.65; }
-
-    /* ---- Prereqs ---- */
-    .prereq-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 3rem; }
-    .prereq-card { background: white; border: 1px solid var(--border-light); border-radius: 12px; padding: 2rem 1.75rem; transition: border-color 0.2s; }
-    .prereq-card:hover { border-color: rgba(26, 31, 36, 0.16); }
-    .prereq-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
-    .prereq-icon svg { width: 22px; height: 22px; }
-    .prereq-icon--charcoal { background: rgba(26, 31, 36, 0.08); color: var(--charcoal); }
-    .prereq-icon--gold { background: rgba(201, 162, 39, 0.12); color: var(--gold); }
-    .prereq-icon--sage { background: rgba(127, 182, 133, 0.12); color: var(--sage); }
-    .prereq-card h3 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.015em; color: var(--text-primary); margin-bottom: 0.5rem; }
-    .prereq-card p { font-size: 1rem; line-height: 1.6; color: var(--text-secondary); margin-bottom: 0; }
-    .prereq-card .card-link { display: inline-block; margin-top: 0.75rem; font-size: 0.9rem; font-weight: 600; color: var(--gold); text-decoration: none; transition: opacity 0.2s; }
-    .prereq-card .card-link:hover { opacity: 0.8; }
-
-    /* ---- Steps ---- */
-    .steps { display: flex; flex-direction: column; gap: 0; }
-    .step-block { padding: 140px 2rem; border-bottom: 1px solid var(--border-light); }
-    .step-block:last-child { border-bottom: none; }
-    .step-inner { max-width: 700px; margin: 0 auto; display: grid; grid-template-columns: 3.5rem 1fr; gap: 1.5rem; align-items: start; }
-    .step-number { width: 3.25rem; height: 3.25rem; border-radius: 50%; border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 700; color: var(--gold); flex-shrink: 0; margin-top: 0.15rem; }
-    .step-content h2 { font-size: clamp(1.75rem, 4vw, 2.5rem); font-weight: 700; line-height: 1.15; letter-spacing: -0.025em; margin-bottom: 1.25rem; }
-    .step-content p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1rem; }
-    .step-content p:last-child { margin-bottom: 0; }
-
-    /* ---- Button ---- */
-    .btn-primary { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
-    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
-    .btn-download { display: inline-flex; align-items: center; gap: 0.75rem; }
-
-    /* ---- Warning ---- */
-    .warning-box { background: rgba(232, 150, 122, 0.08); border-left: 3px solid var(--peach); border-radius: 0 8px 8px 0; padding: 1.25rem 1.5rem; margin-top: 2rem; }
-    .warning-box p { font-size: 1rem; color: var(--text-primary); line-height: 1.65; margin-bottom: 0; }
-    .warning-box strong { color: var(--charcoal); font-weight: 600; }
-
-    /* ---- Code ---- */
-    code { font-family: 'JetBrains Mono', monospace; font-size: 0.875em; background: rgba(26, 31, 36, 0.06); padding: 0.15em 0.4em; border-radius: 4px; color: var(--charcoal); }
-    pre { background: var(--charcoal); color: var(--cream); font-family: 'JetBrains Mono', monospace; font-size: 0.9rem; line-height: 1.7; padding: 1.5rem 1.75rem; border-radius: 10px; overflow-x: auto; margin: 1.5rem 0; }
-    pre code { background: none; padding: 0; border-radius: 0; color: inherit; font-size: inherit; }
-
-    /* ---- Folder tree ---- */
-    .tree-comment { color: var(--text-muted-on-dark); opacity: 0.5; }
-
-    /* ---- Instructions ---- */
-    .instructions { list-style: none; counter-reset: instruction; margin: 1.5rem 0; }
-    .instructions li { counter-increment: instruction; position: relative; padding-left: 2rem; font-size: 1.15rem; color: var(--text-secondary); line-height: 1.75; margin-bottom: 0.75rem; }
-    .instructions li::before { content: counter(instruction) "."; position: absolute; left: 0; font-weight: 600; color: var(--gold); font-family: 'JetBrains Mono', monospace; font-size: 1rem; }
-    .instructions strong { color: var(--text-primary); font-weight: 600; }
-
-    /* ---- Note ---- */
-    .note { background: rgba(127, 182, 133, 0.06); border-left: 3px solid var(--sage); border-radius: 0 8px 8px 0; padding: 1.25rem 1.5rem; margin-top: 1.5rem; }
-    .note p { font-size: 1rem; color: var(--text-secondary); line-height: 1.65; margin-bottom: 0; }
-
-    /* ---- Callout ---- */
-    .callout { border: 2px solid var(--gold); border-radius: 12px; padding: 2rem 2.5rem; margin-top: 2.5rem; text-align: center; }
-    .callout p { font-size: 1.35rem; font-weight: 600; color: var(--text-primary); font-style: italic; line-height: 1.5; margin-bottom: 0; }
-    .callout .callout-sub { font-size: 1.05rem; font-weight: 400; font-style: normal; color: var(--text-secondary); margin-top: 0.75rem; }
-
-    /* ---- Help ---- */
-    .help-links { list-style: none; margin-top: 1.5rem; }
-    .help-links li { font-size: 1.15rem; color: var(--text-secondary); line-height: 1.75; padding-left: 1.75rem; position: relative; margin-bottom: 0.5rem; }
-    .help-links li::before { content: ""; position: absolute; left: 0; top: 0.7em; width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
-    .help-links a { color: var(--gold); text-decoration: none; font-weight: 500; transition: opacity 0.2s; }
-    .help-links a:hover { opacity: 0.8; }
-
-    /* ---- Footer ---- */
-    .footer { background: var(--charcoal); border-top: 1px solid var(--border-dark); padding: 3rem 2rem; }
-    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
-    .footer-links { display: flex; gap: 2rem; list-style: none; flex-wrap: wrap; justify-content: center; }
-    .footer-links a { font-size: 0.875rem; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
-    .footer-links a:hover { color: var(--text-on-dark); }
-    .footer-meta p { font-size: 0.8rem; color: var(--text-muted-on-dark); line-height: 1.6; text-align: center; margin: 0; }
-
-    /* ---- Animations ---- */
-    .fade-in { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
-    .fade-in.visible { opacity: 1; transform: translateY(0); }
-    .fade-in-d1 { transition-delay: 0.12s; }
-    .fade-in-d2 { transition-delay: 0.24s; }
-    .fade-in-d3 { transition-delay: 0.36s; }
-
-    /* ---- Responsive ---- */
-    @media (max-width: 768px) {
-      .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: rgba(26, 31, 36, 0.97); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-dark); flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; }
-      .nav-links.open { display: flex; }
-      .nav-toggle { display: block; }
-      .hero { padding: 140px 1.5rem 80px; }
-      .prereq-grid { grid-template-columns: 1fr; gap: 1rem; }
-      .step-block { padding: 80px 1.5rem; }
-      .step-inner { grid-template-columns: 1fr; }
-      .step-number { margin-bottom: 0.25rem; }
-      .section { padding: 100px 1.5rem; }
-      pre { font-size: 0.8rem; padding: 1.25rem 1.25rem; }
-    }
-
-    @media (max-width: 480px) {
-      .btn-primary { width: 100%; text-align: center; }
-      .btn-download { justify-content: center; }
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/site.css">
+  <noscript><style>.fade-in { opacity: 1; transform: none; }</style></noscript>
 </head>
 <body>
-
-  <!-- Nav -->
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="/" class="nav-logo">
-        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
-        DailyOS
-      </a>
-      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
-      <ul class="nav-links">
-        <li><a href="/">Home</a></li>
-        <li><a href="/tour.html">Tour</a></li>
-        <li><a href="/philosophy.html">Philosophy</a></li>
-        <li><a href="/setup.html" class="nav-cta">Get Early Access</a></li>
-      </ul>
-    </div>
-  </nav>
-
-  <!-- ============================================ -->
-  <!-- HERO                                         -->
-  <!-- ============================================ -->
-  <section class="hero">
-    <div class="hero-inner">
-      <h1 class="fade-in">Get started.</h1>
-      <p class="fade-in fade-in-d1">Download to first briefing in under 10 minutes.<br>Your first real morning takes a week.</p>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- PREREQUISITES                                -->
-  <!-- ============================================ -->
-  <section class="section">
-    <div class="section-inner" style="max-width: 900px;">
-      <p class="section-label fade-in">Before you start</p>
-      <h2 class="fade-in">Three things you need.</h2>
-
-      <div class="prereq-grid fade-in">
-        <!-- macOS -->
-        <div class="prereq-card">
-          <div class="prereq-icon prereq-icon--charcoal">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
-            </svg>
-          </div>
-          <h3>macOS (Apple Silicon)</h3>
-          <p>Runs natively on M-series Macs. Intel and other platforms coming.</p>
-        </div>
-
-        <!-- Claude Code -->
-        <div class="prereq-card">
-          <div class="prereq-icon prereq-icon--gold">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-            </svg>
-          </div>
-          <h3>Claude Code</h3>
-          <p>DailyOS uses Claude Code for AI enrichment. Requires Claude Pro or Max ($20/mo+).</p>
-          <a href="https://claude.ai/claude-code" class="card-link">Get Claude Code &rarr;</a>
-        </div>
-
-        <!-- Google Workspace -->
-        <div class="prereq-card">
-          <div class="prereq-icon prereq-icon--sage">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
-            </svg>
-          </div>
-          <h3>Google Workspace</h3>
-          <p>Calendar and Gmail integration. Personal Google accounts work too.</p>
-        </div>
+  <div class="site-nav-wrap">
+    <nav class="site-nav" aria-label="Primary">
+      <div class="site-nav-inner">
+        <a href="/" class="site-logo">
+          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+          DailyOS
+        </a>
+        <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <ul class="site-nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/tour.html">Tour</a></li>
+          <li><a href="/philosophy.html">Philosophy</a></li>
+          <li><a href="/setup.html" class="cta-link active">Get Early Access</a></li>
+        </ul>
       </div>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- STEP 1: DOWNLOAD                             -->
-  <!-- ============================================ -->
-  <div class="steps">
-    <div class="step-block">
-      <div class="step-inner">
-        <div class="step-number fade-in">1</div>
-        <div class="step-content">
-          <h2 class="fade-in">Download DailyOS</h2>
-          <p class="fade-in">Grab the latest release from GitHub.</p>
-          <div class="fade-in">
-            <a href="https://github.com/jamesgiroux/daily-operating-system/releases/latest" class="btn-primary btn-download">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="18" height="18">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-              </svg>
-              Download v0.7.0
-            </a>
-          </div>
-
-          <div class="warning-box fade-in">
-            <p><strong>macOS Gatekeeper:</strong> The app isn't signed by Apple yet. You'll need to allow it:</p>
-            <pre><code>xattr -cr /Applications/DailyOS.app</code></pre>
-            <p>Or: <strong>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</strong></p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- STEP 2: CONNECT GOOGLE                       -->
-    <!-- ============================================ -->
-    <div class="step-block">
-      <div class="step-inner">
-        <div class="step-number fade-in">2</div>
-        <div class="step-content">
-          <h2 class="fade-in">Connect Google</h2>
-          <p class="fade-in">First launch asks to connect your Google account.</p>
-          <ol class="instructions fade-in">
-            <li>Click <strong>Connect Google</strong> in Settings</li>
-            <li>Sign in with your Google account</li>
-            <li>Allow calendar and email access</li>
-            <li>Confirmation appears in the app</li>
-          </ol>
-          <div class="note fade-in">
-            <p>DailyOS reads your calendar and email to prepare your day. It never modifies, sends, or deletes anything without your explicit action.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- STEP 3: WORKSPACE                            -->
-    <!-- ============================================ -->
-    <div class="step-block">
-      <div class="step-inner">
-        <div class="step-number fade-in">3</div>
-        <div class="step-content">
-          <h2 class="fade-in">Choose your workspace</h2>
-          <p class="fade-in">Pick a folder. DailyOS creates the structure.</p>
-          <div class="fade-in">
-            <pre><code>~/Documents/DailyOS/
-├── _today/       <span class="tree-comment"># Your daily briefing</span>
-├── _inbox/       <span class="tree-comment"># Drop files for processing</span>
-├── _archive/     <span class="tree-comment"># Past briefings</span>
-├── Accounts/     <span class="tree-comment"># Your customers and clients</span>
-└── Projects/     <span class="tree-comment"># Your projects</span></code></pre>
-          </div>
-          <p class="fade-in">Everything lives in this folder. Markdown and JSON files you own. Open them in any editor, sync them with any tool, read them with any AI.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- STEP 4: ACCOUNTS & PROJECTS                  -->
-    <!-- ============================================ -->
-    <div class="step-block">
-      <div class="step-inner">
-        <div class="step-number fade-in">4</div>
-        <div class="step-content">
-          <h2 class="fade-in">Add your accounts and projects</h2>
-          <p class="fade-in">The onboarding wizard walks you through it. Add the accounts you manage, the projects you're tracking. DailyOS uses these to build intelligence and prep your meetings.</p>
-          <p class="fade-in">You can always add more later.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- STEP 5: FIRST MORNING                        -->
-    <!-- ============================================ -->
-    <div class="step-block" style="border-bottom: none;">
-      <div class="step-inner">
-        <div class="step-number fade-in">5</div>
-        <div class="step-content">
-          <h2 class="fade-in">Open your first morning</h2>
-          <p class="fade-in">Your first briefing runs at 6:00 AM. Open DailyOS tomorrow morning and your day is laid out. Schedule prepped. Emails triaged. Actions surfaced.</p>
-          <p class="fade-in">Day 1 is thin. The system has one day of context. By week 2, you'll feel it working. By month 2, you'll wonder how you operated without it. That's not a promise. That's how compounding intelligence works.</p>
-          <div class="callout fade-in">
-            <p>"Open the app. Your day is ready."</p>
-            <p class="callout-sub">It starts modest. It doesn't stay that way.</p>
-          </div>
-        </div>
-      </div>
-    </div>
+    </nav>
   </div>
 
-  <!-- ============================================ -->
-  <!-- NEED HELP                                    -->
-  <!-- ============================================ -->
-  <section class="section">
-    <div class="section-inner">
-      <p class="section-label fade-in">Support</p>
-      <h2 class="fade-in">Need help?</h2>
-      <p class="fade-in">DailyOS is in alpha. Things will break. When they do:</p>
-      <ul class="help-links fade-in">
-        <li><a href="https://github.com/jamesgiroux/daily-operating-system/issues">File an issue on GitHub</a></li>
-      </ul>
-    </div>
-  </section>
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy fade-in">
+          <p class="eyebrow eyebrow-sage">Setup</p>
+          <h1>Get started in under 10 minutes.</h1>
+          <p class="lede">Install DailyOS, connect Google, choose a workspace, and wake up to your first prepared day.</p>
+          <div class="hero-actions">
+            <a href="https://github.com/jamesgiroux/daily-operating-system/releases/latest" class="btn btn-primary" target="_blank" rel="noopener">Download Latest</a>
+            <a href="/tour.html" class="btn btn-secondary">View Tour</a>
+          </div>
+          <p class="proofline proofline-sage mono">Day 1 starts thin. Week 2 feels different.</p>
+        </div>
 
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="footer-inner">
-      <ul class="footer-links">
-        <li><a href="/">Home</a></li>
-        <li><a href="/tour.html">Tour</a></li>
-        <li><a href="/philosophy.html">Philosophy</a></li>
-        <li><a href="/setup.html">Get Started</a></li>
-        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
-      </ul>
-      <div class="footer-meta">
-        <p>DailyOS is open source under GPL-3.0</p>
-        <p>&copy; 2026 James Giroux</p>
+        <article class="artifact-panel fade-in delay-1" aria-label="Setup path">
+          <header class="artifact-header">
+            <div>
+              <p class="mini-label">Quick path</p>
+              <h2 class="artifact-title">From install to first briefing</h2>
+            </div>
+            <span class="artifact-chip">5 steps</span>
+          </header>
+          <div class="artifact-strip">
+            <div class="strip-item"><span>1</span><p>Install app from latest release.</p></div>
+            <div class="strip-item"><span>2</span><p>Connect Google Calendar and Gmail.</p></div>
+            <div class="strip-item"><span>3</span><p>Pick a local workspace folder.</p></div>
+            <div class="strip-item"><span>4</span><p>Add core accounts and projects.</p></div>
+            <div class="strip-item"><span>5</span><p>Open tomorrow and review briefing.</p></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section section-compact" id="requirements">
+      <div class="container">
+        <div class="section-head fade-in">
+          <p class="eyebrow">Requirements</p>
+          <h2>Three things you need.</h2>
+          <p class="lede">Everything else is optional during alpha.</p>
+        </div>
+        <div class="setup-prereq-grid fade-in delay-1">
+          <article class="panel setup-prereq">
+            <p class="mini-label">Platform</p>
+            <h3>macOS (Apple Silicon)</h3>
+            <p>DailyOS currently ships for M-series Macs.</p>
+          </article>
+          <article class="panel setup-prereq">
+            <p class="mini-label">AI runtime</p>
+            <h3>Claude Code</h3>
+            <p>Used for enrichment workflows. Pro or Max plan required.</p>
+            <a href="https://claude.ai/claude-code" target="_blank" rel="noopener">Get Claude Code</a>
+          </article>
+          <article class="panel setup-prereq">
+            <p class="mini-label">Integration</p>
+            <h3>Google account</h3>
+            <p>Calendar and Gmail access power morning preparation.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-compact" id="steps">
+      <div class="container">
+        <div class="section-head fade-in">
+          <p class="eyebrow eyebrow-peach">Step-by-step</p>
+          <h2>Setup sequence.</h2>
+          <p class="lede">Do these once. The system handles the daily loop after that.</p>
+        </div>
+        <div class="setup-steps fade-in delay-1">
+          <article class="panel setup-step">
+            <div class="step-index">1</div>
+            <div>
+              <h3>Download and open DailyOS</h3>
+              <p>Install from GitHub Releases and launch once.</p>
+              <div class="inline-note">
+                <p><strong>Gatekeeper:</strong> if blocked, run <code>xattr -cr /Applications/DailyOS.app</code> then reopen.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel setup-step">
+            <div class="step-index">2</div>
+            <div>
+              <h3>Connect Google</h3>
+              <p>Use Settings to authorize Calendar and Gmail read access.</p>
+              <p class="setup-muted">DailyOS does not send or delete messages without explicit action.</p>
+            </div>
+          </article>
+
+          <article class="panel setup-step">
+            <div class="step-index">3</div>
+            <div>
+              <h3>Choose workspace folder</h3>
+              <p>Pick where your local operational memory will live.</p>
+              <pre class="code-shell"><code>~/Documents/DailyOS/
+├── _today/
+├── _inbox/
+├── _archive/
+├── Accounts/
+└── Projects/</code></pre>
+            </div>
+          </article>
+
+          <article class="panel setup-step">
+            <div class="step-index">4</div>
+            <div>
+              <h3>Add accounts and projects</h3>
+              <p>Populate the entities you actually manage. Start small and expand gradually.</p>
+            </div>
+          </article>
+
+          <article class="panel setup-step">
+            <div class="step-index">5</div>
+            <div>
+              <h3>Open your first morning</h3>
+              <p>Tomorrow's briefing will reflect today's context. By week two, preparation quality compounds.</p>
+              <div class="inline-note inline-note-strong">
+                <p>Open the app. Your day is ready.</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-compact" id="support">
+      <div class="container">
+        <div class="section-head fade-in">
+          <p class="eyebrow">Support</p>
+          <h2>Need help?</h2>
+          <p class="lede">Alpha means rough edges. Report issues and we'll iterate fast.</p>
+        </div>
+        <ul class="support-links fade-in delay-1">
+          <li><a href="https://github.com/jamesgiroux/daily-operating-system/issues" target="_blank" rel="noopener">File an issue on GitHub</a></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-panel">
+        <ul class="footer-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/tour.html">Tour</a></li>
+          <li><a href="/philosophy.html">Philosophy</a></li>
+          <li><a href="/setup.html">Get Started</a></li>
+          <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+        <p class="footer-meta">DailyOS is open source under GPL-3.0. &copy; 2026 James Giroux.</p>
       </div>
     </div>
   </footer>
 
-  <script>
-    (function() {
-      var observer = new IntersectionObserver(function(entries) {
-        entries.forEach(function(entry) {
-          if (entry.isIntersecting) entry.target.classList.add('visible');
-        });
-      }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
-      document.querySelectorAll('.fade-in').forEach(function(el) { observer.observe(el); });
-
-      var toggle = document.querySelector('.nav-toggle');
-      var links = document.querySelector('.nav-links');
-      toggle.addEventListener('click', function() {
-        var isOpen = links.classList.toggle('open');
-        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      });
-      links.querySelectorAll('a').forEach(function(link) {
-        link.addEventListener('click', function() {
-          links.classList.remove('open');
-          toggle.setAttribute('aria-expanded', 'false');
-        });
-      });
-    })();
-  </script>
-
+  <script src="/site.js"></script>
 </body>
 </html>
