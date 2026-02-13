@@ -957,9 +957,7 @@ fn extract_section_items(content: &str, section_name: &str) -> Vec<String> {
                 || stripped.starts_with("* ")
                 || stripped.starts_with("• ")
             {
-                let item = stripped
-                    .trim_start_matches(['-', '*', '•', ' '])
-                    .trim();
+                let item = stripped.trim_start_matches(['-', '*', '•', ' ']).trim();
                 if !item.is_empty() {
                     Some(item.to_string())
                 } else {
