@@ -536,22 +536,24 @@ impl ActionDb {
     /// 'decision' (e.g. fresh DB from updated schema.sql). If it fails,
     /// recreate the table with the new constraint, preserving existing rows.
     fn migrate_captures_decision(conn: &Connection) -> Result<(), DbError> {
-        // Quick probe: try inserting and rolling back
+        // Probe with SAVEPOINT so the test row is never committed, even on crash.
         let needs_migration = conn
-            .execute(
-                "INSERT INTO captures (id, meeting_id, meeting_title, capture_type, content)
-                 VALUES ('__probe__', '__probe__', '__probe__', 'decision', '__probe__')",
-                [],
+            .execute_batch(
+                "SAVEPOINT probe_decision;
+                 INSERT INTO captures (id, meeting_id, meeting_title, capture_type, content)
+                 VALUES ('__probe__', '__probe__', '__probe__', 'decision', '__probe__');
+                 ROLLBACK TO probe_decision;
+                 RELEASE probe_decision;",
             )
             .is_err();
 
         if !needs_migration {
-            // Probe succeeded — clean up and return
-            let _ = conn.execute("DELETE FROM captures WHERE id = '__probe__'", []);
             return Ok(());
         }
 
-        // Recreate with new constraint
+        // Recreate with new constraint. Use explicit columns (not SELECT *)
+        // so this works whether or not the source table has extra columns
+        // like project_id from a later migration.
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS captures_v2 (
                 id TEXT PRIMARY KEY,
@@ -564,7 +566,10 @@ impl ActionDb {
                 due_date TEXT,
                 captured_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            INSERT OR IGNORE INTO captures_v2 SELECT * FROM captures;
+            INSERT OR IGNORE INTO captures_v2
+                (id, meeting_id, meeting_title, account_id, capture_type, content, owner, due_date, captured_at)
+                SELECT id, meeting_id, meeting_title, account_id, capture_type, content, owner, due_date, captured_at
+                FROM captures;
             DROP TABLE captures;
             ALTER TABLE captures_v2 RENAME TO captures;
             CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);

@@ -39,6 +39,7 @@ export function useGoogleAuth() {
   }, []);
 
   const connect = useCallback(async () => {
+    if (loading) return;
     setLoading(true);
     setError(null);
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -67,9 +68,10 @@ export function useGoogleAuth() {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       setLoading(false);
     }
-  }, []);
+  }, [loading]);
 
   const disconnect = useCallback(async () => {
+    if (loading) return;
     setLoading(true);
     setError(null);
     try {
@@ -83,7 +85,7 @@ export function useGoogleAuth() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loading]);
 
   const email =
     status.status === "authenticated" ? status.email : undefined;
