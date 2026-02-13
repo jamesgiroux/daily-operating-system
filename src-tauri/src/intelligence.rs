@@ -462,6 +462,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: chrono::Utc::now().to_rfc3339(),
             archived: false,
         };
