@@ -439,11 +439,15 @@ pub fn build_intelligence_context(
                 if let Some(nps) = acct.nps {
                     facts.push(format!("NPS: {}", nps));
                 }
-                if let Some(ref csm) = acct.csm {
-                    facts.push(format!("CSM: {}", csm));
-                }
-                if let Some(ref champion) = acct.champion {
-                    facts.push(format!("Champion: {}", champion));
+                if let Ok(team) = db.get_account_team(entity_id) {
+                    if !team.is_empty() {
+                        let team_line = team
+                            .iter()
+                            .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        facts.push(format!("Account team: {}", team_line));
+                    }
                 }
                 ctx.facts_block = facts.join("\n");
             }
@@ -1996,8 +2000,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Acme Corp".to_string()),
             parent_id: None,
@@ -2048,8 +2050,6 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Empty Corp".to_string()),
             parent_id: None,
@@ -2368,8 +2368,6 @@ Some trailing text"#;
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: Some("2026-12-31".to_string()),
-            csm: Some("Jane".to_string()),
-            champion: Some("Bob".to_string()),
             nps: Some(75),
             tracker_path: None,
             parent_id: None,
