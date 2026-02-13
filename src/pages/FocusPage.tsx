@@ -170,8 +170,9 @@ export default function FocusPage() {
           )}
 
           <OtherPrioritiesSection
-            actions={viewModel?.otherPriorities ?? []}
-            total={data.prioritizedActions.length}
+            actions={viewModel?.otherPrioritiesVisible ?? []}
+            total={viewModel?.totalPendingActions ?? 0}
+            showViewAll={viewModel?.showViewAllActions ?? false}
           />
 
           {data.keyMeetings.length > 0 && <KeyMeetingsSection meetings={data.keyMeetings} />}
@@ -290,9 +291,11 @@ function AtRiskSection({ actions }: { actions: PrioritizedFocusAction[] }) {
 function OtherPrioritiesSection({
   actions,
   total,
+  showViewAll,
 }: {
   actions: PrioritizedFocusAction[];
   total: number;
+  showViewAll: boolean;
 }) {
   if (actions.length === 0) return null;
 
@@ -300,7 +303,7 @@ function OtherPrioritiesSection({
     <section className="mb-6">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Target className="size-4" />
             Other Priorities
           </CardTitle>
@@ -309,13 +312,15 @@ function OtherPrioritiesSection({
           {actions.map((action) => (
             <PrioritizedActionRow key={action.action.id} item={action} />
           ))}
-          <Link
-            to="/actions"
-            search={{ search: undefined }}
-            className="mt-2 block text-center text-sm text-primary hover:underline"
-          >
-            View ranked list ({total} total)
-          </Link>
+          {showViewAll && (
+            <Link
+              to="/actions"
+              search={{ search: undefined }}
+              className="mt-2 block text-center text-sm text-primary hover:underline"
+            >
+              View All Actions ({total})
+            </Link>
+          )}
         </CardContent>
       </Card>
     </section>
