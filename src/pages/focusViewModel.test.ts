@@ -109,6 +109,17 @@ describe("buildFocusViewModel", () => {
     expect(vm.showViewAllActions).toBe(true);
   });
 
+  it("excludes top-three items from at-risk section", () => {
+    const items = [
+      prioritized("a1", { atRisk: true }),
+      prioritized("a2", { atRisk: true }),
+      prioritized("a3"),
+    ];
+    const vm = buildFocusViewModel(focusData(items, ["a1"]));
+    expect(vm.topThree.map((i) => i.action.id)).toEqual(["a1"]);
+    expect(vm.atRisk.map((i) => i.action.id)).toEqual(["a2"]);
+  });
+
   it("hides view-all link when five or fewer P1 actions remain", () => {
     const items = [
       prioritized("a1"),
