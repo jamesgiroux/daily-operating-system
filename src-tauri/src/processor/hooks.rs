@@ -322,6 +322,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
         };
@@ -374,6 +375,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
         };
