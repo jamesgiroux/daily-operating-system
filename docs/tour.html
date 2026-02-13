@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Product Tour — DailyOS</title>
-  <meta name="description" content="See DailyOS in action. Morning briefings, meeting intelligence, account context, and more — all prepared before you open the app.">
-  <meta property="og:title" content="Product Tour — DailyOS">
-  <meta property="og:description" content="See DailyOS in action. AI-native daily intelligence for people who manage relationships.">
+  <title>Product Tour - DailyOS</title>
+  <meta name="description" content="See DailyOS in action: from morning briefing to meeting prep, transcript capture, and weekly intelligence.">
+  <meta property="og:title" content="Product Tour - DailyOS">
+  <meta property="og:description" content="Operational intelligence in motion.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daily-os.com/tour.html">
   <meta property="og:image" content="https://daily-os.com/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Product Tour — DailyOS">
-  <meta name="twitter:description" content="See DailyOS in action. AI-native daily intelligence for people who manage relationships.">
+  <meta name="twitter:title" content="Product Tour - DailyOS">
+  <meta name="twitter:description" content="Operational intelligence in motion.">
   <meta name="twitter:image" content="https://daily-os.com/og-image.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -20,707 +20,410 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
-    :root {
-      --cream: #f5f2ef;
-      --cream-dark: #ebe5e0;
-      --charcoal: #1a1f24;
-      --charcoal-light: #2d343c;
-      --gold: #c9a227;
-      --gold-muted: #d4b85c;
-      --sage: #7fb685;
-      --peach: #e8967a;
-      --white: #ffffff;
-      --text-primary: #1a1f24;
-      --text-secondary: #5a6068;
-      --text-muted: #8a929d;
-      --text-on-dark: #f5f2ef;
-      --text-muted-on-dark: #a0a8b0;
-      --border: rgba(26, 31, 36, 0.08);
-      --border-dark: rgba(245, 242, 239, 0.1);
-      --destructive: #c62828;
-    }
-
-    html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-    body { font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text-primary); background: var(--cream); line-height: 1.6; overflow-x: hidden; }
-    code, .mono { font-family: 'JetBrains Mono', monospace; }
-
-    /* ---- Nav ---- */
-    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: rgba(26, 31, 36, 0.92); border-bottom: 1px solid var(--border-dark); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-    .nav-inner { max-width: 1200px; margin: 0 auto; padding: 0 2rem; height: 64px; display: flex; align-items: center; justify-content: space-between; }
-    .nav-logo { font-weight: 700; font-size: 1.15rem; color: var(--text-on-dark); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; letter-spacing: -0.02em; }
-    .nav-logo-icon { width: 26px; height: 26px; }
-    .nav-links { display: flex; align-items: center; gap: 2rem; list-style: none; }
-    .nav-links a { font-size: 0.875rem; font-weight: 500; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
-    .nav-links a:hover { color: var(--text-on-dark); }
-    .nav-links a.active { color: var(--text-on-dark); }
-    .nav-links a.nav-cta { background: var(--gold); color: var(--charcoal); padding: 0.45rem 1.15rem; border-radius: 6px; font-weight: 600; transition: opacity 0.2s; }
-    .nav-links a.nav-cta:hover { opacity: 0.88; }
-    .nav-toggle { display: none; background: none; border: none; cursor: pointer; padding: 0.5rem; }
-    .nav-toggle span { display: block; width: 20px; height: 2px; background: var(--text-on-dark); margin: 5px 0; transition: all 0.3s; }
-
-    /* ---- Hero ---- */
-    .hero { padding: 180px 2rem 100px; text-align: center; background: var(--charcoal); color: var(--text-on-dark); }
-    .hero-inner { max-width: 700px; margin: 0 auto; }
-    .hero h1 { font-size: clamp(2.5rem, 6vw, 4rem); font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 1.5rem; }
-    .hero p { font-size: 1.25rem; color: var(--text-muted-on-dark); line-height: 1.7; }
-
-    /* ---- Sections ---- */
-    .section { padding: 140px 2rem; }
-    .section-inner { max-width: 700px; margin: 0 auto; }
-    .section-wide { max-width: 1100px; margin: 0 auto; }
-    .section--dark { background: var(--charcoal); color: var(--text-on-dark); }
-    .section-label { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 2rem; }
-    .section h2 { font-size: clamp(2.25rem, 5vw, 3.25rem); font-weight: 700; line-height: 1.12; letter-spacing: -0.03em; margin-bottom: 1.25rem; }
-    .section p { font-size: 1.25rem; line-height: 1.75; color: var(--text-secondary); margin-bottom: 1.25rem; }
-    .section p:last-child { margin-bottom: 0; }
-    .section--dark p { color: var(--text-muted-on-dark); }
-
-    /* ---- Window Frame ---- */
-    .window-frame { background: var(--white); border-radius: 12px; box-shadow: 0 0 0 1px rgba(26,31,36,0.1), 0 20px 50px -12px rgba(0,0,0,0.15); overflow: hidden; margin-top: 3rem; }
-    .window-titlebar { height: 36px; background: #2d343c; display: flex; align-items: center; padding: 0 14px; gap: 8px; }
-    .window-dot { width: 12px; height: 12px; border-radius: 50%; }
-    .window-dot--red { background: #ff5f57; }
-    .window-dot--yellow { background: #ffbd2e; }
-    .window-dot--green { background: #28c840; }
-    .window-body { background: var(--cream); }
-
-    /* ---- Dashboard Mockup ---- */
-    .app-main { padding: 2rem 2.5rem; }
-    .app-date { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 1.25rem; }
-    .focus-callout { display: flex; align-items: flex-start; gap: 0.625rem; background: rgba(127, 182, 133, 0.1); border: 1px solid rgba(127, 182, 133, 0.15); border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1.5rem; }
-    .focus-icon { width: 1.125rem; height: 1.125rem; color: var(--sage); flex-shrink: 0; margin-top: 0.125rem; }
-    .focus-label { font-size: 0.8125rem; font-weight: 600; color: var(--sage); margin-bottom: 0.125rem; }
-    .focus-text { font-size: 0.8125rem; font-weight: 500; color: var(--text-primary); line-height: 1.5; }
-    .dashboard-grid { display: grid; grid-template-columns: 5fr 2fr; gap: 2rem; }
-    .timeline { display: flex; flex-direction: column; gap: 0.625rem; }
-
-    /* Meeting cards */
-    .meeting-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1rem 1.25rem; transition: transform 0.15s, box-shadow 0.15s; }
-    .meeting-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    .meeting-card--customer { border-left: 4px solid var(--gold); }
-    .meeting-card--internal { border-left: 4px solid var(--text-muted); }
-    .meeting-card--personal { border-left: 4px solid var(--sage); }
-    .meeting-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
-    .meeting-time { font-size: 0.8125rem; color: var(--text-muted); }
-    .meeting-title { font-weight: 600; font-size: 0.9375rem; margin-top: 0.125rem; }
-    .meeting-account { margin-top: 0.25rem; font-size: 0.8125rem; color: var(--gold); font-weight: 500; }
-    .meeting-badges { display: flex; gap: 0.375rem; align-items: center; flex-shrink: 0; }
-
-    /* Badges */
-    .badge { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.1875rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
-    .badge--customer { background: rgba(201, 162, 39, 0.15); color: var(--gold); }
-    .badge--qbr { background: rgba(201, 162, 39, 0.15); color: var(--gold); }
-    .badge--internal { background: var(--cream-dark); color: var(--text-muted); }
-    .badge--personal { background: rgba(127, 182, 133, 0.15); color: var(--sage); }
-    .badge--ready { background: rgba(127, 182, 133, 0.1); color: var(--sage); border: 1px solid rgba(127, 182, 133, 0.3); }
-    .badge--needs-prep { background: rgba(232, 150, 122, 0.1); color: var(--peach); border: 1px solid rgba(232, 150, 122, 0.3); }
-    .badge--cancelable { background: transparent; color: var(--text-muted); border: 1px solid rgba(26,31,36,0.15); }
-    .badge--p1 { background: rgba(198, 40, 40, 0.12); color: var(--destructive); }
-    .badge--p2 { background: rgba(201, 162, 39, 0.12); color: var(--gold); }
-    .badge--p3 { background: var(--cream-dark); color: var(--text-muted); }
-    .badge--risk { background: rgba(232, 150, 122, 0.12); color: var(--peach); }
-    .badge--win { background: rgba(127, 182, 133, 0.12); color: var(--sage); }
-    .badge-check { width: 0.6875rem; height: 0.6875rem; }
-
-    /* Sidebar panel */
-    .sidebar-panel { display: flex; flex-direction: column; gap: 1.5rem; }
-    .panel-section-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.5rem; }
-
-    /* Actions */
-    .action-item { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0; }
-    .action-checkbox { width: 1.125rem; height: 1.125rem; border-radius: 50%; border: 2px solid rgba(26,31,36,0.15); flex-shrink: 0; margin-top: 0.125rem; }
-    .action-content { flex: 1; min-width: 0; }
-    .action-title-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-    .action-title { font-size: 0.8125rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .action-account { font-size: 0.75rem; color: var(--gold); font-weight: 500; }
-    .action-due { font-size: 0.75rem; color: var(--text-muted); }
-    .action-due--overdue { color: var(--destructive); }
-
-    /* Emails */
-    .email-item { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.5rem 0; }
-    .email-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--gold); flex-shrink: 0; margin-top: 0.4375rem; }
-    .email-sender { font-size: 0.8125rem; font-weight: 500; }
-    .email-subject { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .email-action { font-size: 0.6875rem; font-weight: 500; color: rgba(201, 162, 39, 0.8); margin-top: 0.125rem; }
-
-    /* ---- Meeting Prep Mockup ---- */
-    .meeting-detail { padding: 2rem 2.5rem; }
-    .meeting-detail-time { font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.25rem; }
-    .meeting-detail-title { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
-    .meeting-detail-meta { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
-    .prep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-    .prep-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem; }
-    .prep-card-title { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 0.75rem; }
-    .prep-card-title--gold { color: var(--gold); }
-    .prep-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
-    .prep-list-item { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5; }
-    .prep-dot { width: 0.375rem; height: 0.375rem; border-radius: 50%; flex-shrink: 0; margin-top: 0.4375rem; }
-    .prep-dot--charcoal { background: var(--text-secondary); }
-    .prep-dot--gold { background: var(--gold); }
-    .prep-dot--peach { background: var(--peach); }
-    .prep-dot--sage { background: var(--sage); }
-
-    /* People list */
-    .people-list { display: flex; flex-direction: column; gap: 0.625rem; }
-    .person-row { display: flex; align-items: center; gap: 0.75rem; }
-    .person-avatar { width: 2rem; height: 2rem; border-radius: 50%; background: rgba(201, 162, 39, 0.1); color: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
-    .person-name { font-size: 0.8125rem; font-weight: 600; }
-    .person-role { font-size: 0.75rem; color: var(--text-muted); }
-    .person-engagement { margin-left: auto; font-size: 0.6875rem; font-weight: 600; }
-    .person-engagement--champion { color: var(--sage); }
-    .person-engagement--neutral { color: var(--text-muted); }
-
-    /* ---- Account Mockup ---- */
-    .account-detail { padding: 2rem 2.5rem; }
-    .account-hero { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-    .account-avatar { width: 3.5rem; height: 3.5rem; border-radius: 50%; background: rgba(201, 162, 39, 0.1); color: var(--gold); display: flex; align-items: center; justify-content: center; font-size: 1.25rem; font-weight: 600; flex-shrink: 0; }
-    .account-name { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
-    .account-badges { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem; }
-    .health-dot { width: 0.625rem; height: 0.625rem; border-radius: 50%; display: inline-block; }
-    .health-dot--green { background: var(--sage); }
-    .health-badge { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; font-weight: 500; color: var(--sage); }
-    .lifecycle-badge { font-size: 0.6875rem; font-weight: 500; color: var(--text-muted); border: 1px solid rgba(26,31,36,0.15); padding: 0.125rem 0.5rem; border-radius: 9999px; }
-    .metrics-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
-    .metric-card { background: var(--white); border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem 1rem; }
-    .metric-value { font-size: 1.25rem; font-weight: 600; }
-    .metric-label { font-size: 0.6875rem; color: var(--text-muted); }
-    .assessment { font-size: 0.875rem; line-height: 1.8; color: var(--text-primary); margin-bottom: 1.5rem; }
-    .assessment-meta { font-size: 0.6875rem; color: var(--text-muted); }
-    .attention-item { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 0.5rem; }
-    .attention-item--risk { background: rgba(198, 40, 40, 0.06); }
-    .attention-item--win { background: rgba(127, 182, 133, 0.08); }
-    .attention-icon { width: 1rem; height: 1rem; flex-shrink: 0; margin-top: 0.125rem; }
-    .attention-text { font-size: 0.8125rem; line-height: 1.5; }
-    .attention-meta { display: flex; gap: 0.5rem; margin-top: 0.25rem; align-items: center; }
-
-    /* ---- After Meeting Flow ---- */
-    .flow-steps { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 1.5rem; align-items: start; margin-top: 3rem; }
-    .flow-step { background: var(--white); border: 1px solid var(--border); border-radius: 12px; padding: 2rem 1.75rem; }
-    .flow-step-number { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; color: var(--gold); letter-spacing: 0.08em; margin-bottom: 0.75rem; }
-    .flow-step h3 { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); }
-    .flow-step p { font-size: 0.95rem; line-height: 1.6; color: var(--text-secondary); margin-bottom: 0; }
-    .flow-arrow { display: flex; align-items: center; padding-top: 3rem; color: var(--gold); font-size: 1.5rem; }
-    .flow-output { list-style: none; margin-top: 0.75rem; }
-    .flow-output li { font-size: 0.85rem; color: var(--text-secondary); padding: 0.25rem 0; padding-left: 1rem; position: relative; }
-    .flow-output li::before { content: ""; position: absolute; left: 0; top: 0.6em; width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
-
-    /* ---- Week View ---- */
-    .week-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1rem; margin-top: 3rem; }
-    .week-day { background: var(--white); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
-    .week-day--active { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
-    .week-day-label { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.75rem; }
-    .week-day--active .week-day-label { color: var(--gold); }
-    .week-day-meeting { font-size: 0.75rem; color: var(--text-secondary); padding: 0.3rem 0; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 0.4rem; }
-    .week-day-meeting:last-child { border-bottom: none; }
-    .week-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-    .week-dot--gold { background: var(--gold); }
-    .week-dot--muted { background: var(--text-muted); opacity: 0.4; }
-    .week-dot--sage { background: var(--sage); }
-    .week-day-stat { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid rgba(0,0,0,0.04); }
-
-    /* ---- CTA ---- */
-    .cta { text-align: center; padding: 140px 2rem; }
-    .cta p { font-size: 1.1rem; color: var(--text-muted-on-dark); margin-top: 0.75rem; }
-    .btn-primary { display: inline-block; background: var(--gold); color: var(--charcoal); padding: 1rem 2.5rem; font-family: 'DM Sans', sans-serif; font-size: 1.05rem; font-weight: 600; border-radius: 8px; text-decoration: none; transition: all 0.2s; }
-    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
-
-    /* ---- Footer ---- */
-    .footer { background: var(--charcoal); border-top: 1px solid var(--border-dark); padding: 3rem 2rem; }
-    .footer-inner { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
-    .footer-links { display: flex; gap: 2rem; list-style: none; flex-wrap: wrap; justify-content: center; }
-    .footer-links a { font-size: 0.875rem; color: var(--text-muted-on-dark); text-decoration: none; transition: color 0.2s; }
-    .footer-links a:hover { color: var(--text-on-dark); }
-    .footer-meta p { font-size: 0.8rem; color: var(--text-muted-on-dark); line-height: 1.6; text-align: center; margin: 0; }
-
-    /* ---- Animations ---- */
-    .fade-in { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1); }
-    .fade-in.visible { opacity: 1; transform: translateY(0); }
-    .fade-in-d1 { transition-delay: 0.12s; }
-    .fade-in-d2 { transition-delay: 0.24s; }
-
-    /* ---- Responsive ---- */
-    @media (max-width: 1024px) {
-      .flow-steps { grid-template-columns: 1fr; }
-      .flow-arrow { display: none; }
-      .week-grid { grid-template-columns: repeat(3, 1fr); }
-      .metrics-row { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 768px) {
-      .nav-links { display: none; position: absolute; top: 64px; left: 0; right: 0; background: rgba(26, 31, 36, 0.97); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border-dark); flex-direction: column; padding: 1.5rem 2rem; gap: 1rem; }
-      .nav-links.open { display: flex; }
-      .nav-toggle { display: block; }
-      .hero { padding: 150px 1.5rem 80px; }
-      .section { padding: 100px 1.5rem; }
-      .dashboard-grid { grid-template-columns: 1fr; }
-      .prep-grid { grid-template-columns: 1fr; }
-      .week-grid { grid-template-columns: 1fr 1fr; }
-      .app-main, .meeting-detail, .account-detail { padding: 1.25rem; }
-      .cta { padding: 100px 1.5rem; }
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/site.css">
+  <noscript><style>.fade-in { opacity: 1; transform: none; }</style></noscript>
 </head>
 <body>
-
-  <!-- Nav -->
-  <nav class="nav">
-    <div class="nav-inner">
-      <a href="/" class="nav-logo">
-        <svg class="nav-logo-icon" viewBox="0 0 32 32" width="26" height="26"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
-        DailyOS
-      </a>
-      <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
-        <span></span><span></span><span></span>
-      </button>
-      <ul class="nav-links">
-        <li><a href="/">Home</a></li>
-        <li><a href="/tour.html" class="active">Tour</a></li>
-        <li><a href="/philosophy.html">Philosophy</a></li>
-        <li><a href="/setup.html" class="nav-cta">Get Early Access</a></li>
-      </ul>
-    </div>
-  </nav>
-
-  <!-- ============================================ -->
-  <!-- HERO                                         -->
-  <!-- ============================================ -->
-  <section class="hero">
-    <div class="hero-inner">
-      <h1 class="fade-in">See it in action.</h1>
-      <p class="fade-in fade-in-d1">Five screens. That's the whole product.</p>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- SECTION 1: YOUR MORNING                      -->
-  <!-- ============================================ -->
-  <section class="section" id="morning">
-    <div class="section-wide">
-      <div class="section-inner" style="margin-bottom: 0;">
-        <p class="section-label fade-in">The daily briefing</p>
-        <h2 class="fade-in">Your morning, prepared.</h2>
-        <p class="fade-in">Open the app. Your schedule is laid out with prep status for every meeting. Your priority actions are surfaced. Your flagged emails have suggested next steps. No setup. No ritual.</p>
+  <div class="site-nav-wrap">
+    <nav class="site-nav" aria-label="Primary">
+      <div class="site-nav-inner">
+        <a href="/" class="site-logo">
+          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+          DailyOS
+        </a>
+        <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
+          <span></span><span></span><span></span>
+        </button>
+        <ul class="site-nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/tour.html" class="active">Tour</a></li>
+          <li><a href="/philosophy.html">Philosophy</a></li>
+          <li><a href="/setup.html" class="cta-link">Get Early Access</a></li>
+        </ul>
       </div>
+    </nav>
+  </div>
 
-      <div class="window-frame fade-in fade-in-d1">
-        <div class="window-titlebar">
-          <div class="window-dot window-dot--red"></div>
-          <div class="window-dot window-dot--yellow"></div>
-          <div class="window-dot window-dot--green"></div>
+  <main>
+    <section class="hero">
+      <div class="container hero-centered fade-in">
+        <p class="eyebrow">The daily loop</p>
+        <h1>A workday that is already prepared.</h1>
+        <p class="lede">DailyOS prepares your meetings, captures outcomes, and learns from every workday. Better, more accurate, more actionable &mdash; every day.</p>
+        <div class="hero-actions">
+          <a href="/setup.html" class="btn btn-primary">Start in Alpha</a>
+          <a href="#morning" class="btn btn-secondary">Jump to Morning</a>
         </div>
-        <div class="window-body">
-          <div class="app-main">
-            <div class="app-date">Monday, February 10, 2026</div>
-            <div class="focus-callout">
-              <svg class="focus-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
-              <div>
-                <div class="focus-label">Focus</div>
-                <div class="focus-text">Your week is front-loaded &mdash; 5 external meetings today, 2 tomorrow. Acme QBR is the priority: renewal decision is this quarter.</div>
+        <p class="proofline proofline-sage mono">No prompts. No maintenance. Just leverage.</p>
+      </div>
+    </section>
+
+    <section class="section section-compact">
+      <div class="container">
+        <div class="tour-layout">
+          <!-- ===== 1. MORNING BRIEF ===== -->
+          <article id="morning" class="section-compact">
+            <div class="section-head fade-in">
+              <p class="eyebrow eyebrow-sage">1 &mdash; Morning brief</p>
+              <h2>One screen. The day in context.</h2>
+              <p class="lede">You start with priorities, not inbox archaeology. Meetings are prepped, risks are flagged, and actions are queued before you touch anything.</p>
+            </div>
+
+            <div class="app-window fade-in delay-1">
+              <div class="app-titlebar">
+                <span class="dot-r"></span>
+                <span class="dot-y"></span>
+                <span class="dot-g"></span>
+              </div>
+              <div class="app-body">
+                <div class="app-date">Monday, February 10</div>
+
+                <div class="app-focus">
+                  <strong>Focus:</strong> Renewal conversation with Acme has high leverage. Resolve budget blocker before the 2:00 PM call.
+                </div>
+
+                <div class="app-timeline">
+                  <div class="app-meeting">
+                    <div class="app-meeting-dot"></div>
+                    <div class="app-card">
+                      <div class="app-card-top">
+                        <span class="app-time">9:00 AM</span>
+                        <span class="app-time-sep">&mdash;</span>
+                        <span class="app-time">9:30 AM</span>
+                        <span class="app-badge app-badge-gold">Customer</span>
+                        <span class="app-badge app-badge-sage">Processed</span>
+                      </div>
+                      <h4 class="app-card-title">Globex check-in</h4>
+                      <span class="app-entity">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14V4h5v10M9 14V2h5v12M1 14h14"/></svg>
+                        Globex Corp
+                      </span>
+                      <p class="app-context">Support metrics trending positive. Champion confirmed expansion interest in Q2 planning session.</p>
+                      <div class="app-signals">
+                        <span class="app-signal app-signal-win">Champion engagement increasing</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="app-meeting">
+                    <div class="app-meeting-dot"></div>
+                    <div class="app-card">
+                      <div class="app-card-top">
+                        <span class="app-time">11:00 AM</span>
+                        <span class="app-time-sep">&mdash;</span>
+                        <span class="app-time">11:30 AM</span>
+                        <span class="app-badge app-badge-gold">External</span>
+                        <span class="app-badge app-badge-muted">No prior history</span>
+                      </div>
+                      <h4 class="app-card-title">Jordan Lee &mdash; intro call</h4>
+                      <p class="app-context">New contact from Initech. Context packet created from email thread and LinkedIn signals.</p>
+                    </div>
+                  </div>
+
+                  <div class="app-meeting">
+                    <div class="app-meeting-dot"></div>
+                    <div class="app-card">
+                      <div class="app-card-top">
+                        <span class="app-time">2:00 PM</span>
+                        <span class="app-time-sep">&mdash;</span>
+                        <span class="app-time">2:45 PM</span>
+                        <span class="app-badge app-badge-gold">QBR</span>
+                        <span class="app-badge app-badge-peach">Needs prep</span>
+                      </div>
+                      <h4 class="app-card-title">Acme Corp QBR</h4>
+                      <span class="app-entity">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14V4h5v10M9 14V2h5v12M1 14h14"/></svg>
+                        Acme Corp
+                      </span>
+                      <p class="app-context">CFO + VP Ops + CSM. Adoption up 34% since rollout, but budget sign-off is still open.</p>
+                      <div class="app-signals">
+                        <span class="app-signal app-signal-win">Support backlog now zero</span>
+                        <span class="app-signal app-signal-risk">CFO budget approval pending</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="app-actions-header">
+                  <span>Actions Due</span>
+                  <span>2 items</span>
+                </div>
+                <div class="app-action">
+                  <div class="app-action-circle"></div>
+                  <div class="app-action-body">
+                    <div class="app-action-row">
+                      <span class="app-action-title">Send revised pricing package</span>
+                      <span class="app-badge app-badge-peach">P1</span>
+                    </div>
+                    <div class="app-action-meta">
+                      <span class="app-action-account">Acme Corp</span>
+                      <span class="app-action-overdue">Overdue</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="app-action">
+                  <div class="app-action-circle"></div>
+                  <div class="app-action-body">
+                    <div class="app-action-row">
+                      <span class="app-action-title">Review QBR deck with account team</span>
+                      <span class="app-badge app-badge-gold">P2</span>
+                    </div>
+                    <div class="app-action-meta">
+                      <span class="app-action-account">Acme Corp</span>
+                      <span class="app-action-due">Due today &middot; 1:00 PM</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div class="dashboard-grid">
-              <div class="timeline">
-                <div class="meeting-card meeting-card--customer">
-                  <div class="meeting-header">
-                    <div>
-                      <div class="meeting-time mono">9:00 AM</div>
-                      <div class="meeting-title">Weekly Check-in</div>
-                      <div class="meeting-account">Globex Corp</div>
-                    </div>
-                    <div class="meeting-badges">
-                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
-                      <span class="badge badge--customer">Customer</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="meeting-card meeting-card--internal">
-                  <div class="meeting-header">
-                    <div>
-                      <div class="meeting-time mono">10:00 AM</div>
-                      <div class="meeting-title">CS Team Standup</div>
-                    </div>
-                    <div class="meeting-badges">
-                      <span class="badge badge--cancelable">Cancelable</span>
-                      <span class="badge badge--internal">Team Sync</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="meeting-card meeting-card--customer">
-                  <div class="meeting-header">
-                    <div>
-                      <div class="meeting-time mono">11:30 AM</div>
-                      <div class="meeting-title">Onboarding Kickoff</div>
-                      <div class="meeting-account">Initech</div>
-                    </div>
-                    <div class="meeting-badges">
-                      <span class="badge badge--needs-prep">Needs prep</span>
-                      <span class="badge badge--customer">Customer</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="meeting-card meeting-card--customer">
-                  <div class="meeting-header">
-                    <div>
-                      <div class="meeting-time mono">2:00 PM</div>
-                      <div class="meeting-title">QBR Review</div>
-                      <div class="meeting-account">Acme Corp</div>
-                    </div>
-                    <div class="meeting-badges">
-                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
-                      <span class="badge badge--qbr">QBR</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="meeting-card meeting-card--personal">
-                  <div class="meeting-header">
-                    <div>
-                      <div class="meeting-time mono">4:00 PM</div>
-                      <div class="meeting-title">1:1 with Manager</div>
-                    </div>
-                    <div class="meeting-badges">
-                      <span class="badge badge--ready"><svg class="badge-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Ready</span>
-                      <span class="badge badge--personal">1:1</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="sidebar-panel">
+          </article>
+
+          <!-- ===== 2. MEETING INTELLIGENCE ===== -->
+          <article id="meeting" class="section">
+            <div class="section-head fade-in">
+              <p class="eyebrow">2 &mdash; Meeting intelligence</p>
+              <h2>Click a meeting. The briefing is already assembled.</h2>
+              <p class="lede">Executive summary, risks, people in the room, open items, and recommended moves &mdash; prepared before you walk in.</p>
+            </div>
+
+            <div class="executive-panel fade-in delay-1">
+              <header class="exec-header">
                 <div>
-                  <div class="panel-section-title">Actions</div>
-                  <div class="action-item">
-                    <div class="action-checkbox"></div>
-                    <div class="action-content">
-                      <div class="action-title-row"><div class="action-title">Send QBR deck to Sarah</div><span class="badge badge--p1">P1</span></div>
-                      <div class="action-account">Acme Corp</div>
-                      <div class="action-due action-due--overdue">Overdue &middot; Feb 7</div>
-                    </div>
-                  </div>
-                  <div class="action-item">
-                    <div class="action-checkbox"></div>
-                    <div class="action-content">
-                      <div class="action-title-row"><div class="action-title">Follow up on integration ticket</div><span class="badge badge--p2">P2</span></div>
-                      <div class="action-account">Globex Corp</div>
-                      <div class="action-due">Due Feb 12</div>
-                    </div>
-                  </div>
-                  <div class="action-item">
-                    <div class="action-checkbox"></div>
-                    <div class="action-content">
-                      <div class="action-title-row"><div class="action-title">Draft onboarding timeline</div><span class="badge badge--p2">P2</span></div>
-                      <div class="action-account">Initech</div>
-                      <div class="action-due">Due Feb 14</div>
-                    </div>
-                  </div>
+                  <p class="exec-kicker">Meeting Intelligence Report</p>
+                  <h3 class="exec-title">Acme Corp QBR</h3>
+                  <p class="exec-meta">2:00 PM &middot; 45 min &middot; Renewal cycle</p>
                 </div>
+                <span class="status-chip">Strategic brief</span>
+              </header>
+
+              <blockquote class="report-quote">
+                <p>Support backlog is now zero and adoption is trending up. Budget sign-off is still open, so this meeting needs a clear ROI narrative.</p>
+              </blockquote>
+
+              <div class="report-risk-grid">
+                <div class="report-risk-card">
+                  <p class="mini-label">Risk 1</p>
+                  <p>Budget owner still unconvinced on analytics add-on timing.</p>
+                </div>
+                <div class="report-risk-card">
+                  <p class="mini-label">Risk 2</p>
+                  <p>KPI baseline must be finalized before commercial ask.</p>
+                </div>
+                <div class="report-risk-card">
+                  <p class="mini-label">Risk 3</p>
+                  <p>Procurement path needs explicit owner by end of call.</p>
+                </div>
+              </div>
+
+              <div class="report-metrics-grid">
+                <div class="report-metric-card">
+                  <p class="mini-label">Primary goal</p>
+                  <p>Secure budget owner commitment</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">People in room</p>
+                  <p>CFO, VP Ops, Champion, AM</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">Account health</p>
+                  <p class="report-metric-positive">Green with expansion path</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">Meeting type</p>
+                  <p>QBR + renewal planning</p>
+                </div>
+              </div>
+
+              <div class="report-main-grid">
+                <section class="signal-card">
+                  <p class="signal-label" style="margin-bottom:0.45rem;">Open items</p>
+                  <ul class="action-list">
+                    <li>
+                      <span class="action-title">Finalize pricing artifact</span>
+                      <span class="action-meta overdue">Overdue &middot; send before meeting</span>
+                    </li>
+                    <li>
+                      <span class="action-title">Confirm pilot KPI baseline</span>
+                      <span class="action-meta">Needed for ROI narrative</span>
+                    </li>
+                    <li>
+                      <span class="action-title">Align on budget approval owner</span>
+                      <span class="action-meta">Decision gate today</span>
+                    </li>
+                  </ul>
+                </section>
+
+                <aside class="report-side-stack">
+                  <section class="report-side-card">
+                    <p class="mini-label">Before this meeting</p>
+                    <ul class="stack-list">
+                      <li>Open with outcomes from support reduction.</li>
+                      <li>Confirm budget owner before pricing discussion.</li>
+                      <li>Close with explicit next-decision date.</li>
+                    </ul>
+                  </section>
+                  <section class="report-side-card report-side-card-positive">
+                    <p class="mini-label">Recent wins</p>
+                    <ul class="stack-list">
+                      <li>Champion participation has increased weekly.</li>
+                      <li>Executive sponsor requested expansion scenario.</li>
+                    </ul>
+                  </section>
+                </aside>
+              </div>
+            </div>
+          </article>
+
+          <!-- ===== 3. POST-MEETING ===== -->
+          <article id="after" class="section section-compact">
+            <div class="section-head fade-in">
+              <p class="eyebrow eyebrow-peach">3 &mdash; After the meeting</p>
+              <h2>The meeting ends. The outcomes are already organized.</h2>
+              <p class="lede">Decisions, actions, and wins are extracted from your transcript and routed to account memory, your action queue, and tomorrow&rsquo;s briefing.</p>
+            </div>
+
+            <div class="executive-panel fade-in delay-1">
+              <header class="exec-header">
                 <div>
-                  <div class="panel-section-title">Emails</div>
-                  <div class="email-item">
-                    <div class="email-dot"></div>
-                    <div>
-                      <div class="email-sender">Sarah Chen</div>
-                      <div class="email-subject">Re: QBR Agenda &mdash; expansion section?</div>
-                      <div class="email-action">&rarr; Reply before your 2 PM</div>
-                    </div>
+                  <p class="exec-kicker">Post-meeting summary</p>
+                  <h3 class="exec-title">Acme Corp QBR</h3>
+                  <p class="exec-meta">Processed from transcript &middot; 2:48 PM</p>
+                </div>
+                <span class="artifact-chip">Processed</span>
+              </header>
+
+              <blockquote class="report-quote">
+                <p>Budget owner committed to Q2 timeline. CFO needs ROI model before final sign-off. Champion requested expansion scenario &mdash; strong signal for upsell path.</p>
+              </blockquote>
+
+              <div class="report-risk-grid">
+                <div class="signal-card">
+                  <div class="signal-top">
+                    <p class="signal-label">Decisions</p>
+                    <span class="tag tag-win">2 resolved</span>
                   </div>
-                  <div class="email-item">
-                    <div class="email-dot"></div>
-                    <div>
-                      <div class="email-sender">Tom Rivera (Initech)</div>
-                      <div class="email-subject">Onboarding questions &mdash; SSO</div>
-                      <div class="email-action">&rarr; Forward to engineering</div>
-                    </div>
+                  <ul class="stack-list">
+                    <li>VP Ops confirmed as budget owner</li>
+                    <li>Q2 renewal timeline agreed</li>
+                  </ul>
+                </div>
+                <div class="signal-card">
+                  <div class="signal-top">
+                    <p class="signal-label">Actions created</p>
+                    <span class="tag tag-risk">3 new</span>
                   </div>
+                  <ul class="stack-list">
+                    <li>Send ROI model to CFO by Thursday</li>
+                    <li>Draft expansion scenario for champion</li>
+                    <li>Schedule follow-up with VP Ops</li>
+                  </ul>
+                </div>
+                <div class="signal-card report-side-card-positive">
+                  <div class="signal-top">
+                    <p class="signal-label">Wins captured</p>
+                  </div>
+                  <ul class="stack-list">
+                    <li>Champion actively requesting expansion</li>
+                    <li>Support backlog confirmed at zero</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="report-metrics-grid">
+                <div class="report-metric-card">
+                  <p class="mini-label">Risk update</p>
+                  <p>Procurement path now has explicit owner</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">Account health</p>
+                  <p class="report-metric-positive">Improved &mdash; expansion signal</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">Next touchpoint</p>
+                  <p>Follow-up Thursday with VP Ops</p>
+                </div>
+                <div class="report-metric-card">
+                  <p class="mini-label">Memory updated</p>
+                  <p>Acme Corp intelligence refreshed</p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
+          </article>
 
-  <!-- ============================================ -->
-  <!-- SECTION 2: MEETING INTELLIGENCE              -->
-  <!-- ============================================ -->
-  <section class="section section--dark" id="meeting-intelligence">
-    <div class="section-wide">
-      <div class="section-inner" style="margin-bottom: 0;">
-        <p class="section-label fade-in">Meeting intelligence</p>
-        <h2 class="fade-in" style="color: var(--text-on-dark);">Click any meeting. The prep is done.</h2>
-        <p class="fade-in">Who's in the room and their engagement history. What was discussed last time. Open action items. Risk signals. A suggested agenda based on what actually matters.</p>
-      </div>
+          <!-- ===== 4. WEEKLY INTELLIGENCE ===== -->
+          <article id="week" class="section section-compact">
+            <div class="section-head fade-in">
+              <p class="eyebrow eyebrow-sage">4 &mdash; Weekly intelligence</p>
+              <h2>The rhythm is daily. The intelligence is cumulative.</h2>
+              <p class="lede">Each morning is prepared, but the system is also looking ahead: carrying context forward, tracking what changed, and sharpening next week's starting point.</p>
+            </div>
 
-      <div class="window-frame fade-in fade-in-d1">
-        <div class="window-titlebar">
-          <div class="window-dot window-dot--red"></div>
-          <div class="window-dot window-dot--yellow"></div>
-          <div class="window-dot window-dot--green"></div>
-        </div>
-        <div class="window-body">
-          <div class="meeting-detail">
-            <div>
-              <div class="meeting-detail-time mono">2:00 PM &mdash; 3:00 PM</div>
-              <div class="meeting-detail-title">QBR Review &mdash; Acme Corp</div>
-              <div class="meeting-detail-meta">
-                <span class="badge badge--qbr">QBR</span>
-                <span style="font-size: 0.8125rem; color: var(--gold); font-weight: 500;">Acme Corp</span>
-                <span style="font-size: 0.8125rem; color: var(--text-muted);">5 attendees</span>
+            <div class="week-grid fade-in delay-1" aria-label="Weekly planning view">
+              <div class="week-day week-day--active">
+                <div class="week-day-label">Mon (today)</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Globex check-in</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>CS standup</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Initech kickoff</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Acme QBR</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span>1:1 manager</div>
+                <div class="week-day-stat">5 meetings &middot; 3 prepped</div>
+              </div>
+              <div class="week-day">
+                <div class="week-day-label">Tue</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Globex expansion</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Product sync</div>
+                <div class="week-day-stat">2 meetings</div>
+              </div>
+              <div class="week-day">
+                <div class="week-day-label">Wed</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Initech training</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Team standup</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span>1:1 Sarah</div>
+                <div class="week-day-stat">3 meetings &middot; 1 action due</div>
+              </div>
+              <div class="week-day">
+                <div class="week-day-label">Thu</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Acme follow-up</div>
+                <div class="week-day-stat">1 meeting</div>
+              </div>
+              <div class="week-day">
+                <div class="week-day-label">Fri</div>
+                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Focus time</div>
+                <div class="week-day-stat">No meetings &middot; 2 actions due</div>
               </div>
             </div>
-            <div class="prep-grid">
-              <div class="prep-card">
-                <div class="prep-card-title">What to Know</div>
-                <ul class="prep-list">
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span>Renewal decision expected this quarter. ARR $180K with expansion conversation active for analytics module ($45K).</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--peach"></span>CFO (David Marsh) hasn't confirmed budget. Sarah flagged this in last week's email.</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--sage"></span>CSAT improved from 7.2 to 8.6 since last QBR. Use as proof point.</li>
-                </ul>
-              </div>
-              <div class="prep-card">
-                <div class="prep-card-title">Key People</div>
-                <div class="people-list">
-                  <div class="person-row">
-                    <div class="person-avatar">SC</div>
-                    <div><div class="person-name">Sarah Chen</div><div class="person-role">VP Operations</div></div>
-                    <div class="person-engagement person-engagement--champion" style="margin-left: auto;">Champion</div>
-                  </div>
-                  <div class="person-row">
-                    <div class="person-avatar">DM</div>
-                    <div><div class="person-name">David Marsh</div><div class="person-role">CFO</div></div>
-                    <div class="person-engagement person-engagement--neutral" style="margin-left: auto;">Neutral</div>
-                  </div>
-                  <div class="person-row">
-                    <div class="person-avatar">JL</div>
-                    <div><div class="person-name">Jenny Liu</div><div class="person-role">Product Lead</div></div>
-                    <div class="person-engagement person-engagement--champion" style="margin-left: auto;">Champion</div>
-                  </div>
-                </div>
-              </div>
-              <div class="prep-card">
-                <div class="prep-card-title prep-card-title--gold">Suggested Agenda</div>
-                <ul class="prep-list">
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Review Q4 outcomes and CSAT improvement</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Analytics module demo and ROI projection</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Address CFO budget concerns directly</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--gold"></span>Align on renewal timeline</li>
-                </ul>
-              </div>
-              <div class="prep-card">
-                <div class="prep-card-title">Recent Context</div>
-                <ul class="prep-list">
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span><strong style="font-weight: 600; color: var(--text-primary);">Jan 28:</strong>&nbsp; Sarah mentioned CFO wants adoption metrics before signing off on expansion.</li>
-                  <li class="prep-list-item"><span class="prep-dot prep-dot--charcoal"></span><strong style="font-weight: 600; color: var(--text-primary);">Jan 15:</strong>&nbsp; Jenny's team fully onboarded on the new reporting module.</li>
-                </ul>
-              </div>
+          </article>
+
+          <!-- ===== CTA ===== -->
+          <section class="section">
+            <div class="panel cta-card fade-in">
+              <h2>From prep debt to decision leverage.</h2>
+              <p class="lede">If this is how you want your workweek to feel, DailyOS is ready for alpha testers now.</p>
+              <a href="/setup.html" class="btn btn-primary">Set Up in 10 Minutes</a>
+              <p class="proofline">Open source &middot; GPL-3.0 &middot; Free during alpha</p>
             </div>
-          </div>
+          </section>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+  </main>
 
-  <!-- ============================================ -->
-  <!-- SECTION 3: ACCOUNT INTELLIGENCE              -->
-  <!-- ============================================ -->
-  <section class="section" id="account-intelligence">
-    <div class="section-wide">
-      <div class="section-inner" style="margin-bottom: 0;">
-        <p class="section-label fade-in">Account intelligence</p>
-        <h2 class="fade-in">Accounts that build themselves.</h2>
-        <p class="fade-in">Every meeting, transcript, and email enriches the account record. Health signals, stakeholder sentiment, expansion opportunities, risk indicators. All maintained without touching a CRM.</p>
-      </div>
-
-      <div class="window-frame fade-in fade-in-d1">
-        <div class="window-titlebar">
-          <div class="window-dot window-dot--red"></div>
-          <div class="window-dot window-dot--yellow"></div>
-          <div class="window-dot window-dot--green"></div>
-        </div>
-        <div class="window-body">
-          <div class="account-detail">
-            <div class="account-hero">
-              <div class="account-avatar">A</div>
-              <div>
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                  <div class="account-name">Acme Corp</div>
-                  <div class="account-badges">
-                    <span class="health-badge"><span class="health-dot health-dot--green"></span> Green</span>
-                    <span class="lifecycle-badge">Growth</span>
-                  </div>
-                </div>
-                <div style="font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.25rem;">14 files &middot; Last updated 2 hours ago</div>
-              </div>
-            </div>
-            <div class="metrics-row">
-              <div class="metric-card"><div class="metric-value">$180K</div><div class="metric-label">ARR</div></div>
-              <div class="metric-card"><div class="metric-value">Growth</div><div class="metric-label">Lifecycle</div></div>
-              <div class="metric-card"><div class="metric-value">47 days</div><div class="metric-label">Renewal</div></div>
-              <div class="metric-card"><div class="metric-value">6 <span style="font-size: 0.75rem; font-weight: 400; color: var(--sage);">&uarr;</span></div><div class="metric-label">Meetings (30d)</div></div>
-            </div>
-            <div class="assessment">Acme is in a strong position heading into renewal. The champion (Sarah Chen, VP Ops) is engaged and driving internal adoption &mdash; weekly active users up 34% since the reporting module launch. Expansion conversation for the analytics module ($45K) is active, but the CFO hasn't confirmed budget.</div>
-            <div class="attention-item attention-item--risk">
-              <svg class="attention-icon" style="color: var(--destructive);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <div>
-                <div class="attention-text">CFO hasn't confirmed budget for analytics module expansion ($45K). May require separate approval process.</div>
-                <div class="attention-meta"><span class="badge badge--risk" style="font-size: 0.625rem;">watch</span><span style="font-size: 0.6875rem; color: var(--text-muted);">Email, Feb 3</span></div>
-              </div>
-            </div>
-            <div class="attention-item attention-item--win">
-              <svg class="attention-icon" style="color: var(--sage);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <div>
-                <div class="attention-text">CSAT improved from 7.2 to 8.6 since last QBR. Support ticket backlog fully cleared.</div>
-                <div class="attention-meta"><span style="font-size: 0.6875rem; color: var(--text-muted);">Strengthens renewal position</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- SECTION 4: AFTER THE MEETING                 -->
-  <!-- ============================================ -->
-  <section class="section section--dark" id="after">
-    <div class="section-wide">
-      <div class="section-inner" style="margin-bottom: 0;">
-        <p class="section-label fade-in">After the meeting</p>
-        <h2 class="fade-in" style="color: var(--text-on-dark);">Drop the transcript. Walk away.</h2>
-        <p class="fade-in">After a call, drop the transcript into your inbox folder. The system processes it automatically. Summary, action items, stakeholder updates, account enrichment. You don't think about it again.</p>
-      </div>
-
-      <div class="flow-steps fade-in fade-in-d1">
-        <div class="flow-step">
-          <div class="flow-step-number">01 DROP</div>
-          <h3>Drop the transcript</h3>
-          <p>Drag a file into the inbox folder. Any format. Meeting recording, transcript, notes.</p>
-        </div>
-        <div class="flow-arrow">&rarr;</div>
-        <div class="flow-step">
-          <div class="flow-step-number">02 PROCESS</div>
-          <h3>System processes it</h3>
-          <p>AI reads the transcript, extracts what matters, and routes it to the right places.</p>
-        </div>
-        <div class="flow-arrow">&rarr;</div>
-        <div class="flow-step">
-          <div class="flow-step-number">03 OUTPUT</div>
-          <h3>Everything filed</h3>
-          <ul class="flow-output">
-            <li>Meeting summary in account folder</li>
-            <li>Action items assigned with due dates</li>
-            <li>Stakeholder records updated</li>
-            <li>Account intelligence enriched</li>
-            <li>Tomorrow's briefing improved</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- SECTION 5: YOUR WEEK                         -->
-  <!-- ============================================ -->
-  <section class="section" id="week">
-    <div class="section-wide">
-      <div class="section-inner" style="margin-bottom: 0;">
-        <p class="section-label fade-in">Your week</p>
-        <h2 class="fade-in">The rhythm is daily. The intelligence is cumulative.</h2>
-        <p class="fade-in">Each morning, DailyOS runs at 6 AM. By the time you have coffee, your daily briefing is ready. But the system is also looking ahead &mdash; flagging what's coming, tracking what's overdue, connecting today's meetings to last week's context.</p>
-      </div>
-
-      <div class="week-grid fade-in fade-in-d1">
-        <div class="week-day week-day--active">
-          <div class="week-day-label">Mon (today)</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Globex check-in</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> CS standup</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Initech kickoff</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Acme QBR</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span> 1:1 manager</div>
-          <div class="week-day-stat">5 meetings &middot; 3 prepped</div>
-        </div>
-        <div class="week-day">
-          <div class="week-day-label">Tue</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Globex expansion</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Product sync</div>
-          <div class="week-day-stat">2 meetings</div>
-        </div>
-        <div class="week-day">
-          <div class="week-day-label">Wed</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Initech training</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Team standup</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span> 1:1 Sarah</div>
-          <div class="week-day-stat">3 meetings &middot; 1 action due</div>
-        </div>
-        <div class="week-day">
-          <div class="week-day-label">Thu</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span> Acme follow-up</div>
-          <div class="week-day-stat">1 meeting</div>
-        </div>
-        <div class="week-day">
-          <div class="week-day-label">Fri</div>
-          <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span> Focus time</div>
-          <div class="week-day-stat">No meetings &middot; 2 actions due</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================ -->
-  <!-- CTA                                          -->
-  <!-- ============================================ -->
-  <section class="cta section--dark">
-    <div class="section-inner">
-      <h2 class="fade-in" style="font-size: clamp(2rem, 5vw, 3rem); color: var(--text-on-dark);">Ready to see your morning prepared?</h2>
-      <div class="fade-in fade-in-d1">
-        <a href="/setup.html" class="btn-primary">Get Early Access</a>
-      </div>
-      <p class="fade-in fade-in-d2" style="margin-top: 1rem;">Open source &middot; GPL-3.0 &middot; Free during alpha</p>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="footer-inner">
-      <ul class="footer-links">
-        <li><a href="/">Home</a></li>
-        <li><a href="/tour.html">Tour</a></li>
-        <li><a href="/philosophy.html">Philosophy</a></li>
-        <li><a href="/setup.html">Get Started</a></li>
-        <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
-      </ul>
-      <div class="footer-meta">
-        <p>DailyOS is open source under GPL-3.0</p>
-        <p>&copy; 2026 James Giroux</p>
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-panel">
+        <ul class="footer-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/tour.html">Tour</a></li>
+          <li><a href="/philosophy.html">Philosophy</a></li>
+          <li><a href="/setup.html">Get Started</a></li>
+          <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+        <p class="footer-meta">DailyOS is open source under GPL-3.0. &copy; 2026 James Giroux.</p>
       </div>
     </div>
   </footer>
 
-  <script>
-    (function() {
-      var observer = new IntersectionObserver(function(entries) {
-        entries.forEach(function(entry) {
-          if (entry.isIntersecting) entry.target.classList.add('visible');
-        });
-      }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
-      document.querySelectorAll('.fade-in').forEach(function(el) { observer.observe(el); });
-
-      var toggle = document.querySelector('.nav-toggle');
-      var links = document.querySelector('.nav-links');
-      toggle.addEventListener('click', function() {
-        var isOpen = links.classList.toggle('open');
-        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      });
-      links.querySelectorAll('a').forEach(function(link) {
-        link.addEventListener('click', function() {
-          links.classList.remove('open');
-          toggle.setAttribute('aria-expanded', 'false');
-        });
-      });
-    })();
-  </script>
-
+  <script src="/site.js"></script>
 </body>
 </html>
