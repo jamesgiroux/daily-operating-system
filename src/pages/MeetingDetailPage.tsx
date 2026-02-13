@@ -29,7 +29,7 @@ import type {
   CalendarEvent,
   StakeholderInsight,
 } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, parseDate } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
@@ -82,10 +82,12 @@ export default function MeetingDetailPage() {
       setCanEditUserLayer(intel.canEditUserLayer);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
-        const start = new Date(startRaw);
+        const start = parseDate(startRaw);
+        if (!start) return startRaw;
         const startLabel = start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
         if (!endRaw) return startLabel;
-        const end = new Date(endRaw);
+        const end = parseDate(endRaw);
+        if (!end) return startLabel;
         const endLabel = end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
         return `${startLabel} - ${endLabel}`;
       };
@@ -1351,7 +1353,8 @@ function findQuickContextValue(
 }
 
 function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
+  const date = parseDate(iso);
+  if (!date) return iso;
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));

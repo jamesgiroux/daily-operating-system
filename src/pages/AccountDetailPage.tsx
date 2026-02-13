@@ -32,7 +32,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageError, InlineEmpty } from "@/components/PageState";
-import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort, formatShortDate, parseDate } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -712,7 +712,7 @@ export default function AccountDetailPage() {
   if (signals?.lastMeeting) {
     metrics.push({
       label: "Last Meeting",
-      value: formatDate(signals.lastMeeting),
+      value: formatShortDate(signals.lastMeeting),
     });
   }
   const heroTeamPreview =
@@ -1103,7 +1103,7 @@ export default function AccountDetailPage() {
                       <p className="text-sm text-muted-foreground">
                         {intelligence.nextMeetingReadiness.meetingTitle}
                         {intelligence.nextMeetingReadiness.meetingDate &&
-                          ` — ${formatDate(intelligence.nextMeetingReadiness.meetingDate)}`}
+                          ` — ${formatShortDate(intelligence.nextMeetingReadiness.meetingDate)}`}
                       </p>
                     )}
                   </CardHeader>
@@ -1936,7 +1936,7 @@ export default function AccountDetailPage() {
                               {event.eventType}
                             </Badge>
                             <span className="text-muted-foreground">
-                              {formatDate(event.eventDate)}
+                              {formatShortDate(event.eventDate)}
                             </span>
                           </div>
                           {event.arrImpact != null && (
@@ -2520,14 +2520,14 @@ function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
   if (detail.renewalDate) {
     fields.push({
       label: "Renewal",
-      value: formatDate(detail.renewalDate),
+      value: formatShortDate(detail.renewalDate),
     });
   }
 
   if (detail.contractStart) {
     fields.push({
       label: "Contract Start",
-      value: formatDate(detail.contractStart),
+      value: formatShortDate(detail.contractStart),
     });
   }
 
@@ -2842,42 +2842,26 @@ function CaptureIcon({ type }: { type: string }) {
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
-
-
 function formatRelativeDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const date = parseDate(dateStr);
+  if (!date) return dateStr.split("T")[0]?.split(" ")[0] ?? dateStr;
+  const now = new Date();
+  const diffMs = date.getTime() - now.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffDays === 0) {
-      return date.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-    if (diffDays === 1) {
-      return `Tomorrow ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-    }
-    if (diffDays === -1) return "Yesterday";
-    if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
-    if (diffDays <= 7) return `In ${diffDays} days`;
-    return formatDate(dateStr);
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
+  if (diffDays === 0) {
+    return date.toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }
+  if (diffDays === 1) {
+    return `Tomorrow ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  }
+  if (diffDays === -1) return "Yesterday";
+  if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
+  if (diffDays <= 7) return `In ${diffDays} days`;
+  return formatShortDate(dateStr);
 }
 
 function formatMeetingType(meetingType: string): string {
