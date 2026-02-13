@@ -378,6 +378,10 @@ pub struct ExecutionRecord {
     pub duration_secs: Option<u64>,
     pub success: bool,
     pub error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_phase: Option<WorkflowPhase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_retry: Option<bool>,
     pub trigger: ExecutionTrigger,
 }
 
