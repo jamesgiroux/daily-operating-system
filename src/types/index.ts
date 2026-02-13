@@ -6,6 +6,13 @@
 export type ProfileType = "customer-success" | "general";
 
 export type EntityMode = "account" | "project" | "both";
+export type SettingsTabId =
+  | "profile"
+  | "integrations"
+  | "workflows"
+  | "intelligence"
+  | "hygiene"
+  | "diagnostics";
 
 export type MeetingType =
   | "customer"
@@ -422,6 +429,46 @@ export type GoogleAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string }
   | { status: "tokenexpired" };
+
+export interface HygieneFixView {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface HygieneGapActionView {
+  kind: "navigate" | "run_scan_now";
+  label: string;
+  route?: string;
+}
+
+export interface HygieneGapView {
+  key: string;
+  label: string;
+  count: number;
+  impact: "critical" | "medium" | "low";
+  description: string;
+  action: HygieneGapActionView;
+}
+
+export interface HygieneBudgetView {
+  usedToday: number;
+  dailyLimit: number;
+  queuedForNextBudget: number;
+}
+
+export interface HygieneStatusView {
+  status: "running" | "healthy" | "needs_attention";
+  statusLabel: string;
+  lastScanTime?: string;
+  nextScanTime?: string;
+  totalGaps: number;
+  totalFixes: number;
+  isRunning: boolean;
+  fixes: HygieneFixView[];
+  gaps: HygieneGapView[];
+  budget: HygieneBudgetView;
+}
 
 export interface CalendarEvent {
   id: string;

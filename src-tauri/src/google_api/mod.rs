@@ -195,8 +195,11 @@ pub async fn send_with_retry(
                 let status = response.status();
                 let decision = retry_decision_for_status(status);
                 if decision == RetryDecision::Retryable && attempt < attempts {
-                    let delay =
-                        retry_delay(attempt, policy, response.headers().get(reqwest::header::RETRY_AFTER));
+                    let delay = retry_delay(
+                        attempt,
+                        policy,
+                        response.headers().get(reqwest::header::RETRY_AFTER),
+                    );
                     log::warn!(
                         "google_api retry {}/{} after status {} (sleep {:?})",
                         attempt,
@@ -309,13 +312,12 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
 /// exchange, even with PKCE. The secret is not truly secret (it ships in the
 /// binary) — Google documents this as expected for installed/desktop apps.
 fn embedded_credentials() -> ClientCredentials {
+    let client_secret = option_env!("DAILYOS_GOOGLE_SECRET").map(|s| s.to_string());
     ClientCredentials {
         installed: InstalledAppCredentials {
             client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
                 .to_string(),
-            client_secret: Some(
-                "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".to_string(),
-            ),
+            client_secret,
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uris: vec!["http://localhost".to_string()],
@@ -464,7 +466,7 @@ mod tests {
             refresh_token: Some("1//test-refresh-token".to_string()),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             client_id: "12345.apps.googleusercontent.com".to_string(),
-            client_secret: Some("test-secret".to_string()),
+            client_secret: "test-secret".to_string().into(),
             scopes: vec!["https://www.googleapis.com/auth/calendar".to_string()],
             expiry: Some("2026-02-08T12:00:00Z".to_string()),
             account: Some("user@example.com".to_string()),
@@ -529,7 +531,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: None,
             account: None,
@@ -546,7 +548,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: Some(future.to_rfc3339()),
             account: None,
@@ -563,7 +565,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: Some(past.to_rfc3339()),
             account: None,
