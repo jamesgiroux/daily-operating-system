@@ -327,11 +327,21 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
   const [localEntities, setLocalEntities] = React.useState<LinkedEntity[]>(
     meeting.linkedEntities ?? []
   );
+  const [suggestedUnarchiveAccountId, setSuggestedUnarchiveAccountId] = React.useState<string | null>(
+    meeting.suggestedUnarchiveAccountId ?? null,
+  );
+  const [restoringSuggestion, setRestoringSuggestion] = React.useState(false);
+  const [suggestionError, setSuggestionError] = React.useState<string | null>(null);
 
   // Sync from props when meeting data refreshes (e.g., dashboard reload)
   React.useEffect(() => {
     setLocalEntities(meeting.linkedEntities ?? []);
   }, [meeting.linkedEntities]);
+
+  React.useEffect(() => {
+    setSuggestedUnarchiveAccountId(meeting.suggestedUnarchiveAccountId ?? null);
+    setSuggestionError(null);
+  }, [meeting.suggestedUnarchiveAccountId]);
 
   const handleAddEntity = React.useCallback(
     async (newId: string | null, name?: string) => {
@@ -587,37 +597,47 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
             />
           </div>
 
-          {meeting.suggestedUnarchiveAccountId && (
+          {suggestedUnarchiveAccountId && (
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-primary/70">Matches archived account</span>
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-5 px-2 text-xs text-primary hover:text-primary"
+                disabled={restoringSuggestion}
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
+                    setRestoringSuggestion(true);
+                    setSuggestionError(null);
                     await invoke("archive_account", {
-                      id: meeting.suggestedUnarchiveAccountId,
+                      id: suggestedUnarchiveAccountId!,
                       archived: false,
                     });
                     await invoke("add_meeting_entity", {
                       meetingId: meeting.id,
-                      entityId: meeting.suggestedUnarchiveAccountId,
+                      entityId: suggestedUnarchiveAccountId!,
                       entityType: "account",
                       meetingTitle: meeting.title,
                       startTime: meeting.startIso ?? meeting.time,
                       meetingTypeStr: meeting.type,
                     });
+                    setSuggestedUnarchiveAccountId(null);
                     emit("entity-updated");
                   } catch (err) {
-                    console.error("Failed to unarchive:", err);
+                    const message = err instanceof Error ? err.message : String(err);
+                    setSuggestionError(message);
+                  } finally {
+                    setRestoringSuggestion(false);
                   }
                 }}
               >
-                Restore
+                {restoringSuggestion ? "Restoring..." : "Restore"}
               </Button>
             </div>
+          )}
+          {suggestionError && (
+            <p className="mt-1 text-xs text-destructive">{suggestionError}</p>
           )}
 
           {/* Row 4: Intelligence brief — surfaced on card, no expansion needed */}

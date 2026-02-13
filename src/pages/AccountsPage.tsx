@@ -7,6 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import {
+  BulkCreateForm,
+  parseBulkCreateInput,
+} from "@/components/ui/bulk-create-form";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError } from "@/components/PageState";
 import { Building2, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
@@ -20,7 +24,6 @@ interface ArchivedAccount {
   lifecycle?: string;
   arr?: number;
   health?: string;
-  csm?: string;
   archived: boolean;
 }
 
@@ -115,10 +118,7 @@ export default function AccountsPage() {
 
   // I162: bulk create
   async function handleBulkCreate() {
-    const names = bulkValue
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
       await invoke<string[]>("bulk_create_accounts", { names });
@@ -176,7 +176,7 @@ export default function AccountsPage() {
     ? scopeFiltered.filter(
         (a) =>
           a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.csm ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+          (a.teamSummary ?? "").toLowerCase().includes(searchQuery.toLowerCase())
       )
     : scopeFiltered;
 
@@ -196,8 +196,7 @@ export default function AccountsPage() {
   const filteredArchived = searchQuery
     ? archivedAccounts.filter(
         (a) =>
-          a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.csm ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+          a.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : archivedAccounts;
 
@@ -281,51 +280,22 @@ export default function AccountsPage() {
                   {creating ? (
                     <>
                       {bulkMode ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={bulkValue}
-                            onChange={(e) => setBulkValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setCreating(false);
-                              }
-                            }}
-                            placeholder="One account name per line"
-                            rows={5}
-                            className="w-64 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={handleBulkCreate}>
-                              Create{" "}
-                              {bulkValue.split("\n").filter((s) => s.trim()).length || ""}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setBulkMode(false);
-                                setBulkValue("");
-                              }}
-                            >
-                              Single
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setCreating(false);
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setNewName("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                        <BulkCreateForm
+                          value={bulkValue}
+                          onChange={setBulkValue}
+                          onCreate={handleBulkCreate}
+                          onSingleMode={() => {
+                            setBulkMode(false);
+                            setBulkValue("");
+                          }}
+                          onCancel={() => {
+                            setCreating(false);
+                            setBulkMode(false);
+                            setBulkValue("");
+                            setNewName("");
+                          }}
+                          placeholder="One account name per line"
+                        />
                       ) : (
                         <div className="flex items-center gap-2">
                           <InlineCreateForm
@@ -494,7 +464,7 @@ function AccountRow({
       params={{ accountId: account.id }}
       signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
       name={account.name}
-      subtitle={account.csm ? `CSM: ${account.csm}` : undefined}
+      subtitle={account.teamSummary}
       className={isChild ? "pl-8" : undefined}
       badges={
         <div className="inline-flex items-center gap-2">
@@ -565,7 +535,7 @@ function ArchivedAccountRow({ account }: { account: ArchivedAccount }) {
       signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
       name={account.name}
       subtitle={
-        [account.csm ? `CSM: ${account.csm}` : "", account.lifecycle]
+        [account.lifecycle]
           .filter(Boolean)
           .join(" \u00B7 ") || undefined
       }
