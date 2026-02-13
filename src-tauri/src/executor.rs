@@ -1052,7 +1052,10 @@ impl Executor {
     /// Re-runs `enrich_briefing()` against existing `_today/data/schedule.json`
     /// so users can update the focus statement and narrative independently.
     pub async fn execute_focus_refresh(&self, workspace: &Path) -> Result<(), String> {
-        // Guard: reject if /today pipeline is currently running
+        // Guard: reject if /today pipeline is currently running.
+        // Note: TOCTOU race between this check and execution start is accepted —
+        // same pattern as execute_email_refresh. Practical risk is negligible:
+        // both operations are user-initiated in a single-user desktop app.
         let today_status = self.state.get_workflow_status(WorkflowId::Today);
         if matches!(today_status, WorkflowStatus::Running { .. }) {
             return Err("Cannot refresh focus while /today pipeline is running".to_string());
