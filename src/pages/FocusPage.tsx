@@ -14,6 +14,8 @@ import type {
 } from "@/types";
 import { buildFocusViewModel } from "./focusViewModel";
 import { PageEmpty, PageError } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
 import { cn, stripMarkdown } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -64,6 +66,7 @@ function formatDuration(minutes: number): string {
 }
 
 export default function FocusPage() {
+  const { personality } = usePersonality();
   const [data, setData] = useState<FocusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -177,8 +180,7 @@ export default function FocusPage() {
       <main className="flex-1 overflow-hidden">
         <PageEmpty
           icon={Target}
-          title="No focus data yet"
-          message="Your focus priorities will appear here after the daily briefing runs."
+          {...getPersonalityCopy("focus-empty", personality)}
         />
       </main>
     );

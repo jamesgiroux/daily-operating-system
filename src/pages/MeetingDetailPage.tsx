@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,18 +127,40 @@ export default function MeetingDetailPage() {
         id: meetingMeta?.id || meetingId,
         title: meetingMeta?.title || data.title,
         start: meetingMeta?.startTime || new Date().toISOString(),
-        end: meetingMeta?.endTime || meetingMeta?.startTime || new Date().toISOString(),
-        type: "internal",
+        end:
+          meetingMeta?.endTime ||
+          meetingMeta?.startTime ||
+          new Date().toISOString(),
+        type:
+          (meetingMeta?.meetingType as CalendarEvent["type"]) ?? "internal",
         attendees: [],
         isAllDay: false,
       };
-      await invoke("attach_meeting_transcript", {
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript", {
         filePath: selected,
         meeting: calendarEvent,
       });
+      console.log("[transcript] Result:", result);
+      if (result.status !== "success") {
+        toast.error("Transcript processing failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Transcript processed");
+      }
       await loadMeetingIntelligence();
     } catch (err) {
-      console.error("Failed to attach transcript:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to attach transcript:", msg);
+      toast.error("Failed to attach transcript", { description: msg });
     } finally {
       setAttaching(false);
     }
@@ -166,7 +189,7 @@ export default function MeetingDetailPage() {
     );
   }
 
-  if (error || !data) {
+  if (error) {
     return (
       <main className="flex-1 overflow-hidden p-6">
         <Link to="/">
@@ -179,11 +202,31 @@ export default function MeetingDetailPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-destructive">
               <AlertCircle className="size-5" />
-              <p>{error || "Meeting prep not available"}</p>
+              <p>{error}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (!data) {
+    return (
+      <main className="flex-1 overflow-hidden p-6">
+        <Link to="/">
+          <Button variant="ghost" size="sm" className="mb-4">
+            <ArrowLeft className="mr-2 size-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Clock className="size-5" />
+              <p>Prep not ready yet</p>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              This meeting doesn't have a prep file yet. The system generates prep
-              files for customer meetings when running the Daily Briefing.
+              Meeting context will appear here after the daily briefing runs.
             </p>
           </CardContent>
         </Card>
