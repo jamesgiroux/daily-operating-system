@@ -28,6 +28,9 @@ pub enum DbError {
 
     #[error("Failed to create database directory: {0}")]
     CreateDir(std::io::Error),
+
+    #[error("Schema migration failed: {0}")]
+    Migration(String),
 }
 
 /// A row from the `actions` table.
@@ -374,151 +377,13 @@ impl ActionDb {
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
-        // Apply schema (all statements use IF NOT EXISTS, so this is idempotent)
-        conn.execute_batch(include_str!("schema.sql"))?;
+        // Run schema migrations (ADR-0071)
+        crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
 
-        // Migration: add calendar_event_id to meetings_history (ignore if exists)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;");
-
-        // Migration: backfill entities from accounts (ADR-0045).
-        // Idempotent — INSERT OR IGNORE skips existing rows.
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
-             SELECT id, name, 'account', tracker_path, updated_at FROM accounts;",
-        );
-
-        // Migration: add needs_decision flag to actions (I42 — Executive Intelligence)
-        let _ =
-            conn.execute_batch("ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;");
-
-        // Migration: add nps column to accounts (I72 — Account Dashboards)
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN nps INTEGER;");
-
-        // Migration: add parent_id to accounts (I114 — Parent-Child Accounts)
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN parent_id TEXT;");
-
-        // Migration: ring → lifecycle (ring was INTEGER 1-4, lifecycle is TEXT)
-        let has_lifecycle: bool = conn
-            .prepare("SELECT lifecycle FROM accounts LIMIT 0")
-            .is_ok();
-        if !has_lifecycle {
-            let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN lifecycle TEXT;");
-            // Drop the old ring column data — it was CS-specific decoration
-            // SQLite can't drop columns, so ring stays as a dead column
-        }
-
-        // Migration: add 'decision' to captures.capture_type CHECK constraint.
-        // SQLite can't ALTER CHECK constraints, so we recreate the table if needed.
-        // Recreating captures is safe — the table schema changes but data is
-        // rebuilt from transcript processing and post-meeting capture.
-        Self::migrate_captures_decision(&conn)?;
-
-        // Migration: create meeting_entities junction table (I52)
-        let _ = conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS meeting_entities (
-                meeting_id TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                entity_type TEXT NOT NULL DEFAULT 'account',
-                PRIMARY KEY (meeting_id, entity_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);",
-        );
-
-        // Migration: backfill entities from projects (I50, parallel to account backfill)
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
-             SELECT id, name, 'project', tracker_path, updated_at FROM projects;",
-        );
-
-        // Migration: backfill meeting_entities junction from meetings_history.account_id (I52)
-        // Join through accounts table to resolve slugified entity IDs (Sprint 9 fix)
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
-             SELECT mh.id, a.id, 'account' FROM meetings_history mh
-             JOIN accounts a ON LOWER(a.name) = LOWER(mh.account_id)
-             WHERE mh.account_id IS NOT NULL AND mh.account_id != '';",
-        );
-
-        // Repair migration: clean orphaned junction rows where entity_id doesn't exist
-        // in entities table (from pre-fix backfill that used raw names instead of slugified IDs)
-        let _ = conn.execute_batch(
-            "DELETE FROM meeting_entities WHERE entity_id NOT IN (SELECT id FROM entities);",
-        );
-
-        // Migration: add project_id column to captures (I52)
-        let has_project_id: bool = conn
-            .prepare("SELECT project_id FROM captures LIMIT 0")
-            .is_ok();
-        if !has_project_id {
-            let _ = conn.execute_batch("ALTER TABLE captures ADD COLUMN project_id TEXT;");
-        }
-
-        // Migration: add person_id column to actions (I127 — Manual Action Creation)
-        let _ = conn.execute_batch("ALTER TABLE actions ADD COLUMN person_id TEXT;");
-
-        // Migration: add content_type + priority to content_index (I139)
-        let _ = conn.execute_batch(
-            "ALTER TABLE content_index ADD COLUMN content_type TEXT NOT NULL DEFAULT 'general';",
-        );
-        let _ = conn.execute_batch(
-            "ALTER TABLE content_index ADD COLUMN priority INTEGER NOT NULL DEFAULT 5;",
-        );
-
-        // Sprint 12 Migration: add archived column to entities
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN archived INTEGER DEFAULT 0;");
-        let _ = conn.execute_batch("ALTER TABLE projects ADD COLUMN archived INTEGER DEFAULT 0;");
-        let _ = conn.execute_batch("ALTER TABLE people ADD COLUMN archived INTEGER DEFAULT 0;");
-
-        // Sprint 12 Migration: account lifecycle events table (I143)
-        let _ = conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS account_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id TEXT NOT NULL,
-                event_type TEXT NOT NULL CHECK(event_type IN ('renewal', 'expansion', 'churn', 'downgrade')),
-                event_date TEXT NOT NULL,
-                arr_impact REAL,
-                notes TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-            );"
-        );
-        let _ = conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);",
-        );
-        let _ = conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);",
-        );
-
-        // Migration: add prep_context_json to meetings_history (I181)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_context_json TEXT;");
-
-        // Migration: add description to meetings_history (I185)
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN description TEXT;");
-
-        // Meeting permanence/user-layer migrations (ADR-0065 / ADR-0066)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_agenda_json TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_notes TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_json TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_at TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_path TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_hash TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_path TEXT;");
-        let _ = conn
-            .execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_processed_at TEXT;");
-
-        // Normalize reviewed-prep state to canonical meeting IDs.
+        // Legacy data repairs — idempotent Rust code, safe to run every startup.
+        // Will be removed once all alpha users are past v0.7.3.
         let _ = Self::normalize_reviewed_prep_keys(&conn);
-
-        // Comprehensive ID backfill for calendar-backed meetings.
         let _ = Self::backfill_meeting_identity(&conn);
-
-        // Import user-authored prep fields from persisted prep context JSON.
         let _ = Self::backfill_meeting_user_layer(&conn);
 
         Ok(Self { conn })
@@ -528,51 +393,6 @@ impl ActionDb {
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         Ok(home.join(".dailyos").join("actions.db"))
-    }
-
-    /// Migrate the `captures` table to accept 'decision' as a capture_type.
-    ///
-    /// Tries a test insert — if it succeeds the constraint already allows
-    /// 'decision' (e.g. fresh DB from updated schema.sql). If it fails,
-    /// recreate the table with the new constraint, preserving existing rows.
-    fn migrate_captures_decision(conn: &Connection) -> Result<(), DbError> {
-        // Quick probe: try inserting and rolling back
-        let needs_migration = conn
-            .execute(
-                "INSERT INTO captures (id, meeting_id, meeting_title, capture_type, content)
-                 VALUES ('__probe__', '__probe__', '__probe__', 'decision', '__probe__')",
-                [],
-            )
-            .is_err();
-
-        if !needs_migration {
-            // Probe succeeded — clean up and return
-            let _ = conn.execute("DELETE FROM captures WHERE id = '__probe__'", []);
-            return Ok(());
-        }
-
-        // Recreate with new constraint
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS captures_v2 (
-                id TEXT PRIMARY KEY,
-                meeting_id TEXT NOT NULL,
-                meeting_title TEXT NOT NULL,
-                account_id TEXT,
-                capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
-                content TEXT NOT NULL,
-                owner TEXT,
-                due_date TEXT,
-                captured_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            INSERT OR IGNORE INTO captures_v2 SELECT * FROM captures;
-            DROP TABLE captures;
-            ALTER TABLE captures_v2 RENAME TO captures;
-            CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
-            CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
-            CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);",
-        )?;
-
-        Ok(())
     }
 
     /// Convert reviewed-prep keys from legacy prep file paths to meeting IDs.
@@ -5016,41 +4836,6 @@ mod tests {
         let projects = db.get_entities_by_type("project").expect("query");
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "Project X");
-    }
-
-    #[test]
-    fn test_backfill_migration_populates_entities() {
-        // Create a DB, insert an account directly (bypassing the bridge),
-        // then re-open to trigger the backfill migration.
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("backfill_test.db");
-        std::mem::forget(dir);
-
-        // First open: create DB and insert an account via raw SQL
-        // (simulating pre-ADR-0045 state)
-        {
-            let conn = rusqlite::Connection::open(&path).expect("open");
-            conn.execute_batch("PRAGMA journal_mode=WAL;").expect("wal");
-            conn.execute_batch(include_str!("schema.sql"))
-                .expect("schema");
-            conn.execute(
-                "INSERT INTO accounts (id, name, lifecycle, tracker_path, updated_at)
-                 VALUES ('legacy-acct', 'Legacy Corp', 'steady-state', 'Accounts/legacy', '2025-01-01T00:00:00Z')",
-                [],
-            )
-            .expect("insert legacy account");
-        }
-
-        // Second open via ActionDb: backfill migration should run
-        let db = ActionDb::open_at(path).expect("reopen");
-        let entity = db.get_entity("legacy-acct").expect("get entity");
-        assert!(
-            entity.is_some(),
-            "Backfill should create entity from account"
-        );
-        let e = entity.unwrap();
-        assert_eq!(e.name, "Legacy Corp");
-        assert_eq!(e.entity_type, EntityType::Account);
     }
 
     #[test]
