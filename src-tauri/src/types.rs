@@ -42,6 +42,15 @@ pub struct Config {
     pub user_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_focus: Option<String>,
+    /// One-time gate: internal team setup completion state (Sprint 20 / ADR-0070).
+    #[serde(default)]
+    pub internal_team_setup_completed: bool,
+    /// Internal setup schema/version marker for future re-prompts.
+    #[serde(default)]
+    pub internal_team_setup_version: u32,
+    /// Root internal org account ID (set after setup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal_org_account_id: Option<String>,
     /// Show developer tools panel (wrench icon). Only effective in debug builds.
     #[serde(default)]
     pub developer_mode: bool,
@@ -1473,6 +1482,9 @@ mod tests {
             user_company: None,
             user_title: None,
             user_focus: None,
+            internal_team_setup_completed: false,
+            internal_team_setup_version: 0,
+            internal_org_account_id: None,
             developer_mode: false,
             ai_models: AiModelConfig::default(),
         }

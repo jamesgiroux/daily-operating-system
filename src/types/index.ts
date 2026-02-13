@@ -798,6 +798,7 @@ export interface AccountListItem {
   parentName?: string;
   childCount: number;
   isParent: boolean;
+  isInternal: boolean;
   archived: boolean;
 }
 
@@ -880,6 +881,29 @@ export interface AccountDetail extends AccountListItem {
   parentAggregate?: ParentAggregate;
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+}
+
+export interface PickerAccount {
+  id: string;
+  name: string;
+  parentName?: string;
+  isInternal: boolean;
+}
+
+export interface OnboardingPrimingCard {
+  id: string;
+  title: string;
+  startTime?: string;
+  dayLabel: string;
+  suggestedEntityId?: string;
+  suggestedEntityName?: string;
+  suggestedAction: string;
+}
+
+export interface OnboardingPrimingContext {
+  googleConnected: boolean;
+  cards: OnboardingPrimingCard[];
+  prompt: string;
 }
 
 // =============================================================================
