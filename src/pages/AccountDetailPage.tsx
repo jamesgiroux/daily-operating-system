@@ -71,6 +71,7 @@ import type {
   IntelRisk,
   IntelWin,
   MeetingPreview,
+  Person,
   StakeholderInsight,
   StrategicProgram,
   ParentAggregate,
@@ -82,6 +83,7 @@ import {
 } from "@/components/ui/collapsible";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
+const accountTeamRoleSuggestions = ["TAM", "CSM", "RM", "AE", "Champion"];
 
 const temperatureStyles: Record<string, string> = {
   hot: "bg-destructive/15 text-destructive",
@@ -89,6 +91,19 @@ const temperatureStyles: Record<string, string> = {
   cool: "bg-muted text-muted-foreground",
   cold: "bg-muted text-muted-foreground/60",
 };
+
+function normalizeTeamRole(role: string): string {
+  return role.trim() || "associated";
+}
+
+function syntheticUnknownEmail(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  const prefix = base.length > 0 ? base : "person";
+  return `${prefix}.${Date.now()}@unknown.local`;
+}
 
 /** Render inline text with [N] citation markers as superscript. */
 function renderCitations(text: string): ReactNode[] {
@@ -170,8 +185,6 @@ export default function AccountDetailPage() {
   const [editLifecycle, setEditLifecycle] = useState<string>("");
   const [editArr, setEditArr] = useState<string>("");
   const [editNps, setEditNps] = useState<string>("");
-  const [editCsm, setEditCsm] = useState<string>("");
-  const [editChampion, setEditChampion] = useState<string>("");
   const [editRenewal, setEditRenewal] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
   const [dirty, setDirty] = useState(false);
@@ -210,6 +223,16 @@ export default function AccountDetailPage() {
   const [newEventDate, setNewEventDate] = useState("");
   const [newArrImpact, setNewArrImpact] = useState("");
   const [newEventNotes, setNewEventNotes] = useState("");
+  const [teamSearchQuery, setTeamSearchQuery] = useState("");
+  const [teamSearchResults, setTeamSearchResults] = useState<Person[]>([]);
+  const [selectedTeamPerson, setSelectedTeamPerson] = useState<Person | null>(null);
+  const [teamRole, setTeamRole] = useState("CSM");
+  const [teamWorking, setTeamWorking] = useState(false);
+  const [teamInlineName, setTeamInlineName] = useState("");
+  const [teamInlineEmail, setTeamInlineEmail] = useState("");
+  const [teamInlineRole, setTeamInlineRole] = useState("Champion");
+  const [resolvedImportNotes, setResolvedImportNotes] = useState<Set<number>>(new Set());
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -234,8 +257,6 @@ export default function AccountDetailPage() {
       setEditLifecycle(result.lifecycle ?? "");
       setEditArr(result.arr?.toString() ?? "");
       setEditNps(result.nps?.toString() ?? "");
-      setEditCsm(result.csm ?? "");
-      setEditChampion(result.champion ?? "");
       setEditRenewal(result.renewalDate ?? "");
       setEditNotes(result.notes ?? "");
       setPrograms(result.strategicPrograms);
@@ -268,6 +289,29 @@ export default function AccountDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setResolvedImportNotes(new Set());
+    setTeamError(null);
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!teamSearchQuery || teamSearchQuery.trim().length < 2) {
+      setTeamSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const results = await invoke<Person[]>("search_people", {
+          query: teamSearchQuery.trim(),
+        });
+        setTeamSearchResults(results);
+      } catch {
+        setTeamSearchResults([]);
+      }
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [teamSearchQuery]);
 
   // Listen for intelligence-updated events
   useEffect(() => {
@@ -328,10 +372,6 @@ export default function AccountDetailPage() {
         fieldUpdates.push(["arr", editArr]);
       if (editNps !== (detail.nps?.toString() ?? ""))
         fieldUpdates.push(["nps", editNps]);
-      if (editCsm !== (detail.csm ?? ""))
-        fieldUpdates.push(["csm", editCsm]);
-      if (editChampion !== (detail.champion ?? ""))
-        fieldUpdates.push(["champion", editChampion]);
       if (editRenewal !== (detail.renewalDate ?? ""))
         fieldUpdates.push(["contract_end", editRenewal]);
 
@@ -367,8 +407,6 @@ export default function AccountDetailPage() {
     setEditLifecycle(detail.lifecycle ?? "");
     setEditArr(detail.arr?.toString() ?? "");
     setEditNps(detail.nps?.toString() ?? "");
-    setEditCsm(detail.csm ?? "");
-    setEditChampion(detail.champion ?? "");
     setEditRenewal(detail.renewalDate ?? "");
     setDirty(false);
     setEditing(false);
@@ -518,6 +556,96 @@ export default function AccountDetailPage() {
     }
   }
 
+  async function handleAddExistingTeamMember() {
+    if (!detail || !selectedTeamPerson) return;
+    const normalizedRole = normalizeTeamRole(teamRole);
+    try {
+      setTeamWorking(true);
+      setTeamError(null);
+      await invoke("add_account_team_member", {
+        accountId: detail.id,
+        personId: selectedTeamPerson.id,
+        role: normalizedRole,
+      });
+      setSelectedTeamPerson(null);
+      setTeamSearchQuery("");
+      setTeamSearchResults([]);
+      setTeamRole("CSM");
+      await load();
+    } catch (e) {
+      setTeamError(String(e));
+    } finally {
+      setTeamWorking(false);
+    }
+  }
+
+  async function handleRemoveTeamMember(personId: string, role: string) {
+    if (!detail) return;
+    try {
+      setTeamWorking(true);
+      setTeamError(null);
+      await invoke("remove_account_team_member", {
+        accountId: detail.id,
+        personId,
+        role,
+      });
+      await load();
+    } catch (e) {
+      setTeamError(String(e));
+    } finally {
+      setTeamWorking(false);
+    }
+  }
+
+  async function createAndAddTeamMember(name: string, email: string, role: string) {
+    if (!detail) return;
+    const normalizedRole = normalizeTeamRole(role);
+    const personName = name.trim();
+    const personEmail = email.trim() || syntheticUnknownEmail(personName);
+    const personId = await invoke<string>("create_person", {
+      email: personEmail,
+      name: personName,
+      relationship: "unknown",
+    });
+    await invoke("add_account_team_member", {
+      accountId: detail.id,
+      personId,
+      role: normalizedRole,
+    });
+  }
+
+  async function handleCreateInlineTeamMember() {
+    if (!teamInlineName.trim()) return;
+    try {
+      setTeamWorking(true);
+      setTeamError(null);
+      await createAndAddTeamMember(teamInlineName, teamInlineEmail, teamInlineRole);
+      setTeamInlineName("");
+      setTeamInlineEmail("");
+      setTeamInlineRole("Champion");
+      await load();
+    } catch (e) {
+      setTeamError(String(e));
+    } finally {
+      setTeamWorking(false);
+    }
+  }
+
+  async function handleImportNoteCreateAndAdd(noteId: number, name: string, role: string) {
+    if (!name.trim()) return;
+    try {
+      setTeamWorking(true);
+      setTeamError(null);
+      await createAndAddTeamMember(name.trim(), "", role);
+      setResolvedImportNotes((prev) => new Set([...prev, noteId]));
+      await load();
+    } catch (e) {
+      setTeamError(String(e));
+    } finally {
+      setTeamWorking(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-8">
@@ -587,6 +715,13 @@ export default function AccountDetailPage() {
       value: formatDate(signals.lastMeeting),
     });
   }
+  const heroTeamPreview =
+    detail.accountTeam.length > 0
+      ? detail.accountTeam
+          .slice(0, 2)
+          .map((member) => `${member.personName} (${member.role.toUpperCase()})`)
+          .join(", ")
+      : null;
 
   return (
     <main className="flex-1 overflow-hidden">
@@ -661,9 +796,9 @@ export default function AccountDetailPage() {
                     </Badge>
                   )}
                 </div>
-                {detail.csm && (
+                {heroTeamPreview && (
                   <span className="text-sm text-muted-foreground">
-                    CSM: {detail.csm}
+                    Team: {heroTeamPreview}
                   </span>
                 )}
               </div>
@@ -1422,10 +1557,6 @@ export default function AccountDetailPage() {
                       setEditArr={setEditArr}
                       editNps={editNps}
                       setEditNps={setEditNps}
-                      editCsm={editCsm}
-                      setEditCsm={setEditCsm}
-                      editChampion={editChampion}
-                      setEditChampion={setEditChampion}
                       editRenewal={editRenewal}
                       setEditRenewal={setEditRenewal}
                       setDirty={setDirty}
@@ -1436,6 +1567,211 @@ export default function AccountDetailPage() {
                     />
                   ) : (
                     <AccountDetailsReadView detail={detail} />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Account Team
+                    {detail.accountTeam.length > 0 && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.accountTeam.length})
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {detail.accountTeam.length > 0 ? (
+                    <div className="space-y-2">
+                      {detail.accountTeam.map((member) => (
+                        <div
+                          key={`${member.personId}-${member.role}`}
+                          className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <Link
+                              to="/people/$personId"
+                              params={{ personId: member.personId }}
+                              className="font-medium hover:text-primary"
+                            >
+                              {member.personName}
+                            </Link>
+                            <div className="text-xs text-muted-foreground">
+                              {member.role.toUpperCase()}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={teamWorking}
+                            onClick={() =>
+                              handleRemoveTeamMember(member.personId, member.role)
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No account team members yet.
+                    </p>
+                  )}
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Add Existing Person
+                    </label>
+                    <Input
+                      value={teamSearchQuery}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setTeamSearchQuery(value);
+                        setSelectedTeamPerson(null);
+                      }}
+                      placeholder="Search people..."
+                    />
+                    {teamSearchResults.length > 0 && !selectedTeamPerson && (
+                      <div className="max-h-36 space-y-1 overflow-auto rounded border p-1">
+                        {teamSearchResults.slice(0, 6).map((person) => (
+                          <button
+                            key={person.id}
+                            type="button"
+                            className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-sm hover:bg-muted"
+                            onClick={() => {
+                              setSelectedTeamPerson(person);
+                              setTeamSearchQuery(person.name);
+                              setTeamSearchResults([]);
+                            }}
+                          >
+                            <span>{person.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {person.email}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={teamRole}
+                        onChange={(e) => setTeamRole(e.target.value)}
+                        placeholder="Role"
+                        className="h-8 text-xs"
+                      />
+                      {accountTeamRoleSuggestions.map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={() => setTeamRole(role)}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={teamWorking || !selectedTeamPerson || !teamRole.trim()}
+                      onClick={handleAddExistingTeamMember}
+                    >
+                      Add to Team
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Create Person + Add
+                    </label>
+                    <Input
+                      value={teamInlineName}
+                      onChange={(e) => setTeamInlineName(e.target.value)}
+                      placeholder="Name"
+                    />
+                    <Input
+                      value={teamInlineEmail}
+                      onChange={(e) => setTeamInlineEmail(e.target.value)}
+                      placeholder="Email (optional)"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={teamInlineRole}
+                        onChange={(e) => setTeamInlineRole(e.target.value)}
+                        placeholder="Role"
+                        className="h-8 text-xs"
+                      />
+                      {accountTeamRoleSuggestions.map((role) => (
+                        <button
+                          key={`inline-${role}`}
+                          type="button"
+                          className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={() => setTeamInlineRole(role)}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={teamWorking || !teamInlineName.trim() || !teamInlineRole.trim()}
+                      onClick={handleCreateInlineTeamMember}
+                    >
+                      Create + Add
+                    </Button>
+                  </div>
+
+                  {detail.accountTeamImportNotes.filter((note) => !resolvedImportNotes.has(note.id)).length > 0 && (
+                    <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Migrated Team Notes
+                      </p>
+                      {detail.accountTeamImportNotes
+                        .filter((note) => !resolvedImportNotes.has(note.id))
+                        .map((note) => (
+                          <div
+                            key={note.id}
+                            className="flex items-center justify-between gap-3 rounded border bg-background px-2 py-2 text-xs"
+                          >
+                            <div>
+                              <div className="font-medium">{note.legacyValue}</div>
+                              <div className="text-muted-foreground">
+                                {note.legacyField.toUpperCase()} · {note.note}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              disabled={teamWorking}
+                              onClick={() =>
+                                handleImportNoteCreateAndAdd(
+                                  note.id,
+                                  note.legacyValue,
+                                  note.legacyField,
+                                )
+                              }
+                            >
+                              Create + Add
+                            </Button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {teamError && (
+                    <p className="text-xs text-destructive">
+                      {teamError}
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -2196,14 +2532,6 @@ function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
     fields.push({ label: "NPS", value: String(detail.nps) });
   }
 
-  if (detail.csm) {
-    fields.push({ label: "CSM", value: detail.csm });
-  }
-
-  if (detail.champion) {
-    fields.push({ label: "Champion", value: detail.champion });
-  }
-
   if (detail.renewalDate) {
     fields.push({
       label: "Renewal",
@@ -2249,10 +2577,6 @@ function AccountDetailsEditForm({
   setEditArr,
   editNps,
   setEditNps,
-  editCsm,
-  setEditCsm,
-  editChampion,
-  setEditChampion,
   editRenewal,
   setEditRenewal,
   setDirty,
@@ -2271,10 +2595,6 @@ function AccountDetailsEditForm({
   setEditArr: (v: string) => void;
   editNps: string;
   setEditNps: (v: string) => void;
-  editCsm: string;
-  setEditCsm: (v: string) => void;
-  editChampion: string;
-  setEditChampion: (v: string) => void;
   editRenewal: string;
   setEditRenewal: (v: string) => void;
   setDirty: (v: boolean) => void;
@@ -2377,36 +2697,6 @@ function AccountDetailsEditForm({
               setDirty(true);
             }}
             placeholder="NPS score"
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">
-            CSM
-          </label>
-          <input
-            type="text"
-            value={editCsm}
-            onChange={(e) => {
-              setEditCsm(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="CSM name"
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">
-            Champion
-          </label>
-          <input
-            type="text"
-            value={editChampion}
-            onChange={(e) => {
-              setEditChampion(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="Champion name"
             className={inputClass}
           />
         </div>

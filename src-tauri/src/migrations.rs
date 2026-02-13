@@ -20,6 +20,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 2,
     sql: include_str!("migrations/002_internal_teams.sql"),
+}, Migration {
+    version: 3,
+    sql: include_str!("migrations/003_account_team.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -174,13 +177,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 2,
-            "should apply baseline + internal teams migrations"
+            applied, 3,
+            "should apply baseline + internal teams + account team migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -235,6 +238,19 @@ mod tests {
         )
         .expect("accounts should include is_internal");
 
+        conn.execute(
+            "INSERT INTO account_team (account_id, person_id, role) VALUES ('a1', 'p1', 'tam')",
+            [],
+        )
+        .expect("account_team table should exist");
+
+        conn.execute(
+            "INSERT INTO account_team_import_notes (account_id, legacy_field, legacy_value, note)
+             VALUES ('a1', 'csm', 'Legacy Name', 'note')",
+            [],
+        )
+        .expect("account_team_import_notes table should exist");
+
         // Verify account_domains exists and accepts inserts
         conn.execute(
             "INSERT INTO account_domains (account_id, domain) VALUES ('a1', 'acme.com')",
@@ -270,18 +286,51 @@ mod tests {
 
         // Create other tables that a pre-framework DB would have
         conn.execute_batch(
-            "CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, updated_at TEXT NOT NULL);
-             CREATE TABLE meetings_history (id TEXT PRIMARY KEY, title TEXT NOT NULL, meeting_type TEXT NOT NULL, start_time TEXT NOT NULL, created_at TEXT NOT NULL);",
+            "CREATE TABLE accounts (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                lifecycle TEXT,
+                arr REAL,
+                health TEXT,
+                csm TEXT,
+                champion TEXT,
+                contract_start TEXT,
+                contract_end TEXT,
+                nps INTEGER,
+                tracker_path TEXT,
+                parent_id TEXT,
+                updated_at TEXT NOT NULL,
+                archived INTEGER DEFAULT 0
+            );
+             CREATE TABLE meetings_history (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                meeting_type TEXT NOT NULL,
+                start_time TEXT NOT NULL,
+                created_at TEXT NOT NULL
+             );
+             CREATE TABLE people (
+                id TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                name TEXT NOT NULL,
+                relationship TEXT NOT NULL DEFAULT 'unknown'
+             );
+             CREATE TABLE entity_people (
+                entity_id TEXT NOT NULL,
+                person_id TEXT NOT NULL,
+                relationship_type TEXT DEFAULT 'associated',
+                PRIMARY KEY (entity_id, person_id)
+             );",
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2
+        // Run migrations — should bootstrap v1 and apply v2/v3
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 1, "bootstrap should mark v1, then apply v2");
+        assert_eq!(applied, 2, "bootstrap should mark v1, then apply v2/v3");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -320,14 +369,14 @@ mod tests {
 
         // Run migrations twice
         let first = run_migrations(&conn).expect("first run");
-        assert_eq!(first, 1);
+        assert_eq!(first, 3);
 
         let second = run_migrations(&conn).expect("second run");
         assert_eq!(second, 0, "second run should apply no migrations");
 
-        // Version should still be 1
+        // Version should still be latest
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 1);
+        assert_eq!(version, 3);
     }
 
     #[test]
@@ -339,7 +388,7 @@ mod tests {
         conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
 
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 1);
+        assert_eq!(applied, 3);
 
         // Verify backup file was created
         let backup_path = dir.path().join("test_backup.db.pre-migration.bak");
