@@ -103,6 +103,7 @@ export default function FocusPage() {
   useEffect(() => {
     let unlistenWorkflow: UnlistenFn | undefined;
     let unlistenDelivered: UnlistenFn | undefined;
+    let unlistenCalendar: UnlistenFn | undefined;
     let cancelled = false;
 
     listen<string>("workflow-completed", () => {
@@ -127,10 +128,22 @@ export default function FocusPage() {
       }
     });
 
+    // Reload when calendar poller provides live events (clears degraded warning)
+    listen("calendar-updated", () => {
+      void loadFocus(false);
+    }).then((fn) => {
+      if (cancelled) {
+        fn();
+      } else {
+        unlistenCalendar = fn;
+      }
+    });
+
     return () => {
       cancelled = true;
       unlistenWorkflow?.();
       unlistenDelivered?.();
+      unlistenCalendar?.();
     };
   }, [loadFocus]);
 
