@@ -45,12 +45,14 @@ export type WorkflowStatus =
  */
 export interface ExecutionRecord {
   id: string;
-  workflow: "today" | "archive";
+  workflow: "today" | "archive" | "week" | "inboxbatch" | "inbox_batch";
   startedAt: string;
   finishedAt?: string;
   durationSecs?: number;
   success: boolean;
   errorMessage?: string;
+  errorPhase?: "preparing" | "enriching" | "delivering";
+  canRetry?: boolean;
   trigger: "scheduled" | "manual" | "missed";
 }
 
@@ -59,7 +61,7 @@ export interface ExecutionRecord {
  */
 interface UseWorkflowOptions {
   /** Workflow to monitor (default: "today") */
-  workflow?: "today" | "archive";
+  workflow?: "today" | "archive" | "week" | "inbox_batch";
   /** Poll interval in ms (default: 5000) */
   pollInterval?: number;
 }

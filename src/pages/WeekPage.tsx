@@ -142,6 +142,7 @@ export default function WeekPage() {
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<WorkflowPhase | null>(null);
+  const [retryingEnrichment, setRetryingEnrichment] = useState(false);
 
   const loadWeek = useCallback(async () => {
     try {
@@ -240,6 +241,23 @@ export default function WeekPage() {
     }
   }, []);
 
+  const handleRetryEnrichment = useCallback(async () => {
+    setRetryingEnrichment(true);
+    setError(null);
+    try {
+      await invoke("retry_week_enrichment");
+      await loadWeek();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to retry week enrichment",
+      );
+    } finally {
+      setRetryingEnrichment(false);
+    }
+  }, [loadWeek]);
+
   // Loading skeleton — briefing-shaped
   if (loading) {
     return (
@@ -298,6 +316,8 @@ export default function WeekPage() {
   }
 
   const hasNarrative = !!data.weekNarrative;
+  const enrichmentIncomplete =
+    !running && (!data.weekNarrative || !data.topPriority);
   const readinessLine =
     data.readinessChecks && data.readinessChecks.length > 0
       ? synthesizeReadiness(data.readinessChecks)
@@ -365,6 +385,34 @@ export default function WeekPage() {
             {running && !hasNarrative && commitments.length === 0 && (
               <div className="mt-6">
                 <WorkflowProgress phase={phase ?? "preparing"} />
+              </div>
+            )}
+
+            {enrichmentIncomplete && (
+              <div className="mt-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+                      Enrichment incomplete
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Mechanical week data is available. Retry AI enrichment to restore narrative and priority signals.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetryEnrichment}
+                    disabled={retryingEnrichment}
+                  >
+                    {retryingEnrichment ? (
+                      <RefreshCw className="mr-1.5 size-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1.5 size-3.5" />
+                    )}
+                    Retry Enrichment
+                  </Button>
+                </div>
               </div>
             )}
 
