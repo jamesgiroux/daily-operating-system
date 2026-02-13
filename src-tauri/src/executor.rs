@@ -1047,6 +1047,52 @@ impl Executor {
         Ok(())
     }
 
+    /// Refresh only focus/briefing narrative without running full /today pipeline.
+    ///
+    /// Re-runs `enrich_briefing()` against existing `_today/data/schedule.json`
+    /// so users can update the focus statement and narrative independently.
+    pub async fn execute_focus_refresh(&self, workspace: &Path) -> Result<(), String> {
+        // Guard: reject if /today pipeline is currently running
+        let today_status = self.state.get_workflow_status(WorkflowId::Today);
+        if matches!(today_status, WorkflowStatus::Running { .. }) {
+            return Err("Cannot refresh focus while /today pipeline is running".to_string());
+        }
+
+        let data_dir = workspace.join("_today").join("data");
+        let schedule_path = data_dir.join("schedule.json");
+        if !schedule_path.exists() {
+            return Err("No daily briefing data found. Run briefing first.".to_string());
+        }
+
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or(crate::types::UserContext {
+                name: None,
+                company: None,
+                title: None,
+                focus: None,
+            });
+
+        let ai_config = self.ai_model_config();
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+
+        crate::workflow::deliver::enrich_briefing(
+            &data_dir,
+            &synthesis_pty,
+            workspace,
+            &user_ctx,
+            &self.state,
+        )?;
+
+        let _ = self.app_handle.emit("operation-delivered", "briefing");
+        log::info!("Focus refresh complete");
+        Ok(())
+    }
+
     /// Emit a workflow status event to the frontend
     fn emit_status_event(&self, workflow: WorkflowId, status: WorkflowStatus) {
         // Update state
