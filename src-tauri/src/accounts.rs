@@ -506,6 +506,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 nps: json.structured.nps,
                 tracker_path,
                 parent_id: Some(parent_id),
+                is_internal: false,
                 updated_at,
                 archived: false,
             },
@@ -535,6 +536,7 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 nps: json.structured.nps,
                 tracker_path,
                 parent_id: json.parent_id.clone(),
+                is_internal: false,
                 updated_at,
                 archived: false,
             },
@@ -611,6 +613,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     nps: None,
                     tracker_path: Some(format!("Accounts/{}", name)),
                     parent_id: None,
+                    is_internal: false,
                     updated_at: now,
                     archived: false,
                 };
@@ -766,6 +769,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             parent_name_str, sub_name_str
                         )),
                         parent_id: Some(parent_id.clone()),
+                        is_internal: false,
                         updated_at: now,
                         archived: false,
                     };
@@ -1094,6 +1098,7 @@ mod tests {
             nps: Some(80),
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         }
@@ -1477,6 +1482,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -1556,6 +1562,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Cox".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -1575,6 +1582,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -1593,6 +1601,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: Some("Accounts/Cox/Enterprise".to_string()),
             parent_id: Some("cox".to_string()),
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -1628,6 +1637,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         })
@@ -1647,6 +1657,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         })
@@ -1665,6 +1676,7 @@ END_ENRICHMENT";
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         })
