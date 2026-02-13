@@ -304,12 +304,18 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
 /// These are the production DailyOS Desktop App credentials registered in
 /// Google Cloud. Users don't need to supply their own credentials.json.
 /// A file on disk still overrides these for local development.
+///
+/// Note: Google Desktop App clients still require client_secret in the token
+/// exchange, even with PKCE. The secret is not truly secret (it ships in the
+/// binary) — Google documents this as expected for installed/desktop apps.
 fn embedded_credentials() -> ClientCredentials {
     ClientCredentials {
         installed: InstalledAppCredentials {
             client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
                 .to_string(),
-            client_secret: None,
+            client_secret: Some(
+                "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".to_string(),
+            ),
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uris: vec!["http://localhost".to_string()],
@@ -390,8 +396,6 @@ pub async fn refresh_access_token(token: &GoogleToken) -> Result<GoogleToken, Go
     let mut new_token = token.clone();
     new_token.token = access_token.to_string();
     new_token.expiry = Some(expiry.to_rfc3339());
-    // Strip legacy secret from persisted token once refresh succeeds.
-    new_token.client_secret = None;
 
     // Persist the refreshed token
     save_token(&new_token)?;
