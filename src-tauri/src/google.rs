@@ -86,13 +86,46 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
 /// Build account domain hints from DB for meeting classification.
 fn build_account_hints(state: &AppState) -> HashSet<String> {
-    state
-        .db
-        .lock()
-        .ok()
-        .and_then(|g| g.as_ref().and_then(|db| db.get_all_accounts().ok()))
-        .map(|accounts| accounts.iter().map(|a| a.id.to_lowercase()).collect())
-        .unwrap_or_default()
+    let mut hints = HashSet::new();
+    if let Ok(db_guard) = state.db.lock() {
+        if let Some(db) = db_guard.as_ref() {
+            if let Ok(accounts) = db.get_all_accounts() {
+                for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
+                    let id_key: String = account
+                        .id
+                        .to_lowercase()
+                        .chars()
+                        .filter(|c| c.is_ascii_alphanumeric())
+                        .collect();
+                    if id_key.len() >= 3 {
+                        hints.insert(id_key);
+                    }
+
+                    let name_key: String = account
+                        .name
+                        .to_lowercase()
+                        .chars()
+                        .filter(|c| c.is_ascii_alphanumeric())
+                        .collect();
+                    if name_key.len() >= 3 {
+                        hints.insert(name_key);
+                    }
+
+                    if let Ok(domains) = db.get_account_domains(&account.id) {
+                        for domain in domains {
+                            let base = domain.split('.').next().unwrap_or("").to_lowercase();
+                            let key: String =
+                                base.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+                            if key.len() >= 3 {
+                                hints.insert(key);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    hints
 }
 
 /// Calendar polling errors
@@ -633,6 +666,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
