@@ -315,9 +315,12 @@ pub fn run() {
             commands::get_accounts_for_picker,
             commands::get_child_accounts_list,
             commands::get_account_detail,
+            commands::get_account_team,
             commands::update_account_field,
             commands::update_account_notes,
             commands::update_account_programs,
+            commands::add_account_team_member,
+            commands::remove_account_team_member,
             commands::create_account,
             commands::create_child_account,
             commands::create_team,
@@ -338,6 +341,7 @@ pub fn run() {
             commands::run_hygiene_scan_now,
             // I172: Duplicate People Detection
             commands::get_duplicate_people,
+            commands::get_duplicate_people_for_person,
             // I176: Archive / Unarchive Entities
             commands::archive_account,
             commands::archive_project,

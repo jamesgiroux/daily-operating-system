@@ -457,8 +457,6 @@ mod tests {
                     .format("%Y-%m-%d")
                     .to_string(),
             ),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
