@@ -218,6 +218,7 @@ pub fn run() {
             commands::set_entity_mode,
             commands::set_workspace_path,
             commands::set_developer_mode,
+            commands::set_personality,
             commands::set_ai_model,
             commands::set_schedule,
             commands::get_actions_from_db,

@@ -366,17 +366,18 @@ mod tests {
     #[test]
     fn test_idempotency() {
         let conn = mem_db();
+        let total = MIGRATIONS.len();
 
         // Run migrations twice
         let first = run_migrations(&conn).expect("first run");
-        assert_eq!(first, 3);
+        assert_eq!(first, total);
 
         let second = run_migrations(&conn).expect("second run");
         assert_eq!(second, 0, "second run should apply no migrations");
 
-        // Version should still be latest
+        // Version should match the highest migration
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 3);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version);
     }
 
     #[test]
@@ -388,7 +389,7 @@ mod tests {
         conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
 
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 3);
+        assert_eq!(applied, MIGRATIONS.len());
 
         // Verify backup file was created
         let backup_path = dir.path().join("test_backup.db.pre-migration.bak");

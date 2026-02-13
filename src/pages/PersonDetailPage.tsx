@@ -26,7 +26,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { PageError } from "@/components/PageState";
+import { PageError, InlineEmpty } from "@/components/PageState";
 import { cn } from "@/lib/utils";
 import {
   Archive,
@@ -575,7 +575,7 @@ export default function PersonDetailPage() {
                       ))}
                     </div>
                   ) : (
-                    <EmptyState icon={Calendar} message="No meetings recorded yet" />
+                    <InlineEmpty icon={Calendar} message="No meetings recorded yet" />
                   )}
                 </CardContent>
               </Card>
@@ -815,21 +815,6 @@ export default function PersonDetailPage() {
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
-
-function EmptyState({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ElementType;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center py-6 text-center">
-      <Icon className="mb-2 size-8 text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  );
-}
 
 function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
   const fields: { label: string; value: React.ReactNode }[] = [];
