@@ -302,20 +302,19 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
 /// Built-in OAuth client credentials (I123).
 ///
 /// These are the production DailyOS Desktop App credentials registered in
-/// Google Cloud. Users don't need to supply their own credentials.json.
-/// A file on disk still overrides these for local development.
+/// Google Cloud. A credentials.json on disk overrides these for local dev.
 ///
-/// Note: Google Desktop App clients still require client_secret in the token
-/// exchange, even with PKCE. The secret is not truly secret (it ships in the
-/// binary) — Google documents this as expected for installed/desktop apps.
+/// Note: `client_secret` is injected at build time via `DAILYOS_GOOGLE_SECRET`
+/// env var. Google Desktop App clients require client_secret even with PKCE.
+/// Without the env var, embedded credentials will fail token exchange — users
+/// must supply their own credentials.json at ~/.dailyos/google/credentials.json.
 fn embedded_credentials() -> ClientCredentials {
+    let client_secret = option_env!("DAILYOS_GOOGLE_SECRET").map(|s| s.to_string());
     ClientCredentials {
         installed: InstalledAppCredentials {
             client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
                 .to_string(),
-            client_secret: Some(
-                "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".to_string(),
-            ),
+            client_secret,
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uris: vec!["http://localhost".to_string()],
@@ -367,22 +366,14 @@ pub async fn refresh_access_token(token: &GoogleToken) -> Result<GoogleToken, Go
         .ok_or(GoogleApiError::AuthExpired)?;
 
     let client = reqwest::Client::new();
+    let include_secret = token.client_secret.is_some();
 
     let (status, body_text) =
-        refresh_access_token_request(&client, token, refresh_token, false).await?;
+        refresh_access_token_request(&client, token, refresh_token, include_secret).await?;
     let body: serde_json::Value = if status.is_success() {
         serde_json::from_str(&body_text)?
-    } else if status.as_u16() == 400
-        && body_text.contains("invalid_client")
-        && token.client_secret.is_some()
-    {
-        let (retry_status, retry_body_text) =
-            refresh_access_token_request(&client, token, refresh_token, true).await?;
-        if !retry_status.is_success() {
-            return Err(map_refresh_error(retry_status.as_u16(), &retry_body_text));
-        }
-        serde_json::from_str(&retry_body_text)?
     } else {
+        log::error!("OAuth refresh failed: status={} body={}", status, body_text);
         return Err(map_refresh_error(status.as_u16(), &body_text));
     };
 
