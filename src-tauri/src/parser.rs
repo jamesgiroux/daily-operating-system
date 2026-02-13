@@ -1967,21 +1967,22 @@ pub fn parse_week_overview(path: &Path) -> Result<WeekOverview, String> {
 
         // Focus areas (list)
         if (current_section.contains("priorit") || current_section.contains("focus"))
-            && (line_trimmed.starts_with("1.") || line_trimmed.starts_with("- ")) {
-                let item = line_trimmed.trim_start_matches(|c: char| {
-                    c.is_ascii_digit() || c == '.' || c == '-' || c == ' '
-                });
-                if let Some(colon) = item.find(':') {
-                    focus_areas.push(
-                        item[..colon]
-                            .trim_start_matches("**")
-                            .trim_end_matches("**")
-                            .to_string(),
-                    );
-                } else {
-                    focus_areas.push(item.to_string());
-                }
+            && (line_trimmed.starts_with("1.") || line_trimmed.starts_with("- "))
+        {
+            let item = line_trimmed.trim_start_matches(|c: char| {
+                c.is_ascii_digit() || c == '.' || c == '-' || c == ' '
+            });
+            if let Some(colon) = item.find(':') {
+                focus_areas.push(
+                    item[..colon]
+                        .trim_start_matches("**")
+                        .trim_end_matches("**")
+                        .to_string(),
+                );
+            } else {
+                focus_areas.push(item.to_string());
             }
+        }
     }
 
     // Build action summary
