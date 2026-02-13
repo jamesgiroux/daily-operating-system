@@ -7,6 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import {
+  BulkCreateForm,
+  parseBulkCreateInput,
+} from "@/components/ui/bulk-create-form";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import {
   StatusBadge,
@@ -109,10 +113,7 @@ export default function ProjectsPage() {
 
   // I162: bulk create
   async function handleBulkCreate() {
-    const names = bulkValue
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
       await invoke<string[]>("bulk_create_projects", { names });
@@ -231,51 +232,22 @@ export default function ProjectsPage() {
                   {creating ? (
                     <>
                       {bulkMode ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={bulkValue}
-                            onChange={(e) => setBulkValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setCreating(false);
-                              }
-                            }}
-                            placeholder="One project name per line"
-                            rows={5}
-                            className="w-64 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={handleBulkCreate}>
-                              Create{" "}
-                              {bulkValue.split("\n").filter((s) => s.trim()).length || ""}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setBulkMode(false);
-                                setBulkValue("");
-                              }}
-                            >
-                              Single
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setCreating(false);
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setNewName("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                        <BulkCreateForm
+                          value={bulkValue}
+                          onChange={setBulkValue}
+                          onCreate={handleBulkCreate}
+                          onSingleMode={() => {
+                            setBulkMode(false);
+                            setBulkValue("");
+                          }}
+                          onCancel={() => {
+                            setCreating(false);
+                            setBulkMode(false);
+                            setBulkValue("");
+                            setNewName("");
+                          }}
+                          placeholder="One project name per line"
+                        />
                       ) : (
                         <div className="flex items-center gap-2">
                           <InlineCreateForm
@@ -461,4 +433,3 @@ function ArchivedProjectRow({ project }: { project: ArchivedProject }) {
     />
   );
 }
-

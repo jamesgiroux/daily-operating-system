@@ -62,10 +62,24 @@ pub struct AccountStructured {
     pub renewal_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nps: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub account_team: Vec<AccountTeamEntry>,
+    /// Legacy import-only field (kept for backward compatibility).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub csm: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Legacy import-only field (kept for backward compatibility).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub champion: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountTeamEntry {
+    pub person_id: String,
+    pub name: String,
+    pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +158,18 @@ pub fn write_account_json(
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
+    let account_team = _db
+        .get_account_team(&account.id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| AccountTeamEntry {
+            person_id: m.person_id,
+            name: m.person_name,
+            role: m.role,
+            email: Some(m.person_email),
+        })
+        .collect();
+
     let json = AccountJson {
         version: 1,
         entity_type: "account".to_string(),
@@ -153,8 +179,9 @@ pub fn write_account_json(
             lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
-            csm: account.csm.clone(),
-            champion: account.champion.clone(),
+            account_team,
+            csm: None,
+            champion: None,
         },
         company_overview: existing_json.and_then(|j| j.company_overview.clone()),
         strategic_programs: existing_json
@@ -216,13 +243,21 @@ pub fn write_account_markdown(
     if let Some(nps) = account.nps {
         md.push_str(&format!("**NPS:** {}  \n", nps));
     }
-    if let Some(ref csm) = account.csm {
-        md.push_str(&format!("**CSM:** {}  \n", csm));
-    }
-    if let Some(ref champion) = account.champion {
-        md.push_str(&format!("**Champion:** {}  \n", champion));
-    }
     md.push('\n');
+
+    if let Ok(team) = db.get_account_team(&account.id) {
+        if !team.is_empty() {
+            md.push_str("## Account Team\n\n");
+            for member in team {
+                md.push_str(&format!(
+                    "- **{}** — {}\n",
+                    member.person_name,
+                    member.role.to_uppercase()
+                ));
+            }
+            md.push('\n');
+        }
+    }
 
     // Read intelligence.json once (used for Company Overview skip + intelligence sections)
     let intel_data =
@@ -501,8 +536,6 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 health: json.structured.health.clone(),
                 contract_start: None,
                 contract_end: json.structured.renewal_date.clone(),
-                csm: json.structured.csm.clone(),
-                champion: json.structured.champion.clone(),
                 nps: json.structured.nps,
                 tracker_path,
                 parent_id: Some(parent_id),
@@ -531,8 +564,6 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 health: json.structured.health.clone(),
                 contract_start: None,
                 contract_end: json.structured.renewal_date.clone(),
-                csm: json.structured.csm.clone(),
-                champion: json.structured.champion.clone(),
                 nps: json.structured.nps,
                 tracker_path,
                 parent_id: json.parent_id.clone(),
@@ -608,8 +639,6 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     health: None,
                     contract_start: None,
                     contract_end: None,
-                    csm: None,
-                    champion: None,
                     nps: None,
                     tracker_path: Some(format!("Accounts/{}", name)),
                     parent_id: None,
@@ -761,8 +790,6 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                         health: None,
                         contract_start: None,
                         contract_end: None,
-                        csm: None,
-                        champion: None,
                         nps: None,
                         tracker_path: Some(format!(
                             "Accounts/{}/{}",
@@ -1057,8 +1084,9 @@ fn default_account_json(account: &DbAccount) -> AccountJson {
             lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
-            csm: account.csm.clone(),
-            champion: account.champion.clone(),
+            account_team: Vec::new(),
+            csm: None,
+            champion: None,
         },
         company_overview: None,
         strategic_programs: Vec::new(),
@@ -1093,8 +1121,6 @@ mod tests {
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
             contract_end: Some("2026-01-01".to_string()),
-            csm: Some("Jane".to_string()),
-            champion: Some("Bob".to_string()),
             nps: Some(80),
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
@@ -1141,8 +1167,9 @@ mod tests {
                 lifecycle: account.lifecycle.clone(),
                 renewal_date: account.contract_end.clone(),
                 nps: account.nps,
-                csm: account.csm.clone(),
-                champion: account.champion.clone(),
+                account_team: Vec::new(),
+                csm: None,
+                champion: None,
             },
             company_overview: Some(CompanyOverview {
                 description: Some("A great company.".to_string()),
@@ -1248,8 +1275,9 @@ mod tests {
                 lifecycle: account.lifecycle.clone(),
                 renewal_date: account.contract_end.clone(),
                 nps: account.nps,
-                csm: account.csm.clone(),
-                champion: account.champion.clone(),
+                account_team: Vec::new(),
+                csm: None,
+                champion: None,
             },
             company_overview: Some(CompanyOverview {
                 description: Some("Important context.".to_string()),
@@ -1477,8 +1505,6 @@ END_ENRICHMENT";
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
@@ -1557,8 +1583,6 @@ END_ENRICHMENT";
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Cox".to_string()),
             parent_id: None,
@@ -1577,8 +1601,6 @@ END_ENRICHMENT";
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Cox/Consumer-Brands".to_string()),
             parent_id: Some("cox".to_string()),
@@ -1596,8 +1618,6 @@ END_ENRICHMENT";
             health: Some("yellow".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Cox/Enterprise".to_string()),
             parent_id: Some("cox".to_string()),
@@ -1632,8 +1652,6 @@ END_ENRICHMENT";
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: Some("2027-12-31".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
@@ -1652,8 +1670,6 @@ END_ENRICHMENT";
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: Some("2026-09-30".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
@@ -1671,8 +1687,6 @@ END_ENRICHMENT";
             health: Some("red".to_string()),
             contract_start: None,
             contract_end: Some("2026-03-15".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: Some("parent".to_string()),
