@@ -44,6 +44,17 @@ import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 
+const settingsTabs = new Set([
+  "profile",
+  "integrations",
+  "workflows",
+  "intelligence",
+  "hygiene",
+  "diagnostics",
+]);
+const peopleRelationshipTabs = new Set(["all", "external", "internal", "unknown"]);
+const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
+
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
@@ -211,6 +222,13 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   component: SettingsPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const validated: { tab?: string } = {};
+    if (typeof search.tab === "string" && settingsTabs.has(search.tab)) {
+      validated.tab = search.tab;
+    }
+    return validated;
+  },
 });
 
 const weekRoute = createRoute({
@@ -229,6 +247,22 @@ const peopleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/people",
   component: PeoplePage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const validated: { relationship?: string; hygiene?: string } = {};
+    if (
+      typeof search.relationship === "string" &&
+      peopleRelationshipTabs.has(search.relationship)
+    ) {
+      validated.relationship = search.relationship;
+    }
+    if (
+      typeof search.hygiene === "string" &&
+      peopleHygieneFilters.has(search.hygiene)
+    ) {
+      validated.hygiene = search.hygiene;
+    }
+    return validated;
+  },
 });
 
 const personDetailRoute = createRoute({

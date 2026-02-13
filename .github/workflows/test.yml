@@ -44,6 +44,13 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Fail on committed OAuth secrets
+        run: |
+          if rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob '!target/**' --glob '!node_modules/**' --glob '!.git/**' .; then
+            echo "Committed Google OAuth secret pattern detected."
+            exit 1
+          fi
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test
