@@ -8,7 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- OAuth token exchange restored: client_secret was stripped during PKCE migration but Google Desktop App clients still require it — every auth attempt was returning 400 Bad Request
 - OAuth callback no longer shows "Authorization successful" before the token exchange completes — browser now waits for the full exchange + Keychain save, and shows the actual error on failure
+- Token refresh no longer strips client_secret from saved tokens, preventing refresh failures after the initial hour
 - Added diagnostic logging at every step of the OAuth flow for troubleshooting
 
 ## [0.7.1] - 2026-02-12
