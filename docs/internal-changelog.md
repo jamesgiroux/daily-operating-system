@@ -25,6 +25,16 @@
 - No ranking algorithm changes made in Sprint 18.
 - Focus prioritization regression tests passed.
 
+### Unplanned - Isolated Focus refresh
+
+- Added backend command `refresh_focus` to re-run briefing focus/narrative enrichment without executing the full /today pipeline.
+- Added executor path `execute_focus_refresh()` with guardrails (rejects while /today is running; requires existing `_today/data/schedule.json`).
+- Registered command in Tauri invoke handler.
+- Updated Focus page to:
+  - expose a manual `Refresh Focus` button,
+  - auto-refresh when `workflow-completed` is emitted,
+  - auto-refresh when `operation-delivered` emits `briefing`.
+
 ### Validation
 
 - `pnpm test -- src/pages/focusViewModel.test.ts`
