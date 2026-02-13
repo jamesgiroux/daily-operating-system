@@ -17,6 +17,9 @@ struct Migration {
 const MIGRATIONS: &[Migration] = &[Migration {
     version: 1,
     sql: include_str!("migrations/001_baseline.sql"),
+}, Migration {
+    version: 2,
+    sql: include_str!("migrations/002_internal_teams.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -170,11 +173,14 @@ mod tests {
     fn test_fresh_db_applies_baseline() {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 1, "should apply exactly 1 migration (baseline)");
+        assert_eq!(
+            applied, 2,
+            "should apply baseline + internal teams migrations"
+        );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -223,11 +229,18 @@ mod tests {
 
         // Verify accounts has all migrated columns
         conn.execute(
-            "INSERT INTO accounts (id, name, updated_at, lifecycle, nps, parent_id, archived)
-             VALUES ('a1', 'Acme', '2025-01-01', 'onboarding', 85, NULL, 0)",
+            "INSERT INTO accounts (id, name, updated_at, lifecycle, nps, parent_id, is_internal, archived)
+             VALUES ('a1', 'Acme', '2025-01-01', 'onboarding', 85, NULL, 0, 0)",
             [],
         )
-        .expect("accounts should have lifecycle, nps, parent_id, archived");
+        .expect("accounts should include is_internal");
+
+        // Verify account_domains exists and accepts inserts
+        conn.execute(
+            "INSERT INTO account_domains (account_id, domain) VALUES ('a1', 'acme.com')",
+            [],
+        )
+        .expect("account_domains table should exist");
 
         // Verify account_events table
         conn.execute(
@@ -262,13 +275,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap (mark v1 as applied) without running SQL
+        // Run migrations — should bootstrap v1 and apply v2
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 0, "bootstrap should mark v1 as applied, not run SQL");
+        assert_eq!(applied, 1, "bootstrap should mark v1, then apply v2");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
 
         // Verify existing data is untouched
         let title: String = conn
