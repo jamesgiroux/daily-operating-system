@@ -165,16 +165,22 @@ function getProcessingQuote(): string {
 const inboxStatusStyles: Record<string, string> = {
   completed:
     "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+  routed:
+    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
   needs_enrichment:
     "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
   error:
     "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
+  unprocessed:
+    "bg-muted text-muted-foreground border-border",
 };
 
 function formatInboxStatus(value: string): string {
   if (value === "completed") return "Processed";
+  if (value === "routed") return "Processed";
   if (value === "needs_enrichment") return "Needs AI";
   if (value === "error") return "Error";
+  if (value === "unprocessed") return "Unprocessed";
   return value.replace(/_/g, " ");
 }
 
@@ -195,6 +201,7 @@ export default function InboxPage() {
   const [processingQuote] = useState(getProcessingQuote);
   const [isDragging, setIsDragging] = useState(false);
   const [dropResult, setDropResult] = useState<{ count: number } | null>(null);
+  const lastDropRef = useRef<{ signature: string; at: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // Tauri drag-drop listener
@@ -211,7 +218,22 @@ export default function InboxPage() {
             setIsDragging(false);
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
-              invoke<number>("copy_to_inbox", { paths })
+              const uniquePaths = Array.from(new Set(paths));
+              const signature = [...uniquePaths].sort().join("|");
+              const now = Date.now();
+              const previous = lastDropRef.current;
+
+              // Ignore burst-duplicate drop events from the webview bridge (I203).
+              if (
+                previous &&
+                previous.signature === signature &&
+                now - previous.at < 1500
+              ) {
+                return;
+              }
+              lastDropRef.current = { signature, at: now };
+
+              invoke<number>("copy_to_inbox", { paths: uniquePaths })
                 .then((count) => {
                   if (count > 0) {
                     setDropResult({ count });
@@ -770,15 +792,15 @@ function InboxRow({
             <StatusBadge value="error" styles={inboxStatusStyles} formatLabel={formatInboxStatus} />
           )}
 
-          {!isProcessing && !isError && file.processingStatus && (
+          {!isProcessing && !isError && (
             <StatusBadge
-              value={file.processingStatus}
+              value={file.processingStatus ?? "unprocessed"}
               styles={inboxStatusStyles}
               formatLabel={formatInboxStatus}
             />
           )}
 
-          {!isProcessing && !isError && !file.processingStatus && time && (
+          {!isProcessing && !isError && time && (
             <span className="text-xs text-muted-foreground/40">{time}</span>
           )}
 

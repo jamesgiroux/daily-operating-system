@@ -28,6 +28,7 @@ import {
   ToggleRight,
   Activity,
   Cpu,
+  History,
   X,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
@@ -48,6 +49,17 @@ interface ScheduleEntry {
   enabled: boolean;
   cron: string;
   timezone: string;
+}
+
+interface DeliveryExecutionRecord {
+  id: string;
+  workflow: string;
+  startedAt: string;
+  finishedAt?: string;
+  durationSecs?: number;
+  success: boolean;
+  errorMessage?: string;
+  trigger: string;
 }
 
 export default function SettingsPage() {
@@ -270,6 +282,9 @@ export default function SettingsPage() {
             {/* System Health */}
             <SystemHealthCard />
 
+            {/* Delivery History */}
+            <DeliveryHistoryCard />
+
             {/* Run result */}
             {runResult && (
               <Card className={cn(runResult.success ? "border-success" : "border-destructive")}>
@@ -345,7 +360,7 @@ export default function SettingsPage() {
 }
 
 function GoogleAccountCard() {
-  const { status, email, loading, connect, disconnect } = useGoogleAuth();
+  const { status, email, loading, error, connect, disconnect } = useGoogleAuth();
 
   return (
     <Card>
@@ -360,7 +375,7 @@ function GoogleAccountCard() {
             : "Connect Google for calendar awareness and meeting features"}
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
         {status.status === "authenticated" ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -399,7 +414,7 @@ function GoogleAccountCard() {
               ) : (
                 <RefreshCw className="mr-1.5 size-3.5" />
               )}
-              Reconnect
+              {loading ? "Waiting for authorization..." : "Reconnect"}
             </Button>
           </div>
         ) : (
@@ -409,8 +424,13 @@ function GoogleAccountCard() {
             </span>
             <Button size="sm" onClick={connect} disabled={loading}>
               {loading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-              Connect
+              {loading ? "Waiting for authorization..." : "Connect"}
             </Button>
+          </div>
+        )}
+        {error && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
           </div>
         )}
       </CardContent>
@@ -816,6 +836,225 @@ function ScheduleRow({
         )}
       </Button>
     </div>
+  );
+}
+
+function normalizeWorkflowId(workflow: string): string {
+  return workflow === "inboxbatch" ? "inbox_batch" : workflow;
+}
+
+function workflowLabel(workflow: string): string {
+  switch (normalizeWorkflowId(workflow)) {
+    case "today":
+      return "Daily Briefing";
+    case "week":
+      return "Weekly Briefing";
+    case "archive":
+      return "Archive";
+    case "inbox_batch":
+      return "Inbox Processing";
+    default:
+      return workflow;
+  }
+}
+
+function formatRunTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function formatRunDuration(seconds?: number): string {
+  if (seconds == null) return "-";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return remaining === 0 ? `${minutes}m` : `${minutes}m ${remaining}s`;
+}
+
+type DeliveryStatus = "success" | "partial" | "failed";
+
+function getDeliveryStatus(entry: DeliveryExecutionRecord): DeliveryStatus {
+  if (!entry.success) return "failed";
+  if (entry.errorMessage && entry.errorMessage.trim().length > 0) return "partial";
+  return "success";
+}
+
+function inferFailureContext(errorMessage?: string): { phase?: string; retryable: boolean } {
+  if (!errorMessage) {
+    return { retryable: false };
+  }
+  const text = errorMessage.toLowerCase();
+  let phase: string | undefined;
+  if (text.includes("prepar")) phase = "Preparing";
+  else if (text.includes("enrich")) phase = "Enriching";
+  else if (text.includes("deliver")) phase = "Delivering";
+
+  const retryable = [
+    "timeout",
+    "temporar",
+    "network",
+    "connection",
+    "rate limit",
+    "429",
+    "unavailable",
+    "busy",
+    "retry",
+  ].some((token) => text.includes(token));
+
+  return { phase, retryable };
+}
+
+function DeliveryHistoryCard() {
+  const [entries, setEntries] = useState<DeliveryExecutionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  async function loadHistory() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await invoke<DeliveryExecutionRecord[]>("get_execution_history", {
+        limit: 50,
+      });
+      const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      const bounded = result.filter((entry) => {
+        const ts = Date.parse(entry.startedAt);
+        return Number.isNaN(ts) || ts >= cutoff;
+      });
+      setEntries(bounded.slice(0, 50));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load delivery history");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  async function retryWorkflow(entry: DeliveryExecutionRecord) {
+    setRetryingId(entry.id);
+    try {
+      await invoke("run_workflow", { workflow: normalizeWorkflowId(entry.workflow) });
+      toast.success(`${workflowLabel(entry.workflow)} queued`);
+      setTimeout(() => {
+        loadHistory();
+      }, 500);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to queue workflow");
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <History className="size-4" />
+          Delivery History
+        </CardTitle>
+        <CardDescription>
+          Last 14 days (up to 50 runs) with status and diagnostics
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : error ? (
+          <div className="flex items-center gap-2 rounded-md border border-destructive p-3 text-sm text-destructive">
+            <AlertCircle className="size-4" />
+            <span>{error}</span>
+          </div>
+        ) : entries.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No delivery runs recorded yet.
+          </p>
+        ) : (
+          <>
+            {entries.map((entry) => {
+              const status = getDeliveryStatus(entry);
+              const context = inferFailureContext(entry.errorMessage);
+              const statusBadgeClass =
+                status === "success"
+                  ? "bg-success/15 text-success"
+                  : status === "partial"
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                    : "bg-destructive/15 text-destructive";
+
+              return (
+                <div key={entry.id} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="text-sm font-medium">{workflowLabel(entry.workflow)}</p>
+                      <Badge variant="secondary" className={statusBadgeClass}>
+                        {status}
+                      </Badge>
+                      <Badge variant="outline" className="text-[10px] uppercase">
+                        {entry.trigger}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {formatRunDuration(entry.durationSecs)}
+                      </span>
+                      {(status === "failed" || status === "partial") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => retryWorkflow(entry)}
+                          disabled={retryingId === entry.id}
+                        >
+                          {retryingId === entry.id ? (
+                            <Loader2 className="mr-1 size-3 animate-spin" />
+                          ) : (
+                            <Play className="mr-1 size-3" />
+                          )}
+                          Retry
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {formatRunTime(entry.startedAt)}
+                  </p>
+                  {(status === "failed" || status === "partial") && entry.errorMessage && (
+                    <div className="mt-2 rounded border border-muted bg-muted/40 px-2.5 py-2 text-xs">
+                      <p className="text-foreground">{entry.errorMessage}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        {context.phase ? `Phase: ${context.phase}. ` : ""}
+                        {context.retryable ? "Likely retryable." : "May require config or data fixes."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="flex justify-end">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={loadHistory}>
+                <RefreshCw className="mr-1 size-3.5" />
+                Refresh
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
