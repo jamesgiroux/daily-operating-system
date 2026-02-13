@@ -1123,14 +1123,15 @@ interface HygieneReport {
   staleIntelligence: number;
   unsummarizedFiles: number;
   orphanedMeetings: number;
+  duplicatePeople: number;
   fixes: {
     relationshipsReclassified: number;
-    filesIndexed: number;
     summariesExtracted: number;
     orphanedMeetingsLinked: number;
     meetingCountsUpdated: number;
     namesResolved: number;
     peopleLinkedByDomain: number;
+    renewalsRolledOver: number;
     aiEnrichmentsEnqueued: number;
   };
 }
@@ -1138,6 +1139,7 @@ interface HygieneReport {
 function SystemHealthCard() {
   const [report, setReport] = useState<HygieneReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
 
   async function loadReport() {
     try {
@@ -1147,6 +1149,20 @@ function SystemHealthCard() {
       // No report yet — expected on first launch
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runScan() {
+    setScanning(true);
+    try {
+      const result = await invoke<HygieneReport>("trigger_hygiene_scan");
+      setReport(result);
+      toast.success("Hygiene scan complete");
+    } catch (err) {
+      const message = typeof err === "string" ? err : "Scan failed";
+      toast.error(message);
+    } finally {
+      setScanning(false);
     }
   }
 
@@ -1162,19 +1178,50 @@ function SystemHealthCard() {
       report.missingIntelligence +
       report.staleIntelligence +
       report.unsummarizedFiles +
-      report.orphanedMeetings
+      report.orphanedMeetings +
+      report.duplicatePeople
     : 0;
 
   const totalFixes = report
     ? report.fixes.relationshipsReclassified +
-      report.fixes.filesIndexed +
       report.fixes.summariesExtracted +
       report.fixes.orphanedMeetingsLinked +
       report.fixes.meetingCountsUpdated +
       report.fixes.namesResolved +
       report.fixes.peopleLinkedByDomain +
+      report.fixes.renewalsRolledOver +
       report.fixes.aiEnrichmentsEnqueued
     : 0;
+
+  // Build human-readable fix descriptions for the detail breakdown
+  const fixDetails: string[] = report
+    ? [
+        report.fixes.namesResolved > 0
+          ? `${report.fixes.namesResolved} names resolved`
+          : "",
+        report.fixes.relationshipsReclassified > 0
+          ? `${report.fixes.relationshipsReclassified} relationships reclassified`
+          : "",
+        report.fixes.peopleLinkedByDomain > 0
+          ? `${report.fixes.peopleLinkedByDomain} people linked by domain`
+          : "",
+        report.fixes.orphanedMeetingsLinked > 0
+          ? `${report.fixes.orphanedMeetingsLinked} orphaned meetings linked`
+          : "",
+        report.fixes.meetingCountsUpdated > 0
+          ? `${report.fixes.meetingCountsUpdated} meeting counts updated`
+          : "",
+        report.fixes.summariesExtracted > 0
+          ? `${report.fixes.summariesExtracted} summaries extracted`
+          : "",
+        report.fixes.renewalsRolledOver > 0
+          ? `${report.fixes.renewalsRolledOver} renewals rolled over`
+          : "",
+        report.fixes.aiEnrichmentsEnqueued > 0
+          ? `${report.fixes.aiEnrichmentsEnqueued} AI enrichments queued`
+          : "",
+      ].filter(Boolean)
+    : [];
 
   function formatTime(iso: string): string {
     try {
@@ -1188,13 +1235,30 @@ function SystemHealthCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="size-4" />
-          System Health
-        </CardTitle>
-        <CardDescription>
-          Automated data quality maintenance
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Activity className="size-4" />
+              System Health
+            </CardTitle>
+            <CardDescription>
+              Automated data quality maintenance
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={runScan}
+            disabled={scanning}
+          >
+            {scanning ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="size-4" />
+            )}
+            {scanning ? "Scanning..." : "Run Scan"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         {report ? (
@@ -1204,7 +1268,7 @@ function SystemHealthCard() {
               <span>{formatTime(report.scannedAt)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Gaps detected</span>
+              <span className="text-muted-foreground">Gaps remaining</span>
               <Badge variant={totalGaps === 0 ? "secondary" : "outline"}>
                 {totalGaps}
               </Badge>
@@ -1215,6 +1279,13 @@ function SystemHealthCard() {
                 {totalFixes}
               </Badge>
             </div>
+            {fixDetails.length > 0 && (
+              <div className="rounded-md border border-green-200 bg-green-50 p-3 text-xs text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300 space-y-1">
+                {fixDetails.map((detail) => (
+                  <p key={detail}>{detail}</p>
+                ))}
+              </div>
+            )}
             {totalGaps > 0 && (
               <div className="rounded-md border p-3 text-xs text-muted-foreground space-y-1">
                 {report.unnamedPeople > 0 && (
@@ -1222,6 +1293,9 @@ function SystemHealthCard() {
                 )}
                 {report.unknownRelationships > 0 && (
                   <p>{report.unknownRelationships} unclassified relationships</p>
+                )}
+                {report.duplicatePeople > 0 && (
+                  <p>{report.duplicatePeople} duplicate people</p>
                 )}
                 {report.missingIntelligence > 0 && (
                   <p>{report.missingIntelligence} entities without intelligence</p>

@@ -106,10 +106,27 @@ pub fn run_hygiene_scan(
     report.fixes.names_resolved = resolve_names_from_emails(db, workspace);
     report.fixes.people_linked_by_domain = auto_link_people_by_domain(db);
 
-    // --- Phase 2: AI-budgeted gap filling ---
+    // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
     }
+
+    // --- Re-count gaps after fixes so UI shows remaining problems, not stale pre-fix counts ---
+    report.unnamed_people = db.get_unnamed_people().map(|v| v.len()).unwrap_or(0);
+    report.unknown_relationships = db
+        .get_unknown_relationship_people()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    report.unsummarized_files = db
+        .get_unsummarized_content_files()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    report.orphaned_meetings = db
+        .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
+        .map(|v| v.len())
+        .unwrap_or(0);
+    // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
+    // duplicate_people is also unchanged (no auto-merge).
 
     report
 }
@@ -1196,11 +1213,11 @@ mod tests {
 
         let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
 
-        // Detected before fixing
-        assert_eq!(report.unknown_relationships, 2);
-
         // Fixes applied
         assert_eq!(report.fixes.relationships_reclassified, 2);
+
+        // Post-fix gap count: both resolved, so 0 remaining
+        assert_eq!(report.unknown_relationships, 0);
 
         // Verify actual state
         let p1 = db.get_person("p1").unwrap().unwrap();
