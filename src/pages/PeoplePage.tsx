@@ -10,7 +10,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
-import { PageError, PageEmpty } from "@/components/PageState";
+import { PageError, PageEmpty, SectionEmpty } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { Plus, RefreshCw, Users } from "lucide-react";
 import type { PersonListItem, PersonRelationship, DuplicateCandidate } from "@/types";
@@ -58,6 +60,7 @@ function isLikelyUnnamedPerson(person: PersonListItem): boolean {
 }
 
 export default function PeoplePage() {
+  const { personality } = usePersonality();
   const search = useSearch({ from: "/people" });
   const navigate = useNavigate();
   const initialRelationshipTab = parseRelationshipTab(search.relationship);
@@ -241,8 +244,7 @@ export default function PeoplePage() {
       <main className="flex-1 overflow-hidden">
         <PageEmpty
           icon={Users}
-          title="No people discovered yet"
-          message="People are discovered automatically from your calendar. Connect Google in Settings to get started."
+          {...getPersonalityCopy("people-empty", personality)}
         />
       </main>
     );
@@ -476,30 +478,20 @@ export default function PeoplePage() {
           <div>
             {isArchived ? (
               filteredArchived.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <Users className="mb-4 size-12 text-muted-foreground/40" />
-                    <p className="text-lg font-medium">No archived people</p>
-                    <p className="text-sm text-muted-foreground">
-                      Archived people will appear here.
-                    </p>
-                  </CardContent>
-                </Card>
+                <SectionEmpty
+                  icon={Users}
+                  {...getPersonalityCopy("people-archived-empty", personality)}
+                />
               ) : (
                 filteredArchived.map((person) => (
                   <ArchivedPersonRow key={person.id} person={person} />
                 ))
               )
             ) : sorted.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <Users className="mb-4 size-12 text-muted-foreground/40" />
-                  <p className="text-lg font-medium">No matches</p>
-                  <p className="text-sm text-muted-foreground">
-                    Try a different search or filter.
-                  </p>
-                </CardContent>
-              </Card>
+              <SectionEmpty
+                icon={Users}
+                {...getPersonalityCopy("people-no-matches", personality)}
+              />
             ) : (
               sorted.map((person) => (
                 <PersonRow

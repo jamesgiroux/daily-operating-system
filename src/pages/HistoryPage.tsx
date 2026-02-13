@@ -4,9 +4,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { History, AlertCircle } from "lucide-react";
+import { SectionEmpty } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
 import type { ProcessingLogEntry } from "@/types";
 
 export default function HistoryPage() {
+  const { personality } = usePersonality();
   const [entries, setEntries] = useState<ProcessingLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,15 +67,10 @@ export default function HistoryPage() {
               <p className="text-sm">{error}</p>
             </div>
           ) : entries.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <History className="mb-3 size-10 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">
-                No processing history yet.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Files processed from the inbox will appear here.
-              </p>
-            </div>
+            <SectionEmpty
+              icon={History}
+              {...getPersonalityCopy("history-empty", personality)}
+            />
           ) : (
             <div className="rounded-md border">
               <table className="w-full text-sm">

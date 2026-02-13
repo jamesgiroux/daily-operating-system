@@ -166,7 +166,7 @@ export default function MeetingDetailPage() {
     );
   }
 
-  if (error || !data) {
+  if (error) {
     return (
       <main className="flex-1 overflow-hidden p-6">
         <Link to="/">
@@ -179,11 +179,31 @@ export default function MeetingDetailPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-destructive">
               <AlertCircle className="size-5" />
-              <p>{error || "Meeting prep not available"}</p>
+              <p>{error}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </main>
+    );
+  }
+
+  if (!data) {
+    return (
+      <main className="flex-1 overflow-hidden p-6">
+        <Link to="/">
+          <Button variant="ghost" size="sm" className="mb-4">
+            <ArrowLeft className="mr-2 size-4" />
+            Back to Dashboard
+          </Button>
+        </Link>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Clock className="size-5" />
+              <p>Prep not ready yet</p>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              This meeting doesn't have a prep file yet. The system generates prep
-              files for customer meetings when running the Daily Briefing.
+              Meeting context will appear here after the daily briefing runs.
             </p>
           </CardContent>
         </Card>
