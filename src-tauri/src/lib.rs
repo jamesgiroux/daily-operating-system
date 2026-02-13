@@ -243,6 +243,7 @@ pub fn run() {
             commands::set_capture_delay,
             // Phase 3C: Weekly Planning
             commands::get_week_data,
+            commands::retry_week_enrichment,
             commands::get_focus_data,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,

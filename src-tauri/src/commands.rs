@@ -1078,6 +1078,41 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     }
 }
 
+/// Retry only week AI enrichment without rerunning full week prepare/deliver.
+#[tauri::command]
+pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace_path = config.workspace_path.clone();
+    let user_ctx = crate::types::UserContext::from_config(&config);
+    let ai_models = config.ai_models.clone();
+    let state = state.inner().clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let workspace = std::path::Path::new(&workspace_path);
+        let data_dir = workspace.join("_today").join("data");
+        let week_path = data_dir.join("week-overview.json");
+        if !week_path.exists() {
+            return Err("No weekly overview found. Run the weekly workflow first.".to_string());
+        }
+
+        let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_models);
+        crate::workflow::deliver::enrich_week(&data_dir, &pty, workspace, &user_ctx, &state)
+    });
+
+    match task.await {
+        Ok(result) => result?,
+        Err(e) => return Err(format!("Week enrichment task panicked: {}", e)),
+    }
+
+    Ok("Week enrichment retried".to_string())
+}
+
 // =============================================================================
 // Focus Data Command
 // =============================================================================

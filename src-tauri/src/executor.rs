@@ -143,32 +143,54 @@ impl Executor {
         let execution_id = record.id.clone();
         self.state.add_execution_record(record.clone());
 
-        // Archive workflow: pure Rust, no three-phase, no notification
-        if workflow_id == WorkflowId::Archive {
-            return self
-                .execute_archive(&workspace, &execution_id, trigger)
-                .await;
+        let result = if workflow_id == WorkflowId::Archive {
+            // Archive workflow: pure Rust, no three-phase, no notification
+            self.execute_archive(&workspace, &execution_id, trigger).await
+        } else if workflow_id == WorkflowId::InboxBatch {
+            // Inbox batch: direct processor calls, no three-phase
+            self.execute_inbox_batch(&workspace, &execution_id, trigger)
+                .await
+        } else if workflow_id == WorkflowId::Week {
+            // Week workflow: per-operation pipeline (I94)
+            self.execute_week(&workspace, &execution_id, trigger, &record)
+                .await
+        } else {
+            // Today workflow: per-operation pipeline (ADR-0042)
+            // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
+            self.execute_today_pipeline(&workspace, &execution_id, trigger, &record)
+                .await
+        };
+
+        if let Err(ref err) = result {
+            let finished_at = Utc::now();
+            let duration_secs = (finished_at - record.started_at)
+                .num_seconds()
+                .max(0) as u64;
+            let error_phase = match self.state.get_workflow_status(workflow_id) {
+                WorkflowStatus::Running { phase, .. } => Some(phase),
+                _ => None,
+            };
+            let can_retry = err.is_retryable();
+
+            self.state.update_execution_record(&execution_id, |r| {
+                r.finished_at = Some(finished_at);
+                r.duration_secs = Some(duration_secs);
+                r.success = false;
+                r.error_message = Some(err.to_string());
+                r.error_phase = error_phase;
+                r.can_retry = Some(can_retry);
+            });
+
+            self.emit_status_event(
+                workflow_id,
+                WorkflowStatus::Failed {
+                    error: err.into(),
+                    execution_id,
+                },
+            );
         }
 
-        // Inbox batch: direct processor calls, no three-phase
-        if workflow_id == WorkflowId::InboxBatch {
-            return self
-                .execute_inbox_batch(&workspace, &execution_id, trigger)
-                .await;
-        }
-
-        // Week workflow: per-operation pipeline (I94)
-        if workflow_id == WorkflowId::Week {
-            return self
-                .execute_week(&workspace, &execution_id, trigger, &record)
-                .await;
-        }
-
-        // Today workflow: per-operation pipeline (ADR-0042)
-        // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
-        return self
-            .execute_today_pipeline(&workspace, &execution_id, trigger, &record)
-            .await;
+        result
     }
 
     /// Execute archive workflow (pure Rust, silent operation)
@@ -515,6 +537,7 @@ impl Executor {
             });
 
         let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
+        let mut enrichment_error: Option<String> = None;
         if let Err(e) = crate::workflow::deliver::enrich_week(
             &data_dir,
             &synthesis_pty,
@@ -523,6 +546,7 @@ impl Executor {
             &self.state,
         ) {
             log::warn!("Week enrichment failed (non-fatal): {}", e);
+            enrichment_error = Some(format!("Week enrichment incomplete: {}", e));
         }
         let _ = self.app_handle.emit("operation-delivered", "week-enriched");
 
@@ -534,6 +558,17 @@ impl Executor {
             r.finished_at = Some(finished_at);
             r.duration_secs = Some(duration_secs);
             r.success = true;
+            r.error_message = enrichment_error.clone();
+            r.error_phase = if enrichment_error.is_some() {
+                Some(WorkflowPhase::Enriching)
+            } else {
+                None
+            };
+            r.can_retry = if enrichment_error.is_some() {
+                Some(true)
+            } else {
+                None
+            };
         });
 
         if matches!(
