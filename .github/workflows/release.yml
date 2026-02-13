@@ -15,6 +15,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          CONF_VERSION=$(grep '"version"' src-tauri/tauri.conf.json | head -1 | sed 's/.*: "\(.*\)".*/\1/')
+          if [ "$TAG_VERSION" != "$CONF_VERSION" ]; then
+            echo "ERROR: Tag version ($TAG_VERSION) does not match tauri.conf.json version ($CONF_VERSION)"
+            exit 1
+          fi
+          echo "Version verified: $TAG_VERSION"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -40,19 +50,96 @@ jobs:
           restore-keys: |
             macos-cargo-
 
+      - name: Import Apple certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          # Decode certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Import certificate
+          security import certificate.p12 -k build.keychain \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # Allow codesign to access keychain
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+          # Find signing identity
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Found signing identity: $IDENTITY"
+
+          # Clean up
+          rm certificate.p12
+
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build Tauri app (macOS arm64)
+      - name: Build Tauri app (macOS arm64, signed + notarized)
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target aarch64-apple-darwin
 
-      - name: Find DMG
-        id: find-dmg
+      - name: Collect artifacts
+        id: artifacts
         run: |
-          DMG_PATH=$(ls src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle"
+
+          # DMG for fresh installs
+          DMG_PATH=$(ls "$BUNDLE_DIR"/dmg/*.dmg)
           DMG_NAME=$(basename "$DMG_PATH")
           echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
           echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+
+          # Updater artifacts (.tar.gz and .tar.gz.sig)
+          TARBALL_PATH=$(ls "$BUNDLE_DIR"/macos/*.tar.gz | grep -v '.sig$')
+          TARBALL_NAME=$(basename "$TARBALL_PATH")
+          SIG_PATH="${TARBALL_PATH}.sig"
+          SIG_CONTENT=$(cat "$SIG_PATH")
+          echo "tarball_path=$TARBALL_PATH" >> "$GITHUB_OUTPUT"
+          echo "tarball_name=$TARBALL_NAME" >> "$GITHUB_OUTPUT"
+          echo "sig_path=$SIG_PATH" >> "$GITHUB_OUTPUT"
+          echo "sig_content=$SIG_CONTENT" >> "$GITHUB_OUTPUT"
+
+      - name: Generate latest.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          TARBALL_NAME="${{ steps.artifacts.outputs.tarball_name }}"
+          SIG_CONTENT="${{ steps.artifacts.outputs.sig_content }}"
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          cat > latest.json << JSONEOF
+          {
+            "version": "$VERSION",
+            "notes": "DailyOS v$VERSION",
+            "pub_date": "$PUB_DATE",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "$SIG_CONTENT",
+                "url": "$REPO_URL/releases/download/${{ github.ref_name }}/$TARBALL_NAME"
+              }
+            }
+          }
+          JSONEOF
+
+          echo "Generated latest.json:"
+          cat latest.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -61,12 +148,21 @@ jobs:
           body: |
             ## Installation
 
-            1. Download the DMG
+            **New users:**
+            1. Download `${{ steps.artifacts.outputs.dmg_name }}`
             2. Drag DailyOS to Applications
-            3. Run: `xattr -cr /Applications/DailyOS.app`
-            4. Open DailyOS
+            3. Open DailyOS
 
-            > The `xattr` step is required because the app is not code-signed.
-          files: ${{ steps.find-dmg.outputs.dmg_path }}
+            **Existing users:** DailyOS will update automatically. Check Settings for details.
+          files: |
+            ${{ steps.artifacts.outputs.dmg_path }}
+            ${{ steps.artifacts.outputs.tarball_path }}
+            ${{ steps.artifacts.outputs.sig_path }}
+            latest.json
           draft: false
           prerelease: false
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain build.keychain 2>/dev/null || true
