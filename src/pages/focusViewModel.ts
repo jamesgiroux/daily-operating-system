@@ -20,7 +20,9 @@ export function buildFocusViewModel(data: FocusData): FocusViewModel {
     .filter((v): v is PrioritizedFocusAction => Boolean(v));
 
   const topThreeSet = new Set(topThree.map((item) => item.action.id));
-  const atRisk = prioritized.filter((a) => a.atRisk);
+  const atRisk = prioritized.filter(
+    (a) => a.atRisk && !topThreeSet.has(a.action.id),
+  );
   const otherPriorities = prioritized.filter(
     (a) => !topThreeSet.has(a.action.id) && !a.atRisk,
   );
