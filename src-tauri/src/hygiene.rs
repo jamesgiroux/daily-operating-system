@@ -2194,6 +2194,7 @@ mod tests {
             internal_team_setup_version: 0,
             internal_org_account_id: None,
             developer_mode: false,
+            personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
         }
     }
