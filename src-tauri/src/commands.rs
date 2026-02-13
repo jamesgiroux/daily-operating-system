@@ -1768,7 +1768,7 @@ pub async fn refresh_focus(
         executor.execute_focus_refresh(workspace).await
     })
     .await
-    .map_err(|e| format!("Focus refresh task failed: {}", e))?
+    .map_err(|e| format!("Focus refresh task panicked: {}", e))?
     .map(|_| "Focus refreshed".to_string())
 }
 

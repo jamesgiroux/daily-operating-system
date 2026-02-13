@@ -1415,9 +1415,10 @@ fn push_unique_agenda_item(
 }
 
 fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
-    let numbered = inline_numbered_agenda_regex().replace_all(value.trim(), "|");
+    // Use null byte as sentinel — pipes appear in real agenda text (e.g. "Review pipeline | Discuss metrics").
+    let numbered = inline_numbered_agenda_regex().replace_all(value.trim(), "\x00");
     let mut out = Vec::new();
-    for segment in numbered.split('|') {
+    for segment in numbered.split('\x00') {
         for item in segment.split(';') {
             let trimmed = item.trim();
             if !trimmed.is_empty() {
@@ -1431,6 +1432,9 @@ fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
     out
 }
 
+/// Pre-sanitizes calendar agenda candidates for dedup, then collects unique items.
+/// Items are sanitized here for consistent dedup keys; `push_unique_agenda_item`
+/// re-sanitizes when consuming them (idempotent, harmless).
 fn push_calendar_agenda_candidate(
     raw: &str,
     agenda: &mut Vec<String>,
@@ -1456,7 +1460,6 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
     let mut agenda = Vec::new();
     let mut seen = HashSet::new();
     let mut in_agenda_section = false;
-    let mut saw_agenda_header = false;
 
     for line in calendar_notes.lines() {
         let trimmed = line.trim();
@@ -1466,7 +1469,6 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
 
         let lower = trimmed.to_lowercase();
         if lower.starts_with("agenda") || lower.starts_with("proposed agenda") {
-            saw_agenda_header = true;
             in_agenda_section = true;
             if let Some((_, rest)) = trimmed.split_once(':') {
                 push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
@@ -1499,20 +1501,8 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
         }
     }
 
-    if !saw_agenda_header {
-        for line in calendar_notes.lines() {
-            let trimmed = line.trim();
-            let lower = trimmed.to_lowercase();
-            if lower.starts_with("agenda:") || lower.starts_with("agenda -") {
-                let rest = trimmed
-                    .split_once(':')
-                    .map(|(_, v)| v)
-                    .or_else(|| trimmed.split_once('-').map(|(_, v)| v))
-                    .unwrap_or("");
-                push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
-            }
-        }
-    }
+    // No fallback pass needed — the first pass already matches `lower.starts_with("agenda")`
+    // which covers "agenda:", "agenda -", and any other "agenda" prefix.
 
     agenda
 }
@@ -4314,6 +4304,96 @@ END_AGENDA
         assert_eq!(agenda.len(), 2);
         assert_eq!(agenda[0], "Renewal decision timeline");
         assert_eq!(agenda[1], "Review Team B adoption risk");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_numbered_inline() {
+        let prep = json!({
+            "calendarNotes": "Agenda: 1. Review proposal 2. Discuss timeline 3. Close action items",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+        assert_eq!(agenda[2], "Close action items");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_semicolons() {
+        let prep = json!({
+            "calendarNotes": "Agenda: Review proposal; Discuss timeline; Close items",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+        assert_eq!(agenda[2], "Close items");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_dedup() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review proposal\n- Discuss timeline\n- Review proposal",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_empty_notes() {
+        let prep = json!({});
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
+
+        let prep2 = json!({ "calendarNotes": null });
+        let agenda2 = extract_calendar_agenda_items(&prep2);
+        assert!(agenda2.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_no_agenda_section() {
+        let prep = json!({
+            "calendarNotes": "Please join the call on time.\nDial-in: 555-1234",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_stops_at_next_header() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review proposal\n- Discuss timeline\nQuestions:\n- Who owns legal review?\n- When is the deadline?",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_pipe_in_text() {
+        // Validates Fix 1: pipes in agenda text should not cause incorrect splits.
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review pipeline | Discuss metrics\n- Budget approval",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review pipeline | Discuss metrics");
+        assert_eq!(agenda[1], "Budget approval");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_colon_variant() {
+        // Validates that the first pass handles "agenda:" (with colon) — no fallback needed.
+        let prep = json!({
+            "calendarNotes": "agenda: Review Q1 numbers; Plan Q2 targets",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review Q1 numbers");
+        assert_eq!(agenda[1], "Plan Q2 targets");
     }
 
     #[test]
