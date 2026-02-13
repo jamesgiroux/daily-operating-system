@@ -1748,6 +1748,32 @@ pub async fn refresh_emails(
     .map(|_| "Email refresh complete".to_string())
 }
 
+/// Refresh focus/briefing narrative without running full /today pipeline.
+#[tauri::command]
+pub async fn refresh_focus(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let state_clone = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let workspace = std::path::Path::new(&workspace_path);
+        let executor = crate::executor::Executor::new(state_clone, app_handle);
+        executor.execute_focus_refresh(workspace).await
+    })
+    .await
+    .map_err(|e| format!("Focus refresh task panicked: {}", e))?
+    .map(|_| "Focus refreshed".to_string())
+}
+
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
 ///
 /// Reads emails.json, collects IDs of low-priority emails, calls Gmail
