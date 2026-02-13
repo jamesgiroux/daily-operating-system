@@ -121,7 +121,7 @@ export function computeMeetingDisplayState(
 ): MeetingDisplayState {
   const isCancelled = meeting.overlayStatus === "cancelled";
   const isNew = meeting.overlayStatus === "new";
-  const hasPrepFile = meeting.hasPrep && meeting.id;
+  const hasPrepContext = meeting.hasPrep && !!meeting.id;
 
   // Dot styling (always computed — used by MeetingTimeline)
   const dotBg = isCancelled
@@ -193,11 +193,11 @@ export function computeMeetingDisplayState(
   // 4. Past + no outcomes → View Prep (if available) + Attach/Outcomes buttons
   else if (ctx.isPast && ctx.outcomesStatus === "none") {
     primaryStatus = "past-unprocessed";
-    if (hasPrepFile) {
+    if (hasPrepContext) {
       actions.push({
         key: "view-prep",
         label: "View Prep",
-        linkTo: meeting.prepFile,
+        linkTo: meeting.id,
       });
     }
     actions.push(
@@ -216,12 +216,12 @@ export function computeMeetingDisplayState(
     });
   }
   // 6. Has prep file → "View Prep" action + optional "Limited prep" badge
-  else if (hasPrepFile) {
+  else if (hasPrepContext) {
     primaryStatus = "has-prep";
     actions.push({
       key: "view-prep",
       label: "View Prep",
-      linkTo: meeting.prepFile,
+      linkTo: meeting.id,
     });
     if (!ctx.hasEnrichedPrep) {
       badges.push({
