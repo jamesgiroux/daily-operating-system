@@ -23,6 +23,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { PageError } from "@/components/PageState";
 import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import {
@@ -175,6 +183,11 @@ export default function AccountDetailPage() {
   const [addingAction, setAddingAction] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState("");
   const [creatingAction, setCreatingAction] = useState(false);
+  const [createChildOpen, setCreateChildOpen] = useState(false);
+  const [childName, setChildName] = useState("");
+  const [childDescription, setChildDescription] = useState("");
+  const [childOwnerId, setChildOwnerId] = useState("");
+  const [creatingChild, setCreatingChild] = useState(false);
 
   // I124: Content index state
   const [files, setFiles] = useState<ContentFile[]>([]);
@@ -399,6 +412,29 @@ export default function AccountDetailPage() {
     }
   }
 
+  async function handleCreateChild() {
+    if (!detail || !childName.trim()) return;
+    setCreatingChild(true);
+    try {
+      const result = await invoke<{ id: string }>("create_child_account", {
+        parentId: detail.id,
+        name: childName.trim(),
+        description: childDescription.trim() || null,
+        ownerPersonId: childOwnerId || null,
+      });
+      setCreateChildOpen(false);
+      setChildName("");
+      setChildDescription("");
+      setChildOwnerId("");
+      await load();
+      navigate({ to: "/accounts/$accountId", params: { accountId: result.id } });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreatingChild(false);
+    }
+  }
+
   // I163: Debounced save for strategic programs
   const savePrograms = useCallback(
     async (updated: StrategicProgram[]) => {
@@ -608,6 +644,11 @@ export default function AccountDetailPage() {
                       {detail.lifecycle}
                     </Badge>
                   )}
+                  {detail.isInternal && (
+                    <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                      Internal
+                    </Badge>
+                  )}
                   {signals?.temperature && (
                     <Badge
                       className={cn(
@@ -629,6 +670,81 @@ export default function AccountDetailPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              {!detail.archived && (
+                <Dialog open={createChildOpen} onOpenChange={setCreateChildOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-xs">
+                      <Plus className="mr-1 size-3" />
+                      {detail.isInternal ? "New Team" : "New BU"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{detail.isInternal ? "Create Team" : "Create Business Unit"}</DialogTitle>
+                      <DialogDescription>
+                        Add a child entity under {detail.name}.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Name</label>
+                        <Input
+                          value={childName}
+                          onChange={(e) => setChildName(e.target.value)}
+                          placeholder={detail.isInternal ? "Team name" : "BU name"}
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {(detail.isInternal
+                            ? ["Leadership Team", "Product Team", "Operations Team"]
+                            : ["Enterprise", "SMB", "Strategic"])
+                            .map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => setChildName(suggestion)}
+                                className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Description</label>
+                        <textarea
+                          value={childDescription}
+                          onChange={(e) => setChildDescription(e.target.value)}
+                          className="min-h-[80px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          placeholder="Optional notes for this team or business unit"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Owner</label>
+                        <select
+                          value={childOwnerId}
+                          onChange={(e) => setChildOwnerId(e.target.value)}
+                          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                        >
+                          <option value="">No owner</option>
+                          {detail.linkedPeople.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.name || person.email}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" onClick={() => setCreateChildOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateChild} disabled={creatingChild || !childName.trim()}>
+                        {creatingChild ? "Creating..." : "Create"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
               {dirty && (
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   <Save className="mr-1 size-4" />
