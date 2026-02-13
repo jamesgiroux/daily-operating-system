@@ -32,16 +32,17 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let today = chrono::Local::now().date_naive();
 
     // Load config
-    let (profile, user_domain, user_focus) = get_config(state);
+    let (profile, user_domains, user_focus) = get_config(state);
+    let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
 
     log::info!(
         "prepare_today: workspace={}, profile={}, domain={}",
         workspace.display(),
         profile,
-        if user_domain.is_empty() {
+        if user_domains.is_empty() {
             "(unknown)"
         } else {
-            &user_domain
+            &primary_user_domain
         }
     );
 
@@ -65,7 +66,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let account_hints = build_account_domain_hints(workspace);
 
     let (classified, events, meetings_by_type, time_status) =
-        fetch_and_classify_today(today, &user_domain, &account_hints).await;
+        fetch_and_classify_today(today, &user_domains, &account_hints).await;
 
     log::info!("prepare_today: {} events fetched", events.len());
 
@@ -84,7 +85,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
     let email_result =
-        fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints).await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
             "prepare_today: email sync degraded [{}] {}",
@@ -186,7 +187,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     let now = Utc::now();
     let today = chrono::Local::now().date_naive();
 
-    let (profile, user_domain, _user_focus) = get_config(state);
+    let (profile, user_domains, _user_focus) = get_config(state);
 
     // Week bounds
     let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
@@ -209,7 +210,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     // Fetch and classify calendar events for the week
     let account_hints = build_account_domain_hints(workspace);
     let (classified, _events, _meetings_by_type, _time_status, events_by_day) =
-        fetch_and_classify_week(monday, friday, &user_domain, &account_hints).await;
+        fetch_and_classify_week(monday, friday, &user_domains, &account_hints).await;
 
     // Actions from SQLite
     let db_guard = state.db.lock().ok();
@@ -283,7 +284,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
 /// Replaces refresh_emails.py. Writes: _today/data/email-refresh-directive.json
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
-    let (_profile, user_domain, _user_focus) = get_config(state);
+    let (_profile, user_domains, _user_focus) = get_config(state);
+    let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
     let account_hints = build_account_domain_hints(workspace);
 
     // Extract customer domains from morning's schedule.json if available
@@ -310,7 +312,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     }
 
     let email_result =
-        fetch_and_classify_emails(&user_domain, &customer_domains, &account_hints).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints).await;
     if let Some(sync_error) = email_result.sync_error {
         return Err(ExecutionError::NetworkError(sync_error.message));
     }
@@ -409,7 +411,7 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
 // Shared helpers
 // ============================================================================
 
-fn get_config(state: &AppState) -> (String, String, Option<String>) {
+fn get_config(state: &AppState) -> (String, Vec<String>, Option<String>) {
     let config_guard = state.config.read().ok();
     let config = config_guard.as_ref().and_then(|g| g.as_ref());
 
@@ -417,13 +419,11 @@ fn get_config(state: &AppState) -> (String, String, Option<String>) {
         .map(|c| c.profile.clone())
         .unwrap_or_else(|| "general".to_string());
 
-    let user_domain = config
-        .and_then(|c| c.user_domain.clone())
-        .unwrap_or_default();
+    let user_domains = config.map(|c| c.resolved_user_domains()).unwrap_or_default();
 
     let user_focus = config.and_then(|c| c.user_focus.clone());
 
-    (profile, user_domain, user_focus)
+    (profile, user_domains, user_focus)
 }
 
 /// Build account domain hints from Accounts/ directory.
@@ -459,7 +459,7 @@ fn build_account_domain_hints(workspace: &Path) -> HashSet<String> {
 /// Fetch calendar events for today, classify, and compute time status.
 async fn fetch_and_classify_today(
     today: NaiveDate,
-    user_domain: &str,
+    user_domains: &[String],
     account_hints: &HashSet<String>,
 ) -> (
     Vec<Value>,
@@ -493,7 +493,7 @@ async fn fetch_and_classify_today(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
-        let cm = google_api::classify::classify_meeting(raw, user_domain, account_hints);
+        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, account_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
             "id": ev.id,
@@ -577,7 +577,7 @@ async fn fetch_and_classify_today(
 async fn fetch_and_classify_week(
     monday: NaiveDate,
     friday: NaiveDate,
-    user_domain: &str,
+    user_domains: &[String],
     account_hints: &HashSet<String>,
 ) -> (
     Vec<Value>,
@@ -625,7 +625,7 @@ async fn fetch_and_classify_week(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
-        let cm = google_api::classify::classify_meeting(raw, user_domain, account_hints);
+        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, account_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
             "id": ev.id,
