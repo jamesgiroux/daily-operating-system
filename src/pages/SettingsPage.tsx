@@ -8,6 +8,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TabFilter } from "@/components/ui/tab-filter";
@@ -32,11 +33,13 @@ import {
   LogOut,
   Loader2,
   ToggleRight,
+  User,
   Activity,
   Cpu,
   X,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
 import type {
   PostMeetingCaptureConfig,
@@ -220,6 +223,7 @@ export default function SettingsPage() {
             {activeTab === "profile" && (
               <>
                 <UpdateCard />
+                <UserProfileCard />
                 <UserDomainsCard />
                 <EntityModeCard
                   currentMode={config?.entityMode ?? "account"}
@@ -243,6 +247,7 @@ export default function SettingsPage() {
                     </div>
                   </CardContent>
                 </Card>
+                <PersonalityCard />
               </>
             )}
 
@@ -614,6 +619,203 @@ function GoogleAccountCard() {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const PERSONALITY_OPTIONS = [
+  {
+    value: "professional",
+    label: "Professional",
+    description: "Straightforward, clean copy",
+    example: "No data yet.",
+  },
+  {
+    value: "friendly",
+    label: "Friendly",
+    description: "Warm, encouraging tone",
+    example: "Nothing here yet — we'll have this ready for you soon.",
+  },
+  {
+    value: "playful",
+    label: "Playful",
+    description: "Personality-rich, fun",
+    example: "The hamsters are still running. Data incoming.",
+  },
+] as const;
+
+function PersonalityCard() {
+  const { personality, setPersonality: setCtxPersonality } = usePersonality();
+
+  async function handleChange(value: string) {
+    const previous = personality;
+    setCtxPersonality(value as Personality);
+    try {
+      await invoke("set_personality", { personality: value });
+      toast.success("Personality updated");
+    } catch (err) {
+      setCtxPersonality(previous);
+      toast.error(typeof err === "string" ? err : "Failed to update personality");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquare className="size-4" />
+          Personality
+        </CardTitle>
+        <CardDescription>
+          Sets the tone for empty states, loading messages, and notifications
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3">
+          {PERSONALITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => handleChange(option.value)}
+              className={cn(
+                "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                personality === option.value
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/50",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{option.label}</span>
+                {personality === option.value && (
+                  <Check className="size-3.5 text-primary" />
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {option.description}
+              </span>
+              <span className="mt-1 text-xs italic text-muted-foreground/70">
+                "{option.example}"
+              </span>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserProfileCard() {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [title, setTitle] = useState("");
+  const [focus, setFocus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<{
+      userName?: string;
+      userCompany?: string;
+      userTitle?: string;
+      userFocus?: string;
+    }>("get_config")
+      .then((config) => {
+        setName(config.userName ?? "");
+        setCompany(config.userCompany ?? "");
+        setTitle(config.userTitle ?? "");
+        setFocus(config.userFocus ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await invoke("set_user_profile", {
+        name: name.trim() || null,
+        company: company.trim() || null,
+        title: title.trim() || null,
+        focus: focus.trim() || null,
+        domain: null, // domain is managed by UserDomainsCard
+      });
+      toast.success("Profile updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <User className="size-4" />
+          About You
+        </CardTitle>
+        <CardDescription>
+          Helps DailyOS personalize your briefings and meeting prep
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label htmlFor="profile-name" className="text-sm font-medium">Name</label>
+            <Input
+              id="profile-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Jamie"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-company" className="text-sm font-medium">Company</label>
+            <Input
+              id="profile-company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="e.g. Acme Inc."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-title" className="text-sm font-medium">Title</label>
+            <Input
+              id="profile-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Customer Success Manager"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-focus" className="text-sm font-medium">Current focus</label>
+            <Input
+              id="profile-focus"
+              value={focus}
+              onChange={(e) => setFocus(e.target.value)}
+              placeholder="e.g. Driving Q2 renewals"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Save
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
