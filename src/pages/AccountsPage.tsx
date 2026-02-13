@@ -25,6 +25,7 @@ interface ArchivedAccount {
 }
 
 type ArchiveTab = "active" | "archived";
+type ScopeTab = "all" | "internal" | "external";
 
 type HealthTab = "all" | "green" | "yellow" | "red";
 
@@ -40,11 +41,18 @@ const archiveTabs: { key: ArchiveTab; label: string }[] = [
   { key: "archived", label: "Archived" },
 ];
 
+const scopeTabs: { key: ScopeTab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "internal", label: "Internal" },
+  { key: "external", label: "External" },
+];
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<HealthTab>("all");
+  const [scopeTab, setScopeTab] = useState<ScopeTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -158,19 +166,30 @@ export default function AccountsPage() {
           return false;
         });
 
+  const scopeFiltered = healthFiltered.filter((a) => {
+    if (scopeTab === "internal") return a.isInternal;
+    if (scopeTab === "external") return !a.isInternal;
+    return true;
+  });
+
   const filtered = searchQuery
-    ? healthFiltered.filter(
+    ? scopeFiltered.filter(
         (a) =>
           a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (a.csm ?? "").toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : healthFiltered;
+    : scopeFiltered;
 
   const tabCounts: Record<HealthTab, number> = {
     all: accounts.length,
     green: accounts.filter((a) => a.health === "green").length,
     yellow: accounts.filter((a) => a.health === "yellow").length,
     red: accounts.filter((a) => a.health === "red").length,
+  };
+  const scopeCounts: Record<ScopeTab, number> = {
+    all: accounts.length,
+    internal: accounts.filter((a) => a.isInternal).length,
+    external: accounts.filter((a) => !a.isInternal).length,
   };
 
   // I176: filter archived accounts by search query
@@ -368,6 +387,16 @@ export default function AccountsPage() {
 
           {!isArchived && (
             <TabFilter
+              tabs={scopeTabs}
+              active={scopeTab}
+              onChange={setScopeTab}
+              counts={scopeCounts}
+              className="mb-4"
+            />
+          )}
+
+          {!isArchived && (
+            <TabFilter
               tabs={healthTabs}
               active={tab}
               onChange={setTab}
@@ -457,6 +486,7 @@ function AccountRow({
   const isStale = daysSince != null && daysSince > 14;
 
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const hasInternalBadge = account.isInternal;
 
   return (
     <ListRow
@@ -467,19 +497,26 @@ function AccountRow({
       subtitle={account.csm ? `CSM: ${account.csm}` : undefined}
       className={isChild ? "pl-8" : undefined}
       badges={
-        onToggleExpand ? (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onToggleExpand();
-            }}
-            className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-          >
-            <Chevron className="size-3.5" />
-            <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
-          </button>
-        ) : undefined
+        <div className="inline-flex items-center gap-2">
+          {hasInternalBadge && (
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+              Internal
+            </span>
+          )}
+          {onToggleExpand && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+            >
+              <Chevron className="size-3.5" />
+              <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
+            </button>
+          )}
+        </div>
       }
       columns={
         <>
