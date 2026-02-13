@@ -296,7 +296,13 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
     }
 
     // Production defaults — no credentials.json needed
-    Ok(embedded_credentials())
+    let creds = embedded_credentials();
+    if creds.installed.client_secret.is_none() {
+        log::warn!(
+            "Google OAuth embedded credentials missing client_secret. Set DAILYOS_GOOGLE_SECRET at build time."
+        );
+    }
+    Ok(creds)
 }
 
 /// Built-in OAuth client credentials (I123).
@@ -313,9 +319,7 @@ fn embedded_credentials() -> ClientCredentials {
         installed: InstalledAppCredentials {
             client_id: "245504828099-06i3l5339nkhr5ffq08qn3h9omci4efn.apps.googleusercontent.com"
                 .to_string(),
-            client_secret: Some(
-                "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".to_string(),
-            ),
+            client_secret: option_env!("DAILYOS_GOOGLE_SECRET").map(|s| s.to_string()),
             auth_uri: "https://accounts.google.com/o/oauth2/auth".to_string(),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uris: vec!["http://localhost".to_string()],

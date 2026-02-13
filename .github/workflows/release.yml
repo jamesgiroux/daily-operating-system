@@ -43,7 +43,18 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Validate Google OAuth secret
+        env:
+          DAILYOS_GOOGLE_SECRET: ${{ secrets.DAILYOS_GOOGLE_SECRET }}
+        run: |
+          if [ -z "$DAILYOS_GOOGLE_SECRET" ]; then
+            echo "Missing DAILYOS_GOOGLE_SECRET repository secret"
+            exit 1
+          fi
+
       - name: Build Tauri app (macOS arm64)
+        env:
+          DAILYOS_GOOGLE_SECRET: ${{ secrets.DAILYOS_GOOGLE_SECRET }}
         run: pnpm tauri build --target aarch64-apple-darwin
 
       - name: Find DMG

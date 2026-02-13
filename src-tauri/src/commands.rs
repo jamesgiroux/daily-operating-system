@@ -172,6 +172,24 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
+        // Keep prep visibility durable when prep files are cleaned up (I206).
+        // If SQLite has persisted prep context for a meeting, treat it as prepped.
+        match state.with_db_try_read(|db| db.list_meeting_prep_contexts()) {
+            DbTryRead::Ok(Ok(rows)) => {
+                let persisted_prep_ids: HashSet<String> =
+                    rows.into_iter().map(|(id, _)| id).collect();
+                if !persisted_prep_ids.is_empty() {
+                    for m in &mut meetings {
+                        if persisted_prep_ids.contains(&m.id) {
+                            m.has_prep = true;
+                        }
+                    }
+                }
+            }
+            DbTryRead::Busy => db_busy = true,
+            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
+        }
+
         // Annotate meetings with linked entities from junction table (I52)
         match state.with_db_try_read(|db| {
             let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
@@ -1077,6 +1095,41 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     }
 }
 
+/// Retry only week AI enrichment without rerunning full week prepare/deliver.
+#[tauri::command]
+pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace_path = config.workspace_path.clone();
+    let user_ctx = crate::types::UserContext::from_config(&config);
+    let ai_models = config.ai_models.clone();
+    let state = state.inner().clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let workspace = Path::new(&workspace_path);
+        let data_dir = workspace.join("_today").join("data");
+        let week_path = data_dir.join("week-overview.json");
+        if !week_path.exists() {
+            return Err("No weekly overview found. Run the weekly workflow first.".to_string());
+        }
+
+        let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_models);
+        crate::workflow::deliver::enrich_week(&data_dir, &pty, workspace, &user_ctx, &state)
+    });
+
+    match task.await {
+        Ok(result) => result?,
+        Err(e) => return Err(format!("Week enrichment task failed: {}", e)),
+    }
+
+    Ok("Week enrichment retried".to_string())
+}
+
 // =============================================================================
 // Focus Data Command
 // =============================================================================
@@ -1608,9 +1661,20 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<
     }
 
     let mut copied = 0;
+    let mut seen_sources: HashSet<String> = HashSet::new();
 
     for path_str in &paths {
         let source = Path::new(path_str);
+        let source_key = source
+            .canonicalize()
+            .unwrap_or_else(|_| source.to_path_buf())
+            .to_string_lossy()
+            .to_string();
+
+        // Ignore duplicate paths in a single drop payload (I203).
+        if !seen_sources.insert(source_key) {
+            continue;
+        }
 
         // Skip directories
         if !source.is_file() {
@@ -2458,7 +2522,13 @@ pub async fn start_google_auth(
 
     // Run the native Rust OAuth flow
     let workspace = std::path::Path::new(&workspace_path);
-    let email = crate::google::start_auth(workspace).await?;
+    let email = match crate::google::start_auth(workspace).await {
+        Ok(email) => email,
+        Err(err) => {
+            let _ = app_handle.emit("google-auth-failed", &err);
+            return Err(err);
+        }
+    };
 
     let new_status = GoogleAuthStatus::Authenticated {
         email: email.clone(),
