@@ -1,5 +1,6 @@
 import { AlertCircle, Coffee, RefreshCw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import type { LucideIcon } from "lucide-react";
 
@@ -77,5 +78,54 @@ export function PageError({ message, onRetry }: PageErrorProps) {
         </div>
       </div>
     </ScrollArea>
+  );
+}
+
+interface SectionEmptyProps {
+  icon: LucideIcon;
+  title: string;
+  message?: string;
+  action?: React.ReactNode;
+}
+
+/**
+ * Card-wrapped empty state for list sections and tabs.
+ * Used when a filtered/tabbed list has no items to show.
+ */
+export function SectionEmpty({
+  icon: Icon,
+  title,
+  message,
+  action,
+}: SectionEmptyProps) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+        <Icon className="mb-4 size-12 text-muted-foreground/40" />
+        <p className="text-lg font-medium">{title}</p>
+        {message && (
+          <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+        )}
+        {action && <div className="mt-4">{action}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface InlineEmptyProps {
+  icon: LucideIcon;
+  message: string;
+}
+
+/**
+ * Lightweight empty state for detail page sections.
+ * No card wrapper — blends into surrounding content.
+ */
+export function InlineEmpty({ icon: Icon, message }: InlineEmptyProps) {
+  return (
+    <div className="flex flex-col items-center py-6 text-center">
+      <Icon className="mb-2 size-8 text-muted-foreground/40" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
   );
 }
