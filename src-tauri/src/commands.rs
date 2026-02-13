@@ -1293,7 +1293,7 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
         // 4. Compute capacity from merged meetings (live-first with fallback warning)
         let source = focus_capacity_source_for_live_events(&live_events);
         let day_date = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let capacity = crate::focus_capacity::compute_focus_capacity(
+        let mut capacity = crate::focus_capacity::compute_focus_capacity(
             crate::focus_capacity::FocusCapacityInput {
                 meetings: meetings.clone(),
                 source,
@@ -1303,6 +1303,12 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
                 day_date,
             },
         );
+
+        // Suppress stale-data warning when the briefing schedule is from today —
+        // it was generated from today's Google Calendar and is fresh enough.
+        if overview.date == day_date.format("%Y-%m-%d").to_string() {
+            capacity.warnings.clear();
+        }
 
         // 5. Filter meetings to "key" types (where prep matters)
         let key_meetings: Vec<FocusMeeting> = meetings
