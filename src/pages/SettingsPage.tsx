@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +13,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
+  ArrowDownToLine,
   Building2,
   Check,
   FolderKanban,
@@ -155,6 +159,9 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-6">
+            {/* App Updates */}
+            <UpdateCard />
+
             {/* Google Account */}
             <GoogleAccountCard />
 
@@ -341,6 +348,125 @@ export default function SettingsPage() {
         </div>
       </ScrollArea>
     </main>
+  );
+}
+
+type UpdateState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "available"; update: Update }
+  | { phase: "installing" }
+  | { phase: "error"; message: string };
+
+function UpdateCard() {
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [state, setState] = useState<UpdateState>({ phase: "idle" });
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
+
+  async function handleCheck() {
+    setState({ phase: "checking" });
+    try {
+      const update = await check();
+      if (update) {
+        setState({ phase: "available", update });
+      } else {
+        toast.success("You're on the latest version");
+        setState({ phase: "idle" });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Update check failed: ${message}`);
+      setState({ phase: "error", message });
+    }
+  }
+
+  async function handleInstall() {
+    if (state.phase !== "available") return;
+    const { update } = state;
+    setState({ phase: "installing" });
+    try {
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Update failed: ${message}`);
+      setState({ phase: "error", message });
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ArrowDownToLine className="size-4" />
+          Updates
+        </CardTitle>
+        <CardDescription>
+          {appVersion ? `DailyOS v${appVersion}` : "DailyOS"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {state.phase === "idle" || state.phase === "error" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              {state.phase === "error"
+                ? "Update check failed"
+                : "Check for new versions"}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCheck}
+            >
+              <RefreshCw className="mr-1.5 size-3.5" />
+              Check for Updates
+            </Button>
+          </div>
+        ) : state.phase === "checking" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Checking for updates...
+            </span>
+            <Button variant="outline" size="sm" disabled>
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              Checking
+            </Button>
+          </div>
+        ) : state.phase === "available" ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">
+                  v{state.update.version} available
+                </p>
+                {state.update.body && (
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                    {state.update.body}
+                  </p>
+                )}
+              </div>
+              <Button size="sm" onClick={handleInstall}>
+                <ArrowDownToLine className="mr-1.5 size-3.5" />
+                Install & Restart
+              </Button>
+            </div>
+          </div>
+        ) : state.phase === "installing" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Installing update...
+            </span>
+            <Button size="sm" disabled>
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              Installing
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
