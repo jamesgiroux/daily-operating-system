@@ -9,7 +9,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { PageError } from "@/components/PageState";
-import { cn } from "@/lib/utils";
+import { cn, formatFullDate } from "@/lib/utils";
 import {
   ArrowLeft,
   Calendar,
@@ -291,7 +291,7 @@ export default function ActionDetailPage() {
                 <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <div>
                   <span className="text-muted-foreground">Created: </span>
-                  <span>{formatDate(detail.createdAt)}</span>
+                  <span>{formatFullDate(detail.createdAt)}</span>
                 </div>
               </div>
 
@@ -301,7 +301,7 @@ export default function ActionDetailPage() {
                   <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
                   <div>
                     <span className="text-muted-foreground">Completed: </span>
-                    <span>{formatDate(detail.completedAt)}</span>
+                    <span>{formatFullDate(detail.completedAt)}</span>
                   </div>
                 </div>
               )}
@@ -590,7 +590,7 @@ function EditableDate({
       className="group cursor-pointer"
     >
       {dateValue ? (
-        <span>{formatDate(dateValue)}</span>
+        <span>{formatFullDate(dateValue)}</span>
       ) : (
         <span className="text-muted-foreground/60">Add due date</span>
       )}
@@ -599,16 +599,4 @@ function EditableDate({
   );
 }
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
+

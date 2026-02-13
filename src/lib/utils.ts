@@ -5,24 +5,57 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/** Strip inline markdown formatting (bold, italic, code, links) from a string. */
+/**
+ * Parse a date string with WebKit compatibility.
+ *
+ * WebKit/Safari rejects formats like "2026-02-13 11:30 AM" that V8 accepts.
+ * Falls back to extracting the YYYY-MM-DD portion when native parsing fails.
+ */
+export function parseDate(dateStr: string): Date | null {
+  const date = new Date(dateStr);
+  if (!isNaN(date.getTime())) return date;
+  // WebKit fallback: extract date portion from "YYYY-MM-DD ..." format
+  const dateOnly = dateStr.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  if (dateOnly) {
+    const fallback = new Date(dateOnly);
+    if (!isNaN(fallback.getTime())) return fallback;
+  }
+  return null;
+}
+
+/** Format a date string as short month + day (e.g. "Feb 13"). */
+export function formatShortDate(dateStr: string): string {
+  const date = parseDate(dateStr);
+  if (!date) return dateStr;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Format a date string as a full date (e.g. "Thu, Feb 13, 2026"). */
+export function formatFullDate(dateStr: string): string {
+  const date = parseDate(dateStr);
+  if (!date) return dateStr;
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 /** Format a date string as a relative label (e.g. "Today", "3d ago", "2w ago"). */
 export function formatRelativeDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffDays = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
-    );
+  const date = parseDate(dateStr);
+  if (!date) return "";
+  const now = new Date();
+  const diffDays = Math.floor(
+    (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
+  );
 
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-    return `${Math.floor(diffDays / 30)}mo ago`;
-  } catch {
-    return "";
-  }
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return `${Math.floor(diffDays / 30)}mo ago`;
 }
 
 /** Format ARR as human-readable ($1.2M, $500K, etc.). */

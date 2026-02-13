@@ -46,6 +46,7 @@ pub struct MeetingStatus {
     pub meeting_type: String,
     pub time: String,
     pub end_time: Option<String>,
+    pub start_iso: Option<String>,
     pub account: Option<String>,
     pub calendar_event_id: Option<String>,
     pub transcript_status: TranscriptStatus,
@@ -111,6 +112,7 @@ pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> Reconcilia
                 meeting_type: m.meeting_type,
                 time: m.time,
                 end_time: m.end_time,
+                start_iso: m.start_iso,
                 account: m.account,
                 calendar_event_id: m.calendar_event_id,
                 transcript_status,
@@ -237,7 +239,10 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
             id: meeting_id,
             title: ms.title.clone(),
             meeting_type: ms.meeting_type.clone(),
-            start_time: format!("{} {}", result.date, ms.time),
+            start_time: ms
+                .start_iso
+                .clone()
+                .unwrap_or_else(|| format!("{} {}", result.date, ms.time)),
             end_time: ms
                 .end_time
                 .as_ref()
@@ -925,6 +930,7 @@ mod tests {
                     meeting_type: "customer".to_string(),
                     time: "9:00 AM".to_string(),
                     end_time: Some("10:00 AM".to_string()),
+                    start_iso: None,
                     account: None,
                     calendar_event_id: Some(calendar_event_id.to_string()),
                     transcript_status: TranscriptStatus::NoTranscript,
