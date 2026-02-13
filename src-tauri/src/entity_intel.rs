@@ -656,8 +656,7 @@ pub fn build_intelligence_context(
         }
 
         // In incremental mode, only include files modified since last enrichment
-        if is_incremental && !enriched_at.is_empty() && file.modified_at.as_str() <= enriched_at
-        {
+        if is_incremental && !enriched_at.is_empty() && file.modified_at.as_str() <= enriched_at {
             continue;
         }
 
