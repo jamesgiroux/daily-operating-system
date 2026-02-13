@@ -4,6 +4,13 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.2] - 2026-02-12
+
+### Fixed
+
+- OAuth callback no longer shows "Authorization successful" before the token exchange completes — browser now waits for the full exchange + Keychain save, and shows the actual error on failure
+- Added diagnostic logging at every step of the OAuth flow for troubleshooting
+
 ## [0.7.1] - 2026-02-12
 
 Six sprints of work across meeting intelligence, entity relationships, security hardening, and app responsiveness. 574 Rust tests. 69 Architecture Decision Records.
