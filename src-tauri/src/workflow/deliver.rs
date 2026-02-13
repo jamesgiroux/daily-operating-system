@@ -1468,12 +1468,27 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
         }
 
         let lower = trimmed.to_lowercase();
-        if lower.starts_with("agenda") || lower.starts_with("proposed agenda") {
-            in_agenda_section = true;
-            if let Some((_, rest)) = trimmed.split_once(':') {
-                push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
+        let agenda_prefix_len = if lower.starts_with("proposed agenda") {
+            "proposed agenda".len()
+        } else if lower.starts_with("agenda") {
+            "agenda".len()
+        } else {
+            0
+        };
+        if agenda_prefix_len > 0 {
+            let remainder = trimmed[agenda_prefix_len..].trim_start();
+            // Require delimiter or end-of-line after keyword — reject prose like
+            // "Agenda items were discussed" which is not a section header.
+            if remainder.is_empty()
+                || remainder.starts_with(':')
+                || remainder.starts_with('-')
+            {
+                in_agenda_section = true;
+                if let Some((_, rest)) = trimmed.split_once(':') {
+                    push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
+                }
+                continue;
             }
-            continue;
         }
 
         if in_agenda_section
@@ -4410,6 +4425,17 @@ END_AGENDA
         assert_eq!(agenda[0]["topic"], "Renewal timeline");
         assert_eq!(agenda[1]["source"], "calendar_note");
         assert_eq!(agenda[1]["topic"], "Expansion scope");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_rejects_prose_with_agenda_word() {
+        // "Agenda" at the start of a sentence without a delimiter should NOT
+        // trigger section mode — prevents false positive extraction.
+        let prep = json!({
+            "calendarNotes": "Agenda items were discussed in the last meeting.\nPlease review the notes.",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
     }
 
     #[test]
