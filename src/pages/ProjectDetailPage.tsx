@@ -23,7 +23,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
 import {
   Archive,
   ArrowLeft,
@@ -423,7 +423,7 @@ export default function ProjectDetailPage() {
                     {signals.lastMeeting && (
                       <div>
                         <div className="text-sm font-medium">
-                          {formatDate(signals.lastMeeting)}
+                          {formatShortDate(signals.lastMeeting)}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           last meeting
@@ -602,7 +602,7 @@ export default function ProjectDetailPage() {
                         <Calendar className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{m.title}</span>
                         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          {formatDate(m.startTime)}
+                          {formatShortDate(m.startTime)}
                         </span>
                       </div>
                     ))}
@@ -707,14 +707,4 @@ function CaptureIcon({ type }: { type: string }) {
   );
 }
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
+
