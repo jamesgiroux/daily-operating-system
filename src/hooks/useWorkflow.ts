@@ -51,6 +51,8 @@ export interface ExecutionRecord {
   durationSecs?: number;
   success: boolean;
   errorMessage?: string;
+  errorPhase?: "preparing" | "enriching" | "delivering";
+  canRetry?: boolean;
   trigger: "scheduled" | "manual" | "missed";
 }
 
