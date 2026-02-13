@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useSearch } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -189,6 +190,7 @@ function formatInboxStatus(value: string): string {
 // =============================================================================
 
 export default function InboxPage() {
+  const { entityId } = useSearch({ from: "/inbox" });
   const { files, loading, error, refresh } = useInbox();
   const [refreshing, setRefreshing] = useState(false);
   const [processingAll, setProcessingAll] = useState(false);
@@ -367,7 +369,10 @@ export default function InboxPage() {
       cancelledRef.current.delete(filename);
       updateFileState(filename, { status: "processing", error: undefined });
       try {
-        const result = await invoke<ProcessingResultPayload>("process_inbox_file", { filename });
+        const result = await invoke<ProcessingResultPayload>("process_inbox_file", {
+          filename,
+          entityId,
+        });
 
         if (cancelledRef.current.has(filename)) {
           cancelledRef.current.delete(filename);
@@ -390,7 +395,10 @@ export default function InboxPage() {
 
         // Auto-escalate to AI enrichment
         const enrichResult = await withTimeout(
-          invoke<{ status: string; message?: string }>("enrich_inbox_file", { filename }),
+          invoke<{ status: string; message?: string }>("enrich_inbox_file", {
+            filename,
+            entityId,
+          }),
           ENRICH_TIMEOUT_MS
         );
 
@@ -419,7 +427,7 @@ export default function InboxPage() {
         });
       }
     },
-    [updateFileState, refresh]
+    [entityId, updateFileState, refresh]
   );
 
   // ---------------------------------------------------------------------------
@@ -465,7 +473,10 @@ export default function InboxPage() {
 
         try {
           const enrichResult = await withTimeout(
-            invoke<{ status: string; message?: string }>("enrich_inbox_file", { filename }),
+            invoke<{ status: string; message?: string }>("enrich_inbox_file", {
+              filename,
+              entityId,
+            }),
             ENRICH_TIMEOUT_MS
           );
 
@@ -515,7 +526,7 @@ export default function InboxPage() {
     } finally {
       setProcessingAll(false);
     }
-  }, [files, updateFileState, refresh]);
+  }, [entityId, files, updateFileState, refresh]);
 
   // ---------------------------------------------------------------------------
   // Derived

@@ -59,18 +59,30 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
 
   useEffect(() => {
     async function checkConfig() {
       try {
-        const config = await invoke<{ workspacePath?: string; entityMode?: string }>("get_config");
+        const config = await invoke<{
+          workspacePath?: string;
+          entityMode?: string;
+          internalTeamSetupCompleted?: boolean;
+        }>("get_config");
         // Show onboarding if config exists but workspace is missing/empty
         if (!config.workspacePath) {
+          setOnboardingMode("full");
+          setNeedsOnboarding(true);
+          return;
+        }
+        if (!config.internalTeamSetupCompleted) {
+          setOnboardingMode("internal");
           setNeedsOnboarding(true);
         }
       } catch {
         // No config at all — needs onboarding
+        setOnboardingMode("full");
         setNeedsOnboarding(true);
       } finally {
         setCheckingConfig(false);
@@ -96,7 +108,7 @@ function RootLayout() {
   if (needsOnboarding) {
     return (
       <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-        <OnboardingFlow onComplete={handleOnboardingComplete} />
+        <OnboardingFlow mode={onboardingMode} onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
       </ThemeProvider>
@@ -180,6 +192,9 @@ const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
   component: InboxPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    entityId: typeof search.entityId === "string" ? search.entityId : undefined,
+  }),
 });
 
 const emailsRoute = createRoute({
