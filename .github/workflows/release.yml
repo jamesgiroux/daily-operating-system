@@ -120,33 +120,44 @@ jobs:
           TARBALL_PATH=$(ls "$BUNDLE_DIR"/macos/*.tar.gz | grep -v '.sig$')
           TARBALL_NAME=$(basename "$TARBALL_PATH")
           SIG_PATH="${TARBALL_PATH}.sig"
-          SIG_CONTENT=$(cat "$SIG_PATH")
           echo "tarball_path=$TARBALL_PATH" >> "$GITHUB_OUTPUT"
           echo "tarball_name=$TARBALL_NAME" >> "$GITHUB_OUTPUT"
           echo "sig_path=$SIG_PATH" >> "$GITHUB_OUTPUT"
-          echo "sig_content=$SIG_CONTENT" >> "$GITHUB_OUTPUT"
+
+          # Signature is multiline (Minisign format) — use heredoc for GITHUB_OUTPUT
+          echo "sig_content<<SIG_EOF" >> "$GITHUB_OUTPUT"
+          cat "$SIG_PATH" >> "$GITHUB_OUTPUT"
+          echo "SIG_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Generate latest.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           TARBALL_NAME="${{ steps.artifacts.outputs.tarball_name }}"
-          SIG_CONTENT="${{ steps.artifacts.outputs.sig_content }}"
           REPO_URL="https://github.com/${{ github.repository }}"
+          SIG_PATH="${{ steps.artifacts.outputs.sig_path }}"
 
-          cat > latest.json << JSONEOF
-          {
-            "version": "$VERSION",
-            "notes": "DailyOS v$VERSION",
-            "pub_date": "$PUB_DATE",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "$SIG_CONTENT",
-                "url": "$REPO_URL/releases/download/${{ github.ref_name }}/$TARBALL_NAME"
+          # Signature is multiline — use jq to JSON-escape it
+          SIG_JSON=$(cat "$SIG_PATH" | jq -Rs .)
+
+          # Build latest.json with jq for safe JSON construction
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "DailyOS v$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg url "$REPO_URL/releases/download/${{ github.ref_name }}/$TARBALL_NAME" \
+            --arg sig "$(cat "$SIG_PATH")" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": {
+                  signature: $sig,
+                  url: $url
+                }
               }
-            }
-          }
-          JSONEOF
+            }' > latest.json
 
           echo "Generated latest.json:"
           cat latest.json
