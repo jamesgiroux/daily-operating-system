@@ -1,6 +1,7 @@
--- DailyOS Actions State Management
--- Location: ~/.dailyos/actions.db
--- This file is embedded via include_str! and executed on DB open.
+-- DailyOS Schema Baseline (v1)
+-- Consolidates schema.sql + all inline ALTER TABLE migrations from db.rs.
+-- This migration creates the complete schema for a fresh database.
+-- For existing databases, the bootstrap function marks v1 as applied (this SQL never runs).
 
 CREATE TABLE IF NOT EXISTS actions (
     id TEXT PRIMARY KEY,
@@ -18,7 +19,8 @@ CREATE TABLE IF NOT EXISTS actions (
     context TEXT,
     waiting_on TEXT,
     updated_at TEXT NOT NULL,
-    person_id TEXT
+    person_id TEXT,
+    needs_decision INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
@@ -45,7 +47,6 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE INDEX IF NOT EXISTS idx_accounts_parent ON accounts(parent_id);
 CREATE INDEX IF NOT EXISTS idx_accounts_archived ON accounts(archived);
 
--- Projects (I50 / ADR-0046)
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -71,8 +72,8 @@ CREATE TABLE IF NOT EXISTS meetings_history (
     notes_path TEXT,
     summary TEXT,
     created_at TEXT NOT NULL,
-    prep_context_json TEXT,
     calendar_event_id TEXT,
+    prep_context_json TEXT,
     description TEXT,
     user_agenda_json TEXT,
     user_notes TEXT,
@@ -102,7 +103,6 @@ CREATE TABLE IF NOT EXISTS processing_log (
 CREATE INDEX IF NOT EXISTS idx_processing_status ON processing_log(status);
 CREATE INDEX IF NOT EXISTS idx_processing_created ON processing_log(created_at);
 
--- Post-meeting captures (wins, risks from capture prompts)
 CREATE TABLE IF NOT EXISTS captures (
     id TEXT PRIMARY KEY,
     meeting_id TEXT NOT NULL,
@@ -120,9 +120,6 @@ CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
 CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);
 
--- Profile-agnostic tracked entities (ADR-0045).
--- CS = Account, PM = Project, Manager = Person.
--- Domain-specific fields (lifecycle, ARR, health) stay in `accounts`.
 CREATE TABLE IF NOT EXISTS entities (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -133,7 +130,6 @@ CREATE TABLE IF NOT EXISTS entities (
 
 CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
 
--- Meeting prep state tracking (ADR-0033 near-term)
 CREATE TABLE IF NOT EXISTS meeting_prep_state (
     prep_file TEXT PRIMARY KEY,
     calendar_event_id TEXT,
@@ -142,7 +138,6 @@ CREATE TABLE IF NOT EXISTS meeting_prep_state (
 );
 CREATE INDEX IF NOT EXISTS idx_prep_state_event ON meeting_prep_state(calendar_event_id);
 
--- People sub-entity (I51 / ADR-0046)
 CREATE TABLE IF NOT EXISTS people (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
@@ -163,7 +158,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_people_email ON people(email);
 CREATE INDEX IF NOT EXISTS idx_people_relationship ON people(relationship);
 CREATE INDEX IF NOT EXISTS idx_people_archived ON people(archived);
 
--- Meeting attendees junction (replaces always-NULL attendees TEXT column)
 CREATE TABLE IF NOT EXISTS meeting_attendees (
     meeting_id TEXT NOT NULL,
     person_id TEXT NOT NULL,
@@ -171,7 +165,6 @@ CREATE TABLE IF NOT EXISTS meeting_attendees (
 );
 CREATE INDEX IF NOT EXISTS idx_attendees_person ON meeting_attendees(person_id);
 
--- Person ↔ entity junction (person to account/project)
 CREATE TABLE IF NOT EXISTS entity_people (
     entity_id TEXT NOT NULL,
     person_id TEXT NOT NULL,
@@ -180,7 +173,6 @@ CREATE TABLE IF NOT EXISTS entity_people (
 );
 CREATE INDEX IF NOT EXISTS idx_entity_people_person ON entity_people(person_id);
 
--- Meeting ↔ entity junction (I52 — meeting to account/project)
 CREATE TABLE IF NOT EXISTS meeting_entities (
     meeting_id TEXT NOT NULL,
     entity_id TEXT NOT NULL,
@@ -189,7 +181,6 @@ CREATE TABLE IF NOT EXISTS meeting_entities (
 );
 CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);
 
--- Content file index (I124 / ADR-0056): tracks all non-dashboard files in entity dirs.
 CREATE TABLE IF NOT EXISTS content_index (
     id TEXT PRIMARY KEY,
     entity_id TEXT NOT NULL,
@@ -209,8 +200,6 @@ CREATE TABLE IF NOT EXISTS content_index (
 CREATE INDEX IF NOT EXISTS idx_content_entity ON content_index(entity_id);
 CREATE INDEX IF NOT EXISTS idx_content_modified ON content_index(modified_at);
 
--- Entity intelligence cache (I130 / ADR-0057): synthesized assessment from enrichment.
--- File (intelligence.json) is source of truth; this table is a read-through cache.
 CREATE TABLE IF NOT EXISTS entity_intelligence (
     entity_id TEXT PRIMARY KEY,
     entity_type TEXT NOT NULL DEFAULT 'account',
@@ -225,7 +214,6 @@ CREATE TABLE IF NOT EXISTS entity_intelligence (
     company_context_json TEXT
 );
 
--- Account lifecycle events (I143 — renewal tracking, churn, expansion)
 CREATE TABLE IF NOT EXISTS account_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id TEXT NOT NULL,
