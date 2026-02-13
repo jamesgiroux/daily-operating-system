@@ -1310,6 +1310,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -2068,6 +2069,7 @@ mod tests {
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -2188,6 +2190,9 @@ mod tests {
             user_company: None,
             user_title: None,
             user_focus: None,
+            internal_team_setup_completed: false,
+            internal_team_setup_version: 0,
+            internal_org_account_id: None,
             developer_mode: false,
             ai_models: crate::types::AiModelConfig::default(),
         }
