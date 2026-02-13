@@ -162,10 +162,12 @@ async fn clean_data_directory(today_dir: &Path) -> usize {
     if let Ok(mut entries) = fs::read_dir(&data_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
-            if path.is_file() && path.extension().map(|e| e == "json").unwrap_or(false)
-                && fs::remove_file(&path).await.is_ok() {
-                    cleaned += 1;
-                }
+            if path.is_file()
+                && path.extension().map(|e| e == "json").unwrap_or(false)
+                && fs::remove_file(&path).await.is_ok()
+            {
+                cleaned += 1;
+            }
         }
     }
 
