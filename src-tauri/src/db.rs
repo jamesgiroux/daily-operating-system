@@ -7121,4 +7121,198 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].id, "acc1");
     }
+
+    // =========================================================================
+    // Email signal pipeline integration tests (S3)
+    //
+    // These test the same person-resolution → domain-fallback → signal-upsert
+    // pipeline used by Executor::sync_email_signals_from_payload, exercised
+    // at the DB layer to avoid needing a Tauri AppHandle.
+    // =========================================================================
+
+    #[test]
+    fn test_email_signal_pipeline_person_direct_match() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        // Create person linked to account
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+        db.link_person_to_entity(&person.id, "acc1", "contact")
+            .expect("link person");
+
+        // Simulate: person lookup → entity resolution → signal insert
+        let sender = "alice@acme.com";
+        let found = db
+            .get_person_by_email(sender)
+            .expect("lookup")
+            .expect("person should exist");
+        let entities = db
+            .get_entities_for_person(&found.id)
+            .expect("get entities");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "acc1");
+
+        let inserted = db
+            .upsert_email_signal(
+                "email-1",
+                Some(sender),
+                Some(&found.id),
+                &entities[0].id,
+                entities[0].entity_type.as_str(),
+                "expansion",
+                "Wants to add 50 seats in Q2",
+                Some(0.85),
+                Some("positive"),
+                Some("medium"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("insert signal");
+        assert!(inserted);
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "expansion");
+        assert_eq!(signals[0].entity_id, "acc1");
+        assert_eq!(signals[0].person_id, Some(found.id));
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_domain_fallback() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        db.set_account_domains("acc1", &["acme.com".to_string()])
+            .expect("set domains");
+
+        // No person record — simulate domain fallback
+        let sender = "unknown@acme.com";
+        let person = db.get_person_by_email(sender).expect("lookup");
+        assert!(person.is_none(), "no person should match");
+
+        // Domain fallback
+        let domain = sender.split('@').nth(1).unwrap();
+        let candidates = db
+            .lookup_account_candidates_by_domain(domain)
+            .expect("lookup domain");
+        assert_eq!(candidates.len(), 1);
+
+        let inserted = db
+            .upsert_email_signal(
+                "email-2",
+                Some(sender),
+                None, // no person_id
+                &candidates[0].id,
+                "account",
+                "question",
+                "Asking about enterprise pricing",
+                Some(0.75),
+                Some("neutral"),
+                Some("low"),
+                None,
+            )
+            .expect("insert signal");
+        assert!(inserted);
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "question");
+        assert!(signals[0].person_id.is_none());
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_deduplication() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        // Insert same signal twice (same email_id + entity)
+        let first = db
+            .upsert_email_signal(
+                "email-dup",
+                Some("alice@acme.com"),
+                None,
+                "acc1",
+                "account",
+                "expansion",
+                "Wants to expand",
+                Some(0.85),
+                Some("positive"),
+                Some("high"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("first insert");
+        assert!(first);
+
+        let second = db
+            .upsert_email_signal(
+                "email-dup",
+                Some("alice@acme.com"),
+                None,
+                "acc1",
+                "account",
+                "expansion",
+                "Wants to expand",
+                Some(0.85),
+                Some("positive"),
+                Some("high"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("second insert");
+        assert!(!second, "duplicate should return false");
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list");
+        assert_eq!(signals.len(), 1, "only one signal despite two inserts");
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_multi_entity_targets() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        setup_account(&db, "acc2", "Acme Sub");
+
+        // Person linked to two accounts
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+        db.link_person_to_entity(&person.id, "acc1", "contact")
+            .expect("link 1");
+        db.link_person_to_entity(&person.id, "acc2", "contact")
+            .expect("link 2");
+
+        let entities = db
+            .get_entities_for_person(&person.id)
+            .expect("get entities");
+        assert_eq!(entities.len(), 2);
+
+        // Insert signal for each entity (mirrors executor loop)
+        for entity in &entities {
+            db.upsert_email_signal(
+                "email-multi",
+                Some("alice@acme.com"),
+                Some(&person.id),
+                &entity.id,
+                entity.entity_type.as_str(),
+                "feedback",
+                "Great experience with the new feature",
+                Some(0.9),
+                Some("positive"),
+                None,
+                Some("2026-02-13T11:00:00Z"),
+            )
+            .expect("insert");
+        }
+
+        let signals_acc1 = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list acc1");
+        let signals_acc2 = db
+            .list_recent_email_signals_for_entity("acc2", 10)
+            .expect("list acc2");
+        assert_eq!(signals_acc1.len(), 1);
+        assert_eq!(signals_acc2.len(), 1);
+    }
 }

@@ -33,7 +33,7 @@ import type {
   StakeholderInsight,
   ApplyPrepPrefillResult,
 } from "@/types";
-import { cn } from "@/lib/utils";
+import { cn, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
@@ -814,7 +814,7 @@ export default function MeetingDetailPage() {
                                 </span>
                                 {signal.detectedAt && (
                                   <span className="text-[10px] text-muted-foreground">
-                                    {formatRelativeDate(signal.detectedAt)}
+                                    {formatRelativeDateLong(signal.detectedAt)}
                                   </span>
                                 )}
                               </div>
@@ -905,7 +905,7 @@ function RelationshipPills({ signals }: { signals: StakeholderSignals }) {
   }[signals.temperature] ?? "text-muted-foreground";
 
   const lastMeetingText = signals.lastMeeting
-    ? formatRelativeDate(signals.lastMeeting)
+    ? formatRelativeDateLong(signals.lastMeeting)
     : "No meetings recorded";
 
   return (
@@ -1204,7 +1204,7 @@ function AttendeeRow({ person }: { person: AttendeeContext }) {
 
   const isNew = person.meetingCount === 0;
   const isCold = person.temperature === "cold";
-  const lastSeenText = person.lastSeen ? formatRelativeDate(person.lastSeen) : undefined;
+  const lastSeenText = person.lastSeen ? formatRelativeDateLong(person.lastSeen) : undefined;
 
   const inner = (
     <div className={cn(
@@ -1413,22 +1413,6 @@ function findQuickContextValue(
   return found?.[1];
 }
 
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
-  }
-  const months = Math.floor(diffDays / 30);
-  return `${months} month${months !== 1 ? "s" : ""} ago`;
-}
 
 function normalizePersonKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");

@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 
@@ -94,6 +95,9 @@ pub struct AppState {
     pub next_hygiene_scan_at: Mutex<Option<String>>,
     /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
     pub hygiene_budget: HygieneBudget,
+    /// TTL cache for live week calendar events used by proactive suggestions (W6).
+    /// Stores classified CalendarEvents for Mon-Fri + the instant they were fetched.
+    pub week_calendar_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -140,6 +144,7 @@ impl AppState {
             last_hygiene_scan_at: Mutex::new(None),
             next_hygiene_scan_at: Mutex::new(None),
             hygiene_budget: HygieneBudget::new(10),
+            week_calendar_cache: RwLock::new(None),
         }
     }
 
