@@ -187,12 +187,18 @@ Your morning briefing is in DailyOS. But when you need to build a QBR deck for a
 
 DailyOS doesn't need to be a report generator. It doesn't need to be a strategy tool. It doesn't need to be a writing assistant. Those capabilities exist elsewhere. DailyOS's job is to maintain the richest, most structured, most current archive of your professional life — and keep it in a format that every AI tool can consume.
 
-**The competitive moat isn't the app. It's the archive.**
+**The competitive moat isn't the archive. It's the operational discipline.**
 
-Anyone can build a dashboard. But a continuously maintained, AI-enriched, deeply cross-referenced knowledge base of every meeting, every interaction, every decision, every action, every outcome — organized in a structure that any AI can navigate — that's the product. The app is just the best view of it.
+The archive is valuable — but an archive alone is easy to replicate. Any AI tool with access to your calendar and email could generate similar markdown. And yesterday's prep has limited shelf life; intelligence depreciates.
+
+What's hard to replicate is the *system* that produces the archive. The thing that runs at 6am without you. That maintains entity intelligence continuously across every meeting, every email, every quarter. That self-heals when data goes stale. That tracks actions across time — not just what's due today, but what you promised three meetings ago and haven't delivered. That notices a champion went quiet two weeks before a renewal.
+
+The archive is the output of the moat, not the moat itself. Operational discipline — the self-maintaining system that never stops working for you — is what compounds over time and can't be replicated by giving an AI a snapshot of your calendar.
+
+**Openness is still the strategy.** We keep the archive open not because we're naive about competition, but because openness is what makes the ecosystem work. If the archive were locked inside DailyOS, Claude Desktop couldn't read it, your strategy skills couldn't consume it, and the three-layer ecosystem collapses into another silo. The moat is the discipline, not the data. The data should flow freely.
 
 Digital-native: lock the data in, make it hard to leave.
-AI-native: keep the data open, make it so good they never want to.
+AI-native: keep the data open, make the system so good they never want to.
 
 ---
 
