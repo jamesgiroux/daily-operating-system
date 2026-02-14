@@ -226,7 +226,7 @@ Right metrics:
 - Context available when needed
 - Time saved on cognitive overhead
 
-**The principle:** The goal is a more effective user, not a more engaged user. We succeed when they need us less, not more.
+**The principle:** The goal is a more effective user, not a more engaged user. We succeed when they need us less, not more — because the system is working for them whether they open the app or not.
 
 ---
 

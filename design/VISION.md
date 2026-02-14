@@ -192,6 +192,28 @@ When you walk into a meeting prepared and someone asks "how did you know that?"�
 
 ---
 
+## The Gemini Question
+
+Google will add AI synthesis to Calendar. Microsoft will add it to Outlook. Every integrated platform will eventually show you a smart summary when you click a meeting. Why choose DailyOS?
+
+**For most users: continuity across time.**
+
+Google shows you a snapshot when you click a calendar event. Smart, contextual, maybe even good. But it's moment-in-time intelligence — it knows what's on the invite and what's in your recent emails.
+
+DailyOS had your prep ready before you woke up. It tracked the three action items from your last meeting with that account. It noticed the renewal is next quarter and the engagement score has been declining. It flagged that their champion went quiet two weeks ago. It connected yesterday's support escalation to the executive sponsor's email from last month.
+
+Google gives you intelligence about a moment. DailyOS gives you operational memory with continuity — what happened, what's happening, what's about to matter, maintained continuously whether you're paying attention or not.
+
+Integrated tools have real advantages: zero setup, free, already where you are. We don't pretend otherwise. But they'll always be constrained to their own data and the current moment. They can't maintain a cross-source, cross-time view of your professional relationships because that's not their job. It's ours.
+
+**For power users: ownership and portability.**
+
+Your brain shouldn't have a landlord. When Google falls behind or Claude becomes better than Gemini, your intelligence shouldn't be trapped. Your data is yours, in files you control, readable by any AI tool, portable to any future system.
+
+This is the retention answer, not the acquisition answer. People won't choose DailyOS because "I own my files" — they'll choose it because it knows things Google can't. They'll *stay* because they own everything it built for them.
+
+---
+
 ## How It Works
 
 DailyOS is a native desktop app built with Tauri (Rust + React). All data processing happens locally on your machine.
@@ -231,19 +253,25 @@ DailyOS is for the alone part of knowledge work. The boundary is where individua
 
 ## The Ecosystem, Not Just the App
 
-DailyOS doesn't need to do everything. It needs to maintain the best archive and let the rest of your tools consume it.
+DailyOS doesn't need to do everything. It needs to be the operational memory layer — the system that proactively maintains your readiness so you never have to ask "what do I need to know?"
+
+**It should just know.** That's the promise. Not "ask me anything" — that's a chatbot. Not "search your files" — that's a search engine. DailyOS should know what you need before you need it, because it's been watching, connecting, and maintaining intelligence continuously across time.
+
+What makes this possible is the combination of **personal context** (your calendar, your email, your meetings — signals no enterprise tool has permission to synthesize together) and **continuity across time** (not just what's happening now, but what happened last week, last month, last quarter, and what that means for tomorrow).
 
 **The three-layer ecosystem:**
 
 | Layer | What | Examples |
 |-------|------|---------|
-| Operational intelligence | DailyOS maintains the archive — briefings, preps, outcomes, actions, entities | The app |
-| Creative/analytical work | AI tools consume the archive to create reports, strategies, content | Claude Desktop, ChatGPT |
-| Bridge | MCP connects DailyOS to other tools and data sources | Integrations (Gong, Salesforce, Linear) |
+| Domain intelligence | Tools authoritative in their domain — CRM, transcripts, project tracking, support | Gong, Salesforce, Gainsight, Linear, Zendesk |
+| Operational memory | DailyOS maintains readiness with continuity — briefings, preps, entity intelligence, actions, relationship history | The app |
+| Creative/analytical | AI tools consume the archive for deeper work — reports, strategies, content, analysis | Claude Desktop, ChatGPT |
+
+Domain tools are the best source for their data. DailyOS is the best synthesizer of *your* context across all of them — the layer that turns scattered signals into operational readiness, maintained continuously. Creative tools consume what DailyOS maintains to produce artifacts that require deeper thought.
 
 Strategy consulting? Claude Desktop skill that reads your PARA workspace. Monthly impact report? Any AI tool can synthesize the weekly captures DailyOS archived. GTM plan? Claude reads your account files, your meeting history, your competitive intelligence.
 
-DailyOS's job is to keep the archive excellent. Everything else builds on top.
+DailyOS's job is to maintain operational discipline — the self-running system that keeps your intelligence current and your readiness high. Everything else builds on top.
 
 ## Extensibility Vision
 
