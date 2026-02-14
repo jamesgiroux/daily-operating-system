@@ -27,6 +27,9 @@ const SCAN_INTERVAL_SECS: u64 = 4 * 60 * 60;
 /// How many days back to look for orphaned meetings.
 const ORPHANED_MEETING_LOOKBACK_DAYS: i32 = 90;
 
+/// Max people per domain for pairwise duplicate detection (prevents O(n²) explosion).
+const MAX_DOMAIN_GROUP_SIZE: usize = 200;
+
 /// Public interval getter for UI/command next-scan calculations.
 pub fn scan_interval_secs() -> u64 {
     SCAN_INTERVAL_SECS
@@ -491,9 +494,16 @@ pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>,
 
     let mut candidates: Vec<DuplicateCandidate> = Vec::new();
 
-    for group in domain_groups.values() {
-        // Skip singleton groups — no possible duplicates
+    for (domain, group) in domain_groups.iter() {
         if group.len() < 2 {
+            continue;
+        }
+
+        if group.len() > MAX_DOMAIN_GROUP_SIZE {
+            log::warn!(
+                "Skipping duplicate detection for domain {} ({} people exceeds limit of {})",
+                domain, group.len(), MAX_DOMAIN_GROUP_SIZE
+            );
             continue;
         }
 
