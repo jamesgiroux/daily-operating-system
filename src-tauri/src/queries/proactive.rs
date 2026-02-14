@@ -3,41 +3,8 @@ use std::collections::HashSet;
 use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::db::{ActionDb, DbAction};
+use crate::helpers::{build_external_account_hints, normalize_key};
 use crate::types::{CalendarEvent, LiveProactiveSuggestion, MeetingType, TimeBlock};
-
-fn normalize_key(value: &str) -> String {
-    value
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect::<String>()
-        .to_lowercase()
-}
-
-fn build_external_account_hints(db: &ActionDb) -> HashSet<String> {
-    let mut hints = HashSet::new();
-    if let Ok(accounts) = db.get_all_accounts() {
-        for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
-            let id_key = normalize_key(&account.id);
-            if id_key.len() >= 3 {
-                hints.insert(id_key);
-            }
-            let name_key = normalize_key(&account.name);
-            if name_key.len() >= 3 {
-                hints.insert(name_key);
-            }
-            if let Ok(domains) = db.get_account_domains(&account.id) {
-                for domain in domains {
-                    let base = domain.split('.').next().unwrap_or("");
-                    let base_key = normalize_key(base);
-                    if base_key.len() >= 3 {
-                        hints.insert(base_key);
-                    }
-                }
-            }
-        }
-    }
-    hints
-}
 
 fn meeting_type_label(meeting_type: &MeetingType) -> &'static str {
     match meeting_type {
@@ -283,11 +250,13 @@ pub fn load_live_suggestion_inputs(
     Ok((account_hints, actions))
 }
 
-pub async fn get_live_proactive_suggestions(
+/// Fetch and classify week calendar events from Google Calendar API.
+///
+/// Separated from suggestion computation to enable TTL caching (W6).
+pub async fn fetch_week_events(
     config: &crate::types::Config,
-    account_hints: HashSet<String>,
-    actions: Vec<DbAction>,
-) -> Result<Vec<LiveProactiveSuggestion>, String> {
+    account_hints: &HashSet<String>,
+) -> Result<Vec<CalendarEvent>, String> {
     let tz: chrono_tz::Tz = config
         .schedules
         .today
@@ -309,12 +278,42 @@ pub async fn get_live_proactive_suggestions(
     let user_domains = config.resolved_user_domains();
     let live_events: Vec<CalendarEvent> = raw_events
         .iter()
-        .map(|raw| crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &account_hints))
+        .map(|raw| crate::google_api::classify::classify_meeting_multi(raw, &user_domains, account_hints))
         .map(|classified| classified.to_calendar_event())
         .filter(|event| !event.is_all_day)
         .collect();
 
-    Ok(suggest_from_live_inputs(monday, &live_events, &actions, today))
+    Ok(live_events)
+}
+
+/// Compute proactive suggestions from pre-fetched (possibly cached) calendar events.
+///
+/// Pure computation — no API calls. Safe to call with cached data.
+pub fn compute_suggestions_from_events(
+    config: &crate::types::Config,
+    live_events: &[CalendarEvent],
+    actions: &[DbAction],
+) -> Result<Vec<LiveProactiveSuggestion>, String> {
+    let tz: chrono_tz::Tz = config
+        .schedules
+        .today
+        .timezone
+        .parse()
+        .unwrap_or(chrono_tz::America::New_York);
+    let today = Utc::now().with_timezone(&tz).date_naive();
+    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+
+    Ok(suggest_from_live_inputs(monday, live_events, actions, today))
+}
+
+/// Full fetch + compute pipeline. Convenience for callers that don't need caching.
+pub async fn get_live_proactive_suggestions(
+    config: &crate::types::Config,
+    account_hints: HashSet<String>,
+    actions: Vec<DbAction>,
+) -> Result<Vec<LiveProactiveSuggestion>, String> {
+    let live_events = fetch_week_events(config, &account_hints).await?;
+    compute_suggestions_from_events(config, &live_events, &actions)
 }
 
 #[cfg(test)]

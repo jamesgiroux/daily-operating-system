@@ -50,8 +50,8 @@ const phaseSteps: {
   icon: typeof Database;
 }[] = [
   { key: "preparing", label: "Prepare", icon: Database },
-  { key: "delivering", label: "Deliver", icon: Package },
   { key: "enriching", label: "Enrich", icon: Wand2 },
+  { key: "delivering", label: "Deliver", icon: Package },
 ];
 
 const waitingMessages = [
@@ -92,9 +92,14 @@ export default function WeekPage() {
     null
   );
   const draft = useAgendaDraft({ onError: setError });
+  const loadingRef = useRef(false);
 
   const loadWeek = useCallback(
     async ({ includeLive = true }: { includeLive?: boolean } = {}) => {
+      if (loadingRef.current) return;
+      loadingRef.current = true;
+
+      try {
       if (includeLive) {
         try {
           const live = await invoke<LiveProactiveSuggestion[]>(
@@ -126,6 +131,9 @@ export default function WeekPage() {
         setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setLoading(false);
+      }
+      } finally {
+        loadingRef.current = false;
       }
     },
     []
