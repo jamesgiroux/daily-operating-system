@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use chrono::Utc;
 use serde_json::json;
@@ -112,6 +113,169 @@ impl Executor {
         }
     }
 
+    fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
+        let emails_path = data_dir.join("emails.json");
+        if !emails_path.exists() {
+            return Ok(0);
+        }
+
+        let raw = std::fs::read_to_string(&emails_path)
+            .map_err(|e| format!("Failed to read emails.json for signal sync: {}", e))?;
+        let payload: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("Failed to parse emails.json for signal sync: {}", e))?;
+
+        let high_priority = payload
+            .get("highPriority")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if high_priority.is_empty() {
+            return Ok(0);
+        }
+
+        self.state.with_db_write(|db| {
+            db.conn_ref()
+                .execute_batch("BEGIN")
+                .map_err(|e| e.to_string())?;
+
+            let mut inserted = 0usize;
+
+            let result = (|| -> Result<usize, String> {
+                for email in high_priority {
+                    let email_id =
+                        email.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if email_id.is_empty() {
+                        continue;
+                    }
+
+                    let sender_email = email
+                        .get("senderEmail")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_lowercase())
+                        .filter(|s| !s.is_empty());
+                    let domain = sender_email
+                        .as_deref()
+                        .and_then(|sender| sender.split('@').nth(1))
+                        .unwrap_or("")
+                        .to_string();
+                    let received_at = email
+                        .get("received")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    let person_id = sender_email.as_deref().and_then(|sender| {
+                        db.get_person_by_email(sender)
+                            .ok()
+                            .flatten()
+                            .map(|person| person.id)
+                    });
+
+                    let mut targets: HashSet<(String, String)> = HashSet::new();
+                    if let Some(ref pid) = person_id {
+                        if let Ok(entities) = db.get_entities_for_person(pid) {
+                            for entity in entities {
+                                targets.insert((
+                                    entity.id,
+                                    entity.entity_type.as_str().to_string(),
+                                ));
+                            }
+                        }
+                    }
+
+                    if targets.is_empty() && !domain.is_empty() {
+                        if let Ok(accounts) =
+                            db.lookup_account_candidates_by_domain(&domain)
+                        {
+                            for account in
+                                accounts.into_iter().filter(|a| !a.is_internal)
+                            {
+                                targets.insert((account.id, "account".to_string()));
+                            }
+                        }
+                    }
+
+                    if targets.is_empty() {
+                        continue;
+                    }
+
+                    let signals = email
+                        .get("emailSignals")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for signal in signals {
+                        let signal_type = signal
+                            .get("signalType")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        let signal_text = signal
+                            .get("signalText")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        if signal_type.is_empty() || signal_text.is_empty() {
+                            continue;
+                        }
+
+                        let confidence =
+                            signal.get("confidence").and_then(|v| v.as_f64());
+                        let sentiment = signal
+                            .get("sentiment")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty());
+                        let urgency = signal
+                            .get("urgency")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty());
+                        let detected_at = signal
+                            .get("detectedAt")
+                            .and_then(|v| v.as_str())
+                            .or(received_at.as_deref());
+
+                        for (entity_id, entity_type) in &targets {
+                            let was_inserted = db
+                                .upsert_email_signal(
+                                    email_id,
+                                    sender_email.as_deref(),
+                                    person_id.as_deref(),
+                                    entity_id,
+                                    entity_type,
+                                    signal_type,
+                                    signal_text,
+                                    confidence,
+                                    sentiment,
+                                    urgency,
+                                    detected_at,
+                                )
+                                .map_err(|e| e.to_string())?;
+                            if was_inserted {
+                                inserted += 1;
+                            }
+                        }
+                    }
+                }
+                Ok(inserted)
+            })();
+
+            match result {
+                Ok(count) => {
+                    db.conn_ref()
+                        .execute_batch("COMMIT")
+                        .map_err(|e| e.to_string())?;
+                    Ok(count)
+                }
+                Err(e) => {
+                    let _ = db.conn_ref().execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
+    }
+
     /// Start the executor loop
     ///
     /// Listens for workflow execution requests from the scheduler or manual triggers.
@@ -143,32 +307,54 @@ impl Executor {
         let execution_id = record.id.clone();
         self.state.add_execution_record(record.clone());
 
-        // Archive workflow: pure Rust, no three-phase, no notification
-        if workflow_id == WorkflowId::Archive {
-            return self
-                .execute_archive(&workspace, &execution_id, trigger)
-                .await;
+        let result = if workflow_id == WorkflowId::Archive {
+            // Archive workflow: pure Rust, no three-phase, no notification
+            self.execute_archive(&workspace, &execution_id, trigger).await
+        } else if workflow_id == WorkflowId::InboxBatch {
+            // Inbox batch: direct processor calls, no three-phase
+            self.execute_inbox_batch(&workspace, &execution_id, trigger)
+                .await
+        } else if workflow_id == WorkflowId::Week {
+            // Week workflow: per-operation pipeline (I94)
+            self.execute_week(&workspace, &execution_id, trigger, &record)
+                .await
+        } else {
+            // Today workflow: per-operation pipeline (ADR-0042)
+            // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
+            self.execute_today_pipeline(&workspace, &execution_id, trigger, &record)
+                .await
+        };
+
+        if let Err(ref err) = result {
+            let finished_at = Utc::now();
+            let duration_secs = (finished_at - record.started_at)
+                .num_seconds()
+                .max(0) as u64;
+            let error_phase = match self.state.get_workflow_status(workflow_id) {
+                WorkflowStatus::Running { phase, .. } => Some(phase),
+                _ => None,
+            };
+            let can_retry = err.is_retryable();
+
+            self.state.update_execution_record(&execution_id, |r| {
+                r.finished_at = Some(finished_at);
+                r.duration_secs = Some(duration_secs);
+                r.success = false;
+                r.error_message = Some(err.to_string());
+                r.error_phase = error_phase;
+                r.can_retry = Some(can_retry);
+            });
+
+            self.emit_status_event(
+                workflow_id,
+                WorkflowStatus::Failed {
+                    error: err.into(),
+                    execution_id,
+                },
+            );
         }
 
-        // Inbox batch: direct processor calls, no three-phase
-        if workflow_id == WorkflowId::InboxBatch {
-            return self
-                .execute_inbox_batch(&workspace, &execution_id, trigger)
-                .await;
-        }
-
-        // Week workflow: per-operation pipeline (I94)
-        if workflow_id == WorkflowId::Week {
-            return self
-                .execute_week(&workspace, &execution_id, trigger, &record)
-                .await;
-        }
-
-        // Today workflow: per-operation pipeline (ADR-0042)
-        // Phase 1 (Python) then Rust-native mechanical delivery — no Phase 2/3
-        return self
-            .execute_today_pipeline(&workspace, &execution_id, trigger, &record)
-            .await;
+        result
     }
 
     /// Execute archive workflow (pure Rust, silent operation)
@@ -224,10 +410,7 @@ impl Executor {
                         &db,
                         &recon.date,
                     ) {
-                        Ok(r)
-                            if !r.skipped
-                                && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) =>
-                        {
+                        Ok(r) if !r.skipped && (r.wins_rolled_up > 0 || r.risks_rolled_up > 0) => {
                             log::info!(
                                 "Impact rollup: {} wins, {} risks → {}",
                                 r.wins_rolled_up,
@@ -401,6 +584,7 @@ impl Executor {
                 &profile,
                 Some(&user_ctx),
                 Some(&ai_config),
+                None,
             );
             match &result {
                 crate::processor::enrich::EnrichResult::Routed { classification, .. } => {
@@ -518,6 +702,7 @@ impl Executor {
             });
 
         let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &self.ai_model_config());
+        let mut enrichment_error: Option<String> = None;
         if let Err(e) = crate::workflow::deliver::enrich_week(
             &data_dir,
             &synthesis_pty,
@@ -526,6 +711,7 @@ impl Executor {
             &self.state,
         ) {
             log::warn!("Week enrichment failed (non-fatal): {}", e);
+            enrichment_error = Some(format!("Week enrichment incomplete: {}", e));
         }
         let _ = self.app_handle.emit("operation-delivered", "week-enriched");
 
@@ -537,6 +723,17 @@ impl Executor {
             r.finished_at = Some(finished_at);
             r.duration_secs = Some(duration_secs);
             r.success = true;
+            r.error_message = enrichment_error.clone();
+            r.error_phase = if enrichment_error.is_some() {
+                Some(WorkflowPhase::Enriching)
+            } else {
+                None
+            };
+            r.can_retry = if enrichment_error.is_some() {
+                Some(true)
+            } else {
+                None
+            };
         });
 
         if matches!(
@@ -777,6 +974,16 @@ impl Executor {
                     "email-enrichment-warning",
                     format!("Email AI summaries unavailable: {}", e),
                 );
+            }
+            match self.sync_email_signals_from_payload(&data_dir) {
+                Ok(count) => {
+                    if count > 0 {
+                        log::info!("Email signal sync: persisted {} signal rows", count);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Email signal sync failed (non-fatal): {}", e);
+                }
             }
             let _ = self
                 .app_handle
@@ -1036,6 +1243,14 @@ impl Executor {
                 format!("Email AI summaries unavailable: {}", e),
             );
         }
+        match self.sync_email_signals_from_payload(&data_dir) {
+            Ok(count) => {
+                if count > 0 {
+                    log::info!("Email refresh: persisted {} email signal rows", count);
+                }
+            }
+            Err(e) => log::warn!("Email refresh: email signal sync failed (non-fatal): {}", e),
+        }
         let _ = self
             .app_handle
             .emit("operation-delivered", "emails-enriched");
@@ -1044,6 +1259,55 @@ impl Executor {
         let _ = std::fs::remove_file(&refresh_path);
 
         log::info!("Email refresh complete");
+        Ok(())
+    }
+
+    /// Refresh only focus/briefing narrative without running full /today pipeline.
+    ///
+    /// Re-runs `enrich_briefing()` against existing `_today/data/schedule.json`
+    /// so users can update the focus statement and narrative independently.
+    pub async fn execute_focus_refresh(&self, workspace: &Path) -> Result<(), String> {
+        // Guard: reject if /today pipeline is currently running.
+        // Note: TOCTOU race between this check and execution start is accepted —
+        // same pattern as execute_email_refresh. Practical risk is negligible:
+        // both operations are user-initiated in a single-user desktop app.
+        let today_status = self.state.get_workflow_status(WorkflowId::Today);
+        if matches!(today_status, WorkflowStatus::Running { .. }) {
+            return Err("Cannot refresh focus while /today pipeline is running".to_string());
+        }
+
+        let data_dir = workspace.join("_today").join("data");
+        let schedule_path = data_dir.join("schedule.json");
+        if !schedule_path.exists() {
+            return Err("No daily briefing data found. Run briefing first.".to_string());
+        }
+
+        let user_ctx = self
+            .state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(crate::types::UserContext::from_config))
+            .unwrap_or(crate::types::UserContext {
+                name: None,
+                company: None,
+                title: None,
+                focus: None,
+            });
+
+        let ai_config = self.ai_model_config();
+        let synthesis_pty = PtyManager::for_tier(ModelTier::Synthesis, &ai_config);
+
+        crate::workflow::deliver::enrich_briefing(
+            &data_dir,
+            &synthesis_pty,
+            workspace,
+            &user_ctx,
+            &self.state,
+        )?;
+
+        let _ = self.app_handle.emit("operation-delivered", "briefing");
+        log::info!("Focus refresh complete");
         Ok(())
     }
 

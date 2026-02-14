@@ -75,6 +75,67 @@ describe("buildFocusViewModel", () => {
       prioritized("a4"),
     ];
     const vm = buildFocusViewModel(focusData(items, ["a1", "a2"]));
-    expect(vm.otherPriorities.map((i) => i.action.id)).toEqual(["a4"]);
+    expect(vm.otherPrioritiesVisible.map((i) => i.action.id)).toEqual(["a4"]);
+  });
+
+  it("shows only P1 actions in other priorities", () => {
+    const items = [
+      prioritized("a1"),
+      prioritized("a2", {
+        action: {
+          ...prioritized("a2").action,
+          priority: "P2",
+        },
+      }),
+      prioritized("a3"),
+    ];
+    const vm = buildFocusViewModel(focusData(items, ["a1"]));
+    expect(vm.otherPrioritiesVisible.map((i) => i.action.id)).toEqual(["a3"]);
+  });
+
+  it("caps other priorities at five and toggles view-all link", () => {
+    const items = [
+      prioritized("a1"),
+      prioritized("a2"),
+      prioritized("a3"),
+      prioritized("a4"),
+      prioritized("a5"),
+      prioritized("a6"),
+      prioritized("a7"),
+    ];
+    const vm = buildFocusViewModel(focusData(items, ["a1"]));
+    expect(vm.otherPrioritiesVisible).toHaveLength(5);
+    expect(vm.otherPrioritiesP1Total).toBe(6);
+    expect(vm.showViewAllActions).toBe(true);
+  });
+
+  it("excludes top-three items from at-risk section", () => {
+    const items = [
+      prioritized("a1", { atRisk: true }),
+      prioritized("a2", { atRisk: true }),
+      prioritized("a3"),
+    ];
+    const vm = buildFocusViewModel(focusData(items, ["a1"]));
+    expect(vm.topThree.map((i) => i.action.id)).toEqual(["a1"]);
+    expect(vm.atRisk.map((i) => i.action.id)).toEqual(["a2"]);
+  });
+
+  it("hides view-all link when five or fewer P1 actions remain", () => {
+    const items = [
+      prioritized("a1"),
+      prioritized("a2"),
+      prioritized("a3"),
+      prioritized("a4"),
+      prioritized("a5"),
+      prioritized("a6", {
+        action: {
+          ...prioritized("a6").action,
+          priority: "P2",
+        },
+      }),
+    ];
+    const vm = buildFocusViewModel(focusData(items, ["a1"]));
+    expect(vm.otherPrioritiesP1Total).toBe(4);
+    expect(vm.showViewAllActions).toBe(false);
   });
 });

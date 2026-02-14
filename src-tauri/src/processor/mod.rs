@@ -48,6 +48,7 @@ pub fn process_file(
     filename: &str,
     db: Option<&ActionDb>,
     profile: &str,
+    entity_tracker_path: Option<&str>,
 ) -> ProcessingResult {
     // I60: validate path stays within inbox
     let file_path = match crate::util::validate_inbox_path(workspace, filename) {
@@ -92,7 +93,7 @@ pub fn process_file(
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
     // Resolve destination
-    let destination = resolve_destination(&classification, workspace, filename);
+    let destination = resolve_destination(&classification, workspace, filename, entity_tracker_path);
 
     let result = match destination {
         Some(dest) => {
@@ -247,7 +248,7 @@ pub fn process_all(
         }
 
         if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-            let result = process_file(workspace, filename, db, profile);
+            let result = process_file(workspace, filename, db, profile, None);
             results.push((filename.to_string(), result));
         }
     }
@@ -369,7 +370,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = process_file(workspace, filename, None, "customer-success");
+        let result = process_file(workspace, filename, None, "customer-success", None);
 
         // Should be classified and routed
         match &result {
@@ -411,7 +412,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = process_file(workspace, filename, None, "customer-success");
+        let result = process_file(workspace, filename, None, "customer-success", None);
 
         match &result {
             ProcessingResult::Routed { destination, .. } => {
@@ -448,7 +449,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = process_file(workspace, filename, None, "customer-success");
+        let result = process_file(workspace, filename, None, "customer-success", None);
         assert!(matches!(result, ProcessingResult::Error { .. }));
     }
 
@@ -465,7 +466,7 @@ mod tests {
         let content = "# Tasks\n\n- [ ] Item one\n- [ ] Item two\n- [ ] Item three\n";
         std::fs::write(workspace.join("_inbox").join(filename), content).unwrap();
 
-        let result = process_file(workspace, filename, None, "customer-success");
+        let result = process_file(workspace, filename, None, "customer-success", None);
 
         match &result {
             ProcessingResult::Routed {

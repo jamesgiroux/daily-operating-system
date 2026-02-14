@@ -47,6 +47,7 @@ pub fn enrich_file(
     profile: &str,
     user_ctx: Option<&crate::types::UserContext>,
     ai_config: Option<&AiModelConfig>,
+    entity_tracker_path: Option<&str>,
 ) -> EnrichResult {
     // I60: validate path stays within inbox
     let file_path = match crate::util::validate_inbox_path(workspace, filename) {
@@ -120,7 +121,8 @@ pub fn enrich_file(
         _ => Classification::Unknown,
     };
 
-    let destination = resolve_destination(&classification, workspace, filename);
+    let destination =
+        resolve_destination(&classification, workspace, filename, entity_tracker_path);
 
     // Capture fields before the match to avoid borrow-after-move issues
     let summary = parsed.summary.clone();
