@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import {
   Building2,
   Check,
@@ -121,7 +122,7 @@ export function computeMeetingDisplayState(
 ): MeetingDisplayState {
   const isCancelled = meeting.overlayStatus === "cancelled";
   const isNew = meeting.overlayStatus === "new";
-  const hasPrepFile = meeting.hasPrep && meeting.id;
+  const hasPrepContext = meeting.hasPrep && !!meeting.id;
 
   // Dot styling (always computed — used by MeetingTimeline)
   const dotBg = isCancelled
@@ -193,11 +194,11 @@ export function computeMeetingDisplayState(
   // 4. Past + no outcomes → View Prep (if available) + Attach/Outcomes buttons
   else if (ctx.isPast && ctx.outcomesStatus === "none") {
     primaryStatus = "past-unprocessed";
-    if (hasPrepFile) {
+    if (hasPrepContext) {
       actions.push({
         key: "view-prep",
         label: "View Prep",
-        linkTo: meeting.prepFile,
+        linkTo: meeting.id,
       });
     }
     actions.push(
@@ -216,12 +217,12 @@ export function computeMeetingDisplayState(
     });
   }
   // 6. Has prep file → "View Prep" action + optional "Limited prep" badge
-  else if (hasPrepFile) {
+  else if (hasPrepContext) {
     primaryStatus = "has-prep";
     actions.push({
       key: "view-prep",
       label: "View Prep",
-      linkTo: meeting.prepFile,
+      linkTo: meeting.id,
     });
     if (!ctx.hasEnrichedPrep) {
       badges.push({
@@ -327,11 +328,21 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
   const [localEntities, setLocalEntities] = React.useState<LinkedEntity[]>(
     meeting.linkedEntities ?? []
   );
+  const [suggestedUnarchiveAccountId, setSuggestedUnarchiveAccountId] = React.useState<string | null>(
+    meeting.suggestedUnarchiveAccountId ?? null,
+  );
+  const [restoringSuggestion, setRestoringSuggestion] = React.useState(false);
+  const [suggestionError, setSuggestionError] = React.useState<string | null>(null);
 
   // Sync from props when meeting data refreshes (e.g., dashboard reload)
   React.useEffect(() => {
     setLocalEntities(meeting.linkedEntities ?? []);
   }, [meeting.linkedEntities]);
+
+  React.useEffect(() => {
+    setSuggestedUnarchiveAccountId(meeting.suggestedUnarchiveAccountId ?? null);
+    setSuggestionError(null);
+  }, [meeting.suggestedUnarchiveAccountId]);
 
   const handleAddEntity = React.useCallback(
     async (newId: string | null, name?: string) => {
@@ -448,14 +459,32 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
     };
 
     try {
-      await invoke("attach_meeting_transcript", {
+      const result = await invoke<{
+        status: string;
+        message?: string;
+        summary?: string;
+      }>("attach_meeting_transcript", {
         filePath: selected,
         meeting: calendarEvent,
       });
+
+      if (result.status !== "success") {
+        toast.error("Transcript processing failed", {
+          description: result.message || result.status,
+        });
+      } else if (!result.summary) {
+        toast.warning("No outcomes extracted", {
+          description: result.message || "AI extraction returned empty",
+        });
+      } else {
+        toast.success("Transcript processed");
+      }
       await refreshOutcomes();
       setIsOpen(true);
     } catch (err) {
-      console.error("Failed to attach transcript:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to attach transcript:", msg);
+      toast.error("Failed to attach transcript", { description: msg });
     } finally {
       setAttaching(false);
     }
@@ -587,37 +616,47 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
             />
           </div>
 
-          {meeting.suggestedUnarchiveAccountId && (
+          {suggestedUnarchiveAccountId && (
             <div className="flex items-center gap-2 mt-1">
               <span className="text-xs text-primary/70">Matches archived account</span>
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-5 px-2 text-xs text-primary hover:text-primary"
+                disabled={restoringSuggestion}
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
+                    setRestoringSuggestion(true);
+                    setSuggestionError(null);
                     await invoke("archive_account", {
-                      id: meeting.suggestedUnarchiveAccountId,
+                      id: suggestedUnarchiveAccountId!,
                       archived: false,
                     });
                     await invoke("add_meeting_entity", {
                       meetingId: meeting.id,
-                      entityId: meeting.suggestedUnarchiveAccountId,
+                      entityId: suggestedUnarchiveAccountId!,
                       entityType: "account",
                       meetingTitle: meeting.title,
                       startTime: meeting.startIso ?? meeting.time,
                       meetingTypeStr: meeting.type,
                     });
+                    setSuggestedUnarchiveAccountId(null);
                     emit("entity-updated");
                   } catch (err) {
-                    console.error("Failed to unarchive:", err);
+                    const message = err instanceof Error ? err.message : String(err);
+                    setSuggestionError(message);
+                  } finally {
+                    setRestoringSuggestion(false);
                   }
                 }}
               >
-                Restore
+                {restoringSuggestion ? "Restoring..." : "Restore"}
               </Button>
             </div>
+          )}
+          {suggestionError && (
+            <p className="mt-1 text-xs text-destructive">{suggestionError}</p>
           )}
 
           {/* Row 4: Intelligence brief — surfaced on card, no expansion needed */}
