@@ -86,6 +86,57 @@ pub struct PtyManager {
     nice_priority: Option<i32>,
 }
 
+/// Strip ANSI escape sequences from PTY output.
+///
+/// Even with TERM=dumb, some programs emit minimal escape codes. This is a
+/// defensive safety net applied to all Claude output before parsing.
+fn strip_ansi(input: &str) -> String {
+    // Matches CSI sequences (\x1b[...X), OSC sequences (\x1b]...BEL/ST), and simple escapes (\x1b[X)
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            match chars.peek() {
+                Some('[') => {
+                    // CSI sequence: consume until a letter
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    // OSC sequence: consume until BEL (\x07) or ST (\x1b\\)
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        if next == '\x07' {
+                            chars.next();
+                            break;
+                        }
+                        if next == '\x1b' {
+                            chars.next();
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                _ => {
+                    // Simple escape: skip next char
+                    chars.next();
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 fn is_model_unavailable_output(output: &str) -> bool {
     let lower = output.to_lowercase();
     (lower.contains("model") && lower.contains("not available"))
@@ -209,7 +260,7 @@ impl PtyManager {
         let pair = pty_system
             .openpty(PtySize {
                 rows: 24,
-                cols: 80,
+                cols: 4096, // Wide enough to prevent hard line wrapping of structured output
                 pixel_width: 0,
                 pixel_height: 0,
             })
@@ -236,6 +287,9 @@ impl PtyManager {
             c
         };
         cmd.cwd(workspace);
+
+        // Suppress ANSI escape codes and terminal control sequences
+        cmd.env("TERM", "dumb");
 
         // Remove Claude Code session env vars so the child process doesn't
         // detect itself as a nested session and refuse to run.
@@ -283,13 +337,19 @@ impl PtyManager {
         });
 
         // Wait for output with timeout
-        let output = rx
+        let raw_output = rx
             .recv_timeout(timeout)
             .map_err(|_| ExecutionError::Timeout(self.timeout_secs))?;
 
-        // Check exit status
-        // Note: We can't easily get exit status from PTY child, so we rely on output
-        // Claude Code typically exits 0 on success
+        // Strip any ANSI escape codes that leaked through despite TERM=dumb
+        let output = strip_ansi(&raw_output);
+
+        log::debug!(
+            "Claude output ({} bytes, {} after strip): {}",
+            raw_output.len(),
+            output.len(),
+            &output[..output.len().min(500)]
+        );
 
         // Check for known error patterns in output
         if output.contains("not authenticated")
@@ -338,7 +398,7 @@ pub struct ClaudeOutput {
 
 #[cfg(test)]
 mod tests {
-    use super::is_model_unavailable_output;
+    use super::{is_model_unavailable_output, strip_ansi};
 
     #[test]
     fn detects_model_unavailable_output() {
@@ -349,5 +409,45 @@ mod tests {
             "unknown model: custom-model-name"
         ));
         assert!(!is_model_unavailable_output("rate limit exceeded"));
+    }
+
+    #[test]
+    fn strip_ansi_removes_csi_sequences() {
+        assert_eq!(
+            strip_ansi("\x1b[1mENRICHMENT:e1\x1b[0m"),
+            "ENRICHMENT:e1"
+        );
+        assert_eq!(
+            strip_ansi("\x1b[32mSUMMARY: hello world\x1b[0m"),
+            "SUMMARY: hello world"
+        );
+    }
+
+    #[test]
+    fn strip_ansi_removes_osc_sequences() {
+        assert_eq!(
+            strip_ansi("\x1b]0;Claude Code\x07ENRICHMENT:e1"),
+            "ENRICHMENT:e1"
+        );
+    }
+
+    #[test]
+    fn strip_ansi_preserves_clean_text() {
+        let clean = "ENRICHMENT:e1\nSUMMARY: test\nEND_ENRICHMENT";
+        assert_eq!(strip_ansi(clean), clean);
+    }
+
+    #[test]
+    fn strip_ansi_handles_empty_input() {
+        assert_eq!(strip_ansi(""), "");
+    }
+
+    #[test]
+    fn strip_ansi_handles_complex_sequences() {
+        // Bold + color + reset around content
+        assert_eq!(
+            strip_ansi("\x1b[1;33mWARNING\x1b[0m: check this"),
+            "WARNING: check this"
+        );
     }
 }

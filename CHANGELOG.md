@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-02-14
+
+### Fixed
+
+- All AI enrichment calls (email, briefing, prep, week, entity intelligence, transcript, inbox) hardened against PTY output corruption: TERM=dumb suppresses escape codes, 4096-column width prevents hard line wrapping, ANSI stripping as safety net
+- Debug logging of raw Claude output for all enrichment calls — parse failures now include the first 500 bytes for diagnosis
+- Email enrichment "No enrichments parsed" caused by ANSI escape codes corrupting structured markers
+
 ## [0.7.4] - 2026-02-14
 
 ### Fixed
