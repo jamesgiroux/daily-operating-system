@@ -4,9 +4,9 @@
 //! This is necessary because Claude Code expects an interactive terminal.
 
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
+use std::sync::{mpsc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -14,6 +14,52 @@ use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem};
 
 use crate::error::ExecutionError;
 use crate::types::AiModelConfig;
+
+/// Cached resolved path to the `claude` binary.
+/// Resolved once per process lifetime via `resolve_claude_binary()`.
+static CLAUDE_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Resolve the absolute path to the `claude` CLI binary.
+///
+/// macOS apps launched from Finder/DMG don't inherit the user's shell PATH,
+/// so `which claude` fails even when claude is installed. This function checks
+/// common install locations as a fallback.
+fn resolve_claude_binary() -> Option<&'static PathBuf> {
+    CLAUDE_BINARY
+        .get_or_init(|| {
+            // 1. Try `which claude` (works in terminal, dev mode, or if PATH is correct)
+            if let Ok(output) = Command::new("which").arg("claude").output() {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        log::info!("Resolved claude binary via PATH: {}", path);
+                        return Some(PathBuf::from(path));
+                    }
+                }
+            }
+
+            // 2. Check common install locations (Finder-launched apps won't have shell PATH)
+            let home = dirs::home_dir().unwrap_or_default();
+            let candidates = [
+                home.join(".local/bin/claude"),        // npm global (default)
+                home.join(".npm/bin/claude"),           // npm alternate
+                home.join(".nvm/current/bin/claude"),   // nvm
+                PathBuf::from("/usr/local/bin/claude"), // Homebrew / manual
+                PathBuf::from("/opt/homebrew/bin/claude"), // Homebrew on Apple Silicon
+            ];
+
+            for candidate in &candidates {
+                if candidate.is_file() {
+                    log::info!("Resolved claude binary at: {}", candidate.display());
+                    return Some(candidate.clone());
+                }
+            }
+
+            log::warn!("Claude binary not found in PATH or common install locations");
+            None
+        })
+        .as_ref()
+}
 
 /// Default timeout for AI enrichment phase (5 minutes)
 pub const DEFAULT_CLAUDE_TIMEOUT_SECS: u64 = 300;
@@ -92,11 +138,7 @@ impl PtyManager {
 
     /// Check if Claude Code CLI is available
     pub fn is_claude_available() -> bool {
-        Command::new("which")
-            .arg("claude")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        resolve_claude_binary().is_some()
     }
 
     /// Check if Claude Code is authenticated
@@ -106,7 +148,10 @@ impl PtyManager {
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
         use std::process::Stdio;
 
-        let mut child = Command::new("claude")
+        let claude_path = resolve_claude_binary()
+            .ok_or(ExecutionError::ClaudeCodeNotFound)?;
+
+        let mut child = Command::new(claude_path)
             .args(["--print", "hello"])
             .env("TERM", "dumb")
             .env_remove("CLAUDECODE")
@@ -155,9 +200,9 @@ impl PtyManager {
         workspace: &Path,
         command: &str,
     ) -> Result<ClaudeOutput, ExecutionError> {
-        if !Self::is_claude_available() {
-            return Err(ExecutionError::ClaudeCodeNotFound);
-        }
+        let claude_path = resolve_claude_binary()
+            .ok_or(ExecutionError::ClaudeCodeNotFound)?;
+        let claude_str = claude_path.to_string_lossy();
 
         let pty_system = NativePtySystem::default();
 
@@ -170,11 +215,11 @@ impl PtyManager {
             })
             .map_err(|e| ExecutionError::IoError(format!("Failed to open PTY: {}", e)))?;
 
-        // Build the command, optionally wrapped in `nice` for CPU priority (I173)
+        // Build the command, optionally wrapped in `nice` for CPU priority
         let mut cmd = if let Some(priority) = self.nice_priority {
             let mut c = CommandBuilder::new("nice");
             let prio_str = priority.to_string();
-            c.args(["-n", &prio_str, "claude"]);
+            c.args(["-n", &prio_str, &*claude_str]);
             if let Some(ref model) = self.model {
                 c.args(["--model", model, "--print", command]);
             } else {
@@ -182,7 +227,7 @@ impl PtyManager {
             }
             c
         } else {
-            let mut c = CommandBuilder::new("claude");
+            let mut c = CommandBuilder::new(claude_path.as_os_str());
             if let Some(ref model) = self.model {
                 c.args(["--model", model, "--print", command]);
             } else {

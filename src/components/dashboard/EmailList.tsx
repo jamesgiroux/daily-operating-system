@@ -63,10 +63,21 @@ export function EmailList({ emails, emailSync, maxVisible = 3 }: EmailListProps)
 
   async function handleRefresh() {
     setRefreshing(true);
+    // Track whether a backend event updates status during the refresh.
+    // If it does, that event is authoritative — don't overwrite it.
+    let eventFiredDuringRefresh = false;
+    const unlistenRefreshWarning = listen<string>("email-enrichment-warning", () => {
+      eventFiredDuringRefresh = true;
+    });
+    const unlistenRefreshSync = listen<EmailSyncStatus>("email-sync-status", () => {
+      eventFiredDuringRefresh = true;
+    });
     try {
       await invoke("refresh_emails");
-      setSyncStatus(null);
-      toast.success("Emails refreshed");
+      if (!eventFiredDuringRefresh) {
+        setSyncStatus(null);
+        toast.success("Emails refreshed");
+      }
     } catch (err) {
       setSyncStatus({
         state: "error",
@@ -79,6 +90,8 @@ export function EmailList({ emails, emailSync, maxVisible = 3 }: EmailListProps)
       });
     } finally {
       setRefreshing(false);
+      unlistenRefreshWarning.then((fn) => fn());
+      unlistenRefreshSync.then((fn) => fn());
     }
   }
 
