@@ -4529,6 +4529,7 @@ pub fn create_person(
     relationship: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
+    let email = crate::util::validate_email(&email)?;
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -5321,16 +5322,7 @@ pub struct CreateChildAccountResult {
     pub id: String,
 }
 
-fn normalize_domains(domains: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = domains
-        .iter()
-        .map(|d| d.trim().to_lowercase())
-        .filter(|d| !d.is_empty())
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
+// Domain normalization moved to crate::util::normalize_domains (DRY)
 
 fn normalize_key(value: &str) -> String {
     value
@@ -5544,7 +5536,7 @@ pub fn create_internal_organization(
 ) -> Result<CreateInternalOrganizationResult, String> {
     let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
     let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
-    let domains = normalize_domains(&domains);
+    let domains = crate::util::normalize_domains(&domains);
     let workspace_path = state
         .config
         .read()
@@ -5556,99 +5548,125 @@ pub fn create_internal_organization(
 
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
-    if db
-        .get_internal_root_account()
-        .map_err(|e| e.to_string())?
-        .is_some()
-    {
-        return Err("Internal organization already exists".to_string());
-    }
 
-    let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
-    let mut suffix = 2usize;
-    while db.get_account(&root_id).map_err(|e| e.to_string())?.is_some() {
-        root_id = format!(
-            "internal-{}-{}",
-            crate::util::slugify(&company_name),
-            suffix
-        );
-        suffix += 1;
-    }
+    // === CRITICAL SECTION: Transaction wraps all DB writes ===
+    // Filesystem writes happen after commit (best-effort per ADR-0048).
+    let (root_account, initial_team, created_people, updated_people) = db.with_transaction(|db| {
+        if db
+            .get_internal_root_account()
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Err("Internal organization already exists".to_string());
+        }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    let root_account = crate::db::DbAccount {
-        id: root_id.clone(),
-        name: company_name.clone(),
-        lifecycle: Some("active".to_string()),
-        arr: None,
-        health: Some("green".to_string()),
-        contract_start: None,
-        contract_end: None,
-        nps: None,
-        tracker_path: Some(format!("Internal/{}", company_name)),
-        parent_id: None,
-        is_internal: true,
-        updated_at: now,
-        archived: false,
-    };
-    db.upsert_account(&root_account).map_err(|e| e.to_string())?;
-    db.set_account_domains(&root_account.id, &domains)
-        .map_err(|e| e.to_string())?;
+        let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
+        let mut suffix = 2usize;
+        while db.get_account(&root_id).map_err(|e| e.to_string())?.is_some() {
+            root_id = format!(
+                "internal-{}-{}",
+                crate::util::slugify(&company_name),
+                suffix
+            );
+            suffix += 1;
+        }
 
+        let now = chrono::Utc::now().to_rfc3339();
+        let root_account = crate::db::DbAccount {
+            id: root_id.clone(),
+            name: company_name.clone(),
+            lifecycle: Some("active".to_string()),
+            arr: None,
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: Some(format!("Internal/{}", company_name)),
+            parent_id: None,
+            is_internal: true,
+            updated_at: now,
+            archived: false,
+        };
+        db.upsert_account(&root_account).map_err(|e| e.to_string())?;
+        db.set_account_domains(&root_account.id, &domains)
+            .map_err(|e| e.to_string())?;
+
+        let initial_team = create_child_account_record(db, None, &root_account, &team_name, None, None)?;
+        db.copy_account_domains(&root_account.id, &initial_team.id)
+            .map_err(|e| e.to_string())?;
+
+        let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
+        for colleague in &colleagues {
+            let email = match crate::util::validate_email(&colleague.email) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let person_id = crate::util::slugify(&email);
+            let now = chrono::Utc::now().to_rfc3339();
+            let person = crate::db::DbPerson {
+                id: person_id.clone(),
+                email: email.clone(),
+                name: colleague.name.trim().to_string(),
+                organization: Some(company_name.clone()),
+                role: colleague.title.clone(),
+                relationship: "internal".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: Some(now.clone()),
+                meeting_count: 0,
+                updated_at: now,
+                archived: false,
+            };
+            db.upsert_person(&person).map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &root_account.id, "member")
+                .map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                .map_err(|e| e.to_string())?;
+            created_people.push(person);
+        }
+
+        let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
+        for person_id in existing_person_ids.unwrap_or_default() {
+            if let Ok(Some(mut person)) = db.get_person(&person_id) {
+                if person.relationship != "internal" {
+                    person.relationship = "internal".to_string();
+                    person.organization = Some(company_name.clone());
+                    db.upsert_person(&person).map_err(|e| e.to_string())?;
+                    updated_people.push(person);
+                }
+                db.link_person_to_entity(&person_id, &root_account.id, "member")
+                    .map_err(|e| e.to_string())?;
+                db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok((root_account, initial_team, created_people, updated_people))
+    })?;
+
+    // Filesystem writes (best-effort, outside transaction)
     let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
     let _ = std::fs::create_dir_all(&root_dir);
     let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
     let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
     let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
 
-    let initial_team = create_child_account_record(db, Some(workspace), &root_account, &team_name, None, None)?;
-    db.copy_account_domains(&root_account.id, &initial_team.id)
-        .map_err(|e| e.to_string())?;
+    let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
+    let _ = std::fs::create_dir_all(&team_dir);
+    let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
 
-    for colleague in colleagues {
-        let email = colleague.email.trim().to_lowercase();
-        if !email.contains('@') {
-            continue;
-        }
-        let person_id = crate::util::slugify(&email);
-        let now = chrono::Utc::now().to_rfc3339();
-        let person = crate::db::DbPerson {
-            id: person_id.clone(),
-            email: email.clone(),
-            name: colleague.name.trim().to_string(),
-            organization: Some(company_name.clone()),
-            role: colleague.title.clone(),
-            relationship: "internal".to_string(),
-            notes: None,
-            tracker_path: None,
-            last_seen: None,
-            first_seen: Some(now.clone()),
-            meeting_count: 0,
-            updated_at: now,
-            archived: false,
-        };
-        let _ = db.upsert_person(&person);
-        let _ = db.link_person_to_entity(&person_id, &root_account.id, "member");
-        let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
-        let _ = crate::people::write_person_json(workspace, &person, db);
-        let _ = crate::people::write_person_markdown(workspace, &person, db);
+    for person in &created_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
+    }
+    for person in &updated_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
     }
 
-    // Link existing people to the internal org and team
-    for person_id in existing_person_ids.unwrap_or_default() {
-        if let Ok(Some(mut person)) = db.get_person(&person_id) {
-            // Update relationship to internal if not already
-            if person.relationship != "internal" {
-                person.relationship = "internal".to_string();
-                person.organization = Some(company_name.clone());
-                let _ = db.upsert_person(&person);
-                let _ = crate::people::write_person_json(workspace, &person, db);
-                let _ = crate::people::write_person_markdown(workspace, &person, db);
-            }
-            let _ = db.link_person_to_entity(&person_id, &root_account.id, "member");
-            let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
-        }
-    }
     drop(db_guard);
 
     crate::state::create_or_update_config(&state, |config| {
