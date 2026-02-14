@@ -11,6 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  AgendaDraftDialog,
+  useAgendaDraft,
+} from "@/components/ui/agenda-draft-dialog";
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -28,8 +32,9 @@ import type {
   MeetingIntelligence,
   CalendarEvent,
   StakeholderInsight,
+  ApplyPrepPrefillResult,
 } from "@/types";
-import { cn, parseDate } from "@/lib/utils";
+import { cn, parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
@@ -64,6 +69,9 @@ export default function MeetingDetailPage() {
 
   // Transcript attach (from MeetingDetailPage)
   const [attaching, setAttaching] = useState(false);
+  const draft = useAgendaDraft({ onError: setError });
+  const [prefillNotice, setPrefillNotice] = useState(false);
+  const [prefilling, setPrefilling] = useState(false);
 
   const loadMeetingIntelligence = useCallback(async () => {
     if (!meetingId) {
@@ -167,6 +175,44 @@ export default function MeetingDetailPage() {
       setAttaching(false);
     }
   }, [meetingId, data, meetingMeta, loadMeetingIntelligence]);
+
+  const handleDraftAgendaMessage = useCallback(async () => {
+    if (!meetingId) return;
+    await draft.openDraft(meetingId, data?.meetingContext || undefined);
+  }, [meetingId, data?.meetingContext, draft]);
+
+  const handlePrefillFromContext = useCallback(async () => {
+    if (!meetingId || !canEditUserLayer) return;
+    const candidateItems =
+      data?.proposedAgenda
+        ?.map((item) => cleanPrepLine(item.topic))
+        .filter((item) => item.length > 0)
+        .slice(0, 4) ?? [];
+    if (candidateItems.length === 0) return;
+
+    setPrefilling(true);
+    try {
+      const result = await invoke<ApplyPrepPrefillResult>(
+        "apply_meeting_prep_prefill",
+        {
+          meetingId,
+          agendaItems: candidateItems,
+          notesAppend: data?.meetingContext || "",
+        }
+      );
+      if (result.addedAgendaItems > 0 || result.notesAppended) {
+        setPrefillNotice(true);
+        setTimeout(() => setPrefillNotice(false), 5000);
+      }
+      await loadMeetingIntelligence();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to prefill prep context"
+      );
+    } finally {
+      setPrefilling(false);
+    }
+  }, [meetingId, canEditUserLayer, data, loadMeetingIntelligence]);
 
   useEffect(() => {
     loadMeetingIntelligence();
@@ -389,7 +435,26 @@ export default function MeetingDetailPage() {
                             {data.timeRange}
                           </p>
                         </div>
-                        <CopyAllButton data={data} />
+                        <div className="flex items-center gap-2">
+                          {isEditable && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handlePrefillFromContext}
+                              disabled={prefilling}
+                            >
+                              {prefilling ? "Prefilling..." : "Prefill Prep"}
+                            </Button>
+                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleDraftAgendaMessage}
+                          >
+                            Draft agenda message
+                          </Button>
+                          <CopyAllButton data={data} />
+                        </div>
                       </div>
 
                       {(data.intelligenceSummary || data.meetingContext) ? (
@@ -491,6 +556,15 @@ export default function MeetingDetailPage() {
                       <div className="rounded-lg border border-dashed border-border/80 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
                         No proposed agenda yet. Add your own agenda items below.
                       </div>
+                    )}
+                    {meetingId && (
+                      <>
+                        {prefillNotice && (
+                          <div className="rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary">
+                            Prefill appended new agenda/notes content.
+                          </div>
+                        )}
+                      </>
                     )}
                     {meetingId && (
                       <UserAgendaEditor
@@ -771,6 +845,31 @@ export default function MeetingDetailPage() {
                       </section>
                     )}
 
+                    {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+                      <section className="rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-4">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
+                          Recent Email Signals
+                        </p>
+                        <ul className="mt-3 space-y-2.5">
+                          {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
+                            <li key={`${signal.id ?? i}-${signal.signalType}`} className="text-sm">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-200">
+                                  {signal.signalType}
+                                </span>
+                                {signal.detectedAt && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {formatRelativeDateLong(signal.detectedAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 leading-relaxed">{signal.signalText}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+
                     {recentWinsForSidebar.length > 0 && (
                       <section className="rounded-xl border border-success/20 bg-success/[0.08] p-4">
                         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success">
@@ -801,6 +900,13 @@ export default function MeetingDetailPage() {
           )}
         </div>
       </ScrollArea>
+      <AgendaDraftDialog
+        open={draft.open}
+        onOpenChange={draft.setOpen}
+        loading={draft.loading}
+        subject={draft.subject}
+        body={draft.body}
+      />
     </main>
   );
 }
@@ -844,7 +950,7 @@ function RelationshipPills({ signals }: { signals: StakeholderSignals }) {
   }[signals.temperature] ?? "text-muted-foreground";
 
   const lastMeetingText = signals.lastMeeting
-    ? formatRelativeDate(signals.lastMeeting)
+    ? formatRelativeDateLong(signals.lastMeeting)
     : "No meetings recorded";
 
   return (
@@ -1143,7 +1249,7 @@ function AttendeeRow({ person }: { person: AttendeeContext }) {
 
   const isNew = person.meetingCount === 0;
   const isCold = person.temperature === "cold";
-  const lastSeenText = person.lastSeen ? formatRelativeDate(person.lastSeen) : undefined;
+  const lastSeenText = person.lastSeen ? formatRelativeDateLong(person.lastSeen) : undefined;
 
   const inner = (
     <div className={cn(
@@ -1352,23 +1458,6 @@ function findQuickContextValue(
   return found?.[1];
 }
 
-function formatRelativeDate(iso: string): string {
-  const date = parseDate(iso);
-  if (!date) return iso;
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} week${weeks !== 1 ? "s" : ""} ago`;
-  }
-  const months = Math.floor(diffDays / 30);
-  return `${months} month${months !== 1 ? "s" : ""} ago`;
-}
 
 function normalizePersonKey(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");

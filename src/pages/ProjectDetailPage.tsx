@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmailSignalList } from "@/components/ui/email-signal-list";
 import {
   StatusBadge,
   projectStatusStyles,
@@ -673,6 +674,24 @@ export default function ProjectDetailPage() {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {detail.recentEmailSignals && detail.recentEmailSignals.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">
+                    Email Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <EmailSignalList
+                    signals={detail.recentEmailSignals}
+                    limit={8}
+                    dateFormat="absolute"
+                    showMetadata
+                  />
                 </CardContent>
               </Card>
             )}

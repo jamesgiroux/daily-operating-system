@@ -1549,6 +1549,7 @@ pub fn parse_meeting_prep_file(path: &Path) -> Result<FullMeetingPrep, String> {
         entity_risks: None,
         entity_readiness: None,
         stakeholder_insights: None,
+        recent_email_signals: None,
     })
 }
 
@@ -1835,6 +1836,7 @@ impl EmailDetailBuilder {
             recommended_action: self.recommended_action,
             action_owner: self.action_owner,
             action_priority: self.action_priority,
+            email_signals: None,
         }
     }
 }
@@ -2066,6 +2068,7 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
             time,
             title: account_or_title.clone(),
             account: Some(account_or_title),
+            meeting_id: None,
             meeting_type,
             prep_status,
         },
@@ -2152,6 +2155,8 @@ fn parse_time_block_row(line: &str) -> Option<TimeBlock> {
         end,
         duration_minutes,
         suggested_use: suggested_use.filter(|s| !s.is_empty()),
+        action_id: None,
+        meeting_id: None,
     })
 }
 

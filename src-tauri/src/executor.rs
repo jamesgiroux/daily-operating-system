@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use chrono::Utc;
 use serde_json::json;
@@ -110,6 +111,169 @@ impl Executor {
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn sync_email_signals_from_payload(&self, data_dir: &Path) -> Result<usize, String> {
+        let emails_path = data_dir.join("emails.json");
+        if !emails_path.exists() {
+            return Ok(0);
+        }
+
+        let raw = std::fs::read_to_string(&emails_path)
+            .map_err(|e| format!("Failed to read emails.json for signal sync: {}", e))?;
+        let payload: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("Failed to parse emails.json for signal sync: {}", e))?;
+
+        let high_priority = payload
+            .get("highPriority")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if high_priority.is_empty() {
+            return Ok(0);
+        }
+
+        self.state.with_db_write(|db| {
+            db.conn_ref()
+                .execute_batch("BEGIN")
+                .map_err(|e| e.to_string())?;
+
+            let mut inserted = 0usize;
+
+            let result = (|| -> Result<usize, String> {
+                for email in high_priority {
+                    let email_id =
+                        email.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if email_id.is_empty() {
+                        continue;
+                    }
+
+                    let sender_email = email
+                        .get("senderEmail")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim().to_lowercase())
+                        .filter(|s| !s.is_empty());
+                    let domain = sender_email
+                        .as_deref()
+                        .and_then(|sender| sender.split('@').nth(1))
+                        .unwrap_or("")
+                        .to_string();
+                    let received_at = email
+                        .get("received")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    let person_id = sender_email.as_deref().and_then(|sender| {
+                        db.get_person_by_email(sender)
+                            .ok()
+                            .flatten()
+                            .map(|person| person.id)
+                    });
+
+                    let mut targets: HashSet<(String, String)> = HashSet::new();
+                    if let Some(ref pid) = person_id {
+                        if let Ok(entities) = db.get_entities_for_person(pid) {
+                            for entity in entities {
+                                targets.insert((
+                                    entity.id,
+                                    entity.entity_type.as_str().to_string(),
+                                ));
+                            }
+                        }
+                    }
+
+                    if targets.is_empty() && !domain.is_empty() {
+                        if let Ok(accounts) =
+                            db.lookup_account_candidates_by_domain(&domain)
+                        {
+                            for account in
+                                accounts.into_iter().filter(|a| !a.is_internal)
+                            {
+                                targets.insert((account.id, "account".to_string()));
+                            }
+                        }
+                    }
+
+                    if targets.is_empty() {
+                        continue;
+                    }
+
+                    let signals = email
+                        .get("emailSignals")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    for signal in signals {
+                        let signal_type = signal
+                            .get("signalType")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        let signal_text = signal
+                            .get("signalText")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        if signal_type.is_empty() || signal_text.is_empty() {
+                            continue;
+                        }
+
+                        let confidence =
+                            signal.get("confidence").and_then(|v| v.as_f64());
+                        let sentiment = signal
+                            .get("sentiment")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty());
+                        let urgency = signal
+                            .get("urgency")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty());
+                        let detected_at = signal
+                            .get("detectedAt")
+                            .and_then(|v| v.as_str())
+                            .or(received_at.as_deref());
+
+                        for (entity_id, entity_type) in &targets {
+                            let was_inserted = db
+                                .upsert_email_signal(
+                                    email_id,
+                                    sender_email.as_deref(),
+                                    person_id.as_deref(),
+                                    entity_id,
+                                    entity_type,
+                                    signal_type,
+                                    signal_text,
+                                    confidence,
+                                    sentiment,
+                                    urgency,
+                                    detected_at,
+                                )
+                                .map_err(|e| e.to_string())?;
+                            if was_inserted {
+                                inserted += 1;
+                            }
+                        }
+                    }
+                }
+                Ok(inserted)
+            })();
+
+            match result {
+                Ok(count) => {
+                    db.conn_ref()
+                        .execute_batch("COMMIT")
+                        .map_err(|e| e.to_string())?;
+                    Ok(count)
+                }
+                Err(e) => {
+                    let _ = db.conn_ref().execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })
     }
 
     /// Start the executor loop
@@ -811,6 +975,16 @@ impl Executor {
                     format!("Email AI summaries unavailable: {}", e),
                 );
             }
+            match self.sync_email_signals_from_payload(&data_dir) {
+                Ok(count) => {
+                    if count > 0 {
+                        log::info!("Email signal sync: persisted {} signal rows", count);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Email signal sync failed (non-fatal): {}", e);
+                }
+            }
             let _ = self
                 .app_handle
                 .emit("operation-delivered", "emails-enriched");
@@ -1068,6 +1242,14 @@ impl Executor {
                 "email-enrichment-warning",
                 format!("Email AI summaries unavailable: {}", e),
             );
+        }
+        match self.sync_email_signals_from_payload(&data_dir) {
+            Ok(count) => {
+                if count > 0 {
+                    log::info!("Email refresh: persisted {} email signal rows", count);
+                }
+            }
+            Err(e) => log::warn!("Email refresh: email signal sync failed (non-fatal): {}", e),
         }
         let _ = self
             .app_handle

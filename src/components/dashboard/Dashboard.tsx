@@ -4,6 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { MeetingTimeline } from "./MeetingTimeline";
 import { ActionList } from "./ActionList";
 import { EmailList } from "./EmailList";
+import { formatDayTime } from "@/lib/utils";
 import type { DashboardData, DataFreshness } from "@/types";
 
 interface DashboardProps {
@@ -18,21 +19,6 @@ function getFormattedDate(): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function formatRelativeDate(isoString: string): string {
-  try {
-    const date = new Date(isoString);
-    if (isNaN(date.getTime())) return "";
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-    }) + " at " + date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
 }
 
 export function Dashboard({ data, freshness }: DashboardProps) {
@@ -51,7 +37,7 @@ export function Dashboard({ data, freshness }: DashboardProps) {
               </h1>
               {freshness.freshness === "stale" && (
                 <p className="text-xs text-muted-foreground">
-                  Last updated {formatRelativeDate(freshness.generatedAt)}
+                  Last updated {formatDayTime(freshness.generatedAt)}
                 </p>
               )}
             </div>
