@@ -1333,6 +1333,11 @@ fn build_prep_json(
                     obj.insert("stakeholderInsights".to_string(), json!(insights));
                 }
             }
+            if let Some(ref signals) = ctx.recent_email_signals {
+                if !signals.is_empty() {
+                    obj.insert("recentEmailSignals".to_string(), json!(signals));
+                }
+            }
         }
     }
 
@@ -1937,6 +1942,7 @@ pub struct EmailEnrichment {
     pub summary: Option<String>,
     pub action: Option<String>,
     pub arc: Option<String>,
+    pub signals: Vec<crate::types::EmailSignal>,
 }
 
 /// Parse Claude's email enrichment response.
@@ -1947,6 +1953,7 @@ pub struct EmailEnrichment {
 /// SUMMARY: one-line summary
 /// ACTION: recommended next action
 /// ARC: conversation context
+/// SIGNALS: [{"signalType":"timeline","signalText":"...", "confidence":0.8}]
 /// END_ENRICHMENT
 /// ```
 pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment> {
@@ -1976,6 +1983,11 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
                 current.action = Some(val.trim().to_string());
             } else if let Some(val) = trimmed.strip_prefix("ARC:") {
                 current.arc = Some(val.trim().to_string());
+            } else if let Some(val) = trimmed.strip_prefix("SIGNALS:") {
+                current.signals = serde_json::from_str::<Vec<crate::types::EmailSignal>>(
+                    val.trim(),
+                )
+                .unwrap_or_default();
             }
         }
     }
@@ -2032,12 +2044,15 @@ pub fn enrich_emails(
     let prompt = format!(
         "You are enriching email briefing data. {}\
          For each email below, provide a one-line summary, \
-         a recommended action, and brief conversation arc context.\n\n\
+         a recommended action, brief conversation arc context, and a JSON array \
+         of structured signals. Signal types must be one of: expansion, question, timeline, \
+         sentiment, feedback, relationship. Keep signalText concise.\n\n\
          Format your response as:\n\
          ENRICHMENT:email-id-here\n\
          SUMMARY: <one-line summary>\n\
          ACTION: <recommended next action>\n\
          ARC: <conversation context>\n\
+         SIGNALS: <JSON array of objects with signalType, signalText, optional confidence/sentiment/urgency>\n\
          END_ENRICHMENT\n\n\
          {}",
         user_fragment, email_context
@@ -2072,6 +2087,9 @@ pub fn enrich_emails(
                     }
                     if let Some(ref arc) = enrichment.arc {
                         obj.insert("conversationArc".to_string(), json!(arc));
+                    }
+                    if !enrichment.signals.is_empty() {
+                        obj.insert("emailSignals".to_string(), json!(enrichment.signals));
                     }
                 }
             }
@@ -3141,6 +3159,10 @@ pub struct TimeSuggestion {
     pub block_day: String,
     pub block_start: String,
     pub suggested_use: String,
+    #[serde(default)]
+    pub action_id: Option<String>,
+    #[serde(default)]
+    pub meeting_id: Option<String>,
 }
 
 /// Parse time-block suggestions from Claude output.
@@ -3413,6 +3435,49 @@ pub fn enrich_week(
         })
         .unwrap_or_default();
 
+    let candidate_action_ids: Vec<String> = overview
+        .get("actionSummary")
+        .and_then(|v| v.as_object())
+        .map(|summary| {
+            ["overdue", "dueThisWeekItems"]
+                .into_iter()
+                .flat_map(|key| {
+                    summary
+                        .get(key)
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter_map(|item| {
+                    item.get("id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let candidate_meeting_ids: Vec<String> = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .flat_map(|shape| {
+                    shape
+                        .get("meetings")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter_map(|meeting| {
+                    meeting
+                        .get("meetingId")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
         let db_guard = state.db.lock().ok();
@@ -3449,6 +3514,8 @@ pub fn enrich_week(
          - Actions: {overdue_count} overdue, {due_this_week} due this week\n\
          - Account health alerts: {hygiene_count}\n\
          - Available focus blocks: {available_blocks}\n\
+         - Valid action IDs for references: {candidate_action_ids}\n\
+         - Valid meeting IDs for references: {candidate_meeting_ids}\n\
          {intel_section}\n\
          Provide three sections in your response:\n\n\
          1. A 2-3 sentence narrative framing the week. Focus on what makes this week \
@@ -3457,7 +3524,8 @@ pub fn enrich_week(
          has the biggest impact. Return as a JSON object with title, reason, and optionally \
          meetingId or actionId if it maps to a specific item.\n\n\
          3. Suggestions for how to use the available time blocks. Return as a JSON array \
-         with blockDay, blockStart, and suggestedUse fields.\n\n\
+         with blockDay, blockStart, suggestedUse, and optional actionId/meetingId fields. \
+         Include actionId or meetingId ONLY when you can confidently map to one of the valid IDs above.\n\n\
          Format your response EXACTLY as:\n\n\
          WEEK_NARRATIVE:\n\
          <your 2-3 sentence narrative>\n\
@@ -3466,7 +3534,7 @@ pub fn enrich_week(
          {{\"title\": \"...\", \"reason\": \"...\"}}\n\
          END_TOP_PRIORITY\n\n\
          SUGGESTIONS:\n\
-         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\"}}]\n\
+         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\", \"actionId\": \"optional\", \"meetingId\": \"optional\"}}]\n\
          END_SUGGESTIONS",
         role_label = role_label,
         user_fragment = user_fragment,
@@ -3487,6 +3555,16 @@ pub fn enrich_week(
             "none".to_string()
         } else {
             available_blocks.join("; ")
+        },
+        candidate_action_ids = if candidate_action_ids.is_empty() {
+            "none".to_string()
+        } else {
+            candidate_action_ids.join(", ")
+        },
+        candidate_meeting_ids = if candidate_meeting_ids.is_empty() {
+            "none".to_string()
+        } else {
+            candidate_meeting_ids.join(", ")
         },
     );
 
@@ -3542,6 +3620,22 @@ pub fn enrich_week(
                                     "suggestedUse".to_string(),
                                     json!(suggestion.suggested_use),
                                 );
+                                if let Some(ref action_id) = suggestion.action_id {
+                                    if !action_id.trim().is_empty() {
+                                        block
+                                            .as_object_mut()
+                                            .unwrap()
+                                            .insert("actionId".to_string(), json!(action_id));
+                                    }
+                                }
+                                if let Some(ref meeting_id) = suggestion.meeting_id {
+                                    if !meeting_id.trim().is_empty() {
+                                        block
+                                            .as_object_mut()
+                                            .unwrap()
+                                            .insert("meetingId".to_string(), json!(meeting_id));
+                                    }
+                                }
                             }
                         }
                     }
