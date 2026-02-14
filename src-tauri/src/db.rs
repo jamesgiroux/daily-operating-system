@@ -380,6 +380,29 @@ impl ActionDb {
         &self.conn
     }
 
+    /// Execute a closure within a SQLite transaction.
+    /// Commits on Ok, rolls back on Err.
+    pub fn with_transaction<F, T>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&Self) -> Result<T, String>,
+    {
+        self.conn
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(|e| format!("Failed to begin transaction: {e}"))?;
+        match f(self) {
+            Ok(val) => {
+                self.conn
+                    .execute_batch("COMMIT")
+                    .map_err(|e| format!("Failed to commit transaction: {e}"))?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
     /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
@@ -1211,18 +1234,15 @@ impl ActionDb {
 
     /// Set domains for an account (replace-all).
     pub fn set_account_domains(&self, account_id: &str, domains: &[String]) -> Result<(), DbError> {
+        let normalized = crate::util::normalize_domains(domains);
         self.conn.execute(
             "DELETE FROM account_domains WHERE account_id = ?1",
             params![account_id],
         )?;
-        for domain in domains {
-            let trimmed = domain.trim().to_lowercase();
-            if trimmed.is_empty() {
-                continue;
-            }
+        for domain in normalized {
             self.conn.execute(
                 "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
-                params![account_id, trimmed],
+                params![account_id, &domain],
             )?;
         }
         Ok(())
@@ -1324,6 +1344,7 @@ impl ActionDb {
     }
 
     /// Remove an account team role link.
+    /// If no roles remain for this person on this account, also removes the entity_people link.
     pub fn remove_account_team_member(
         &self,
         account_id: &str,
@@ -1335,6 +1356,23 @@ impl ActionDb {
              WHERE account_id = ?1 AND person_id = ?2 AND LOWER(role) = LOWER(?3)",
             params![account_id, person_id, role.trim()],
         )?;
+
+        // Clean up entity_people link if no roles remain
+        let remaining_roles: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM account_team
+             WHERE account_id = ?1 AND person_id = ?2",
+            params![account_id, person_id],
+            |row| row.get(0),
+        )?;
+
+        if remaining_roles == 0 {
+            self.conn.execute(
+                "DELETE FROM entity_people
+                 WHERE entity_id = ?1 AND person_id = ?2",
+                params![account_id, person_id],
+            )?;
+        }
+
         Ok(())
     }
 
