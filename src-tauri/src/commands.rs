@@ -227,16 +227,17 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
             crate::db::DbError,
         > {
-            let archived = db.get_archived_accounts()?;
+            // Single JOIN query instead of N+1 per-account domain lookups (W3)
+            let accounts_with_domains = db.get_all_accounts_with_domains(true)?;
+            let mut archived = Vec::new();
             let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
-            for account in &archived {
-                let domains = db
-                    .get_account_domains(&account.id)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|d| d.to_lowercase())
-                    .collect::<HashSet<_>>();
-                domains_by_account.insert(account.id.clone(), domains);
+            for (account, domains) in accounts_with_domains {
+                if account.archived {
+                    let domain_set: HashSet<String> =
+                        domains.iter().map(|d| d.to_lowercase()).collect();
+                    domains_by_account.insert(account.id.clone(), domain_set);
+                    archived.push(account);
+                }
             }
             Ok((archived, domains_by_account))
         }) {
