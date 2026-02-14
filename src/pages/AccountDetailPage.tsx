@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmailSignalList } from "@/components/ui/email-signal-list";
 import {
   StatusBadge,
   healthStyles,
@@ -32,7 +33,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageError } from "@/components/PageState";
-import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort, formatBidirectionalDate } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -1012,7 +1013,7 @@ export default function AccountDetailPage() {
                             {m.title}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatRelativeDate(m.startTime)}
+                            {formatBidirectionalDate(m.startTime)}
                           </span>
                         </div>
                       ))}
@@ -1363,33 +1364,12 @@ export default function AccountDetailPage() {
                     </p>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-2">
-                      {detail.recentEmailSignals.slice(0, 8).map((signal, idx) => (
-                        <div
-                          key={`${signal.id ?? idx}-${signal.signalType}`}
-                          className="rounded-md border border-border/70 bg-card/50 px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                              {signal.signalType}
-                            </Badge>
-                            <span className="text-[10px] text-muted-foreground">
-                              {signal.detectedAt
-                                ? formatRelativeDateShort(signal.detectedAt)
-                                : ""}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-sm leading-relaxed">{signal.signalText}</p>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                            {signal.urgency && <span>Urgency: {signal.urgency}</span>}
-                            {signal.sentiment && <span>Sentiment: {signal.sentiment}</span>}
-                            {signal.confidence != null && (
-                              <span>Confidence: {Math.round(signal.confidence * 100)}%</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <EmailSignalList
+                      signals={detail.recentEmailSignals}
+                      limit={8}
+                      dateFormat="relative-short"
+                      showMetadata
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -1906,7 +1886,7 @@ function MeetingPreviewCard({ meeting }: { meeting: MeetingPreview }) {
         </Badge>
         <span className="flex-1 truncate font-medium">{meeting.title}</span>
         <span className="shrink-0 text-sm text-muted-foreground">
-          {formatRelativeDate(meeting.startTime)}
+          {formatBidirectionalDate(meeting.startTime)}
         </span>
       </div>
 
@@ -2625,30 +2605,6 @@ function formatDate(dateStr: string): string {
 }
 
 
-function formatRelativeDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-    if (diffDays === 1) {
-      return `Tomorrow ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-    }
-    if (diffDays === -1) return "Yesterday";
-    if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
-    if (diffDays <= 7) return `In ${diffDays} days`;
-    return formatDate(dateStr);
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
 
 function formatMeetingType(meetingType: string): string {
   const labels: Record<string, string> = {
