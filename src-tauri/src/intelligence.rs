@@ -355,7 +355,7 @@ fn format_renewal_detail(acct: &DbAccount, days_until: i64) -> String {
 mod tests {
     use super::*;
     use crate::db::ActionDb;
-    use crate::types::{Meeting, MeetingPrep, MeetingType, OverlayStatus};
+    use crate::types::{Meeting, MeetingType, OverlayStatus};
 
     fn test_db() -> ActionDb {
         let dir = tempfile::tempdir().expect("temp dir");
