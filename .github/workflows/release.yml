@@ -146,8 +146,10 @@ jobs:
           echo "sig_path=$SIG_PATH" >> "$GITHUB_OUTPUT"
 
           # Signature is multiline (Minisign format) — use heredoc for GITHUB_OUTPUT
+          # printf '\n' ensures a trailing newline before the delimiter
           echo "sig_content<<SIG_EOF" >> "$GITHUB_OUTPUT"
           cat "$SIG_PATH" >> "$GITHUB_OUTPUT"
+          printf '\n' >> "$GITHUB_OUTPUT"
           echo "SIG_EOF" >> "$GITHUB_OUTPUT"
 
       - name: Generate latest.json
