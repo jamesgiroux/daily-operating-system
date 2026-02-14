@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmailSignalList } from "@/components/ui/email-signal-list";
 import {
   StatusBadge,
   healthStyles,
@@ -32,7 +33,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { PageError, InlineEmpty } from "@/components/PageState";
-import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort, formatShortDate, parseDate } from "@/lib/utils";
+import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort, formatShortDate, formatBidirectionalDate } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -1151,7 +1152,7 @@ export default function AccountDetailPage() {
                             {m.title}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatRelativeDate(m.startTime)}
+                            {formatBidirectionalDate(m.startTime)}
                           </span>
                         </div>
                       ))}
@@ -1484,6 +1485,30 @@ export default function AccountDetailPage() {
                         </>
                       )}
                     </Collapsible>
+                  </CardContent>
+                </Card>
+              )}
+
+              {detail.recentEmailSignals && detail.recentEmailSignals.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Email Timeline
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.recentEmailSignals.length})
+                      </span>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Signals extracted from recent inbound email.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <EmailSignalList
+                      signals={detail.recentEmailSignals}
+                      limit={8}
+                      dateFormat="relative-short"
+                      showMetadata
+                    />
                   </CardContent>
                 </Card>
               )}
@@ -2201,7 +2226,7 @@ function MeetingPreviewCard({ meeting }: { meeting: MeetingPreview }) {
         </Badge>
         <span className="flex-1 truncate font-medium">{meeting.title}</span>
         <span className="shrink-0 text-sm text-muted-foreground">
-          {formatRelativeDate(meeting.startTime)}
+          {formatBidirectionalDate(meeting.startTime)}
         </span>
       </div>
 
@@ -2846,27 +2871,6 @@ function CaptureIcon({ type }: { type: string }) {
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
 
-function formatRelativeDate(dateStr: string): string {
-  const date = parseDate(dateStr);
-  if (!date) return dateStr.split("T")[0]?.split(" ")[0] ?? dateStr;
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) {
-    return date.toLocaleTimeString(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  if (diffDays === 1) {
-    return `Tomorrow ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-  }
-  if (diffDays === -1) return "Yesterday";
-  if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
-  if (diffDays <= 7) return `In ${diffDays} days`;
-  return formatShortDate(dateStr);
-}
 
 function formatMeetingType(meetingType: string): string {
   const labels: Record<string, string> = {
