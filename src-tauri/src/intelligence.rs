@@ -355,7 +355,7 @@ fn format_renewal_detail(acct: &DbAccount, days_until: i64) -> String {
 mod tests {
     use super::*;
     use crate::db::ActionDb;
-    use crate::types::{Meeting, MeetingPrep, MeetingType, OverlayStatus};
+    use crate::types::{Meeting, MeetingType, OverlayStatus};
 
     fn test_db() -> ActionDb {
         let dir = tempfile::tempdir().expect("temp dir");
@@ -457,11 +457,10 @@ mod tests {
                     .format("%Y-%m-%d")
                     .to_string(),
             ),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: chrono::Utc::now().to_rfc3339(),
             archived: false,
         };

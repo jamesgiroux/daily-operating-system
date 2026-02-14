@@ -50,6 +50,20 @@ cd src-tauri && cargo test
 
 There are approximately 500 Rust tests covering the backend.
 
+### Google OAuth Secret Management
+
+- Production builds require `DAILYOS_GOOGLE_SECRET` at compile time.
+- Local development does not require that env var if `~/.dailyos/google/credentials.json` is present; file credentials override embedded defaults.
+- Release workflow (`.github/workflows/release.yml`) fails fast if `DAILYOS_GOOGLE_SECRET` is missing.
+
+Rotation procedure:
+
+1. Create a new Google OAuth Desktop client in Google Cloud Console.
+2. Set the new client secret in GitHub repo secret `DAILYOS_GOOGLE_SECRET`.
+3. Build and verify OAuth end-to-end in a release artifact.
+4. Revoke/delete the previous OAuth client.
+5. Rewrite git history to remove exposed secrets and force-push rewritten refs.
+
 ## Architecture
 
 Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows through three tiers: filesystem (durable markdown + JSON), SQLite (working store), and app memory (ephemeral). AI enrichment runs through Claude Code CLI spawned as a PTY subprocess.
@@ -59,6 +73,7 @@ Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows throu
 - [PHILOSOPHY.md](design/PHILOSOPHY.md) -- Why we exist
 - [PRINCIPLES.md](design/PRINCIPLES.md) -- Design principles
 - [VISION.md](design/VISION.md) -- Product vision
+- [oauth-secret-rotation.md](docs/oauth-secret-rotation.md) -- OAuth rotation + history rewrite runbook
 
 Product website: [daily-os.com](https://daily-os.com)
 

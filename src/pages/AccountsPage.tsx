@@ -7,6 +7,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import {
+  BulkCreateForm,
+  parseBulkCreateInput,
+} from "@/components/ui/bulk-create-form";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import { PageError } from "@/components/PageState";
 import { Building2, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
@@ -20,11 +24,11 @@ interface ArchivedAccount {
   lifecycle?: string;
   arr?: number;
   health?: string;
-  csm?: string;
   archived: boolean;
 }
 
 type ArchiveTab = "active" | "archived";
+type ScopeTab = "all" | "internal" | "external";
 
 type HealthTab = "all" | "green" | "yellow" | "red";
 
@@ -40,11 +44,18 @@ const archiveTabs: { key: ArchiveTab; label: string }[] = [
   { key: "archived", label: "Archived" },
 ];
 
+const scopeTabs: { key: ScopeTab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "internal", label: "Internal" },
+  { key: "external", label: "External" },
+];
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<HealthTab>("all");
+  const [scopeTab, setScopeTab] = useState<ScopeTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -107,10 +118,7 @@ export default function AccountsPage() {
 
   // I162: bulk create
   async function handleBulkCreate() {
-    const names = bulkValue
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
       await invoke<string[]>("bulk_create_accounts", { names });
@@ -158,13 +166,19 @@ export default function AccountsPage() {
           return false;
         });
 
+  const scopeFiltered = healthFiltered.filter((a) => {
+    if (scopeTab === "internal") return a.isInternal;
+    if (scopeTab === "external") return !a.isInternal;
+    return true;
+  });
+
   const filtered = searchQuery
-    ? healthFiltered.filter(
+    ? scopeFiltered.filter(
         (a) =>
           a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.csm ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+          (a.teamSummary ?? "").toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : healthFiltered;
+    : scopeFiltered;
 
   const tabCounts: Record<HealthTab, number> = {
     all: accounts.length,
@@ -172,13 +186,17 @@ export default function AccountsPage() {
     yellow: accounts.filter((a) => a.health === "yellow").length,
     red: accounts.filter((a) => a.health === "red").length,
   };
+  const scopeCounts: Record<ScopeTab, number> = {
+    all: accounts.length,
+    internal: accounts.filter((a) => a.isInternal).length,
+    external: accounts.filter((a) => !a.isInternal).length,
+  };
 
   // I176: filter archived accounts by search query
   const filteredArchived = searchQuery
     ? archivedAccounts.filter(
         (a) =>
-          a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (a.csm ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+          a.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : archivedAccounts;
 
@@ -262,51 +280,22 @@ export default function AccountsPage() {
                   {creating ? (
                     <>
                       {bulkMode ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={bulkValue}
-                            onChange={(e) => setBulkValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setCreating(false);
-                              }
-                            }}
-                            placeholder="One account name per line"
-                            rows={5}
-                            className="w-64 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={handleBulkCreate}>
-                              Create{" "}
-                              {bulkValue.split("\n").filter((s) => s.trim()).length || ""}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setBulkMode(false);
-                                setBulkValue("");
-                              }}
-                            >
-                              Single
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setCreating(false);
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setNewName("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                        <BulkCreateForm
+                          value={bulkValue}
+                          onChange={setBulkValue}
+                          onCreate={handleBulkCreate}
+                          onSingleMode={() => {
+                            setBulkMode(false);
+                            setBulkValue("");
+                          }}
+                          onCancel={() => {
+                            setCreating(false);
+                            setBulkMode(false);
+                            setBulkValue("");
+                            setNewName("");
+                          }}
+                          placeholder="One account name per line"
+                        />
                       ) : (
                         <div className="flex items-center gap-2">
                           <InlineCreateForm
@@ -365,6 +354,16 @@ export default function AccountsPage() {
             placeholder="Search accounts..."
             className="mb-4"
           />
+
+          {!isArchived && (
+            <TabFilter
+              tabs={scopeTabs}
+              active={scopeTab}
+              onChange={setScopeTab}
+              counts={scopeCounts}
+              className="mb-4"
+            />
+          )}
 
           {!isArchived && (
             <TabFilter
@@ -457,6 +456,7 @@ function AccountRow({
   const isStale = daysSince != null && daysSince > 14;
 
   const Chevron = isExpanded ? ChevronDown : ChevronRight;
+  const hasInternalBadge = account.isInternal;
 
   return (
     <ListRow
@@ -464,22 +464,29 @@ function AccountRow({
       params={{ accountId: account.id }}
       signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
       name={account.name}
-      subtitle={account.csm ? `CSM: ${account.csm}` : undefined}
+      subtitle={account.teamSummary}
       className={isChild ? "pl-8" : undefined}
       badges={
-        onToggleExpand ? (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onToggleExpand();
-            }}
-            className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
-          >
-            <Chevron className="size-3.5" />
-            <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
-          </button>
-        ) : undefined
+        <div className="inline-flex items-center gap-2">
+          {hasInternalBadge && (
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+              Internal
+            </span>
+          )}
+          {onToggleExpand && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+            >
+              <Chevron className="size-3.5" />
+              <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
+            </button>
+          )}
+        </div>
       }
       columns={
         <>
@@ -528,7 +535,7 @@ function ArchivedAccountRow({ account }: { account: ArchivedAccount }) {
       signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
       name={account.name}
       subtitle={
-        [account.csm ? `CSM: ${account.csm}` : "", account.lifecycle]
+        [account.lifecycle]
           .filter(Boolean)
           .join(" \u00B7 ") || undefined
       }

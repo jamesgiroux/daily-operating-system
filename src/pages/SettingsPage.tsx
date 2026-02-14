@@ -1,15 +1,22 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { TabFilter } from "@/components/ui/tab-filter";
 import { ModeToggle } from "@/components/mode-toggle";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
+  ArrowDownToLine,
   Building2,
   Check,
   FolderKanban,
@@ -26,13 +33,22 @@ import {
   LogOut,
   Loader2,
   ToggleRight,
+  User,
   Activity,
   Cpu,
   X,
 } from "lucide-react";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
-import type { PostMeetingCaptureConfig, FeatureDefinition, EntityMode, AiModelConfig } from "@/types";
+import type {
+  PostMeetingCaptureConfig,
+  FeatureDefinition,
+  EntityMode,
+  AiModelConfig,
+  SettingsTabId,
+  HygieneStatusView,
+} from "@/types";
 
 interface Config {
   workspacePath: string;
@@ -50,7 +66,37 @@ interface ScheduleEntry {
   timezone: string;
 }
 
+const allSettingsTabs: { key: SettingsTabId; label: string }[] = [
+  { key: "profile", label: "Profile" },
+  { key: "integrations", label: "Integrations" },
+  { key: "workflows", label: "Workflows" },
+  { key: "intelligence", label: "Intelligence" },
+  { key: "hygiene", label: "Intelligence Hygiene" },
+  { key: "diagnostics", label: "Diagnostics" },
+];
+
+const settingsTabs = import.meta.env.DEV
+  ? allSettingsTabs
+  : allSettingsTabs.filter((t) => t.key !== "diagnostics");
+
+function parseSettingsTab(value: unknown): SettingsTabId {
+  if (
+    value === "profile" ||
+    value === "integrations" ||
+    value === "workflows" ||
+    value === "intelligence" ||
+    value === "hygiene" ||
+    value === "diagnostics"
+  ) {
+    return value;
+  }
+  return "profile";
+}
+
 export default function SettingsPage() {
+  const search = useSearch({ from: "/settings" });
+  const navigate = useNavigate();
+  const activeTab = parseSettingsTab(search.tab);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +145,16 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function setActiveTab(tab: SettingsTabId) {
+    navigate({
+      to: "/settings",
+      search: (prev: Record<string, unknown>) => ({
+        ...prev,
+        tab,
+      }),
+    });
   }
 
   if (loading) {
@@ -154,52 +210,158 @@ export default function SettingsPage() {
             </p>
           </div>
 
+          <div className="mb-6 overflow-x-auto pb-1">
+            <TabFilter
+              tabs={settingsTabs}
+              active={activeTab}
+              onChange={setActiveTab}
+              className="w-max min-w-full"
+            />
+          </div>
+
           <div className="space-y-6">
-            {/* Google Account */}
-            <GoogleAccountCard />
+            {activeTab === "profile" && (
+              <>
+                <UpdateCard />
+                <UserProfileCard />
+                <UserDomainsCard />
+                <EntityModeCard
+                  currentMode={config?.entityMode ?? "account"}
+                  onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
+                />
+                <WorkspaceCard
+                  workspacePath={config?.workspacePath ?? ""}
+                  onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
+                />
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Settings className="size-4" />
+                      Appearance
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm">Theme</span>
+                      <ModeToggle />
+                    </div>
+                  </CardContent>
+                </Card>
+                <PersonalityCard />
+              </>
+            )}
 
-            {/* User Domains */}
-            <UserDomainsCard />
+            {activeTab === "integrations" && <GoogleAccountCard />}
 
-            {/* Post-Meeting Capture */}
-            <CaptureSettingsCard />
+            {activeTab === "workflows" && (
+              <>
+                <CaptureSettingsCard />
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Clock className="size-4" />
+                      Schedules
+                    </CardTitle>
+                    <CardDescription>
+                      Automated workflow execution times
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {config?.schedules && (
+                      <>
+                        <ScheduleRow
+                          label="Morning Briefing"
+                          schedule={config.schedules.today}
+                          running={running === "today"}
+                          onRun={() => handleRunWorkflow("today")}
+                        />
+                        <ScheduleRow
+                          label="Nightly Archive"
+                          schedule={config.schedules.archive}
+                          running={running === "archive"}
+                          onRun={() => handleRunWorkflow("archive")}
+                        />
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+                {runResult && (
+                  <Card className={cn(runResult.success ? "border-success" : "border-destructive")}>
+                    <CardContent className="pt-6">
+                      <div className="flex items-center gap-2">
+                        {runResult.success ? (
+                          <CheckCircle className="size-5 text-success" />
+                        ) : (
+                          <AlertCircle className="size-5 text-destructive" />
+                        )}
+                        <p className={cn("text-sm", runResult.success ? "text-success" : "text-destructive")}>
+                          {runResult.message}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Play className="size-4" />
+                      Manual Run
+                    </CardTitle>
+                    <CardDescription>
+                      Trigger workflows manually without waiting for schedule
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => handleRunWorkflow("today")}
+                      disabled={running !== null}
+                    >
+                      {running === "today" ? (
+                        <RefreshCw className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Play className="mr-2 size-4" />
+                      )}
+                      Run Daily Briefing
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleRunWorkflow("week")}
+                      disabled={running !== null}
+                    >
+                      {running === "week" ? (
+                        <RefreshCw className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Play className="mr-2 size-4" />
+                      )}
+                      Run Weekly Briefing
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => handleRunWorkflow("archive")}
+                      disabled={running !== null}
+                    >
+                      {running === "archive" ? (
+                        <RefreshCw className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <Play className="mr-2 size-4" />
+                      )}
+                      Run Archive
+                    </Button>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
-            {/* Feature Toggles */}
-            <FeaturesCard />
+            {activeTab === "intelligence" && (
+              <>
+                <FeaturesCard />
+                <AiModelsCard />
+              </>
+            )}
 
-            {/* AI Models */}
-            <AiModelsCard />
+            {activeTab === "hygiene" && <IntelligenceHygieneCard />}
 
-            {/* Entity Mode */}
-            <EntityModeCard
-              currentMode={config?.entityMode ?? "account"}
-              onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
-            />
-
-            {/* Workspace */}
-            <WorkspaceCard
-              workspacePath={config?.workspacePath ?? ""}
-              onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
-            />
-
-            {/* Theme */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Settings className="size-4" />
-                  Appearance
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Theme</span>
-                  <ModeToggle />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Developer Mode */}
-            {import.meta.env.DEV && (
+            {activeTab === "diagnostics" && (
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-base">
@@ -235,108 +397,6 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
             )}
-
-            {/* Schedules */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Clock className="size-4" />
-                  Schedules
-                </CardTitle>
-                <CardDescription>
-                  Automated workflow execution times
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {config?.schedules && (
-                  <>
-                    <ScheduleRow
-                      label="Morning Briefing"
-                      schedule={config.schedules.today}
-                      running={running === "today"}
-                      onRun={() => handleRunWorkflow("today")}
-                    />
-                    <ScheduleRow
-                      label="Nightly Archive"
-                      schedule={config.schedules.archive}
-                      running={running === "archive"}
-                      onRun={() => handleRunWorkflow("archive")}
-                    />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* System Health */}
-            <SystemHealthCard />
-
-            {/* Run result */}
-            {runResult && (
-              <Card className={cn(runResult.success ? "border-success" : "border-destructive")}>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-2">
-                    {runResult.success ? (
-                      <CheckCircle className="size-5 text-success" />
-                    ) : (
-                      <AlertCircle className="size-5 text-destructive" />
-                    )}
-                    <p className={cn("text-sm", runResult.success ? "text-success" : "text-destructive")}>
-                      {runResult.message}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Manual run section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Play className="size-4" />
-                  Manual Run
-                </CardTitle>
-                <CardDescription>
-                  Trigger workflows manually without waiting for schedule
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-3">
-                <Button
-                  onClick={() => handleRunWorkflow("today")}
-                  disabled={running !== null}
-                >
-                  {running === "today" ? (
-                    <RefreshCw className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 size-4" />
-                  )}
-                  Run Daily Briefing
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleRunWorkflow("week")}
-                  disabled={running !== null}
-                >
-                  {running === "week" ? (
-                    <RefreshCw className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 size-4" />
-                  )}
-                  Run Weekly Briefing
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleRunWorkflow("archive")}
-                  disabled={running !== null}
-                >
-                  {running === "archive" ? (
-                    <RefreshCw className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Play className="mr-2 size-4" />
-                  )}
-                  Run Archive
-                </Button>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </ScrollArea>
@@ -344,8 +404,137 @@ export default function SettingsPage() {
   );
 }
 
+type UpdateState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "available"; update: Update }
+  | { phase: "installing" }
+  | { phase: "error"; message: string };
+
+function UpdateCard() {
+  const [appVersion, setAppVersion] = useState<string>("");
+  const [state, setState] = useState<UpdateState>({ phase: "idle" });
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
+
+  async function handleCheck() {
+    setState({ phase: "checking" });
+    try {
+      const update = await check();
+      if (update) {
+        setState({ phase: "available", update });
+      } else {
+        toast.success("You're on the latest version");
+        setState({ phase: "idle" });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Update check failed: ${message}`);
+      setState({ phase: "error", message });
+    }
+  }
+
+  async function handleInstall() {
+    if (state.phase !== "available") return;
+    const { update } = state;
+    setState({ phase: "installing" });
+    try {
+      await update.downloadAndInstall();
+      await relaunch();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(`Update failed: ${message}`);
+      setState({ phase: "error", message });
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ArrowDownToLine className="size-4" />
+          Updates
+        </CardTitle>
+        <CardDescription>
+          {appVersion ? `DailyOS v${appVersion}` : "DailyOS"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {state.phase === "idle" || state.phase === "error" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              {state.phase === "error"
+                ? "Update check failed"
+                : "Check for new versions"}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCheck}
+            >
+              <RefreshCw className="mr-1.5 size-3.5" />
+              Check for Updates
+            </Button>
+          </div>
+        ) : state.phase === "checking" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Checking for updates...
+            </span>
+            <Button variant="outline" size="sm" disabled>
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              Checking
+            </Button>
+          </div>
+        ) : state.phase === "available" ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">
+                  v{state.update.version} available
+                </p>
+                {state.update.body && (
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                    {state.update.body}
+                  </p>
+                )}
+              </div>
+              <Button size="sm" onClick={handleInstall}>
+                <ArrowDownToLine className="mr-1.5 size-3.5" />
+                Install & Restart
+              </Button>
+            </div>
+          </div>
+        ) : state.phase === "installing" ? (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              Installing update...
+            </span>
+            <Button size="sm" disabled>
+              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+              Installing
+            </Button>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 function GoogleAccountCard() {
-  const { status, email, loading, connect, disconnect } = useGoogleAuth();
+  const {
+    status,
+    email,
+    loading,
+    phase,
+    error,
+    justConnected,
+    connect,
+    disconnect,
+    clearError,
+  } = useGoogleAuth();
 
   return (
     <Card>
@@ -361,21 +550,40 @@ function GoogleAccountCard() {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-3 flex items-center justify-between rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+            <span className="text-xs text-destructive">{error}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-destructive"
+              onClick={clearError}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
+
         {status.status === "authenticated" ? (
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full rounded-full bg-success opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-success" />
-              </span>
-              <span className="text-sm">{email}</span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full rounded-full bg-success opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-success" />
+                </span>
+                <span className="text-sm">{email}</span>
+              </div>
+              {justConnected && (
+                <p className="mt-1 text-xs text-success">Connected successfully.</p>
+              )}
             </div>
             <Button
               variant="ghost"
               size="sm"
               className="text-muted-foreground"
               onClick={disconnect}
-              disabled={loading}
+              disabled={loading || phase === "authorizing"}
             >
               {loading ? (
                 <Loader2 className="mr-1.5 size-3.5 animate-spin" />
@@ -399,20 +607,215 @@ function GoogleAccountCard() {
               ) : (
                 <RefreshCw className="mr-1.5 size-3.5" />
               )}
-              Reconnect
+              {phase === "authorizing" ? "Waiting for authorization..." : "Reconnect"}
             </Button>
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Not connected
-            </span>
+            <span className="text-sm text-muted-foreground">Not connected</span>
             <Button size="sm" onClick={connect} disabled={loading}>
               {loading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-              Connect
+              {phase === "authorizing" ? "Waiting for authorization..." : "Connect"}
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const PERSONALITY_OPTIONS = [
+  {
+    value: "professional",
+    label: "Professional",
+    description: "Straightforward, clean copy",
+    example: "No data yet.",
+  },
+  {
+    value: "friendly",
+    label: "Friendly",
+    description: "Warm, encouraging tone",
+    example: "Nothing here yet — we'll have this ready for you soon.",
+  },
+  {
+    value: "playful",
+    label: "Playful",
+    description: "Personality-rich, fun",
+    example: "The hamsters are still running. Data incoming.",
+  },
+] as const;
+
+function PersonalityCard() {
+  const { personality, setPersonality: setCtxPersonality } = usePersonality();
+
+  async function handleChange(value: string) {
+    const previous = personality;
+    setCtxPersonality(value as Personality);
+    try {
+      await invoke("set_personality", { personality: value });
+      toast.success("Personality updated");
+    } catch (err) {
+      setCtxPersonality(previous);
+      toast.error(typeof err === "string" ? err : "Failed to update personality");
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquare className="size-4" />
+          Personality
+        </CardTitle>
+        <CardDescription>
+          Sets the tone for empty states, loading messages, and notifications
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3">
+          {PERSONALITY_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => handleChange(option.value)}
+              className={cn(
+                "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
+                personality === option.value
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:bg-muted/50",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">{option.label}</span>
+                {personality === option.value && (
+                  <Check className="size-3.5 text-primary" />
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">
+                {option.description}
+              </span>
+              <span className="mt-1 text-xs italic text-muted-foreground/70">
+                "{option.example}"
+              </span>
+            </button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function UserProfileCard() {
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [title, setTitle] = useState("");
+  const [focus, setFocus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<{
+      userName?: string;
+      userCompany?: string;
+      userTitle?: string;
+      userFocus?: string;
+    }>("get_config")
+      .then((config) => {
+        setName(config.userName ?? "");
+        setCompany(config.userCompany ?? "");
+        setTitle(config.userTitle ?? "");
+        setFocus(config.userFocus ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await invoke("set_user_profile", {
+        name: name.trim() || null,
+        company: company.trim() || null,
+        title: title.trim() || null,
+        focus: focus.trim() || null,
+        domain: null, // domain is managed by UserDomainsCard
+      });
+      toast.success("Profile updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <User className="size-4" />
+          About You
+        </CardTitle>
+        <CardDescription>
+          Helps DailyOS personalize your briefings and meeting prep
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label htmlFor="profile-name" className="text-sm font-medium">Name</label>
+            <Input
+              id="profile-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Jamie"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-company" className="text-sm font-medium">Company</label>
+            <Input
+              id="profile-company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="e.g. Acme Inc."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-title" className="text-sm font-medium">Title</label>
+            <Input
+              id="profile-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Customer Success Manager"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="profile-focus" className="text-sm font-medium">Current focus</label>
+            <Input
+              id="profile-focus"
+              value={focus}
+              onChange={(e) => setFocus(e.target.value)}
+              placeholder="e.g. Driving Q2 renewals"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+            Save
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -986,77 +1389,79 @@ function WorkspaceCard({
 }
 
 // =============================================================================
-// System Health Card (I148)
+// Intelligence Hygiene Card (I213)
 // =============================================================================
 
-interface HygieneReport {
-  scannedAt: string;
-  unnamedPeople: number;
-  unknownRelationships: number;
-  missingIntelligence: number;
-  staleIntelligence: number;
-  unsummarizedFiles: number;
-  orphanedMeetings: number;
-  fixes: {
-    relationshipsReclassified: number;
-    filesIndexed: number;
-    summariesExtracted: number;
-    orphanedMeetingsLinked: number;
-    meetingCountsUpdated: number;
-    namesResolved: number;
-    peopleLinkedByDomain: number;
-    aiEnrichmentsEnqueued: number;
-  };
+function formatTime(iso?: string): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-function SystemHealthCard() {
-  const [report, setReport] = useState<HygieneReport | null>(null);
+function IntelligenceHygieneCard() {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<HygieneStatusView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [runningNow, setRunningNow] = useState(false);
 
-  async function loadReport() {
+  async function loadStatus() {
     try {
-      const result = await invoke<HygieneReport | null>("get_hygiene_report");
-      setReport(result);
-    } catch {
-      // No report yet — expected on first launch
+      const result = await invoke<HygieneStatusView>("get_intelligence_hygiene_status");
+      setStatus(result);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to load hygiene status");
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadReport();
+    loadStatus();
   }, []);
 
-  if (loading) return null;
-
-  const totalGaps = report
-    ? report.unnamedPeople +
-      report.unknownRelationships +
-      report.missingIntelligence +
-      report.staleIntelligence +
-      report.unsummarizedFiles +
-      report.orphanedMeetings
-    : 0;
-
-  const totalFixes = report
-    ? report.fixes.relationshipsReclassified +
-      report.fixes.filesIndexed +
-      report.fixes.summariesExtracted +
-      report.fixes.orphanedMeetingsLinked +
-      report.fixes.meetingCountsUpdated +
-      report.fixes.namesResolved +
-      report.fixes.peopleLinkedByDomain +
-      report.fixes.aiEnrichmentsEnqueued
-    : 0;
-
-  function formatTime(iso: string): string {
+  async function runScanNow() {
+    setRunningNow(true);
     try {
-      const d = new Date(iso);
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    } catch {
-      return iso;
+      const updated = await invoke<HygieneStatusView>("run_hygiene_scan_now");
+      setStatus(updated);
+      toast.success("Hygiene scan complete");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to run hygiene scan");
+    } finally {
+      setRunningNow(false);
     }
+  }
+
+  function handleGapAction(route?: string) {
+    if (!route) {
+      runScanNow();
+      return;
+    }
+
+    if (route.startsWith("/people")) {
+      const parsed = new URL(route, "http://localhost");
+      const relationship = parsed.searchParams.get("relationship") ?? undefined;
+      const hygiene = parsed.searchParams.get("hygiene") ?? undefined;
+      navigate({
+        to: "/people",
+        search: {
+          relationship: relationship as "all" | "external" | "internal" | "unknown" | undefined,
+          hygiene: hygiene as "unnamed" | "duplicates" | undefined,
+        },
+      });
+      return;
+    }
+
+    runScanNow();
   }
 
   return (
@@ -1064,57 +1469,123 @@ function SystemHealthCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Activity className="size-4" />
-          System Health
+          Intelligence Hygiene
         </CardTitle>
         <CardDescription>
-          Automated data quality maintenance
+          Proactive intelligence maintenance with clear next actions
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        {report ? (
+      <CardContent className="space-y-4">
+        {loading ? (
           <div className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Last scan</span>
-              <span>{formatTime(report.scannedAt)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Gaps detected</span>
-              <Badge variant={totalGaps === 0 ? "secondary" : "outline"}>
-                {totalGaps}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Fixes applied</span>
-              <Badge variant={totalFixes > 0 ? "default" : "secondary"}>
-                {totalFixes}
-              </Badge>
-            </div>
-            {totalGaps > 0 && (
-              <div className="rounded-md border p-3 text-xs text-muted-foreground space-y-1">
-                {report.unnamedPeople > 0 && (
-                  <p>{report.unnamedPeople} unnamed people</p>
-                )}
-                {report.unknownRelationships > 0 && (
-                  <p>{report.unknownRelationships} unclassified relationships</p>
-                )}
-                {report.missingIntelligence > 0 && (
-                  <p>{report.missingIntelligence} entities without intelligence</p>
-                )}
-                {report.staleIntelligence > 0 && (
-                  <p>{report.staleIntelligence} stale intelligence records</p>
-                )}
-                {report.unsummarizedFiles > 0 && (
-                  <p>{report.unsummarizedFiles} unsummarized files</p>
-                )}
-                {report.orphanedMeetings > 0 && (
-                  <p>{report.orphanedMeetings} orphaned meetings</p>
-                )}
-              </div>
-            )}
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-20 w-full" />
           </div>
+        ) : status ? (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-md border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
+                <div className="mt-1 flex items-center justify-between">
+                  <p className="text-sm font-medium">{status.statusLabel}</p>
+                  <Badge variant={status.totalGaps === 0 ? "secondary" : "outline"}>
+                    {status.totalGaps} gaps
+                  </Badge>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Last scan: {formatTime(status.lastScanTime)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Next scan: {formatTime(status.nextScanTime)}
+                </p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">AI Budget</p>
+                <p className="mt-1 text-sm font-medium">
+                  {status.budget.usedToday} / {status.budget.dailyLimit} used today
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Queued for next budget window: {status.budget.queuedForNextBudget}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium">Fixes Applied</p>
+                <Badge variant={status.totalFixes > 0 ? "default" : "secondary"}>
+                  {status.totalFixes}
+                </Badge>
+              </div>
+              {status.fixes.length > 0 ? (
+                <div className="space-y-1">
+                  {status.fixes.map((fix) => (
+                    <div key={fix.key} className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{fix.label}</span>
+                      <span>{fix.count}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">No fixes were applied in the most recent scan.</p>
+              )}
+            </div>
+
+            <div className="rounded-md border p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium">Gaps Detected</p>
+                <Badge variant={status.gaps.length > 0 ? "outline" : "secondary"}>
+                  {status.gaps.length}
+                </Badge>
+              </div>
+              {status.gaps.length > 0 ? (
+                <div className="space-y-2">
+                  {status.gaps.map((gap) => (
+                    <div key={gap.key} className="rounded-md border p-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {gap.label} <span className="text-muted-foreground">({gap.count})</span>
+                          </p>
+                          <p className="text-xs text-muted-foreground">{gap.description}</p>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] uppercase">
+                          {gap.impact}
+                        </Badge>
+                      </div>
+                      <div className="mt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs"
+                          onClick={() => handleGapAction(gap.action.route)}
+                        >
+                          {gap.action.label}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No open hygiene gaps. The system will continue scanning automatically.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={runScanNow} disabled={runningNow || status.isRunning}>
+                {(runningNow || status.isRunning) && <Loader2 className="mr-2 size-4 animate-spin" />}
+                Run Hygiene Scan Now
+              </Button>
+              <Button variant="ghost" size="sm" onClick={loadStatus}>
+                Refresh
+              </Button>
+            </div>
+          </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No scan completed yet — runs automatically after startup
+            No scan completed yet — runs automatically after startup.
           </p>
         )}
       </CardContent>

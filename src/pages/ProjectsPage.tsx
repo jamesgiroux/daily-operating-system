@@ -1,18 +1,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
+import {
+  BulkCreateForm,
+  parseBulkCreateInput,
+} from "@/components/ui/bulk-create-form";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
 import {
   StatusBadge,
   projectStatusStyles,
 } from "@/components/ui/status-badge";
-import { PageError } from "@/components/PageState";
+import { PageError, SectionEmpty } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
 import { FolderKanban, Plus, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectListItem } from "@/types";
@@ -46,6 +51,7 @@ const statusTabs: { key: StatusTab; label: string }[] = [
 
 
 export default function ProjectsPage() {
+  const { personality } = usePersonality();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,10 +115,7 @@ export default function ProjectsPage() {
 
   // I162: bulk create
   async function handleBulkCreate() {
-    const names = bulkValue
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
     try {
       await invoke<string[]>("bulk_create_projects", { names });
@@ -231,51 +234,22 @@ export default function ProjectsPage() {
                   {creating ? (
                     <>
                       {bulkMode ? (
-                        <div className="flex flex-col gap-2">
-                          <textarea
-                            autoFocus
-                            value={bulkValue}
-                            onChange={(e) => setBulkValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setCreating(false);
-                              }
-                            }}
-                            placeholder="One project name per line"
-                            rows={5}
-                            className="w-64 rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" onClick={handleBulkCreate}>
-                              Create{" "}
-                              {bulkValue.split("\n").filter((s) => s.trim()).length || ""}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setBulkMode(false);
-                                setBulkValue("");
-                              }}
-                            >
-                              Single
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setCreating(false);
-                                setBulkMode(false);
-                                setBulkValue("");
-                                setNewName("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                        <BulkCreateForm
+                          value={bulkValue}
+                          onChange={setBulkValue}
+                          onCreate={handleBulkCreate}
+                          onSingleMode={() => {
+                            setBulkMode(false);
+                            setBulkValue("");
+                          }}
+                          onCancel={() => {
+                            setCreating(false);
+                            setBulkMode(false);
+                            setBulkValue("");
+                            setNewName("");
+                          }}
+                          placeholder="One project name per line"
+                        />
                       ) : (
                         <div className="flex items-center gap-2">
                           <InlineCreateForm
@@ -349,30 +323,20 @@ export default function ProjectsPage() {
           <div>
             {isArchived ? (
               filteredArchived.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <FolderKanban className="mb-4 size-12 text-muted-foreground/40" />
-                    <p className="text-lg font-medium">No archived projects</p>
-                    <p className="text-sm text-muted-foreground">
-                      Archived projects will appear here.
-                    </p>
-                  </CardContent>
-                </Card>
+                <SectionEmpty
+                  icon={FolderKanban}
+                  {...getPersonalityCopy("projects-archived-empty", personality)}
+                />
               ) : (
                 filteredArchived.map((project) => (
                   <ArchivedProjectRow key={project.id} project={project} />
                 ))
               )
             ) : filtered.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <FolderKanban className="mb-4 size-12 text-muted-foreground/40" />
-                  <p className="text-lg font-medium">No matches</p>
-                  <p className="text-sm text-muted-foreground">
-                    Try a different search or filter.
-                  </p>
-                </CardContent>
-              </Card>
+              <SectionEmpty
+                icon={FolderKanban}
+                {...getPersonalityCopy("projects-no-matches", personality)}
+              />
             ) : (
               filtered.map((project) => (
                 <ProjectRow key={project.id} project={project} />
@@ -461,4 +425,3 @@ function ArchivedProjectRow({ project }: { project: ArchivedProject }) {
     />
   );
 }
-

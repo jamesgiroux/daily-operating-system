@@ -27,6 +27,14 @@ const SCAN_INTERVAL_SECS: u64 = 4 * 60 * 60;
 /// How many days back to look for orphaned meetings.
 const ORPHANED_MEETING_LOOKBACK_DAYS: i32 = 90;
 
+/// Max people per domain for pairwise duplicate detection (prevents O(n²) explosion).
+const MAX_DOMAIN_GROUP_SIZE: usize = 200;
+
+/// Public interval getter for UI/command next-scan calculations.
+pub fn scan_interval_secs() -> u64 {
+    SCAN_INTERVAL_SECS
+}
+
 /// Report from a hygiene scan: gaps detected + mechanical fixes applied.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -106,10 +114,27 @@ pub fn run_hygiene_scan(
     report.fixes.names_resolved = resolve_names_from_emails(db, workspace);
     report.fixes.people_linked_by_domain = auto_link_people_by_domain(db);
 
-    // --- Phase 2: AI-budgeted gap filling ---
+    // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
     }
+
+    // --- Re-count gaps after fixes so UI shows remaining problems, not stale pre-fix counts ---
+    report.unnamed_people = db.get_unnamed_people().map(|v| v.len()).unwrap_or(0);
+    report.unknown_relationships = db
+        .get_unknown_relationship_people()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    report.unsummarized_files = db
+        .get_unsummarized_content_files()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    report.orphaned_meetings = db
+        .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
+        .map(|v| v.len())
+        .unwrap_or(0);
+    // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
+    // duplicate_people is also unchanged (no auto-merge).
 
     report
 }
@@ -128,10 +153,9 @@ fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> usize {
     let mut fixed = 0;
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
-        if new_rel != "unknown"
-            && db.update_person_relationship(&person.id, &new_rel).is_ok() {
-                fixed += 1;
-            }
+        if new_rel != "unknown" && db.update_person_relationship(&person.id, &new_rel).is_ok() {
+            fixed += 1;
+        }
     }
     fixed
 }
@@ -409,10 +433,10 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
                 && db
                     .link_person_to_entity(&person.id, account_id, "associated")
                     .is_ok()
-                {
-                    linked += 1;
-                    break; // One link per person
-                }
+            {
+                linked += 1;
+                break; // One link per person
+            }
         }
     }
 
@@ -470,9 +494,16 @@ pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>,
 
     let mut candidates: Vec<DuplicateCandidate> = Vec::new();
 
-    for group in domain_groups.values() {
-        // Skip singleton groups — no possible duplicates
+    for (domain, group) in domain_groups.iter() {
         if group.len() < 2 {
+            continue;
+        }
+
+        if group.len() > MAX_DOMAIN_GROUP_SIZE {
+            log::warn!(
+                "Skipping duplicate detection for domain {} ({} people exceeds limit of {})",
+                domain, group.len(), MAX_DOMAIN_GROUP_SIZE
+            );
             continue;
         }
 
@@ -836,6 +867,20 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
     log::info!("HygieneLoop: started");
 
     loop {
+        // Prevent overlap with manual scan runs.
+        let began_scan = state.hygiene_scan_running.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        ).is_ok();
+
+        if !began_scan {
+            log::debug!("HygieneLoop: skipping scan (another hygiene scan is already running)");
+            tokio::time::sleep(std::time::Duration::from_secs(SCAN_INTERVAL_SECS)).await;
+            continue;
+        }
+
         // Check for overnight window — use expanded scan with higher AI budget
         if is_overnight_window() {
             let overnight = try_run_overnight(&state);
@@ -894,7 +939,17 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             if let Ok(mut guard) = state.last_hygiene_report.lock() {
                 *guard = Some(report);
             }
+            if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+                *guard = Some(Utc::now().to_rfc3339());
+            }
         }
+
+        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+            *guard = Some(
+                (Utc::now() + chrono::Duration::seconds(SCAN_INTERVAL_SECS as i64)).to_rfc3339(),
+            );
+        }
+        state.hygiene_scan_running.store(false, std::sync::atomic::Ordering::Release);
 
         tokio::time::sleep(std::time::Duration::from_secs(SCAN_INTERVAL_SECS)).await;
     }
@@ -931,6 +986,288 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
         Some(&state.hygiene_budget),
         Some(&state.intel_queue),
     ))
+}
+
+// =============================================================================
+// Hygiene Status View Model (consumed by Tauri commands)
+// =============================================================================
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneFixView {
+    pub key: String,
+    pub label: String,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneGapActionView {
+    pub kind: String,
+    pub label: String,
+    pub route: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneGapView {
+    pub key: String,
+    pub label: String,
+    pub count: usize,
+    pub impact: String,
+    pub description: String,
+    pub action: HygieneGapActionView,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneBudgetView {
+    pub used_today: u32,
+    pub daily_limit: u32,
+    pub queued_for_next_budget: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneStatusView {
+    pub status: String,
+    pub status_label: String,
+    pub last_scan_time: Option<String>,
+    pub next_scan_time: Option<String>,
+    pub total_gaps: usize,
+    pub total_fixes: usize,
+    pub is_running: bool,
+    pub fixes: Vec<HygieneFixView>,
+    pub gaps: Vec<HygieneGapView>,
+    pub budget: HygieneBudgetView,
+}
+
+fn hygiene_gap_action(key: &str) -> HygieneGapActionView {
+    match key {
+        "unnamed_people" => HygieneGapActionView {
+            kind: "navigate".to_string(),
+            label: "View People".to_string(),
+            route: Some("/people?hygiene=unnamed".to_string()),
+        },
+        "unknown_relationships" => HygieneGapActionView {
+            kind: "navigate".to_string(),
+            label: "Review Relationships".to_string(),
+            route: Some("/people?relationship=unknown".to_string()),
+        },
+        "duplicate_people" => HygieneGapActionView {
+            kind: "navigate".to_string(),
+            label: "Review Duplicates".to_string(),
+            route: Some("/people?hygiene=duplicates".to_string()),
+        },
+        _ => HygieneGapActionView {
+            kind: "run_scan_now".to_string(),
+            label: "Run Hygiene Scan Now".to_string(),
+            route: None,
+        },
+    }
+}
+
+/// Build the hygiene status view model from app state and an optional report.
+pub fn build_intelligence_hygiene_status(
+    state: &AppState,
+    report: Option<&HygieneReport>,
+) -> HygieneStatusView {
+    let unnamed_people = report.map(|r| r.unnamed_people).unwrap_or(0);
+    let unknown_relationships = report.map(|r| r.unknown_relationships).unwrap_or(0);
+    let missing_intelligence = report.map(|r| r.missing_intelligence).unwrap_or(0);
+    let stale_intelligence = report.map(|r| r.stale_intelligence).unwrap_or(0);
+    let unsummarized_files = report.map(|r| r.unsummarized_files).unwrap_or(0);
+    let orphaned_meetings = report.map(|r| r.orphaned_meetings).unwrap_or(0);
+    let duplicate_people = report.map(|r| r.duplicate_people).unwrap_or(0);
+
+    let fixes = report
+        .map(|r| {
+            vec![
+                HygieneFixView {
+                    key: "relationships_reclassified".to_string(),
+                    label: "Relationships reclassified".to_string(),
+                    count: r.fixes.relationships_reclassified,
+                },
+                HygieneFixView {
+                    key: "summaries_extracted".to_string(),
+                    label: "Summaries extracted".to_string(),
+                    count: r.fixes.summaries_extracted,
+                },
+                HygieneFixView {
+                    key: "orphaned_meetings_linked".to_string(),
+                    label: "Orphaned meetings linked".to_string(),
+                    count: r.fixes.orphaned_meetings_linked,
+                },
+                HygieneFixView {
+                    key: "meeting_counts_updated".to_string(),
+                    label: "Meeting counts updated".to_string(),
+                    count: r.fixes.meeting_counts_updated,
+                },
+                HygieneFixView {
+                    key: "names_resolved".to_string(),
+                    label: "Names resolved".to_string(),
+                    count: r.fixes.names_resolved,
+                },
+                HygieneFixView {
+                    key: "people_linked_by_domain".to_string(),
+                    label: "People linked by domain".to_string(),
+                    count: r.fixes.people_linked_by_domain,
+                },
+                HygieneFixView {
+                    key: "renewals_rolled_over".to_string(),
+                    label: "Renewals rolled over".to_string(),
+                    count: r.fixes.renewals_rolled_over,
+                },
+                HygieneFixView {
+                    key: "ai_enrichments_enqueued".to_string(),
+                    label: "AI enrichments enqueued".to_string(),
+                    count: r.fixes.ai_enrichments_enqueued,
+                },
+            ]
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|fix| fix.count > 0)
+        .collect::<Vec<_>>();
+
+    let mut gaps = Vec::new();
+    let gap_rows = vec![
+        (
+            "unnamed_people",
+            "Unnamed people",
+            unnamed_people,
+            "critical",
+            "Missing names make prep less personal.",
+        ),
+        (
+            "unknown_relationships",
+            "Unknown relationships",
+            unknown_relationships,
+            "medium",
+            "Unknown relationships reduce meeting classification accuracy.",
+        ),
+        (
+            "duplicate_people",
+            "Duplicate people",
+            duplicate_people,
+            "critical",
+            "Duplicate records fragment context and meeting history.",
+        ),
+        (
+            "missing_intelligence",
+            "Missing intelligence",
+            missing_intelligence,
+            "medium",
+            "Entities without intelligence produce sparse prep.",
+        ),
+        (
+            "stale_intelligence",
+            "Stale intelligence",
+            stale_intelligence,
+            "low",
+            "Older intelligence can miss recent customer signals.",
+        ),
+        (
+            "unsummarized_files",
+            "Unsummarized files",
+            unsummarized_files,
+            "medium",
+            "Summaries speed up context retrieval during prep.",
+        ),
+        (
+            "orphaned_meetings",
+            "Orphaned meetings",
+            orphaned_meetings,
+            "medium",
+            "Orphaned meetings do not enrich the right entities.",
+        ),
+    ];
+
+    for (key, label, count, impact, description) in gap_rows {
+        if count == 0 {
+            continue;
+        }
+        gaps.push(HygieneGapView {
+            key: key.to_string(),
+            label: label.to_string(),
+            count,
+            impact: impact.to_string(),
+            description: description.to_string(),
+            action: hygiene_gap_action(key),
+        });
+    }
+
+    let total_gaps = unnamed_people
+        + unknown_relationships
+        + missing_intelligence
+        + stale_intelligence
+        + unsummarized_files
+        + orphaned_meetings
+        + duplicate_people;
+
+    let total_fixes = report
+        .map(|r| {
+            r.fixes.relationships_reclassified
+                + r.fixes.summaries_extracted
+                + r.fixes.orphaned_meetings_linked
+                + r.fixes.meeting_counts_updated
+                + r.fixes.names_resolved
+                + r.fixes.people_linked_by_domain
+                + r.fixes.renewals_rolled_over
+                + r.fixes.ai_enrichments_enqueued
+        })
+        .unwrap_or(0);
+
+    let is_running = state
+        .hygiene_scan_running
+        .load(std::sync::atomic::Ordering::Acquire);
+
+    let (status, status_label) = if is_running {
+        ("running".to_string(), "Running".to_string())
+    } else if total_gaps == 0 {
+        ("healthy".to_string(), "Healthy".to_string())
+    } else {
+        (
+            "needs_attention".to_string(),
+            "Needs Attention".to_string(),
+        )
+    };
+
+    let queued_for_next_budget = report
+        .map(|r| {
+            (r.missing_intelligence + r.stale_intelligence)
+                .saturating_sub(r.fixes.ai_enrichments_enqueued)
+        })
+        .unwrap_or(0);
+
+    let last_scan_time = state
+        .last_hygiene_scan_at
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .or_else(|| report.map(|r| r.scanned_at.clone()));
+    let next_scan_time = state
+        .next_hygiene_scan_at
+        .lock()
+        .ok()
+        .and_then(|g| g.clone());
+
+    HygieneStatusView {
+        status,
+        status_label,
+        last_scan_time,
+        next_scan_time,
+        total_gaps,
+        total_fixes,
+        is_running,
+        fixes,
+        gaps,
+        budget: HygieneBudgetView {
+            used_today: state.hygiene_budget.used_today(),
+            daily_limit: state.hygiene_budget.daily_limit,
+            queued_for_next_budget,
+        },
+    }
 }
 
 // =============================================================================
@@ -978,11 +1315,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -1196,11 +1532,11 @@ mod tests {
 
         let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
 
-        // Detected before fixing
-        assert_eq!(report.unknown_relationships, 2);
-
         // Fixes applied
         assert_eq!(report.fixes.relationships_reclassified, 2);
+
+        // Post-fix gap count: both resolved, so 0 remaining
+        assert_eq!(report.unknown_relationships, 0);
 
         // Verify actual state
         let p1 = db.get_person("p1").unwrap().unwrap();
@@ -1736,11 +2072,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: Some(contract_end.to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -1861,7 +2196,11 @@ mod tests {
             user_company: None,
             user_title: None,
             user_focus: None,
+            internal_team_setup_completed: false,
+            internal_team_setup_version: 0,
+            internal_org_account_id: None,
             developer_mode: false,
+            personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
         }
     }
