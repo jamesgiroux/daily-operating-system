@@ -467,7 +467,7 @@ export function MeetingCard({ meeting, now: nowProp, currentMeeting: currentMeet
         filePath: selected,
         meeting: calendarEvent,
       });
-      console.log("[transcript] Result:", result);
+
       if (result.status !== "success") {
         toast.error("Transcript processing failed", {
           description: result.message || result.status,

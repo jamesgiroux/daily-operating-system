@@ -62,12 +62,12 @@ export default function EmailsPage() {
   async function handleArchiveLow() {
     setArchiving(true);
     try {
-      const count = await invoke<number>("archive_low_priority_emails");
+      await invoke<number>("archive_low_priority_emails");
       // Optimistic removal from local state
       setEmails((prev) => prev.filter((e) => e.priority !== "low"));
       setConfirmArchive(false);
       setArchivedExpanded(false);
-      console.log(`Archived ${count} emails`);
+
     } catch (err) {
       console.error("Archive failed:", err);
     } finally {
