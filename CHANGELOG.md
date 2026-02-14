@@ -8,9 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [0.7.3] - 2026-02-13
 
-Eight sprints of work (17-24) across proactive intelligence, entity management, reliability, and security. 647 Rust tests. 71 Architecture Decision Records. First release with auto-updater.
+647 Rust tests. 71 Architecture Decision Records. First release with auto-updater.
 
-### Proactive Intelligence (Sprint 22)
+### Proactive Intelligence
 
 - Weekly briefing with AI narrative, priority synthesis, and readiness assessment
 - Live proactive suggestions during workflow execution with progress stepper
@@ -18,7 +18,7 @@ Eight sprints of work (17-24) across proactive intelligence, entity management, 
 - Email signals displayed on entity detail pages with signal-type badges and relative dates
 - Agenda draft dialog for pre-meeting preparation with AI-generated starter content
 
-### Entity Management (Sprint 21)
+### Entity Management
 
 - Internal team setup: create your organization with root account, team, colleagues, and domain auto-linking
 - Parent-child account hierarchy with directory scaffolding and domain inheritance
@@ -27,20 +27,20 @@ Eight sprints of work (17-24) across proactive intelligence, entity management, 
 - Entity picker filters archived entities from queries
 - Account domains tracked in dedicated junction table with N+1 query elimination (single JOIN)
 
-### Onboarding (Sprint 21)
+### Onboarding
 
 - Internal Team Setup chapter: configure company, team, colleagues, and domains during onboarding
 - Prime Briefing chapter: trigger first briefing from onboarding wizard
-- Onboarding flow enhanced with demo data and educational content (I56/I57)
+- Onboarding flow enhanced with demo data and educational content
 
-### Personality System (Sprint 24)
+### Personality System
 
 - Configurable personality for AI copy across empty states and notifications
 - PersonalityProvider context with 5 personality options (Professional, Friendly, Playful, Zen, Direct)
 - SectionEmpty and InlineEmpty shared components replace ad-hoc empty states across all pages
 - PersonalityCard and UserProfileCard in Settings
 
-### Settings & Security (Sprint 19/23)
+### Settings & Security
 
 - Settings tabs with deep-link support (`/settings?tab=...`) for Profile, Integrations, Workflows, Intelligence, Hygiene, and Diagnostics
 - Intelligence Hygiene status API + manual scan with gap-specific actions
@@ -49,9 +49,9 @@ Eight sprints of work (17-24) across proactive intelligence, entity management, 
 - Removed hardcoded Google OAuth `client_secret` from source; loaded via `option_env!`
 - CI guard to fail builds when committed OAuth secret patterns are detected
 
-### Reliability (Sprint 17)
+### Reliability
 
-- Schema migration framework (ADR-0071): numbered SQL migrations, pre-migration backup, forward-compat guard, bootstrap for existing databases
+- Schema migration framework: numbered SQL migrations, pre-migration backup, forward-compat guard, bootstrap for existing databases
 - Transaction wrapper on `create_internal_organization` — atomic multi-record creation with rollback on failure
 - Race guard on WeekPage polling — prevents overlapping IPC calls during workflow execution
 - Email validation on person creation
@@ -61,7 +61,7 @@ Eight sprints of work (17-24) across proactive intelligence, entity management, 
 - Transcript attachment error visibility improved
 - Workflow delivery history tracks explicit failure phase and retry metadata
 
-### Auto-Updater (Sprint 23)
+### Auto-Updater
 
 - Tauri updater plugin with Minisign signature verification
 - "Check for Updates" UI in Settings with download + relaunch flow
@@ -101,9 +101,9 @@ Six sprints of work across meeting intelligence, entity relationships, security 
 
 - Meeting prep redesigned as a report: executive brief hero, agenda-first flow, right-rail navigation, appendix-style deep context
 - Agenda and Wins are now semantically separate enrichment blocks with structured source provenance (replaces flat talking points)
-- User-authored prep fields (`userAgenda`, `userNotes`) are DB-authoritative with freeze/editability rules (ADR-0065)
-- Meeting identity hardened: calendar event ID is canonical primary key across poller, reconcile, and DB (ADR-0061)
-- Unified meeting intelligence contract (`get_meeting_intelligence`) combines prep, outcomes, and transcript metadata in a single backend call (ADR-0066)
+- User-authored prep fields (`userAgenda`, `userNotes`) are DB-authoritative with freeze/editability rules
+- Meeting identity hardened: calendar event ID is canonical primary key across poller, reconcile, and DB
+- Unified meeting intelligence contract (`get_meeting_intelligence`) combines prep, outcomes, and transcript metadata in a single backend call
 - Enriched prep context persisted to `meetings_history` for durable post-meeting records
 - Meeting search across entities via Cmd+K command menu with debounced cross-entity lookup
 - Calendar description pipeline extracted and exposed in prep as `calendarNotes`
@@ -124,11 +124,11 @@ Six sprints of work across meeting intelligence, entity relationships, security 
 
 - Focus page redesigned with live capacity engine computing from calendar events
 - Deterministic action prioritization with urgency/impact scoring, top-3 recommendations, risk radar
-- Focus capacity computes from live calendar, schedule artifact retained for briefing narrative only (ADR-0062)
+- Focus capacity computes from live calendar, schedule artifact retained for briefing narrative only
 
 ### Security & Auth
 
-- OAuth hardened with PKCE (`S256`) challenge + state parameter validation (ADR-0068)
+- OAuth hardened with PKCE (`S256`) challenge + state parameter validation
 - macOS Keychain token storage with one-time legacy file migration and removal
 - Secretless token exchange and refresh with compatibility fallback for legacy clients
 - IPC input validation DTOs for action create/update with centralized validators
@@ -145,7 +145,7 @@ Six sprints of work across meeting intelligence, entity relationships, security 
 
 - App responsiveness: `check_claude_status` moved to async with `spawn_blocking`, background tasks open own SQLite connections instead of competing for shared Mutex
 - Google API retry policy with exponential backoff wired into auth, calendar, and Gmail
-- Resume latency instrumentation with p50/p95/max rollups and budget violation tracking (ADR-0067)
+- Resume latency instrumentation with p50/p95/max rollups and budget violation tracking
 - Split-lock enrichment pattern with `nice -n 10` PTY execution for background AI operations
 - Archive lifecycle reordered: reconciliation and prep freezing happen before `_today/data` cleanup
 - Claude auth check timeout reduced from 8s to 3s, focus debounce intervals increased
@@ -160,7 +160,7 @@ Six sprints of work across meeting intelligence, entity relationships, security 
 
 - Frontend meeting routes consolidated to canonical `/meeting/$meetingId` with history route as redirect
 - Theme toggle fixed: replaced broken dropdown (Radix dual-install issue) with segmented button group
-- Radix UI components migrated to explicit standalone packages, resolving dual-install portal bug (ADR-0069)
+- Radix UI components migrated to explicit standalone packages, resolving dual-install portal bug
 - Calendar poller polls immediately on startup (5s auth delay) instead of sleeping first
 - Empty prep page shows "generating" message instead of blank
 - Binary size and bundle measurement scripts for repeatable performance tracking
