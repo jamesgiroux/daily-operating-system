@@ -3002,6 +3002,7 @@ impl ActionDb {
     const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
 
     /// Insert an email signal, returning `true` if a new row was inserted.
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_email_signal(
         &self,
         email_id: &str,

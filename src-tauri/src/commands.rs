@@ -6745,7 +6745,7 @@ fn is_meeting_user_layer_read_only(meeting: &crate::db::DbMeeting) -> bool {
         });
     // Default to read-only when time can't be parsed — safer than allowing edits
     // on meetings whose temporal state is unknown.
-    end_dt.map_or(true, |e| e < now)
+    end_dt.is_none_or(|e| e < now)
 }
 
 fn normalized_item_key(value: &str) -> String {
