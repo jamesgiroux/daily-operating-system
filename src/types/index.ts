@@ -247,6 +247,7 @@ export interface WeekMeeting {
   time: string;
   title: string;
   account?: string;
+  meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
 }
@@ -308,6 +309,8 @@ export interface TimeBlock {
   end: string;
   durationMinutes: number;
   suggestedUse?: string;
+  actionId?: string;
+  meetingId?: string;
 }
 
 /** AI-identified top priority for the week (I94) */
@@ -316,6 +319,23 @@ export interface TopPriority {
   reason: string;
   meetingId?: string;
   actionId?: string;
+}
+
+export interface LiveProactiveSuggestion {
+  day: string;
+  date: string;
+  start: string;
+  end: string;
+  durationMinutes: number;
+  title: string;
+  reason: string;
+  source: "live" | string;
+  actionId?: string;
+  meetingId?: string;
+  capacityFit: number;
+  urgencyImpact: number;
+  confidence: number;
+  totalScore: number;
 }
 
 // =============================================================================
@@ -388,6 +408,22 @@ export interface EmailDetail {
   recommendedAction?: string;
   actionOwner?: string;
   actionPriority?: string;
+  emailSignals?: EmailSignal[];
+}
+
+export interface EmailSignal {
+  id?: number;
+  emailId?: string;
+  senderEmail?: string;
+  personId?: string;
+  entityId?: string;
+  entityType?: string;
+  signalType: string;
+  signalText: string;
+  confidence?: number;
+  sentiment?: string;
+  urgency?: string;
+  detectedAt?: string;
 }
 
 export interface EmailSummaryData {
@@ -578,6 +614,19 @@ export interface MeetingIntelligence {
   transcriptProcessedAt?: string;
 }
 
+export interface ApplyPrepPrefillResult {
+  meetingId: string;
+  addedAgendaItems: number;
+  notesAppended: boolean;
+  mode: string;
+}
+
+export interface AgendaDraftResult {
+  meetingId: string;
+  subject?: string;
+  body: string;
+}
+
 // =============================================================================
 // Executive Intelligence (I42)
 // =============================================================================
@@ -689,6 +738,8 @@ export interface FullMeetingPrep {
   entityReadiness?: string[];
   /** Stakeholder insights from intelligence.json (I135) */
   stakeholderInsights?: StakeholderInsight[];
+  /** Recent email-derived signals linked to meeting entity context (I215) */
+  recentEmailSignals?: EmailSignal[];
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */
@@ -895,6 +946,7 @@ export interface AccountDetail extends AccountListItem {
     content: string;
     meetingTitle: string;
   }[];
+  recentEmailSignals?: EmailSignal[];
   /** I114: Parent-child hierarchy */
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
@@ -1070,6 +1122,7 @@ export interface ProjectDetail extends ProjectListItem {
     content: string;
     meetingTitle: string;
   }[];
+  recentEmailSignals?: EmailSignal[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
 }
