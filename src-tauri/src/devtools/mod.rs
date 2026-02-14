@@ -2432,7 +2432,7 @@ fn write_mock_google_token() -> Result<(), String> {
         refresh_token: Some("mock-refresh".to_string()),
         token_uri: "https://oauth2.googleapis.com/token".to_string(),
         client_id: "mock-client-id".to_string(),
-        client_secret: Some("mock-client-secret".to_string()),
+        client_secret: "mock-client-secret".to_string().into(),
         scopes: vec![
             "https://www.googleapis.com/auth/calendar".to_string(),
             "https://www.googleapis.com/auth/gmail.modify".to_string(),

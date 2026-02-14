@@ -913,6 +913,21 @@ fn recent_win_prefix_regex() -> &'static Regex {
     })
 }
 
+fn agenda_list_item_regex() -> &'static Regex {
+    static AGENDA_LIST_ITEM_RE: OnceLock<Regex> = OnceLock::new();
+    AGENDA_LIST_ITEM_RE.get_or_init(|| {
+        Regex::new(r"^(?:[-*•]\s+|\d+[.)]\s+)(.+)$")
+            .expect("agenda list item regex must compile")
+    })
+}
+
+fn inline_numbered_agenda_regex() -> &'static Regex {
+    static INLINE_NUMBERED_AGENDA_RE: OnceLock<Regex> = OnceLock::new();
+    INLINE_NUMBERED_AGENDA_RE.get_or_init(|| {
+        Regex::new(r"(?:^|\s)\d+[.)]\s+").expect("inline numbered agenda regex must compile")
+    })
+}
+
 fn split_inline_source_tail(value: &str) -> (String, Option<String>) {
     let raw = value.trim();
     if let Some(caps) = source_tail_regex().captures(raw) {
@@ -1318,6 +1333,11 @@ fn build_prep_json(
                     obj.insert("stakeholderInsights".to_string(), json!(insights));
                 }
             }
+            if let Some(ref signals) = ctx.recent_email_signals {
+                if !signals.is_empty() {
+                    obj.insert("recentEmailSignals".to_string(), json!(signals));
+                }
+            }
         }
     }
 
@@ -1399,12 +1419,132 @@ fn push_unique_agenda_item(
     agenda.push(item);
 }
 
+fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
+    // Use null byte as sentinel — pipes appear in real agenda text (e.g. "Review pipeline | Discuss metrics").
+    let numbered = inline_numbered_agenda_regex().replace_all(value.trim(), "\x00");
+    let mut out = Vec::new();
+    for segment in numbered.split('\x00') {
+        for item in segment.split(';') {
+            let trimmed = item.trim();
+            if !trimmed.is_empty() {
+                out.push(trimmed.to_string());
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(value.trim().to_string());
+    }
+    out
+}
+
+/// Pre-sanitizes calendar agenda candidates for dedup, then collects unique items.
+/// Items are sanitized here for consistent dedup keys; `push_unique_agenda_item`
+/// re-sanitizes when consuming them (idempotent, harmless).
+fn push_calendar_agenda_candidate(
+    raw: &str,
+    agenda: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+) {
+    for candidate in split_inline_agenda_candidates(raw) {
+        let Some(cleaned) = sanitize_prep_line(&candidate) else {
+            continue;
+        };
+        let key = cleaned.to_lowercase();
+        if !seen.contains(&key) {
+            seen.insert(key);
+            agenda.push(cleaned);
+        }
+    }
+}
+
+fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
+    let Some(calendar_notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) else {
+        return Vec::new();
+    };
+
+    let mut agenda = Vec::new();
+    let mut seen = HashSet::new();
+    let mut in_agenda_section = false;
+
+    for line in calendar_notes.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let lower = trimmed.to_lowercase();
+        let agenda_prefix_len = if lower.starts_with("proposed agenda") {
+            "proposed agenda".len()
+        } else if lower.starts_with("agenda") {
+            "agenda".len()
+        } else {
+            0
+        };
+        if agenda_prefix_len > 0 {
+            let remainder = trimmed[agenda_prefix_len..].trim_start();
+            // Require delimiter or end-of-line after keyword — reject prose like
+            // "Agenda items were discussed" which is not a section header.
+            if remainder.is_empty()
+                || remainder.starts_with(':')
+                || remainder.starts_with('-')
+            {
+                in_agenda_section = true;
+                if let Some((_, rest)) = trimmed.split_once(':') {
+                    push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
+                }
+                continue;
+            }
+        }
+
+        if in_agenda_section
+            && trimmed.ends_with(':')
+            && !trimmed.starts_with('-')
+            && !trimmed.starts_with('*')
+            && !trimmed.starts_with('•')
+            && !trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+        {
+            break;
+        }
+
+        if in_agenda_section {
+            if let Some(caps) = agenda_list_item_regex().captures(trimmed) {
+                if let Some(item) = caps.get(1) {
+                    push_calendar_agenda_candidate(item.as_str(), &mut agenda, &mut seen);
+                }
+            } else {
+                push_calendar_agenda_candidate(trimmed, &mut agenda, &mut seen);
+            }
+        }
+    }
+
+    // No fallback pass needed — the first pass already matches `lower.starts_with("agenda")`
+    // which covers "agenda:", "agenda -", and any other "agenda" prefix.
+
+    agenda
+}
+
 fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
     let mut agenda: Vec<Value> = Vec::new();
     let mut seen_topics: HashSet<String> = HashSet::new();
     const MAX_ITEMS: usize = 7;
 
-    // 1. Overdue items first (most urgent)
+    // 1. Calendar agenda first (I188) — enrich around user/organizer agenda.
+    for item in extract_calendar_agenda_items(prep).iter().take(MAX_ITEMS) {
+        push_unique_agenda_item(
+            &mut agenda,
+            &mut seen_topics,
+            item,
+            Some("From calendar agenda"),
+            "calendar_note",
+            MAX_ITEMS,
+        );
+    }
+
+    // 2. Overdue items next (most urgent operational follow-up)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items {
             let is_overdue = item
@@ -1428,7 +1568,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 2. Risks (limit 2)
+    // 3. Risks (limit 2)
     if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
         for risk in risks.iter().take(2) {
             if let Some(text) = risk.as_str() {
@@ -1444,7 +1584,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 3. Questions (limit 2)
+    // 4. Questions (limit 2)
     if let Some(questions) = prep.get("questions").and_then(|v| v.as_array()) {
         for q in questions.iter().take(2) {
             if let Some(text) = q.as_str() {
@@ -1460,7 +1600,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 4. Non-overdue open items (limit 2)
+    // 5. Non-overdue open items (limit 2)
     if let Some(items) = prep.get("openItems").and_then(|v| v.as_array()) {
         for item in items.iter().take(4) {
             let is_overdue = item
@@ -1484,7 +1624,7 @@ fn generate_mechanical_agenda(prep: &Value) -> Vec<Value> {
         }
     }
 
-    // 5. Wins are fallback only when agenda is still sparse.
+    // 6. Wins are fallback only when agenda is still sparse.
     if agenda.len() < 3 {
         if let Some(wins) = prep
             .get("recentWins")
@@ -1802,6 +1942,7 @@ pub struct EmailEnrichment {
     pub summary: Option<String>,
     pub action: Option<String>,
     pub arc: Option<String>,
+    pub signals: Vec<crate::types::EmailSignal>,
 }
 
 /// Parse Claude's email enrichment response.
@@ -1812,6 +1953,7 @@ pub struct EmailEnrichment {
 /// SUMMARY: one-line summary
 /// ACTION: recommended next action
 /// ARC: conversation context
+/// SIGNALS: [{"signalType":"timeline","signalText":"...", "confidence":0.8}]
 /// END_ENRICHMENT
 /// ```
 pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment> {
@@ -1841,6 +1983,11 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
                 current.action = Some(val.trim().to_string());
             } else if let Some(val) = trimmed.strip_prefix("ARC:") {
                 current.arc = Some(val.trim().to_string());
+            } else if let Some(val) = trimmed.strip_prefix("SIGNALS:") {
+                current.signals = serde_json::from_str::<Vec<crate::types::EmailSignal>>(
+                    val.trim(),
+                )
+                .unwrap_or_default();
             }
         }
     }
@@ -1897,12 +2044,15 @@ pub fn enrich_emails(
     let prompt = format!(
         "You are enriching email briefing data. {}\
          For each email below, provide a one-line summary, \
-         a recommended action, and brief conversation arc context.\n\n\
+         a recommended action, brief conversation arc context, and a JSON array \
+         of structured signals. Signal types must be one of: expansion, question, timeline, \
+         sentiment, feedback, relationship. Keep signalText concise.\n\n\
          Format your response as:\n\
          ENRICHMENT:email-id-here\n\
          SUMMARY: <one-line summary>\n\
          ACTION: <recommended next action>\n\
          ARC: <conversation context>\n\
+         SIGNALS: <JSON array of objects with signalType, signalText, optional confidence/sentiment/urgency>\n\
          END_ENRICHMENT\n\n\
          {}",
         user_fragment, email_context
@@ -1937,6 +2087,9 @@ pub fn enrich_emails(
                     }
                     if let Some(ref arc) = enrichment.arc {
                         obj.insert("conversationArc".to_string(), json!(arc));
+                    }
+                    if !enrichment.signals.is_empty() {
+                        obj.insert("emailSignals".to_string(), json!(enrichment.signals));
                     }
                 }
             }
@@ -2615,6 +2768,20 @@ pub fn enrich_preps(
                 }
             }
         }
+        if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
+            if !notes.trim().is_empty() {
+                prep_context.push_str("Calendar Notes:\n");
+                prep_context.push_str(notes.trim());
+                prep_context.push('\n');
+            }
+        }
+        let calendar_agenda = extract_calendar_agenda_items(&prep);
+        if !calendar_agenda.is_empty() {
+            prep_context.push_str("Calendar Agenda:\n");
+            for item in &calendar_agenda {
+                prep_context.push_str(&format!("- {}\n", item));
+            }
+        }
         if let Some(risks) = prep.get("risks").and_then(|v| v.as_array()) {
             prep_context.push_str("Risks:\n");
             for r in risks {
@@ -2659,11 +2826,12 @@ pub fn enrich_preps(
     let prompt = format!(
         "You are refining meeting prep reports for a Customer Success Manager.\n\n\
          For each meeting below, review recent wins, risks, open items, questions, \
-         and current mechanical agenda. Produce:\n\
+         calendar notes, and current mechanical agenda. Produce:\n\
          1) A refined agenda that:\n\
+         0. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
          1. Orders items by impact (highest-stakes first)\n\
          2. Adds a brief 'why' rationale for each item\n\
-         3. Uses source category (risk, talking_point, question, open_item)\n\
+         3. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
          4. Avoids duplicating recent wins unless there are no other substantive topics\n\
          5. Caps at 7 items per meeting\n\
          2) A clean recent wins list (max 4) with source provenance separated.\n\n\
@@ -2991,6 +3159,10 @@ pub struct TimeSuggestion {
     pub block_day: String,
     pub block_start: String,
     pub suggested_use: String,
+    #[serde(default)]
+    pub action_id: Option<String>,
+    #[serde(default)]
+    pub meeting_id: Option<String>,
 }
 
 /// Parse time-block suggestions from Claude output.
@@ -3263,6 +3435,49 @@ pub fn enrich_week(
         })
         .unwrap_or_default();
 
+    let candidate_action_ids: Vec<String> = overview
+        .get("actionSummary")
+        .and_then(|v| v.as_object())
+        .map(|summary| {
+            ["overdue", "dueThisWeekItems"]
+                .into_iter()
+                .flat_map(|key| {
+                    summary
+                        .get(key)
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter_map(|item| {
+                    item.get("id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let candidate_meeting_ids: Vec<String> = day_shapes
+        .map(|shapes| {
+            shapes
+                .iter()
+                .flat_map(|shape| {
+                    shape
+                        .get("meetings")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                })
+                .filter_map(|meeting| {
+                    meeting
+                        .get("meetingId")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
     // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
         let db_guard = state.db.lock().ok();
@@ -3299,6 +3514,8 @@ pub fn enrich_week(
          - Actions: {overdue_count} overdue, {due_this_week} due this week\n\
          - Account health alerts: {hygiene_count}\n\
          - Available focus blocks: {available_blocks}\n\
+         - Valid action IDs for references: {candidate_action_ids}\n\
+         - Valid meeting IDs for references: {candidate_meeting_ids}\n\
          {intel_section}\n\
          Provide three sections in your response:\n\n\
          1. A 2-3 sentence narrative framing the week. Focus on what makes this week \
@@ -3307,7 +3524,8 @@ pub fn enrich_week(
          has the biggest impact. Return as a JSON object with title, reason, and optionally \
          meetingId or actionId if it maps to a specific item.\n\n\
          3. Suggestions for how to use the available time blocks. Return as a JSON array \
-         with blockDay, blockStart, and suggestedUse fields.\n\n\
+         with blockDay, blockStart, suggestedUse, and optional actionId/meetingId fields. \
+         Include actionId or meetingId ONLY when you can confidently map to one of the valid IDs above.\n\n\
          Format your response EXACTLY as:\n\n\
          WEEK_NARRATIVE:\n\
          <your 2-3 sentence narrative>\n\
@@ -3316,7 +3534,7 @@ pub fn enrich_week(
          {{\"title\": \"...\", \"reason\": \"...\"}}\n\
          END_TOP_PRIORITY\n\n\
          SUGGESTIONS:\n\
-         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\"}}]\n\
+         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"...\", \"actionId\": \"optional\", \"meetingId\": \"optional\"}}]\n\
          END_SUGGESTIONS",
         role_label = role_label,
         user_fragment = user_fragment,
@@ -3337,6 +3555,16 @@ pub fn enrich_week(
             "none".to_string()
         } else {
             available_blocks.join("; ")
+        },
+        candidate_action_ids = if candidate_action_ids.is_empty() {
+            "none".to_string()
+        } else {
+            candidate_action_ids.join(", ")
+        },
+        candidate_meeting_ids = if candidate_meeting_ids.is_empty() {
+            "none".to_string()
+        } else {
+            candidate_meeting_ids.join(", ")
         },
     );
 
@@ -3392,6 +3620,22 @@ pub fn enrich_week(
                                     "suggestedUse".to_string(),
                                     json!(suggestion.suggested_use),
                                 );
+                                if let Some(ref action_id) = suggestion.action_id {
+                                    if !action_id.trim().is_empty() {
+                                        block
+                                            .as_object_mut()
+                                            .unwrap()
+                                            .insert("actionId".to_string(), json!(action_id));
+                                    }
+                                }
+                                if let Some(ref meeting_id) = suggestion.meeting_id {
+                                    if !meeting_id.trim().is_empty() {
+                                        block
+                                            .as_object_mut()
+                                            .unwrap()
+                                            .insert("meetingId".to_string(), json!(meeting_id));
+                                    }
+                                }
                             }
                         }
                     }
@@ -4158,6 +4402,134 @@ END_AGENDA
         let response = "Here's some random output without markers.";
         let enrichments = parse_agenda_enrichment(response);
         assert!(enrichments.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_items_from_notes() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n1. Renewal decision timeline\n- Review Team B adoption risk\nQuestions:\n- Confirm legal review owner",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Renewal decision timeline");
+        assert_eq!(agenda[1], "Review Team B adoption risk");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_numbered_inline() {
+        let prep = json!({
+            "calendarNotes": "Agenda: 1. Review proposal 2. Discuss timeline 3. Close action items",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+        assert_eq!(agenda[2], "Close action items");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_semicolons() {
+        let prep = json!({
+            "calendarNotes": "Agenda: Review proposal; Discuss timeline; Close items",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 3);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+        assert_eq!(agenda[2], "Close items");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_dedup() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review proposal\n- Discuss timeline\n- Review proposal",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_empty_notes() {
+        let prep = json!({});
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
+
+        let prep2 = json!({ "calendarNotes": null });
+        let agenda2 = extract_calendar_agenda_items(&prep2);
+        assert!(agenda2.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_no_agenda_section() {
+        let prep = json!({
+            "calendarNotes": "Please join the call on time.\nDial-in: 555-1234",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_stops_at_next_header() {
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review proposal\n- Discuss timeline\nQuestions:\n- Who owns legal review?\n- When is the deadline?",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review proposal");
+        assert_eq!(agenda[1], "Discuss timeline");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_pipe_in_text() {
+        // Validates Fix 1: pipes in agenda text should not cause incorrect splits.
+        let prep = json!({
+            "calendarNotes": "Agenda:\n- Review pipeline | Discuss metrics\n- Budget approval",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review pipeline | Discuss metrics");
+        assert_eq!(agenda[1], "Budget approval");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_colon_variant() {
+        // Validates that the first pass handles "agenda:" (with colon) — no fallback needed.
+        let prep = json!({
+            "calendarNotes": "agenda: Review Q1 numbers; Plan Q2 targets",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert_eq!(agenda.len(), 2);
+        assert_eq!(agenda[0], "Review Q1 numbers");
+        assert_eq!(agenda[1], "Plan Q2 targets");
+    }
+
+    #[test]
+    fn test_generate_mechanical_agenda_prefers_calendar_agenda() {
+        let prep = json!({
+            "calendarNotes": "Agenda: 1) Renewal timeline; 2) Expansion scope",
+            "openItems": [
+                {"title": "Send revised proposal", "isOverdue": true},
+            ],
+            "risks": ["Budget scrutiny from finance"],
+        });
+        let agenda = generate_mechanical_agenda(&prep);
+        assert_eq!(agenda[0]["source"], "calendar_note");
+        assert_eq!(agenda[0]["topic"], "Renewal timeline");
+        assert_eq!(agenda[1]["source"], "calendar_note");
+        assert_eq!(agenda[1]["topic"], "Expansion scope");
+    }
+
+    #[test]
+    fn test_extract_calendar_agenda_rejects_prose_with_agenda_word() {
+        // "Agenda" at the start of a sentence without a delimiter should NOT
+        // trigger section mode — prevents false positive extraction.
+        let prep = json!({
+            "calendarNotes": "Agenda items were discussed in the last meeting.\nPlease review the notes.",
+        });
+        let agenda = extract_calendar_agenda_items(&prep);
+        assert!(agenda.is_empty());
     }
 
     #[test]

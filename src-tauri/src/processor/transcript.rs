@@ -117,6 +117,14 @@ pub fn process_transcript(
         }
     };
 
+    // Debug: log raw Claude output for transcript processing
+    log::info!(
+        "Transcript AI output for '{}' ({} bytes): {}",
+        meeting.title,
+        output.len(),
+        if output.len() > 500 { &output[..500] } else { &output }
+    );
+
     // 4. Parse response
     let parsed = parse_enrichment_response(&output);
     let summary = parsed.summary.clone();
@@ -235,6 +243,18 @@ pub fn process_transcript(
         append_to_impact_log(workspace, meeting, &wins);
     }
 
+    // If summary is empty after parsing, include truncated raw output for debugging
+    let debug_message = if summary.is_empty() {
+        let preview = if output.len() > 200 {
+            format!("{}...", &output[..200])
+        } else {
+            output.clone()
+        };
+        Some(format!("Empty parse result. Raw output: {}", preview))
+    } else {
+        None
+    };
+
     TranscriptResult {
         status: "success".to_string(),
         summary: Some(summary),
@@ -243,7 +263,7 @@ pub fn process_transcript(
         risks,
         decisions,
         actions: extracted_actions,
-        message: None,
+        message: debug_message,
     }
 }
 
