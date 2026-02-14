@@ -21,8 +21,8 @@ use crate::state::{reload_config, AppState, DbTryRead};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
     ExecutionRecord, FocusAvailability, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus,
-    InboxFile, MeetingIntelligence, MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority,
-    SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
+    InboxFile, LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
+    PostMeetingCaptureConfig, Priority, SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -1076,6 +1076,25 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
             message: format!("No week data: {}", e),
         },
     }
+}
+
+/// Live proactive suggestions computed from current calendar + SQLite action state.
+#[tauri::command]
+pub async fn get_live_proactive_suggestions(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<LiveProactiveSuggestion>, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    // Use a dedicated DB connection so this async command never holds AppState DB lock
+    // across Google API awaits.
+    let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+    let (account_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
+    crate::queries::proactive::get_live_proactive_suggestions(&config, account_hints, actions).await
 }
 
 /// Retry only week AI enrichment without rerunning full week prepare/deliver.
@@ -4615,6 +4634,7 @@ pub struct AccountDetailResult {
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::StakeholderSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     pub parent_id: Option<String>,
     pub parent_name: Option<String>,
     pub children: Vec<AccountChildSummary>,
@@ -4867,6 +4887,9 @@ pub fn get_account_detail(
     let recent_captures = db
         .get_captures_for_account(&account_id, 90)
         .unwrap_or_default();
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&account_id, 12)
+        .unwrap_or_default();
 
     // I114: Resolve parent name for child accounts, children for parent accounts
     let parent_name = account
@@ -4917,6 +4940,7 @@ pub fn get_account_detail(
         linked_people,
         signals,
         recent_captures,
+        recent_email_signals,
         parent_id: account.parent_id,
         parent_name,
         children,
@@ -5723,6 +5747,7 @@ pub struct ProjectDetailResult {
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::ProjectSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -5826,6 +5851,9 @@ pub fn get_project_detail(
     let recent_captures = db
         .get_captures_for_project(&project_id, 90)
         .unwrap_or_default();
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&project_id, 12)
+        .unwrap_or_default();
 
     Ok(ProjectDetailResult {
         id: project.id,
@@ -5842,6 +5870,7 @@ pub fn get_project_detail(
         linked_people,
         signals,
         recent_captures,
+        recent_email_signals,
         intelligence,
     })
 }
@@ -6442,6 +6471,295 @@ pub fn get_account_events(
 // I194: User Agenda + Notes Editability (ADR-0065)
 // =============================================================================
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPrepPrefillResult {
+    pub meeting_id: String,
+    pub added_agenda_items: usize,
+    pub notes_appended: bool,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgendaDraftResult {
+    pub meeting_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    pub body: String,
+}
+
+fn is_meeting_user_layer_read_only(meeting: &crate::db::DbMeeting) -> bool {
+    if meeting.prep_frozen_at.is_some() {
+        return true;
+    }
+    let now = chrono::Utc::now();
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or_else(|| {
+            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
+        });
+    // Default to read-only when time can't be parsed — safer than allowing edits
+    // on meetings whose temporal state is unknown.
+    end_dt.map_or(true, |e| e < now)
+}
+
+fn normalized_item_key(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn merge_user_agenda(existing: &[String], incoming: &[String]) -> (Vec<String>, usize) {
+    let mut merged = existing.to_vec();
+    let mut seen: std::collections::HashSet<String> = existing
+        .iter()
+        .map(|item| normalized_item_key(item))
+        .filter(|k| !k.is_empty())
+        .collect();
+    let mut added = 0usize;
+
+    for item in incoming {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = normalized_item_key(trimmed);
+        if key.is_empty() || seen.contains(&key) {
+            continue;
+        }
+        merged.push(trimmed.to_string());
+        seen.insert(key);
+        added += 1;
+    }
+
+    (merged, added)
+}
+
+fn merge_user_notes(existing: Option<&str>, notes_append: &str) -> (Option<String>, bool) {
+    let append = notes_append.trim();
+    if append.is_empty() {
+        return (existing.map(|s| s.to_string()), false);
+    }
+
+    match existing.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(current) if current.contains(append) => (Some(current.to_string()), false),
+        Some(current) => (Some(format!("{}\n\n{}", current, append)), true),
+        None => (Some(append.to_string()), true),
+    }
+}
+
+fn apply_meeting_prep_prefill_inner(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    agenda_items: &[String],
+    notes_append: &str,
+) -> Result<ApplyPrepPrefillResult, String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    if is_meeting_user_layer_read_only(&meeting) {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
+    }
+
+    let existing_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref()).unwrap_or_default();
+    let (merged_agenda, added_agenda_items) = merge_user_agenda(&existing_agenda, agenda_items);
+    let agenda_json = if merged_agenda.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::to_string(&merged_agenda)
+                .map_err(|e| format!("Serialize error: {}", e))?,
+        )
+    };
+
+    let (merged_notes, notes_appended) = merge_user_notes(meeting.user_notes.as_deref(), notes_append);
+    db.update_meeting_user_layer(
+        meeting_id,
+        agenda_json.as_deref(),
+        merged_notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ApplyPrepPrefillResult {
+        meeting_id: meeting_id.to_string(),
+        added_agenda_items,
+        notes_appended,
+        mode: "append_dedupe".to_string(),
+    })
+}
+
+fn generate_agenda_draft_body(
+    title: &str,
+    time_range: Option<&str>,
+    agenda_items: &[String],
+    context_hint: Option<&str>,
+    context: Option<&str>,
+) -> String {
+    let mut body = String::new();
+    body.push_str(&format!("Hi all,\n\nAhead of {}, here is a proposed agenda", title));
+    if let Some(range) = time_range.filter(|value| !value.trim().is_empty()) {
+        body.push_str(&format!(" for {}.", range));
+    } else {
+        body.push('.');
+    }
+    body.push_str("\n\n");
+
+    if agenda_items.is_empty() {
+        body.push_str("1. Confirm priorities and desired outcomes\n");
+        body.push_str("2. Review current risks and blockers\n");
+        body.push_str("3. Align on owners and next steps\n");
+    } else {
+        for (idx, item) in agenda_items.iter().enumerate() {
+            body.push_str(&format!("{}. {}\n", idx + 1, item));
+        }
+    }
+
+    if let Some(hint) = context_hint.map(str::trim).filter(|s| !s.is_empty()) {
+        body.push_str(&format!("\nAdditional context to cover: {}\n", hint));
+    }
+
+    if let Some(summary) = context
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.lines().next().unwrap_or(s).trim())
+        .filter(|s| !s.is_empty())
+    {
+        body.push_str(&format!("\nCurrent context: {}\n", summary));
+    }
+
+    body.push_str("\nPlease reply with additions or edits.\n\nThanks");
+    body
+}
+
+fn build_agenda_draft_result(
+    meeting: &crate::db::DbMeeting,
+    prep: Option<&FullMeetingPrep>,
+    context_hint: Option<&str>,
+) -> AgendaDraftResult {
+    let mut agenda_items: Vec<String> = Vec::new();
+    if let Some(prep) = prep {
+        if let Some(ref user_agenda) = prep.user_agenda {
+            agenda_items.extend(user_agenda.iter().map(|item| item.trim().to_string()));
+        }
+        if agenda_items.is_empty() {
+            if let Some(ref proposed) = prep.proposed_agenda {
+                agenda_items.extend(
+                    proposed
+                        .iter()
+                        .map(|item| item.topic.trim().to_string())
+                        .filter(|item| !item.is_empty()),
+                );
+            }
+        }
+    }
+    agenda_items.retain(|item| !item.is_empty());
+    let mut seen = std::collections::HashSet::new();
+    agenda_items.retain(|item| seen.insert(normalized_item_key(item)));
+
+    let title = prep
+        .map(|p| p.title.as_str())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or(&meeting.title);
+    let time_range = prep.map(|p| p.time_range.as_str());
+    let context = prep
+        .and_then(|p| p.meeting_context.as_deref())
+        .or(meeting.summary.as_deref());
+
+    AgendaDraftResult {
+        meeting_id: meeting.id.clone(),
+        subject: Some(format!("Agenda for {}", title)),
+        body: generate_agenda_draft_body(title, time_range, &agenda_items, context_hint, context),
+    }
+}
+
+/// Apply AI-suggested prep additions in append + dedupe mode.
+#[tauri::command]
+pub fn apply_meeting_prep_prefill(
+    meeting_id: String,
+    agenda_items: Vec<String>,
+    notes_append: String,
+    state: State<Arc<AppState>>,
+) -> Result<ApplyPrepPrefillResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let result = apply_meeting_prep_prefill_inner(db, &meeting_id, &agenda_items, &notes_append)?;
+
+    // Mirror write to active prep JSON (best-effort) for immediate UI coherence.
+    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                let existing = json
+                    .get("userAgenda")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let (merged_agenda, _) = merge_user_agenda(&existing, &agenda_items);
+                if let Some(obj) = json.as_object_mut() {
+                    if merged_agenda.is_empty() {
+                        obj.remove("userAgenda");
+                    } else {
+                        obj.insert("userAgenda".to_string(), serde_json::json!(merged_agenda));
+                    }
+                    let existing_notes = obj.get("userNotes").and_then(|v| v.as_str());
+                    let (merged_notes, _) = merge_user_notes(existing_notes, &notes_append);
+                    if let Some(notes) = merged_notes {
+                        obj.insert("userNotes".to_string(), serde_json::json!(notes));
+                    }
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Generate a draft agenda message from current prep context.
+#[tauri::command]
+pub fn generate_meeting_agenda_message_draft(
+    meeting_id: String,
+    context_hint: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<AgendaDraftResult, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+    let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+
+    Ok(build_agenda_draft_result(
+        &meeting,
+        prep.as_ref(),
+        context_hint.as_deref(),
+    ))
+}
+
 /// Update user-authored agenda items on a meeting prep file.
 #[tauri::command]
 pub fn update_meeting_user_agenda(
@@ -6456,17 +6774,7 @@ pub fn update_meeting_user_agenda(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let now = chrono::Utc::now();
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or_else(|| {
-            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
-        });
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    if is_past || is_frozen {
+    if is_meeting_user_layer_read_only(&meeting) {
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
@@ -6515,17 +6823,7 @@ pub fn update_meeting_user_notes(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let now = chrono::Utc::now();
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or_else(|| {
-            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
-        });
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    if is_past || is_frozen {
+    if is_meeting_user_layer_read_only(&meeting) {
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
@@ -6756,5 +7054,222 @@ mod tests {
             .unwrap();
         assert!(after.contains("recentWins"));
         assert!(after.contains("recentWinSources"));
+    }
+
+    #[test]
+    fn test_apply_meeting_prep_prefill_additive_and_idempotent() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("actions.db");
+        let db = ActionDb::open_at(db_path).expect("open db");
+
+        let meeting = DbMeeting {
+            id: "mtg-prefill".to_string(),
+            title: "Prefill Test".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
+            end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: Some("Context summary".to_string()),
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+
+        let first = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-prefill",
+            &["Confirm blockers".to_string(), "Agree owners".to_string()],
+            "Bring latest renewal risk updates.",
+        )
+        .expect("first prefill");
+        assert_eq!(first.added_agenda_items, 2);
+        assert!(first.notes_appended);
+
+        let second = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-prefill",
+            &["Confirm blockers".to_string(), "Agree owners".to_string()],
+            "Bring latest renewal risk updates.",
+        )
+        .expect("second prefill");
+        assert_eq!(second.added_agenda_items, 0);
+        assert!(!second.notes_appended);
+
+        let updated = db
+            .get_meeting_intelligence_row("mtg-prefill")
+            .expect("load meeting")
+            .expect("meeting exists");
+        let agenda = parse_user_agenda_json(updated.user_agenda_json.as_deref()).unwrap_or_default();
+        assert_eq!(agenda.len(), 2);
+        assert!(updated
+            .user_notes
+            .unwrap_or_default()
+            .contains("renewal risk updates"));
+    }
+
+    #[test]
+    fn test_apply_meeting_prep_prefill_blocks_past_or_frozen() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("actions.db");
+        let db = ActionDb::open_at(db_path).expect("open db");
+
+        let past = DbMeeting {
+            id: "mtg-past".to_string(),
+            title: "Past Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() - chrono::Duration::hours(4)).to_rfc3339(),
+            end_time: Some((Utc::now() - chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&past).expect("upsert past meeting");
+
+        let err = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-past",
+            &["Item".to_string()],
+            "notes",
+        )
+        .expect_err("past meeting should be read-only");
+        assert!(err.contains("read-only"));
+
+        let frozen = DbMeeting {
+            id: "mtg-frozen".to_string(),
+            title: "Frozen Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
+            end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: Some("{}".to_string()),
+            prep_frozen_at: Some(Utc::now().to_rfc3339()),
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&frozen).expect("upsert frozen meeting");
+
+        let frozen_err = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-frozen",
+            &["Item".to_string()],
+            "notes",
+        )
+        .expect_err("frozen meeting should be read-only");
+        assert!(frozen_err.contains("read-only"));
+    }
+
+    #[test]
+    fn test_generate_meeting_agenda_message_draft_deterministic_structure() {
+        let meeting = DbMeeting {
+            id: "mtg-draft".to_string(),
+            title: "Acme Weekly".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: Utc::now().to_rfc3339(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: Some("Renewal risk still elevated.".to_string()),
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+
+        let prep = FullMeetingPrep {
+            file_path: "preps/mtg-draft.json".to_string(),
+            calendar_event_id: None,
+            title: "Acme Weekly".to_string(),
+            time_range: "Tuesday 2:00 PM".to_string(),
+            meeting_context: Some("Renewal risk remains high.".to_string()),
+            calendar_notes: None,
+            account_snapshot: None,
+            quick_context: None,
+            user_agenda: None,
+            user_notes: None,
+            attendees: None,
+            since_last: None,
+            strategic_programs: None,
+            current_state: None,
+            open_items: None,
+            risks: None,
+            talking_points: None,
+            recent_wins: None,
+            recent_win_sources: None,
+            questions: None,
+            key_principles: None,
+            references: None,
+            raw_markdown: None,
+            stakeholder_signals: None,
+            attendee_context: None,
+            proposed_agenda: Some(vec![
+                crate::types::AgendaItem {
+                    topic: "Align on renewal path".to_string(),
+                    why: None,
+                    source: None,
+                },
+                crate::types::AgendaItem {
+                    topic: "Confirm owner handoffs".to_string(),
+                    why: None,
+                    source: None,
+                },
+            ]),
+            intelligence_summary: None,
+            entity_risks: None,
+            entity_readiness: None,
+            stakeholder_insights: None,
+            recent_email_signals: None,
+        };
+
+        let draft = build_agenda_draft_result(&meeting, Some(&prep), Some("Cover timeline risks"));
+        assert_eq!(draft.subject.as_deref(), Some("Agenda for Acme Weekly"));
+        assert!(draft.body.contains("1. Align on renewal path"));
+        assert!(draft.body.contains("2. Confirm owner handoffs"));
+        assert!(draft.body.contains("Cover timeline risks"));
+        assert!(draft.body.contains("Please reply with additions or edits."));
     }
 }
