@@ -1257,6 +1257,72 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Get all accounts with their domains in a single JOIN query.
+    ///
+    /// Eliminates N+1 queries when callers need domains for many accounts.
+    /// Returns `Vec<(DbAccount, Vec<String>)>` — each tuple is an account + its domains.
+    pub fn get_all_accounts_with_domains(
+        &self,
+        include_archived: bool,
+    ) -> Result<Vec<(DbAccount, Vec<String>)>, DbError> {
+        let query = if include_archived {
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived, ad.domain
+             FROM accounts a
+             LEFT JOIN account_domains ad ON a.id = ad.account_id
+             ORDER BY a.id, ad.domain"
+        } else {
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived, ad.domain
+             FROM accounts a
+             LEFT JOIN account_domains ad ON a.id = ad.account_id
+             WHERE a.archived = 0
+             ORDER BY a.id, ad.domain"
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let mut rows = stmt.query([])?;
+
+        let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
+        let mut current_id: Option<String> = None;
+
+        while let Some(row) = rows.next()? {
+            let account_id: String = row.get(0)?;
+            let domain: Option<String> = row.get(13)?;
+
+            if current_id.as_deref() != Some(&account_id) {
+                // New account — push a new entry
+                let account = DbAccount {
+                    id: account_id.clone(),
+                    name: row.get(1)?,
+                    lifecycle: row.get(2)?,
+                    arr: row.get(3)?,
+                    health: row.get(4)?,
+                    contract_start: row.get(5)?,
+                    contract_end: row.get(6)?,
+                    nps: row.get(7)?,
+                    tracker_path: row.get(8)?,
+                    parent_id: row.get(9)?,
+                    is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+                    updated_at: row.get(11)?,
+                    archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
+                };
+                let domains = domain.into_iter().collect();
+                result.push((account, domains));
+                current_id = Some(account_id);
+            } else if let Some(d) = domain {
+                // Same account — append domain
+                if let Some(last) = result.last_mut() {
+                    last.1.push(d);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Copy domains from parent to child (idempotent).
     pub fn copy_account_domains(&self, parent_id: &str, child_id: &str) -> Result<(), DbError> {
         self.conn.execute(
@@ -7094,5 +7160,91 @@ mod tests {
             )
             .expect("query");
         assert_eq!(meeting_type, "all_hands");
+    }
+
+    fn sample_account(id: &str, name: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+        }
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_single_query() {
+        let db = test_db();
+
+        let acct = sample_account("acme", "Acme Corp");
+        db.upsert_account(&acct).unwrap();
+        db.set_account_domains("acme", &["acme.com".to_string(), "acme.io".to_string()])
+            .unwrap();
+
+        let acct2 = sample_account("globex", "Globex Inc");
+        db.upsert_account(&acct2).unwrap();
+        db.set_account_domains("globex", &["globex.com".to_string()])
+            .unwrap();
+
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Find acme
+        let acme = results.iter().find(|(a, _)| a.id == "acme").unwrap();
+        assert_eq!(acme.0.name, "Acme Corp");
+        assert_eq!(acme.1.len(), 2);
+        assert!(acme.1.contains(&"acme.com".to_string()));
+        assert!(acme.1.contains(&"acme.io".to_string()));
+
+        // Find globex
+        let globex = results.iter().find(|(a, _)| a.id == "globex").unwrap();
+        assert_eq!(globex.1.len(), 1);
+        assert_eq!(globex.1[0], "globex.com");
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_no_domains() {
+        let db = test_db();
+
+        let acct = sample_account("solo", "Solo Corp");
+        db.upsert_account(&acct).unwrap();
+
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.id, "solo");
+        assert!(results[0].1.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_filters_archived() {
+        let db = test_db();
+
+        let active = sample_account("active", "Active Corp");
+        db.upsert_account(&active).unwrap();
+        db.set_account_domains("active", &["active.com".to_string()])
+            .unwrap();
+
+        let mut archived = sample_account("old", "Old Corp");
+        archived.archived = true;
+        db.upsert_account(&archived).unwrap();
+        db.set_account_domains("old", &["old.com".to_string()])
+            .unwrap();
+
+        // Exclude archived
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.id, "active");
+
+        // Include archived
+        let results = db.get_all_accounts_with_domains(true).unwrap();
+        assert_eq!(results.len(), 2);
     }
 }
