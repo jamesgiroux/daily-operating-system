@@ -113,6 +113,9 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(account_row)) = db.get_account_by_name(&matched.name) {
+                            ctx["entity_id"] = json!(account_row.id);
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -239,6 +242,9 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(account_row)) = db.get_account_by_name(&matched.name) {
+                            ctx["entity_id"] = json!(account_row.id);
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -267,6 +273,16 @@ fn gather_meeting_context(
         }
 
         _ => {}
+    }
+
+    if let Some(db) = db {
+        if let Some(entity_id) = ctx
+            .get("entity_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+        {
+            inject_recent_email_signals(db, &entity_id, &mut ctx);
+        }
     }
 
     ctx
@@ -321,6 +337,14 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
                 })
             })
             .collect::<Vec<_>>());
+    }
+}
+
+fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
+    if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, 8) {
+        if !signals.is_empty() {
+            ctx["recent_email_signals"] = json!(signals);
+        }
     }
 }
 
