@@ -203,17 +203,14 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             db.get_meeting_entity_map(&meeting_ids)
         }) {
             DbTryRead::Ok(Ok(entity_map)) => {
-                let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-                if !meeting_ids.is_empty() {
-                    for m in &mut meetings {
-                        if let Some(entities) = entity_map.get(&m.id) {
-                            m.linked_entities = Some(entities.clone());
-                            // First account entity also populates account_id + account name
-                            if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
-                            {
-                                m.account_id = Some(acct.id.clone());
-                                m.account = Some(acct.name.clone());
-                            }
+                for m in &mut meetings {
+                    if let Some(entities) = entity_map.get(&m.id) {
+                        m.linked_entities = Some(entities.clone());
+                        // First account entity also populates account_id + account name
+                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
+                        {
+                            m.account_id = Some(acct.id.clone());
+                            m.account = Some(acct.name.clone());
                         }
                     }
                 }
