@@ -25,9 +25,13 @@ pub fn resolve_destination(
     classification: &Classification,
     workspace: &Path,
     filename: &str,
+    entity_tracker_path: Option<&str>,
 ) -> Option<PathBuf> {
     match classification {
         Classification::MeetingNotes { account } => {
+            if let Some(tp) = entity_tracker_path {
+                return Some(workspace.join(tp).join("Meeting-Notes").join(filename));
+            }
             if let Some(account) = account {
                 // Route to Accounts/<name>/Meeting-Notes/ (ADR-0059)
                 let account_dir = sanitize_dir_name(account);
@@ -46,6 +50,9 @@ pub fn resolve_destination(
         }
 
         Classification::AccountUpdate { account } => {
+            if let Some(tp) = entity_tracker_path {
+                return Some(workspace.join(tp).join("Documents").join(filename));
+            }
             // Route to Accounts/<name>/Documents/ (ADR-0059)
             let account_dir = sanitize_dir_name(account);
             Some(
@@ -171,7 +178,7 @@ mod tests {
         let classification = Classification::MeetingNotes {
             account: Some("acme corp".to_string()),
         };
-        let dest = resolve_destination(&classification, workspace, "notes.md");
+        let dest = resolve_destination(&classification, workspace, "notes.md", None);
         assert!(dest.is_some());
         let dest = dest.unwrap();
         assert_eq!(
@@ -184,7 +191,7 @@ mod tests {
     fn test_resolve_meeting_notes_no_account() {
         let workspace = Path::new("/workspace");
         let classification = Classification::MeetingNotes { account: None };
-        let dest = resolve_destination(&classification, workspace, "notes.md");
+        let dest = resolve_destination(&classification, workspace, "notes.md", None);
         assert!(dest.is_some());
         let dest = dest.unwrap();
         assert!(dest.starts_with("/workspace/_archive/"));
@@ -197,7 +204,7 @@ mod tests {
         let classification = Classification::AccountUpdate {
             account: "acme corp".to_string(),
         };
-        let dest = resolve_destination(&classification, workspace, "update.md");
+        let dest = resolve_destination(&classification, workspace, "update.md", None);
         assert!(dest.is_some());
         let dest = dest.unwrap();
         assert_eq!(
@@ -231,7 +238,25 @@ mod tests {
     fn test_resolve_unknown_stays() {
         let workspace = Path::new("/workspace");
         let classification = Classification::Unknown;
-        let dest = resolve_destination(&classification, workspace, "mystery.md");
+        let dest = resolve_destination(&classification, workspace, "mystery.md", None);
         assert!(dest.is_none());
+    }
+
+    #[test]
+    fn test_resolve_with_entity_override_uses_tracker_path() {
+        let workspace = Path::new("/workspace");
+        let classification = Classification::MeetingNotes { account: None };
+        let dest = resolve_destination(
+            &classification,
+            workspace,
+            "notes.md",
+            Some("Internal/Acme/Core-Team"),
+        );
+        assert_eq!(
+            dest,
+            Some(PathBuf::from(
+                "/workspace/Internal/Acme/Core-Team/Meeting-Notes/notes.md"
+            ))
+        );
     }
 }

@@ -393,6 +393,8 @@ pub struct IntelligenceContext {
     pub open_actions: String,
     /// Recent captures (wins/risks/decisions) from last 90 days.
     pub recent_captures: String,
+    /// Recent email-derived signals linked to this entity.
+    pub recent_email_signals: String,
     /// Linked stakeholders from entity_people + people.
     pub stakeholders: String,
     /// Source file manifest.
@@ -439,11 +441,15 @@ pub fn build_intelligence_context(
                 if let Some(nps) = acct.nps {
                     facts.push(format!("NPS: {}", nps));
                 }
-                if let Some(ref csm) = acct.csm {
-                    facts.push(format!("CSM: {}", csm));
-                }
-                if let Some(ref champion) = acct.champion {
-                    facts.push(format!("Champion: {}", champion));
+                if let Ok(team) = db.get_account_team(entity_id) {
+                    if !team.is_empty() {
+                        let team_line = team
+                            .iter()
+                            .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        facts.push(format!("Account team: {}", team_line));
+                    }
                 }
                 ctx.facts_block = facts.join("\n");
             }
@@ -563,6 +569,26 @@ pub fn build_intelligence_context(
         ctx.recent_captures = lines.join("\n");
     }
 
+    // --- Recent email signals ---
+    if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, 12) {
+        if !signals.is_empty() {
+            let lines: Vec<String> = signals
+                .iter()
+                .map(|s| {
+                    format!(
+                        "- [{}] {} (urgency: {}, confidence: {:.2}, at: {})",
+                        s.signal_type,
+                        s.signal_text,
+                        s.urgency.as_deref().unwrap_or("unknown"),
+                        s.confidence.unwrap_or(0.0),
+                        s.detected_at
+                    )
+                })
+                .collect();
+            ctx.recent_email_signals = lines.join("\n");
+        }
+    }
+
     // --- Stakeholders ---
     let people = db.get_people_for_entity(entity_id).unwrap_or_default();
     if !people.is_empty() {
@@ -656,8 +682,7 @@ pub fn build_intelligence_context(
         }
 
         // In incremental mode, only include files modified since last enrichment
-        if is_incremental && !enriched_at.is_empty() && file.modified_at.as_str() <= enriched_at
-        {
+        if is_incremental && !enriched_at.is_empty() && file.modified_at.as_str() <= enriched_at {
             continue;
         }
 
@@ -810,6 +835,12 @@ pub fn build_intelligence_prompt(
     if !ctx.recent_captures.is_empty() {
         prompt.push_str("## Recent Captures (wins/risks/decisions)\n");
         prompt.push_str(&ctx.recent_captures);
+        prompt.push_str("\n\n");
+    }
+
+    if !ctx.recent_email_signals.is_empty() {
+        prompt.push_str("## Recent Email Signals\n");
+        prompt.push_str(&ctx.recent_email_signals);
         prompt.push_str("\n\n");
     }
 
@@ -1997,11 +2028,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Acme Corp".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -2048,11 +2078,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/Empty Corp".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -2147,6 +2176,7 @@ mod tests {
             meeting_history: "- 2026-01-15 | QBR | Quarterly review".to_string(),
             open_actions: "- [P1] Follow up on renewal".to_string(),
             recent_captures: "- [win] Expanded seats".to_string(),
+            recent_email_signals: String::new(),
             stakeholders: "- Alice | VP Eng | Acme | 5 meetings".to_string(),
             file_manifest: vec![SourceManifestEntry {
                 filename: "qbr.md".to_string(),
@@ -2367,11 +2397,10 @@ Some trailing text"#;
             health: Some("green".to_string()),
             contract_start: None,
             contract_end: Some("2026-12-31".to_string()),
-            csm: Some("Jane".to_string()),
-            champion: Some("Bob".to_string()),
             nps: Some(75),
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };

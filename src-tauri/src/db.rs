@@ -28,6 +28,9 @@ pub enum DbError {
 
     #[error("Failed to create database directory: {0}")]
     CreateDir(std::io::Error),
+
+    #[error("Schema migration failed: {0}")]
+    Migration(String),
 }
 
 /// A row from the `actions` table.
@@ -63,13 +66,36 @@ pub struct DbAccount {
     pub health: Option<String>,
     pub contract_start: Option<String>,
     pub contract_end: Option<String>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
     pub nps: Option<i32>,
     pub tracker_path: Option<String>,
     pub parent_id: Option<String>,
+    pub is_internal: bool,
     pub updated_at: String,
     pub archived: bool,
+}
+
+/// A row from `account_team`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTeamMember {
+    pub account_id: String,
+    pub person_id: String,
+    pub person_name: String,
+    pub person_email: String,
+    pub role: String,
+    pub created_at: String,
+}
+
+/// A row from `account_team_import_notes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbAccountTeamImportNote {
+    pub id: i64,
+    pub account_id: String,
+    pub legacy_field: String,
+    pub legacy_value: String,
+    pub note: String,
+    pub created_at: String,
 }
 
 /// Aggregated signals for a parent account's children (I114).
@@ -166,6 +192,24 @@ pub struct DbCapture {
     pub capture_type: String,
     pub content: String,
     pub captured_at: String,
+}
+
+/// Email-derived intelligence signal linked to an entity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbEmailSignal {
+    pub id: i64,
+    pub email_id: String,
+    pub sender_email: Option<String>,
+    pub person_id: Option<String>,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub signal_type: String,
+    pub signal_text: String,
+    pub confidence: Option<f64>,
+    pub sentiment: Option<String>,
+    pub urgency: Option<String>,
+    pub detected_at: String,
 }
 
 /// Stakeholder relationship signals computed from meeting history and account data (I43).
@@ -354,6 +398,29 @@ impl ActionDb {
         &self.conn
     }
 
+    /// Execute a closure within a SQLite transaction.
+    /// Commits on Ok, rolls back on Err.
+    pub fn with_transaction<F, T>(&self, f: F) -> Result<T, String>
+    where
+        F: FnOnce(&Self) -> Result<T, String>,
+    {
+        self.conn
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(|e| format!("Failed to begin transaction: {e}"))?;
+        match f(self) {
+            Ok(val) => {
+                self.conn
+                    .execute_batch("COMMIT")
+                    .map_err(|e| format!("Failed to commit transaction: {e}"))?;
+                Ok(val)
+            }
+            Err(e) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    }
+
     /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
@@ -374,151 +441,13 @@ impl ActionDb {
         // Enable WAL mode for better concurrent read performance
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
-        // Apply schema (all statements use IF NOT EXISTS, so this is idempotent)
-        conn.execute_batch(include_str!("schema.sql"))?;
+        // Run schema migrations (ADR-0071)
+        crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
 
-        // Migration: add calendar_event_id to meetings_history (ignore if exists)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN calendar_event_id TEXT;");
-
-        // Migration: backfill entities from accounts (ADR-0045).
-        // Idempotent — INSERT OR IGNORE skips existing rows.
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
-             SELECT id, name, 'account', tracker_path, updated_at FROM accounts;",
-        );
-
-        // Migration: add needs_decision flag to actions (I42 — Executive Intelligence)
-        let _ =
-            conn.execute_batch("ALTER TABLE actions ADD COLUMN needs_decision INTEGER DEFAULT 0;");
-
-        // Migration: add nps column to accounts (I72 — Account Dashboards)
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN nps INTEGER;");
-
-        // Migration: add parent_id to accounts (I114 — Parent-Child Accounts)
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN parent_id TEXT;");
-
-        // Migration: ring → lifecycle (ring was INTEGER 1-4, lifecycle is TEXT)
-        let has_lifecycle: bool = conn
-            .prepare("SELECT lifecycle FROM accounts LIMIT 0")
-            .is_ok();
-        if !has_lifecycle {
-            let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN lifecycle TEXT;");
-            // Drop the old ring column data — it was CS-specific decoration
-            // SQLite can't drop columns, so ring stays as a dead column
-        }
-
-        // Migration: add 'decision' to captures.capture_type CHECK constraint.
-        // SQLite can't ALTER CHECK constraints, so we recreate the table if needed.
-        // Recreating captures is safe — the table schema changes but data is
-        // rebuilt from transcript processing and post-meeting capture.
-        Self::migrate_captures_decision(&conn)?;
-
-        // Migration: create meeting_entities junction table (I52)
-        let _ = conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS meeting_entities (
-                meeting_id TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                entity_type TEXT NOT NULL DEFAULT 'account',
-                PRIMARY KEY (meeting_id, entity_id)
-            );
-            CREATE INDEX IF NOT EXISTS idx_meeting_entities_entity ON meeting_entities(entity_id);",
-        );
-
-        // Migration: backfill entities from projects (I50, parallel to account backfill)
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
-             SELECT id, name, 'project', tracker_path, updated_at FROM projects;",
-        );
-
-        // Migration: backfill meeting_entities junction from meetings_history.account_id (I52)
-        // Join through accounts table to resolve slugified entity IDs (Sprint 9 fix)
-        let _ = conn.execute_batch(
-            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
-             SELECT mh.id, a.id, 'account' FROM meetings_history mh
-             JOIN accounts a ON LOWER(a.name) = LOWER(mh.account_id)
-             WHERE mh.account_id IS NOT NULL AND mh.account_id != '';",
-        );
-
-        // Repair migration: clean orphaned junction rows where entity_id doesn't exist
-        // in entities table (from pre-fix backfill that used raw names instead of slugified IDs)
-        let _ = conn.execute_batch(
-            "DELETE FROM meeting_entities WHERE entity_id NOT IN (SELECT id FROM entities);",
-        );
-
-        // Migration: add project_id column to captures (I52)
-        let has_project_id: bool = conn
-            .prepare("SELECT project_id FROM captures LIMIT 0")
-            .is_ok();
-        if !has_project_id {
-            let _ = conn.execute_batch("ALTER TABLE captures ADD COLUMN project_id TEXT;");
-        }
-
-        // Migration: add person_id column to actions (I127 — Manual Action Creation)
-        let _ = conn.execute_batch("ALTER TABLE actions ADD COLUMN person_id TEXT;");
-
-        // Migration: add content_type + priority to content_index (I139)
-        let _ = conn.execute_batch(
-            "ALTER TABLE content_index ADD COLUMN content_type TEXT NOT NULL DEFAULT 'general';",
-        );
-        let _ = conn.execute_batch(
-            "ALTER TABLE content_index ADD COLUMN priority INTEGER NOT NULL DEFAULT 5;",
-        );
-
-        // Sprint 12 Migration: add archived column to entities
-        let _ = conn.execute_batch("ALTER TABLE accounts ADD COLUMN archived INTEGER DEFAULT 0;");
-        let _ = conn.execute_batch("ALTER TABLE projects ADD COLUMN archived INTEGER DEFAULT 0;");
-        let _ = conn.execute_batch("ALTER TABLE people ADD COLUMN archived INTEGER DEFAULT 0;");
-
-        // Sprint 12 Migration: account lifecycle events table (I143)
-        let _ = conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS account_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id TEXT NOT NULL,
-                event_type TEXT NOT NULL CHECK(event_type IN ('renewal', 'expansion', 'churn', 'downgrade')),
-                event_date TEXT NOT NULL,
-                arr_impact REAL,
-                notes TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-            );"
-        );
-        let _ = conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_account_events_account ON account_events(account_id);",
-        );
-        let _ = conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_account_events_date ON account_events(event_date);",
-        );
-
-        // Migration: add prep_context_json to meetings_history (I181)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_context_json TEXT;");
-
-        // Migration: add description to meetings_history (I185)
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN description TEXT;");
-
-        // Meeting permanence/user-layer migrations (ADR-0065 / ADR-0066)
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_agenda_json TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN user_notes TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_json TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_frozen_at TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_path TEXT;");
-        let _ =
-            conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN prep_snapshot_hash TEXT;");
-        let _ = conn.execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_path TEXT;");
-        let _ = conn
-            .execute_batch("ALTER TABLE meetings_history ADD COLUMN transcript_processed_at TEXT;");
-
-        // Normalize reviewed-prep state to canonical meeting IDs.
+        // Legacy data repairs — idempotent Rust code, safe to run every startup.
+        // Will be removed once all alpha users are past v0.7.3.
         let _ = Self::normalize_reviewed_prep_keys(&conn);
-
-        // Comprehensive ID backfill for calendar-backed meetings.
         let _ = Self::backfill_meeting_identity(&conn);
-
-        // Import user-authored prep fields from persisted prep context JSON.
         let _ = Self::backfill_meeting_user_layer(&conn);
 
         Ok(Self { conn })
@@ -528,51 +457,6 @@ impl ActionDb {
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         Ok(home.join(".dailyos").join("actions.db"))
-    }
-
-    /// Migrate the `captures` table to accept 'decision' as a capture_type.
-    ///
-    /// Tries a test insert — if it succeeds the constraint already allows
-    /// 'decision' (e.g. fresh DB from updated schema.sql). If it fails,
-    /// recreate the table with the new constraint, preserving existing rows.
-    fn migrate_captures_decision(conn: &Connection) -> Result<(), DbError> {
-        // Quick probe: try inserting and rolling back
-        let needs_migration = conn
-            .execute(
-                "INSERT INTO captures (id, meeting_id, meeting_title, capture_type, content)
-                 VALUES ('__probe__', '__probe__', '__probe__', 'decision', '__probe__')",
-                [],
-            )
-            .is_err();
-
-        if !needs_migration {
-            // Probe succeeded — clean up and return
-            let _ = conn.execute("DELETE FROM captures WHERE id = '__probe__'", []);
-            return Ok(());
-        }
-
-        // Recreate with new constraint
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS captures_v2 (
-                id TEXT PRIMARY KEY,
-                meeting_id TEXT NOT NULL,
-                meeting_title TEXT NOT NULL,
-                account_id TEXT,
-                capture_type TEXT CHECK(capture_type IN ('win', 'risk', 'action', 'decision')) NOT NULL,
-                content TEXT NOT NULL,
-                owner TEXT,
-                due_date TEXT,
-                captured_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            INSERT OR IGNORE INTO captures_v2 SELECT * FROM captures;
-            DROP TABLE captures;
-            ALTER TABLE captures_v2 RENAME TO captures;
-            CREATE INDEX IF NOT EXISTS idx_captures_meeting ON captures(meeting_id);
-            CREATE INDEX IF NOT EXISTS idx_captures_account ON captures(account_id);
-            CREATE INDEX IF NOT EXISTS idx_captures_type ON captures(capture_type);",
-        )?;
-
-        Ok(())
     }
 
     /// Convert reviewed-prep keys from legacy prep file paths to meeting IDs.
@@ -1250,8 +1134,8 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO accounts (
                 id, name, lifecycle, arr, health, contract_start, contract_end,
-                csm, champion, nps, tracker_path, parent_id, updated_at, archived
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                nps, tracker_path, parent_id, is_internal, updated_at, archived
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 lifecycle = excluded.lifecycle,
@@ -1259,11 +1143,10 @@ impl ActionDb {
                 health = excluded.health,
                 contract_start = excluded.contract_start,
                 contract_end = excluded.contract_end,
-                csm = excluded.csm,
-                champion = excluded.champion,
                 nps = excluded.nps,
                 tracker_path = excluded.tracker_path,
                 parent_id = excluded.parent_id,
+                is_internal = excluded.is_internal,
                 updated_at = excluded.updated_at",
             params![
                 account.id,
@@ -1273,11 +1156,10 @@ impl ActionDb {
                 account.health,
                 account.contract_start,
                 account.contract_end,
-                account.csm,
-                account.champion,
                 account.nps,
                 account.tracker_path,
                 account.parent_id,
+                account.is_internal as i32,
                 account.updated_at,
                 account.archived as i32,
             ],
@@ -1305,7 +1187,7 @@ impl ActionDb {
     pub fn get_account(&self, id: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -1322,7 +1204,7 @@ impl ActionDb {
     pub fn get_account_by_name(&self, name: &str) -> Result<Option<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -1339,8 +1221,8 @@ impl ActionDb {
     pub fn get_all_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
-             FROM accounts ORDER BY name",
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
+             FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1350,7 +1232,7 @@ impl ActionDb {
     pub fn get_top_level_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1361,10 +1243,268 @@ impl ActionDb {
     pub fn get_child_accounts(&self, parent_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Set domains for an account (replace-all).
+    pub fn set_account_domains(&self, account_id: &str, domains: &[String]) -> Result<(), DbError> {
+        let normalized = crate::util::normalize_domains(domains);
+        self.conn.execute(
+            "DELETE FROM account_domains WHERE account_id = ?1",
+            params![account_id],
+        )?;
+        for domain in normalized {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO account_domains (account_id, domain) VALUES (?1, ?2)",
+                params![account_id, &domain],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Get account domains for an account.
+    pub fn get_account_domains(&self, account_id: &str) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT domain FROM account_domains WHERE account_id = ?1 ORDER BY domain",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get all accounts with their domains in a single JOIN query.
+    ///
+    /// Eliminates N+1 queries when callers need domains for many accounts.
+    /// Returns `Vec<(DbAccount, Vec<String>)>` — each tuple is an account + its domains.
+    pub fn get_all_accounts_with_domains(
+        &self,
+        include_archived: bool,
+    ) -> Result<Vec<(DbAccount, Vec<String>)>, DbError> {
+        let query = if include_archived {
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived, ad.domain
+             FROM accounts a
+             LEFT JOIN account_domains ad ON a.id = ad.account_id
+             ORDER BY a.id, ad.domain"
+        } else {
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
+                    a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived, ad.domain
+             FROM accounts a
+             LEFT JOIN account_domains ad ON a.id = ad.account_id
+             WHERE a.archived = 0
+             ORDER BY a.id, ad.domain"
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let mut rows = stmt.query([])?;
+
+        let mut result: Vec<(DbAccount, Vec<String>)> = Vec::new();
+        let mut current_id: Option<String> = None;
+
+        while let Some(row) = rows.next()? {
+            let account_id: String = row.get(0)?;
+            let domain: Option<String> = row.get(13)?;
+
+            if current_id.as_deref() != Some(&account_id) {
+                // New account — push a new entry
+                let account = DbAccount {
+                    id: account_id.clone(),
+                    name: row.get(1)?,
+                    lifecycle: row.get(2)?,
+                    arr: row.get(3)?,
+                    health: row.get(4)?,
+                    contract_start: row.get(5)?,
+                    contract_end: row.get(6)?,
+                    nps: row.get(7)?,
+                    tracker_path: row.get(8)?,
+                    parent_id: row.get(9)?,
+                    is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+                    updated_at: row.get(11)?,
+                    archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
+                };
+                let domains = domain.into_iter().collect();
+                result.push((account, domains));
+                current_id = Some(account_id);
+            } else if let Some(d) = domain {
+                // Same account — append domain
+                if let Some(last) = result.last_mut() {
+                    last.1.push(d);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Lookup non-archived account candidates by email domain.
+    pub fn lookup_account_candidates_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<Vec<DbAccount>, DbError> {
+        let normalized = domain.trim().to_lowercase();
+        if normalized.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
+                    a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived
+             FROM accounts a
+             INNER JOIN account_domains d ON d.account_id = a.id
+             WHERE d.domain = ?1
+               AND a.archived = 0
+             ORDER BY a.is_internal ASC, a.name ASC",
+        )?;
+        let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Copy domains from parent to child (idempotent).
+    pub fn copy_account_domains(&self, parent_id: &str, child_id: &str) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO account_domains (account_id, domain)
+             SELECT ?1, domain FROM account_domains WHERE account_id = ?2",
+            params![child_id, parent_id],
+        )?;
+        Ok(())
+    }
+
+    /// Root internal organization account (top-level internal account).
+    pub fn get_internal_root_account(&self) -> Result<Option<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
+             FROM accounts
+             WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0
+             ORDER BY updated_at DESC
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map([], Self::map_account_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// All active internal accounts.
+    pub fn get_internal_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
+             FROM accounts
+             WHERE is_internal = 1 AND archived = 0
+             ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get account team members with person details.
+    pub fn get_account_team(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountTeamMember>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT at.account_id, at.person_id, p.name, p.email, at.role, at.created_at
+             FROM account_team at
+             JOIN people p ON p.id = at.person_id
+             WHERE at.account_id = ?1
+             ORDER BY at.role, p.name",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamMember {
+                account_id: row.get(0)?,
+                person_id: row.get(1)?,
+                person_name: row.get(2)?,
+                person_email: row.get(3)?,
+                role: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Add an account team member role link (idempotent).
+    pub fn add_account_team_member(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        role: &str,
+    ) -> Result<(), DbError> {
+        let role = role.trim().to_lowercase();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO account_team (account_id, person_id, role, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![account_id, person_id, role, Utc::now().to_rfc3339()],
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO entity_people (entity_id, person_id, relationship_type)
+             VALUES (?1, ?2, 'associated')",
+            params![account_id, person_id],
+        )?;
+        Ok(())
+    }
+
+    /// Remove an account team role link.
+    /// If no roles remain for this person on this account, also removes the entity_people link.
+    pub fn remove_account_team_member(
+        &self,
+        account_id: &str,
+        person_id: &str,
+        role: &str,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "DELETE FROM account_team
+             WHERE account_id = ?1 AND person_id = ?2 AND LOWER(role) = LOWER(?3)",
+            params![account_id, person_id, role.trim()],
+        )?;
+
+        // Clean up entity_people link if no roles remain
+        let remaining_roles: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM account_team
+             WHERE account_id = ?1 AND person_id = ?2",
+            params![account_id, person_id],
+            |row| row.get(0),
+        )?;
+
+        if remaining_roles == 0 {
+            self.conn.execute(
+                "DELETE FROM entity_people
+                 WHERE entity_id = ?1 AND person_id = ?2",
+                params![account_id, person_id],
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Import notes from migration for unmatched legacy account-team fields.
+    pub fn get_account_team_import_notes(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<DbAccountTeamImportNote>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, account_id, legacy_field, legacy_value, note, created_at
+             FROM account_team_import_notes
+             WHERE account_id = ?1
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![account_id], |row| {
+            Ok(DbAccountTeamImportNote {
+                id: row.get(0)?,
+                account_id: row.get(1)?,
+                legacy_field: row.get(2)?,
+                legacy_value: row.get(3)?,
+                note: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -1541,8 +1681,6 @@ impl ActionDb {
             "lifecycle" => "UPDATE accounts SET lifecycle = ?1, updated_at = ?3 WHERE id = ?2",
             "arr" => "UPDATE accounts SET arr = CAST(?1 AS REAL), updated_at = ?3 WHERE id = ?2",
             "nps" => "UPDATE accounts SET nps = CAST(?1 AS INTEGER), updated_at = ?3 WHERE id = ?2",
-            "csm" => "UPDATE accounts SET csm = ?1, updated_at = ?3 WHERE id = ?2",
-            "champion" => "UPDATE accounts SET champion = ?1, updated_at = ?3 WHERE id = ?2",
             "contract_start" => {
                 "UPDATE accounts SET contract_start = ?1, updated_at = ?3 WHERE id = ?2"
             }
@@ -2849,6 +2987,112 @@ impl ActionDb {
         Ok(captures)
     }
 
+    /// Insert an email intelligence signal, deduped by `(email_id, entity_id, signal_type, signal_text)`.
+    /// Known signal types from AI enrichment. Unknown types are rejected to prevent
+    /// hallucinated categories from polluting the database.
+    const VALID_SIGNAL_TYPES: &'static [&'static str] = &[
+        "expansion",
+        "question",
+        "timeline",
+        "sentiment",
+        "feedback",
+        "relationship",
+    ];
+
+    const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
+
+    /// Insert an email signal, returning `true` if a new row was inserted.
+    pub fn upsert_email_signal(
+        &self,
+        email_id: &str,
+        sender_email: Option<&str>,
+        person_id: Option<&str>,
+        entity_id: &str,
+        entity_type: &str,
+        signal_type: &str,
+        signal_text: &str,
+        confidence: Option<f64>,
+        sentiment: Option<&str>,
+        urgency: Option<&str>,
+        detected_at: Option<&str>,
+    ) -> Result<bool, DbError> {
+        if !Self::VALID_SIGNAL_TYPES.contains(&signal_type) {
+            log::warn!(
+                "Ignoring unknown email signal type '{}' for entity {}",
+                signal_type,
+                entity_id
+            );
+            return Ok(false);
+        }
+        if !Self::VALID_ENTITY_TYPES.contains(&entity_type) {
+            log::warn!(
+                "Ignoring unknown entity type '{}' for email signal",
+                entity_type
+            );
+            return Ok(false);
+        }
+
+        self.conn.execute(
+            "INSERT OR IGNORE INTO email_signals (
+                email_id, sender_email, person_id, entity_id, entity_type,
+                signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')))",
+            params![
+                email_id,
+                sender_email,
+                person_id,
+                entity_id,
+                entity_type,
+                signal_type,
+                signal_text,
+                confidence,
+                sentiment,
+                urgency,
+                detected_at,
+            ],
+        )?;
+        Ok(self.conn.changes() > 0)
+    }
+
+    /// List recent email signals for an entity.
+    pub fn list_recent_email_signals_for_entity(
+        &self,
+        entity_id: &str,
+        limit: usize,
+    ) -> Result<Vec<DbEmailSignal>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             FROM email_signals
+             WHERE entity_id = ?1
+             ORDER BY detected_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![entity_id, limit as i64], |row| {
+            Ok(DbEmailSignal {
+                id: row.get(0)?,
+                email_id: row.get(1)?,
+                sender_email: row.get(2)?,
+                person_id: row.get(3)?,
+                entity_id: row.get(4)?,
+                entity_type: row.get(5)?,
+                signal_type: row.get(6)?,
+                signal_text: row.get(7)?,
+                confidence: row.get(8)?,
+                sentiment: row.get(9)?,
+                urgency: row.get(10)?,
+                detected_at: row.get(11)?,
+            })
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
+    }
+
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -3178,7 +3422,7 @@ impl ActionDb {
     pub fn get_renewal_alerts(&self, days_ahead: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -3198,7 +3442,7 @@ impl ActionDb {
     pub fn get_stale_accounts(&self, stale_days: i32) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -3324,7 +3568,7 @@ impl ActionDb {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
                             tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
-                     FROM people WHERE relationship = ?1 ORDER BY name",
+                     FROM people WHERE relationship = ?1 AND archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map(params![rel], Self::map_person_row)?;
                 rows.collect::<Result<Vec<_>, _>>()?
@@ -3333,7 +3577,7 @@ impl ActionDb {
                 let mut stmt = self.conn.prepare(
                     "SELECT id, email, name, organization, role, relationship, notes,
                             tracker_path, last_seen, first_seen, meeting_count, updated_at, archived
-                     FROM people ORDER BY name",
+                     FROM people WHERE archived = 0 ORDER BY name",
                 )?;
                 let rows = stmt.query_map([], Self::map_person_row)?;
                 rows.collect::<Result<Vec<_>, _>>()?
@@ -3697,13 +3941,12 @@ impl ActionDb {
             health: row.get(4)?,
             contract_start: row.get(5)?,
             contract_end: row.get(6)?,
-            csm: row.get(7)?,
-            champion: row.get(8)?,
-            nps: row.get(9)?,
-            tracker_path: row.get(10)?,
-            parent_id: row.get(11)?,
-            updated_at: row.get(12)?,
-            archived: row.get::<_, i32>(13).unwrap_or(0) != 0,
+            nps: row.get(7)?,
+            tracker_path: row.get(8)?,
+            parent_id: row.get(9)?,
+            is_internal: row.get::<_, i32>(10).unwrap_or(0) != 0,
+            updated_at: row.get(11)?,
+            archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
         })
     }
 
@@ -4093,7 +4336,7 @@ impl ActionDb {
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
-                    csm, champion, nps, tracker_path, parent_id, updated_at, archived
+                    nps, tracker_path, parent_id, is_internal, updated_at, archived
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -4226,7 +4469,7 @@ impl ActionDb {
     pub fn get_accounts_past_renewal(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
-                    a.csm, a.champion, a.nps, a.tracker_path, a.parent_id, a.updated_at, a.archived
+                    a.nps, a.tracker_path, a.parent_id, a.is_internal, a.updated_at, a.archived
              FROM accounts a
              WHERE a.contract_end IS NOT NULL
                AND a.contract_end < date('now')
@@ -4426,11 +4669,10 @@ mod tests {
             health: Some("green".to_string()),
             contract_start: Some("2025-01-01".to_string()),
             contract_end: Some("2026-01-01".to_string()),
-            csm: Some("Alice".to_string()),
-            champion: Some("Bob".to_string()),
             nps: None,
             tracker_path: Some("Accounts/acme-corp".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -4450,6 +4692,52 @@ mod tests {
         let db = test_db();
         let result = db.get_account("nonexistent").expect("get account");
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_all_accounts_excludes_archived() {
+        let db = test_db();
+        let now = Utc::now().to_rfc3339();
+
+        let active = DbAccount {
+            id: "active-corp".to_string(),
+            name: "Active Corp".to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: now.clone(),
+            archived: false,
+        };
+
+        let archived = DbAccount {
+            id: "archived-corp".to_string(),
+            name: "Archived Corp".to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: now,
+            archived: true,
+        };
+
+        db.upsert_account(&active).expect("upsert active");
+        db.upsert_account(&archived).expect("upsert archived");
+
+        let results = db.get_all_accounts().expect("get all");
+        assert_eq!(results.len(), 1, "should only return active account");
+        assert_eq!(results[0].id, "active-corp");
+        assert!(!results[0].archived);
     }
 
     #[test]
@@ -4835,11 +5123,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
         };
@@ -4865,12 +5152,11 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             archived: false,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
         };
         db.upsert_account(&account).expect("upsert");
@@ -4960,11 +5246,10 @@ mod tests {
             health: Some("yellow".to_string()),
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some("Accounts/beta-inc".to_string()),
             parent_id: None,
+            is_internal: false,
             updated_at: "2025-06-01T00:00:00Z".to_string(),
             archived: false,
         };
@@ -5016,41 +5301,6 @@ mod tests {
         let projects = db.get_entities_by_type("project").expect("query");
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "Project X");
-    }
-
-    #[test]
-    fn test_backfill_migration_populates_entities() {
-        // Create a DB, insert an account directly (bypassing the bridge),
-        // then re-open to trigger the backfill migration.
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("backfill_test.db");
-        std::mem::forget(dir);
-
-        // First open: create DB and insert an account via raw SQL
-        // (simulating pre-ADR-0045 state)
-        {
-            let conn = rusqlite::Connection::open(&path).expect("open");
-            conn.execute_batch("PRAGMA journal_mode=WAL;").expect("wal");
-            conn.execute_batch(include_str!("schema.sql"))
-                .expect("schema");
-            conn.execute(
-                "INSERT INTO accounts (id, name, lifecycle, tracker_path, updated_at)
-                 VALUES ('legacy-acct', 'Legacy Corp', 'steady-state', 'Accounts/legacy', '2025-01-01T00:00:00Z')",
-                [],
-            )
-            .expect("insert legacy account");
-        }
-
-        // Second open via ActionDb: backfill migration should run
-        let db = ActionDb::open_at(path).expect("reopen");
-        let entity = db.get_entity("legacy-acct").expect("get entity");
-        assert!(
-            entity.is_some(),
-            "Backfill should create entity from account"
-        );
-        let e = entity.unwrap();
-        assert_eq!(e.name, "Legacy Corp");
-        assert_eq!(e.entity_type, EntityType::Account);
     }
 
     #[test]
@@ -5196,11 +5446,10 @@ mod tests {
                     .format("%Y-%m-%d")
                     .to_string(),
             ),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5215,11 +5464,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5234,11 +5482,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: Some("2020-01-01".to_string()),
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5262,11 +5509,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
         };
@@ -5281,11 +5527,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5388,11 +5633,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5505,6 +5749,31 @@ mod tests {
     }
 
     #[test]
+    fn test_get_people_excludes_archived() {
+        let db = test_db();
+
+        let mut active = sample_person("active@test.com");
+        active.relationship = "external".to_string();
+
+        let mut archived = sample_person("archived@test.com");
+        archived.relationship = "external".to_string();
+        archived.archived = true;
+
+        db.upsert_person(&active).expect("upsert active");
+        db.upsert_person(&archived).expect("upsert archived");
+
+        // No filter — should exclude archived
+        let all = db.get_people(None).expect("get all");
+        assert_eq!(all.len(), 1, "should only return active person");
+        assert_eq!(all[0].email, "active@test.com");
+
+        // With relationship filter — should also exclude archived
+        let filtered = db.get_people(Some("external")).expect("get external");
+        assert_eq!(filtered.len(), 1, "should only return active external person");
+        assert_eq!(filtered[0].email, "active@test.com");
+    }
+
+    #[test]
     fn test_person_entity_linking() {
         let db = test_db();
         let person = sample_person("jane@acme.com");
@@ -5518,11 +5787,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5754,11 +6022,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -5892,11 +6159,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
         };
@@ -6816,11 +7082,10 @@ mod tests {
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: None,
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -7040,8 +7305,346 @@ mod tests {
                 "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
                 [],
                 |row| row.get(0),
-            )
+        )
             .expect("query");
         assert_eq!(meeting_type, "all_hands");
+    }
+
+    fn sample_account(id: &str, name: &str) -> DbAccount {
+        DbAccount {
+            id: id.to_string(),
+            name: name.to_string(),
+            lifecycle: None,
+            arr: None,
+            health: None,
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: None,
+            parent_id: None,
+            is_internal: false,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+        }
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_single_query() {
+        let db = test_db();
+
+        let acct = sample_account("acme", "Acme Corp");
+        db.upsert_account(&acct).unwrap();
+        db.set_account_domains("acme", &["acme.com".to_string(), "acme.io".to_string()])
+            .unwrap();
+
+        let acct2 = sample_account("globex", "Globex Inc");
+        db.upsert_account(&acct2).unwrap();
+        db.set_account_domains("globex", &["globex.com".to_string()])
+            .unwrap();
+
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Find acme
+        let acme = results.iter().find(|(a, _)| a.id == "acme").unwrap();
+        assert_eq!(acme.0.name, "Acme Corp");
+        assert_eq!(acme.1.len(), 2);
+        assert!(acme.1.contains(&"acme.com".to_string()));
+        assert!(acme.1.contains(&"acme.io".to_string()));
+
+        // Find globex
+        let globex = results.iter().find(|(a, _)| a.id == "globex").unwrap();
+        assert_eq!(globex.1.len(), 1);
+        assert_eq!(globex.1[0], "globex.com");
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_no_domains() {
+        let db = test_db();
+
+        let acct = sample_account("solo", "Solo Corp");
+        db.upsert_account(&acct).unwrap();
+
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.id, "solo");
+        assert!(results[0].1.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_accounts_with_domains_filters_archived() {
+        let db = test_db();
+
+        let active = sample_account("active", "Active Corp");
+        db.upsert_account(&active).unwrap();
+        db.set_account_domains("active", &["active.com".to_string()])
+            .unwrap();
+
+        let mut archived = sample_account("old", "Old Corp");
+        archived.archived = true;
+        db.upsert_account(&archived).unwrap();
+        db.set_account_domains("old", &["old.com".to_string()])
+            .unwrap();
+
+        // Exclude archived
+        let results = db.get_all_accounts_with_domains(false).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.id, "active");
+
+        // Include archived
+        let results = db.get_all_accounts_with_domains(true).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_insert_and_query_email_signals() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        db.upsert_email_signal(
+            "email-1",
+            Some("owner@acme.com"),
+            None,
+            "acc1",
+            "account",
+            "timeline",
+            "Customer asked to move launch date by two weeks",
+            Some(0.86),
+            Some("neutral"),
+            Some("high"),
+            Some("2026-02-12T09:00:00Z"),
+        )
+        .expect("insert signal");
+
+        // Duplicate should be ignored by dedupe unique index.
+        db.upsert_email_signal(
+            "email-1",
+            Some("owner@acme.com"),
+            None,
+            "acc1",
+            "account",
+            "timeline",
+            "Customer asked to move launch date by two weeks",
+            Some(0.86),
+            Some("neutral"),
+            Some("high"),
+            Some("2026-02-12T09:00:00Z"),
+        )
+        .expect("insert duplicate signal");
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "timeline");
+        assert!(signals[0].signal_text.contains("launch date"));
+    }
+
+    #[test]
+    fn test_domain_based_account_lookup() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        db.set_account_domains("acc1", &["acme.com".to_string()])
+            .expect("set domains");
+
+        let candidates = db
+            .lookup_account_candidates_by_domain("acme.com")
+            .expect("lookup domain");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "acc1");
+    }
+
+    // =========================================================================
+    // Email signal pipeline integration tests (S3)
+    //
+    // These test the same person-resolution → domain-fallback → signal-upsert
+    // pipeline used by Executor::sync_email_signals_from_payload, exercised
+    // at the DB layer to avoid needing a Tauri AppHandle.
+    // =========================================================================
+
+    #[test]
+    fn test_email_signal_pipeline_person_direct_match() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        // Create person linked to account
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+        db.link_person_to_entity(&person.id, "acc1", "contact")
+            .expect("link person");
+
+        // Simulate: person lookup → entity resolution → signal insert
+        let sender = "alice@acme.com";
+        let found = db
+            .get_person_by_email(sender)
+            .expect("lookup")
+            .expect("person should exist");
+        let entities = db
+            .get_entities_for_person(&found.id)
+            .expect("get entities");
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].id, "acc1");
+
+        let inserted = db
+            .upsert_email_signal(
+                "email-1",
+                Some(sender),
+                Some(&found.id),
+                &entities[0].id,
+                entities[0].entity_type.as_str(),
+                "expansion",
+                "Wants to add 50 seats in Q2",
+                Some(0.85),
+                Some("positive"),
+                Some("medium"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("insert signal");
+        assert!(inserted);
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "expansion");
+        assert_eq!(signals[0].entity_id, "acc1");
+        assert_eq!(signals[0].person_id, Some(found.id));
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_domain_fallback() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        db.set_account_domains("acc1", &["acme.com".to_string()])
+            .expect("set domains");
+
+        // No person record — simulate domain fallback
+        let sender = "unknown@acme.com";
+        let person = db.get_person_by_email(sender).expect("lookup");
+        assert!(person.is_none(), "no person should match");
+
+        // Domain fallback
+        let domain = sender.split('@').nth(1).unwrap();
+        let candidates = db
+            .lookup_account_candidates_by_domain(domain)
+            .expect("lookup domain");
+        assert_eq!(candidates.len(), 1);
+
+        let inserted = db
+            .upsert_email_signal(
+                "email-2",
+                Some(sender),
+                None, // no person_id
+                &candidates[0].id,
+                "account",
+                "question",
+                "Asking about enterprise pricing",
+                Some(0.75),
+                Some("neutral"),
+                Some("low"),
+                None,
+            )
+            .expect("insert signal");
+        assert!(inserted);
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "question");
+        assert!(signals[0].person_id.is_none());
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_deduplication() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        // Insert same signal twice (same email_id + entity)
+        let first = db
+            .upsert_email_signal(
+                "email-dup",
+                Some("alice@acme.com"),
+                None,
+                "acc1",
+                "account",
+                "expansion",
+                "Wants to expand",
+                Some(0.85),
+                Some("positive"),
+                Some("high"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("first insert");
+        assert!(first);
+
+        let second = db
+            .upsert_email_signal(
+                "email-dup",
+                Some("alice@acme.com"),
+                None,
+                "acc1",
+                "account",
+                "expansion",
+                "Wants to expand",
+                Some(0.85),
+                Some("positive"),
+                Some("high"),
+                Some("2026-02-13T10:00:00Z"),
+            )
+            .expect("second insert");
+        assert!(!second, "duplicate should return false");
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list");
+        assert_eq!(signals.len(), 1, "only one signal despite two inserts");
+    }
+
+    #[test]
+    fn test_email_signal_pipeline_multi_entity_targets() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        setup_account(&db, "acc2", "Acme Sub");
+
+        // Person linked to two accounts
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert person");
+        db.link_person_to_entity(&person.id, "acc1", "contact")
+            .expect("link 1");
+        db.link_person_to_entity(&person.id, "acc2", "contact")
+            .expect("link 2");
+
+        let entities = db
+            .get_entities_for_person(&person.id)
+            .expect("get entities");
+        assert_eq!(entities.len(), 2);
+
+        // Insert signal for each entity (mirrors executor loop)
+        for entity in &entities {
+            db.upsert_email_signal(
+                "email-multi",
+                Some("alice@acme.com"),
+                Some(&person.id),
+                &entity.id,
+                entity.entity_type.as_str(),
+                "feedback",
+                "Great experience with the new feature",
+                Some(0.9),
+                Some("positive"),
+                None,
+                Some("2026-02-13T11:00:00Z"),
+            )
+            .expect("insert");
+        }
+
+        let signals_acc1 = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list acc1");
+        let signals_acc2 = db
+            .list_recent_email_signals_for_entity("acc2", 10)
+            .expect("list acc2");
+        assert_eq!(signals_acc1.len(), 1);
+        assert_eq!(signals_acc2.len(), 1);
     }
 }

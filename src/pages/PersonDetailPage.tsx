@@ -26,8 +26,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { PageError } from "@/components/PageState";
-import { cn } from "@/lib/utils";
+import { PageError, InlineEmpty } from "@/components/PageState";
+import { cn, formatShortDate } from "@/lib/utils";
 import {
   Archive,
   ArrowLeft,
@@ -41,7 +41,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import type { Person, PersonDetail } from "@/types";
+import type { DuplicateCandidate, Person, PersonDetail } from "@/types";
 
 const temperatureStyles: Record<string, { dot: string; badge: string }> = {
   hot: { dot: "bg-success", badge: "bg-success/15 text-success" },
@@ -73,6 +73,7 @@ export default function PersonDetailPage() {
   const [mergeSearchQuery, setMergeSearchQuery] = useState("");
   const [mergeSearchResults, setMergeSearchResults] = useState<Person[]>([]);
   const [merging, setMerging] = useState(false);
+  const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[]>([]);
 
   const load = useCallback(async () => {
     if (!personId) return;
@@ -97,6 +98,23 @@ export default function PersonDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadDuplicateCandidates = useCallback(async () => {
+    if (!personId) return;
+    try {
+      const candidates = await invoke<DuplicateCandidate[]>(
+        "get_duplicate_people_for_person",
+        { personId },
+      );
+      setDuplicateCandidates(candidates);
+    } catch {
+      setDuplicateCandidates([]);
+    }
+  }, [personId]);
+
+  useEffect(() => {
+    loadDuplicateCandidates();
+  }, [loadDuplicateCandidates]);
 
   async function saveField(field: string, value: string) {
     if (!detail) return;
@@ -188,6 +206,21 @@ export default function PersonDetailPage() {
     }
   }
 
+  async function handleOpenSuggestedMerge(candidate: DuplicateCandidate) {
+    if (!detail) return;
+    const targetId =
+      candidate.person1Id === detail.id ? candidate.person2Id : candidate.person1Id;
+    try {
+      const suggested = await invoke<PersonDetail>("get_person_detail", {
+        personId: targetId,
+      });
+      setMergeTarget(suggested);
+      setMergeConfirmOpen(true);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function handleDelete() {
     if (!detail) return;
     try {
@@ -275,7 +308,7 @@ export default function PersonDetailPage() {
       metrics.push({ label: "Engagement", value: signals.temperature });
     }
     if (signals.lastMeeting) {
-      metrics.push({ label: "Last Meeting", value: formatDate(signals.lastMeeting) });
+      metrics.push({ label: "Last Meeting", value: formatShortDate(signals.lastMeeting) });
     }
   }
   if (detail.meetingCount > 0) {
@@ -450,6 +483,59 @@ export default function PersonDetailPage() {
             </div>
           )}
 
+          {duplicateCandidates.length > 0 && (
+            <Card className="border-primary/25 bg-primary/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">
+                  Potential Duplicates
+                  <span className="ml-1 text-muted-foreground">
+                    ({duplicateCandidates.length})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {duplicateCandidates.map((candidate) => {
+                  const targetId =
+                    candidate.person1Id === detail.id
+                      ? candidate.person2Id
+                      : candidate.person1Id;
+                  const targetName =
+                    candidate.person1Id === detail.id
+                      ? candidate.person2Name
+                      : candidate.person1Name;
+                  return (
+                    <div
+                      key={`${candidate.person1Id}-${candidate.person2Id}`}
+                      className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <Link
+                          to="/people/$personId"
+                          params={{ personId: targetId }}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          Merge into {targetName}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">
+                          {candidate.reason} · {Math.round(candidate.confidence * 100)}%
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 text-xs"
+                        disabled={merging}
+                        onClick={() => handleOpenSuggestedMerge(candidate)}
+                      >
+                        Merge
+                      </Button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Asymmetric Grid: Main (3fr) + Sidebar (2fr) */}
           <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
             {/* Main Column */}
@@ -483,13 +569,13 @@ export default function PersonDetailPage() {
                             {m.title}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatDate(m.startTime)}
+                            {formatShortDate(m.startTime)}
                           </span>
                         </Link>
                       ))}
                     </div>
                   ) : (
-                    <EmptyState icon={Calendar} message="No meetings recorded yet" />
+                    <InlineEmpty icon={Calendar} message="No meetings recorded yet" />
                   )}
                 </CardContent>
               </Card>
@@ -730,21 +816,6 @@ export default function PersonDetailPage() {
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
 
-function EmptyState({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ElementType;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center py-6 text-center">
-      <Icon className="mb-2 size-8 text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  );
-}
-
 function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
   const fields: { label: string; value: React.ReactNode }[] = [];
 
@@ -777,10 +848,10 @@ function PersonDetailsReadView({ detail }: { detail: PersonDetail }) {
     fields.push({ label: "Email", value: detail.email });
   }
   if (detail.firstSeen) {
-    fields.push({ label: "First Seen", value: formatDate(detail.firstSeen) });
+    fields.push({ label: "First Seen", value: formatShortDate(detail.firstSeen) });
   }
   if (detail.lastSeen) {
-    fields.push({ label: "Last Seen", value: formatDate(detail.lastSeen) });
+    fields.push({ label: "Last Seen", value: formatShortDate(detail.lastSeen) });
   }
 
   if (fields.length === 0) {
@@ -892,18 +963,6 @@ function PersonDetailsEditForm({
 }
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
 
 function formatMeetingType(meetingType: string): string {
   const labels: Record<string, string> = {

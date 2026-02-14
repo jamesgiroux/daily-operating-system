@@ -97,7 +97,7 @@ describe("computeMeetingDisplayState", () => {
       expect(state.primaryStatus).toBe("past-unprocessed");
       expect(state.actions).toHaveLength(3);
       expect(state.actions.map(a => a.key)).toEqual(["view-prep", "attach-transcript", "capture-outcomes"]);
-      expect(state.actions[0].linkTo).toBe("prep.md");
+      expect(state.actions[0].linkTo).toBe("test-1");
     });
   });
 
@@ -149,7 +149,7 @@ describe("computeMeetingDisplayState", () => {
       expect(state.primaryStatus).toBe("has-prep");
       expect(state.actions).toHaveLength(1);
       expect(state.actions[0].key).toBe("view-prep");
-      expect(state.actions[0].linkTo).toBe("01-customer-acme.md");
+      expect(state.actions[0].linkTo).toBe("test-1");
     });
 
     it("has prep file without enrichment → 'Limited prep' badge", () => {

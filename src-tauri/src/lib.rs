@@ -12,10 +12,12 @@ mod commands;
 mod db;
 mod db_backup;
 mod devtools;
+mod migrations;
 pub mod entity;
 pub mod entity_intel;
 mod error;
 mod executor;
+pub mod helpers;
 mod focus_capacity;
 mod focus_prioritization;
 mod google;
@@ -59,6 +61,8 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
@@ -215,6 +219,7 @@ pub fn run() {
             commands::set_entity_mode,
             commands::set_workspace_path,
             commands::set_developer_mode,
+            commands::set_personality,
             commands::set_ai_model,
             commands::set_schedule,
             commands::get_actions_from_db,
@@ -240,6 +245,8 @@ pub fn run() {
             commands::set_capture_delay,
             // Phase 3C: Weekly Planning
             commands::get_week_data,
+            commands::get_live_proactive_suggestions,
+            commands::retry_week_enrichment,
             commands::get_focus_data,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
@@ -255,6 +262,7 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
+            commands::refresh_focus,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             // I39: Feature Toggles
@@ -264,6 +272,9 @@ pub fn run() {
             commands::install_demo_data,
             commands::populate_workspace,
             commands::set_user_profile,
+            commands::get_internal_team_setup_status,
+            commands::create_internal_organization,
+            commands::get_onboarding_priming_context,
             commands::check_claude_status,
             commands::get_latency_rollups,
             commands::install_inbox_sample,
@@ -307,10 +318,16 @@ pub fn run() {
             commands::get_accounts_for_picker,
             commands::get_child_accounts_list,
             commands::get_account_detail,
+            commands::get_account_team,
             commands::update_account_field,
             commands::update_account_notes,
             commands::update_account_programs,
+            commands::add_account_team_member,
+            commands::remove_account_team_member,
             commands::create_account,
+            commands::create_child_account,
+            commands::create_team,
+            commands::backfill_internal_meeting_associations,
             // I50: Project Dashboards
             commands::get_projects_list,
             commands::get_project_detail,
@@ -323,8 +340,11 @@ pub fn run() {
             commands::rebuild_database,
             // I148: Hygiene
             commands::get_hygiene_report,
+            commands::get_intelligence_hygiene_status,
+            commands::run_hygiene_scan_now,
             // I172: Duplicate People Detection
             commands::get_duplicate_people,
+            commands::get_duplicate_people_for_person,
             // I176: Archive / Unarchive Entities
             commands::archive_account,
             commands::archive_project,
@@ -341,6 +361,8 @@ pub fn run() {
             commands::record_account_event,
             commands::get_account_events,
             // I194: User Agenda + Notes (ADR-0065)
+            commands::apply_meeting_prep_prefill,
+            commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
         ])

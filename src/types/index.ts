@@ -6,6 +6,13 @@
 export type ProfileType = "customer-success" | "general";
 
 export type EntityMode = "account" | "project" | "both";
+export type SettingsTabId =
+  | "profile"
+  | "integrations"
+  | "workflows"
+  | "intelligence"
+  | "hygiene"
+  | "diagnostics";
 
 export type MeetingType =
   | "customer"
@@ -240,6 +247,7 @@ export interface WeekMeeting {
   time: string;
   title: string;
   account?: string;
+  meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
 }
@@ -301,6 +309,8 @@ export interface TimeBlock {
   end: string;
   durationMinutes: number;
   suggestedUse?: string;
+  actionId?: string;
+  meetingId?: string;
 }
 
 /** AI-identified top priority for the week (I94) */
@@ -309,6 +319,23 @@ export interface TopPriority {
   reason: string;
   meetingId?: string;
   actionId?: string;
+}
+
+export interface LiveProactiveSuggestion {
+  day: string;
+  date: string;
+  start: string;
+  end: string;
+  durationMinutes: number;
+  title: string;
+  reason: string;
+  source: "live" | string;
+  actionId?: string;
+  meetingId?: string;
+  capacityFit: number;
+  urgencyImpact: number;
+  confidence: number;
+  totalScore: number;
 }
 
 // =============================================================================
@@ -381,6 +408,22 @@ export interface EmailDetail {
   recommendedAction?: string;
   actionOwner?: string;
   actionPriority?: string;
+  emailSignals?: EmailSignal[];
+}
+
+export interface EmailSignal {
+  id?: number;
+  emailId?: string;
+  senderEmail?: string;
+  personId?: string;
+  entityId?: string;
+  entityType?: string;
+  signalType: string;
+  signalText: string;
+  confidence?: number;
+  sentiment?: string;
+  urgency?: string;
+  detectedAt?: string;
 }
 
 export interface EmailSummaryData {
@@ -422,6 +465,46 @@ export type GoogleAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string }
   | { status: "tokenexpired" };
+
+export interface HygieneFixView {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface HygieneGapActionView {
+  kind: "navigate" | "run_scan_now";
+  label: string;
+  route?: string;
+}
+
+export interface HygieneGapView {
+  key: string;
+  label: string;
+  count: number;
+  impact: "critical" | "medium" | "low";
+  description: string;
+  action: HygieneGapActionView;
+}
+
+export interface HygieneBudgetView {
+  usedToday: number;
+  dailyLimit: number;
+  queuedForNextBudget: number;
+}
+
+export interface HygieneStatusView {
+  status: "running" | "healthy" | "needs_attention";
+  statusLabel: string;
+  lastScanTime?: string;
+  nextScanTime?: string;
+  totalGaps: number;
+  totalFixes: number;
+  isRunning: boolean;
+  fixes: HygieneFixView[];
+  gaps: HygieneGapView[];
+  budget: HygieneBudgetView;
+}
 
 export interface CalendarEvent {
   id: string;
@@ -529,6 +612,19 @@ export interface MeetingIntelligence {
   prepFrozenAt?: string;
   transcriptPath?: string;
   transcriptProcessedAt?: string;
+}
+
+export interface ApplyPrepPrefillResult {
+  meetingId: string;
+  addedAgendaItems: number;
+  notesAppended: boolean;
+  mode: string;
+}
+
+export interface AgendaDraftResult {
+  meetingId: string;
+  subject?: string;
+  body: string;
 }
 
 // =============================================================================
@@ -642,6 +738,8 @@ export interface FullMeetingPrep {
   entityReadiness?: string[];
   /** Stakeholder insights from intelligence.json (I135) */
   stakeholderInsights?: StakeholderInsight[];
+  /** Recent email-derived signals linked to meeting entity context (I215) */
+  recentEmailSignals?: EmailSignal[];
 }
 
 /** Account snapshot item for intelligence-enriched Quick Context (I186) */
@@ -741,8 +839,7 @@ export interface AccountListItem {
   arr?: number;
   health?: AccountHealth;
   nps?: number;
-  csm?: string;
-  champion?: string;
+  teamSummary?: string;
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
@@ -751,6 +848,7 @@ export interface AccountListItem {
   parentName?: string;
   childCount: number;
   isParent: boolean;
+  isInternal: boolean;
   archived: boolean;
 }
 
@@ -802,6 +900,24 @@ export interface AccountChildSummary {
   openActionCount: number;
 }
 
+export interface AccountTeamMember {
+  accountId: string;
+  personId: string;
+  personName: string;
+  personEmail: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface AccountTeamImportNote {
+  id: number;
+  accountId: string;
+  legacyField: string;
+  legacyValue: string;
+  note: string;
+  createdAt: string;
+}
+
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
@@ -813,6 +929,8 @@ export interface AccountDetail extends AccountListItem {
   recentMeetings: MeetingPreview[];
   openActions: Action[];
   linkedPeople: Person[];
+  accountTeam: AccountTeamMember[];
+  accountTeamImportNotes: AccountTeamImportNote[];
   signals?: {
     meetingFrequency30d: number;
     meetingFrequency90d: number;
@@ -828,11 +946,35 @@ export interface AccountDetail extends AccountListItem {
     content: string;
     meetingTitle: string;
   }[];
+  recentEmailSignals?: EmailSignal[];
   /** I114: Parent-child hierarchy */
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
+}
+
+export interface PickerAccount {
+  id: string;
+  name: string;
+  parentName?: string;
+  isInternal: boolean;
+}
+
+export interface OnboardingPrimingCard {
+  id: string;
+  title: string;
+  startTime?: string;
+  dayLabel: string;
+  suggestedEntityId?: string;
+  suggestedEntityName?: string;
+  suggestedAction: string;
+}
+
+export interface OnboardingPrimingContext {
+  googleConnected: boolean;
+  cards: OnboardingPrimingCard[];
+  prompt: string;
 }
 
 // =============================================================================
@@ -980,6 +1122,7 @@ export interface ProjectDetail extends ProjectListItem {
     content: string;
     meetingTitle: string;
   }[];
+  recentEmailSignals?: EmailSignal[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
 }
