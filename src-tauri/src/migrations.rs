@@ -20,6 +20,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 2,
     sql: include_str!("migrations/002_internal_teams.sql"),
+}, Migration {
+    version: 3,
+    sql: include_str!("migrations/003_email_signals.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -174,13 +177,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 2,
-            "should apply baseline + internal teams migrations"
+            applied, 3,
+            "should apply baseline + internal teams + email signals migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -249,6 +252,15 @@ mod tests {
             [],
         )
         .expect("account_events table should exist");
+
+        // Verify email_signals exists and accepts inserts
+        conn.execute(
+            "INSERT INTO email_signals (
+                email_id, sender_email, entity_id, entity_type, signal_type, signal_text
+             ) VALUES ('em-1', 'owner@acme.com', 'a1', 'account', 'timeline', 'Customer asked for revised launch date')",
+            [],
+        )
+        .expect("email_signals table should exist");
     }
 
     #[test]
@@ -275,13 +287,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2
+        // Run migrations — should bootstrap v1 and apply v2 + v3
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 1, "bootstrap should mark v1, then apply v2");
+        assert_eq!(applied, 2, "bootstrap should mark v1, then apply v2/v3");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
 
         // Verify existing data is untouched
         let title: String = conn
@@ -320,14 +332,14 @@ mod tests {
 
         // Run migrations twice
         let first = run_migrations(&conn).expect("first run");
-        assert_eq!(first, 1);
+        assert_eq!(first, MIGRATIONS.len());
 
         let second = run_migrations(&conn).expect("second run");
         assert_eq!(second, 0, "second run should apply no migrations");
 
-        // Version should still be 1
+        // Version should match latest migration
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 1);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version);
     }
 
     #[test]
@@ -339,7 +351,7 @@ mod tests {
         conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
 
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 1);
+        assert_eq!(applied, MIGRATIONS.len());
 
         // Verify backup file was created
         let backup_path = dir.path().join("test_backup.db.pre-migration.bak");
