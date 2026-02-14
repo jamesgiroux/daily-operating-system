@@ -85,12 +85,18 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 }
 
 /// Build account domain hints from DB for meeting classification.
+///
+/// Uses a single JOIN query instead of N+1 per-account domain lookups.
 fn build_account_hints(state: &AppState) -> HashSet<String> {
     let mut hints = HashSet::new();
     if let Ok(db_guard) = state.db.lock() {
         if let Some(db) = db_guard.as_ref() {
-            if let Ok(accounts) = db.get_all_accounts() {
-                for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
+            if let Ok(accounts_with_domains) = db.get_all_accounts_with_domains(false) {
+                for (account, domains) in accounts_with_domains {
+                    if account.is_internal {
+                        continue;
+                    }
+
                     let id_key: String = account
                         .id
                         .to_lowercase()
@@ -111,14 +117,12 @@ fn build_account_hints(state: &AppState) -> HashSet<String> {
                         hints.insert(name_key);
                     }
 
-                    if let Ok(domains) = db.get_account_domains(&account.id) {
-                        for domain in domains {
-                            let base = domain.split('.').next().unwrap_or("").to_lowercase();
-                            let key: String =
-                                base.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
-                            if key.len() >= 3 {
-                                hints.insert(key);
-                            }
+                    for domain in domains {
+                        let base = domain.split('.').next().unwrap_or("").to_lowercase();
+                        let key: String =
+                            base.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+                        if key.len() >= 3 {
+                            hints.insert(key);
                         }
                     }
                 }
