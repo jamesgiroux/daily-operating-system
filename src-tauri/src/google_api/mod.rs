@@ -195,8 +195,11 @@ pub async fn send_with_retry(
                 let status = response.status();
                 let decision = retry_decision_for_status(status);
                 if decision == RetryDecision::Retryable && attempt < attempts {
-                    let delay =
-                        retry_delay(attempt, policy, response.headers().get(reqwest::header::RETRY_AFTER));
+                    let delay = retry_delay(
+                        attempt,
+                        policy,
+                        response.headers().get(reqwest::header::RETRY_AFTER),
+                    );
                     log::warn!(
                         "google_api retry {}/{} after status {} (sleep {:?})",
                         attempt,
@@ -455,7 +458,7 @@ mod tests {
             refresh_token: Some("1//test-refresh-token".to_string()),
             token_uri: "https://oauth2.googleapis.com/token".to_string(),
             client_id: "12345.apps.googleusercontent.com".to_string(),
-            client_secret: Some("test-secret".to_string()),
+            client_secret: "test-secret".to_string().into(),
             scopes: vec!["https://www.googleapis.com/auth/calendar".to_string()],
             expiry: Some("2026-02-08T12:00:00Z".to_string()),
             account: Some("user@example.com".to_string()),
@@ -520,7 +523,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: None,
             account: None,
@@ -537,7 +540,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: Some(future.to_rfc3339()),
             account: None,
@@ -554,7 +557,7 @@ mod tests {
             refresh_token: None,
             token_uri: default_token_uri(),
             client_id: "c".to_string(),
-            client_secret: Some("s".to_string()),
+            client_secret: "s".to_string().into(),
             scopes: vec![],
             expiry: Some(past.to_rfc3339()),
             account: None,

@@ -42,6 +42,20 @@ pub struct Config {
     pub user_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_focus: Option<String>,
+    /// UI personality tone: "professional", "friendly", or "playful" (I216).
+    /// Affects UI chrome only (empty states, loading messages, celebrations).
+    /// Never affects intelligence content.
+    #[serde(default = "default_personality")]
+    pub personality: String,
+    /// One-time gate: internal team setup completion state (Sprint 20 / ADR-0070).
+    #[serde(default)]
+    pub internal_team_setup_completed: bool,
+    /// Internal setup schema/version marker for future re-prompts.
+    #[serde(default)]
+    pub internal_team_setup_version: u32,
+    /// Root internal org account ID (set after setup).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal_org_account_id: Option<String>,
     /// Show developer tools panel (wrench icon). Only effective in debug builds.
     #[serde(default)]
     pub developer_mode: bool,
@@ -75,6 +89,20 @@ fn default_history_count() -> u32 {
 
 fn default_profile() -> String {
     "customer-success".to_string()
+}
+
+fn default_personality() -> String {
+    "professional".to_string()
+}
+
+pub fn validate_personality(value: &str) -> Result<(), String> {
+    match value {
+        "professional" | "friendly" | "playful" => Ok(()),
+        _ => Err(format!(
+            "Invalid personality: '{}'. Must be 'professional', 'friendly', or 'playful'.",
+            value
+        )),
+    }
 }
 
 // =============================================================================
@@ -366,7 +394,6 @@ pub enum WorkflowStatus {
     },
 }
 
-
 /// Record of a workflow execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -378,6 +405,10 @@ pub struct ExecutionRecord {
     pub duration_secs: Option<u64>,
     pub success: bool,
     pub error_message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_phase: Option<WorkflowPhase>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub can_retry: Option<bool>,
     pub trigger: ExecutionTrigger,
 }
 
@@ -763,6 +794,8 @@ pub struct WeekMeeting {
     pub time: String,
     pub title: String,
     pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
     pub prep_status: PrepStatus,
@@ -869,6 +902,10 @@ pub struct TimeBlock {
     pub duration_minutes: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_use: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
 }
 
 /// AI-identified top priority for the week (I94)
@@ -881,6 +918,28 @@ pub struct TopPriority {
     pub meeting_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_id: Option<String>,
+}
+
+/// Live proactive suggestion computed at query time from calendar + SQLite state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveProactiveSuggestion {
+    pub day: String,
+    pub date: String,
+    pub start: String,
+    pub end: String,
+    pub duration_minutes: u32,
+    pub title: String,
+    pub reason: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
+    pub capacity_fit: f32,
+    pub urgency_impact: f32,
+    pub confidence: f32,
+    pub total_score: f32,
 }
 
 // =============================================================================
@@ -981,6 +1040,24 @@ pub struct EmailDetail {
     pub action_owner: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_priority: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_signals: Option<Vec<EmailSignal>>,
+}
+
+/// Structured signal extracted from email context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailSignal {
+    pub signal_type: String,
+    pub signal_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_at: Option<String>,
 }
 
 /// Email summary from 83-email-summary.md
@@ -1087,6 +1164,9 @@ pub struct FullMeetingPrep {
     /// Stakeholder insights from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    /// Recent email signals linked to this meeting's entity context.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
 }
 
 /// Unified meeting detail payload (ADR-0066).
@@ -1231,10 +1311,11 @@ impl Default for GoogleConfig {
 pub enum GoogleAuthStatus {
     #[default]
     NotConfigured,
-    Authenticated { email: String },
+    Authenticated {
+        email: String,
+    },
     TokenExpired,
 }
-
 
 /// A calendar event from Google Calendar
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1469,7 +1550,11 @@ mod tests {
             user_company: None,
             user_title: None,
             user_focus: None,
+            internal_team_setup_completed: false,
+            internal_team_setup_version: 0,
+            internal_org_account_id: None,
             developer_mode: false,
+            personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
         }
     }
@@ -1631,5 +1716,44 @@ mod tests {
         assert!(is_feature_enabled(&config, "projectTracking"));
         assert!(is_feature_enabled(&config, "accountTracking"));
         assert!(is_feature_enabled(&config, "impactRollup"));
+    }
+
+    // =========================================================================
+    // Personality validation tests (Sprint 24)
+    // =========================================================================
+
+    #[test]
+    fn test_validate_personality_valid_values() {
+        assert!(validate_personality("professional").is_ok());
+        assert!(validate_personality("friendly").is_ok());
+        assert!(validate_personality("playful").is_ok());
+    }
+
+    #[test]
+    fn test_validate_personality_rejects_invalid() {
+        assert!(validate_personality("casual").is_err());
+        assert!(validate_personality("").is_err());
+        assert!(validate_personality("Professional").is_err()); // case-sensitive
+    }
+
+    #[test]
+    fn test_config_deserializes_without_personality() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.personality, "professional"); // default
+    }
+
+    #[test]
+    fn test_config_deserializes_with_personality() {
+        let json = r#"{
+            "workspacePath": "/tmp/test",
+            "profile": "customer-success",
+            "personality": "playful"
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.personality, "playful");
     }
 }

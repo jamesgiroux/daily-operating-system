@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { EntityMode } from "@/types";
 
 import { Welcome } from "./chapters/Welcome";
@@ -10,56 +9,65 @@ import { GoogleConnect } from "./chapters/GoogleConnect";
 import { ClaudeCode } from "./chapters/ClaudeCode";
 import { AboutYou } from "./chapters/AboutYou";
 import { PopulateWorkspace } from "./chapters/PopulateWorkspace";
-import { InboxTraining, type InboxProcessingState } from "./chapters/InboxTraining";
+import { InboxTraining } from "./chapters/InboxTraining";
 import { DashboardTour } from "./chapters/DashboardTour";
 import { MeetingDeepDive } from "./chapters/MeetingDeepDive";
-import { Ready } from "./chapters/Ready";
+import { InternalTeamSetup } from "./chapters/InternalTeamSetup";
+import { PrimeBriefing } from "./chapters/PrimeBriefing";
 
 interface OnboardingFlowProps {
+  mode?: "full" | "internal";
   onComplete: () => void;
 }
 
-const CHAPTERS = [
+const FULL_CHAPTERS = [
   "welcome",
   "entity-mode",
   "workspace",
   "google",
   "claude-code",
   "about-you",
+  "internal-team-setup",
   "populate",
   "inbox-training",
   "dashboard-tour",
   "meeting-deep-dive",
-  "ready",
+  "prime-briefing",
 ] as const;
 
-type Chapter = (typeof CHAPTERS)[number];
+const INTERNAL_ONLY_CHAPTERS = [
+  "internal-team-setup",
+  "prime-briefing",
+] as const;
 
-const CHAPTER_LABELS = [
-  "Welcome",
-  "Work Style",
-  "Workspace",
-  "Google",
-  "Claude",
-  "About You",
-  "Your Work",
-  "Inbox",
-  "Dashboard",
-  "Meeting Prep",
-  "Ready",
-];
+type Chapter = (typeof FULL_CHAPTERS)[number];
 
-export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
-  const [chapter, setChapter] = useState<Chapter>("welcome");
+const CHAPTER_LABELS: Record<Chapter, string> = {
+  "welcome": "Welcome",
+  "entity-mode": "Work Style",
+  "workspace": "Workspace",
+  "google": "Google",
+  "claude-code": "Claude",
+  "about-you": "About You",
+  "internal-team-setup": "Internal Team",
+  "populate": "Your Work",
+  "inbox-training": "Inbox",
+  "dashboard-tour": "Dashboard",
+  "meeting-deep-dive": "Meeting Prep",
+  "prime-briefing": "Prime",
+};
+
+export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProps) {
+  const chapterOrder = (mode === "internal" ? INTERNAL_ONLY_CHAPTERS : FULL_CHAPTERS) as readonly Chapter[];
+  const [chapter, setChapter] = useState<Chapter>(chapterOrder[0]);
   const [entityMode, setEntityMode] = useState<EntityMode>("account");
-  const [workspacePath, setWorkspacePath] = useState("");
   const [quickSetup, setQuickSetup] = useState(false);
-  const [claudeCodeInstalled, setClaudeCodeInstalled] = useState(false);
-  const [inboxProcessing, setInboxProcessing] = useState<InboxProcessingState | undefined>();
 
-  const { status: googleStatus } = useGoogleAuth();
+  const chapterIndex = chapterOrder.indexOf(chapter);
 
-  const chapterIndex = CHAPTERS.indexOf(chapter);
+  useEffect(() => {
+    setChapter(chapterOrder[0]);
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function goToChapter(c: Chapter) {
     setChapter(c);
@@ -82,7 +90,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       <div className={cn("w-full space-y-6 transition-all duration-300", widthClass)}>
         {/* Progress dots */}
         <div className="flex items-center justify-center gap-2">
-          {CHAPTERS.map((c, i) => (
+          {chapterOrder.map((c, i) => (
             <div
               key={c}
               className={cn(
@@ -93,7 +101,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                     ? "bg-primary"
                     : "bg-muted",
               )}
-              title={CHAPTER_LABELS[i]}
+              title={CHAPTER_LABELS[c]}
             />
           ))}
         </div>
@@ -115,10 +123,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {chapter === "workspace" && (
           <Workspace
             entityMode={entityMode}
-            onNext={(path) => {
-              setWorkspacePath(path);
-              goToChapter("google");
-            }}
+            onNext={(_path) => goToChapter("google")}
           />
         )}
 
@@ -130,16 +135,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "claude-code" && (
           <ClaudeCode
-            onNext={(installed) => {
-              setClaudeCodeInstalled(installed);
-              goToChapter("about-you");
-            }}
+            onNext={(_installed) => goToChapter("about-you")}
           />
         )}
 
         {chapter === "about-you" && (
           <AboutYou
-            onNext={() => goToChapter("populate")}
+            onNext={() => goToChapter("internal-team-setup")}
+          />
+        )}
+
+        {chapter === "internal-team-setup" && (
+          <InternalTeamSetup
+            onNext={() => {
+              if (mode === "internal") {
+                goToChapter("prime-briefing");
+              } else {
+                goToChapter("populate");
+              }
+            }}
           />
         )}
 
@@ -152,10 +166,9 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {chapter === "inbox-training" && (
           <InboxTraining
-            onNext={(state) => {
-              setInboxProcessing(state);
+            onNext={(_state) => {
               if (quickSetup) {
-                goToChapter("ready");
+                goToChapter("prime-briefing");
               } else {
                 goToChapter("dashboard-tour");
               }
@@ -166,27 +179,20 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
         {chapter === "dashboard-tour" && (
           <DashboardTour
             onNext={() => goToChapter("meeting-deep-dive")}
-            onSkipTour={() => goToChapter("ready")}
+            onSkipTour={() => goToChapter("prime-briefing")}
           />
         )}
 
         {chapter === "meeting-deep-dive" && (
-          <MeetingDeepDive onNext={() => goToChapter("ready")} />
+          <MeetingDeepDive onNext={() => goToChapter("prime-briefing")} />
         )}
 
-        {chapter === "ready" && (
-          <Ready
-            entityMode={entityMode}
-            workspacePath={workspacePath}
-            googleStatus={googleStatus}
-            claudeCodeInstalled={claudeCodeInstalled}
-            inboxProcessing={inboxProcessing}
-            onComplete={onComplete}
-          />
+        {chapter === "prime-briefing" && (
+          <PrimeBriefing onComplete={onComplete} />
         )}
 
         {/* Skip to Quick Setup — visible on chapters 1-4 when not already in quick setup */}
-        {!quickSetup && chapterIndex <= 3 && (
+        {mode === "full" && !quickSetup && chapterIndex <= 3 && (
           <div className="text-center pt-2">
             <button
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"

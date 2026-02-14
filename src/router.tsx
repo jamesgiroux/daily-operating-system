@@ -43,23 +43,49 @@ import WeekPage from "@/pages/WeekPage";
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
+import { useNotifications } from "@/hooks/useNotifications";
+import { PersonalityProvider } from "@/hooks/usePersonality";
+
+const settingsTabs = new Set([
+  "profile",
+  "integrations",
+  "workflows",
+  "intelligence",
+  "hygiene",
+  "diagnostics",
+]);
+const peopleRelationshipTabs = new Set(["all", "external", "internal", "unknown"]);
+const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
+  useNotifications();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
 
   useEffect(() => {
     async function checkConfig() {
       try {
-        const config = await invoke<{ workspacePath?: string; entityMode?: string }>("get_config");
+        const config = await invoke<{
+          workspacePath?: string;
+          entityMode?: string;
+          internalTeamSetupCompleted?: boolean;
+        }>("get_config");
         // Show onboarding if config exists but workspace is missing/empty
         if (!config.workspacePath) {
+          setOnboardingMode("full");
+          setNeedsOnboarding(true);
+          return;
+        }
+        if (!config.internalTeamSetupCompleted) {
+          setOnboardingMode("internal");
           setNeedsOnboarding(true);
         }
       } catch {
         // No config at all — needs onboarding
+        setOnboardingMode("full");
         setNeedsOnboarding(true);
       } finally {
         setCheckingConfig(false);
@@ -85,7 +111,7 @@ function RootLayout() {
   if (needsOnboarding) {
     return (
       <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-        <OnboardingFlow onComplete={handleOnboardingComplete} />
+        <OnboardingFlow mode={onboardingMode} onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
       </ThemeProvider>
@@ -94,17 +120,19 @@ function RootLayout() {
 
   return (
     <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
-      <SidebarProvider defaultOpen={false}>
-        <AppSidebar />
-        <SidebarInset>
-          <Header onCommandMenuOpen={() => setCommandOpen(true)} />
-          <Outlet />
-        </SidebarInset>
-        <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
-      </SidebarProvider>
-      <PostMeetingPrompt />
-      <Toaster position="bottom-right" />
-      <DevToolsPanel />
+      <PersonalityProvider>
+        <SidebarProvider defaultOpen={false}>
+          <AppSidebar />
+          <SidebarInset>
+            <Header onCommandMenuOpen={() => setCommandOpen(true)} />
+            <Outlet />
+          </SidebarInset>
+          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+        </SidebarProvider>
+        <PostMeetingPrompt />
+        <Toaster position="bottom-right" />
+        <DevToolsPanel />
+      </PersonalityProvider>
     </ThemeProvider>
   );
 }
@@ -169,6 +197,9 @@ const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
   component: InboxPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    entityId: typeof search.entityId === "string" ? search.entityId : undefined,
+  }),
 });
 
 const emailsRoute = createRoute({
@@ -211,6 +242,13 @@ const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
   component: SettingsPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const validated: { tab?: string } = {};
+    if (typeof search.tab === "string" && settingsTabs.has(search.tab)) {
+      validated.tab = search.tab;
+    }
+    return validated;
+  },
 });
 
 const weekRoute = createRoute({
@@ -229,6 +267,22 @@ const peopleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/people",
   component: PeoplePage,
+  validateSearch: (search: Record<string, unknown>) => {
+    const validated: { relationship?: string; hygiene?: string } = {};
+    if (
+      typeof search.relationship === "string" &&
+      peopleRelationshipTabs.has(search.relationship)
+    ) {
+      validated.relationship = search.relationship;
+    }
+    if (
+      typeof search.hygiene === "string" &&
+      peopleHygieneFilters.has(search.hygiene)
+    ) {
+      validated.hygiene = search.hygiene;
+    }
+    return validated;
+  },
 });
 
 const personDetailRoute = createRoute({
