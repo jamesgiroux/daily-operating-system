@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -10,6 +10,7 @@ use regex::Regex;
 use tauri::{Emitter, State};
 
 use crate::executor::request_workflow_execution;
+use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
 use crate::json_loader::{
     check_data_freshness, load_actions_json, load_emails_json, load_emails_json_with_sync,
     load_prep_json, load_schedule_json, DataFreshness,
@@ -20,8 +21,8 @@ use crate::state::{reload_config, AppState, DbTryRead};
 use crate::types::{
     Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
     ExecutionRecord, FocusAvailability, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus,
-    InboxFile, MeetingIntelligence, MeetingType, OverlayStatus, PostMeetingCaptureConfig, Priority,
-    SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
+    InboxFile, LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
+    PostMeetingCaptureConfig, Priority, SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
 
@@ -52,6 +53,30 @@ const DASHBOARD_LATENCY_BUDGET_MS: u128 = 300;
 const CLAUDE_STATUS_CACHE_TTL_SECS: u64 = 300;
 // TODO(I197 follow-up): migrate remaining command DB call sites to AppState DB
 // helpers in passes, prioritizing frequent reads before one-off write paths.
+
+fn normalize_match_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn attendee_domains(attendees: &[String]) -> HashSet<String> {
+    attendees
+        .iter()
+        .filter_map(|a| a.split('@').nth(1))
+        .map(|d| d.to_lowercase())
+        .collect()
+}
+
+fn build_live_event_domain_map(events: &[CalendarEvent]) -> HashMap<String, HashSet<String>> {
+    let mut map = HashMap::new();
+    for event in events {
+        map.insert(event.id.clone(), attendee_domains(&event.attendees));
+    }
+    map
+}
 
 fn log_command_latency(command: &str, started: std::time::Instant, budget_ms: u128) {
     let elapsed_ms = started.elapsed().as_millis();
@@ -178,17 +203,14 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
             db.get_meeting_entity_map(&meeting_ids)
         }) {
             DbTryRead::Ok(Ok(entity_map)) => {
-                let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-                if !meeting_ids.is_empty() {
-                    for m in &mut meetings {
-                        if let Some(entities) = entity_map.get(&m.id) {
-                            m.linked_entities = Some(entities.clone());
-                            // First account entity also populates account_id + account name
-                            if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
-                            {
-                                m.account_id = Some(acct.id.clone());
-                                m.account = Some(acct.name.clone());
-                            }
+                for m in &mut meetings {
+                    if let Some(entities) = entity_map.get(&m.id) {
+                        m.linked_entities = Some(entities.clone());
+                        // First account entity also populates account_id + account name
+                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
+                        {
+                            m.account_id = Some(acct.id.clone());
+                            m.account = Some(acct.name.clone());
                         }
                     }
                 }
@@ -198,29 +220,94 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
 
         // Flag meetings that matched an archived account for unarchive suggestion (I161)
-        match state.with_db_try_read(|db| db.get_archived_accounts()) {
-            DbTryRead::Ok(Ok(archived)) => {
+        match state.with_db_try_read(|db| -> Result<
+            (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
+            crate::db::DbError,
+        > {
+            // Single JOIN query instead of N+1 per-account domain lookups (W3)
+            let accounts_with_domains = db.get_all_accounts_with_domains(true)?;
+            let mut archived = Vec::new();
+            let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
+            for (account, domains) in accounts_with_domains {
+                if account.archived {
+                    let domain_set: HashSet<String> =
+                        domains.iter().map(|d| d.to_lowercase()).collect();
+                    domains_by_account.insert(account.id.clone(), domain_set);
+                    archived.push(account);
+                }
+            }
+            Ok((archived, domains_by_account))
+        }) {
+            DbTryRead::Ok(Ok((archived, domains_by_account))) => {
                 let archived_ids: HashSet<String> =
                     archived.iter().map(|a| a.id.to_lowercase()).collect();
-                if !archived_ids.is_empty() {
-                    for m in &mut meetings {
-                        // Resolve the account identifier: prefer account_id (junction table),
-                        // fall back to account (classification hint slug)
-                        let resolved = m
-                            .account_id
-                            .as_deref()
-                            .or(m.account.as_deref())
-                            .map(str::to_lowercase);
-                        if let Some(ref id) = resolved {
-                            if archived_ids.contains(id) {
-                                // Find the canonical (original-case) account ID
-                                let canonical = archived
-                                    .iter()
-                                    .find(|a| a.id.to_lowercase() == *id)
-                                    .map(|a| a.id.clone())
-                                    .unwrap_or_else(|| id.clone());
-                                m.suggested_unarchive_account_id = Some(canonical);
+                let live_domains = build_live_event_domain_map(&live_events);
+                for m in &mut meetings {
+                    // Already linked to an active account; skip suggestion.
+                    if let Some(ref account_id) = m.account_id {
+                        if !archived_ids.contains(&account_id.to_lowercase()) {
+                            continue;
+                        }
+                    }
+
+                    let account_hint_key = m
+                        .account
+                        .as_deref()
+                        .map(normalize_match_key)
+                        .unwrap_or_default();
+                    let account_id_key = m
+                        .account_id
+                        .as_deref()
+                        .map(normalize_match_key)
+                        .unwrap_or_default();
+                    let meeting_domains = m
+                        .calendar_event_id
+                        .as_ref()
+                        .and_then(|id| live_domains.get(id))
+                        .or_else(|| live_domains.get(&m.id));
+
+                    let mut best: Option<(i32, String, String)> = None;
+                    for archived_account in &archived {
+                        let mut score = 0i32;
+                        let archived_id_key = normalize_match_key(&archived_account.id);
+                        let archived_name_key = normalize_match_key(&archived_account.name);
+
+                        if !account_id_key.is_empty() && account_id_key == archived_id_key {
+                            score = score.max(100);
+                        }
+                        if !account_hint_key.is_empty()
+                            && (account_hint_key == archived_id_key
+                                || account_hint_key == archived_name_key)
+                        {
+                            score = score.max(90);
+                        }
+                        if let Some(domains) = meeting_domains {
+                            if let Some(account_domains) = domains_by_account.get(&archived_account.id) {
+                                if !account_domains.is_empty()
+                                    && domains.iter().any(|d| account_domains.contains(d))
+                                {
+                                    score = score.max(80);
+                                }
                             }
+                        }
+
+                        if score == 0 {
+                            continue;
+                        }
+                        let tie = archived_account.id.to_lowercase();
+                        let candidate = (score, tie.clone(), archived_account.id.clone());
+                        if best
+                            .as_ref()
+                            .map(|(s, t, _)| score > *s || (score == *s && tie < *t))
+                            .unwrap_or(true)
+                        {
+                            best = Some(candidate);
+                        }
+                    }
+
+                    if let Some((score, _, account_id)) = best {
+                        if score >= 80 {
+                            m.suggested_unarchive_account_id = Some(account_id);
                         }
                     }
                 }
@@ -1077,6 +1164,116 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     }
 }
 
+/// TTL thresholds for week calendar cache (W6).
+const WEEK_CACHE_FRESH_SECS: u64 = 120; // 2 min: serve immediately
+const WEEK_CACHE_STALE_SECS: u64 = 300; // 5 min: serve stale + background refresh
+
+/// Live proactive suggestions computed from current calendar + SQLite action state.
+///
+/// Uses a TTL cache to avoid hitting Google Calendar API on every call (W6).
+/// Fresh (<2 min): return cached. Stale (2-5 min): return cached + refresh in background.
+/// Expired (>5 min) or empty: wait for fresh fetch.
+#[tauri::command]
+pub async fn get_live_proactive_suggestions(
+    state: State<'_, Arc<AppState>>,
+    force_refresh: Option<bool>,
+) -> Result<Vec<LiveProactiveSuggestion>, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    // Use a dedicated DB connection so this async command never holds AppState DB lock
+    // across Google API awaits.
+    let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+    let (account_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
+
+    // Check cache unless force refresh requested
+    if !force_refresh.unwrap_or(false) {
+        if let Ok(guard) = state.week_calendar_cache.read() {
+            if let Some((ref events, fetched_at)) = *guard {
+                let age = fetched_at.elapsed().as_secs();
+                if age < WEEK_CACHE_FRESH_SECS {
+                    // Fresh: compute from cached events directly
+                    return crate::queries::proactive::compute_suggestions_from_events(
+                        &config, events, &actions,
+                    );
+                }
+                if age < WEEK_CACHE_STALE_SECS {
+                    // Stale but usable: compute now, trigger background refresh
+                    let result = crate::queries::proactive::compute_suggestions_from_events(
+                        &config, events, &actions,
+                    );
+                    let bg_state = state.inner().clone();
+                    let bg_config = config.clone();
+                    let bg_hints = account_hints.clone();
+                    tokio::spawn(async move {
+                        let _ = refresh_week_calendar_cache(&bg_state, &bg_config, bg_hints).await;
+                    });
+                    return result;
+                }
+            }
+        }
+    }
+
+    // Cache miss or expired: fetch, cache, and compute
+    let events = refresh_week_calendar_cache(&state, &config, account_hints).await?;
+    crate::queries::proactive::compute_suggestions_from_events(&config, &events, &actions)
+}
+
+/// Fetch week calendar events from Google API and update the AppState cache.
+async fn refresh_week_calendar_cache(
+    state: &AppState,
+    config: &crate::types::Config,
+    account_hints: std::collections::HashSet<String>,
+) -> Result<Vec<CalendarEvent>, String> {
+    let events =
+        crate::queries::proactive::fetch_week_events(config, &account_hints).await?;
+
+    if let Ok(mut guard) = state.week_calendar_cache.write() {
+        *guard = Some((events.clone(), std::time::Instant::now()));
+    }
+
+    Ok(events)
+}
+
+/// Retry only week AI enrichment without rerunning full week prepare/deliver.
+#[tauri::command]
+pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let workspace_path = config.workspace_path.clone();
+    let user_ctx = crate::types::UserContext::from_config(&config);
+    let ai_models = config.ai_models.clone();
+    let state = state.inner().clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        let workspace = std::path::Path::new(&workspace_path);
+        let data_dir = workspace.join("_today").join("data");
+        let week_path = data_dir.join("week-overview.json");
+        if !week_path.exists() {
+            return Err("No weekly overview found. Run the weekly workflow first.".to_string());
+        }
+
+        let pty = crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Synthesis, &ai_models);
+        crate::workflow::deliver::enrich_week(&data_dir, &pty, workspace, &user_ctx, &state)
+    });
+
+    match task.await {
+        Ok(result) => result?,
+        Err(e) => return Err(format!("Week enrichment task panicked: {}", e)),
+    }
+
+    Ok("Week enrichment retried".to_string())
+}
+
 // =============================================================================
 // Focus Data Command
 // =============================================================================
@@ -1169,15 +1366,22 @@ pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
         // 4. Compute capacity from merged meetings (live-first with fallback warning)
         let source = focus_capacity_source_for_live_events(&live_events);
         let day_date = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let capacity =
-            crate::focus_capacity::compute_focus_capacity(crate::focus_capacity::FocusCapacityInput {
+        let mut capacity = crate::focus_capacity::compute_focus_capacity(
+            crate::focus_capacity::FocusCapacityInput {
                 meetings: meetings.clone(),
                 source,
                 timezone: tz,
                 work_hours_start: config.google.work_hours_start,
                 work_hours_end: config.google.work_hours_end,
                 day_date,
-            });
+            },
+        );
+
+        // Suppress stale-data warning when the briefing schedule is from today —
+        // it was generated from today's Google Calendar and is fresh enough.
+        if overview.date == day_date.format("%Y-%m-%d").to_string() {
+            capacity.warnings.clear();
+        }
 
         // 5. Filter meetings to "key" types (where prep matters)
         let key_meetings: Vec<FocusMeeting> = meetings
@@ -1430,6 +1634,7 @@ pub fn get_inbox_files(state: State<Arc<AppState>>) -> InboxResult {
 #[tauri::command]
 pub async fn process_inbox_file(
     filename: String,
+    entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::processor::ProcessingResult, String> {
     let config = state
@@ -1442,6 +1647,7 @@ pub async fn process_inbox_file(
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
+    let entity_id = entity_id.clone();
 
     // Validate filename before processing (I60: path traversal guard)
     let workspace = Path::new(&workspace_path);
@@ -1451,7 +1657,18 @@ pub async fn process_inbox_file(
         let workspace = Path::new(&workspace_path);
         let db_guard = state.db.lock().ok();
         let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
-        crate::processor::process_file(workspace, &filename, db_ref, &profile)
+        let entity_tracker_path = entity_id.as_deref().and_then(|eid| {
+            db_ref
+                .and_then(|db| db.get_entity(eid).ok().flatten())
+                .and_then(|e| e.tracker_path)
+        });
+        crate::processor::process_file(
+            workspace,
+            &filename,
+            db_ref,
+            &profile,
+            entity_tracker_path.as_deref(),
+        )
     })
     .await
     .map_err(|e| format!("Processing task failed: {}", e))
@@ -1492,6 +1709,7 @@ pub async fn process_all_inbox(
 #[tauri::command]
 pub async fn enrich_inbox_file(
     filename: String,
+    entity_id: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::processor::enrich::EnrichResult, String> {
     let config = state
@@ -1504,6 +1722,7 @@ pub async fn enrich_inbox_file(
     let state = state.inner().clone();
     let workspace_path = config.workspace_path.clone();
     let profile = config.profile.clone();
+    let entity_id = entity_id.clone();
 
     // Validate filename before enriching (I60: path traversal guard)
     let workspace = Path::new(&workspace_path);
@@ -1514,6 +1733,18 @@ pub async fn enrich_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
+        let entity_tracker_path = state
+            .db
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.as_ref().and_then(|db| {
+                    entity_id
+                        .as_deref()
+                        .and_then(|eid| db.get_entity(eid).ok().flatten())
+                })
+            })
+            .and_then(|e| e.tracker_path);
         crate::processor::enrich::enrich_file(
             workspace,
             &filename,
@@ -1521,6 +1752,7 @@ pub async fn enrich_inbox_file(
             &profile,
             Some(&user_ctx),
             Some(&ai_config),
+            entity_tracker_path.as_deref(),
         )
     })
     .await
@@ -1746,6 +1978,32 @@ pub async fn refresh_emails(
     .map(|_| "Email refresh complete".to_string())
 }
 
+/// Refresh focus/briefing narrative without running full /today pipeline.
+#[tauri::command]
+pub async fn refresh_focus(
+    state: State<'_, Arc<AppState>>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+
+    let state_clone = state.inner().clone();
+    let workspace_path = config.workspace_path.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let workspace = std::path::Path::new(&workspace_path);
+        let executor = crate::executor::Executor::new(state_clone, app_handle);
+        executor.execute_focus_refresh(workspace).await
+    })
+    .await
+    .map_err(|e| format!("Focus refresh task panicked: {}", e))?
+    .map(|_| "Focus refreshed".to_string())
+}
+
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
 ///
 /// Reads emails.json, collects IDs of low-priority emails, calls Gmail
@@ -1907,6 +2165,19 @@ pub fn set_workspace_path(path: String, state: State<Arc<AppState>>) -> Result<C
 pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<Config, String> {
     crate::state::create_or_update_config(&state, |config| {
         config.developer_mode = enabled;
+    })
+}
+
+/// Set UI personality tone (professional, friendly, playful)
+#[tauri::command]
+pub fn set_personality(
+    personality: String,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    let normalized = personality.to_lowercase();
+    crate::types::validate_personality(&normalized)?;
+    crate::state::create_or_update_config(&state, |config| {
+        config.personality = normalized.clone();
     })
 }
 
@@ -2403,6 +2674,12 @@ pub fn get_action_detail(
 // Phase 3.0: Google Auth Commands
 // =============================================================================
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleAuthFailedPayload {
+    message: String,
+}
+
 /// Get current Google authentication status.
 ///
 /// Re-checks persisted auth storage when cached state is NotConfigured,
@@ -2458,7 +2735,19 @@ pub async fn start_google_auth(
 
     // Run the native Rust OAuth flow
     let workspace = std::path::Path::new(&workspace_path);
-    let email = crate::google::start_auth(workspace).await?;
+    let email = match crate::google::start_auth(workspace).await {
+        Ok(email) => email,
+        Err(err) => {
+            let message = err.to_string();
+            let _ = app_handle.emit(
+                "google-auth-failed",
+                GoogleAuthFailedPayload {
+                    message: message.clone(),
+                },
+            );
+            return Err(message);
+        }
+    };
 
     let new_status = GoogleAuthStatus::Authenticated {
         email: email.clone(),
@@ -3300,11 +3589,10 @@ pub fn populate_workspace(
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
+            is_internal: false,
             updated_at: now.clone(),
             archived: false,
         };
@@ -3378,6 +3666,133 @@ pub fn populate_workspace(
         "Created {} accounts, {} projects",
         account_count, project_count
     ))
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingPrimingCard {
+    pub id: String,
+    pub title: String,
+    pub start_time: Option<String>,
+    pub day_label: String,
+    pub suggested_entity_id: Option<String>,
+    pub suggested_entity_name: Option<String>,
+    pub suggested_action: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnboardingPrimingContext {
+    pub google_connected: bool,
+    pub cards: Vec<OnboardingPrimingCard>,
+    pub prompt: String,
+}
+
+#[tauri::command]
+pub async fn get_onboarding_priming_context(
+    state: State<'_, Arc<AppState>>,
+) -> Result<OnboardingPrimingContext, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("Config not loaded")?;
+    let user_domains = config.resolved_user_domains();
+
+    let access_token = match crate::google_api::get_valid_access_token().await {
+        Ok(token) => token,
+        Err(_) => {
+            return Ok(OnboardingPrimingContext {
+                google_connected: false,
+                cards: Vec::new(),
+                prompt: "Connect Google Calendar to preview your first full briefing. You can still generate a first run now."
+                    .to_string(),
+            })
+        }
+    };
+
+    let today = chrono::Local::now().date_naive();
+    let tomorrow = today + chrono::Duration::days(1);
+    let raw_events = crate::google_api::calendar::fetch_events(&access_token, today, tomorrow)
+        .await
+        .map_err(|e| format!("Calendar fetch failed: {}", e))?;
+
+    let (hints, internal_root) = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        (
+            crate::helpers::build_external_account_hints(db),
+            db.get_internal_root_account().ok().flatten(),
+        )
+    };
+
+    let mut cards = Vec::new();
+    for raw in raw_events.iter().filter(|e| !e.is_all_day).take(8) {
+        let cm = crate::google_api::classify::classify_meeting_multi(raw, &user_domains, &hints);
+        let event = cm.to_calendar_event();
+        let start = event.start.with_timezone(&chrono::Local);
+        let day_label = if start.date_naive() == today {
+            "Today".to_string()
+        } else if start.date_naive() == tomorrow {
+            "Tomorrow".to_string()
+        } else {
+            start.format("%a").to_string()
+        };
+
+        let mut suggested_entity_id = None;
+        let mut suggested_entity_name = None;
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Some(ref account_hint) = cm.account {
+                    if let Ok(Some(account)) = db.get_account_by_name(account_hint) {
+                        suggested_entity_id = Some(account.id.clone());
+                        suggested_entity_name = Some(account.name.clone());
+                    }
+                } else if matches!(
+                    event.meeting_type,
+                    crate::types::MeetingType::Internal
+                        | crate::types::MeetingType::TeamSync
+                        | crate::types::MeetingType::OneOnOne
+                ) {
+                    if let Some(ref root) = internal_root {
+                        suggested_entity_id = Some(root.id.clone());
+                        suggested_entity_name = Some(root.name.clone());
+                    }
+                }
+            }
+        }
+
+        let suggested_action = match event.meeting_type {
+            crate::types::MeetingType::Customer
+            | crate::types::MeetingType::Qbr
+            | crate::types::MeetingType::Partnership => {
+                "Open context and prep follow-up questions".to_string()
+            }
+            crate::types::MeetingType::Internal
+            | crate::types::MeetingType::TeamSync
+            | crate::types::MeetingType::OneOnOne => "Capture decisions and owners in Inbox".to_string(),
+            _ => "Review context before kickoff".to_string(),
+        };
+
+        cards.push(OnboardingPrimingCard {
+            id: event.id,
+            title: event.title,
+            start_time: Some(start.to_rfc3339()),
+            day_label,
+            suggested_entity_id,
+            suggested_entity_name,
+            suggested_action,
+        });
+    }
+
+    Ok(OnboardingPrimingContext {
+        google_connected: true,
+        cards,
+        prompt:
+            "Prime your first briefing by reviewing high-priority meetings and running a full 'today' workflow preview."
+                .to_string(),
+    })
 }
 
 // =============================================================================
@@ -4161,6 +4576,8 @@ pub fn create_person(
     relationship: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
+    let email = crate::util::validate_email(&email)?;
+
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -4316,8 +4733,8 @@ pub struct AccountListItem {
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_summary: Option<String>,
     pub renewal_date: Option<String>,
     pub open_action_count: usize,
     pub days_since_last_meeting: Option<i64>,
@@ -4325,6 +4742,7 @@ pub struct AccountListItem {
     pub parent_name: Option<String>,
     pub child_count: usize,
     pub is_parent: bool,
+    pub is_internal: bool,
 }
 
 /// Full account detail for the detail page.
@@ -4337,8 +4755,6 @@ pub struct AccountDetailResult {
     pub arr: Option<f64>,
     pub health: Option<String>,
     pub nps: Option<i32>,
-    pub csm: Option<String>,
-    pub champion: Option<String>,
     pub renewal_date: Option<String>,
     pub contract_start: Option<String>,
     pub company_overview: Option<crate::accounts::CompanyOverview>,
@@ -4349,12 +4765,16 @@ pub struct AccountDetailResult {
     /// ADR-0063: richer type with optional prep context for preview cards.
     pub recent_meetings: Vec<MeetingPreview>,
     pub linked_people: Vec<crate::db::DbPerson>,
+    pub account_team: Vec<crate::db::DbAccountTeamMember>,
+    pub account_team_import_notes: Vec<crate::db::DbAccountTeamImportNote>,
     pub signals: Option<crate::db::StakeholderSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     pub parent_id: Option<String>,
     pub parent_name: Option<String>,
     pub children: Vec<AccountChildSummary>,
     pub parent_aggregate: Option<crate::db::ParentAggregate>,
+    pub is_internal: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -4401,6 +4821,7 @@ pub struct PickerAccount {
     pub id: String,
     pub name: String,
     pub parent_name: Option<String>,
+    pub is_internal: bool,
 }
 
 #[tauri::command]
@@ -4428,6 +4849,7 @@ pub fn get_accounts_for_picker(state: State<Arc<AppState>>) -> Result<Vec<Picker
                 id: a.id,
                 name: a.name,
                 parent_name,
+                is_internal: a.is_internal,
             }
         })
         .collect();
@@ -4489,6 +4911,24 @@ fn account_to_list_item(
         })
     });
 
+    let team_summary = db.get_account_team(&a.id).ok().and_then(|members| {
+        if members.is_empty() {
+            None
+        } else {
+            let labels: Vec<String> = members
+                .iter()
+                .take(2)
+                .map(|m| format!("{} ({})", m.person_name, m.role.to_uppercase()))
+                .collect();
+            let suffix = if members.len() > 2 {
+                format!(" +{}", members.len() - 2)
+            } else {
+                String::new()
+            };
+            Some(format!("Team: {}{}", labels.join(", "), suffix))
+        }
+    });
+
     AccountListItem {
         id: a.id.clone(),
         name: a.name.clone(),
@@ -4496,8 +4936,7 @@ fn account_to_list_item(
         arr: a.arr,
         health: a.health.clone(),
         nps: a.nps,
-        csm: a.csm.clone(),
-        champion: a.champion.clone(),
+        team_summary,
         renewal_date: a.contract_end.clone(),
         open_action_count,
         days_since_last_meeting,
@@ -4505,6 +4944,7 @@ fn account_to_list_item(
         parent_name: None,
         child_count,
         is_parent: child_count > 0,
+        is_internal: a.is_internal,
     }
 }
 
@@ -4593,11 +5033,18 @@ pub fn get_account_detail(
         .collect();
 
     let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
+    let account_team = db.get_account_team(&account_id).unwrap_or_default();
+    let account_team_import_notes = db
+        .get_account_team_import_notes(&account_id)
+        .unwrap_or_default();
 
     let signals = db.get_stakeholder_signals(&account_id).ok();
 
     let recent_captures = db
         .get_captures_for_account(&account_id, 90)
+        .unwrap_or_default();
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&account_id, 12)
         .unwrap_or_default();
 
     // I114: Resolve parent name for child accounts, children for parent accounts
@@ -4636,8 +5083,6 @@ pub fn get_account_detail(
         arr: account.arr,
         health: account.health,
         nps: account.nps,
-        csm: account.csm,
-        champion: account.champion,
         renewal_date: account.contract_end,
         contract_start: account.contract_start,
         company_overview: overview,
@@ -4647,14 +5092,61 @@ pub fn get_account_detail(
         upcoming_meetings,
         recent_meetings,
         linked_people,
+        account_team,
+        account_team_import_notes,
         signals,
         recent_captures,
+        recent_email_signals,
         parent_id: account.parent_id,
         parent_name,
         children,
         parent_aggregate,
+        is_internal: account.is_internal,
         intelligence,
     })
+}
+
+/// Get account-team members (I207).
+#[tauri::command]
+pub fn get_account_team(
+    account_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccountTeamMember>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_account_team(&account_id).map_err(|e| e.to_string())
+}
+
+/// Add a person-role pair to an account team (I207).
+#[tauri::command]
+pub fn add_account_team_member(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let role = role.trim().to_lowercase();
+    if role.is_empty() {
+        return Err("Role is required".to_string());
+    }
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.add_account_team_member(&account_id, &person_id, &role)
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a person-role pair from an account team (I207).
+#[tauri::command]
+pub fn remove_account_team_member(
+    account_id: String,
+    person_id: String,
+    role: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.remove_account_team_member(&account_id, &person_id, &role)
+        .map_err(|e| e.to_string())
 }
 
 /// Update a single structured field on an account.
@@ -4792,7 +5284,7 @@ pub fn create_account(
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
     // Derive ID and tracker_path based on whether this is a child account
-    let (id, tracker_path) = if let Some(ref pid) = parent_id {
+    let (id, tracker_path, is_internal) = if let Some(ref pid) = parent_id {
         let parent = db
             .get_account(pid)
             .map_err(|e| e.to_string())?
@@ -4802,10 +5294,10 @@ pub fn create_account(
             .tracker_path
             .unwrap_or_else(|| format!("Accounts/{}", parent.name));
         let tp = format!("{}/{}", parent_dir, name);
-        (child_id, tp)
+        (child_id, tp, parent.is_internal)
     } else {
         let id = crate::util::slugify(&name);
-        (id, format!("Accounts/{}", name))
+        (id, format!("Accounts/{}", name), false)
     };
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -4818,16 +5310,18 @@ pub fn create_account(
         health: None,
         contract_start: None,
         contract_end: None,
-        csm: None,
-        champion: None,
         nps: None,
         tracker_path: Some(tracker_path),
         parent_id,
+        is_internal,
         updated_at: now,
         archived: false,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
+    if let Some(ref pid) = account.parent_id {
+        let _ = db.copy_account_domains(pid, &account.id);
+    }
 
     // Create workspace files + directory template (ADR-0059)
     let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -4841,6 +5335,518 @@ pub fn create_account(
     }
 
     Ok(id)
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamColleagueInput {
+    pub name: String,
+    pub email: String,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateInternalOrganizationResult {
+    pub root_account_id: String,
+    pub initial_team_id: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalTeamSetupPrefill {
+    pub company: Option<String>,
+    pub domains: Vec<String>,
+    pub title: Option<String>,
+    pub suggested_team_name: String,
+    pub suggested_colleagues: Vec<TeamColleagueInput>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InternalTeamSetupStatus {
+    pub required: bool,
+    pub prefill: InternalTeamSetupPrefill,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateChildAccountResult {
+    pub id: String,
+}
+
+// Domain normalization moved to crate::util::normalize_domains (DRY)
+
+fn normalize_key(value: &str) -> String {
+    value
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn create_child_account_record(
+    db: &crate::db::ActionDb,
+    workspace: Option<&Path>,
+    parent: &crate::db::DbAccount,
+    name: &str,
+    description: Option<&str>,
+    owner_person_id: Option<&str>,
+) -> Result<crate::db::DbAccount, String> {
+    let children = db
+        .get_child_accounts(&parent.id)
+        .map_err(|e| e.to_string())?;
+    if children.iter().any(|c| c.name.eq_ignore_ascii_case(name)) {
+        return Err(format!(
+            "A child named '{}' already exists under '{}'",
+            name, parent.name
+        ));
+    }
+
+    let base_slug = crate::util::slugify(name);
+    let mut id = format!("{}--{}", parent.id, base_slug);
+    let mut suffix = 2usize;
+    while db.get_account(&id).map_err(|e| e.to_string())?.is_some() {
+        id = format!("{}--{}-{}", parent.id, base_slug, suffix);
+        suffix += 1;
+    }
+
+    let parent_tracker = parent.tracker_path.clone().unwrap_or_else(|| {
+        if parent.is_internal {
+            format!("Internal/{}", parent.name)
+        } else {
+            format!("Accounts/{}", parent.name)
+        }
+    });
+    let tracker_path = format!("{}/{}", parent_tracker, name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let account = crate::db::DbAccount {
+        id,
+        name: name.to_string(),
+        lifecycle: None,
+        arr: None,
+        health: None,
+        contract_start: None,
+        contract_end: None,
+        nps: None,
+        tracker_path: Some(tracker_path),
+        parent_id: Some(parent.id.clone()),
+        is_internal: parent.is_internal,
+        updated_at: now,
+        archived: false,
+    };
+
+    db.upsert_account(&account).map_err(|e| e.to_string())?;
+    db.copy_account_domains(&parent.id, &account.id)
+        .map_err(|e| e.to_string())?;
+
+    if let Some(owner_id) = owner_person_id {
+        db.link_person_to_entity(owner_id, &account.id, "owner")
+            .map_err(|e| e.to_string())?;
+    }
+
+    if let Some(ws) = workspace {
+        let account_dir = crate::accounts::resolve_account_dir(ws, &account);
+        let _ = std::fs::create_dir_all(&account_dir);
+        let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
+
+        let mut json = default_account_json(&account);
+        if let Some(desc) = description {
+            let trimmed = desc.trim();
+            if !trimmed.is_empty() {
+                json.notes = Some(trimmed.to_string());
+            }
+        }
+        let _ = crate::accounts::write_account_json(ws, &account, Some(&json), db);
+        let _ = crate::accounts::write_account_markdown(ws, &account, Some(&json), db);
+    }
+
+    Ok(account)
+}
+
+fn infer_internal_account_for_meeting(
+    db: &crate::db::ActionDb,
+    title: &str,
+    attendees_csv: Option<&str>,
+) -> Option<crate::db::DbAccount> {
+    let internal_accounts = db.get_internal_accounts().ok()?;
+    if internal_accounts.is_empty() {
+        return None;
+    }
+    let root = internal_accounts
+        .iter()
+        .find(|a| a.parent_id.is_none())
+        .cloned();
+    let candidates: Vec<crate::db::DbAccount> = internal_accounts
+        .iter()
+        .filter(|a| a.parent_id.is_some())
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        return root;
+    }
+
+    let title_key = normalize_key(title);
+    let attendee_set: HashSet<String> = attendees_csv
+        .unwrap_or("")
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| s.contains('@'))
+        .collect();
+
+    let mut best: Option<(i32, crate::db::DbAccount)> = None;
+    for candidate in candidates {
+        let mut score = 0i32;
+        let name_key = normalize_key(&candidate.name);
+        if !name_key.is_empty() && title_key.contains(&name_key) {
+            score += 2;
+        }
+
+        let overlaps = db
+            .get_people_for_entity(&candidate.id)
+            .unwrap_or_default()
+            .iter()
+            .filter(|p| attendee_set.contains(&p.email.to_lowercase()))
+            .count() as i32;
+        score += overlaps * 3;
+
+        match &best {
+            None => best = Some((score, candidate)),
+            Some((best_score, best_acc)) => {
+                if score > *best_score
+                    || (score == *best_score
+                        && candidate.name.to_lowercase() < best_acc.name.to_lowercase())
+                {
+                    best = Some((score, candidate));
+                }
+            }
+        }
+    }
+
+    match best {
+        Some((score, account)) if score > 0 => Some(account),
+        _ => root,
+    }
+}
+
+#[tauri::command]
+pub fn get_internal_team_setup_status(
+    state: State<Arc<AppState>>,
+) -> Result<InternalTeamSetupStatus, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("Config not loaded")?;
+
+    let suggested_team_name = if let Some(title) = config.user_title.as_deref() {
+        if title.to_lowercase().contains("manager") || title.to_lowercase().contains("director") {
+            "Leadership Team".to_string()
+        } else {
+            "Core Team".to_string()
+        }
+    } else {
+        "Core Team".to_string()
+    };
+
+    let suggested_colleagues = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        db.get_people(Some("internal"))
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .take(5)
+            .map(|p| TeamColleagueInput {
+                name: p.name,
+                email: p.email,
+                title: p.role,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    Ok(InternalTeamSetupStatus {
+        required: !config.internal_team_setup_completed,
+        prefill: InternalTeamSetupPrefill {
+            company: config.user_company.clone(),
+            domains: config.resolved_user_domains(),
+            title: config.user_title.clone(),
+            suggested_team_name,
+            suggested_colleagues,
+        },
+    })
+}
+
+#[tauri::command]
+pub fn create_internal_organization(
+    company_name: String,
+    domains: Vec<String>,
+    team_name: String,
+    colleagues: Vec<TeamColleagueInput>,
+    existing_person_ids: Option<Vec<String>>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateInternalOrganizationResult, String> {
+    // Validation (before transaction)
+    let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
+    let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
+    let domains = crate::util::normalize_domains(&domains);
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone())
+        .ok_or("Config not loaded")?;
+    let workspace = Path::new(&workspace_path);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // === CRITICAL SECTION: Transaction wraps all DB writes ===
+    // Filesystem writes happen after commit (best-effort per ADR-0048).
+    let (root_account, initial_team, created_people, updated_people) = db.with_transaction(|db| {
+        if db
+            .get_internal_root_account()
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Err("Internal organization already exists".to_string());
+        }
+
+        let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
+        let mut suffix = 2usize;
+        while db.get_account(&root_id).map_err(|e| e.to_string())?.is_some() {
+            root_id = format!(
+                "internal-{}-{}",
+                crate::util::slugify(&company_name),
+                suffix
+            );
+            suffix += 1;
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let root_account = crate::db::DbAccount {
+            id: root_id.clone(),
+            name: company_name.clone(),
+            lifecycle: Some("active".to_string()),
+            arr: None,
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            nps: None,
+            tracker_path: Some(format!("Internal/{}", company_name)),
+            parent_id: None,
+            is_internal: true,
+            updated_at: now,
+            archived: false,
+        };
+        db.upsert_account(&root_account).map_err(|e| e.to_string())?;
+        db.set_account_domains(&root_account.id, &domains)
+            .map_err(|e| e.to_string())?;
+
+        let initial_team = create_child_account_record(db, None, &root_account, &team_name, None, None)?;
+        db.copy_account_domains(&root_account.id, &initial_team.id)
+            .map_err(|e| e.to_string())?;
+
+        let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
+        for colleague in &colleagues {
+            let email = match crate::util::validate_email(&colleague.email) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let person_id = crate::util::slugify(&email);
+            let now = chrono::Utc::now().to_rfc3339();
+            let person = crate::db::DbPerson {
+                id: person_id.clone(),
+                email: email.clone(),
+                name: colleague.name.trim().to_string(),
+                organization: Some(company_name.clone()),
+                role: colleague.title.clone(),
+                relationship: "internal".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: Some(now.clone()),
+                meeting_count: 0,
+                updated_at: now,
+                archived: false,
+            };
+            db.upsert_person(&person).map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &root_account.id, "member")
+                .map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                .map_err(|e| e.to_string())?;
+            created_people.push(person);
+        }
+
+        let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
+        for person_id in existing_person_ids.unwrap_or_default() {
+            if let Ok(Some(mut person)) = db.get_person(&person_id) {
+                if person.relationship != "internal" {
+                    person.relationship = "internal".to_string();
+                    person.organization = Some(company_name.clone());
+                    db.upsert_person(&person).map_err(|e| e.to_string())?;
+                    updated_people.push(person);
+                }
+                db.link_person_to_entity(&person_id, &root_account.id, "member")
+                    .map_err(|e| e.to_string())?;
+                db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok((root_account, initial_team, created_people, updated_people))
+    })?;
+
+    // Filesystem writes (best-effort, outside transaction)
+    let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
+    let _ = std::fs::create_dir_all(&root_dir);
+    let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
+
+    let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
+    let _ = std::fs::create_dir_all(&team_dir);
+    let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name, "account");
+    let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
+    let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
+
+    for person in &created_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
+    }
+    for person in &updated_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
+    }
+
+    drop(db_guard);
+
+    crate::state::create_or_update_config(&state, |config| {
+        config.internal_team_setup_completed = true;
+        config.internal_team_setup_version = 1;
+        config.internal_org_account_id = Some(root_account.id.clone());
+        if config.user_company.is_none() {
+            config.user_company = Some(company_name.clone());
+        }
+        if !domains.is_empty() {
+            config.user_domain = domains.first().cloned();
+            config.user_domains = Some(domains.clone());
+        }
+    })?;
+
+    Ok(CreateInternalOrganizationResult {
+        root_account_id: root_account.id,
+        initial_team_id: initial_team.id,
+    })
+}
+
+#[tauri::command]
+pub fn create_child_account(
+    parent_id: String,
+    name: String,
+    description: Option<String>,
+    owner_person_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateChildAccountResult, String> {
+    let name = crate::util::validate_entity_name(&name)?.to_string();
+    let workspace_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .as_ref()
+        .map(|c| c.workspace_path.clone());
+    let workspace = workspace_path.as_deref().map(Path::new);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let parent = db
+        .get_account(&parent_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Parent account not found: {}", parent_id))?;
+    let child = create_child_account_record(
+        db,
+        workspace,
+        &parent,
+        &name,
+        description.as_deref(),
+        owner_person_id.as_deref(),
+    )?;
+    drop(db_guard);
+
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id: child.id.clone(),
+        entity_type: "account".to_string(),
+        priority: crate::intel_queue::IntelPriority::ContentChange,
+        requested_at: std::time::Instant::now(),
+    });
+
+    Ok(CreateChildAccountResult { id: child.id })
+}
+
+#[tauri::command]
+pub fn create_team(
+    name: String,
+    description: Option<String>,
+    owner_person_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<CreateChildAccountResult, String> {
+    let root_id = {
+        let cfg = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned")?
+            .clone()
+            .ok_or("Config not loaded")?;
+        if let Some(id) = cfg.internal_org_account_id {
+            id
+        } else {
+            let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+            let db = db_guard.as_ref().ok_or("Database not initialized")?;
+            db.get_internal_root_account()
+                .map_err(|e| e.to_string())?
+                .map(|a| a.id)
+                .ok_or("No internal organization configured")?
+        }
+    };
+
+    create_child_account(root_id, name, description, owner_person_id, state)
+}
+
+#[tauri::command]
+pub fn backfill_internal_meeting_associations(state: State<Arc<AppState>>) -> Result<usize, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT m.id, m.title, m.attendees
+             FROM meetings_history m
+             LEFT JOIN meeting_entities me ON me.meeting_id = m.id AND me.entity_type = 'account'
+             WHERE m.meeting_type IN ('internal', 'team_sync', 'one_on_one')
+               AND me.meeting_id IS NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let meetings: Vec<(String, String, Option<String>)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    let mut updated = 0usize;
+    for (meeting_id, title, attendees) in meetings {
+        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref()) else {
+            continue;
+        };
+        let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
+        let _ = db.update_meeting_account(&meeting_id, Some(&account.id));
+        let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
+        updated += 1;
+    }
+
+    Ok(updated)
 }
 
 // =============================================================================
@@ -4969,6 +5975,7 @@ pub struct ProjectDetailResult {
     pub linked_people: Vec<crate::db::DbPerson>,
     pub signals: Option<crate::db::ProjectSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
+    pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -5072,6 +6079,9 @@ pub fn get_project_detail(
     let recent_captures = db
         .get_captures_for_project(&project_id, 90)
         .unwrap_or_default();
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&project_id, 12)
+        .unwrap_or_default();
 
     Ok(ProjectDetailResult {
         id: project.id,
@@ -5088,6 +6098,7 @@ pub fn get_project_detail(
         linked_people,
         signals,
         recent_captures,
+        recent_email_signals,
         intelligence,
     })
 }
@@ -5298,8 +6309,9 @@ fn default_account_json(account: &crate::db::DbAccount) -> crate::accounts::Acco
             lifecycle: account.lifecycle.clone(),
             renewal_date: account.contract_end.clone(),
             nps: account.nps,
-            csm: account.csm.clone(),
-            champion: account.champion.clone(),
+            account_team: Vec::new(),
+            csm: None,
+            champion: None,
         },
         company_overview: None,
         strategic_programs: Vec::new(),
@@ -5321,6 +6333,72 @@ pub fn get_hygiene_report(
     Ok(guard.clone())
 }
 
+/// Get the current Intelligence Hygiene status view model.
+#[tauri::command]
+pub fn get_intelligence_hygiene_status(
+    state: State<Arc<AppState>>,
+) -> Result<HygieneStatusView, String> {
+    let report = state
+        .last_hygiene_report
+        .lock()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .clone();
+    Ok(build_intelligence_hygiene_status(&state, report.as_ref()))
+}
+
+/// Run a hygiene scan immediately and return the updated status.
+#[tauri::command]
+pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
+    if state.hygiene_scan_running.compare_exchange(
+        false,
+        true,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Acquire,
+    ).is_err() {
+        return Err("A hygiene scan is already running".to_string());
+    }
+
+    let scan_result = (|| -> Result<crate::hygiene::HygieneReport, String> {
+        let config = state
+            .config
+            .read()
+            .map_err(|_| "Lock poisoned".to_string())?
+            .clone()
+            .ok_or("No configuration loaded".to_string())?;
+
+        let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+        let workspace = std::path::Path::new(&config.workspace_path);
+        let report = crate::hygiene::run_hygiene_scan(
+            &db,
+            &config,
+            workspace,
+            Some(&state.hygiene_budget),
+            Some(&state.intel_queue),
+        );
+
+        if let Ok(mut guard) = state.last_hygiene_report.lock() {
+            *guard = Some(report.clone());
+        }
+        if let Ok(mut guard) = state.last_hygiene_scan_at.lock() {
+            *guard = Some(report.scanned_at.clone());
+        }
+        if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
+            *guard = Some(
+                (chrono::Utc::now()
+                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs() as i64))
+                .to_rfc3339(),
+            );
+        }
+
+        Ok(report)
+    })();
+
+    state.hygiene_scan_running.store(false, std::sync::atomic::Ordering::Release);
+
+    let report = scan_result?;
+    Ok(build_intelligence_hygiene_status(&state, Some(&report)))
+}
+
 /// Detect potential duplicate people (I172).
 #[tauri::command]
 pub fn get_duplicate_people(
@@ -5329,6 +6407,21 @@ pub fn get_duplicate_people(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     crate::hygiene::detect_duplicate_people(db)
+}
+
+/// Detect potential duplicate people for a specific person (I172).
+#[tauri::command]
+pub fn get_duplicate_people_for_person(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::hygiene::DuplicateCandidate>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let dupes = crate::hygiene::detect_duplicate_people(db)?;
+    Ok(dupes
+        .into_iter()
+        .filter(|d| d.person1_id == person_id || d.person2_id == person_id)
+        .collect())
 }
 
 // =============================================================================
@@ -5499,11 +6592,10 @@ pub fn bulk_create_accounts(
             health: None,
             contract_start: None,
             contract_end: None,
-            csm: None,
-            champion: None,
             nps: None,
             tracker_path: Some(format!("Accounts/{}", name)),
             parent_id: None,
+            is_internal: false,
             updated_at: now,
             archived: false,
         };
@@ -5621,6 +6713,295 @@ pub fn get_account_events(
 // I194: User Agenda + Notes Editability (ADR-0065)
 // =============================================================================
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPrepPrefillResult {
+    pub meeting_id: String,
+    pub added_agenda_items: usize,
+    pub notes_appended: bool,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgendaDraftResult {
+    pub meeting_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    pub body: String,
+}
+
+fn is_meeting_user_layer_read_only(meeting: &crate::db::DbMeeting) -> bool {
+    if meeting.prep_frozen_at.is_some() {
+        return true;
+    }
+    let now = chrono::Utc::now();
+    let end_dt = meeting
+        .end_time
+        .as_deref()
+        .and_then(parse_meeting_datetime)
+        .or_else(|| {
+            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
+        });
+    // Default to read-only when time can't be parsed — safer than allowing edits
+    // on meetings whose temporal state is unknown.
+    end_dt.map_or(true, |e| e < now)
+}
+
+fn normalized_item_key(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn merge_user_agenda(existing: &[String], incoming: &[String]) -> (Vec<String>, usize) {
+    let mut merged = existing.to_vec();
+    let mut seen: std::collections::HashSet<String> = existing
+        .iter()
+        .map(|item| normalized_item_key(item))
+        .filter(|k| !k.is_empty())
+        .collect();
+    let mut added = 0usize;
+
+    for item in incoming {
+        let trimmed = item.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let key = normalized_item_key(trimmed);
+        if key.is_empty() || seen.contains(&key) {
+            continue;
+        }
+        merged.push(trimmed.to_string());
+        seen.insert(key);
+        added += 1;
+    }
+
+    (merged, added)
+}
+
+fn merge_user_notes(existing: Option<&str>, notes_append: &str) -> (Option<String>, bool) {
+    let append = notes_append.trim();
+    if append.is_empty() {
+        return (existing.map(|s| s.to_string()), false);
+    }
+
+    match existing.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(current) if current.contains(append) => (Some(current.to_string()), false),
+        Some(current) => (Some(format!("{}\n\n{}", current, append)), true),
+        None => (Some(append.to_string()), true),
+    }
+}
+
+fn apply_meeting_prep_prefill_inner(
+    db: &crate::db::ActionDb,
+    meeting_id: &str,
+    agenda_items: &[String],
+    notes_append: &str,
+) -> Result<ApplyPrepPrefillResult, String> {
+    let meeting = db
+        .get_meeting_intelligence_row(meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+
+    if is_meeting_user_layer_read_only(&meeting) {
+        return Err("Meeting user fields are read-only after freeze/past state".to_string());
+    }
+
+    let existing_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref()).unwrap_or_default();
+    let (merged_agenda, added_agenda_items) = merge_user_agenda(&existing_agenda, agenda_items);
+    let agenda_json = if merged_agenda.is_empty() {
+        None
+    } else {
+        Some(
+            serde_json::to_string(&merged_agenda)
+                .map_err(|e| format!("Serialize error: {}", e))?,
+        )
+    };
+
+    let (merged_notes, notes_appended) = merge_user_notes(meeting.user_notes.as_deref(), notes_append);
+    db.update_meeting_user_layer(
+        meeting_id,
+        agenda_json.as_deref(),
+        merged_notes.as_deref(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(ApplyPrepPrefillResult {
+        meeting_id: meeting_id.to_string(),
+        added_agenda_items,
+        notes_appended,
+        mode: "append_dedupe".to_string(),
+    })
+}
+
+fn generate_agenda_draft_body(
+    title: &str,
+    time_range: Option<&str>,
+    agenda_items: &[String],
+    context_hint: Option<&str>,
+    context: Option<&str>,
+) -> String {
+    let mut body = String::new();
+    body.push_str(&format!("Hi all,\n\nAhead of {}, here is a proposed agenda", title));
+    if let Some(range) = time_range.filter(|value| !value.trim().is_empty()) {
+        body.push_str(&format!(" for {}.", range));
+    } else {
+        body.push('.');
+    }
+    body.push_str("\n\n");
+
+    if agenda_items.is_empty() {
+        body.push_str("1. Confirm priorities and desired outcomes\n");
+        body.push_str("2. Review current risks and blockers\n");
+        body.push_str("3. Align on owners and next steps\n");
+    } else {
+        for (idx, item) in agenda_items.iter().enumerate() {
+            body.push_str(&format!("{}. {}\n", idx + 1, item));
+        }
+    }
+
+    if let Some(hint) = context_hint.map(str::trim).filter(|s| !s.is_empty()) {
+        body.push_str(&format!("\nAdditional context to cover: {}\n", hint));
+    }
+
+    if let Some(summary) = context
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.lines().next().unwrap_or(s).trim())
+        .filter(|s| !s.is_empty())
+    {
+        body.push_str(&format!("\nCurrent context: {}\n", summary));
+    }
+
+    body.push_str("\nPlease reply with additions or edits.\n\nThanks");
+    body
+}
+
+fn build_agenda_draft_result(
+    meeting: &crate::db::DbMeeting,
+    prep: Option<&FullMeetingPrep>,
+    context_hint: Option<&str>,
+) -> AgendaDraftResult {
+    let mut agenda_items: Vec<String> = Vec::new();
+    if let Some(prep) = prep {
+        if let Some(ref user_agenda) = prep.user_agenda {
+            agenda_items.extend(user_agenda.iter().map(|item| item.trim().to_string()));
+        }
+        if agenda_items.is_empty() {
+            if let Some(ref proposed) = prep.proposed_agenda {
+                agenda_items.extend(
+                    proposed
+                        .iter()
+                        .map(|item| item.topic.trim().to_string())
+                        .filter(|item| !item.is_empty()),
+                );
+            }
+        }
+    }
+    agenda_items.retain(|item| !item.is_empty());
+    let mut seen = std::collections::HashSet::new();
+    agenda_items.retain(|item| seen.insert(normalized_item_key(item)));
+
+    let title = prep
+        .map(|p| p.title.as_str())
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or(&meeting.title);
+    let time_range = prep.map(|p| p.time_range.as_str());
+    let context = prep
+        .and_then(|p| p.meeting_context.as_deref())
+        .or(meeting.summary.as_deref());
+
+    AgendaDraftResult {
+        meeting_id: meeting.id.clone(),
+        subject: Some(format!("Agenda for {}", title)),
+        body: generate_agenda_draft_body(title, time_range, &agenda_items, context_hint, context),
+    }
+}
+
+/// Apply AI-suggested prep additions in append + dedupe mode.
+#[tauri::command]
+pub fn apply_meeting_prep_prefill(
+    meeting_id: String,
+    agenda_items: Vec<String>,
+    notes_append: String,
+    state: State<Arc<AppState>>,
+) -> Result<ApplyPrepPrefillResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let result = apply_meeting_prep_prefill_inner(db, &meeting_id, &agenda_items, &notes_append)?;
+
+    // Mirror write to active prep JSON (best-effort) for immediate UI coherence.
+    if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
+        if let Ok(content) = std::fs::read_to_string(&prep_path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                let existing = json
+                    .get("userAgenda")
+                    .and_then(|v| v.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let (merged_agenda, _) = merge_user_agenda(&existing, &agenda_items);
+                if let Some(obj) = json.as_object_mut() {
+                    if merged_agenda.is_empty() {
+                        obj.remove("userAgenda");
+                    } else {
+                        obj.insert("userAgenda".to_string(), serde_json::json!(merged_agenda));
+                    }
+                    let existing_notes = obj.get("userNotes").and_then(|v| v.as_str());
+                    let (merged_notes, _) = merge_user_notes(existing_notes, &notes_append);
+                    if let Some(notes) = merged_notes {
+                        obj.insert("userNotes".to_string(), serde_json::json!(notes));
+                    }
+                }
+                if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    let _ = std::fs::write(&prep_path, updated);
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Generate a draft agenda message from current prep context.
+#[tauri::command]
+pub fn generate_meeting_agenda_message_draft(
+    meeting_id: String,
+    context_hint: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<AgendaDraftResult, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone()
+        .ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let meeting = db
+        .get_meeting_intelligence_row(&meeting_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
+    let prep = load_meeting_prep_from_sources(&today_dir, &meeting);
+
+    Ok(build_agenda_draft_result(
+        &meeting,
+        prep.as_ref(),
+        context_hint.as_deref(),
+    ))
+}
+
 /// Update user-authored agenda items on a meeting prep file.
 #[tauri::command]
 pub fn update_meeting_user_agenda(
@@ -5635,17 +7016,7 @@ pub fn update_meeting_user_agenda(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let now = chrono::Utc::now();
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or_else(|| {
-            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
-        });
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    if is_past || is_frozen {
+    if is_meeting_user_layer_read_only(&meeting) {
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
@@ -5694,17 +7065,7 @@ pub fn update_meeting_user_notes(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?;
 
-    let now = chrono::Utc::now();
-    let end_dt = meeting
-        .end_time
-        .as_deref()
-        .and_then(parse_meeting_datetime)
-        .or_else(|| {
-            parse_meeting_datetime(&meeting.start_time).map(|s| s + chrono::Duration::hours(1))
-        });
-    let is_past = end_dt.is_some_and(|e| e < now);
-    let is_frozen = meeting.prep_frozen_at.is_some();
-    if is_past || is_frozen {
+    if is_meeting_user_layer_read_only(&meeting) {
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
@@ -5935,5 +7296,222 @@ mod tests {
             .unwrap();
         assert!(after.contains("recentWins"));
         assert!(after.contains("recentWinSources"));
+    }
+
+    #[test]
+    fn test_apply_meeting_prep_prefill_additive_and_idempotent() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("actions.db");
+        let db = ActionDb::open_at(db_path).expect("open db");
+
+        let meeting = DbMeeting {
+            id: "mtg-prefill".to_string(),
+            title: "Prefill Test".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
+            end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: Some("Context summary".to_string()),
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&meeting).expect("upsert meeting");
+
+        let first = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-prefill",
+            &["Confirm blockers".to_string(), "Agree owners".to_string()],
+            "Bring latest renewal risk updates.",
+        )
+        .expect("first prefill");
+        assert_eq!(first.added_agenda_items, 2);
+        assert!(first.notes_appended);
+
+        let second = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-prefill",
+            &["Confirm blockers".to_string(), "Agree owners".to_string()],
+            "Bring latest renewal risk updates.",
+        )
+        .expect("second prefill");
+        assert_eq!(second.added_agenda_items, 0);
+        assert!(!second.notes_appended);
+
+        let updated = db
+            .get_meeting_intelligence_row("mtg-prefill")
+            .expect("load meeting")
+            .expect("meeting exists");
+        let agenda = parse_user_agenda_json(updated.user_agenda_json.as_deref()).unwrap_or_default();
+        assert_eq!(agenda.len(), 2);
+        assert!(updated
+            .user_notes
+            .unwrap_or_default()
+            .contains("renewal risk updates"));
+    }
+
+    #[test]
+    fn test_apply_meeting_prep_prefill_blocks_past_or_frozen() {
+        let dir = tempdir().expect("tempdir");
+        let db_path = dir.path().join("actions.db");
+        let db = ActionDb::open_at(db_path).expect("open db");
+
+        let past = DbMeeting {
+            id: "mtg-past".to_string(),
+            title: "Past Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() - chrono::Duration::hours(4)).to_rfc3339(),
+            end_time: Some((Utc::now() - chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&past).expect("upsert past meeting");
+
+        let err = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-past",
+            &["Item".to_string()],
+            "notes",
+        )
+        .expect_err("past meeting should be read-only");
+        assert!(err.contains("read-only"));
+
+        let frozen = DbMeeting {
+            id: "mtg-frozen".to_string(),
+            title: "Frozen Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
+            end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: Some("{}".to_string()),
+            prep_frozen_at: Some(Utc::now().to_rfc3339()),
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+        db.upsert_meeting(&frozen).expect("upsert frozen meeting");
+
+        let frozen_err = apply_meeting_prep_prefill_inner(
+            &db,
+            "mtg-frozen",
+            &["Item".to_string()],
+            "notes",
+        )
+        .expect_err("frozen meeting should be read-only");
+        assert!(frozen_err.contains("read-only"));
+    }
+
+    #[test]
+    fn test_generate_meeting_agenda_message_draft_deterministic_structure() {
+        let meeting = DbMeeting {
+            id: "mtg-draft".to_string(),
+            title: "Acme Weekly".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: Utc::now().to_rfc3339(),
+            end_time: None,
+            account_id: None,
+            attendees: None,
+            notes_path: None,
+            summary: Some("Renewal risk still elevated.".to_string()),
+            created_at: Utc::now().to_rfc3339(),
+            calendar_event_id: None,
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        };
+
+        let prep = FullMeetingPrep {
+            file_path: "preps/mtg-draft.json".to_string(),
+            calendar_event_id: None,
+            title: "Acme Weekly".to_string(),
+            time_range: "Tuesday 2:00 PM".to_string(),
+            meeting_context: Some("Renewal risk remains high.".to_string()),
+            calendar_notes: None,
+            account_snapshot: None,
+            quick_context: None,
+            user_agenda: None,
+            user_notes: None,
+            attendees: None,
+            since_last: None,
+            strategic_programs: None,
+            current_state: None,
+            open_items: None,
+            risks: None,
+            talking_points: None,
+            recent_wins: None,
+            recent_win_sources: None,
+            questions: None,
+            key_principles: None,
+            references: None,
+            raw_markdown: None,
+            stakeholder_signals: None,
+            attendee_context: None,
+            proposed_agenda: Some(vec![
+                crate::types::AgendaItem {
+                    topic: "Align on renewal path".to_string(),
+                    why: None,
+                    source: None,
+                },
+                crate::types::AgendaItem {
+                    topic: "Confirm owner handoffs".to_string(),
+                    why: None,
+                    source: None,
+                },
+            ]),
+            intelligence_summary: None,
+            entity_risks: None,
+            entity_readiness: None,
+            stakeholder_insights: None,
+            recent_email_signals: None,
+        };
+
+        let draft = build_agenda_draft_result(&meeting, Some(&prep), Some("Cover timeline risks"));
+        assert_eq!(draft.subject.as_deref(), Some("Agenda for Acme Weekly"));
+        assert!(draft.body.contains("1. Align on renewal path"));
+        assert!(draft.body.contains("2. Confirm owner handoffs"));
+        assert!(draft.body.contains("Cover timeline risks"));
+        assert!(draft.body.contains("Please reply with additions or edits."));
     }
 }

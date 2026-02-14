@@ -4,6 +4,27 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Added
+
+- Settings tabs with deep-link support (`/settings?tab=...`) for Profile, Integrations, Workflows, Intelligence, Intelligence Hygiene, and Diagnostics
+- Intelligence Hygiene status API + manual scan command (`get_intelligence_hygiene_status`, `run_hygiene_scan_now`)
+- OAuth failure event (`google-auth-failed`) so frontend can surface real auth errors without hanging
+- CI guard to fail builds when committed Google OAuth secret patterns are detected
+
+### Changed
+
+- Settings Google auth card now shows waiting, inline failure, and post-success confirmation states
+- Browser OAuth callback page now renders branded DailyOS success/failure/cancel states with next-step guidance
+- Intelligence Hygiene UI is now actionable with gap-specific actions and manual run controls
+- Release pipeline now requires `DAILYOS_GOOGLE_SECRET` during Tauri build
+
+### Security
+
+- Removed hardcoded production Google OAuth `client_secret` from source; now loaded via `option_env!(\"DAILYOS_GOOGLE_SECRET\")`
+- Documented secret rotation and release-time secret injection workflow in `README.md`
+
 ## [0.7.2] - 2026-02-12
 
 ### Fixed

@@ -179,6 +179,51 @@ pub fn validate_yyyy_mm_dd(value: &str, field: &str) -> Result<String, String> {
         .map_err(|_| format!("Invalid {field}: expected YYYY-MM-DD"))
 }
 
+/// Validates email format with basic RFC 5322 compliance.
+/// Returns trimmed lowercase email on success.
+/// Accepts synthetic @unknown.local emails as valid.
+pub fn validate_email(email: &str) -> Result<String, String> {
+    let trimmed = email.trim().to_lowercase();
+
+    let parts: Vec<&str> = trimmed.split('@').collect();
+    if parts.len() != 2 {
+        return Err("Email must contain exactly one @".to_string());
+    }
+
+    let (local, domain) = (parts[0], parts[1]);
+
+    if local.is_empty() {
+        return Err("Email local part cannot be empty".to_string());
+    }
+    if domain.is_empty() {
+        return Err("Email domain cannot be empty".to_string());
+    }
+
+    // Domain must have at least one dot or be known synthetic
+    if !domain.contains('.') && domain != "unknown.local" {
+        return Err("Email domain must contain a dot".to_string());
+    }
+
+    // Reject invalid local part patterns
+    if local.contains(' ') || local.contains("..") {
+        return Err("Email local part contains invalid characters".to_string());
+    }
+
+    Ok(trimmed)
+}
+
+/// Normalize domain list: trim, lowercase, dedup, remove empty.
+pub fn normalize_domains(domains: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = domains
+        .iter()
+        .map(|d| d.trim().to_lowercase())
+        .filter(|d| !d.is_empty())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// Writes content to a file atomically: write to .tmp, then rename.
 /// Rename is atomic on the same filesystem (POSIX guarantee).
 pub fn atomic_write(path: &Path, content: &[u8]) -> std::io::Result<()> {
@@ -545,5 +590,56 @@ mod tests {
         assert!(MANAGED_ENTITY_DIRS.contains(&"Call-Transcripts"));
         assert!(MANAGED_ENTITY_DIRS.contains(&"Meeting-Notes"));
         assert!(MANAGED_ENTITY_DIRS.contains(&"Documents"));
+    }
+
+    // Email validation tests
+
+    #[test]
+    fn test_validate_email_valid() {
+        assert_eq!(
+            validate_email("test@example.com").unwrap(),
+            "test@example.com"
+        );
+        assert_eq!(
+            validate_email("  User@EXAMPLE.COM  ").unwrap(),
+            "user@example.com"
+        );
+        assert_eq!(
+            validate_email("person.abc@unknown.local").unwrap(),
+            "person.abc@unknown.local"
+        );
+    }
+
+    #[test]
+    fn test_validate_email_invalid() {
+        assert!(validate_email("no-at-sign").is_err());
+        assert!(validate_email("@@double").is_err());
+        assert!(validate_email("x@").is_err());
+        assert!(validate_email("@missing").is_err());
+        assert!(validate_email("user@nodot").is_err());
+        assert!(validate_email("user @example.com").is_err());
+        assert!(validate_email("us..er@example.com").is_err());
+    }
+
+    // Domain normalization tests
+
+    #[test]
+    fn test_normalize_domains() {
+        let input = vec![
+            "  Example.COM  ".to_string(),
+            "".to_string(),
+            "test.io".to_string(),
+        ];
+        assert_eq!(normalize_domains(&input), vec!["example.com", "test.io"]);
+    }
+
+    #[test]
+    fn test_normalize_domains_dedup() {
+        let input = vec![
+            "acme.com".to_string(),
+            "ACME.COM".to_string(),
+            "other.io".to_string(),
+        ];
+        assert_eq!(normalize_domains(&input), vec!["acme.com", "other.io"]);
     }
 }

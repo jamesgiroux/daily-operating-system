@@ -13,7 +13,9 @@ import { useActions } from "@/hooks/useActions";
 import type { CreateActionParams } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
 import { cn, stripMarkdown } from "@/lib/utils";
-import { PageError } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
+import { PageError, SectionEmpty } from "@/components/PageState";
 import {
   CheckCircle2,
   ChevronDown,
@@ -54,6 +56,7 @@ const priorityLabels: Record<string, string> = {
 };
 
 export default function ActionsPage() {
+  const { personality } = usePersonality();
   const { search: initialSearch } = useSearch({ strict: false });
   const {
     actions,
@@ -179,19 +182,17 @@ export default function ActionsPage() {
           {/* Actions list */}
           <div className="space-y-3">
             {actions.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <CheckCircle2 className="mb-4 size-12 text-muted-foreground/40" />
-                  <p className="text-lg font-medium">No actions to show</p>
-                  <p className="text-sm text-muted-foreground">
-                    {statusFilter === "completed"
-                      ? "No completed actions yet."
-                      : statusFilter === "waiting"
-                        ? "Nothing waiting on others."
-                        : "You're all caught up!"}
-                  </p>
-                </CardContent>
-              </Card>
+              <SectionEmpty
+                icon={CheckCircle2}
+                {...getPersonalityCopy(
+                  statusFilter === "completed"
+                    ? "actions-completed-empty"
+                    : statusFilter === "waiting"
+                      ? "actions-waiting-empty"
+                      : "actions-empty",
+                  personality,
+                )}
+              />
             ) : (
               actions.map((action) => (
                 <ActionCard

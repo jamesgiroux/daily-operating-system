@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU32;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::sync::{Arc, Mutex, RwLock, TryLockError};
+use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 
@@ -86,8 +87,17 @@ pub struct AppState {
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
     /// Last hygiene scan report (I145 — ADR-0058)
     pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
+    /// Indicates whether a hygiene scan is currently running.
+    pub hygiene_scan_running: AtomicBool,
+    /// ISO timestamp for the most recent completed hygiene scan.
+    pub last_hygiene_scan_at: Mutex<Option<String>>,
+    /// ISO timestamp for the next scheduled hygiene scan.
+    pub next_hygiene_scan_at: Mutex<Option<String>>,
     /// Daily AI budget for proactive hygiene (I146 — ADR-0058)
     pub hygiene_budget: HygieneBudget,
+    /// TTL cache for live week calendar events used by proactive suggestions (W6).
+    /// Stores classified CalendarEvents for Mon-Fri + the instant they were fetched.
+    pub week_calendar_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -130,7 +140,11 @@ impl AppState {
             transcript_processed: Mutex::new(transcript_processed),
             intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
             last_hygiene_report: Mutex::new(None),
+            hygiene_scan_running: AtomicBool::new(false),
+            last_hygiene_scan_at: Mutex::new(None),
+            next_hygiene_scan_at: Mutex::new(None),
             hygiene_budget: HygieneBudget::new(10),
+            week_calendar_cache: RwLock::new(None),
         }
     }
 
@@ -368,8 +382,12 @@ pub fn create_or_update_config(
                 user_company: None,
                 user_title: None,
                 user_focus: None,
+                personality: "professional".to_string(),
                 developer_mode: false,
                 ai_models: crate::types::AiModelConfig::default(),
+                internal_team_setup_completed: false,
+                internal_team_setup_version: 0,
+                internal_org_account_id: None,
             }
         }
     };
@@ -566,6 +584,8 @@ pub fn create_execution_record(workflow: WorkflowId, trigger: ExecutionTrigger) 
         duration_secs: None,
         success: false,
         error_message: None,
+        error_phase: None,
+        can_retry: None,
         trigger,
     }
 }

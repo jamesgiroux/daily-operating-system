@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate, Link } from "@tanstack/react-router";
+import { useNavigate, useSearch, Link } from "@tanstack/react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,13 +10,16 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SearchInput } from "@/components/ui/search-input";
 import { TabFilter } from "@/components/ui/tab-filter";
 import { ListRow, ListColumn } from "@/components/ui/list-row";
-import { PageError, PageEmpty } from "@/components/PageState";
+import { PageError, PageEmpty, SectionEmpty } from "@/components/PageState";
+import { getPersonalityCopy } from "@/lib/personality";
+import { usePersonality } from "@/hooks/usePersonality";
 import { cn, formatRelativeDate } from "@/lib/utils";
 import { Plus, RefreshCw, Users } from "lucide-react";
 import type { PersonListItem, PersonRelationship, DuplicateCandidate } from "@/types";
 
 type ArchiveTab = "active" | "archived";
 type RelationshipTab = "all" | "external" | "internal" | "unknown";
+type HygieneFilter = "unnamed" | "duplicates";
 
 const archiveTabs: { key: ArchiveTab; label: string }[] = [
   { key: "active", label: "Active" },
@@ -37,21 +40,44 @@ const tempOrder: Record<string, number> = {
   cold: 3,
 };
 
+function parseRelationshipTab(value: unknown): RelationshipTab {
+  if (value === "external" || value === "internal" || value === "unknown") {
+    return value;
+  }
+  return "all";
+}
+
+function parseHygieneFilter(value: unknown): HygieneFilter | undefined {
+  if (value === "unnamed" || value === "duplicates") {
+    return value;
+  }
+  return undefined;
+}
+
+function isLikelyUnnamedPerson(person: PersonListItem): boolean {
+  const name = person.name.toLowerCase();
+  return !name.includes(" ") || name.includes("@");
+}
+
 export default function PeoplePage() {
+  const { personality } = usePersonality();
+  const search = useSearch({ from: "/people" });
   const navigate = useNavigate();
+  const initialRelationshipTab = parseRelationshipTab(search.relationship);
+  const activeHygieneFilter = parseHygieneFilter(search.hygiene);
   const [people, setPeople] = useState<PersonListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
   const [archivedPeople, setArchivedPeople] = useState<PersonListItem[]>([]);
-  const [tab, setTab] = useState<RelationshipTab>("all");
+  const [tab, setTab] = useState<RelationshipTab>(initialRelationshipTab);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAddForm, setShowAddForm] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [duplicates, setDuplicates] = useState<DuplicateCandidate[]>([]);
-  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(activeHygieneFilter === "duplicates");
 
   const loadDuplicates = useCallback(() => {
     invoke<DuplicateCandidate[]>("get_duplicate_people")
@@ -62,6 +88,16 @@ export default function PeoplePage() {
   useEffect(() => {
     loadDuplicates();
   }, [loadDuplicates]);
+
+  useEffect(() => {
+    setTab(parseRelationshipTab(search.relationship));
+  }, [search.relationship]);
+
+  useEffect(() => {
+    if (activeHygieneFilter === "duplicates") {
+      setShowDuplicates(true);
+    }
+  }, [activeHygieneFilter]);
 
   const handleCreatePerson = useCallback(async () => {
     if (!newEmail.trim() || !newName.trim()) return;
@@ -143,9 +179,14 @@ export default function PeoplePage() {
       )
     : people;
 
+  const hygieneFiltered =
+    activeHygieneFilter === "unnamed"
+      ? filtered.filter(isLikelyUnnamedPerson)
+      : filtered;
+
   // Sort by temperature (hot first), then by last-seen (most recent first)
   const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
+    return [...hygieneFiltered].sort((a, b) => {
       const ta = tempOrder[a.temperature] ?? 4;
       const tb = tempOrder[b.temperature] ?? 4;
       if (ta !== tb) return ta - tb;
@@ -153,7 +194,7 @@ export default function PeoplePage() {
       const bDate = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
       return bDate - aDate;
     });
-  }, [filtered]);
+  }, [hygieneFiltered]);
 
   // I176: filter archived people by search query
   const filteredArchived = searchQuery
@@ -203,8 +244,7 @@ export default function PeoplePage() {
       <main className="flex-1 overflow-hidden">
         <PageEmpty
           icon={Users}
-          title="No people discovered yet"
-          message="People are discovered automatically from your calendar. Connect Google in Settings to get started."
+          {...getPersonalityCopy("people-empty", personality)}
         />
       </main>
     );
@@ -326,10 +366,43 @@ export default function PeoplePage() {
             <TabFilter
               tabs={tabs}
               active={tab}
-              onChange={setTab}
+              onChange={(next) => {
+                setTab(next);
+                navigate({
+                  to: "/people",
+                  search: (prev: Record<string, unknown>) => ({
+                    ...prev,
+                    relationship: next === "all" ? undefined : next,
+                  }),
+                });
+              }}
               counts={tabCounts}
               className="mb-6"
             />
+          )}
+
+          {!isArchived && activeHygieneFilter === "unnamed" && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5">
+              <span className="text-sm text-charcoal/70">
+                Showing people with likely placeholder names.
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-primary"
+                onClick={() => {
+                  navigate({
+                    to: "/people",
+                    search: (prev: Record<string, unknown>) => ({
+                      ...prev,
+                      hygiene: undefined,
+                    }),
+                  });
+                }}
+              >
+                Clear
+              </Button>
+            </div>
           )}
 
           {/* I172: Duplicate detection banner */}
@@ -343,7 +416,17 @@ export default function PeoplePage() {
                   variant="ghost"
                   size="sm"
                   className="text-xs text-primary"
-                  onClick={() => setShowDuplicates(!showDuplicates)}
+                  onClick={() => {
+                    const nextShow = !showDuplicates;
+                    setShowDuplicates(nextShow);
+                    navigate({
+                      to: "/people",
+                      search: (prev: Record<string, unknown>) => ({
+                        ...prev,
+                        hygiene: nextShow ? "duplicates" : undefined,
+                      }),
+                    });
+                  }}
                 >
                   {showDuplicates ? "Hide" : "Review"}
                 </Button>
@@ -395,30 +478,20 @@ export default function PeoplePage() {
           <div>
             {isArchived ? (
               filteredArchived.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <Users className="mb-4 size-12 text-muted-foreground/40" />
-                    <p className="text-lg font-medium">No archived people</p>
-                    <p className="text-sm text-muted-foreground">
-                      Archived people will appear here.
-                    </p>
-                  </CardContent>
-                </Card>
+                <SectionEmpty
+                  icon={Users}
+                  {...getPersonalityCopy("people-archived-empty", personality)}
+                />
               ) : (
                 filteredArchived.map((person) => (
                   <ArchivedPersonRow key={person.id} person={person} />
                 ))
               )
             ) : sorted.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <Users className="mb-4 size-12 text-muted-foreground/40" />
-                  <p className="text-lg font-medium">No matches</p>
-                  <p className="text-sm text-muted-foreground">
-                    Try a different search or filter.
-                  </p>
-                </CardContent>
-              </Card>
+              <SectionEmpty
+                icon={Users}
+                {...getPersonalityCopy("people-no-matches", personality)}
+              />
             ) : (
               sorted.map((person) => (
                 <PersonRow

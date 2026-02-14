@@ -113,6 +113,24 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
+                            ctx["entity_id"] = json!(acct.id);
+                            if let Ok(team) = db.get_account_team(&acct.id) {
+                                if !team.is_empty() {
+                                    ctx["account_team"] = json!(team
+                                        .iter()
+                                        .map(|m| {
+                                            json!({
+                                                "personId": m.person_id,
+                                                "name": m.person_name,
+                                                "email": m.person_email,
+                                                "role": m.role,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>());
+                                }
+                            }
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -147,6 +165,26 @@ fn gather_meeting_context(
         }
 
         "internal" | "team_sync" => {
+            if let Some(db) = db {
+                if let Some(internal_account) = resolve_internal_account_for_meeting(
+                    db,
+                    event_id,
+                    title,
+                    meeting.get("attendees"),
+                ) {
+                    ctx["account"] = json!(internal_account.name.clone());
+                    ctx["entity_id"] = json!(internal_account.id.clone());
+                    let account_path = crate::accounts::resolve_account_dir(workspace, &internal_account);
+                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
+                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
+                    }
+                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
+                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
+                    }
+                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
+                    ctx["meeting_history"] = get_meeting_history(db, &internal_account.id, 30, 3);
+                }
+            }
             if !title.is_empty() {
                 let recent = find_recent_summaries(title, &archive_dir, 1);
                 if !recent.is_empty() {
@@ -164,6 +202,22 @@ fn gather_meeting_context(
         }
 
         "one_on_one" => {
+            if let Some(db) = db {
+                if let Some(internal_account) = resolve_internal_account_for_meeting(
+                    db,
+                    event_id,
+                    title,
+                    meeting.get("attendees"),
+                ) {
+                    ctx["account"] = json!(internal_account.name.clone());
+                    ctx["entity_id"] = json!(internal_account.id.clone());
+                    let account_path = crate::accounts::resolve_account_dir(workspace, &internal_account);
+                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
+                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
+                    }
+                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
+                }
+            }
             if !title.is_empty() {
                 let recent = find_recent_summaries(title, &archive_dir, 3);
                 if !recent.is_empty() {
@@ -203,6 +257,24 @@ fn gather_meeting_context(
                         ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
                         ctx["open_actions"] = get_account_actions(db, &matched.name);
                         ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
+                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
+                            ctx["entity_id"] = json!(acct.id);
+                            if let Ok(team) = db.get_account_team(&acct.id) {
+                                if !team.is_empty() {
+                                    ctx["account_team"] = json!(team
+                                        .iter()
+                                        .map(|m| {
+                                            json!({
+                                                "personId": m.person_id,
+                                                "name": m.person_name,
+                                                "email": m.person_email,
+                                                "role": m.role,
+                                            })
+                                        })
+                                        .collect::<Vec<_>>());
+                                }
+                            }
+                        }
                     }
 
                     // I135: Persistent entity prep from intelligence.json
@@ -231,6 +303,16 @@ fn gather_meeting_context(
         }
 
         _ => {}
+    }
+
+    if let Some(db) = db {
+        if let Some(entity_id) = ctx
+            .get("entity_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+        {
+            inject_recent_email_signals(db, &entity_id, &mut ctx);
+        }
     }
 
     ctx
@@ -288,6 +370,14 @@ fn inject_entity_intelligence(entity_dir: &Path, ctx: &mut Value) {
     }
 }
 
+fn inject_recent_email_signals(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
+    if let Ok(signals) = db.list_recent_email_signals_for_entity(entity_id, 8) {
+        if !signals.is_empty() {
+            ctx["recent_email_signals"] = json!(signals);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // File search helpers
 // ---------------------------------------------------------------------------
@@ -303,6 +393,15 @@ fn resolve_account_from_db(
     meeting: &Value,
     accounts_dir: &Path,
 ) -> Option<AccountMatch> {
+    let meeting_type = meeting
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let internal_meeting = matches!(
+        meeting_type.as_str(),
+        "internal" | "team_sync" | "one_on_one"
+    );
     let meeting_id = crate::workflow::deliver::meeting_primary_id(Some(event_id), "", "", "");
     let title_lower = meeting
         .get("title")
@@ -330,6 +429,13 @@ fn resolve_account_from_db(
     // Step 0: Explicit account assignment on meetings_history is highest-confidence.
     if let Some(ref row) = meeting_row {
         if let Some(ref account_id) = row.account_id {
+            if !internal_meeting {
+                if let Ok(Some(account)) = db.get_account(account_id) {
+                    if account.is_internal {
+                        return None;
+                    }
+                }
+            }
             if let Some(matched) = resolve_account_identifier(db, account_id, accounts_dir) {
                 return Some(matched);
             }
@@ -352,6 +458,13 @@ fn resolve_account_from_db(
             for entity in entities {
                 if entity.entity_type != crate::entity::EntityType::Account {
                     continue;
+                }
+                if !internal_meeting {
+                    if let Ok(Some(account)) = db.get_account(&entity.id) {
+                        if account.is_internal {
+                            continue;
+                        }
+                    }
                 }
                 if let Some(matched) = find_account_dir_by_id_hint(&entity.id, accounts_dir)
                     .or_else(|| find_account_dir_by_name(&entity.name, accounts_dir))
@@ -532,6 +645,104 @@ fn normalize_account_key(value: &str) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .collect()
+}
+
+fn attendee_emails_from_value(attendees: Option<&Value>) -> HashSet<String> {
+    attendees
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| s.contains('@'))
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn resolve_internal_account_for_meeting(
+    db: &crate::db::ActionDb,
+    event_id: &str,
+    title: &str,
+    attendees: Option<&Value>,
+) -> Option<crate::db::DbAccount> {
+    if !event_id.is_empty() {
+        if let Ok(Some(row)) = db.get_meeting_by_calendar_event_id(event_id) {
+            if let Some(ref account_id) = row.account_id {
+                if let Ok(Some(account)) = db.get_account(account_id) {
+                    if account.is_internal && !account.archived {
+                        return Some(account);
+                    }
+                }
+            }
+            if let Ok(entities) = db.get_meeting_entities(&row.id) {
+                for entity in entities {
+                    if entity.entity_type != crate::entity::EntityType::Account {
+                        continue;
+                    }
+                    if let Ok(Some(account)) = db.get_account(&entity.id) {
+                        if account.is_internal && !account.archived {
+                            return Some(account);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let internal_accounts = db.get_internal_accounts().ok()?;
+    if internal_accounts.is_empty() {
+        return None;
+    }
+    let root = internal_accounts
+        .iter()
+        .find(|a| a.parent_id.is_none())
+        .cloned();
+    let candidate_accounts: Vec<crate::db::DbAccount> = internal_accounts
+        .iter()
+        .filter(|a| a.parent_id.is_some())
+        .cloned()
+        .collect();
+    if candidate_accounts.is_empty() {
+        return root;
+    }
+
+    let title_key = normalize_account_key(title);
+    let attendee_emails = attendee_emails_from_value(attendees);
+
+    let mut best: Option<(i32, crate::db::DbAccount)> = None;
+    for account in candidate_accounts {
+        let mut score = 0i32;
+        let account_key = normalize_account_key(&account.name);
+        if !account_key.is_empty() && title_key.contains(&account_key) {
+            score += 2;
+        }
+
+        let overlap = db
+            .get_people_for_entity(&account.id)
+            .unwrap_or_default()
+            .iter()
+            .filter(|p| attendee_emails.contains(&p.email.to_lowercase()))
+            .count() as i32;
+        score += overlap * 3;
+
+        match &best {
+            None => best = Some((score, account)),
+            Some((best_score, best_account)) => {
+                if score > *best_score
+                    || (score == *best_score
+                        && account.name.to_lowercase() < best_account.name.to_lowercase())
+                {
+                    best = Some((score, account));
+                }
+            }
+        }
+    }
+
+    match best {
+        Some((score, account)) if score > 0 => Some(account),
+        _ => root,
+    }
 }
 
 /// Find an account directory by name (exact, case-insensitive match).
@@ -957,9 +1168,7 @@ fn extract_section_items(content: &str, section_name: &str) -> Vec<String> {
                 || stripped.starts_with("* ")
                 || stripped.starts_with("• ")
             {
-                let item = stripped
-                    .trim_start_matches(['-', '*', '•', ' '])
-                    .trim();
+                let item = stripped.trim_start_matches(['-', '*', '•', ' ']).trim();
                 if !item.is_empty() {
                     Some(item.to_string())
                 } else {

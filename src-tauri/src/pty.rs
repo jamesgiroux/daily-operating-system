@@ -109,6 +109,9 @@ impl PtyManager {
         let mut child = Command::new("claude")
             .args(["--print", "hello"])
             .env("TERM", "dumb")
+            .env_remove("CLAUDECODE")
+            .env_remove("CLAUDE_CODE_SSE_PORT")
+            .env_remove("CLAUDE_CODE_ENTRYPOINT")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -189,6 +192,12 @@ impl PtyManager {
         };
         cmd.cwd(workspace);
 
+        // Remove Claude Code session env vars so the child process doesn't
+        // detect itself as a nested session and refuse to run.
+        for key in ["CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"] {
+            cmd.env_remove(key);
+        }
+
         // Spawn the child process
         let _child = pair
             .slave
@@ -259,6 +268,13 @@ impl PtyManager {
 
         if output.contains("subscription") && output.contains("limit") {
             return Err(ExecutionError::ClaudeSubscriptionLimit);
+        }
+
+        if output.contains("cannot be launched inside another Claude Code session") {
+            return Err(ExecutionError::ConfigurationError(
+                "Nested Claude Code session detected. CLAUDECODE env var leaked to subprocess."
+                    .to_string(),
+            ));
         }
 
         Ok(ClaudeOutput {

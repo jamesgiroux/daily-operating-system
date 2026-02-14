@@ -24,6 +24,8 @@ fn map_gaps_to_blocks(gaps: Vec<serde_json::Value>) -> Vec<TimeBlock> {
                 end,
                 duration_minutes,
                 suggested_use,
+                action_id: None,
+                meeting_id: None,
             })
         })
         .collect()

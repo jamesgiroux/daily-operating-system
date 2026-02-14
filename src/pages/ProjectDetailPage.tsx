@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmailSignalList } from "@/components/ui/email-signal-list";
 import {
   StatusBadge,
   projectStatusStyles,
@@ -23,7 +24,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { PageError } from "@/components/PageState";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
 import {
   Archive,
   ArrowLeft,
@@ -423,7 +424,7 @@ export default function ProjectDetailPage() {
                     {signals.lastMeeting && (
                       <div>
                         <div className="text-sm font-medium">
-                          {formatDate(signals.lastMeeting)}
+                          {formatShortDate(signals.lastMeeting)}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           last meeting
@@ -602,7 +603,7 @@ export default function ProjectDetailPage() {
                         <Calendar className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{m.title}</span>
                         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          {formatDate(m.startTime)}
+                          {formatShortDate(m.startTime)}
                         </span>
                       </div>
                     ))}
@@ -676,6 +677,24 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             )}
+
+            {detail.recentEmailSignals && detail.recentEmailSignals.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">
+                    Email Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <EmailSignalList
+                    signals={detail.recentEmailSignals}
+                    limit={8}
+                    dateFormat="absolute"
+                    showMetadata
+                  />
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </ScrollArea>
@@ -707,14 +726,4 @@ function CaptureIcon({ type }: { type: string }) {
   );
 }
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
+
