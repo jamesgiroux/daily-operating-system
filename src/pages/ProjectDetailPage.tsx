@@ -676,6 +676,43 @@ export default function ProjectDetailPage() {
                 </CardContent>
               </Card>
             )}
+
+            {detail.recentEmailSignals && detail.recentEmailSignals.length > 0 && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium">
+                    Email Timeline
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {detail.recentEmailSignals.slice(0, 8).map((signal, idx) => (
+                      <div
+                        key={`${signal.id ?? idx}-${signal.signalType}`}
+                        className="rounded-md border border-border/70 bg-card/50 px-3 py-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                            {signal.signalType}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground">
+                            {signal.detectedAt ? formatDate(signal.detectedAt) : ""}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm leading-relaxed">{signal.signalText}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          {signal.urgency && <span>Urgency: {signal.urgency}</span>}
+                          {signal.sentiment && <span>Sentiment: {signal.sentiment}</span>}
+                          {signal.confidence != null && (
+                            <span>Confidence: {Math.round(signal.confidence * 100)}%</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </ScrollArea>
