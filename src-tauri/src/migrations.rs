@@ -23,6 +23,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 3,
     sql: include_str!("migrations/003_account_team.sql"),
+}, Migration {
+    version: 4,
+    sql: include_str!("migrations/004_account_team_role_index.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -177,13 +180,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 3,
-            "should apply baseline + internal teams + account team migrations"
+            applied, 4,
+            "should apply baseline + internal teams + account team + role index migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -324,13 +327,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2/v3
+        // Run migrations — should bootstrap v1 and apply v2/v3/v4
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 2, "bootstrap should mark v1, then apply v2/v3");
+        assert_eq!(applied, 3, "bootstrap should mark v1, then apply v2/v3/v4");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
 
         // Verify existing data is untouched
         let title: String = conn
