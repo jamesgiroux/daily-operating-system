@@ -1078,10 +1078,19 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     }
 }
 
+/// TTL thresholds for week calendar cache (W6).
+const WEEK_CACHE_FRESH_SECS: u64 = 120; // 2 min: serve immediately
+const WEEK_CACHE_STALE_SECS: u64 = 300; // 5 min: serve stale + background refresh
+
 /// Live proactive suggestions computed from current calendar + SQLite action state.
+///
+/// Uses a TTL cache to avoid hitting Google Calendar API on every call (W6).
+/// Fresh (<2 min): return cached. Stale (2-5 min): return cached + refresh in background.
+/// Expired (>5 min) or empty: wait for fresh fetch.
 #[tauri::command]
 pub async fn get_live_proactive_suggestions(
     state: State<'_, Arc<AppState>>,
+    force_refresh: Option<bool>,
 ) -> Result<Vec<LiveProactiveSuggestion>, String> {
     let config = state
         .config
@@ -1094,7 +1103,54 @@ pub async fn get_live_proactive_suggestions(
     // across Google API awaits.
     let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
     let (account_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
-    crate::queries::proactive::get_live_proactive_suggestions(&config, account_hints, actions).await
+
+    // Check cache unless force refresh requested
+    if !force_refresh.unwrap_or(false) {
+        if let Ok(guard) = state.week_calendar_cache.read() {
+            if let Some((ref events, fetched_at)) = *guard {
+                let age = fetched_at.elapsed().as_secs();
+                if age < WEEK_CACHE_FRESH_SECS {
+                    // Fresh: compute from cached events directly
+                    return crate::queries::proactive::compute_suggestions_from_events(
+                        &config, events, &actions,
+                    );
+                }
+                if age < WEEK_CACHE_STALE_SECS {
+                    // Stale but usable: compute now, trigger background refresh
+                    let result = crate::queries::proactive::compute_suggestions_from_events(
+                        &config, events, &actions,
+                    );
+                    let bg_state = state.inner().clone();
+                    let bg_config = config.clone();
+                    let bg_hints = account_hints.clone();
+                    tokio::spawn(async move {
+                        let _ = refresh_week_calendar_cache(&bg_state, &bg_config, bg_hints).await;
+                    });
+                    return result;
+                }
+            }
+        }
+    }
+
+    // Cache miss or expired: fetch, cache, and compute
+    let events = refresh_week_calendar_cache(&state, &config, account_hints).await?;
+    crate::queries::proactive::compute_suggestions_from_events(&config, &events, &actions)
+}
+
+/// Fetch week calendar events from Google API and update the AppState cache.
+async fn refresh_week_calendar_cache(
+    state: &AppState,
+    config: &crate::types::Config,
+    account_hints: std::collections::HashSet<String>,
+) -> Result<Vec<CalendarEvent>, String> {
+    let events =
+        crate::queries::proactive::fetch_week_events(config, &account_hints).await?;
+
+    if let Ok(mut guard) = state.week_calendar_cache.write() {
+        *guard = Some((events.clone(), std::time::Instant::now()));
+    }
+
+    Ok(events)
 }
 
 /// Retry only week AI enrichment without rerunning full week prepare/deliver.
@@ -3529,32 +3585,6 @@ pub struct OnboardingPrimingContext {
     pub prompt: String,
 }
 
-fn build_external_account_hints(db: &crate::db::ActionDb) -> HashSet<String> {
-    let mut hints = HashSet::new();
-    if let Ok(accounts) = db.get_all_accounts() {
-        for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
-            let id_key = normalize_key(&account.id);
-            if id_key.len() >= 3 {
-                hints.insert(id_key);
-            }
-            let name_key = normalize_key(&account.name);
-            if name_key.len() >= 3 {
-                hints.insert(name_key);
-            }
-            if let Ok(domains) = db.get_account_domains(&account.id) {
-                for domain in domains {
-                    let base = domain.split('.').next().unwrap_or("").to_lowercase();
-                    let base_key = normalize_key(&base);
-                    if base_key.len() >= 3 {
-                        hints.insert(base_key);
-                    }
-                }
-            }
-        }
-    }
-    hints
-}
-
 #[tauri::command]
 pub async fn get_onboarding_priming_context(
     state: State<'_, Arc<AppState>>,
@@ -3589,7 +3619,7 @@ pub async fn get_onboarding_priming_context(
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
         (
-            build_external_account_hints(db),
+            crate::helpers::build_external_account_hints(db),
             db.get_internal_root_account().ok().flatten(),
         )
     };
@@ -4443,6 +4473,11 @@ pub fn create_person(
     relationship: Option<String>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
+    let email = email.trim().to_lowercase();
+    if !email.contains('@') {
+        return Err("Invalid email address".to_string());
+    }
+
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -5178,24 +5213,7 @@ pub struct CreateChildAccountResult {
     pub id: String,
 }
 
-fn normalize_domains(domains: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = domains
-        .iter()
-        .map(|d| d.trim().to_lowercase())
-        .filter(|d| !d.is_empty())
-        .collect();
-    out.sort();
-    out.dedup();
-    out
-}
-
-fn normalize_key(value: &str) -> String {
-    value
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric())
-        .collect()
-}
+use crate::helpers::{normalize_domains, normalize_key};
 
 fn create_child_account_record(
     db: &crate::db::ActionDb,
@@ -5400,6 +5418,7 @@ pub fn create_internal_organization(
     colleagues: Vec<TeamColleagueInput>,
     state: State<Arc<AppState>>,
 ) -> Result<CreateInternalOrganizationResult, String> {
+    // Validation (before transaction)
     let company_name = crate::util::validate_entity_name(&company_name)?.to_string();
     let team_name = crate::util::validate_entity_name(&team_name)?.to_string();
     let domains = normalize_domains(&domains);
@@ -5433,66 +5452,98 @@ pub fn create_internal_organization(
         suffix += 1;
     }
 
-    let now = chrono::Utc::now().to_rfc3339();
-    let root_account = crate::db::DbAccount {
-        id: root_id.clone(),
-        name: company_name.clone(),
-        lifecycle: Some("active".to_string()),
-        arr: None,
-        health: Some("green".to_string()),
-        contract_start: None,
-        contract_end: None,
-        csm: None,
-        champion: None,
-        nps: None,
-        tracker_path: Some(format!("Internal/{}", company_name)),
-        parent_id: None,
-        is_internal: true,
-        updated_at: now,
-        archived: false,
-    };
-    db.upsert_account(&root_account).map_err(|e| e.to_string())?;
-    db.set_account_domains(&root_account.id, &domains)
-        .map_err(|e| e.to_string())?;
+    // --- BEGIN TRANSACTION ---
+    db.conn_ref()
+        .execute_batch("BEGIN")
+        .map_err(|e| format!("Failed to begin transaction: {}", e))?;
 
+    let txn_result = (|| -> Result<(crate::db::DbAccount, crate::db::DbAccount, Vec<crate::db::DbPerson>), String> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let root_account = crate::db::DbAccount {
+            id: root_id.clone(),
+            name: company_name.clone(),
+            lifecycle: Some("active".to_string()),
+            arr: None,
+            health: Some("green".to_string()),
+            contract_start: None,
+            contract_end: None,
+            csm: None,
+            champion: None,
+            nps: None,
+            tracker_path: Some(format!("Internal/{}", company_name)),
+            parent_id: None,
+            is_internal: true,
+            updated_at: now,
+            archived: false,
+        };
+        db.upsert_account(&root_account).map_err(|e| e.to_string())?;
+        db.set_account_domains(&root_account.id, &domains)
+            .map_err(|e| e.to_string())?;
+
+        let initial_team = create_child_account_record(db, None, &root_account, &team_name, None, None)?;
+        db.copy_account_domains(&root_account.id, &initial_team.id)
+            .map_err(|e| e.to_string())?;
+
+        let mut created_people = Vec::new();
+        for colleague in &colleagues {
+            let email = colleague.email.trim().to_lowercase();
+            if !email.contains('@') {
+                continue;
+            }
+            let person_id = crate::util::slugify(&email);
+            let now = chrono::Utc::now().to_rfc3339();
+            let person = crate::db::DbPerson {
+                id: person_id.clone(),
+                email: email.clone(),
+                name: colleague.name.trim().to_string(),
+                organization: Some(company_name.clone()),
+                role: colleague.title.clone(),
+                relationship: "internal".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: Some(now.clone()),
+                meeting_count: 0,
+                updated_at: now,
+                archived: false,
+            };
+            db.upsert_person(&person).map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &root_account.id, "member")
+                .map_err(|e| e.to_string())?;
+            db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                .map_err(|e| e.to_string())?;
+            created_people.push(person);
+        }
+
+        Ok((root_account, initial_team, created_people))
+    })();
+
+    let (root_account, initial_team, created_people) = match txn_result {
+        Ok(data) => {
+            db.conn_ref()
+                .execute_batch("COMMIT")
+                .map_err(|e| format!("Failed to commit transaction: {}", e))?;
+            data
+        }
+        Err(e) => {
+            let _ = db.conn_ref().execute_batch("ROLLBACK");
+            return Err(e);
+        }
+    };
+    // --- END TRANSACTION ---
+
+    // Filesystem writes OUTSIDE transaction (idempotent, can't be rolled back)
     let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
     let _ = std::fs::create_dir_all(&root_dir);
     let _ = crate::util::bootstrap_entity_directory(&root_dir, &company_name, "account");
     let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
     let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
 
-    let initial_team = create_child_account_record(db, Some(workspace), &root_account, &team_name, None, None)?;
-    db.copy_account_domains(&root_account.id, &initial_team.id)
-        .map_err(|e| e.to_string())?;
-
-    for colleague in colleagues {
-        let email = colleague.email.trim().to_lowercase();
-        if !email.contains('@') {
-            continue;
-        }
-        let person_id = crate::util::slugify(&email);
-        let now = chrono::Utc::now().to_rfc3339();
-        let person = crate::db::DbPerson {
-            id: person_id.clone(),
-            email: email.clone(),
-            name: colleague.name.trim().to_string(),
-            organization: Some(company_name.clone()),
-            role: colleague.title.clone(),
-            relationship: "internal".to_string(),
-            notes: None,
-            tracker_path: None,
-            last_seen: None,
-            first_seen: Some(now.clone()),
-            meeting_count: 0,
-            updated_at: now,
-            archived: false,
-        };
-        let _ = db.upsert_person(&person);
-        let _ = db.link_person_to_entity(&person_id, &root_account.id, "member");
-        let _ = db.link_person_to_entity(&person_id, &initial_team.id, "member");
-        let _ = crate::people::write_person_json(workspace, &person, db);
-        let _ = crate::people::write_person_markdown(workspace, &person, db);
+    for person in &created_people {
+        let _ = crate::people::write_person_json(workspace, person, db);
+        let _ = crate::people::write_person_markdown(workspace, person, db);
     }
+
     drop(db_guard);
 
     crate::state::create_or_update_config(&state, |config| {
