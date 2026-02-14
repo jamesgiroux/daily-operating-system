@@ -4,13 +4,25 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AgendaDraftDialog,
+  useAgendaDraft,
+} from "@/components/ui/agenda-draft-dialog";
 
 import type {
+  ApplyPrepPrefillResult,
+  LiveProactiveSuggestion,
   WeekOverview,
-  ReadinessCheck,
   WeekAction,
 } from "@/types";
 import { cn } from "@/lib/utils";
+import {
+  classifyWeekShapeState,
+  formatBlockRange,
+  formatDueContext,
+  resolveSuggestionLink,
+  synthesizeReadiness,
+} from "@/pages/weekPageViewModel";
 import {
   Calendar,
   Check,
@@ -65,102 +77,59 @@ const waitingMessages = [
   "Polishing the details...",
 ];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Format a due date as a relative phrase: "due Wednesday", "1 day overdue" */
-function formatDueContext(
-  dueDate?: string,
-  daysOverdue?: number
-): string | null {
-  if (!dueDate) return null;
-
-  if (daysOverdue != null && daysOverdue > 0) {
-    return daysOverdue === 1 ? "1 day overdue" : `${daysOverdue} days overdue`;
-  }
-
-  try {
-    const date = new Date(dueDate + "T00:00:00");
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 0)
-      return `${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""} overdue`;
-    if (diffDays === 0) return "due today";
-    if (diffDays === 1) return "due tomorrow";
-    if (diffDays <= 6)
-      return `due ${date.toLocaleDateString("en-US", { weekday: "long" })}`;
-    return `due ${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
-  } catch {
-    return null;
-  }
-}
-
-/** Synthesize readiness checks into a one-line summary */
-function synthesizeReadiness(checks: ReadinessCheck[]): string {
-  const prepNeeded = checks.filter(
-    (c) =>
-      c.checkType === "no_prep" ||
-      c.checkType === "prep_needed" ||
-      c.checkType === "agenda_needed"
-  ).length;
-  const overdueActions = checks.filter(
-    (c) => c.checkType === "overdue_action"
-  );
-  const staleContacts = checks.filter(
-    (c) => c.checkType === "stale_contact"
-  ).length;
-
-  const parts: string[] = [];
-  if (prepNeeded > 0)
-    parts.push(
-      `${prepNeeded} meeting${prepNeeded !== 1 ? "s" : ""} need prep`
-    );
-  if (overdueActions.length > 0) {
-    const msg = overdueActions[0].message;
-    const match = msg.match(/^(\d+)/);
-    const count = match ? match[1] : overdueActions.length.toString();
-    parts.push(`${count} overdue action${count !== "1" ? "s" : ""}`);
-  }
-  if (staleContacts > 0)
-    parts.push(
-      `${staleContacts} stale contact${staleContacts !== 1 ? "s" : ""}`
-    );
-  return parts.join(" · ");
-}
-
-// ---------------------------------------------------------------------------
-// Page Component
-// ---------------------------------------------------------------------------
-
 export default function WeekPage() {
   const [data, setData] = useState<WeekOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveSuggestions, setLiveSuggestions] = useState<
+    LiveProactiveSuggestion[]
+  >([]);
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState<WorkflowPhase | null>(null);
   const [retryingEnrichment, setRetryingEnrichment] = useState(false);
+  const [prefillingMeetingId, setPrefillingMeetingId] = useState<string | null>(
+    null
+  );
+  const draft = useAgendaDraft({ onError: setError });
 
-  const loadWeek = useCallback(async () => {
-    try {
-      const result = await invoke<WeekResult>("get_week_data");
-      if (result.status === "success" && result.data) {
-        setData(result.data);
-        setError(null);
-      } else if (result.status === "not_found") {
-        setData(null);
-      } else if (result.status === "error") {
-        setError(result.message || "Failed to load week data");
+  const loadWeek = useCallback(
+    async ({ includeLive = true }: { includeLive?: boolean } = {}) => {
+      if (includeLive) {
+        try {
+          const live = await invoke<LiveProactiveSuggestion[]>(
+            "get_live_proactive_suggestions"
+          );
+          setLiveSuggestions(live);
+          setLiveError(null);
+        } catch (err) {
+          setLiveSuggestions([]);
+          setLiveError(
+            err instanceof Error
+              ? err.message
+              : "Live suggestions unavailable"
+          );
+        }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+
+      try {
+        const result = await invoke<WeekResult>("get_week_data");
+        if (result.status === "success" && result.data) {
+          setData(result.data);
+          setError(null);
+        } else if (result.status === "not_found") {
+          setData(null);
+        } else if (result.status === "error") {
+          setError(result.message || "Failed to load week data");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadWeek();
@@ -191,7 +160,7 @@ export default function WeekPage() {
         if (status.status === "running") {
           sawRunning = true;
           if (status.phase) setPhase(status.phase);
-          loadWeek();
+          loadWeek({ includeLive: false });
         } else if (status.status === "completed" && sawRunning) {
           clearInterval(interval);
           setRunning(false);
@@ -208,7 +177,7 @@ export default function WeekPage() {
           clearInterval(interval);
           setRunning(false);
           setPhase(null);
-          loadWeek();
+          loadWeek({ includeLive: false });
         }
       } catch {
         // Ignore polling errors
@@ -257,6 +226,26 @@ export default function WeekPage() {
       setRetryingEnrichment(false);
     }
   }, [loadWeek]);
+
+  const handlePrefillPrep = useCallback(
+    async (meetingId: string, suggestionText: string, reasonText?: string) => {
+      setPrefillingMeetingId(meetingId);
+      try {
+        await invoke<ApplyPrepPrefillResult>("apply_meeting_prep_prefill", {
+          meetingId,
+          agendaItems: [suggestionText],
+          notesAppend: reasonText || "",
+        });
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Failed to prefill meeting prep"
+        );
+      } finally {
+        setPrefillingMeetingId(null);
+      }
+    },
+    []
+  );
 
   // Loading skeleton — briefing-shaped
   if (loading) {
@@ -339,6 +328,7 @@ export default function WeekPage() {
   }
 
   const hasPortfolio = data.hygieneAlerts && data.hygieneAlerts.length > 0;
+  const dayShapes = data.dayShapes ?? [];
 
   return (
     <main className="flex-1 overflow-hidden">
@@ -525,10 +515,237 @@ export default function WeekPage() {
             )}
 
             {/* Divider — transition from commitments to portfolio */}
-            {hasPortfolio && (
+            {(liveSuggestions.length > 0 ||
+              !!liveError ||
+              dayShapes.length > 0 ||
+              hasPortfolio) && (
               <div className="my-10">
                 <div className="h-px bg-border/40" />
               </div>
+            )}
+
+            {(liveSuggestions.length > 0 || liveError) && (
+              <section className="mb-8 space-y-3">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+                    Live Now
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Fresh suggestions from your current week calendar.
+                  </p>
+                </div>
+
+                {liveError && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
+                    Live suggestions degraded: {liveError}
+                  </div>
+                )}
+
+                {liveSuggestions.length > 0 && (
+                  <div className="space-y-2">
+                    {liveSuggestions.map((suggestion, idx) => {
+                      const key = `${suggestion.day}-${suggestion.start}-${suggestion.actionId ?? idx}`;
+                      const line = `${suggestion.day} · ${formatBlockRange(
+                        suggestion.start,
+                        suggestion.end
+                      )} · ${suggestion.durationMinutes}m`;
+                      const rowClass =
+                        "block rounded-md border border-border/70 px-3 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+                      const content = (
+                        <>
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-medium leading-snug">{suggestion.title}</p>
+                          </div>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{line}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{suggestion.reason}</p>
+                        </>
+                      );
+
+                      const linkTarget = resolveSuggestionLink(
+                        suggestion.actionId,
+                        suggestion.meetingId
+                      );
+                      const row =
+                        linkTarget.kind === "action" ? (
+                          <Link
+                            to="/actions/$actionId"
+                            params={{ actionId: linkTarget.id }}
+                            className={rowClass}
+                          >
+                            {content}
+                          </Link>
+                        ) : linkTarget.kind === "meeting" ? (
+                          <Link
+                            to="/meeting/$meetingId"
+                            params={{ meetingId: linkTarget.id }}
+                            className={rowClass}
+                          >
+                            {content}
+                          </Link>
+                        ) : (
+                          <div className={rowClass}>{content}</div>
+                        );
+
+                      return (
+                        <div key={key} className="space-y-2">
+                          {row}
+                          {suggestion.meetingId && (
+                            <div className="flex items-center gap-2 px-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={prefillingMeetingId === suggestion.meetingId}
+                                onClick={() =>
+                                  handlePrefillPrep(
+                                    suggestion.meetingId!,
+                                    suggestion.title,
+                                    suggestion.reason
+                                  )
+                                }
+                              >
+                                Prefill Prep
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  draft.openDraft(
+                                    suggestion.meetingId!,
+                                    suggestion.reason
+                                  )
+                                }
+                              >
+                                Draft agenda message
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {dayShapes.length > 0 && (
+              <section className="space-y-4">
+                <div>
+                  <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+                    Week Shape
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Available blocks from the weekly artifact.
+                  </p>
+                </div>
+                {dayShapes.map((shape) => {
+                  const shapeState = classifyWeekShapeState(
+                    shape.availableBlocks
+                  );
+                  const hasBlocks = shapeState !== "no_blocks";
+                  return (
+                    <div
+                      key={`${shape.dayName}-${shape.date}`}
+                      className="rounded-lg border border-border/70 bg-card/50 p-4"
+                    >
+                      <div className="mb-3 flex items-center justify-between">
+                        <p className="text-sm font-medium">{shape.dayName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {shape.meetingCount} meeting{shape.meetingCount === 1 ? "" : "s"} · {shape.density}
+                        </p>
+                      </div>
+                      {shapeState === "no_blocks" && (
+                        <p className="text-sm text-muted-foreground">
+                          No open blocks for this day.
+                        </p>
+                      )}
+                      {shapeState === "no_suggestions" && (
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          Blocks are available, but no suggestion text yet.
+                        </p>
+                      )}
+                      {hasBlocks && (
+                        <div className="space-y-2">
+                          {shape.availableBlocks.map((block, idx) => {
+                            const blockKey = `${shape.dayName}-${block.start}-${block.end}-${idx}`;
+                            const summary = block.suggestedUse?.trim() || "No suggestion yet";
+                            const meta = `${formatBlockRange(block.start, block.end)} · ${block.durationMinutes}m`;
+                            const rowClass =
+                              "block rounded-md px-3 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+                            const content = (
+                              <>
+                                <p className="text-sm font-medium leading-snug">{summary}</p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>
+                              </>
+                            );
+                            const linkTarget = resolveSuggestionLink(
+                              block.actionId,
+                              block.meetingId
+                            );
+                            const row =
+                              linkTarget.kind === "action" ? (
+                                <Link
+                                  to="/actions/$actionId"
+                                  params={{ actionId: linkTarget.id }}
+                                  className={rowClass}
+                                >
+                                  {content}
+                                </Link>
+                              ) : linkTarget.kind === "meeting" ? (
+                                <Link
+                                  to="/meeting/$meetingId"
+                                  params={{ meetingId: linkTarget.id }}
+                                  className={rowClass}
+                                >
+                                  {content}
+                                </Link>
+                              ) : (
+                                <div className="rounded-md border border-border/70 px-3 py-2">
+                                  {content}
+                                </div>
+                              );
+
+                            return (
+                              <div key={blockKey} className="space-y-2">
+                                {row}
+                                {block.meetingId && (
+                                  <div className="flex items-center gap-2 px-1">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={prefillingMeetingId === block.meetingId}
+                                      onClick={() =>
+                                        handlePrefillPrep(
+                                          block.meetingId!,
+                                          summary,
+                                          summary
+                                        )
+                                      }
+                                    >
+                                      Prefill Prep
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        draft.openDraft(
+                                          block.meetingId!,
+                                          summary
+                                        )
+                                      }
+                                    >
+                                      Draft agenda message
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </section>
             )}
 
             {/* Portfolio watch — prose, no widget chrome */}
@@ -576,6 +793,13 @@ export default function WeekPage() {
           </div>
         </div>
       </ScrollArea>
+      <AgendaDraftDialog
+        open={draft.open}
+        onOpenChange={draft.setOpen}
+        loading={draft.loading}
+        subject={draft.subject}
+        body={draft.body}
+      />
     </main>
   );
 }

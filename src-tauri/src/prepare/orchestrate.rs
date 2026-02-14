@@ -1465,11 +1465,25 @@ fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
 
             let meeting_id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let prep_status = resolve_prep_status(meeting_id, &meeting_type, data_dir);
+            let stable_meeting_id = crate::workflow::deliver::meeting_primary_id(
+                if meeting_id.is_empty() {
+                    None
+                } else {
+                    Some(meeting_id)
+                },
+                m.get("title")
+                    .or_else(|| m.get("summary"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(""),
+                start_str,
+                &meeting_type,
+            );
 
             meetings.push(json!({
                 "time": if time_display.is_empty() { "TBD".to_string() } else { time_display },
                 "title": m.get("title").or_else(|| m.get("summary")).and_then(|v| v.as_str()).unwrap_or("Meeting"),
                 "account": m.get("account"),
+                "meetingId": if stable_meeting_id.is_empty() { Value::Null } else { json!(stable_meeting_id) },
                 "type": meeting_type,
                 "prepStatus": prep_status,
             }));
