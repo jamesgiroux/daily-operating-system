@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags-ignore:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -27,13 +29,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
       - name: Cache Rust dependencies
         uses: actions/cache@v4
         with:
           path: |
+            ~/.cargo/bin
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
@@ -51,12 +51,15 @@ jobs:
             exit 1
           fi
 
+      - name: Run Rust clippy (production targets)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+
       - name: Run Rust tests
         working-directory: src-tauri
         run: cargo test
 
-      - name: Run Rust clippy (production targets)
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+      - name: Install cargo-audit
+        run: which cargo-audit || cargo install cargo-audit --locked
 
       - name: Run Rust dependency audit (high+)
         run: cargo audit --file audit.toml
