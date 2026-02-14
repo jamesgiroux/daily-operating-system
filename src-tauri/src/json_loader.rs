@@ -425,6 +425,8 @@ pub struct JsonPrep {
     pub entity_readiness: Option<Vec<String>>,
     /// Stakeholder insights from intelligence.json (I135)
     pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    /// Recent email-derived signals linked to this entity (I215)
+    pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -703,6 +705,7 @@ pub fn load_prep_json(today_dir: &Path, prep_file: &str) -> Result<FullMeetingPr
         entity_risks: data.entity_risks,
         entity_readiness: data.entity_readiness,
         stakeholder_insights: data.stakeholder_insights,
+        recent_email_signals: data.recent_email_signals,
     })
 }
 
@@ -834,6 +837,8 @@ pub struct DirectiveMeetingContext {
     pub entity_readiness: Option<Vec<String>>,
     #[serde(default)]
     pub stakeholder_insights: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub recent_email_signals: Option<Vec<serde_json::Value>>,
     /// Calendar event description (I185).
     #[serde(default)]
     pub description: Option<String>,
