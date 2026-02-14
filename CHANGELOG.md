@@ -6,24 +6,83 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
-### Added
+## [0.7.3] - 2026-02-13
 
-- Settings tabs with deep-link support (`/settings?tab=...`) for Profile, Integrations, Workflows, Intelligence, Intelligence Hygiene, and Diagnostics
-- Intelligence Hygiene status API + manual scan command (`get_intelligence_hygiene_status`, `run_hygiene_scan_now`)
-- OAuth failure event (`google-auth-failed`) so frontend can surface real auth errors without hanging
-- CI guard to fail builds when committed Google OAuth secret patterns are detected
+Eight sprints of work (17-24) across proactive intelligence, entity management, reliability, and security. 647 Rust tests. 71 Architecture Decision Records. First release with auto-updater.
 
-### Changed
+### Proactive Intelligence (Sprint 22)
 
-- Settings Google auth card now shows waiting, inline failure, and post-success confirmation states
-- Browser OAuth callback page now renders branded DailyOS success/failure/cancel states with next-step guidance
-- Intelligence Hygiene UI is now actionable with gap-specific actions and manual run controls
-- Release pipeline now requires `DAILYOS_GOOGLE_SECRET` during Tauri build
+- Weekly briefing with AI narrative, priority synthesis, and readiness assessment
+- Live proactive suggestions during workflow execution with progress stepper
+- Email signal extraction: timeline events, risks, expansion signals, escalations linked to entities
+- Email signals displayed on entity detail pages with signal-type badges and relative dates
+- Agenda draft dialog for pre-meeting preparation with AI-generated starter content
 
-### Security
+### Entity Management (Sprint 21)
 
-- Removed hardcoded production Google OAuth `client_secret` from source; now loaded via `option_env!(\"DAILYOS_GOOGLE_SECRET\")`
-- Documented secret rotation and release-time secret injection workflow in `README.md`
+- Internal team setup: create your organization with root account, team, colleagues, and domain auto-linking
+- Parent-child account hierarchy with directory scaffolding and domain inheritance
+- Account team management: link people to accounts with roles (CSM, TAM, executive sponsor, etc.)
+- Bulk person creation form for onboarding flows
+- Entity picker filters archived entities from queries
+- Account domains tracked in dedicated junction table with N+1 query elimination (single JOIN)
+
+### Onboarding (Sprint 21)
+
+- Internal Team Setup chapter: configure company, team, colleagues, and domains during onboarding
+- Prime Briefing chapter: trigger first briefing from onboarding wizard
+- Onboarding flow enhanced with demo data and educational content (I56/I57)
+
+### Personality System (Sprint 24)
+
+- Configurable personality for AI copy across empty states and notifications
+- PersonalityProvider context with 5 personality options (Professional, Friendly, Playful, Zen, Direct)
+- SectionEmpty and InlineEmpty shared components replace ad-hoc empty states across all pages
+- PersonalityCard and UserProfileCard in Settings
+
+### Settings & Security (Sprint 19/23)
+
+- Settings tabs with deep-link support (`/settings?tab=...`) for Profile, Integrations, Workflows, Intelligence, Hygiene, and Diagnostics
+- Intelligence Hygiene status API + manual scan with gap-specific actions
+- OAuth failure event (`google-auth-failed`) surfaces real auth errors without hanging
+- OAuth hardened with PKCE S256 challenge + state parameter validation
+- Removed hardcoded Google OAuth `client_secret` from source; loaded via `option_env!`
+- CI guard to fail builds when committed OAuth secret patterns are detected
+
+### Reliability (Sprint 17)
+
+- Schema migration framework (ADR-0071): numbered SQL migrations, pre-migration backup, forward-compat guard, bootstrap for existing databases
+- Transaction wrapper on `create_internal_organization` — atomic multi-record creation with rollback on failure
+- Race guard on WeekPage polling — prevents overlapping IPC calls during workflow execution
+- Email validation on person creation
+- WebKit date compatibility: `parseDate` utility handles Safari's strict timestamp parsing
+- PTY subprocess strips Claude Code env vars to prevent nested session detection
+- Stale capacity warning suppressed when briefing schedule is from today
+- Transcript attachment error visibility improved
+- Workflow delivery history tracks explicit failure phase and retry metadata
+
+### Auto-Updater (Sprint 23)
+
+- Tauri updater plugin with Minisign signature verification
+- "Check for Updates" UI in Settings with download + relaunch flow
+- Release pipeline generates signed `latest.json` for update endpoint
+- Code signing and notarization in CI release workflow
+
+### Infrastructure
+
+- Shared `helpers.rs` module: `normalize_key`, `normalize_domains`, `build_external_account_hints` (DRY consolidation)
+- Centralized date formatters in `utils.ts`: `formatRelativeDateLong`, `formatBidirectionalDate`, `formatDayTime`, `formatShortDate`
+- Meeting context preparation extracted into dedicated module (`prepare/meeting_context.rs`)
+- 5 SQL migrations: baseline, internal_teams, account_team, account_team_role_index, email_signals
+- Focus page: isolated refresh command, P1 action cap, agenda anchored to calendar notes
+- Proactive intelligence query layer (`queries/proactive.rs`)
+
+### Fixed
+
+- "View All Actions" count now reflects P1 actions only
+- Hygiene system: NaN bug, manual scan trigger, detail breakdown
+- `latest.json` generation handles multiline Minisign signatures correctly
+- Clippy warnings resolved for CI (`-D warnings` enforcement)
 
 ## [0.7.2] - 2026-02-12
 
