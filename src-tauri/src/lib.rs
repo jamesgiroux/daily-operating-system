@@ -243,6 +243,7 @@ pub fn run() {
             commands::set_capture_delay,
             // Phase 3C: Weekly Planning
             commands::get_week_data,
+            commands::get_live_proactive_suggestions,
             commands::retry_week_enrichment,
             commands::get_focus_data,
             // I44/I45: Transcript Intake & Meeting Outcomes
@@ -354,6 +355,8 @@ pub fn run() {
             commands::record_account_event,
             commands::get_account_events,
             // I194: User Agenda + Notes (ADR-0065)
+            commands::apply_meeting_prep_prefill,
+            commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
         ])

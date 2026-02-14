@@ -775,6 +775,8 @@ pub struct WeekMeeting {
     pub time: String,
     pub title: String,
     pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
     pub prep_status: PrepStatus,
@@ -881,6 +883,10 @@ pub struct TimeBlock {
     pub duration_minutes: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_use: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
 }
 
 /// AI-identified top priority for the week (I94)
@@ -893,6 +899,28 @@ pub struct TopPriority {
     pub meeting_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_id: Option<String>,
+}
+
+/// Live proactive suggestion computed at query time from calendar + SQLite state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveProactiveSuggestion {
+    pub day: String,
+    pub date: String,
+    pub start: String,
+    pub end: String,
+    pub duration_minutes: u32,
+    pub title: String,
+    pub reason: String,
+    pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting_id: Option<String>,
+    pub capacity_fit: f32,
+    pub urgency_impact: f32,
+    pub confidence: f32,
+    pub total_score: f32,
 }
 
 // =============================================================================
@@ -993,6 +1021,24 @@ pub struct EmailDetail {
     pub action_owner: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub action_priority: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_signals: Option<Vec<EmailSignal>>,
+}
+
+/// Structured signal extracted from email context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailSignal {
+    pub signal_type: String,
+    pub signal_text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sentiment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_at: Option<String>,
 }
 
 /// Email summary from 83-email-summary.md
@@ -1099,6 +1145,9 @@ pub struct FullMeetingPrep {
     /// Stakeholder insights from intelligence.json (I135)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
+    /// Recent email signals linked to this meeting's entity context.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
 }
 
 /// Unified meeting detail payload (ADR-0066).

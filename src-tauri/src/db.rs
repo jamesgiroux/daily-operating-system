@@ -172,6 +172,24 @@ pub struct DbCapture {
     pub captured_at: String,
 }
 
+/// Email-derived intelligence signal linked to an entity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbEmailSignal {
+    pub id: i64,
+    pub email_id: String,
+    pub sender_email: Option<String>,
+    pub person_id: Option<String>,
+    pub entity_id: String,
+    pub entity_type: String,
+    pub signal_type: String,
+    pub signal_text: String,
+    pub confidence: Option<f64>,
+    pub sentiment: Option<String>,
+    pub urgency: Option<String>,
+    pub detected_at: String,
+}
+
 /// Stakeholder relationship signals computed from meeting history and account data (I43).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1216,6 +1234,30 @@ impl ActionDb {
             "SELECT domain FROM account_domains WHERE account_id = ?1 ORDER BY domain",
         )?;
         let rows = stmt.query_map(params![account_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Lookup non-archived account candidates by email domain.
+    pub fn lookup_account_candidates_by_domain(
+        &self,
+        domain: &str,
+    ) -> Result<Vec<DbAccount>, DbError> {
+        let normalized = domain.trim().to_lowercase();
+        if normalized.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut stmt = self.conn.prepare(
+            "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start, a.contract_end,
+                    a.csm, a.champion, a.nps, a.tracker_path, a.parent_id, a.is_internal,
+                    a.updated_at, a.archived
+             FROM accounts a
+             INNER JOIN account_domains d ON d.account_id = a.id
+             WHERE d.domain = ?1
+               AND a.archived = 0
+             ORDER BY a.is_internal ASC, a.name ASC",
+        )?;
+        let rows = stmt.query_map(params![normalized], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -2738,6 +2780,112 @@ impl ActionDb {
             captures.push(row?);
         }
         Ok(captures)
+    }
+
+    /// Insert an email intelligence signal, deduped by `(email_id, entity_id, signal_type, signal_text)`.
+    /// Known signal types from AI enrichment. Unknown types are rejected to prevent
+    /// hallucinated categories from polluting the database.
+    const VALID_SIGNAL_TYPES: &'static [&'static str] = &[
+        "expansion",
+        "question",
+        "timeline",
+        "sentiment",
+        "feedback",
+        "relationship",
+    ];
+
+    const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
+
+    /// Insert an email signal, returning `true` if a new row was inserted.
+    pub fn upsert_email_signal(
+        &self,
+        email_id: &str,
+        sender_email: Option<&str>,
+        person_id: Option<&str>,
+        entity_id: &str,
+        entity_type: &str,
+        signal_type: &str,
+        signal_text: &str,
+        confidence: Option<f64>,
+        sentiment: Option<&str>,
+        urgency: Option<&str>,
+        detected_at: Option<&str>,
+    ) -> Result<bool, DbError> {
+        if !Self::VALID_SIGNAL_TYPES.contains(&signal_type) {
+            log::warn!(
+                "Ignoring unknown email signal type '{}' for entity {}",
+                signal_type,
+                entity_id
+            );
+            return Ok(false);
+        }
+        if !Self::VALID_ENTITY_TYPES.contains(&entity_type) {
+            log::warn!(
+                "Ignoring unknown entity type '{}' for email signal",
+                entity_type
+            );
+            return Ok(false);
+        }
+
+        self.conn.execute(
+            "INSERT OR IGNORE INTO email_signals (
+                email_id, sender_email, person_id, entity_id, entity_type,
+                signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, COALESCE(?11, datetime('now')))",
+            params![
+                email_id,
+                sender_email,
+                person_id,
+                entity_id,
+                entity_type,
+                signal_type,
+                signal_text,
+                confidence,
+                sentiment,
+                urgency,
+                detected_at,
+            ],
+        )?;
+        Ok(self.conn.changes() > 0)
+    }
+
+    /// List recent email signals for an entity.
+    pub fn list_recent_email_signals_for_entity(
+        &self,
+        entity_id: &str,
+        limit: usize,
+    ) -> Result<Vec<DbEmailSignal>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             FROM email_signals
+             WHERE entity_id = ?1
+             ORDER BY detected_at DESC, id DESC
+             LIMIT ?2",
+        )?;
+
+        let rows = stmt.query_map(params![entity_id, limit as i64], |row| {
+            Ok(DbEmailSignal {
+                id: row.get(0)?,
+                email_id: row.get(1)?,
+                sender_email: row.get(2)?,
+                person_id: row.get(3)?,
+                entity_id: row.get(4)?,
+                entity_type: row.get(5)?,
+                signal_type: row.get(6)?,
+                signal_text: row.get(7)?,
+                confidence: row.get(8)?,
+                sentiment: row.get(9)?,
+                urgency: row.get(10)?,
+                detected_at: row.get(11)?,
+            })
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
     }
 
     /// Query actions extracted from a transcript for a specific meeting.
@@ -6911,8 +7059,66 @@ mod tests {
                 "SELECT meeting_type FROM meetings_history WHERE id = 'm1'",
                 [],
                 |row| row.get(0),
-            )
+        )
             .expect("query");
         assert_eq!(meeting_type, "all_hands");
+    }
+
+    #[test]
+    fn test_insert_and_query_email_signals() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+
+        db.upsert_email_signal(
+            "email-1",
+            Some("owner@acme.com"),
+            None,
+            "acc1",
+            "account",
+            "timeline",
+            "Customer asked to move launch date by two weeks",
+            Some(0.86),
+            Some("neutral"),
+            Some("high"),
+            Some("2026-02-12T09:00:00Z"),
+        )
+        .expect("insert signal");
+
+        // Duplicate should be ignored by dedupe unique index.
+        db.upsert_email_signal(
+            "email-1",
+            Some("owner@acme.com"),
+            None,
+            "acc1",
+            "account",
+            "timeline",
+            "Customer asked to move launch date by two weeks",
+            Some(0.86),
+            Some("neutral"),
+            Some("high"),
+            Some("2026-02-12T09:00:00Z"),
+        )
+        .expect("insert duplicate signal");
+
+        let signals = db
+            .list_recent_email_signals_for_entity("acc1", 10)
+            .expect("list signals");
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_type, "timeline");
+        assert!(signals[0].signal_text.contains("launch date"));
+    }
+
+    #[test]
+    fn test_domain_based_account_lookup() {
+        let db = test_db();
+        setup_account(&db, "acc1", "Acme Corp");
+        db.set_account_domains("acc1", &["acme.com".to_string()])
+            .expect("set domains");
+
+        let candidates = db
+            .lookup_account_candidates_by_domain("acme.com")
+            .expect("lookup domain");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, "acc1");
     }
 }

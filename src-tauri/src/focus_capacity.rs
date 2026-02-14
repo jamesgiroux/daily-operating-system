@@ -294,6 +294,8 @@ fn make_block(start: DateTime<Tz>, end: DateTime<Tz>, duration_minutes: u32) -> 
         end: end.to_rfc3339(),
         duration_minutes,
         suggested_use,
+        action_id: None,
+        meeting_id: None,
     }
 }
 
