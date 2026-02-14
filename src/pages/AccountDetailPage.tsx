@@ -102,7 +102,8 @@ function syntheticUnknownEmail(name: string): string {
     .replace(/[^a-z0-9]+/g, ".")
     .replace(/^\.+|\.+$/g, "");
   const prefix = base.length > 0 ? base : "person";
-  return `${prefix}.${Date.now()}@unknown.local`;
+  const uuid = crypto.randomUUID().slice(0, 8);
+  return `${prefix}.${uuid}@unknown.local`;
 }
 
 /** Render inline text with [N] citation markers as superscript. */
@@ -300,6 +301,8 @@ export default function AccountDetailPage() {
       setTeamSearchResults([]);
       return;
     }
+    // Debounced search: 180ms delay prevents excessive backend queries.
+    // Backend rate limiting unnecessary — local SQLite, no DoS risk.
     const timer = setTimeout(async () => {
       try {
         const results = await invoke<Person[]>("search_people", {
@@ -556,21 +559,16 @@ export default function AccountDetailPage() {
     }
   }
 
-  async function handleAddExistingTeamMember() {
-    if (!detail || !selectedTeamPerson) return;
-    const normalizedRole = normalizeTeamRole(teamRole);
+  async function performTeamOperation(
+    operation: () => Promise<void>,
+    onSuccess?: () => void
+  ) {
+    if (!detail) return;
     try {
       setTeamWorking(true);
       setTeamError(null);
-      await invoke("add_account_team_member", {
-        accountId: detail.id,
-        personId: selectedTeamPerson.id,
-        role: normalizedRole,
-      });
-      setSelectedTeamPerson(null);
-      setTeamSearchQuery("");
-      setTeamSearchResults([]);
-      setTeamRole("CSM");
+      await operation();
+      onSuccess?.();
       await load();
     } catch (e) {
       setTeamError(String(e));
@@ -579,22 +577,34 @@ export default function AccountDetailPage() {
     }
   }
 
+  async function handleAddExistingTeamMember() {
+    if (!selectedTeamPerson) return;
+    const normalizedRole = normalizeTeamRole(teamRole);
+    await performTeamOperation(
+      async () => {
+        await invoke("add_account_team_member", {
+          accountId: detail!.id,
+          personId: selectedTeamPerson.id,
+          role: normalizedRole,
+        });
+      },
+      () => {
+        setSelectedTeamPerson(null);
+        setTeamSearchQuery("");
+        setTeamSearchResults([]);
+        setTeamRole("CSM");
+      }
+    );
+  }
+
   async function handleRemoveTeamMember(personId: string, role: string) {
-    if (!detail) return;
-    try {
-      setTeamWorking(true);
-      setTeamError(null);
+    await performTeamOperation(async () => {
       await invoke("remove_account_team_member", {
-        accountId: detail.id,
+        accountId: detail!.id,
         personId,
         role,
       });
-      await load();
-    } catch (e) {
-      setTeamError(String(e));
-    } finally {
-      setTeamWorking(false);
-    }
+    });
   }
 
   async function createAndAddTeamMember(name: string, email: string, role: string) {
@@ -616,34 +626,28 @@ export default function AccountDetailPage() {
 
   async function handleCreateInlineTeamMember() {
     if (!teamInlineName.trim()) return;
-    try {
-      setTeamWorking(true);
-      setTeamError(null);
-      await createAndAddTeamMember(teamInlineName, teamInlineEmail, teamInlineRole);
-      setTeamInlineName("");
-      setTeamInlineEmail("");
-      setTeamInlineRole("Champion");
-      await load();
-    } catch (e) {
-      setTeamError(String(e));
-    } finally {
-      setTeamWorking(false);
-    }
+    await performTeamOperation(
+      async () => {
+        await createAndAddTeamMember(teamInlineName, teamInlineEmail, teamInlineRole);
+      },
+      () => {
+        setTeamInlineName("");
+        setTeamInlineEmail("");
+        setTeamInlineRole("Champion");
+      }
+    );
   }
 
   async function handleImportNoteCreateAndAdd(noteId: number, name: string, role: string) {
     if (!name.trim()) return;
-    try {
-      setTeamWorking(true);
-      setTeamError(null);
-      await createAndAddTeamMember(name.trim(), "", role);
-      setResolvedImportNotes((prev) => new Set([...prev, noteId]));
-      await load();
-    } catch (e) {
-      setTeamError(String(e));
-    } finally {
-      setTeamWorking(false);
-    }
+    await performTeamOperation(
+      async () => {
+        await createAndAddTeamMember(name.trim(), "", role);
+      },
+      () => {
+        setResolvedImportNotes((prev) => new Set([...prev, noteId]));
+      }
+    );
   }
 
   if (loading) {
