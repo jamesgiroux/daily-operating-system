@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmailSignalList } from "@/components/ui/email-signal-list";
 import {
   StatusBadge,
   healthStyles,
@@ -23,8 +24,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { PageError } from "@/components/PageState";
-import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { PageError, InlineEmpty } from "@/components/PageState";
+import { cn, formatArr, formatFileSize, formatRelativeDate as formatRelativeDateShort, formatShortDate, formatBidirectionalDate } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
@@ -63,6 +72,7 @@ import type {
   IntelRisk,
   IntelWin,
   MeetingPreview,
+  Person,
   StakeholderInsight,
   StrategicProgram,
   ParentAggregate,
@@ -74,6 +84,7 @@ import {
 } from "@/components/ui/collapsible";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
+const accountTeamRoleSuggestions = ["TAM", "CSM", "RM", "AE", "Champion"];
 
 const temperatureStyles: Record<string, string> = {
   hot: "bg-destructive/15 text-destructive",
@@ -81,6 +92,20 @@ const temperatureStyles: Record<string, string> = {
   cool: "bg-muted text-muted-foreground",
   cold: "bg-muted text-muted-foreground/60",
 };
+
+function normalizeTeamRole(role: string): string {
+  return role.trim() || "associated";
+}
+
+function syntheticUnknownEmail(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "");
+  const prefix = base.length > 0 ? base : "person";
+  const uuid = crypto.randomUUID().slice(0, 8);
+  return `${prefix}.${uuid}@unknown.local`;
+}
 
 /** Render inline text with [N] citation markers as superscript. */
 function renderCitations(text: string): ReactNode[] {
@@ -162,8 +187,6 @@ export default function AccountDetailPage() {
   const [editLifecycle, setEditLifecycle] = useState<string>("");
   const [editArr, setEditArr] = useState<string>("");
   const [editNps, setEditNps] = useState<string>("");
-  const [editCsm, setEditCsm] = useState<string>("");
-  const [editChampion, setEditChampion] = useState<string>("");
   const [editRenewal, setEditRenewal] = useState<string>("");
   const [editNotes, setEditNotes] = useState<string>("");
   const [dirty, setDirty] = useState(false);
@@ -175,6 +198,11 @@ export default function AccountDetailPage() {
   const [addingAction, setAddingAction] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState("");
   const [creatingAction, setCreatingAction] = useState(false);
+  const [createChildOpen, setCreateChildOpen] = useState(false);
+  const [childName, setChildName] = useState("");
+  const [childDescription, setChildDescription] = useState("");
+  const [childOwnerId, setChildOwnerId] = useState("");
+  const [creatingChild, setCreatingChild] = useState(false);
 
   // I124: Content index state
   const [files, setFiles] = useState<ContentFile[]>([]);
@@ -197,6 +225,16 @@ export default function AccountDetailPage() {
   const [newEventDate, setNewEventDate] = useState("");
   const [newArrImpact, setNewArrImpact] = useState("");
   const [newEventNotes, setNewEventNotes] = useState("");
+  const [teamSearchQuery, setTeamSearchQuery] = useState("");
+  const [teamSearchResults, setTeamSearchResults] = useState<Person[]>([]);
+  const [selectedTeamPerson, setSelectedTeamPerson] = useState<Person | null>(null);
+  const [teamRole, setTeamRole] = useState("CSM");
+  const [teamWorking, setTeamWorking] = useState(false);
+  const [teamInlineName, setTeamInlineName] = useState("");
+  const [teamInlineEmail, setTeamInlineEmail] = useState("");
+  const [teamInlineRole, setTeamInlineRole] = useState("Champion");
+  const [resolvedImportNotes, setResolvedImportNotes] = useState<Set<number>>(new Set());
+  const [teamError, setTeamError] = useState<string | null>(null);
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -221,8 +259,6 @@ export default function AccountDetailPage() {
       setEditLifecycle(result.lifecycle ?? "");
       setEditArr(result.arr?.toString() ?? "");
       setEditNps(result.nps?.toString() ?? "");
-      setEditCsm(result.csm ?? "");
-      setEditChampion(result.champion ?? "");
       setEditRenewal(result.renewalDate ?? "");
       setEditNotes(result.notes ?? "");
       setPrograms(result.strategicPrograms);
@@ -255,6 +291,31 @@ export default function AccountDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setResolvedImportNotes(new Set());
+    setTeamError(null);
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!teamSearchQuery || teamSearchQuery.trim().length < 2) {
+      setTeamSearchResults([]);
+      return;
+    }
+    // Debounced search: 180ms delay prevents excessive backend queries.
+    // Backend rate limiting unnecessary — local SQLite, no DoS risk.
+    const timer = setTimeout(async () => {
+      try {
+        const results = await invoke<Person[]>("search_people", {
+          query: teamSearchQuery.trim(),
+        });
+        setTeamSearchResults(results);
+      } catch {
+        setTeamSearchResults([]);
+      }
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [teamSearchQuery]);
 
   // Listen for intelligence-updated events
   useEffect(() => {
@@ -315,10 +376,6 @@ export default function AccountDetailPage() {
         fieldUpdates.push(["arr", editArr]);
       if (editNps !== (detail.nps?.toString() ?? ""))
         fieldUpdates.push(["nps", editNps]);
-      if (editCsm !== (detail.csm ?? ""))
-        fieldUpdates.push(["csm", editCsm]);
-      if (editChampion !== (detail.champion ?? ""))
-        fieldUpdates.push(["champion", editChampion]);
       if (editRenewal !== (detail.renewalDate ?? ""))
         fieldUpdates.push(["contract_end", editRenewal]);
 
@@ -354,8 +411,6 @@ export default function AccountDetailPage() {
     setEditLifecycle(detail.lifecycle ?? "");
     setEditArr(detail.arr?.toString() ?? "");
     setEditNps(detail.nps?.toString() ?? "");
-    setEditCsm(detail.csm ?? "");
-    setEditChampion(detail.champion ?? "");
     setEditRenewal(detail.renewalDate ?? "");
     setDirty(false);
     setEditing(false);
@@ -396,6 +451,29 @@ export default function AccountDetailPage() {
       setError(String(e));
     } finally {
       setEnriching(false);
+    }
+  }
+
+  async function handleCreateChild() {
+    if (!detail || !childName.trim()) return;
+    setCreatingChild(true);
+    try {
+      const result = await invoke<{ id: string }>("create_child_account", {
+        parentId: detail.id,
+        name: childName.trim(),
+        description: childDescription.trim() || null,
+        ownerPersonId: childOwnerId || null,
+      });
+      setCreateChildOpen(false);
+      setChildName("");
+      setChildDescription("");
+      setChildOwnerId("");
+      await load();
+      navigate({ to: "/accounts/$accountId", params: { accountId: result.id } });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreatingChild(false);
     }
   }
 
@@ -482,6 +560,97 @@ export default function AccountDetailPage() {
     }
   }
 
+  async function performTeamOperation(
+    operation: () => Promise<void>,
+    onSuccess?: () => void
+  ) {
+    if (!detail) return;
+    try {
+      setTeamWorking(true);
+      setTeamError(null);
+      await operation();
+      onSuccess?.();
+      await load();
+    } catch (e) {
+      setTeamError(String(e));
+    } finally {
+      setTeamWorking(false);
+    }
+  }
+
+  async function handleAddExistingTeamMember() {
+    if (!selectedTeamPerson) return;
+    const normalizedRole = normalizeTeamRole(teamRole);
+    await performTeamOperation(
+      async () => {
+        await invoke("add_account_team_member", {
+          accountId: detail!.id,
+          personId: selectedTeamPerson.id,
+          role: normalizedRole,
+        });
+      },
+      () => {
+        setSelectedTeamPerson(null);
+        setTeamSearchQuery("");
+        setTeamSearchResults([]);
+        setTeamRole("CSM");
+      }
+    );
+  }
+
+  async function handleRemoveTeamMember(personId: string, role: string) {
+    await performTeamOperation(async () => {
+      await invoke("remove_account_team_member", {
+        accountId: detail!.id,
+        personId,
+        role,
+      });
+    });
+  }
+
+  async function createAndAddTeamMember(name: string, email: string, role: string) {
+    if (!detail) return;
+    const normalizedRole = normalizeTeamRole(role);
+    const personName = name.trim();
+    const personEmail = email.trim() || syntheticUnknownEmail(personName);
+    const personId = await invoke<string>("create_person", {
+      email: personEmail,
+      name: personName,
+      relationship: "unknown",
+    });
+    await invoke("add_account_team_member", {
+      accountId: detail.id,
+      personId,
+      role: normalizedRole,
+    });
+  }
+
+  async function handleCreateInlineTeamMember() {
+    if (!teamInlineName.trim()) return;
+    await performTeamOperation(
+      async () => {
+        await createAndAddTeamMember(teamInlineName, teamInlineEmail, teamInlineRole);
+      },
+      () => {
+        setTeamInlineName("");
+        setTeamInlineEmail("");
+        setTeamInlineRole("Champion");
+      }
+    );
+  }
+
+  async function handleImportNoteCreateAndAdd(noteId: number, name: string, role: string) {
+    if (!name.trim()) return;
+    await performTeamOperation(
+      async () => {
+        await createAndAddTeamMember(name.trim(), "", role);
+      },
+      () => {
+        setResolvedImportNotes((prev) => new Set([...prev, noteId]));
+      }
+    );
+  }
+
   if (loading) {
     return (
       <main className="flex-1 overflow-hidden p-8">
@@ -548,9 +717,16 @@ export default function AccountDetailPage() {
   if (signals?.lastMeeting) {
     metrics.push({
       label: "Last Meeting",
-      value: formatDate(signals.lastMeeting),
+      value: formatShortDate(signals.lastMeeting),
     });
   }
+  const heroTeamPreview =
+    detail.accountTeam.length > 0
+      ? detail.accountTeam
+          .slice(0, 2)
+          .map((member) => `${member.personName} (${member.role.toUpperCase()})`)
+          .join(", ")
+      : null;
 
   return (
     <main className="flex-1 overflow-hidden">
@@ -608,6 +784,11 @@ export default function AccountDetailPage() {
                       {detail.lifecycle}
                     </Badge>
                   )}
+                  {detail.isInternal && (
+                    <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                      Internal
+                    </Badge>
+                  )}
                   {signals?.temperature && (
                     <Badge
                       className={cn(
@@ -620,15 +801,90 @@ export default function AccountDetailPage() {
                     </Badge>
                   )}
                 </div>
-                {detail.csm && (
+                {heroTeamPreview && (
                   <span className="text-sm text-muted-foreground">
-                    CSM: {detail.csm}
+                    Team: {heroTeamPreview}
                   </span>
                 )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
+              {!detail.archived && (
+                <Dialog open={createChildOpen} onOpenChange={setCreateChildOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 text-xs">
+                      <Plus className="mr-1 size-3" />
+                      {detail.isInternal ? "New Team" : "New BU"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{detail.isInternal ? "Create Team" : "Create Business Unit"}</DialogTitle>
+                      <DialogDescription>
+                        Add a child entity under {detail.name}.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Name</label>
+                        <Input
+                          value={childName}
+                          onChange={(e) => setChildName(e.target.value)}
+                          placeholder={detail.isInternal ? "Team name" : "BU name"}
+                        />
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {(detail.isInternal
+                            ? ["Leadership Team", "Product Team", "Operations Team"]
+                            : ["Enterprise", "SMB", "Strategic"])
+                            .map((suggestion) => (
+                              <button
+                                key={suggestion}
+                                type="button"
+                                onClick={() => setChildName(suggestion)}
+                                className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                              >
+                                {suggestion}
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Description</label>
+                        <textarea
+                          value={childDescription}
+                          onChange={(e) => setChildDescription(e.target.value)}
+                          className="min-h-[80px] w-full rounded-md border bg-background px-3 py-2 text-sm"
+                          placeholder="Optional notes for this team or business unit"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs text-muted-foreground">Owner</label>
+                        <select
+                          value={childOwnerId}
+                          onChange={(e) => setChildOwnerId(e.target.value)}
+                          className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                        >
+                          <option value="">No owner</option>
+                          {detail.linkedPeople.map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.name || person.email}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" onClick={() => setCreateChildOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleCreateChild} disabled={creatingChild || !childName.trim()}>
+                        {creatingChild ? "Creating..." : "Create"}
+                      </Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              )}
               {dirty && (
                 <Button size="sm" onClick={handleSave} disabled={saving}>
                   <Save className="mr-1 size-4" />
@@ -852,7 +1108,7 @@ export default function AccountDetailPage() {
                       <p className="text-sm text-muted-foreground">
                         {intelligence.nextMeetingReadiness.meetingTitle}
                         {intelligence.nextMeetingReadiness.meetingDate &&
-                          ` — ${formatDate(intelligence.nextMeetingReadiness.meetingDate)}`}
+                          ` — ${formatShortDate(intelligence.nextMeetingReadiness.meetingDate)}`}
                       </p>
                     )}
                   </CardHeader>
@@ -896,13 +1152,13 @@ export default function AccountDetailPage() {
                             {m.title}
                           </span>
                           <span className="shrink-0 text-sm text-muted-foreground">
-                            {formatRelativeDate(m.startTime)}
+                            {formatBidirectionalDate(m.startTime)}
                           </span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={CalendarClock}
                       message="No upcoming meetings scheduled"
                     />
@@ -951,7 +1207,7 @@ export default function AccountDetailPage() {
                       )}
                     </Collapsible>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={CalendarClock}
                       message="No past meetings recorded"
                     />
@@ -1063,7 +1319,7 @@ export default function AccountDetailPage() {
                     </div>
                   ) : (
                     !addingAction && (
-                      <EmptyState
+                      <InlineEmpty
                         icon={CheckCircle2}
                         message="No open actions"
                       />
@@ -1233,6 +1489,30 @@ export default function AccountDetailPage() {
                 </Card>
               )}
 
+              {detail.recentEmailSignals && detail.recentEmailSignals.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base font-semibold">
+                      Email Timeline
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.recentEmailSignals.length})
+                      </span>
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                      Signals extracted from recent inbound email.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <EmailSignalList
+                      signals={detail.recentEmailSignals}
+                      limit={8}
+                      dateFormat="relative-short"
+                      showMetadata
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Value Delivered (from intelligence) */}
               {(intelligence?.valueDelivered?.length ?? 0) > 0 && (
                 <Card>
@@ -1306,10 +1586,6 @@ export default function AccountDetailPage() {
                       setEditArr={setEditArr}
                       editNps={editNps}
                       setEditNps={setEditNps}
-                      editCsm={editCsm}
-                      setEditCsm={setEditCsm}
-                      editChampion={editChampion}
-                      setEditChampion={setEditChampion}
                       editRenewal={editRenewal}
                       setEditRenewal={setEditRenewal}
                       setDirty={setDirty}
@@ -1320,6 +1596,211 @@ export default function AccountDetailPage() {
                     />
                   ) : (
                     <AccountDetailsReadView detail={detail} />
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base font-semibold">
+                    Account Team
+                    {detail.accountTeam.length > 0 && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({detail.accountTeam.length})
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {detail.accountTeam.length > 0 ? (
+                    <div className="space-y-2">
+                      {detail.accountTeam.map((member) => (
+                        <div
+                          key={`${member.personId}-${member.role}`}
+                          className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                        >
+                          <div className="min-w-0">
+                            <Link
+                              to="/people/$personId"
+                              params={{ personId: member.personId }}
+                              className="font-medium hover:text-primary"
+                            >
+                              {member.personName}
+                            </Link>
+                            <div className="text-xs text-muted-foreground">
+                              {member.role.toUpperCase()}
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={teamWorking}
+                            onClick={() =>
+                              handleRemoveTeamMember(member.personId, member.role)
+                            }
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No account team members yet.
+                    </p>
+                  )}
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Add Existing Person
+                    </label>
+                    <Input
+                      value={teamSearchQuery}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setTeamSearchQuery(value);
+                        setSelectedTeamPerson(null);
+                      }}
+                      placeholder="Search people..."
+                    />
+                    {teamSearchResults.length > 0 && !selectedTeamPerson && (
+                      <div className="max-h-36 space-y-1 overflow-auto rounded border p-1">
+                        {teamSearchResults.slice(0, 6).map((person) => (
+                          <button
+                            key={person.id}
+                            type="button"
+                            className="flex w-full items-center justify-between rounded px-2 py-1 text-left text-sm hover:bg-muted"
+                            onClick={() => {
+                              setSelectedTeamPerson(person);
+                              setTeamSearchQuery(person.name);
+                              setTeamSearchResults([]);
+                            }}
+                          >
+                            <span>{person.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {person.email}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={teamRole}
+                        onChange={(e) => setTeamRole(e.target.value)}
+                        placeholder="Role"
+                        className="h-8 text-xs"
+                      />
+                      {accountTeamRoleSuggestions.map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={() => setTeamRole(role)}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={teamWorking || !selectedTeamPerson || !teamRole.trim()}
+                      onClick={handleAddExistingTeamMember}
+                    >
+                      Add to Team
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Create Person + Add
+                    </label>
+                    <Input
+                      value={teamInlineName}
+                      onChange={(e) => setTeamInlineName(e.target.value)}
+                      placeholder="Name"
+                    />
+                    <Input
+                      value={teamInlineEmail}
+                      onChange={(e) => setTeamInlineEmail(e.target.value)}
+                      placeholder="Email (optional)"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={teamInlineRole}
+                        onChange={(e) => setTeamInlineRole(e.target.value)}
+                        placeholder="Role"
+                        className="h-8 text-xs"
+                      />
+                      {accountTeamRoleSuggestions.map((role) => (
+                        <button
+                          key={`inline-${role}`}
+                          type="button"
+                          className="rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+                          onClick={() => setTeamInlineRole(role)}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={teamWorking || !teamInlineName.trim() || !teamInlineRole.trim()}
+                      onClick={handleCreateInlineTeamMember}
+                    >
+                      Create + Add
+                    </Button>
+                  </div>
+
+                  {detail.accountTeamImportNotes.filter((note) => !resolvedImportNotes.has(note.id)).length > 0 && (
+                    <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Migrated Team Notes
+                      </p>
+                      {detail.accountTeamImportNotes
+                        .filter((note) => !resolvedImportNotes.has(note.id))
+                        .map((note) => (
+                          <div
+                            key={note.id}
+                            className="flex items-center justify-between gap-3 rounded border bg-background px-2 py-2 text-xs"
+                          >
+                            <div>
+                              <div className="font-medium">{note.legacyValue}</div>
+                              <div className="text-muted-foreground">
+                                {note.legacyField.toUpperCase()} · {note.note}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              disabled={teamWorking}
+                              onClick={() =>
+                                handleImportNoteCreateAndAdd(
+                                  note.id,
+                                  note.legacyValue,
+                                  note.legacyField,
+                                )
+                              }
+                            >
+                              Create + Add
+                            </Button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {teamError && (
+                    <p className="text-xs text-destructive">
+                      {teamError}
+                    </p>
                   )}
                 </CardContent>
               </Card>
@@ -1484,7 +1965,7 @@ export default function AccountDetailPage() {
                               {event.eventType}
                             </Badge>
                             <span className="text-muted-foreground">
-                              {formatDate(event.eventDate)}
+                              {formatShortDate(event.eventDate)}
                             </span>
                           </div>
                           {event.arrImpact != null && (
@@ -1666,7 +2147,7 @@ export default function AccountDetailPage() {
                       )}
                     </Collapsible>
                   ) : (
-                    <EmptyState
+                    <InlineEmpty
                       icon={FileText}
                       message="No files indexed"
                     />
@@ -1708,7 +2189,7 @@ export default function AccountDetailPage() {
                         ))}
                       </div>
                     ) : (
-                      <EmptyState
+                      <InlineEmpty
                         icon={Users}
                         message="No people linked yet"
                       />
@@ -1745,7 +2226,7 @@ function MeetingPreviewCard({ meeting }: { meeting: MeetingPreview }) {
         </Badge>
         <span className="flex-1 truncate font-medium">{meeting.title}</span>
         <span className="shrink-0 text-sm text-muted-foreground">
-          {formatRelativeDate(meeting.startTime)}
+          {formatBidirectionalDate(meeting.startTime)}
         </span>
       </div>
 
@@ -2024,21 +2505,6 @@ function ProgramRow({
 
 // ─── Existing Sub-components ─────────────────────────────────────────────────
 
-function EmptyState({
-  icon: Icon,
-  message,
-}: {
-  icon: React.ElementType;
-  message: string;
-}) {
-  return (
-    <div className="flex flex-col items-center py-6 text-center">
-      <Icon className="mb-2 size-8 text-muted-foreground/40" />
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  );
-}
-
 function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
   const healthDotStyles: Record<string, string> = {
     green: "bg-green-500",
@@ -2080,25 +2546,17 @@ function AccountDetailsReadView({ detail }: { detail: AccountDetail }) {
     fields.push({ label: "NPS", value: String(detail.nps) });
   }
 
-  if (detail.csm) {
-    fields.push({ label: "CSM", value: detail.csm });
-  }
-
-  if (detail.champion) {
-    fields.push({ label: "Champion", value: detail.champion });
-  }
-
   if (detail.renewalDate) {
     fields.push({
       label: "Renewal",
-      value: formatDate(detail.renewalDate),
+      value: formatShortDate(detail.renewalDate),
     });
   }
 
   if (detail.contractStart) {
     fields.push({
       label: "Contract Start",
-      value: formatDate(detail.contractStart),
+      value: formatShortDate(detail.contractStart),
     });
   }
 
@@ -2133,10 +2591,6 @@ function AccountDetailsEditForm({
   setEditArr,
   editNps,
   setEditNps,
-  editCsm,
-  setEditCsm,
-  editChampion,
-  setEditChampion,
   editRenewal,
   setEditRenewal,
   setDirty,
@@ -2155,10 +2609,6 @@ function AccountDetailsEditForm({
   setEditArr: (v: string) => void;
   editNps: string;
   setEditNps: (v: string) => void;
-  editCsm: string;
-  setEditCsm: (v: string) => void;
-  editChampion: string;
-  setEditChampion: (v: string) => void;
   editRenewal: string;
   setEditRenewal: (v: string) => void;
   setDirty: (v: boolean) => void;
@@ -2261,36 +2711,6 @@ function AccountDetailsEditForm({
               setDirty(true);
             }}
             placeholder="NPS score"
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">
-            CSM
-          </label>
-          <input
-            type="text"
-            value={editCsm}
-            onChange={(e) => {
-              setEditCsm(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="CSM name"
-            className={inputClass}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">
-            Champion
-          </label>
-          <input
-            type="text"
-            value={editChampion}
-            onChange={(e) => {
-              setEditChampion(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="Champion name"
             className={inputClass}
           />
         </div>
@@ -2451,43 +2871,6 @@ function CaptureIcon({ type }: { type: string }) {
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
 
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
-
-
-function formatRelativeDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = date.getTime() - now.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-    if (diffDays === 1) {
-      return `Tomorrow ${date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
-    }
-    if (diffDays === -1) return "Yesterday";
-    if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
-    if (diffDays <= 7) return `In ${diffDays} days`;
-    return formatDate(dateStr);
-  } catch {
-    return dateStr.split("T")[0] ?? dateStr;
-  }
-}
 
 function formatMeetingType(meetingType: string): string {
   const labels: Record<string, string> = {

@@ -13,8 +13,7 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::{
-    load_credentials, save_token, send_with_retry, GoogleApiError, GoogleToken, RetryPolicy,
-    SCOPES,
+    load_credentials, save_token, send_with_retry, GoogleApiError, GoogleToken, RetryPolicy, SCOPES,
 };
 
 /// Run the full OAuth2 consent flow.
@@ -37,10 +36,7 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
     // Bind to a random port
     let listener = TcpListener::bind("127.0.0.1:0").map_err(GoogleApiError::Io)?;
-    let port = listener
-        .local_addr()
-        .map_err(GoogleApiError::Io)?
-        .port();
+    let port = listener.local_addr().map_err(GoogleApiError::Io)?.port();
     let redirect_uri = format!("http://localhost:{}", port);
 
     // Build authorization URL
@@ -64,9 +60,16 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         .set_nonblocking(false)
         .map_err(GoogleApiError::Io)?;
 
-    let CallbackResult { callback, mut stream } = wait_for_auth_callback(&listener)?;
+    let CallbackResult {
+        callback,
+        mut stream,
+    } = wait_for_auth_callback(&listener)?;
     if callback.state.as_deref() != Some(oauth_state.as_str()) {
-        send_response(&mut stream, "Authorization failed: state mismatch. Please try again.");
+        send_error_response(
+            &mut stream,
+            "Authorization failed",
+            "State mismatch detected. Please return to DailyOS and try connecting again.",
+        );
         return Err(GoogleApiError::OAuthStateMismatch);
     }
 
@@ -90,7 +93,11 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
         Ok(result) => result,
         Err(e) => {
             log::error!("OAuth: token exchange request failed: {}", e);
-            send_response(&mut stream, "Authorization failed: could not reach Google. Please try again.");
+            send_error_response(
+                &mut stream,
+                "Authorization failed",
+                "Could not reach Google during token exchange. Please return to DailyOS and try again.",
+            );
             return Err(e);
         }
     };
@@ -98,11 +105,19 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
     let body: serde_json::Value = if status.is_success() {
         serde_json::from_str(&body_text)?
     } else {
-        log::error!("OAuth: token exchange failed: status={} body={}", status, body_text);
-        send_response(&mut stream, &format!(
-            "Authorization failed: Google returned {}. Please try again or check the app logs.",
+        log::error!(
+            "OAuth: token exchange failed: status={} body={}",
             status,
-        ));
+            body_text
+        );
+        send_error_response(
+            &mut stream,
+            "Authorization failed",
+            &format!(
+                "Google returned {} during authorization. Please return to DailyOS and try again.",
+                status
+            ),
+        );
         return Err(GoogleApiError::RefreshFailed(format!(
             "Token exchange failed ({}): {}",
             status, body_text
@@ -135,14 +150,19 @@ pub async fn run_consent_flow(workspace: Option<&Path>) -> Result<String, Google
 
     if let Err(e) = save_token(&token) {
         log::error!("OAuth: failed to save token: {}", e);
-        send_response(&mut stream, "Authorization failed: could not save credentials. Check app logs.");
+        send_error_response(
+            &mut stream,
+            "Authorization failed",
+            "Credentials could not be saved. Please return to DailyOS and check logs.",
+        );
         return Err(e);
     }
 
     // Token saved — NOW tell the browser it worked
-    send_response(
+    send_success_response(
         &mut stream,
-        "Authorization successful! You can close this tab and return to DailyOS.",
+        "Google account connected",
+        "You can close this tab and return to DailyOS. Settings will update automatically.",
     );
     log::info!("OAuth: flow complete, token saved");
 
@@ -165,9 +185,7 @@ fn wait_for_auth_callback(listener: &TcpListener) -> Result<CallbackResult, Goog
     let (mut stream, _) = listener.accept().map_err(GoogleApiError::Io)?;
 
     let mut buffer = [0u8; 4096];
-    let n = stream
-        .read(&mut buffer)
-        .map_err(GoogleApiError::Io)?;
+    let n = stream.read(&mut buffer).map_err(GoogleApiError::Io)?;
     let request = String::from_utf8_lossy(&buffer[..n]);
 
     let query = request
@@ -183,18 +201,27 @@ fn wait_for_auth_callback(listener: &TcpListener) -> Result<CallbackResult, Goog
 
     if let Some(error_code) = error {
         if error_code == "access_denied" {
-            send_response(&mut stream, "Authorization denied. You can close this tab.");
+            send_info_response(
+                &mut stream,
+                "Authorization cancelled",
+                "No changes were made. You can close this tab and return to DailyOS.",
+            );
             return Err(GoogleApiError::FlowCancelled);
         }
-        send_response(&mut stream, "Authorization failed. You can close this tab.");
+        send_error_response(
+            &mut stream,
+            "Authorization failed",
+            "Google returned an error response. You can close this tab and return to DailyOS.",
+        );
         return Err(GoogleApiError::FlowCancelled);
     }
 
     let code = code.ok_or(GoogleApiError::FlowCancelled)?;
     if code.is_empty() {
-        send_response(
+        send_error_response(
             &mut stream,
-            "No authorization code received. You can close this tab.",
+            "Authorization failed",
+            "No authorization code was returned. Please close this tab and try again from DailyOS.",
         );
         return Err(GoogleApiError::FlowCancelled);
     }
@@ -209,12 +236,36 @@ fn wait_for_auth_callback(listener: &TcpListener) -> Result<CallbackResult, Goog
 }
 
 /// Send an HTTP response to the browser.
-fn send_response(stream: &mut impl Write, message: &str) {
-    let body = format!(
-        "<html><body style=\"font-family: system-ui; text-align: center; padding: 40px;\">\
-         <h2>{}</h2></body></html>",
-        message
-    );
+enum CallbackTone {
+    Success,
+    Error,
+    Info,
+}
+
+fn render_callback_html(title: &str, message: &str, tone: CallbackTone) -> String {
+    let (accent, badge_bg, badge_text) = match tone {
+        CallbackTone::Success => ("#0f766e", "#d1fae5", "#065f46"),
+        CallbackTone::Error => ("#b91c1c", "#fee2e2", "#7f1d1d"),
+        CallbackTone::Info => ("#1d4ed8", "#dbeafe", "#1e3a8a"),
+    };
+
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\
+         <title>DailyOS Authorization</title></head>\
+         <body style=\"margin:0;background:linear-gradient(135deg,#f8fafc,#eff6ff);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;\">\
+         <main style=\"min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;\">\
+         <section style=\"max-width:560px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;box-shadow:0 12px 32px rgba(15,23,42,0.08);\">\
+         <div style=\"display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:{badge_bg};color:{badge_text};font-size:12px;font-weight:600;\">DailyOS</div>\
+         <h1 style=\"margin:14px 0 8px;font-size:22px;line-height:1.3;color:{accent};\">{title}</h1>\
+         <p style=\"margin:0 0 18px;font-size:14px;line-height:1.6;color:#334155;\">{message}</p>\
+         <div style=\"border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:13px;line-height:1.5;color:#475569;\">\
+         Next: return to DailyOS Settings. This window can now be closed.</div>\
+         </section></main></body></html>"
+    )
+}
+
+fn send_response(stream: &mut impl Write, title: &str, message: &str, tone: CallbackTone) {
+    let body = render_callback_html(title, message, tone);
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
         body.len(),
@@ -222,6 +273,18 @@ fn send_response(stream: &mut impl Write, message: &str) {
     );
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
+}
+
+fn send_success_response(stream: &mut impl Write, title: &str, message: &str) {
+    send_response(stream, title, message, CallbackTone::Success);
+}
+
+fn send_error_response(stream: &mut impl Write, title: &str, message: &str) {
+    send_response(stream, title, message, CallbackTone::Error);
+}
+
+fn send_info_response(stream: &mut impl Write, title: &str, message: &str) {
+    send_response(stream, title, message, CallbackTone::Info);
 }
 
 /// Fetch the user's email address from the Gmail API.

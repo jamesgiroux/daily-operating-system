@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { useSearch } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -165,16 +166,22 @@ function getProcessingQuote(): string {
 const inboxStatusStyles: Record<string, string> = {
   completed:
     "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+  routed:
+    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
   needs_enrichment:
     "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
   error:
     "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
+  unprocessed:
+    "bg-muted text-muted-foreground border-border",
 };
 
 function formatInboxStatus(value: string): string {
   if (value === "completed") return "Processed";
+  if (value === "routed") return "Processed";
   if (value === "needs_enrichment") return "Needs AI";
   if (value === "error") return "Error";
+  if (value === "unprocessed") return "Unprocessed";
   return value.replace(/_/g, " ");
 }
 
@@ -183,6 +190,7 @@ function formatInboxStatus(value: string): string {
 // =============================================================================
 
 export default function InboxPage() {
+  const { entityId } = useSearch({ from: "/inbox" });
   const { files, loading, error, refresh } = useInbox();
   const [refreshing, setRefreshing] = useState(false);
   const [processingAll, setProcessingAll] = useState(false);
@@ -195,6 +203,7 @@ export default function InboxPage() {
   const [processingQuote] = useState(getProcessingQuote);
   const [isDragging, setIsDragging] = useState(false);
   const [dropResult, setDropResult] = useState<{ count: number } | null>(null);
+  const lastDropRef = useRef<{ signature: string; at: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // Tauri drag-drop listener
@@ -211,7 +220,22 @@ export default function InboxPage() {
             setIsDragging(false);
             const paths = event.payload.paths;
             if (paths && paths.length > 0) {
-              invoke<number>("copy_to_inbox", { paths })
+              const uniquePaths = Array.from(new Set(paths));
+              const signature = [...uniquePaths].sort().join("|");
+              const now = Date.now();
+              const previous = lastDropRef.current;
+
+              // Ignore burst-duplicate drop events from the webview bridge (I203).
+              if (
+                previous &&
+                previous.signature === signature &&
+                now - previous.at < 1500
+              ) {
+                return;
+              }
+              lastDropRef.current = { signature, at: now };
+
+              invoke<number>("copy_to_inbox", { paths: uniquePaths })
                 .then((count) => {
                   if (count > 0) {
                     setDropResult({ count });
@@ -345,7 +369,10 @@ export default function InboxPage() {
       cancelledRef.current.delete(filename);
       updateFileState(filename, { status: "processing", error: undefined });
       try {
-        const result = await invoke<ProcessingResultPayload>("process_inbox_file", { filename });
+        const result = await invoke<ProcessingResultPayload>("process_inbox_file", {
+          filename,
+          entityId,
+        });
 
         if (cancelledRef.current.has(filename)) {
           cancelledRef.current.delete(filename);
@@ -368,7 +395,10 @@ export default function InboxPage() {
 
         // Auto-escalate to AI enrichment
         const enrichResult = await withTimeout(
-          invoke<{ status: string; message?: string }>("enrich_inbox_file", { filename }),
+          invoke<{ status: string; message?: string }>("enrich_inbox_file", {
+            filename,
+            entityId,
+          }),
           ENRICH_TIMEOUT_MS
         );
 
@@ -397,7 +427,7 @@ export default function InboxPage() {
         });
       }
     },
-    [updateFileState, refresh]
+    [entityId, updateFileState, refresh]
   );
 
   // ---------------------------------------------------------------------------
@@ -443,7 +473,10 @@ export default function InboxPage() {
 
         try {
           const enrichResult = await withTimeout(
-            invoke<{ status: string; message?: string }>("enrich_inbox_file", { filename }),
+            invoke<{ status: string; message?: string }>("enrich_inbox_file", {
+              filename,
+              entityId,
+            }),
             ENRICH_TIMEOUT_MS
           );
 
@@ -493,7 +526,7 @@ export default function InboxPage() {
     } finally {
       setProcessingAll(false);
     }
-  }, [files, updateFileState, refresh]);
+  }, [entityId, files, updateFileState, refresh]);
 
   // ---------------------------------------------------------------------------
   // Derived
@@ -770,15 +803,15 @@ function InboxRow({
             <StatusBadge value="error" styles={inboxStatusStyles} formatLabel={formatInboxStatus} />
           )}
 
-          {!isProcessing && !isError && file.processingStatus && (
+          {!isProcessing && !isError && (
             <StatusBadge
-              value={file.processingStatus}
+              value={file.processingStatus ?? "unprocessed"}
               styles={inboxStatusStyles}
               formatLabel={formatInboxStatus}
             />
           )}
 
-          {!isProcessing && !isError && !file.processingStatus && time && (
+          {!isProcessing && !isError && time && (
             <span className="text-xs text-muted-foreground/40">{time}</span>
           )}
 
