@@ -1,6 +1,6 @@
 {
   "name": "dailyos",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "AI-native productivity for humans who skip days",
   "type": "module",
   "pnpm": {
