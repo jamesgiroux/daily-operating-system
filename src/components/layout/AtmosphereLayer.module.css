@@ -1,0 +1,113 @@
+/* =============================================================================
+   AtmosphereLayer.module.css
+
+   Atmospheric background layer with page-specific radial gradients and
+   breathing animation. Fixed position, covers entire viewport.
+   ============================================================================= */
+
+@import '../../styles/design-tokens.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ATMOSPHERE — Main container
+   ───────────────────────────────────────────────────────────────────────── */
+.atmosphere {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 100vh;
+  width: 100%;
+  z-index: var(--z-atmosphere);
+  pointer-events: none;
+  overflow: hidden;
+  animation: atmosphere-breathe 12s ease-in-out infinite alternate;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   COLOR VARIANTS — Turmeric, Terracotta, Larkspur
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* TURMERIC (Warm, Customer context) — Default */
+.turmeric {
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 65% 15%,
+      rgba(201, 162, 39, 0.11) 0%,
+      rgba(201, 162, 39, 0.06) 40%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 20% 30%,
+      rgba(143, 163, 196, 0.09) 0%,
+      transparent 60%
+    );
+}
+
+/* TERRACOTTA (Urgency, Action-focused) */
+.terracotta {
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 65% 15%,
+      rgba(196, 101, 74, 0.11) 0%,
+      rgba(196, 101, 74, 0.06) 40%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 20% 30%,
+      rgba(201, 162, 39, 0.05) 0%,
+      transparent 60%
+    );
+}
+
+/* LARKSPUR (Expansive, Forward-looking, People focus) */
+.larkspur {
+  background:
+    radial-gradient(
+      ellipse 80% 50% at 65% 15%,
+      rgba(143, 163, 196, 0.11) 0%,
+      rgba(143, 163, 196, 0.06) 40%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 60% 40% at 20% 30%,
+      rgba(201, 162, 39, 0.05) 0%,
+      transparent 60%
+    );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   WATERMARK ASTERISK
+   ───────────────────────────────────────────────────────────────────────── */
+.watermark {
+  position: absolute;
+  top: 50%;
+  right: -40px;
+  transform: translateY(-50%) rotate(12deg);
+  font-family: var(--font-mark);
+  font-weight: 800;
+  font-size: 420px;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: -1;
+}
+
+/* Color-specific watermark opacity and tint */
+.watermarkTurmeric {
+  color: rgba(201, 162, 39, 0.07); /* Turmeric tint */
+}
+
+.watermarkTerracotta {
+  color: rgba(196, 101, 74, 0.07); /* Terracotta tint */
+}
+
+.watermarkLarkspur {
+  color: rgba(143, 163, 196, 0.07); /* Larkspur tint */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ANIMATION — atmosphere-breathe (defined in design-tokens.css)
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Animation plays at 12s interval, fading opacity in/out
+   to create a subtle "breathing" effect on the gradient wash */
