@@ -5933,16 +5933,7 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
 // Sprint 26: Chat Tool Commands
 // =============================================================================
 
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatEntityListItem {
-    pub id: String,
-    pub name: String,
-    pub entity_type: String,
-    pub status: Option<String>,
-    pub health: Option<String>,
-    pub open_action_count: usize,
-}
+use crate::types::{ChatEntityListItem, meetings_to_json};
 
 fn ensure_open_chat_session(
     db: &crate::db::ActionDb,
@@ -6021,8 +6012,8 @@ pub fn chat_search_content(
         &entity_id,
         query,
         top_k.unwrap_or(10).clamp(1, 50),
-        0.0, // vector weight disabled until real ONNX model replaces hash stub
-        1.0,
+        0.7,
+        0.3,
     )?;
 
     let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
@@ -6054,17 +6045,8 @@ pub fn chat_query_entity(
         if let Some(account) = db.get_account(&entity_id).map_err(|e| e.to_string())? {
             let meetings = db
                 .get_meetings_for_account(&entity_id, 10)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "id": m.id,
-                        "title": m.title,
-                        "startTime": m.start_time,
-                        "meetingType": m.meeting_type,
-                    })
-                })
-                .collect::<Vec<_>>();
+                .map_err(|e| e.to_string())?;
+            let meetings_json = meetings_to_json(&meetings);
             (
                 "account",
                 account.name.clone(),
@@ -6076,22 +6058,13 @@ pub fn chat_query_entity(
                     "nps": account.nps,
                 }),
                 db.get_account_actions(&entity_id).unwrap_or_default(),
-                meetings,
+                meetings_json,
             )
         } else if let Some(project) = db.get_project(&entity_id).map_err(|e| e.to_string())? {
             let meetings = db
                 .get_meetings_for_project(&entity_id, 10)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "id": m.id,
-                        "title": m.title,
-                        "startTime": m.start_time,
-                        "meetingType": m.meeting_type,
-                    })
-                })
-                .collect::<Vec<_>>();
+                .map_err(|e| e.to_string())?;
+            let meetings_json = meetings_to_json(&meetings);
             (
                 "project",
                 project.name.clone(),
@@ -6102,22 +6075,13 @@ pub fn chat_query_entity(
                     "targetDate": project.target_date,
                 }),
                 db.get_project_actions(&entity_id).unwrap_or_default(),
-                meetings,
+                meetings_json,
             )
         } else if let Some(person) = db.get_person(&entity_id).map_err(|e| e.to_string())? {
             let meetings = db
                 .get_person_meetings(&entity_id, 10)
-                .map_err(|e| e.to_string())?
-                .into_iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "id": m.id,
-                        "title": m.title,
-                        "startTime": m.start_time,
-                        "meetingType": m.meeting_type,
-                    })
-                })
-                .collect::<Vec<_>>();
+                .map_err(|e| e.to_string())?;
+            let meetings_json = meetings_to_json(&meetings);
             (
                 "person",
                 person.name.clone(),
@@ -6129,7 +6093,7 @@ pub fn chat_query_entity(
                     "lastSeen": person.last_seen,
                 }),
                 Vec::new(),
-                meetings,
+                meetings_json,
             )
         } else {
             return Err(format!("Entity not found: {}", entity_id));
@@ -6141,8 +6105,8 @@ pub fn chat_query_entity(
         &entity_id,
         question,
         8,
-        0.0, // vector weight disabled until real ONNX model replaces hash stub
-        1.0,
+        0.7,
+        0.3,
     )?;
     let intelligence = db.get_entity_intelligence(&entity_id).ok().flatten();
 

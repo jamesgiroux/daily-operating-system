@@ -247,9 +247,15 @@ fn embed_file(
         return Ok(());
     }
 
+    // nomic-embed-text-v1.5 asymmetric retrieval: documents get "search_document: " prefix,
+    // queries get "search_query: " prefix at search time (ADR-0074, I265).
+    let prefixed_chunks: Vec<String> = chunks
+        .iter()
+        .map(|c| format!("{}{}", crate::embeddings::DOCUMENT_PREFIX, c))
+        .collect();
     let embeddings = state
         .embedding_model
-        .embed_batch(&chunks)
+        .embed_batch(&prefixed_chunks)
         .map_err(|e| format!("embedding batch failed: {e}"))?;
 
     let now = Utc::now().to_rfc3339();
