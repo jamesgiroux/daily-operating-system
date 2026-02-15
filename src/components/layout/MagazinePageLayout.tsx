@@ -2,122 +2,58 @@
  * MagazinePageLayout.tsx
  *
  * Wrapper component combining FolioBar, FloatingNavIsland, AtmosphereLayer,
- * and page container. Provides the complete magazine-layout editorial shell
- * for any page using the new design system.
+ * and page container. Provides the complete magazine-layout editorial shell.
  *
- * Usage:
- *   @example
- *   &lt;MagazinePageLayout
- *     folioLabel="Daily Briefing"
- *     folioDate="Thu, Feb 14, 2026"
- *     activePage="today"
- *     atmosphereColor="turmeric"
- *     heroSection={heroContent}
- *   &gt;
- *     [Page content sections]
- *   &lt;/MagazinePageLayout&gt;
+ * Shell configuration comes from two sources:
+ * 1. Props (router-level concerns: onFolioSearch, onNavigate, onNavHome)
+ * 2. MagazineShellContext (page-level concerns: chapters, folioLabel, atmosphereColor)
+ *
+ * Pages register their config via useRegisterMagazineShell(). This inverts
+ * the dependency so the router doesn't need to import page internals.
  */
 
 import React from 'react';
 import styles from './MagazinePageLayout.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
-import FolioBar, { ReadinessStat } from './FolioBar';
-import FloatingNavIsland, { ChapterItem } from './FloatingNavIsland';
+import FolioBar from './FolioBar';
+import FloatingNavIsland from './FloatingNavIsland';
+import { useMagazineShellConfig } from '@/hooks/useMagazineShell';
+import { useChapterObserver } from '@/hooks/useChapterObserver';
 
 export interface MagazinePageLayoutProps {
-  /**
-   * Hero section — rendered at top of page, above main content
-   */
-  heroSection: React.ReactNode;
-
-  /**
-   * Main page content — rendered below hero section
-   */
+  /** Main page content */
   children: React.ReactNode;
 
-  /**
-   * Atmosphere color scheme
-   * Default: 'turmeric'
-   */
-  atmosphereColor?: 'turmeric' | 'terracotta' | 'larkspur';
-
-  /**
-   * Currently active page for nav highlighting
-   * Default: 'today'
-   */
-  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
-
-  /**
-   * Publication label for folio bar, e.g., "Daily Briefing"
-   * Default: "Daily Briefing"
-   */
-  folioLabel?: string;
-
-  /**
-   * Date text for folio bar, e.g., "Thu, Feb 14, 2026 · Briefed 6:00a"
-   * Optional
-   */
-  folioDate?: string;
-
-  /**
-   * Readiness stats for folio bar
-   */
-  readinessStats?: ReadinessStat[];
-
-  /**
-   * Status text for folio bar, e.g., ">_ ready"
-   * Optional
-   */
-  statusText?: string;
-
-  /**
-   * Callback when folio search button is clicked
-   */
+  /** Callback when folio search button is clicked */
   onFolioSearch?: () => void;
 
-  /**
-   * Callback when nav item is clicked
-   */
+  /** Callback when nav item is clicked */
   onNavigate?: (page: string) => void;
 
-  /**
-   * Callback when nav home (asterisk) is clicked
-   */
+  /** Callback when nav home (asterisk) is clicked */
   onNavHome?: () => void;
-
-  /**
-   * Back link for detail pages — replaces publication label in FolioBar
-   */
-  backLink?: { label: string; href: string };
-
-  /**
-   * Chapter definitions — when provided, FloatingNavIsland switches to chapter mode
-   * with text-based scroll navigation instead of icon-based page navigation
-   */
-  chapters?: ChapterItem[];
-
-  /**
-   * Currently active chapter ID (from IntersectionObserver)
-   */
-  activeChapterId?: string;
 }
 
 export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
-  heroSection,
   children,
-  atmosphereColor = 'turmeric',
-  activePage = 'today',
-  folioLabel = 'Daily Briefing',
-  folioDate,
-  readinessStats,
-  statusText,
   onFolioSearch,
   onNavigate,
   onNavHome,
-  backLink,
-  chapters,
-  activeChapterId,
 }) => {
+  // Page-specific config registered via useRegisterMagazineShell()
+  const pageConfig = useMagazineShellConfig();
+
+  const atmosphereColor = pageConfig?.atmosphereColor ?? 'turmeric';
+  const activePage = pageConfig?.activePage ?? 'today';
+  const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
+  const backLink = pageConfig?.backLink;
+  const chapters = pageConfig?.chapters;
+  const folioActions = pageConfig?.folioActions;
+
+  // Chapter tracking — runs internally so pages don't need to manage it
+  const chapterIds = chapters?.map((c) => c.id) ?? [];
+  const activeChapterId = useChapterObserver(chapterIds, chapterIds.length > 0);
+
   return (
     <div className={styles.magazinePage}>
       {/* Atmospheric background wash */}
@@ -126,11 +62,9 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
       {/* Fixed folio bar — top masthead */}
       <FolioBar
         publicationLabel={folioLabel}
-        dateText={folioDate}
-        readinessStats={readinessStats}
-        statusText={statusText}
         onSearchClick={onFolioSearch}
         backLink={backLink}
+        actions={folioActions}
       />
 
       {/* Fixed floating nav island — right margin */}
@@ -146,10 +80,6 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
       {/* Main page container — content above atmosphere layer */}
       <main className={styles.pageContainer}>
-        {/* Hero section — usually a headline + narrative */}
-        <section className={styles.heroSection}>{heroSection}</section>
-
-        {/* Page content sections */}
         {children}
       </main>
     </div>
