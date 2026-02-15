@@ -35,9 +35,9 @@ import EmailsPage from "@/pages/EmailsPage";
 import FocusPage from "@/pages/FocusPage";
 import HistoryPage from "@/pages/HistoryPage";
 import PeoplePage from "@/pages/PeoplePage";
-import PersonDetailPage from "@/pages/PersonDetailPage";
+import PersonDetailEditorial from "@/pages/PersonDetailEditorial";
 import ProjectsPage from "@/pages/ProjectsPage";
-import ProjectDetailPage from "@/pages/ProjectDetailPage";
+import ProjectDetailEditorial from "@/pages/ProjectDetailEditorial";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
 
@@ -66,7 +66,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/accounts/$accountId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/accounts/$accountId", "/projects/$projectId", "/people/$personId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -125,6 +125,7 @@ function RootLayout() {
       actions: "/actions",
       people: "/people",
       accounts: "/accounts",
+      projects: "/projects",
       settings: "/settings",
     };
     const path = routes[page];
@@ -291,7 +292,7 @@ const projectsRoute = createRoute({
 const projectDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectId",
-  component: ProjectDetailPage,
+  component: ProjectDetailEditorial,
 });
 
 const settingsRoute = createRoute({
@@ -344,7 +345,7 @@ const peopleRoute = createRoute({
 const personDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/people/$personId",
-  component: PersonDetailPage,
+  component: PersonDetailEditorial,
 });
 
 // Create route tree
