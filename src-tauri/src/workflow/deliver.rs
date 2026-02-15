@@ -916,8 +916,7 @@ fn recent_win_prefix_regex() -> &'static Regex {
 fn agenda_list_item_regex() -> &'static Regex {
     static AGENDA_LIST_ITEM_RE: OnceLock<Regex> = OnceLock::new();
     AGENDA_LIST_ITEM_RE.get_or_init(|| {
-        Regex::new(r"^(?:[-*•]\s+|\d+[.)]\s+)(.+)$")
-            .expect("agenda list item regex must compile")
+        Regex::new(r"^(?:[-*•]\s+|\d+[.)]\s+)(.+)$").expect("agenda list item regex must compile")
     })
 }
 
@@ -1440,11 +1439,7 @@ fn split_inline_agenda_candidates(value: &str) -> Vec<String> {
 /// Pre-sanitizes calendar agenda candidates for dedup, then collects unique items.
 /// Items are sanitized here for consistent dedup keys; `push_unique_agenda_item`
 /// re-sanitizes when consuming them (idempotent, harmless).
-fn push_calendar_agenda_candidate(
-    raw: &str,
-    agenda: &mut Vec<String>,
-    seen: &mut HashSet<String>,
-) {
+fn push_calendar_agenda_candidate(raw: &str, agenda: &mut Vec<String>, seen: &mut HashSet<String>) {
     for candidate in split_inline_agenda_candidates(raw) {
         let Some(cleaned) = sanitize_prep_line(&candidate) else {
             continue;
@@ -1484,10 +1479,7 @@ fn extract_calendar_agenda_items(prep: &Value) -> Vec<String> {
             let remainder = trimmed[agenda_prefix_len..].trim_start();
             // Require delimiter or end-of-line after keyword — reject prose like
             // "Agenda items were discussed" which is not a section header.
-            if remainder.is_empty()
-                || remainder.starts_with(':')
-                || remainder.starts_with('-')
-            {
+            if remainder.is_empty() || remainder.starts_with(':') || remainder.starts_with('-') {
                 in_agenda_section = true;
                 if let Some((_, rest)) = trimmed.split_once(':') {
                     push_calendar_agenda_candidate(rest, &mut agenda, &mut seen);
@@ -1984,10 +1976,9 @@ pub fn parse_email_enrichment(response: &str) -> HashMap<String, EmailEnrichment
             } else if let Some(val) = trimmed.strip_prefix("ARC:") {
                 current.arc = Some(val.trim().to_string());
             } else if let Some(val) = trimmed.strip_prefix("SIGNALS:") {
-                current.signals = serde_json::from_str::<Vec<crate::types::EmailSignal>>(
-                    val.trim(),
-                )
-                .unwrap_or_default();
+                current.signals =
+                    serde_json::from_str::<Vec<crate::types::EmailSignal>>(val.trim())
+                        .unwrap_or_default();
             }
         }
     }

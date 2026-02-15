@@ -85,6 +85,10 @@ pub struct AppState {
     pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
     /// Background intelligence enrichment queue (I132)
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
+    /// Shared embedding model runtime (Sprint 26).
+    pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
+    /// Background embedding generation queue (Sprint 26).
+    pub embedding_queue: Arc<crate::processor::embeddings::EmbeddingQueue>,
     /// Last hygiene scan report (I145 — ADR-0058)
     pub last_hygiene_report: Mutex<Option<crate::hygiene::HygieneReport>>,
     /// Indicates whether a hygiene scan is currently running.
@@ -139,6 +143,8 @@ impl AppState {
             capture_captured: Mutex::new(std::collections::HashSet::new()),
             transcript_processed: Mutex::new(transcript_processed),
             intel_queue: Arc::new(crate::intel_queue::IntelligenceQueue::new()),
+            embedding_model: Arc::new(crate::embeddings::EmbeddingModel::new()),
+            embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
             last_hygiene_report: Mutex::new(None),
             hygiene_scan_running: AtomicBool::new(false),
             last_hygiene_scan_at: Mutex::new(None),
@@ -342,6 +348,23 @@ pub fn run_startup_sync(state: &AppState) {
         Err(e) => log::warn!("Startup sync: content index sync failed: {}", e),
     }
 
+    if config.embeddings.enabled {
+        match db.get_entities_with_content() {
+            Ok(entities) => {
+                for (entity_id, entity_type) in entities {
+                    state
+                        .embedding_queue
+                        .enqueue(crate::processor::embeddings::EmbeddingRequest {
+                            entity_id,
+                            entity_type,
+                            requested_at: Instant::now(),
+                        });
+                }
+            }
+            Err(e) => log::warn!("Startup sync: failed to queue embedding work: {}", e),
+        }
+    }
+
     // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
     import_master_task_list(workspace, &db);
 }
@@ -385,6 +408,7 @@ pub fn create_or_update_config(
                 personality: "professional".to_string(),
                 developer_mode: false,
                 ai_models: crate::types::AiModelConfig::default(),
+                embeddings: crate::types::EmbeddingConfig::default(),
                 internal_team_setup_completed: false,
                 internal_team_setup_version: 0,
                 internal_org_account_id: None,
