@@ -9,13 +9,13 @@ interface WatchItemProps {
   detail?: string;
 }
 
-const dotColors: Record<string, string> = {
+const dotColors: Record<WatchItemProps["type"], string> = {
   risk: "var(--color-spice-terracotta)",
   win: "var(--color-garden-sage)",
   unknown: "var(--color-spice-turmeric)",
 };
 
-const typeLabels: Record<string, string> = {
+const typeLabels: Record<WatchItemProps["type"], string> = {
   risk: "Risk",
   win: "Win",
   unknown: "Unknown",
