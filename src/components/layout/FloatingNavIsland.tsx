@@ -41,13 +41,13 @@ export interface FloatingNavIslandProps {
    * Currently active page for visual highlighting (app mode)
    * Default: 'today'
    */
-  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
+  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
 
   /**
    * Color of active state indicator
    * Default: 'turmeric'
    */
-  activeColor?: 'turmeric' | 'terracotta' | 'larkspur';
+  activeColor?: 'turmeric' | 'terracotta' | 'larkspur' | 'olive';
 
   /**
    * Callback when nav item is clicked (app mode)

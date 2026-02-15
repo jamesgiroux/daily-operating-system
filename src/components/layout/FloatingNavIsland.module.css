@@ -118,6 +118,12 @@
   color: var(--color-garden-larkspur);
 }
 
+/* Olive active state */
+.activeOlive {
+  background: rgba(107, 124, 82, 0.1);
+  color: var(--color-garden-olive);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    DIVIDER — Thin separator lines between nav groups
    ───────────────────────────────────────────────────────────────────────── */
@@ -181,5 +187,10 @@
 .colorLarkspur .activeLarkspur {
   background: rgba(143, 163, 196, 0.1);
   color: var(--color-garden-larkspur);
+}
+
+.colorOlive .activeOlive {
+  background: rgba(107, 124, 82, 0.1);
+  color: var(--color-garden-olive);
 }
 
