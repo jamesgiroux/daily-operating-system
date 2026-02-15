@@ -1581,6 +1581,39 @@ impl UserContext {
     }
 }
 
+// =============================================================================
+// Chat Interface Types (Sprint 26)
+// =============================================================================
+
+/// Summary item for entity listings in the chat/MCP interface.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntityListItem {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub status: Option<String>,
+    pub health: Option<String>,
+    pub open_action_count: usize,
+}
+
+/// Convert a slice of `DbMeeting` records to a JSON array of summary objects.
+///
+/// Shared helper for chat commands that return meeting context.
+pub fn meetings_to_json(meetings: &[crate::db::DbMeeting]) -> Vec<serde_json::Value> {
+    meetings
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "title": m.title,
+                "startTime": m.start_time,
+                "meetingType": m.meeting_type,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -683,8 +683,8 @@ pub fn build_intelligence_context(
         entity_id,
         &semantic_query,
         20,
-        0.0, // vector weight disabled until real ONNX model replaces hash stub
-        1.0,
+        0.7,
+        0.3,
     ) {
         for item in matches {
             if seen_file_ids.insert(item.content_file_id.clone()) {
