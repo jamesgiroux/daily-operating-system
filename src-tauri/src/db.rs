@@ -4693,7 +4693,7 @@ impl ActionDb {
              WHERE session_end IS NULL
                AND (
                     (?1 IS NULL AND entity_id IS NULL AND entity_type IS NULL)
-                    OR (entity_id = ?1 AND (?2 IS NULL AND entity_type IS NULL OR entity_type = ?2))
+                    OR (entity_id = ?1 AND ((?2 IS NULL AND entity_type IS NULL) OR entity_type = ?2))
                )
              ORDER BY session_start DESC
              LIMIT 1",
