@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { capitalize } from '@/lib/utils';
 import styles from './FolioBar.module.css';
 
 export interface ReadinessStat {
@@ -49,7 +50,7 @@ export interface FolioBarProps {
    * Back link — replaces publication label with a navigation link.
    * Used on detail pages to navigate back to list pages.
    */
-  backLink?: { label: string; href: string };
+  backLink?: { label: string; onClick: () => void };
 
   /**
    * Actions slot — rendered in right section before search button.
@@ -67,16 +68,15 @@ export const FolioBar: React.FC<FolioBarProps> = ({
   backLink,
   actions,
 }) => {
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   return (
     <header className={styles.folio}>
       {/* LEFT: Back link OR Brand mark + Publication label */}
       <div className={styles.folioLeft}>
         {backLink ? (
-          <a href={backLink.href} className={styles.folioBackLink}>
+          <button onClick={backLink.onClick} className={styles.folioBackLink}>
             <span className={styles.folioBackArrow}>&#8592;</span>
             {backLink.label}
-          </a>
+          </button>
         ) : (
           <>
             <span className={styles.folioMark}>*</span>
@@ -96,9 +96,9 @@ export const FolioBar: React.FC<FolioBarProps> = ({
             {readinessStats.map((stat, idx) => (
               <span
                 key={idx}
-                className={`${styles.folioStat} ${styles[`folioStat${cap(stat.color)}`] || ''}`}
+                className={`${styles.folioStat} ${styles[`folioStat${capitalize(stat.color)}`] || ''}`}
               >
-                <span className={`${styles.folioDot} ${styles[`folioDot${cap(stat.color)}`] || ''}`} />
+                <span className={`${styles.folioDot} ${styles[`folioDot${capitalize(stat.color)}`] || ''}`} />
                 {stat.label}
               </span>
             ))}

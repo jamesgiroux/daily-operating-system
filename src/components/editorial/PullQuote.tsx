@@ -19,6 +19,7 @@ export function PullQuote({ text, attribution }: PullQuoteProps) {
     >
       {/* Top rule — centered 120px */}
       <div
+        aria-hidden="true"
         style={{
           width: 120,
           height: 1,
@@ -56,6 +57,7 @@ export function PullQuote({ text, attribution }: PullQuoteProps) {
       )}
       {/* Bottom rule — centered 120px */}
       <div
+        aria-hidden="true"
         style={{
           width: 120,
           height: 1,
