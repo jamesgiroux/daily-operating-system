@@ -2218,6 +2218,44 @@ pub fn set_ai_model(
     })
 }
 
+/// Set hygiene configuration (I271)
+#[tauri::command]
+pub fn set_hygiene_config(
+    scan_interval_hours: Option<u32>,
+    ai_budget: Option<u32>,
+    pre_meeting_hours: Option<u32>,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    // Validate values
+    if let Some(v) = scan_interval_hours {
+        if ![1, 2, 4, 8].contains(&v) {
+            return Err(format!("Invalid scan interval: {}. Must be 1, 2, 4, or 8.", v));
+        }
+    }
+    if let Some(v) = ai_budget {
+        if ![5, 10, 20, 50].contains(&v) {
+            return Err(format!("Invalid AI budget: {}. Must be 5, 10, 20, or 50.", v));
+        }
+    }
+    if let Some(v) = pre_meeting_hours {
+        if ![2, 4, 12, 24].contains(&v) {
+            return Err(format!("Invalid pre-meeting window: {}. Must be 2, 4, 12, or 24.", v));
+        }
+    }
+
+    crate::state::create_or_update_config(&state, |config| {
+        if let Some(v) = scan_interval_hours {
+            config.hygiene_scan_interval_hours = v;
+        }
+        if let Some(v) = ai_budget {
+            config.hygiene_ai_budget = v;
+        }
+        if let Some(v) = pre_meeting_hours {
+            config.hygiene_pre_meeting_hours = v;
+        }
+    })
+}
+
 /// Set schedule for a workflow
 #[tauri::command]
 pub fn set_schedule(
@@ -6374,6 +6412,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             workspace,
             Some(&state.hygiene_budget),
             Some(&state.intel_queue),
+            false,
         );
 
         if let Ok(mut guard) = state.last_hygiene_report.lock() {
@@ -6385,7 +6424,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
         if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
             *guard = Some(
                 (chrono::Utc::now()
-                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs() as i64))
+                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs(Some(&config)) as i64))
                 .to_rfc3339(),
             );
         }
