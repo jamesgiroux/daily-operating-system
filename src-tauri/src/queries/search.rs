@@ -64,9 +64,12 @@ pub fn search_entity_content(
 
     let text_scores = compute_text_scores(&chunks, query);
 
+    // nomic-embed-text-v1.5 asymmetric retrieval: queries get "search_query: " prefix,
+    // documents get "search_document: " prefix at embedding time (ADR-0074, I265).
+    let prefixed_query = format!("{}{}", crate::embeddings::QUERY_PREFIX, query);
     let query_embedding = model_opt
         .filter(|m| m.is_ready())
-        .and_then(|m| m.embed(query).ok());
+        .and_then(|m| m.embed(&prefixed_query).ok());
 
     let mut out: Vec<ContentMatch> = Vec::new();
     for chunk in chunks {
@@ -130,6 +133,12 @@ fn compute_text_scores(chunks: &[DbContentEmbedding], query: &str) -> HashMap<St
     }
 
     let n_docs = chunks.len() as f32;
+    let avgdl = if tokenized_docs.is_empty() {
+        200.0
+    } else {
+        tokenized_docs.values().map(|t| t.len()).sum::<usize>() as f32
+            / tokenized_docs.len() as f32
+    };
     let mut raw_scores: HashMap<String, f32> = HashMap::new();
     let mut max_score = 0.0_f32;
 
@@ -155,7 +164,7 @@ fn compute_text_scores(chunks: &[DbContentEmbedding], query: &str) -> HashMap<St
             let df = *doc_freq.get(term).unwrap_or(&0) as f32;
             let idf = ((n_docs + 1.0) / (df + 1.0)).ln() + 1.0;
             // BM25-like normalization without external dependency.
-            let tf_norm = tf / (tf + 1.2 * (0.25 + 0.75 * (doc_len / 200.0)));
+            let tf_norm = tf / (tf + 1.2 * (0.25 + 0.75 * (doc_len / avgdl)));
             score += idf * tf_norm;
         }
 
@@ -191,5 +200,45 @@ mod tests {
     fn test_tokenize() {
         let tokens = tokenize("Risk: renewal blocked!");
         assert_eq!(tokens, vec!["risk", "renewal", "blocked"]);
+    }
+
+    #[test]
+    fn test_bm25_avgdl_computed_from_corpus() {
+        // Build chunks with known token counts: 4, 6, 2 → avgdl = 4.0
+        let chunks = vec![
+            DbContentEmbedding {
+                id: "a".to_string(),
+                content_file_id: "f1".to_string(),
+                chunk_index: 0,
+                chunk_text: "one two three four".to_string(),
+                embedding: Vec::new(),
+                created_at: String::new(),
+            },
+            DbContentEmbedding {
+                id: "b".to_string(),
+                content_file_id: "f1".to_string(),
+                chunk_index: 1,
+                chunk_text: "alpha beta gamma delta epsilon zeta".to_string(),
+                embedding: Vec::new(),
+                created_at: String::new(),
+            },
+            DbContentEmbedding {
+                id: "c".to_string(),
+                content_file_id: "f2".to_string(),
+                chunk_index: 0,
+                chunk_text: "hello world".to_string(),
+                embedding: Vec::new(),
+                created_at: String::new(),
+            },
+        ];
+
+        // Query for "alpha" — should score chunk "b" highest
+        let scores = compute_text_scores(&chunks, "alpha");
+        let score_b = *scores.get("b").unwrap_or(&0.0);
+        let score_a = *scores.get("a").unwrap_or(&0.0);
+        let score_c = *scores.get("c").unwrap_or(&0.0);
+        assert!(score_b > 0.0, "chunk containing query term should score > 0");
+        assert_eq!(score_a, 0.0, "chunk without query term should score 0");
+        assert_eq!(score_c, 0.0, "chunk without query term should score 0");
     }
 }

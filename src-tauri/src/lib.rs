@@ -68,11 +68,14 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
 
-            // Initialize bundled embedding model once at startup.
-            // If loading fails, semantic features degrade gracefully to text-only paths.
-            let model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("resources/models/snowflake-arctic-embed-s-int8.onnx");
-            if let Err(e) = state.embedding_model.initialize_from_path(&model_path) {
+            // Initialize embedding model via fastembed (nomic-embed-text-v1.5).
+            // Downloads on first run, caches in ~/.dailyos/models/.
+            // If loading fails, degrades gracefully to hash-based fallback.
+            let models_dir = dirs::home_dir()
+                .unwrap_or_default()
+                .join(".dailyos")
+                .join("models");
+            if let Err(e) = state.embedding_model.initialize(models_dir) {
                 log::warn!("Embedding model unavailable at startup: {}", e);
             }
 
