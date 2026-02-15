@@ -472,6 +472,12 @@ export interface HygieneFixView {
   count: number;
 }
 
+export interface HygieneFixDetail {
+  fixType: string;
+  entityName?: string;
+  description: string;
+}
+
 export interface HygieneGapActionView {
   kind: "navigate" | "run_scan_now";
   label: string;
@@ -502,8 +508,10 @@ export interface HygieneStatusView {
   totalFixes: number;
   isRunning: boolean;
   fixes: HygieneFixView[];
+  fixDetails: HygieneFixDetail[];
   gaps: HygieneGapView[];
   budget: HygieneBudgetView;
+  scanDurationMs?: number;
 }
 
 export interface CalendarEvent {

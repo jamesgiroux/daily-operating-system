@@ -2,6 +2,17 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useNavigate, useSearch, Link } from "@tanstack/react-router";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -447,25 +458,57 @@ export default function PeoplePage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground">{d.reason}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs"
-                          onClick={async () => {
-                            try {
-                              await invoke("merge_people", {
-                                keepId: d.person1Id,
-                                removeId: d.person2Id,
+                        {d.confidence >= 0.6 ? (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="sm" className="text-xs">
+                                Merge
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Merge people</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Merge <strong>{d.person2Name}</strong> into <strong>{d.person1Name}</strong>?
+                                  This will consolidate their meeting history, entity links, and captures.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={async () => {
+                                    try {
+                                      await invoke("merge_people", {
+                                        keepId: d.person1Id,
+                                        removeId: d.person2Id,
+                                      });
+                                      loadPeople();
+                                      loadDuplicates();
+                                    } catch (err) {
+                                      console.error("Merge failed:", err);
+                                    }
+                                  }}
+                                >
+                                  Merge
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => {
+                              navigate({
+                                to: "/people/$personId",
+                                params: { personId: d.person1Id },
                               });
-                              loadPeople();
-                              loadDuplicates();
-                            } catch (err) {
-                              console.error("Merge failed:", err);
-                            }
-                          }}
-                        >
-                          Merge
-                        </Button>
+                            }}
+                          >
+                            Review
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}

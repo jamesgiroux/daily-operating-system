@@ -62,6 +62,15 @@ pub struct Config {
     /// AI model configuration for tiered operations (I174).
     #[serde(default)]
     pub ai_models: AiModelConfig,
+    /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
+    #[serde(default = "default_hygiene_scan_interval_hours")]
+    pub hygiene_scan_interval_hours: u32,
+    /// Daily AI enrichment budget (default: 10). Options: 5, 10, 20, 50.
+    #[serde(default = "default_hygiene_ai_budget")]
+    pub hygiene_ai_budget: u32,
+    /// Pre-meeting refresh window in hours (default: 12). Options: 2, 4, 12, 24.
+    #[serde(default = "default_hygiene_pre_meeting_hours")]
+    pub hygiene_pre_meeting_hours: u32,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -149,6 +158,18 @@ fn default_mechanical_model() -> String {
 
 fn default_entity_mode() -> String {
     "account".to_string()
+}
+
+fn default_hygiene_scan_interval_hours() -> u32 {
+    4
+}
+
+fn default_hygiene_ai_budget() -> u32 {
+    10
+}
+
+fn default_hygiene_pre_meeting_hours() -> u32 {
+    12
 }
 
 impl Config {
@@ -1556,6 +1577,9 @@ mod tests {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
+            hygiene_scan_interval_hours: 4,
+            hygiene_ai_budget: 10,
+            hygiene_pre_meeting_hours: 12,
         }
     }
 

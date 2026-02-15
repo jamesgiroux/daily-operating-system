@@ -1407,11 +1407,27 @@ function formatTime(iso?: string): string {
   }
 }
 
+interface HygieneConfig {
+  hygieneScanIntervalHours: number;
+  hygieneAiBudget: number;
+  hygienePreMeetingHours: number;
+}
+
+const scanIntervalOptions = [1, 2, 4, 8] as const;
+const aiBudgetOptions = [5, 10, 20, 50] as const;
+const preMeetingOptions = [2, 4, 12, 24] as const;
+
 function IntelligenceHygieneCard() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<HygieneStatusView | null>(null);
   const [loading, setLoading] = useState(true);
   const [runningNow, setRunningNow] = useState(false);
+  const [hygieneConfig, setHygieneConfig] = useState<HygieneConfig>({
+    hygieneScanIntervalHours: 4,
+    hygieneAiBudget: 10,
+    hygienePreMeetingHours: 12,
+  });
+  const [showAllFixes, setShowAllFixes] = useState(false);
 
   async function loadStatus() {
     try {
@@ -1426,6 +1442,15 @@ function IntelligenceHygieneCard() {
 
   useEffect(() => {
     loadStatus();
+    invoke<HygieneConfig & Record<string, unknown>>("get_config")
+      .then((config) => {
+        setHygieneConfig({
+          hygieneScanIntervalHours: config.hygieneScanIntervalHours ?? 4,
+          hygieneAiBudget: config.hygieneAiBudget ?? 10,
+          hygienePreMeetingHours: config.hygienePreMeetingHours ?? 12,
+        });
+      })
+      .catch(() => {});
   }, []);
 
   async function runScanNow() {
@@ -1438,6 +1463,26 @@ function IntelligenceHygieneCard() {
       toast.error(typeof err === "string" ? err : "Failed to run hygiene scan");
     } finally {
       setRunningNow(false);
+    }
+  }
+
+  async function handleHygieneConfigChange(
+    field: "scanIntervalHours" | "aiBudget" | "preMeetingHours",
+    value: number,
+  ) {
+    try {
+      await invoke("set_hygiene_config", {
+        [field === "scanIntervalHours" ? "scanIntervalHours" : field === "aiBudget" ? "aiBudget" : "preMeetingHours"]: value,
+      });
+      setHygieneConfig((prev) => ({
+        ...prev,
+        ...(field === "scanIntervalHours" && { hygieneScanIntervalHours: value }),
+        ...(field === "aiBudget" && { hygieneAiBudget: value }),
+        ...(field === "preMeetingHours" && { hygienePreMeetingHours: value }),
+      }));
+      toast.success("Hygiene configuration updated");
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to update hygiene config");
     }
   }
 
@@ -1494,6 +1539,13 @@ function IntelligenceHygieneCard() {
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Last scan: {formatTime(status.lastScanTime)}
+                  {status.scanDurationMs != null && (
+                    <span className="ml-1 text-muted-foreground/60">
+                      ({status.scanDurationMs < 1000
+                        ? `${status.scanDurationMs}ms`
+                        : `${(status.scanDurationMs / 1000).toFixed(1)}s`})
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   Next scan: {formatTime(status.nextScanTime)}
@@ -1517,7 +1569,31 @@ function IntelligenceHygieneCard() {
                   {status.totalFixes}
                 </Badge>
               </div>
-              {status.fixes.length > 0 ? (
+              {status.fixDetails && status.fixDetails.length > 0 ? (
+                <div className="space-y-1">
+                  {(showAllFixes ? status.fixDetails : status.fixDetails.slice(0, 5)).map((detail, i) => (
+                    <p key={i} className="text-xs text-muted-foreground">
+                      &bull; {detail.description}
+                    </p>
+                  ))}
+                  {status.fixDetails.length > 5 && !showAllFixes && (
+                    <button
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      onClick={() => setShowAllFixes(true)}
+                    >
+                      &hellip; and {status.fixDetails.length - 5} more
+                    </button>
+                  )}
+                  {showAllFixes && status.fixDetails.length > 5 && (
+                    <button
+                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                      onClick={() => setShowAllFixes(false)}
+                    >
+                      Show less
+                    </button>
+                  )}
+                </div>
+              ) : status.fixes.length > 0 ? (
                 <div className="space-y-1">
                   {status.fixes.map((fix) => (
                     <div key={fix.key} className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1571,6 +1647,69 @@ function IntelligenceHygieneCard() {
                   No open hygiene gaps. The system will continue scanning automatically.
                 </p>
               )}
+            </div>
+
+            <div className="rounded-md border p-3">
+              <p className="mb-3 text-sm font-medium">Configuration</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm">Scan Interval</p>
+                    <p className="text-xs text-muted-foreground">How often hygiene runs</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {scanIntervalOptions.map((v) => (
+                      <Button
+                        key={v}
+                        variant={hygieneConfig.hygieneScanIntervalHours === v ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => handleHygieneConfigChange("scanIntervalHours", v)}
+                      >
+                        {v}hr
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm">Daily AI Budget</p>
+                    <p className="text-xs text-muted-foreground">Max AI enrichments per day</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {aiBudgetOptions.map((v) => (
+                      <Button
+                        key={v}
+                        variant={hygieneConfig.hygieneAiBudget === v ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => handleHygieneConfigChange("aiBudget", v)}
+                      >
+                        {v}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm">Pre-Meeting Window</p>
+                    <p className="text-xs text-muted-foreground">Refresh intel before meetings</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {preMeetingOptions.map((v) => (
+                      <Button
+                        key={v}
+                        variant={hygieneConfig.hygienePreMeetingHours === v ? "default" : "outline"}
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => handleHygieneConfigChange("preMeetingHours", v)}
+                      >
+                        {v}hr
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
