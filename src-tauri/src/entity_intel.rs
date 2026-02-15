@@ -418,6 +418,7 @@ pub fn build_intelligence_context(
     account: Option<&DbAccount>,
     project: Option<&crate::db::DbProject>,
     prior: Option<&IntelligenceJson>,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> IntelligenceContext {
     let mut ctx = IntelligenceContext::default();
 
@@ -672,10 +673,43 @@ pub fn build_intelligence_context(
         })
         .collect();
 
+    let mut ranked_files: Vec<&crate::db::DbContentFile> = Vec::new();
+    let mut seen_file_ids = std::collections::HashSet::new();
+
+    let semantic_query = semantic_gap_query(prior);
+    if let Ok(matches) = crate::queries::search::search_entity_content(
+        db,
+        embedding_model,
+        entity_id,
+        &semantic_query,
+        20,
+        0.0, // vector weight disabled until real ONNX model replaces hash stub
+        1.0,
+    ) {
+        for item in matches {
+            if seen_file_ids.insert(item.content_file_id.clone()) {
+                if let Some(file) = files.iter().find(|f| f.id == item.content_file_id) {
+                    ranked_files.push(file);
+                }
+            }
+        }
+    }
+
+    // Semantic search unavailable or no matches: preserve existing priority+recency behavior.
+    if ranked_files.is_empty() {
+        ranked_files.extend(files.iter());
+    } else {
+        for file in &files {
+            if seen_file_ids.insert(file.id.clone()) {
+                ranked_files.push(file);
+            }
+        }
+    }
+
     let mut file_parts: Vec<String> = Vec::new();
     let mut total_chars = 0;
 
-    for file in &files {
+    for file in ranked_files {
         // Skip files older than 90 days (use filename date when available)
         if content_date_rfc3339(&file.filename, &file.modified_at) < cutoff_90d {
             continue;
@@ -753,6 +787,26 @@ pub fn build_intelligence_context(
     }
 
     ctx
+}
+
+fn semantic_gap_query(prior: Option<&IntelligenceJson>) -> String {
+    let mut terms = vec!["account status", "risks", "wins", "blockers", "next steps"];
+
+    if let Some(p) = prior {
+        if p.risks.is_empty() {
+            terms.push("risks concerns blockers challenges");
+        }
+        if p.recent_wins.is_empty() {
+            terms.push("recent wins outcomes delivered value");
+        }
+        if p.current_state.is_none() {
+            terms.push("working not working unknowns");
+        }
+    } else {
+        terms.push("executive assessment context renewal sentiment");
+    }
+
+    terms.join(" ")
 }
 
 // =============================================================================
@@ -1287,6 +1341,7 @@ pub fn enrich_entity_intelligence(
         account,
         project,
         prior.as_ref(),
+        None,
     );
 
     // Step 3: Build prompt
@@ -1834,6 +1889,7 @@ pub(crate) fn sync_content_index_for_entity(
                     indexed_at: now.clone(),
                     extracted_at: extracted_at_val,
                     summary: summary_val,
+                    embeddings_generated_at: None,
                     content_type: content_type.to_string(),
                     priority,
                 };
@@ -1869,6 +1925,7 @@ pub(crate) fn sync_content_index_for_entity(
                 indexed_at: now.clone(),
                 extracted_at: extracted_at_val,
                 summary: summary_val,
+                embeddings_generated_at: None,
                 content_type: content_type.to_string(),
                 priority,
             };
@@ -2414,6 +2471,7 @@ Some trailing text"#;
             Some(&account),
             None,
             None,
+            None,
         );
 
         assert!(ctx.facts_block.contains("Health: green"));
@@ -2747,6 +2805,7 @@ Some trailing text"#;
             indexed_at: now.clone(),
             extracted_at: None,
             summary: None,
+            embeddings_generated_at: None,
             content_type: "general".to_string(),
             priority: 5,
         };
@@ -2766,6 +2825,7 @@ Some trailing text"#;
             indexed_at: now.clone(),
             extracted_at: None,
             summary: None,
+            embeddings_generated_at: None,
             content_type: "dashboard".to_string(),
             priority: 10,
         };
@@ -2785,6 +2845,7 @@ Some trailing text"#;
             indexed_at: now.clone(),
             extracted_at: None,
             summary: None,
+            embeddings_generated_at: None,
             content_type: "notes".to_string(),
             priority: 7,
         };

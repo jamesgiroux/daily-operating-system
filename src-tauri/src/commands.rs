@@ -207,8 +207,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     if let Some(entities) = entity_map.get(&m.id) {
                         m.linked_entities = Some(entities.clone());
                         // First account entity also populates account_id + account name
-                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account")
-                        {
+                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
                             m.account_id = Some(acct.id.clone());
                             m.account = Some(acct.name.clone());
                         }
@@ -220,24 +219,26 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         }
 
         // Flag meetings that matched an archived account for unarchive suggestion (I161)
-        match state.with_db_try_read(|db| -> Result<
-            (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
-            crate::db::DbError,
-        > {
-            // Single JOIN query instead of N+1 per-account domain lookups (W3)
-            let accounts_with_domains = db.get_all_accounts_with_domains(true)?;
-            let mut archived = Vec::new();
-            let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
-            for (account, domains) in accounts_with_domains {
-                if account.archived {
-                    let domain_set: HashSet<String> =
-                        domains.iter().map(|d| d.to_lowercase()).collect();
-                    domains_by_account.insert(account.id.clone(), domain_set);
-                    archived.push(account);
+        match state.with_db_try_read(
+            |db| -> Result<
+                (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
+                crate::db::DbError,
+            > {
+                // Single JOIN query instead of N+1 per-account domain lookups (W3)
+                let accounts_with_domains = db.get_all_accounts_with_domains(true)?;
+                let mut archived = Vec::new();
+                let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
+                for (account, domains) in accounts_with_domains {
+                    if account.archived {
+                        let domain_set: HashSet<String> =
+                            domains.iter().map(|d| d.to_lowercase()).collect();
+                        domains_by_account.insert(account.id.clone(), domain_set);
+                        archived.push(account);
+                    }
                 }
-            }
-            Ok((archived, domains_by_account))
-        }) {
+                Ok((archived, domains_by_account))
+            },
+        ) {
             DbTryRead::Ok(Ok((archived, domains_by_account))) => {
                 let archived_ids: HashSet<String> =
                     archived.iter().map(|a| a.id.to_lowercase()).collect();
@@ -282,7 +283,9 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                             score = score.max(90);
                         }
                         if let Some(domains) = meeting_domains {
-                            if let Some(account_domains) = domains_by_account.get(&archived_account.id) {
+                            if let Some(account_domains) =
+                                domains_by_account.get(&archived_account.id)
+                            {
                                 if !account_domains.is_empty()
                                     && domains.iter().any(|d| account_domains.contains(d))
                                 {
@@ -1229,8 +1232,7 @@ async fn refresh_week_calendar_cache(
     config: &crate::types::Config,
     account_hints: std::collections::HashSet<String>,
 ) -> Result<Vec<CalendarEvent>, String> {
-    let events =
-        crate::queries::proactive::fetch_week_events(config, &account_hints).await?;
+    let events = crate::queries::proactive::fetch_week_events(config, &account_hints).await?;
 
     if let Ok(mut guard) = state.week_calendar_cache.write() {
         *guard = Some((events.clone(), std::time::Instant::now()));
@@ -2170,10 +2172,7 @@ pub fn set_developer_mode(enabled: bool, state: State<Arc<AppState>>) -> Result<
 
 /// Set UI personality tone (professional, friendly, playful)
 #[tauri::command]
-pub fn set_personality(
-    personality: String,
-    state: State<Arc<AppState>>,
-) -> Result<Config, String> {
+pub fn set_personality(personality: String, state: State<Arc<AppState>>) -> Result<Config, String> {
     let normalized = personality.to_lowercase();
     crate::types::validate_personality(&normalized)?;
     crate::state::create_or_update_config(&state, |config| {
@@ -3771,7 +3770,9 @@ pub async fn get_onboarding_priming_context(
             }
             crate::types::MeetingType::Internal
             | crate::types::MeetingType::TeamSync
-            | crate::types::MeetingType::OneOnOne => "Capture decisions and owners in Inbox".to_string(),
+            | crate::types::MeetingType::OneOnOne => {
+                "Capture decisions and owners in Inbox".to_string()
+            }
             _ => "Review context before kickoff".to_string(),
         };
 
@@ -5605,99 +5606,106 @@ pub fn create_internal_organization(
 
     // === CRITICAL SECTION: Transaction wraps all DB writes ===
     // Filesystem writes happen after commit (best-effort per ADR-0048).
-    let (root_account, initial_team, created_people, updated_people) = db.with_transaction(|db| {
-        if db
-            .get_internal_root_account()
-            .map_err(|e| e.to_string())?
-            .is_some()
-        {
-            return Err("Internal organization already exists".to_string());
-        }
+    let (root_account, initial_team, created_people, updated_people) =
+        db.with_transaction(|db| {
+            if db
+                .get_internal_root_account()
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                return Err("Internal organization already exists".to_string());
+            }
 
-        let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
-        let mut suffix = 2usize;
-        while db.get_account(&root_id).map_err(|e| e.to_string())?.is_some() {
-            root_id = format!(
-                "internal-{}-{}",
-                crate::util::slugify(&company_name),
-                suffix
-            );
-            suffix += 1;
-        }
+            let mut root_id = format!("internal-{}", crate::util::slugify(&company_name));
+            let mut suffix = 2usize;
+            while db
+                .get_account(&root_id)
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                root_id = format!(
+                    "internal-{}-{}",
+                    crate::util::slugify(&company_name),
+                    suffix
+                );
+                suffix += 1;
+            }
 
-        let now = chrono::Utc::now().to_rfc3339();
-        let root_account = crate::db::DbAccount {
-            id: root_id.clone(),
-            name: company_name.clone(),
-            lifecycle: Some("active".to_string()),
-            arr: None,
-            health: Some("green".to_string()),
-            contract_start: None,
-            contract_end: None,
-            nps: None,
-            tracker_path: Some(format!("Internal/{}", company_name)),
-            parent_id: None,
-            is_internal: true,
-            updated_at: now,
-            archived: false,
-        };
-        db.upsert_account(&root_account).map_err(|e| e.to_string())?;
-        db.set_account_domains(&root_account.id, &domains)
-            .map_err(|e| e.to_string())?;
-
-        let initial_team = create_child_account_record(db, None, &root_account, &team_name, None, None)?;
-        db.copy_account_domains(&root_account.id, &initial_team.id)
-            .map_err(|e| e.to_string())?;
-
-        let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
-        for colleague in &colleagues {
-            let email = match crate::util::validate_email(&colleague.email) {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            let person_id = crate::util::slugify(&email);
             let now = chrono::Utc::now().to_rfc3339();
-            let person = crate::db::DbPerson {
-                id: person_id.clone(),
-                email: email.clone(),
-                name: colleague.name.trim().to_string(),
-                organization: Some(company_name.clone()),
-                role: colleague.title.clone(),
-                relationship: "internal".to_string(),
-                notes: None,
-                tracker_path: None,
-                last_seen: None,
-                first_seen: Some(now.clone()),
-                meeting_count: 0,
+            let root_account = crate::db::DbAccount {
+                id: root_id.clone(),
+                name: company_name.clone(),
+                lifecycle: Some("active".to_string()),
+                arr: None,
+                health: Some("green".to_string()),
+                contract_start: None,
+                contract_end: None,
+                nps: None,
+                tracker_path: Some(format!("Internal/{}", company_name)),
+                parent_id: None,
+                is_internal: true,
                 updated_at: now,
                 archived: false,
             };
-            db.upsert_person(&person).map_err(|e| e.to_string())?;
-            db.link_person_to_entity(&person_id, &root_account.id, "member")
+            db.upsert_account(&root_account)
                 .map_err(|e| e.to_string())?;
-            db.link_person_to_entity(&person_id, &initial_team.id, "member")
+            db.set_account_domains(&root_account.id, &domains)
                 .map_err(|e| e.to_string())?;
-            created_people.push(person);
-        }
 
-        let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
-        for person_id in existing_person_ids.unwrap_or_default() {
-            if let Ok(Some(mut person)) = db.get_person(&person_id) {
-                if person.relationship != "internal" {
-                    person.relationship = "internal".to_string();
-                    person.organization = Some(company_name.clone());
-                    db.upsert_person(&person).map_err(|e| e.to_string())?;
-                    updated_people.push(person);
-                }
+            let initial_team =
+                create_child_account_record(db, None, &root_account, &team_name, None, None)?;
+            db.copy_account_domains(&root_account.id, &initial_team.id)
+                .map_err(|e| e.to_string())?;
+
+            let mut created_people: Vec<crate::db::DbPerson> = Vec::new();
+            for colleague in &colleagues {
+                let email = match crate::util::validate_email(&colleague.email) {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                let person_id = crate::util::slugify(&email);
+                let now = chrono::Utc::now().to_rfc3339();
+                let person = crate::db::DbPerson {
+                    id: person_id.clone(),
+                    email: email.clone(),
+                    name: colleague.name.trim().to_string(),
+                    organization: Some(company_name.clone()),
+                    role: colleague.title.clone(),
+                    relationship: "internal".to_string(),
+                    notes: None,
+                    tracker_path: None,
+                    last_seen: None,
+                    first_seen: Some(now.clone()),
+                    meeting_count: 0,
+                    updated_at: now,
+                    archived: false,
+                };
+                db.upsert_person(&person).map_err(|e| e.to_string())?;
                 db.link_person_to_entity(&person_id, &root_account.id, "member")
                     .map_err(|e| e.to_string())?;
                 db.link_person_to_entity(&person_id, &initial_team.id, "member")
                     .map_err(|e| e.to_string())?;
+                created_people.push(person);
             }
-        }
 
-        Ok((root_account, initial_team, created_people, updated_people))
-    })?;
+            let mut updated_people: Vec<crate::db::DbPerson> = Vec::new();
+            for person_id in existing_person_ids.unwrap_or_default() {
+                if let Ok(Some(mut person)) = db.get_person(&person_id) {
+                    if person.relationship != "internal" {
+                        person.relationship = "internal".to_string();
+                        person.organization = Some(company_name.clone());
+                        db.upsert_person(&person).map_err(|e| e.to_string())?;
+                        updated_people.push(person);
+                    }
+                    db.link_person_to_entity(&person_id, &root_account.id, "member")
+                        .map_err(|e| e.to_string())?;
+                    db.link_person_to_entity(&person_id, &initial_team.id, "member")
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+
+            Ok((root_account, initial_team, created_people, updated_people))
+        })?;
 
     // Filesystem writes (best-effort, outside transaction)
     let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
@@ -5815,7 +5823,9 @@ pub fn create_team(
 }
 
 #[tauri::command]
-pub fn backfill_internal_meeting_associations(state: State<Arc<AppState>>) -> Result<usize, String> {
+pub fn backfill_internal_meeting_associations(
+    state: State<Arc<AppState>>,
+) -> Result<usize, String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
@@ -5837,7 +5847,8 @@ pub fn backfill_internal_meeting_associations(state: State<Arc<AppState>>) -> Re
 
     let mut updated = 0usize;
     for (meeting_id, title, attendees) in meetings {
-        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref()) else {
+        let Some(account) = infer_internal_account_for_meeting(db, &title, attendees.as_deref())
+        else {
             continue;
         };
         let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
@@ -5887,7 +5898,24 @@ pub fn index_entity_files(
         .ok_or_else(|| format!("Account not found: {}", entity_id))?;
 
     crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
-    db.get_entity_files(&entity_id).map_err(|e| e.to_string())
+    let files = db.get_entity_files(&entity_id).map_err(|e| e.to_string())?;
+    drop(db_guard);
+
+    state
+        .embedding_queue
+        .enqueue(crate::processor::embeddings::EmbeddingRequest {
+            entity_id: entity_id.clone(),
+            entity_type: "account".to_string(),
+            requested_at: std::time::Instant::now(),
+        });
+    state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
+        entity_id,
+        entity_type: "account".to_string(),
+        priority: crate::intel_queue::IntelPriority::ContentChange,
+        requested_at: std::time::Instant::now(),
+    });
+
+    Ok(files)
 }
 
 /// Reveal a file in macOS Finder.
@@ -5899,6 +5927,330 @@ pub fn reveal_in_finder(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("Failed to open Finder: {}", e))?;
     Ok(())
+}
+
+// =============================================================================
+// Sprint 26: Chat Tool Commands
+// =============================================================================
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntityListItem {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub status: Option<String>,
+    pub health: Option<String>,
+    pub open_action_count: usize,
+}
+
+fn ensure_open_chat_session(
+    db: &crate::db::ActionDb,
+    entity_id: Option<&str>,
+    entity_type: Option<&str>,
+) -> Result<crate::db::DbChatSession, String> {
+    if let Some(existing) = db
+        .get_open_chat_session(entity_id, entity_type)
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(existing);
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    db.create_chat_session(&session_id, entity_id, entity_type, &now, &now)
+        .map_err(|e| e.to_string())
+}
+
+fn append_chat_exchange(
+    db: &crate::db::ActionDb,
+    session_id: &str,
+    user_content: &str,
+    assistant_json: &serde_json::Value,
+) -> Result<(), String> {
+    let now = chrono::Utc::now().to_rfc3339();
+    let first_idx = db
+        .get_next_chat_turn_index(session_id)
+        .map_err(|e| e.to_string())?;
+
+    db.append_chat_turn(
+        &uuid::Uuid::new_v4().to_string(),
+        session_id,
+        first_idx,
+        "user",
+        user_content,
+        &now,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let assistant_content =
+        serde_json::to_string(assistant_json).map_err(|e| format!("serialize failed: {}", e))?;
+    db.append_chat_turn(
+        &uuid::Uuid::new_v4().to_string(),
+        session_id,
+        first_idx + 1,
+        "assistant",
+        &assistant_content,
+        &now,
+    )
+    .map_err(|e| e.to_string())?;
+
+    db.bump_chat_session_stats(session_id, 2, Some(user_content))
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn chat_search_content(
+    entity_id: String,
+    query: String,
+    top_k: Option<usize>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::queries::search::ContentMatch>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let matches = crate::queries::search::search_entity_content(
+        db,
+        Some(state.embedding_model.as_ref()),
+        &entity_id,
+        query,
+        top_k.unwrap_or(10).clamp(1, 50),
+        0.0, // vector weight disabled until real ONNX model replaces hash stub
+        1.0,
+    )?;
+
+    let session = ensure_open_chat_session(db, Some(&entity_id), None)?;
+    let response = serde_json::json!({
+        "entityId": entity_id,
+        "query": query,
+        "matches": matches,
+    });
+    append_chat_exchange(db, &session.id, query, &response)?;
+
+    Ok(matches)
+}
+
+#[tauri::command]
+pub fn chat_query_entity(
+    entity_id: String,
+    question: String,
+    state: State<Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let question = question.trim();
+    if question.is_empty() {
+        return Err("question is required".to_string());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let (entity_type, entity_name, facts, open_actions, recent_meetings) =
+        if let Some(account) = db.get_account(&entity_id).map_err(|e| e.to_string())? {
+            let meetings = db
+                .get_meetings_for_account(&entity_id, 10)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "id": m.id,
+                        "title": m.title,
+                        "startTime": m.start_time,
+                        "meetingType": m.meeting_type,
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                "account",
+                account.name.clone(),
+                serde_json::json!({
+                    "health": account.health,
+                    "lifecycle": account.lifecycle,
+                    "arr": account.arr,
+                    "renewal": account.contract_end,
+                    "nps": account.nps,
+                }),
+                db.get_account_actions(&entity_id).unwrap_or_default(),
+                meetings,
+            )
+        } else if let Some(project) = db.get_project(&entity_id).map_err(|e| e.to_string())? {
+            let meetings = db
+                .get_meetings_for_project(&entity_id, 10)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "id": m.id,
+                        "title": m.title,
+                        "startTime": m.start_time,
+                        "meetingType": m.meeting_type,
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                "project",
+                project.name.clone(),
+                serde_json::json!({
+                    "status": project.status,
+                    "milestone": project.milestone,
+                    "owner": project.owner,
+                    "targetDate": project.target_date,
+                }),
+                db.get_project_actions(&entity_id).unwrap_or_default(),
+                meetings,
+            )
+        } else if let Some(person) = db.get_person(&entity_id).map_err(|e| e.to_string())? {
+            let meetings = db
+                .get_person_meetings(&entity_id, 10)
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "id": m.id,
+                        "title": m.title,
+                        "startTime": m.start_time,
+                        "meetingType": m.meeting_type,
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                "person",
+                person.name.clone(),
+                serde_json::json!({
+                    "organization": person.organization,
+                    "role": person.role,
+                    "relationship": person.relationship,
+                    "meetingCount": person.meeting_count,
+                    "lastSeen": person.last_seen,
+                }),
+                Vec::new(),
+                meetings,
+            )
+        } else {
+            return Err(format!("Entity not found: {}", entity_id));
+        };
+
+    let semantic_matches = crate::queries::search::search_entity_content(
+        db,
+        Some(state.embedding_model.as_ref()),
+        &entity_id,
+        question,
+        8,
+        0.0, // vector weight disabled until real ONNX model replaces hash stub
+        1.0,
+    )?;
+    let intelligence = db.get_entity_intelligence(&entity_id).ok().flatten();
+
+    let session = ensure_open_chat_session(db, Some(&entity_id), Some(entity_type))?;
+    let response = serde_json::json!({
+        "sessionId": session.id,
+        "entityId": entity_id,
+        "entityType": entity_type,
+        "entityName": entity_name,
+        "question": question,
+        "facts": facts,
+        "intelligence": intelligence,
+        "openActions": open_actions,
+        "recentMeetings": recent_meetings,
+        "semanticMatches": semantic_matches,
+    });
+    append_chat_exchange(db, &session.id, question, &response)?;
+
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn chat_get_briefing(state: State<Arc<AppState>>) -> Result<serde_json::Value, String> {
+    let dashboard = get_dashboard_data(state.clone());
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let session = ensure_open_chat_session(db, None, None)?;
+
+    let response = match dashboard {
+        DashboardResult::Success {
+            data, freshness, ..
+        } => serde_json::json!({
+            "status": "success",
+            "data": data,
+            "freshness": freshness,
+        }),
+        DashboardResult::Empty { message, .. } => serde_json::json!({
+            "status": "empty",
+            "message": message,
+        }),
+        DashboardResult::Error { message } => serde_json::json!({
+            "status": "error",
+            "message": message,
+        }),
+    };
+    append_chat_exchange(db, &session.id, "get briefing", &response)?;
+    Ok(response)
+}
+
+#[tauri::command]
+pub fn chat_list_entities(
+    entity_type: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<ChatEntityListItem>, String> {
+    let requested = entity_type
+        .as_deref()
+        .map(|s| s.to_lowercase())
+        .unwrap_or_else(|| "all".to_string());
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut items = Vec::new();
+    if requested == "all" || requested == "account" || requested == "accounts" {
+        let accounts = db.get_all_accounts().map_err(|e| e.to_string())?;
+        for account in accounts.into_iter().filter(|a| !a.archived) {
+            let open_action_count = db
+                .get_account_actions(&account.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            items.push(ChatEntityListItem {
+                id: account.id,
+                name: account.name,
+                entity_type: "account".to_string(),
+                status: account.lifecycle,
+                health: account.health,
+                open_action_count,
+            });
+        }
+    }
+
+    if requested == "all" || requested == "project" || requested == "projects" {
+        let projects = db.get_all_projects().map_err(|e| e.to_string())?;
+        for project in projects.into_iter().filter(|p| !p.archived) {
+            let open_action_count = db
+                .get_project_actions(&project.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            items.push(ChatEntityListItem {
+                id: project.id,
+                name: project.name,
+                entity_type: "project".to_string(),
+                status: Some(project.status),
+                health: None,
+                open_action_count,
+            });
+        }
+    }
+
+    let session = ensure_open_chat_session(db, None, None)?;
+    let response = serde_json::json!({
+        "entityType": requested,
+        "count": items.len(),
+        "items": items,
+    });
+    append_chat_exchange(db, &session.id, "list entities", &response)?;
+
+    Ok(items)
 }
 
 // ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
@@ -6349,12 +6701,16 @@ pub fn get_intelligence_hygiene_status(
 /// Run a hygiene scan immediately and return the updated status.
 #[tauri::command]
 pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatusView, String> {
-    if state.hygiene_scan_running.compare_exchange(
-        false,
-        true,
-        std::sync::atomic::Ordering::AcqRel,
-        std::sync::atomic::Ordering::Acquire,
-    ).is_err() {
+    if state
+        .hygiene_scan_running
+        .compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        )
+        .is_err()
+    {
         return Err("A hygiene scan is already running".to_string());
     }
 
@@ -6393,7 +6749,9 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
         Ok(report)
     })();
 
-    state.hygiene_scan_running.store(false, std::sync::atomic::Ordering::Release);
+    state
+        .hygiene_scan_running
+        .store(false, std::sync::atomic::Ordering::Release);
 
     let report = scan_result?;
     Ok(build_intelligence_hygiene_status(&state, Some(&report)))
@@ -6811,24 +7169,19 @@ fn apply_meeting_prep_prefill_inner(
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
-    let existing_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref()).unwrap_or_default();
+    let existing_agenda =
+        parse_user_agenda_json(meeting.user_agenda_json.as_deref()).unwrap_or_default();
     let (merged_agenda, added_agenda_items) = merge_user_agenda(&existing_agenda, agenda_items);
     let agenda_json = if merged_agenda.is_empty() {
         None
     } else {
-        Some(
-            serde_json::to_string(&merged_agenda)
-                .map_err(|e| format!("Serialize error: {}", e))?,
-        )
+        Some(serde_json::to_string(&merged_agenda).map_err(|e| format!("Serialize error: {}", e))?)
     };
 
-    let (merged_notes, notes_appended) = merge_user_notes(meeting.user_notes.as_deref(), notes_append);
-    db.update_meeting_user_layer(
-        meeting_id,
-        agenda_json.as_deref(),
-        merged_notes.as_deref(),
-    )
-    .map_err(|e| e.to_string())?;
+    let (merged_notes, notes_appended) =
+        merge_user_notes(meeting.user_notes.as_deref(), notes_append);
+    db.update_meeting_user_layer(meeting_id, agenda_json.as_deref(), merged_notes.as_deref())
+        .map_err(|e| e.to_string())?;
 
     Ok(ApplyPrepPrefillResult {
         meeting_id: meeting_id.to_string(),
@@ -6846,7 +7199,10 @@ fn generate_agenda_draft_body(
     context: Option<&str>,
 ) -> String {
     let mut body = String::new();
-    body.push_str(&format!("Hi all,\n\nAhead of {}, here is a proposed agenda", title));
+    body.push_str(&format!(
+        "Hi all,\n\nAhead of {}, here is a proposed agenda",
+        title
+    ));
     if let Some(range) = time_range.filter(|value| !value.trim().is_empty()) {
         body.push_str(&format!(" for {}.", range));
     } else {
@@ -7353,7 +7709,8 @@ mod tests {
             .get_meeting_intelligence_row("mtg-prefill")
             .expect("load meeting")
             .expect("meeting exists");
-        let agenda = parse_user_agenda_json(updated.user_agenda_json.as_deref()).unwrap_or_default();
+        let agenda =
+            parse_user_agenda_json(updated.user_agenda_json.as_deref()).unwrap_or_default();
         assert_eq!(agenda.len(), 2);
         assert!(updated
             .user_notes
@@ -7392,13 +7749,8 @@ mod tests {
         };
         db.upsert_meeting(&past).expect("upsert past meeting");
 
-        let err = apply_meeting_prep_prefill_inner(
-            &db,
-            "mtg-past",
-            &["Item".to_string()],
-            "notes",
-        )
-        .expect_err("past meeting should be read-only");
+        let err = apply_meeting_prep_prefill_inner(&db, "mtg-past", &["Item".to_string()], "notes")
+            .expect_err("past meeting should be read-only");
         assert!(err.contains("read-only"));
 
         let frozen = DbMeeting {
@@ -7426,13 +7778,9 @@ mod tests {
         };
         db.upsert_meeting(&frozen).expect("upsert frozen meeting");
 
-        let frozen_err = apply_meeting_prep_prefill_inner(
-            &db,
-            "mtg-frozen",
-            &["Item".to_string()],
-            "notes",
-        )
-        .expect_err("frozen meeting should be read-only");
+        let frozen_err =
+            apply_meeting_prep_prefill_inner(&db, "mtg-frozen", &["Item".to_string()], "notes")
+                .expect_err("frozen meeting should be read-only");
         assert!(frozen_err.contains("read-only"));
     }
 
