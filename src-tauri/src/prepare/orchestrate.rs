@@ -419,7 +419,9 @@ fn get_config(state: &AppState) -> (String, Vec<String>, Option<String>) {
         .map(|c| c.profile.clone())
         .unwrap_or_else(|| "general".to_string());
 
-    let user_domains = config.map(|c| c.resolved_user_domains()).unwrap_or_default();
+    let user_domains = config
+        .map(|c| c.resolved_user_domains())
+        .unwrap_or_default();
 
     let user_focus = config.and_then(|c| c.user_focus.clone());
 

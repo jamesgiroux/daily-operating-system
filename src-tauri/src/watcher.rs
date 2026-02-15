@@ -373,6 +373,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 if let Some(ref payload) = payload {
                     // I132: Queue intelligence refresh for affected entities
                     for entity_id in &payload.entity_ids {
+                        state.embedding_queue.enqueue(
+                            crate::processor::embeddings::EmbeddingRequest {
+                                entity_id: entity_id.clone(),
+                                entity_type: "account".to_string(),
+                                requested_at: std::time::Instant::now(),
+                            },
+                        );
                         state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
                             entity_id: entity_id.clone(),
                             entity_type: "account".to_string(),
@@ -399,6 +406,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 if let Some(ref payload) = payload {
                     // Queue intelligence refresh for affected project entities
                     for entity_id in &payload.entity_ids {
+                        state.embedding_queue.enqueue(
+                            crate::processor::embeddings::EmbeddingRequest {
+                                entity_id: entity_id.clone(),
+                                entity_type: "project".to_string(),
+                                requested_at: std::time::Instant::now(),
+                            },
+                        );
                         state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
                             entity_id: entity_id.clone(),
                             entity_type: "project".to_string(),
