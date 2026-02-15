@@ -4,7 +4,7 @@
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { parseDate, formatShortDate } from "@/lib/utils";
+import { parseDate, formatShortDate, formatMeetingType } from "@/lib/utils";
 
 interface TheWorkProps {
   detail: AccountDetail;
@@ -15,22 +15,6 @@ interface TheWorkProps {
   setNewActionTitle?: (v: string) => void;
   creatingAction?: boolean;
   onCreateAction?: () => void;
-}
-
-function formatMeetingType(meetingType: string): string {
-  const labels: Record<string, string> = {
-    customer: "Customer",
-    qbr: "QBR",
-    training: "Training",
-    internal: "Internal",
-    team_sync: "Team Sync",
-    one_on_one: "1:1",
-    partnership: "Partner",
-    all_hands: "All Hands",
-    external: "External",
-    personal: "Personal",
-  };
-  return labels[meetingType] ?? meetingType;
 }
 
 /** Format a date string as "Feb 18 Tue". */
@@ -106,6 +90,117 @@ const sectionLabelStyle: React.CSSProperties = {
   marginBottom: 16,
 };
 
+/* ── Extracted sub-components for action groups ── */
+
+interface ActionRowProps {
+  action: { id: string; title: string; dueDate?: string; source?: string };
+  /** CSS color value for the left border bar. Omit for no bar. */
+  accentColor?: string;
+  /** CSS color value for the due date text. */
+  dateColor?: string;
+  /** Bold title for overdue emphasis. */
+  bold?: boolean;
+}
+
+function ActionRow({ action, accentColor, dateColor = "var(--color-text-tertiary)", bold }: ActionRowProps) {
+  return (
+    <Link
+      to="/actions/$actionId"
+      params={{ actionId: action.id }}
+      style={{
+        display: "block",
+        position: "relative",
+        padding: "14px 0 14px 20px",
+        borderBottom: "1px solid var(--color-rule-light)",
+        textDecoration: "none",
+        color: "inherit",
+      }}
+    >
+      {accentColor && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 14,
+            bottom: 14,
+            width: 3,
+            borderRadius: 2,
+            background: accentColor,
+          }}
+        />
+      )}
+      <div
+        style={{
+          fontFamily: "var(--font-sans)",
+          fontSize: 14,
+          lineHeight: 1.55,
+          fontWeight: bold ? 500 : 400,
+          color: "var(--color-text-primary)",
+        }}
+      >
+        {action.title}
+      </div>
+      {(action.dueDate || action.source) && (
+        <div style={{ display: "flex", gap: 16, marginTop: 4 }}>
+          {action.dueDate && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                color: dateColor,
+              }}
+            >
+              {formatShortDate(action.dueDate)}
+            </span>
+          )}
+          {action.source && (
+            <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-text-tertiary)" }}>
+              {action.source}
+            </span>
+          )}
+        </div>
+      )}
+    </Link>
+  );
+}
+
+interface ActionGroupProps {
+  label: string;
+  labelColor: string;
+  actions: Array<{ id: string; title: string; dueDate?: string; source?: string }>;
+  accentColor?: string;
+  dateColor?: string;
+  bold?: boolean;
+}
+
+function ActionGroup({ label, labelColor, actions, accentColor, dateColor, bold }: ActionGroupProps) {
+  if (actions.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          fontWeight: 500,
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          color: labelColor,
+          marginBottom: 12,
+          paddingBottom: 6,
+          borderBottom: "1px solid var(--color-rule-light)",
+        }}
+      >
+        {label}
+      </div>
+      {actions.map((a) => (
+        <ActionRow key={a.id} action={a} accentColor={accentColor} dateColor={dateColor} bold={bold} />
+      ))}
+    </div>
+  );
+}
+
 export function TheWork({
   detail,
   intelligence,
@@ -127,7 +222,7 @@ export function TheWork({
 
   return (
     <section id="the-work" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading number={6} title="The Work" />
+      <ChapterHeading title="The Work" />
 
       {/* Readiness Callout */}
       {readiness && readiness.prepItems.length > 0 && (
@@ -279,340 +374,25 @@ export function TheWork({
 
         {detail.openActions.length > 0 ? (
           <div>
-            {/* Overdue group */}
-            {overdue.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    color: "var(--color-spice-terracotta)",
-                    marginBottom: 12,
-                    paddingBottom: 6,
-                    borderBottom: "1px solid var(--color-rule-light)",
-                  }}
-                >
-                  Overdue
-                </div>
-                {overdue.map((a) => (
-                  <Link
-                    key={a.id}
-                    to="/actions/$actionId"
-                    params={{ actionId: a.id }}
-                    style={{
-                      display: "block",
-                      position: "relative",
-                      padding: "14px 0 14px 20px",
-                      borderBottom: "1px solid var(--color-rule-light)",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    {/* Left border bar */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        top: 14,
-                        bottom: 14,
-                        width: 3,
-                        borderRadius: 2,
-                        background: "var(--color-spice-terracotta)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.55,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
-                      }}
-                    >
-                      {a.title}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 16,
-                        marginTop: 4,
-                      }}
-                    >
-                      {a.dueDate && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 10,
-                            fontWeight: 500,
-                            letterSpacing: "0.04em",
-                            color: "var(--color-spice-terracotta)",
-                          }}
-                        >
-                          {formatShortDate(a.dueDate)}
-                        </span>
-                      )}
-                      {a.source && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 12,
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {a.source}
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {/* This Week group */}
-            {thisWeek.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    color: "var(--color-spice-turmeric)",
-                    marginBottom: 12,
-                    paddingBottom: 6,
-                    borderBottom: "1px solid var(--color-rule-light)",
-                  }}
-                >
-                  This Week
-                </div>
-                {thisWeek.map((a) => (
-                  <Link
-                    key={a.id}
-                    to="/actions/$actionId"
-                    params={{ actionId: a.id }}
-                    style={{
-                      display: "block",
-                      position: "relative",
-                      padding: "14px 0 14px 20px",
-                      borderBottom: "1px solid var(--color-rule-light)",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    {/* Left border bar */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: 0,
-                        top: 14,
-                        bottom: 14,
-                        width: 3,
-                        borderRadius: 2,
-                        background: "var(--color-spice-turmeric)",
-                      }}
-                    />
-                    <div
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.55,
-                        fontWeight: 400,
-                        color: "var(--color-text-primary)",
-                      }}
-                    >
-                      {a.title}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 16,
-                        marginTop: 4,
-                      }}
-                    >
-                      {a.dueDate && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 10,
-                            fontWeight: 500,
-                            letterSpacing: "0.04em",
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {formatShortDate(a.dueDate)}
-                        </span>
-                      )}
-                      {a.source && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 12,
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {a.source}
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {/* Upcoming group */}
-            {upcoming.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    color: "var(--color-text-tertiary)",
-                    marginBottom: 12,
-                    paddingBottom: 6,
-                    borderBottom: "1px solid var(--color-rule-light)",
-                  }}
-                >
-                  Upcoming
-                </div>
-                {upcoming.map((a) => (
-                  <Link
-                    key={a.id}
-                    to="/actions/$actionId"
-                    params={{ actionId: a.id }}
-                    style={{
-                      display: "block",
-                      position: "relative",
-                      padding: "14px 0 14px 20px",
-                      borderBottom: "1px solid var(--color-rule-light)",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    {/* No left border bar for upcoming */}
-                    <div
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.55,
-                        fontWeight: 400,
-                        color: "var(--color-text-primary)",
-                      }}
-                    >
-                      {a.title}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 16,
-                        marginTop: 4,
-                      }}
-                    >
-                      {a.dueDate && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-mono)",
-                            fontSize: 10,
-                            fontWeight: 500,
-                            letterSpacing: "0.04em",
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {formatShortDate(a.dueDate)}
-                        </span>
-                      )}
-                      {a.source && (
-                        <span
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 12,
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {a.source}
-                        </span>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {/* No due date actions (appended to upcoming group visually) */}
-            {noDue.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                {/* Only show group label if there are no upcoming items above */}
-                {upcoming.length === 0 && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      fontWeight: 500,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.1em",
-                      color: "var(--color-text-tertiary)",
-                      marginBottom: 12,
-                      paddingBottom: 6,
-                      borderBottom: "1px solid var(--color-rule-light)",
-                    }}
-                  >
-                    Upcoming
-                  </div>
-                )}
-                {noDue.map((a) => (
-                  <Link
-                    key={a.id}
-                    to="/actions/$actionId"
-                    params={{ actionId: a.id }}
-                    style={{
-                      display: "block",
-                      position: "relative",
-                      padding: "14px 0 14px 20px",
-                      borderBottom: "1px solid var(--color-rule-light)",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        lineHeight: 1.55,
-                        fontWeight: 400,
-                        color: "var(--color-text-primary)",
-                      }}
-                    >
-                      {a.title}
-                    </div>
-                    {a.source && (
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 16,
-                          marginTop: 4,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontFamily: "var(--font-sans)",
-                            fontSize: 12,
-                            color: "var(--color-text-tertiary)",
-                          }}
-                        >
-                          {a.source}
-                        </span>
-                      </div>
-                    )}
-                  </Link>
-                ))}
-              </div>
-            )}
+            <ActionGroup
+              label="Overdue"
+              labelColor="var(--color-spice-terracotta)"
+              actions={overdue}
+              accentColor="var(--color-spice-terracotta)"
+              dateColor="var(--color-spice-terracotta)"
+              bold
+            />
+            <ActionGroup
+              label="This Week"
+              labelColor="var(--color-spice-turmeric)"
+              actions={thisWeek}
+              accentColor="var(--color-spice-turmeric)"
+            />
+            <ActionGroup
+              label="Upcoming"
+              labelColor="var(--color-text-tertiary)"
+              actions={[...upcoming, ...noDue]}
+            />
           </div>
         ) : (
           <p
