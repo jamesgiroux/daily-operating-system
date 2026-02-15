@@ -317,6 +317,11 @@ pub fn run_startup_sync(state: &AppState) {
         return;
     }
 
+    // Refresh managed workspace files if version changed (I275)
+    if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
+        log::warn!("Startup sync: failed to write managed workspace files: {}", e);
+    }
+
     let db = match crate::db::ActionDb::open() {
         Ok(db) => db,
         Err(e) => {
@@ -475,6 +480,9 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
                 .map_err(|e| format!("Failed to create Projects: {}", e))?;
         }
     }
+
+    // Write managed CLAUDE.md + .claude/settings.json (I275)
+    crate::util::write_managed_workspace_files(path)?;
 
     Ok(())
 }
