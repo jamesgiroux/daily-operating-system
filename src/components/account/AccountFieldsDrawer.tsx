@@ -31,7 +31,7 @@ interface AccountFieldsDrawerProps {
   editRenewal: string;
   setEditRenewal: (v: string) => void;
   setDirty: (v: boolean) => void;
-  onSave: () => void;
+  onSave: () => Promise<void>;
   onCancel: () => void;
   saving: boolean;
   dirty: boolean;
@@ -194,8 +194,8 @@ export function AccountFieldsDrawer({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              onSave();
+            onClick={async () => {
+              await onSave();
               onOpenChange(false);
             }}
             disabled={saving || !dirty}

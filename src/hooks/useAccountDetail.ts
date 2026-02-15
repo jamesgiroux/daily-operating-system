@@ -1,3 +1,13 @@
+/**
+ * useAccountDetail — Orchestrator hook for the account detail page.
+ *
+ * Composes focused sub-hooks internally:
+ *   - useAccountFields (field editing, save/cancel)
+ *   - useTeamManagement (search, add, remove, inline create)
+ *
+ * The public return type is unchanged — page components destructure
+ * one flat object, sub-hooks are an internal concern.
+ */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -6,41 +16,18 @@ import type {
   AccountDetail,
   AccountEvent,
   ContentFile,
-  Person,
   StrategicProgram,
 } from "@/types";
-
-function normalizeTeamRole(role: string): string {
-  return role.trim() || "associated";
-}
-
-function syntheticUnknownEmail(name: string): string {
-  const base = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "");
-  const prefix = base.length > 0 ? base : "person";
-  const uuid = crypto.randomUUID().slice(0, 8);
-  return `${prefix}.${uuid}@unknown.local`;
-}
+import { useAccountFields } from "./useAccountFields";
+import { useTeamManagement } from "./useTeamManagement";
 
 export function useAccountDetail(accountId: string | undefined) {
   const navigate = useNavigate();
   const [detail, setDetail] = useState<AccountDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
 
-  // Editable structured fields
-  const [editName, setEditName] = useState("");
-  const [editHealth, setEditHealth] = useState("");
-  const [editLifecycle, setEditLifecycle] = useState("");
-  const [editArr, setEditArr] = useState("");
-  const [editNps, setEditNps] = useState("");
-  const [editRenewal, setEditRenewal] = useState("");
-  const [editNotes, setEditNotes] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [saving, setSaving] = useState(false);
+  // Enrichment
   const [enriching, setEnriching] = useState(false);
   const [enrichSeconds, setEnrichSeconds] = useState(0);
 
@@ -48,6 +35,8 @@ export function useAccountDetail(accountId: string | undefined) {
   const [addingAction, setAddingAction] = useState(false);
   const [newActionTitle, setNewActionTitle] = useState("");
   const [creatingAction, setCreatingAction] = useState(false);
+
+  // Child account creation
   const [createChildOpen, setCreateChildOpen] = useState(false);
   const [childName, setChildName] = useState("");
   const [childDescription, setChildDescription] = useState("");
@@ -61,7 +50,7 @@ export function useAccountDetail(accountId: string | undefined) {
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
 
-  // Strategic programs inline editing
+  // Strategic programs
   const [programs, setPrograms] = useState<StrategicProgram[]>([]);
   const programsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,19 +62,7 @@ export function useAccountDetail(accountId: string | undefined) {
   const [newArrImpact, setNewArrImpact] = useState("");
   const [newEventNotes, setNewEventNotes] = useState("");
 
-  // Team management
-  const [teamSearchQuery, setTeamSearchQuery] = useState("");
-  const [teamSearchResults, setTeamSearchResults] = useState<Person[]>([]);
-  const [selectedTeamPerson, setSelectedTeamPerson] = useState<Person | null>(null);
-  const [teamRole, setTeamRole] = useState("CSM");
-  const [teamWorking, setTeamWorking] = useState(false);
-  const [teamInlineName, setTeamInlineName] = useState("");
-  const [teamInlineEmail, setTeamInlineEmail] = useState("");
-  const [teamInlineRole, setTeamInlineRole] = useState("Champion");
-  const [resolvedImportNotes, setResolvedImportNotes] = useState<Set<number>>(new Set());
-  const [teamError, setTeamError] = useState<string | null>(null);
-
-  // Evidence section collapse state
+  // Evidence collapse
   const [recentMeetingsExpanded, setRecentMeetingsExpanded] = useState(false);
 
   // Cleanup debounce timer on unmount
@@ -97,6 +74,8 @@ export function useAccountDetail(accountId: string | undefined) {
 
   const intelligence = detail?.intelligence ?? null;
 
+  // ─── Core data loading ────────────────────────────────────────────────
+
   const load = useCallback(async () => {
     if (!accountId) return;
     try {
@@ -106,15 +85,7 @@ export function useAccountDetail(accountId: string | undefined) {
         accountId,
       });
       setDetail(result);
-      setEditName(result.name);
-      setEditHealth(result.health ?? "");
-      setEditLifecycle(result.lifecycle ?? "");
-      setEditArr(result.arr?.toString() ?? "");
-      setEditNps(result.nps?.toString() ?? "");
-      setEditRenewal(result.renewalDate ?? "");
-      setEditNotes(result.notes ?? "");
       setPrograms(result.strategicPrograms);
-      setDirty(false);
       // Load content files
       try {
         const contentFiles = await invoke<ContentFile[]>("get_entity_files", {
@@ -144,31 +115,13 @@ export function useAccountDetail(accountId: string | undefined) {
     load();
   }, [load]);
 
-  useEffect(() => {
-    setResolvedImportNotes(new Set());
-    setTeamError(null);
-  }, [accountId]);
+  // ─── Composed sub-hooks ───────────────────────────────────────────────
 
-  // Debounced team search
-  useEffect(() => {
-    if (!teamSearchQuery || teamSearchQuery.trim().length < 2) {
-      setTeamSearchResults([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const results = await invoke<Person[]>("search_people", {
-          query: teamSearchQuery.trim(),
-        });
-        setTeamSearchResults(results);
-      } catch {
-        setTeamSearchResults([]);
-      }
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [teamSearchQuery]);
+  const fields = useAccountFields(detail, load, setError);
+  const team = useTeamManagement(accountId, load);
 
-  // Listen for intelligence-updated events
+  // ─── Event listeners ──────────────────────────────────────────────────
+
   useEffect(() => {
     const unlisten = listen<{ entityId: string }>(
       "intelligence-updated",
@@ -176,14 +129,11 @@ export function useAccountDetail(accountId: string | undefined) {
         if (accountId && event.payload.entityId === accountId) {
           load();
         }
-      }
+      },
     );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [accountId, load]);
 
-  // Listen for content-changed events from watcher
   useEffect(() => {
     const unlisten = listen<{ entityIds: string[]; count: number }>(
       "content-changed",
@@ -192,66 +142,23 @@ export function useAccountDetail(accountId: string | undefined) {
           setNewFileCount(event.payload.count);
           setBannerDismissed(false);
         }
-      }
+      },
     );
-    return () => {
-      unlisten.then((fn) => fn());
-    };
+    return () => { unlisten.then((fn) => fn()); };
   }, [accountId]);
 
-  // Timer for enrichment progress
+  // ─── Enrichment timer ─────────────────────────────────────────────────
+
   useEffect(() => {
     if (!enriching) {
       setEnrichSeconds(0);
       return;
     }
-    const interval = setInterval(() => {
-      setEnrichSeconds((s) => s + 1);
-    }, 1000);
+    const interval = setInterval(() => setEnrichSeconds((s) => s + 1), 1000);
     return () => clearInterval(interval);
   }, [enriching]);
 
-  // ─── Handlers ───────────────────────────────────────────────────────
-
-  async function handleSave() {
-    if (!detail) return;
-    setSaving(true);
-    try {
-      const fieldUpdates: [string, string][] = [];
-      if (editName !== detail.name) fieldUpdates.push(["name", editName]);
-      if (editHealth !== (detail.health ?? "")) fieldUpdates.push(["health", editHealth]);
-      if (editLifecycle !== (detail.lifecycle ?? "")) fieldUpdates.push(["lifecycle", editLifecycle]);
-      if (editArr !== (detail.arr?.toString() ?? "")) fieldUpdates.push(["arr", editArr]);
-      if (editNps !== (detail.nps?.toString() ?? "")) fieldUpdates.push(["nps", editNps]);
-      if (editRenewal !== (detail.renewalDate ?? "")) fieldUpdates.push(["contract_end", editRenewal]);
-
-      for (const [field, value] of fieldUpdates) {
-        await invoke("update_account_field", { accountId: detail.id, field, value });
-      }
-      if (editNotes !== (detail.notes ?? "")) {
-        await invoke("update_account_notes", { accountId: detail.id, notes: editNotes });
-      }
-      setDirty(false);
-      setEditing(false);
-      await load();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleCancelEdit() {
-    if (!detail) return;
-    setEditName(detail.name);
-    setEditHealth(detail.health ?? "");
-    setEditLifecycle(detail.lifecycle ?? "");
-    setEditArr(detail.arr?.toString() ?? "");
-    setEditNps(detail.nps?.toString() ?? "");
-    setEditRenewal(detail.renewalDate ?? "");
-    setDirty(false);
-    setEditing(false);
-  }
+  // ─── Handlers ─────────────────────────────────────────────────────────
 
   async function handleIndexFiles() {
     if (!detail) return;
@@ -330,7 +237,7 @@ export function useAccountDetail(accountId: string | undefined) {
         }
       }, 400);
     },
-    [detail]
+    [detail],
   );
 
   function handleProgramUpdate(index: number, updated: StrategicProgram) {
@@ -371,7 +278,7 @@ export function useAccountDetail(accountId: string | undefined) {
       setNewArrImpact("");
       setNewEventNotes("");
     } catch (err) {
-      console.error("Failed to record event:", err);
+      setError(String(err));
     }
   }
 
@@ -395,97 +302,6 @@ export function useAccountDetail(accountId: string | undefined) {
     }
   }
 
-  async function performTeamOperation(
-    operation: () => Promise<void>,
-    onSuccess?: () => void
-  ) {
-    if (!detail) return;
-    try {
-      setTeamWorking(true);
-      setTeamError(null);
-      await operation();
-      onSuccess?.();
-      await load();
-    } catch (e) {
-      setTeamError(String(e));
-    } finally {
-      setTeamWorking(false);
-    }
-  }
-
-  async function createAndAddTeamMember(name: string, email: string, role: string) {
-    if (!detail) return;
-    const normalizedRole = normalizeTeamRole(role);
-    const personName = name.trim();
-    const personEmail = email.trim() || syntheticUnknownEmail(personName);
-    const personId = await invoke<string>("create_person", {
-      email: personEmail,
-      name: personName,
-      relationship: "unknown",
-    });
-    await invoke("add_account_team_member", {
-      accountId: detail.id,
-      personId,
-      role: normalizedRole,
-    });
-  }
-
-  async function handleAddExistingTeamMember() {
-    if (!selectedTeamPerson) return;
-    const normalizedRole = normalizeTeamRole(teamRole);
-    await performTeamOperation(
-      async () => {
-        await invoke("add_account_team_member", {
-          accountId: detail!.id,
-          personId: selectedTeamPerson.id,
-          role: normalizedRole,
-        });
-      },
-      () => {
-        setSelectedTeamPerson(null);
-        setTeamSearchQuery("");
-        setTeamSearchResults([]);
-        setTeamRole("CSM");
-      }
-    );
-  }
-
-  async function handleRemoveTeamMember(personId: string, role: string) {
-    await performTeamOperation(async () => {
-      await invoke("remove_account_team_member", {
-        accountId: detail!.id,
-        personId,
-        role,
-      });
-    });
-  }
-
-  async function handleCreateInlineTeamMember() {
-    if (!teamInlineName.trim()) return;
-    await performTeamOperation(
-      async () => {
-        await createAndAddTeamMember(teamInlineName, teamInlineEmail, teamInlineRole);
-      },
-      () => {
-        setTeamInlineName("");
-        setTeamInlineEmail("");
-        setTeamInlineRole("Champion");
-      }
-    );
-  }
-
-  async function handleImportNoteCreateAndAdd(noteId: number, name: string, role: string) {
-    if (!name.trim()) return;
-    await performTeamOperation(
-      async () => {
-        await createAndAddTeamMember(name.trim(), "", role);
-      },
-      () => {
-        setResolvedImportNotes((prev) => new Set([...prev, noteId]));
-      }
-    );
-  }
-
   async function handleCreateAction() {
     if (!detail || !newActionTitle.trim()) return;
     setCreatingAction(true);
@@ -495,11 +311,15 @@ export function useAccountDetail(accountId: string | undefined) {
       });
       setNewActionTitle("");
       setAddingAction(false);
-      load();
+      await load();
+    } catch (e) {
+      setError(String(e));
     } finally {
       setCreatingAction(false);
     }
   }
+
+  // ─── Flat public API ──────────────────────────────────────────────────
 
   return {
     // Core data
@@ -511,17 +331,10 @@ export function useAccountDetail(accountId: string | undefined) {
     events,
     programs,
 
-    // Edit fields
-    editing, setEditing,
-    editName, setEditName,
-    editHealth, setEditHealth,
-    editLifecycle, setEditLifecycle,
-    editArr, setEditArr,
-    editNps, setEditNps,
-    editRenewal, setEditRenewal,
-    editNotes, setEditNotes,
-    dirty, setDirty,
-    saving,
+    // Field editing (from useAccountFields)
+    ...fields,
+
+    // Enrichment
     enriching,
     enrichSeconds,
 
@@ -550,25 +363,16 @@ export function useAccountDetail(accountId: string | undefined) {
     newArrImpact, setNewArrImpact,
     newEventNotes, setNewEventNotes,
 
-    // Team management
-    teamSearchQuery, setTeamSearchQuery,
-    teamSearchResults,
-    selectedTeamPerson, setSelectedTeamPerson,
-    teamRole, setTeamRole,
-    teamWorking,
-    teamInlineName, setTeamInlineName,
-    teamInlineEmail, setTeamInlineEmail,
-    teamInlineRole, setTeamInlineRole,
-    resolvedImportNotes,
-    teamError,
+    // Team management (from useTeamManagement)
+    ...team,
 
     // Evidence collapse
     recentMeetingsExpanded, setRecentMeetingsExpanded,
 
     // Handlers
     load,
-    handleSave,
-    handleCancelEdit,
+    handleSave: fields.handleSave,
+    handleCancelEdit: fields.handleCancelEdit,
     handleIndexFiles,
     handleEnrich,
     handleCreateChild,
@@ -578,10 +382,10 @@ export function useAccountDetail(accountId: string | undefined) {
     handleRecordEvent,
     handleArchive,
     handleUnarchive,
-    handleAddExistingTeamMember,
-    handleRemoveTeamMember,
-    handleCreateInlineTeamMember,
-    handleImportNoteCreateAndAdd,
+    handleAddExistingTeamMember: team.handleAddExistingTeamMember,
+    handleRemoveTeamMember: team.handleRemoveTeamMember,
+    handleCreateInlineTeamMember: team.handleCreateInlineTeamMember,
+    handleImportNoteCreateAndAdd: team.handleImportNoteCreateAndAdd,
     handleCreateAction,
   };
 }

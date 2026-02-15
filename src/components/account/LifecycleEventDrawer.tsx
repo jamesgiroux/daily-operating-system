@@ -23,7 +23,7 @@ interface LifecycleEventDrawerProps {
   setNewArrImpact: (v: string) => void;
   newEventNotes: string;
   setNewEventNotes: (v: string) => void;
-  onSave: () => void;
+  onSave: () => Promise<void>;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -135,8 +135,8 @@ export function LifecycleEventDrawer({
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              onSave();
+            onClick={async () => {
+              await onSave();
               onOpenChange(false);
             }}
             disabled={!newEventDate}

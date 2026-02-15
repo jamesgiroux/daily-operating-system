@@ -25,7 +25,7 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
-import AccountDetailEditorial, { CHAPTERS as ACCOUNT_CHAPTERS } from "@/pages/AccountDetailEditorial";
+import AccountDetailEditorial from "@/pages/AccountDetailEditorial";
 import ActionDetailPage from "@/pages/ActionDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
@@ -44,13 +44,13 @@ import WeekPage from "@/pages/WeekPage";
 
 // Magazine shell
 import MagazinePageLayout from "@/components/layout/MagazinePageLayout";
+import { MagazineShellContext, useMagazineShellProvider } from "@/hooks/useMagazineShell";
 
 // Global overlays
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
-import { useChapterObserver } from "@/hooks/useChapterObserver";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 
 const settingsTabs = new Set([
@@ -64,8 +64,9 @@ const settingsTabs = new Set([
 const peopleRelationshipTabs = new Set(["all", "external", "internal", "unknown"]);
 const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
-// Paths that use the magazine shell instead of the sidebar shell
-const MAGAZINE_SHELL_PATHS = /^\/accounts\/[^/]+$/;
+// Route IDs that use the magazine shell instead of the sidebar shell.
+// Add new editorial routes here as they're built.
+const MAGAZINE_ROUTE_IDS = new Set(["/accounts/$accountId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -76,13 +77,12 @@ function RootLayout() {
   const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
 
-  const routerState = useRouterState();
-  const currentPath = routerState.location.pathname;
-  const useMagazineShell = MAGAZINE_SHELL_PATHS.test(currentPath);
+  // Magazine shell context — pages register their config, layout consumes it
+  const magazineShell = useMagazineShellProvider();
 
-  // Chapter navigation for editorial pages — hook always called (React rules)
-  const chapterIds = useMagazineShell ? ACCOUNT_CHAPTERS.map((c) => c.id) : [];
-  const activeChapterId = useChapterObserver(chapterIds);
+  const routerState = useRouterState();
+  const deepestRouteId = routerState.matches[routerState.matches.length - 1]?.routeId ?? "";
+  const useMagazineShell = MAGAZINE_ROUTE_IDS.has(deepestRouteId);
 
   useEffect(() => {
     async function checkConfig() {
@@ -150,25 +150,20 @@ function RootLayout() {
     );
   }
 
-  // Magazine shell for account detail (and future editorial pages)
+  // Magazine shell for editorial pages (account detail, future editorial pages)
   if (useMagazineShell) {
     return (
       <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
         <PersonalityProvider>
-          <MagazinePageLayout
-            folioLabel="Account"
-            activePage="accounts"
-            atmosphereColor="turmeric"
-            heroSection={null}
-            onFolioSearch={() => setCommandOpen(true)}
-            onNavigate={handleNavNavigate}
-            onNavHome={() => navigate({ to: "/" })}
-            backLink={{ label: "Accounts", href: "/accounts" }}
-            chapters={ACCOUNT_CHAPTERS}
-            activeChapterId={activeChapterId}
-          >
-            <Outlet />
-          </MagazinePageLayout>
+          <MagazineShellContext.Provider value={magazineShell}>
+            <MagazinePageLayout
+              onFolioSearch={() => setCommandOpen(true)}
+              onNavigate={handleNavNavigate}
+              onNavHome={() => navigate({ to: "/" })}
+            >
+              <Outlet />
+            </MagazinePageLayout>
+          </MagazineShellContext.Provider>
           <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
           <PostMeetingPrompt />
           <Toaster position="bottom-right" />

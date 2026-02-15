@@ -19,6 +19,7 @@ import {
   Building2,
   Settings,
 } from 'lucide-react';
+import { capitalize } from '@/lib/utils';
 import { smoothScrollTo } from '@/lib/smooth-scroll';
 import styles from './FloatingNavIsland.module.css';
 
@@ -85,13 +86,12 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   chapters,
   activeChapterId,
 }) => {
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-  const activeClass = styles[`active${cap(activeColor)}`] || '';
+  const activeClass = styles[`active${capitalize(activeColor)}`] || '';
 
   // Chapter mode — icon-based scroll navigation (same visual style as app mode)
   if (mode === 'chapters' && chapters && chapters.length > 0) {
     return (
-      <nav className={`${styles.navIsland} ${styles[`color${cap(activeColor)}`] || ''}`}>
+      <nav className={`${styles.navIsland} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
         {/* Home button — Brand mark */}
         <button
           className={styles.navIslandMark}
@@ -137,7 +137,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   const isItemActive = (itemId: string) => itemId === activePage;
 
   return (
-    <nav className={`${styles.navIsland} ${styles[`color${cap(activeColor)}`] || ''}`}>
+    <nav className={`${styles.navIsland} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
       {/* Home button — Brand mark */}
       <button
         className={styles.navIslandMark}

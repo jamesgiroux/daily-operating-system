@@ -4,7 +4,6 @@
  * No chapter number shown — just rule + title.
  */
 interface ChapterHeadingProps {
-  number: number;
   title: string;
   epigraph?: string;
 }

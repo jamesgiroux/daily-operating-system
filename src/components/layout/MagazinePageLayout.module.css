@@ -33,15 +33,6 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   HERO SECTION — Large headline + narrative area
-   ───────────────────────────────────────────────────────────────────────── */
-.heroSection {
-  position: relative;
-  padding-top: var(--space-5xl);
-  padding-bottom: var(--space-4xl);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
    RESPONSIVE ADJUSTMENTS
    ───────────────────────────────────────────────────────────────────────── */
 
@@ -58,11 +49,6 @@
     padding-right: 48px;
     padding-bottom: 120px;
   }
-
-  .heroSection {
-    padding-top: var(--space-4xl);
-    padding-bottom: var(--space-3xl);
-  }
 }
 
 @media (max-width: 480px) {
@@ -70,10 +56,5 @@
     padding-left: var(--space-lg);
     padding-right: var(--space-lg);
     max-width: none;
-  }
-
-  .heroSection {
-    padding-top: var(--space-3xl);
-    padding-bottom: var(--space-2xl);
   }
 }

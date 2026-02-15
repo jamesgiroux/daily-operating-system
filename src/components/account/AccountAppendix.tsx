@@ -112,6 +112,92 @@ function FileIcon() {
   );
 }
 
+/* ── Sub-components ──────────────────────────────────────────────────── */
+
+/** Stat cell used in Portfolio Summary (label + value). */
+function PortfolioStat({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div
+        style={{
+          color: "var(--color-text-tertiary)",
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ color: "var(--color-text-primary)", fontWeight: 600 }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Normalized company context display — handles both intelligence and dashboard sources. */
+function CompanyContextBlock({
+  description,
+  additionalContext,
+  industry,
+  size,
+  headquarters,
+}: {
+  description?: string;
+  additionalContext?: string;
+  industry?: string;
+  size?: string;
+  headquarters?: string;
+}) {
+  return (
+    <>
+      {description && (
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-secondary)",
+            maxWidth: 580,
+            margin: "0 0 8px",
+          }}
+        >
+          {description}
+        </p>
+      )}
+      {additionalContext && (
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 13,
+            lineHeight: 1.5,
+            color: "var(--color-text-secondary)",
+            maxWidth: 580,
+            margin: "0 0 8px",
+          }}
+        >
+          {additionalContext}
+        </p>
+      )}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 16,
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+        }}
+      >
+        {industry && <span>Industry: {industry}</span>}
+        {size && <span>Size: {size}</span>}
+        {headquarters && <span>HQ: {headquarters}</span>}
+      </div>
+    </>
+  );
+}
+
 /* ── Component ───────────────────────────────────────────────────────── */
 
 export function AccountAppendix({
@@ -461,93 +547,20 @@ export function AccountAppendix({
         <div style={{ marginBottom: 40 }}>
           <div style={sectionTitleStyle}>Company Context</div>
           {intelligence?.companyContext ? (
-            <>
-              {intelligence.companyContext.description && (
-                <p
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--color-text-secondary)",
-                    maxWidth: 580,
-                    margin: "0 0 8px",
-                  }}
-                >
-                  {intelligence.companyContext.description}
-                </p>
-              )}
-              {intelligence.companyContext.additionalContext && (
-                <p
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    lineHeight: 1.5,
-                    color: "var(--color-text-secondary)",
-                    maxWidth: 580,
-                    margin: "0 0 8px",
-                  }}
-                >
-                  {intelligence.companyContext.additionalContext}
-                </p>
-              )}
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 16,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {intelligence.companyContext.industry && (
-                  <span>Industry: {intelligence.companyContext.industry}</span>
-                )}
-                {intelligence.companyContext.size && (
-                  <span>Size: {intelligence.companyContext.size}</span>
-                )}
-                {intelligence.companyContext.headquarters && (
-                  <span>HQ: {intelligence.companyContext.headquarters}</span>
-                )}
-              </div>
-            </>
+            <CompanyContextBlock
+              description={intelligence.companyContext.description}
+              additionalContext={intelligence.companyContext.additionalContext}
+              industry={intelligence.companyContext.industry}
+              size={intelligence.companyContext.size}
+              headquarters={intelligence.companyContext.headquarters}
+            />
           ) : detail.companyOverview ? (
-            <>
-              {detail.companyOverview.description && (
-                <p
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    color: "var(--color-text-secondary)",
-                    maxWidth: 580,
-                    margin: "0 0 8px",
-                  }}
-                >
-                  {detail.companyOverview.description}
-                </p>
-              )}
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 16,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {detail.companyOverview.industry && (
-                  <span>Industry: {detail.companyOverview.industry}</span>
-                )}
-                {detail.companyOverview.size && (
-                  <span>Size: {detail.companyOverview.size}</span>
-                )}
-                {detail.companyOverview.headquarters && (
-                  <span>HQ: {detail.companyOverview.headquarters}</span>
-                )}
-              </div>
-            </>
+            <CompanyContextBlock
+              description={detail.companyOverview.description}
+              industry={detail.companyOverview.industry}
+              size={detail.companyOverview.size}
+              headquarters={detail.companyOverview.headquarters}
+            />
           ) : null}
         </div>
       )}
@@ -623,96 +636,17 @@ export function AccountAppendix({
               fontSize: 13,
             }}
           >
-            <div>
-              <div
-                style={{
-                  color: "var(--color-text-tertiary)",
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  marginBottom: 2,
-                }}
-              >
-                BUs
-              </div>
-              <div
-                style={{
-                  color: "var(--color-text-primary)",
-                  fontWeight: 600,
-                }}
-              >
-                {detail.parentAggregate.buCount}
-              </div>
-            </div>
+            <PortfolioStat label="BUs">{detail.parentAggregate.buCount}</PortfolioStat>
             {detail.parentAggregate.totalArr != null && (
-              <div>
-                <div
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    marginBottom: 2,
-                  }}
-                >
-                  Total ARR
-                </div>
-                <div
-                  style={{
-                    color: "var(--color-text-primary)",
-                    fontWeight: 600,
-                  }}
-                >
-                  ${formatArr(detail.parentAggregate.totalArr)}
-                </div>
-              </div>
+              <PortfolioStat label="Total ARR">${formatArr(detail.parentAggregate.totalArr)}</PortfolioStat>
             )}
             {detail.parentAggregate.worstHealth && (
-              <div>
-                <div
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    marginBottom: 2,
-                  }}
-                >
-                  Worst Health
-                </div>
-                <div
-                  style={{
-                    color: "var(--color-text-primary)",
-                    fontWeight: 600,
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {detail.parentAggregate.worstHealth}
-                </div>
-              </div>
+              <PortfolioStat label="Worst Health">
+                <span style={{ textTransform: "capitalize" }}>{detail.parentAggregate.worstHealth}</span>
+              </PortfolioStat>
             )}
             {detail.parentAggregate.nearestRenewal && (
-              <div>
-                <div
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    marginBottom: 2,
-                  }}
-                >
-                  Next Renewal
-                </div>
-                <div
-                  style={{
-                    color: "var(--color-text-primary)",
-                    fontWeight: 600,
-                  }}
-                >
-                  {formatShortDate(detail.parentAggregate.nearestRenewal)}
-                </div>
-              </div>
+              <PortfolioStat label="Next Renewal">{formatShortDate(detail.parentAggregate.nearestRenewal)}</PortfolioStat>
             )}
           </div>
         </div>

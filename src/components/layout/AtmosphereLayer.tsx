@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { capitalize } from '@/lib/utils';
 import styles from './AtmosphereLayer.module.css';
 
 export interface AtmosphereLayerProps {
@@ -27,12 +28,10 @@ export const AtmosphereLayer: React.FC<AtmosphereLayerProps> = ({
   color = 'turmeric',
   className = '',
 }) => {
-  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
   return (
     <div className={`${styles.atmosphere} ${styles[color]} ${className}`}>
       {/* Watermark asterisk — subtly visible, for visual interest */}
-      <div className={`${styles.watermark} ${styles[`watermark${cap(color)}`] || ''}`}>
+      <div className={`${styles.watermark} ${styles[`watermark${capitalize(color)}`] || ''}`}>
         *
       </div>
     </div>

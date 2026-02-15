@@ -1,22 +1,23 @@
 import { useState, useEffect, useRef } from "react";
+import { isScrolling } from "@/lib/smooth-scroll";
 
-/**
- * Tracks which chapter section is currently in view using IntersectionObserver.
- * Returns the ID of the active chapter for nav highlighting.
- */
-export function useChapterObserver(chapterIds: string[]): string {
+export function useChapterObserver(chapterIds: string[], ready = true): string {
   const [activeId, setActiveId] = useState(chapterIds[0] ?? "");
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
+    setActiveId(chapterIds[0] ?? "");
+  }, [chapterIds]);
+
+  useEffect(() => {
     if (chapterIds.length === 0) return;
+    if (!ready) return;
 
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        // Find the entry that is intersecting and closest to the top
+        if (isScrolling) return;
         const intersecting = entries.filter((e) => e.isIntersecting);
         if (intersecting.length > 0) {
-          // Pick the one with the smallest top boundary (closest to viewport top)
           const top = intersecting.reduce((best, entry) =>
             entry.boundingClientRect.top < best.boundingClientRect.top ? entry : best
           );
@@ -35,7 +36,7 @@ export function useChapterObserver(chapterIds: string[]): string {
     return () => {
       observerRef.current?.disconnect();
     };
-  }, [chapterIds]);
+  }, [chapterIds, ready]);
 
   return activeId;
 }

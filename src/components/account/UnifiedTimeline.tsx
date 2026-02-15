@@ -7,7 +7,7 @@ import { useState } from "react";
 import type { AccountDetail } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
-import { formatShortDate } from "@/lib/utils";
+import { formatShortDate, formatMeetingType } from "@/lib/utils";
 
 interface UnifiedTimelineProps {
   detail: AccountDetail;
@@ -21,22 +21,6 @@ interface TimelineItem {
   subtitle?: string;
   linkTo?: string;
   linkParams?: Record<string, string>;
-}
-
-function formatMeetingType(meetingType: string): string {
-  const labels: Record<string, string> = {
-    customer: "Customer",
-    qbr: "QBR",
-    training: "Training",
-    internal: "Internal",
-    team_sync: "Team Sync",
-    one_on_one: "1:1",
-    partnership: "Partner",
-    all_hands: "All Hands",
-    external: "External",
-    personal: "Personal",
-  };
-  return labels[meetingType] ?? meetingType;
 }
 
 export function UnifiedTimeline({ detail }: UnifiedTimelineProps) {
@@ -97,7 +81,7 @@ export function UnifiedTimeline({ detail }: UnifiedTimelineProps) {
 
   return (
     <section id="the-record" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading number={5} title="The Record" />
+      <ChapterHeading title="The Record" />
 
       {items.length > 0 ? (
         <>
