@@ -100,10 +100,15 @@ jobs:
           # Clean up
           rm certificate.p12
 
-      # NOTE: Notarization disabled for now (API key auth hangs during submission).
-      # App is code-signed but not notarized. Users need: xattr -cr /Applications/DailyOS.app
-      # TODO: Re-enable notarization once Apple API key submission is debugged.
-      # Secrets ready: APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_KEY_PATH_BASE64
+      - name: Prepare Apple notarization credentials
+        env:
+          APPLE_API_KEY_PATH_BASE64: ${{ secrets.APPLE_API_KEY_PATH_BASE64 }}
+        run: |
+          # Write the App Store Connect API .p8 key from base64 secret
+          mkdir -p ~/private_keys
+          echo "$APPLE_API_KEY_PATH_BASE64" | base64 --decode > ~/private_keys/AuthKey.p8
+          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "Notarization API key written to ~/private_keys/AuthKey.p8"
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -117,11 +122,14 @@ jobs:
             exit 1
           fi
 
-      - name: Build Tauri app (macOS arm64, signed)
-        timeout-minutes: 30
+      - name: Build Tauri app (macOS arm64, signed + notarized)
+        timeout-minutes: 45
         env:
           DAILYOS_GOOGLE_SECRET: ${{ secrets.DAILYOS_GOOGLE_SECRET }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target aarch64-apple-darwin
@@ -195,7 +203,7 @@ jobs:
             **New users:**
             1. Download `${{ steps.artifacts.outputs.dmg_name }}`
             2. Drag DailyOS to Applications
-            3. Open DailyOS
+            3. Open DailyOS — the app is signed and notarized, no workarounds needed
 
             **Existing users:** DailyOS will update automatically. Check Settings for details.
           files: |
@@ -206,7 +214,8 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: Cleanup keychain
+      - name: Cleanup keychain and credentials
         if: always()
         run: |
           security delete-keychain build.keychain 2>/dev/null || true
+          rm -f ~/private_keys/AuthKey.p8 2>/dev/null || true
