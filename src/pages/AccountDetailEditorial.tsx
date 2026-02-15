@@ -1,7 +1,8 @@
-import React, { useState } from "react";
-import { useParams } from "@tanstack/react-router";
+import React, { useState, useMemo } from "react";
+import { useParams, useNavigate } from "@tanstack/react-router";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
   AlignLeft,
   Clock,
@@ -55,8 +56,22 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
 
 export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
   useRevealObserver(!acct.loading && !!acct.detail);
+
+  // Register magazine shell configuration — MagazinePageLayout consumes this
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Account",
+      atmosphereColor: "turmeric" as const,
+      activePage: "accounts" as const,
+      backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+      chapters: CHAPTERS,
+    }),
+    [navigate],
+  );
+  useRegisterMagazineShell(shellConfig);
 
   // Drawer/dialog open state
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
@@ -315,6 +330,3 @@ export default function AccountDetailEditorial() {
     </>
   );
 }
-
-// Re-export chapters for use by the router shell
-export { CHAPTERS };

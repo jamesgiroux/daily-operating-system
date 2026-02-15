@@ -80,7 +80,7 @@ export function StakeholderGallery({
 
   return (
     <section id="the-room" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading number={3} title="The Room" epigraph={epigraph} />
+      <ChapterHeading title="The Room" epigraph={epigraph} />
 
       {hasStakeholders ? (
         <div
