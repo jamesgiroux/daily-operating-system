@@ -23,7 +23,7 @@ export function StateOfPlay({ intelligence }: StateOfPlayProps) {
 
   return (
     <section id="state-of-play" style={{ scrollMarginTop: 60, paddingTop: 80 }}>
-      <ChapterHeading number={2} title="State of Play" />
+      <ChapterHeading title="State of Play" />
 
       {hasContent ? (
         <>

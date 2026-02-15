@@ -145,6 +145,28 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+/** Capitalize the first letter of a string. */
+export function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Format a meeting type string as a human-readable label. */
+export function formatMeetingType(type: string): string {
+  const labels: Record<string, string> = {
+    customer: "Customer",
+    qbr: "QBR",
+    training: "Training",
+    internal: "Internal",
+    team_sync: "Team Sync",
+    one_on_one: "1:1",
+    partnership: "Partner",
+    all_hands: "All Hands",
+    external: "External",
+    personal: "Personal",
+  };
+  return labels[type] ?? type;
+}
+
 export function stripMarkdown(text: string): string {
   return text
     .replace(/\*\*(.+?)\*\*/g, "$1")   // **bold**

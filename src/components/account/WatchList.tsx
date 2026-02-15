@@ -211,7 +211,7 @@ export function WatchList({
         }}
       >
         <div style={{ maxWidth: 820, margin: "0 auto", padding: "80px 48px" }}>
-          <ChapterHeading number={4} title="Watch List" />
+          <ChapterHeading title="Watch List" />
 
           {hasContent ? (
             <>
