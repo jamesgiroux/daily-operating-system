@@ -14,22 +14,36 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/001_baseline.sql"),
-}, Migration {
-    version: 2,
-    sql: include_str!("migrations/002_internal_teams.sql"),
-}, Migration {
-    version: 3,
-    sql: include_str!("migrations/003_account_team.sql"),
-}, Migration {
-    version: 4,
-    sql: include_str!("migrations/004_account_team_role_index.sql"),
-}, Migration {
-    version: 5,
-    sql: include_str!("migrations/005_email_signals.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/001_baseline.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/002_internal_teams.sql"),
+    },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/003_account_team.sql"),
+    },
+    Migration {
+        version: 4,
+        sql: include_str!("migrations/004_account_team_role_index.sql"),
+    },
+    Migration {
+        version: 5,
+        sql: include_str!("migrations/005_email_signals.sql"),
+    },
+    Migration {
+        version: 6,
+        sql: include_str!("migrations/006_content_embeddings.sql"),
+    },
+    Migration {
+        version: 7,
+        sql: include_str!("migrations/007_chat_sessions.sql"),
+    },
+];
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -155,12 +169,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
             "INSERT INTO schema_version (version) VALUES (?1)",
             [migration.version],
         )
-        .map_err(|e| {
-            format!(
-                "Failed to record migration v{}: {}",
-                migration.version, e
-            )
-        })?;
+        .map_err(|e| format!("Failed to record migration v{}: {}", migration.version, e))?;
 
         log::info!("Applied migration v{}", migration.version);
     }
@@ -183,13 +192,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 5,
-            "should apply baseline + internal teams + account team + role index + email signals migrations"
+            applied, 7,
+            "should apply baseline through chat sessions migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 5);
+        assert_eq!(version, 7);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -280,6 +289,36 @@ mod tests {
             [],
         )
         .expect("email_signals table should exist");
+
+        conn.execute(
+            "INSERT INTO content_embeddings (
+                id, content_file_id, chunk_index, chunk_text, embedding, created_at
+             ) VALUES (
+                'emb-1', 'ci1', 0, 'chunk text', X'00000000', '2026-02-15T00:00:00Z'
+             )",
+            [],
+        )
+        .expect("content_embeddings table should exist");
+
+        conn.execute(
+            "INSERT INTO chat_sessions (
+                id, entity_id, entity_type, session_start, created_at
+             ) VALUES (
+                'sess-1', 'a1', 'account', '2026-02-15T00:00:00Z', '2026-02-15T00:00:00Z'
+             )",
+            [],
+        )
+        .expect("chat_sessions table should exist");
+
+        conn.execute(
+            "INSERT INTO chat_turns (
+                id, session_id, turn_index, role, content, timestamp
+             ) VALUES (
+                'turn-1', 'sess-1', 0, 'user', 'hello', '2026-02-15T00:00:00Z'
+             )",
+            [],
+        )
+        .expect("chat_turns table should exist");
     }
 
     #[test]
@@ -335,17 +374,33 @@ mod tests {
                 person_id TEXT NOT NULL,
                 relationship_type TEXT DEFAULT 'associated',
                 PRIMARY KEY (entity_id, person_id)
+             );
+             CREATE TABLE content_index (
+                id TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                filename TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                absolute_path TEXT NOT NULL,
+                format TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                modified_at TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                extracted_at TEXT,
+                summary TEXT,
+                content_type TEXT NOT NULL DEFAULT 'general',
+                priority INTEGER NOT NULL DEFAULT 5
              );",
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5
+        // Run migrations — should bootstrap v1 and apply v2-v7
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 4, "bootstrap should mark v1, then apply v2/v3/v4/v5");
+        assert_eq!(applied, 6, "bootstrap should mark v1, then apply v2-v7");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 5);
+        assert_eq!(version, 7);
 
         // Verify existing data is untouched
         let title: String = conn
