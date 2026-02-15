@@ -767,12 +767,17 @@ pub fn build_intelligence_prompt(
     entity_name: &str,
     entity_type: &str,
     ctx: &IntelligenceContext,
+    relationship: Option<&str>,
 ) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
     let entity_label = match entity_type {
         "account" => "customer account",
         "project" => "project",
-        "person" => "professional relationship",
+        "person" => match relationship {
+            Some("internal") => "internal teammate / colleague",
+            Some("external") => "external stakeholder / customer contact",
+            _ => "professional contact",
+        },
         _ => "entity",
     };
 
@@ -902,13 +907,50 @@ pub fn build_intelligence_prompt(
          - Write for a busy executive who has 60 seconds to understand this account.\n\n",
     );
 
+    // Person-specific writing rules based on relationship type
+    if entity_type == "person" {
+        match relationship {
+            Some("internal") => prompt.push_str(
+                "PERSON CONTEXT — INTERNAL TEAMMATE:\n\
+                 - Focus on collaboration patterns, shared work, and alignment.\n\
+                 - WORKING items = productive collaboration signals, shared wins, effective coordination.\n\
+                 - NOT_WORKING items = alignment gaps, communication friction, unclear ownership.\n\
+                 - Risks should focus on team-level blockers, not relationship health.\n\
+                 - Assessment should answer: 'How effectively do we work together?'\n\n",
+            ),
+            Some("external") => prompt.push_str(
+                "PERSON CONTEXT — EXTERNAL STAKEHOLDER:\n\
+                 - Focus on relationship health, engagement signals, and influence.\n\
+                 - WORKING items = strong engagement, responsiveness, advocacy, trust signals.\n\
+                 - NOT_WORKING items = disengagement, unresponsiveness, misalignment, risk of churn.\n\
+                 - Risks should focus on relationship risks — champion departure, sentiment shifts.\n\
+                 - Assessment should answer: 'What does this person need and how do I navigate them?'\n\n",
+            ),
+            _ => prompt.push_str(
+                "PERSON CONTEXT:\n\
+                 - Relationship type is unknown. Infer from available signals whether this is likely \
+                   an internal colleague or external contact, and frame the assessment accordingly.\n\n",
+            ),
+        }
+    }
+
     // Output format instructions
-    prompt.push_str(
+    let p1_framing = match entity_type {
+        "account" => "account trajectory",
+        "project" => "project trajectory",
+        "person" => match relationship {
+            Some("internal") => "collaboration dynamic",
+            Some("external") => "relationship health",
+            _ => "relationship dynamic",
+        },
+        _ => "overall assessment",
+    };
+    prompt.push_str(&format!(
         "Return ONLY the structured block below — no other text before or after.\n\n\
          INTELLIGENCE\n\
          EXECUTIVE_ASSESSMENT:\n\
          <2-4 paragraphs separated by blank lines (\\n\\n), structured as follows:\n\
-         Paragraph 1: One-sentence verdict — account trajectory in plain language. Then 2-3 sentences on why.\n\
+         Paragraph 1: One-sentence verdict — {p1_framing} in plain language. Then 2-3 sentences on why.\n\
          Paragraph 2: Top risk or blocker — what could go wrong and what depends on it.\n\
          Paragraph 3: Biggest opportunity — where upside exists and what unlocks it.\n\
          Paragraph 4 (optional): Key unknowns or intelligence gaps that need resolution.\n\
@@ -931,7 +973,7 @@ pub fn build_intelligence_prompt(
           unknown = person not present in available transcripts)\n\
          VALUE: <date> | <value statement> | SOURCE: <filename> | IMPACT: <impact>\n\
          NEXT_MEETING_PREP: <preparation item for next meeting>\n",
-    );
+    ));
 
     // Company context (initial only)
     if !is_incremental && entity_type == "account" {
@@ -1290,7 +1332,10 @@ pub fn enrich_entity_intelligence(
     );
 
     // Step 3: Build prompt
-    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx);
+    // For person entities, we'd need the relationship from the DB but this code path
+    // doesn't have the person record. The intel_queue path (which is the primary path)
+    // handles this correctly. Pass None here for the legacy direct-enrichment path.
+    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx, None);
 
     // Step 4: Spawn Claude Code
     let output = pty
@@ -2190,7 +2235,7 @@ mod tests {
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
         };
 
-        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx);
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None);
 
         assert!(prompt.contains("INITIAL intelligence build"));
         assert!(prompt.contains("Acme Corp"));
@@ -2217,11 +2262,60 @@ mod tests {
             ..Default::default()
         };
 
-        let prompt = build_intelligence_prompt("Project X", "project", &ctx);
+        let prompt = build_intelligence_prompt("Project X", "project", &ctx, None);
 
         assert!(prompt.contains("INCREMENTAL update"));
         assert!(prompt.contains("Prior."));
         assert!(!prompt.contains("COMPANY_DESCRIPTION:"));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_person_external() {
+        let ctx = IntelligenceContext {
+            facts_block: "Role: VP Engineering".to_string(),
+            meeting_history: "- 2026-02-01 | Weekly sync".to_string(),
+            ..Default::default()
+        };
+
+        let prompt =
+            build_intelligence_prompt("Alice Chen", "person", &ctx, Some("external"));
+
+        assert!(prompt.contains("external stakeholder / customer contact"));
+        assert!(prompt.contains("EXTERNAL STAKEHOLDER"));
+        assert!(prompt.contains("relationship health"));
+        assert!(!prompt.contains("INTERNAL TEAMMATE"));
+        assert!(!prompt.contains("collaboration dynamic"));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_person_internal() {
+        let ctx = IntelligenceContext {
+            facts_block: "Role: Engineering Manager".to_string(),
+            ..Default::default()
+        };
+
+        let prompt =
+            build_intelligence_prompt("Bob Kim", "person", &ctx, Some("internal"));
+
+        assert!(prompt.contains("internal teammate / colleague"));
+        assert!(prompt.contains("INTERNAL TEAMMATE"));
+        assert!(prompt.contains("collaboration dynamic"));
+        assert!(!prompt.contains("EXTERNAL STAKEHOLDER"));
+        // "relationship health" appears as negation in internal rules ("not relationship health")
+        // so verify the external p1_framing string is absent instead
+        assert!(!prompt.contains("relationship health in plain language"));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_person_unknown() {
+        let ctx = IntelligenceContext::default();
+
+        let prompt =
+            build_intelligence_prompt("Unknown Person", "person", &ctx, None);
+
+        assert!(prompt.contains("professional contact"));
+        assert!(prompt.contains("Relationship type is unknown"));
+        assert!(prompt.contains("relationship dynamic"));
     }
 
     #[test]

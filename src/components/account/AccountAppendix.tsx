@@ -3,21 +3,15 @@
  * Lifecycle events, notes, files, company context, value delivered, portfolio, BUs.
  * Styled to match the editorial appendix mockup: double rule, mono labels, grid rows.
  */
-import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import type {
   AccountDetail,
   AccountEvent,
   ContentFile,
   EntityIntelligence,
 } from "@/types";
-import {
-  formatArr,
-  formatFileSize,
-  formatRelativeDate as formatRelativeDateShort,
-  formatShortDate,
-} from "@/lib/utils";
+import { formatArr, formatShortDate } from "@/lib/utils";
+import { FileListSection } from "@/components/entity/FileListSection";
 
 interface AccountAppendixProps {
   detail: AccountDetail;
@@ -81,36 +75,6 @@ const monoActionButtonStyle: React.CSSProperties = {
   letterSpacing: "0.06em",
   padding: 0,
 };
-
-/* ── Document icon SVG (14x14) ───────────────────────────────────────── */
-
-function FileIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}
-    >
-      <path
-        d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z"
-        stroke="currentColor"
-        strokeWidth="1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 1.5v3h3"
-        stroke="currentColor"
-        strokeWidth="1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 /* ── Sub-components ──────────────────────────────────────────────────── */
 
@@ -215,11 +179,6 @@ export function AccountAppendix({
   indexFeedback,
   onCreateChild,
 }: AccountAppendixProps) {
-  const [filesExpanded, setFilesExpanded] = useState(false);
-
-  const visibleFiles = filesExpanded ? files : files.slice(0, 10);
-  const hasMoreFiles = files.length > 10;
-
   const companyContext = intelligence?.companyContext ?? detail.companyOverview;
 
   return (
@@ -407,140 +366,12 @@ export function AccountAppendix({
       </div>
 
       {/* ── Files ─────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 40 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            justifyContent: "space-between",
-          }}
-        >
-          <div style={sectionTitleStyle}>
-            Files{files.length > 0 ? ` \u00B7 ${files.length}` : ""}
-          </div>
-          <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
-            {indexFeedback && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  color: "var(--color-garden-sage)",
-                }}
-              >
-                {indexFeedback}
-              </span>
-            )}
-            {onIndexFiles && (
-              <button
-                onClick={onIndexFiles}
-                disabled={indexing}
-                style={{
-                  ...monoActionButtonStyle,
-                  cursor: indexing ? "default" : "pointer",
-                }}
-              >
-                {indexing ? "Indexing..." : "Re-index"}
-              </button>
-            )}
-          </div>
-        </div>
-        {files.length > 0 ? (
-          <>
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {visibleFiles.map((f, idx) => (
-                <li
-                  key={f.id}
-                  onClick={() =>
-                    invoke("reveal_in_finder", { path: f.absolutePath })
-                  }
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "20px 1fr auto auto",
-                    gap: 10,
-                    padding: "7px 0",
-                    borderBottom:
-                      idx === visibleFiles.length - 1
-                        ? "none"
-                        : "1px solid var(--color-rule-light)",
-                    alignItems: "center",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  <span>
-                    <FileIcon />
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 13,
-                      color: "var(--color-text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {f.filename}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
-                    {formatFileSize(f.fileSize)}
-                  </span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 10,
-                      color: "var(--color-text-tertiary)",
-                    }}
-                  >
-                    {formatRelativeDateShort(f.modifiedAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {hasMoreFiles && !filesExpanded && (
-              <button
-                onClick={() => setFilesExpanded(true)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--color-text-tertiary)",
-                  cursor: "pointer",
-                  padding: "6px 0",
-                  marginTop: 4,
-                  border: "none",
-                  background: "none",
-                }}
-              >
-                +{files.length - 10} more files
-              </button>
-            )}
-          </>
-        ) : (
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-              fontStyle: "italic",
-              margin: 0,
-            }}
-          >
-            No files indexed.
-          </p>
-        )}
-      </div>
+      <FileListSection
+        files={files}
+        onIndexFiles={onIndexFiles}
+        indexing={indexing}
+        indexFeedback={indexFeedback}
+      />
 
       {/* ── Company Context ───────────────────────────────────────── */}
       {companyContext && (
