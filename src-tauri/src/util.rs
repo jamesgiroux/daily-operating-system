@@ -284,22 +284,24 @@ pub fn validate_entity_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-/// Validate a slug/identifier passed across IPC boundaries.
+/// Validate an identifier passed across IPC boundaries.
+///
+/// Allows alphanumeric, hyphens, underscores, spaces, and dots — covers both
+/// UUID-style IDs and AI-generated action IDs (e.g. "ai-2026-02-05 meeting_name-0").
+/// Rejects path traversal sequences and control characters.
 pub fn validate_id_slug(value: &str, field: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(format!("{field} cannot be empty"));
     }
-    if trimmed.len() > 128 {
-        return Err(format!("{field} is too long (max 128 chars)"));
+    if trimmed.len() > 200 {
+        return Err(format!("{field} is too long (max 200 chars)"));
     }
-    if !trimmed
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-    {
-        return Err(format!(
-            "{field} contains invalid characters (allowed: a-z, A-Z, 0-9, -, _)"
-        ));
+    if trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(format!("{field} contains path traversal characters"));
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(format!("{field} contains control characters"));
     }
     Ok(trimmed.to_string())
 }
