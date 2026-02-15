@@ -1,0 +1,102 @@
+@import '../../styles/design-tokens.css';
+
+.timeline {
+  position: relative;
+  padding-left: 40px;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--color-rule-heavy);
+}
+
+.entry {
+  position: relative;
+  padding-bottom: 32px;
+}
+
+.entry:last-child {
+  padding-bottom: 0;
+}
+
+.dot {
+  position: absolute;
+  left: -33px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--color-paper-cream);
+}
+
+.dotMeeting { background: var(--color-spice-turmeric); }
+.dotEmail { background: var(--color-garden-larkspur); }
+.dotCapture { background: var(--color-garden-sage); }
+.dotEvent { background: var(--color-spice-saffron); }
+.dotValue { background: var(--color-garden-sage); }
+.dotRisk { background: var(--color-spice-terracotta); }
+.dotDecision { background: var(--color-spice-terracotta); }
+
+.dateLine {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.typeBadge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-left: 8px;
+}
+
+.typeMeeting { background: rgba(201, 162, 39, 0.10); color: var(--color-spice-turmeric); }
+.typeEmail { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
+.typeCapture { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-rosemary); }
+.typeEvent { background: rgba(222, 184, 65, 0.12); color: var(--color-spice-saffron); }
+.typeValue { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-rosemary); }
+.typeRisk { background: rgba(196, 101, 74, 0.10); color: var(--color-spice-terracotta); }
+.typeDecision { background: rgba(196, 101, 74, 0.10); color: var(--color-spice-terracotta); }
+
+.title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.detail {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 580px;
+  margin-top: 4px;
+}
+
+.entryLink {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}

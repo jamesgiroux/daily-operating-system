@@ -1,0 +1,142 @@
+/* =============================================================================
+   DESIGN TOKENS — ADR-0076 Brand Identity + ADR-0073 Typography & Spacing
+
+   Single source of truth for all design values across the magazine-layout
+   editorial redesign. Use these CSS custom properties throughout all components.
+   ============================================================================= */
+
+:root {
+  /* ─────────────────────────────────────────────────────────────────────────
+     PAPER PALETTE — Grounds & Backgrounds
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     DESK PALETTE — Frame & Primary Text
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-desk-espresso: #3d2e27;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SPICE PALETTE — Warm Accents (Accounts, Active States, Urgency)
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-spice-turmeric: #c9a227; /* Primary accent, accounts, warm emphasis */
+  --color-spice-saffron: #deb841; /* Secondary warm accent */
+  --color-spice-terracotta: #c4654a; /* Urgency, errors, overdue items */
+  --color-spice-chili: #9b3a2a; /* Deep red, critical states */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     GARDEN PALETTE — Cool Accents (People, Success, Forward-Looking)
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-garden-sage: #7eaa7b; /* Success, healthy, prepped */
+  --color-garden-olive: #6b7c52; /* Projects, muted secondary */
+  --color-garden-rosemary: #4a6741; /* Deep green, success variant */
+  --color-garden-larkspur: #8fa3c4; /* People, calm, expansive, forward-looking */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TEXT COLORS
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-text-primary: var(--color-desk-charcoal); /* Primary text, headlines */
+  --color-text-secondary: #5a6370; /* Body text, secondary content */
+  --color-text-tertiary: #6b7280; /* Labels, hints, tertiary content (WCAG AA compliant) */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     RULE COLORS — Dividers, Borders, Grid Lines
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-rule-heavy: rgba(30, 37, 48, 0.12); /* Primary dividers, section rules */
+  --color-rule-light: rgba(30, 37, 48, 0.06); /* Secondary dividers, soft separators */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ENTITY COLORS (ADR-0076)
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-entity-account: var(--color-spice-turmeric); /* Accounts */
+  --color-entity-project: var(--color-garden-olive); /* Projects */
+  --color-entity-person: var(--color-garden-larkspur); /* People */
+  --color-entity-action: var(--color-spice-terracotta); /* Actions, overdue */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TYPOGRAPHY — Font Families (ADR-0073)
+     ───────────────────────────────────────────────────────────────────────── */
+  --font-serif: 'Newsreader', Georgia, serif; /* Display, headlines, narrative */
+  --font-sans: 'DM Sans', -apple-system, sans-serif; /* Body, UI text, labels */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace; /* Time, dates, code */
+  --font-mark: 'Montserrat', sans-serif; /* Brand mark asterisk (must be 800) */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SPACING SCALE (ADR-0073) — Base 4px grid
+     ───────────────────────────────────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     LAYOUT — Fixed Dimensions for App Shell
+     ───────────────────────────────────────────────────────────────────────── */
+  --folio-height: 40px; /* FolioBar fixed height */
+  --folio-padding-top: 10px;
+  --folio-padding-bottom: 10px;
+  --folio-padding-left: 80px;
+  --folio-padding-right: 48px;
+  --page-padding-horizontal: 120px; /* Left/right padding for page container */
+  --page-padding-bottom: 160px; /* Bottom padding for page container */
+  --page-margin-top: 40px; /* Clearance for fixed folio bar */
+  --page-max-width: 1100px; /* Maximum content width */
+  --nav-island-right: 28px; /* Distance from right edge */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BORDER RADIUS
+     ───────────────────────────────────────────────────────────────────────── */
+  --radius-editorial-sm: 4px; /* Search button, small elements */
+  --radius-editorial-md: 10px; /* Nav island items */
+  --radius-editorial-lg: 12px; /* Featured actions box */
+  --radius-editorial-xl: 16px; /* Nav island container */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SHADOWS
+     ───────────────────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TRANSITIONS & ANIMATIONS
+     ───────────────────────────────────────────────────────────────────────── */
+  --transition-fast: 0.12s ease;
+  --transition-normal: 0.15s ease;
+  --transition-slow: 0.2s ease;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BACKDROP & GLASS EFFECTS (macOS Native)
+     ───────────────────────────────────────────────────────────────────────── */
+  --backdrop-blur: blur(12px);
+  --frosted-glass-background: rgba(245, 242, 239, 0.85); /* Folio bar background */
+  --frosted-glass-nav: rgba(250, 248, 246, 0.8); /* Nav island background */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Z-INDEX STACK
+     ───────────────────────────────────────────────────────────────────────── */
+  --z-atmosphere: 0; /* Background layer */
+  --z-page-content: 1; /* Main content, above atmosphere */
+  --z-app-shell: 100; /* Folio bar, nav island, top-level UI */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   KEYFRAME ANIMATIONS
+   (Global reset lives in index.css via Tailwind — not here)
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes atmosphere-breathe {
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 1;
+  }
+}

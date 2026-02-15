@@ -1,0 +1,194 @@
+/* =============================================================================
+   FolioBar.module.css
+
+   Styles for editorial masthead — fixed top bar with brand, publication label,
+   date, readiness stats, and search trigger.
+   ============================================================================= */
+
+@import '../../styles/design-tokens.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOLIO — Main Container
+   ───────────────────────────────────────────────────────────────────────── */
+.folio {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-app-shell);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--folio-padding-top) var(--folio-padding-right) var(--folio-padding-bottom)
+    var(--folio-padding-left);
+  height: var(--folio-height);
+  background: var(--frosted-glass-background);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  -webkit-app-region: drag; /* macOS: make draggable */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LEFT SECTION — Brand mark + Publication label
+   ───────────────────────────────────────────────────────────────────────── */
+.folioLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag; /* macOS: clickable elements inside drag region */
+}
+
+.folioMark {
+  font-family: var(--font-mark);
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  user-select: none;
+}
+
+.folioPub {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.folioBackLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--transition-normal);
+}
+
+.folioBackLink:hover {
+  color: var(--color-text-primary);
+}
+
+.folioBackArrow {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.folioActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CENTER SECTION — Date (absolutely positioned)
+   ───────────────────────────────────────────────────────────────────────── */
+.folioCenter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RIGHT SECTION — Readiness stats, status, search
+   ───────────────────────────────────────────────────────────────────────── */
+.folioRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   READINESS STATS — Flex row with colored dots
+   ───────────────────────────────────────────────────────────────────────── */
+.folioReadiness {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.folioStat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.folioDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.folioDotSage {
+  background: var(--color-garden-sage);
+}
+
+.folioDotTerracotta {
+  background: var(--color-spice-terracotta);
+}
+
+.folioStatSage {
+  color: var(--color-garden-rosemary);
+}
+
+.folioStatTerracotta {
+  color: var(--color-spice-terracotta);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATUS TEXT — Mono font
+   ───────────────────────────────────────────────────────────────────────── */
+.folioStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SEARCH BUTTON — Clickable, bordered
+   ───────────────────────────────────────────────────────────────────────── */
+.folioSearch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  transition: border-color var(--transition-normal);
+  -webkit-app-region: no-drag;
+}
+
+.folioSearch:hover {
+  border-color: rgba(30, 37, 48, 0.25);
+}
+
+.folioSearch:active {
+  opacity: 0.9;
+}
+
+/* Remove default button outline on focus */
+.folioSearch:focus {
+  outline: none;
+  border-color: var(--color-spice-turmeric);
+}
