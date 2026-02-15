@@ -4056,7 +4056,7 @@ impl ActionDb {
                     content_type, priority
              FROM content_index
              WHERE summary IS NULL
-               AND format IN ('Markdown', 'Text', 'Pdf', 'Docx', 'Html')
+               AND format IN ('Markdown', 'PlainText', 'Pdf', 'Docx', 'Xlsx', 'Pptx', 'Html', 'Rtf')
              ORDER BY priority DESC, modified_at DESC",
         )?;
         let rows = stmt.query_map([], |row| {

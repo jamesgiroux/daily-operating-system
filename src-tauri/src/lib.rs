@@ -221,6 +221,7 @@ pub fn run() {
             commands::set_developer_mode,
             commands::set_personality,
             commands::set_ai_model,
+            commands::set_hygiene_config,
             commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
