@@ -14,9 +14,9 @@ export interface MagazineShellConfig {
   /** Publication label for FolioBar, e.g., "Account" */
   folioLabel: string;
   /** Atmosphere gradient color */
-  atmosphereColor: "turmeric" | "terracotta" | "larkspur";
+  atmosphereColor: "turmeric" | "terracotta" | "larkspur" | "olive";
   /** Which nav icon is highlighted */
-  activePage: "today" | "week" | "inbox" | "actions" | "people" | "accounts" | "settings";
+  activePage: "today" | "week" | "inbox" | "actions" | "people" | "accounts" | "projects" | "settings";
   /** Back link for FolioBar detail pages */
   backLink?: { label: string; onClick: () => void };
   /** Chapter definitions for FloatingNavIsland scroll mode */

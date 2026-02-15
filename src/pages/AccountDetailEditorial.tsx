@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { formatArr, formatShortDate } from "@/lib/utils";
+import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -32,17 +34,69 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AccountHero } from "@/components/account/AccountHero";
-import { VitalsStrip } from "@/components/account/VitalsStrip";
-import { StateOfPlay } from "@/components/account/StateOfPlay";
-import { StakeholderGallery } from "@/components/account/StakeholderGallery";
-import { WatchList } from "@/components/account/WatchList";
-import { UnifiedTimeline } from "@/components/account/UnifiedTimeline";
-import { TheWork } from "@/components/account/TheWork";
 import { AccountAppendix } from "@/components/account/AccountAppendix";
+import { WatchListPrograms } from "@/components/account/WatchListPrograms";
+import { VitalsStrip } from "@/components/entity/VitalsStrip";
+import { StateOfPlay } from "@/components/entity/StateOfPlay";
+import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
+import { WatchList } from "@/components/entity/WatchList";
+import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
+import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
+
+/* ── Vitals assembly (moved from old account/VitalsStrip) ── */
+
+function formatRenewalCountdown(dateStr: string): string {
+  try {
+    const renewal = new Date(dateStr);
+    const now = new Date();
+    const diffDays = Math.round(
+      (renewal.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`;
+    return `Renewal in ${diffDays}d`;
+  } catch {
+    return dateStr;
+  }
+}
+
+const healthColorMap: Record<string, "saffron" | undefined> = {
+  yellow: "saffron",
+};
+
+function buildAccountVitals(detail: {
+  arr?: number | null;
+  health?: string;
+  lifecycle?: string;
+  renewalDate?: string;
+  nps?: number | null;
+  signals?: { meetingFrequency30d?: number };
+  contractStart?: string;
+}): VitalDisplay[] {
+  const vitals: VitalDisplay[] = [];
+  if (detail.arr != null) {
+    vitals.push({ text: `$${formatArr(detail.arr)} ARR`, highlight: "turmeric" });
+  }
+  if (detail.health) {
+    vitals.push({
+      text: `${detail.health.charAt(0).toUpperCase() + detail.health.slice(1)} Health`,
+      highlight: healthColorMap[detail.health],
+    });
+  }
+  if (detail.lifecycle) vitals.push({ text: detail.lifecycle });
+  if (detail.renewalDate) vitals.push({ text: formatRenewalCountdown(detail.renewalDate) });
+  if (detail.nps != null) vitals.push({ text: `NPS ${detail.nps}` });
+  if (detail.signals?.meetingFrequency30d != null) {
+    vitals.push({ text: `${detail.signals.meetingFrequency30d} meetings / 30d` });
+  }
+  if (detail.contractStart) {
+    vitals.push({ text: `Contract: ${formatShortDate(detail.contractStart)}` });
+  }
+  return vitals;
+}
 
 // Chapter definitions for the editorial layout — icons match the v3 mockup nav island
 const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
@@ -129,7 +183,7 @@ export default function AccountDetailEditorial() {
           onUnarchive={acct.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip detail={detail} />
+          <VitalsStrip vitals={buildAccountVitals(detail)} />
         </div>
       </section>
 
@@ -151,22 +205,26 @@ export default function AccountDetailEditorial() {
       <div className="editorial-reveal">
         <WatchList
           intelligence={intelligence}
-          programs={programs}
-          onProgramUpdate={acct.handleProgramUpdate}
-          onProgramDelete={acct.handleProgramDelete}
-          onAddProgram={acct.handleAddProgram}
+          bottomSection={
+            <WatchListPrograms
+              programs={programs}
+              onProgramUpdate={acct.handleProgramUpdate}
+              onProgramDelete={acct.handleProgramDelete}
+              onAddProgram={acct.handleAddProgram}
+            />
+          }
         />
       </div>
 
       {/* Chapter 5: The Record */}
       <div className="editorial-reveal">
-        <UnifiedTimeline detail={detail} />
+        <UnifiedTimeline data={detail} />
       </div>
 
       {/* Chapter 6: The Work */}
       <div className="editorial-reveal">
         <TheWork
-          detail={detail}
+          data={detail}
           intelligence={intelligence}
           addingAction={acct.addingAction}
           setAddingAction={acct.setAddingAction}
