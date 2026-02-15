@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
-import type { Person, PersonDetail, DuplicateCandidate } from "@/types";
+import type { Person, PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
 
 export function usePersonDetail(personId: string | undefined) {
   const navigate = useNavigate();
@@ -41,6 +41,11 @@ export function usePersonDetail(personId: string | undefined) {
   // Duplicates
   const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[]>([]);
 
+  // Files
+  const [files, setFiles] = useState<ContentFile[]>([]);
+  const [indexing, setIndexing] = useState(false);
+  const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
+
   // ─── Core data loading ────────────────────────────────────────────────
 
   const load = useCallback(async () => {
@@ -54,6 +59,17 @@ export function usePersonDetail(personId: string | undefined) {
       setEditRole(result.role ?? "");
       setEditNotes(result.notes ?? "");
       setDirty(false);
+
+      // Load files
+      try {
+        const contentFiles = await invoke<ContentFile[]>("get_entity_files", {
+          entityType: "person",
+          entityId: personId,
+        });
+        setFiles(contentFiles);
+      } catch {
+        setFiles([]);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -286,6 +302,31 @@ export function usePersonDetail(personId: string | undefined) {
     }
   }
 
+  // ─── File indexing ───────────────────────────────────────────────────
+
+  async function handleIndexFiles() {
+    if (!detail) return;
+    try {
+      setIndexing(true);
+      setIndexFeedback(null);
+      const result = await invoke<string>("index_entity_files", {
+        entityType: "person",
+        entityId: detail.id,
+      });
+      setIndexFeedback(result);
+      // Reload files
+      const contentFiles = await invoke<ContentFile[]>("get_entity_files", {
+        entityType: "person",
+        entityId: detail.id,
+      });
+      setFiles(contentFiles);
+    } catch (e) {
+      setIndexFeedback(String(e));
+    } finally {
+      setIndexing(false);
+    }
+  }
+
   // ─── Derived ──────────────────────────────────────────────────────────
 
   const intelligence = detail?.intelligence ?? null;
@@ -333,6 +374,12 @@ export function usePersonDetail(personId: string | undefined) {
 
     // Duplicates
     duplicateCandidates,
+
+    // Files
+    files,
+    indexing,
+    indexFeedback,
+    handleIndexFiles,
 
     // Archive
     handleArchive,
