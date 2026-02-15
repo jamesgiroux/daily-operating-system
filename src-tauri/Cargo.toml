@@ -51,6 +51,7 @@ zip = "2"
 calamine = "0.33"
 html2text = "0.16"
 rtf-parser = "0.4"
+ort = "2.0.0-rc.9"
 
 [dev-dependencies]
 tempfile = "3"

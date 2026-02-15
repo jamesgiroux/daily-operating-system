@@ -6,9 +6,9 @@
 //! - Archive: pure Rust reconciliation + file moves
 //! - InboxBatch: direct processor calls
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::collections::HashSet;
 
 use chrono::Utc;
 use serde_json::json;
@@ -143,8 +143,11 @@ impl Executor {
 
             let result = (|| -> Result<usize, String> {
                 for email in high_priority {
-                    let email_id =
-                        email.get("id").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let email_id = email
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim();
                     if email_id.is_empty() {
                         continue;
                     }
@@ -175,21 +178,15 @@ impl Executor {
                     if let Some(ref pid) = person_id {
                         if let Ok(entities) = db.get_entities_for_person(pid) {
                             for entity in entities {
-                                targets.insert((
-                                    entity.id,
-                                    entity.entity_type.as_str().to_string(),
-                                ));
+                                targets
+                                    .insert((entity.id, entity.entity_type.as_str().to_string()));
                             }
                         }
                     }
 
                     if targets.is_empty() && !domain.is_empty() {
-                        if let Ok(accounts) =
-                            db.lookup_account_candidates_by_domain(&domain)
-                        {
-                            for account in
-                                accounts.into_iter().filter(|a| !a.is_internal)
-                            {
+                        if let Ok(accounts) = db.lookup_account_candidates_by_domain(&domain) {
+                            for account in accounts.into_iter().filter(|a| !a.is_internal) {
                                 targets.insert((account.id, "account".to_string()));
                             }
                         }
@@ -219,8 +216,7 @@ impl Executor {
                             continue;
                         }
 
-                        let confidence =
-                            signal.get("confidence").and_then(|v| v.as_f64());
+                        let confidence = signal.get("confidence").and_then(|v| v.as_f64());
                         let sentiment = signal
                             .get("sentiment")
                             .and_then(|v| v.as_str())
@@ -309,7 +305,8 @@ impl Executor {
 
         let result = if workflow_id == WorkflowId::Archive {
             // Archive workflow: pure Rust, no three-phase, no notification
-            self.execute_archive(&workspace, &execution_id, trigger).await
+            self.execute_archive(&workspace, &execution_id, trigger)
+                .await
         } else if workflow_id == WorkflowId::InboxBatch {
             // Inbox batch: direct processor calls, no three-phase
             self.execute_inbox_batch(&workspace, &execution_id, trigger)
@@ -327,9 +324,7 @@ impl Executor {
 
         if let Err(ref err) = result {
             let finished_at = Utc::now();
-            let duration_secs = (finished_at - record.started_at)
-                .num_seconds()
-                .max(0) as u64;
+            let duration_secs = (finished_at - record.started_at).num_seconds().max(0) as u64;
             let error_phase = match self.state.get_workflow_status(workflow_id) {
                 WorkflowStatus::Running { phase, .. } => Some(phase),
                 _ => None,

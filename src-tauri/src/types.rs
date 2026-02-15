@@ -62,6 +62,9 @@ pub struct Config {
     /// AI model configuration for tiered operations (I174).
     #[serde(default)]
     pub ai_models: AiModelConfig,
+    /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
+    #[serde(default)]
+    pub embeddings: EmbeddingConfig,
 }
 
 /// Profile-specific configuration (CSM users)
@@ -149,6 +152,54 @@ fn default_mechanical_model() -> String {
 
 fn default_entity_mode() -> String {
     "account".to_string()
+}
+
+/// Embedding runtime configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingConfig {
+    #[serde(default = "default_embeddings_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_embedding_sweep_interval_secs")]
+    pub sweep_interval_secs: u64,
+    #[serde(default = "default_embedding_chunk_tokens")]
+    pub chunk_tokens: usize,
+    #[serde(default = "default_embedding_chunk_overlap_tokens")]
+    pub chunk_overlap_tokens: usize,
+    #[serde(default = "default_embedding_max_files_per_sweep")]
+    pub max_files_per_sweep: usize,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_embeddings_enabled(),
+            sweep_interval_secs: default_embedding_sweep_interval_secs(),
+            chunk_tokens: default_embedding_chunk_tokens(),
+            chunk_overlap_tokens: default_embedding_chunk_overlap_tokens(),
+            max_files_per_sweep: default_embedding_max_files_per_sweep(),
+        }
+    }
+}
+
+fn default_embeddings_enabled() -> bool {
+    true
+}
+
+fn default_embedding_sweep_interval_secs() -> u64 {
+    5 * 60
+}
+
+fn default_embedding_chunk_tokens() -> usize {
+    500
+}
+
+fn default_embedding_chunk_overlap_tokens() -> usize {
+    80
+}
+
+fn default_embedding_max_files_per_sweep() -> usize {
+    100
 }
 
 impl Config {
@@ -1556,6 +1607,7 @@ mod tests {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
+            embeddings: EmbeddingConfig::default(),
         }
     }
 

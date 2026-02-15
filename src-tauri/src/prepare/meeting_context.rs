@@ -174,7 +174,8 @@ fn gather_meeting_context(
                 ) {
                     ctx["account"] = json!(internal_account.name.clone());
                     ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path = crate::accounts::resolve_account_dir(workspace, &internal_account);
+                    let account_path =
+                        crate::accounts::resolve_account_dir(workspace, &internal_account);
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
                         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
                     }
@@ -211,7 +212,8 @@ fn gather_meeting_context(
                 ) {
                     ctx["account"] = json!(internal_account.name.clone());
                     ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path = crate::accounts::resolve_account_dir(workspace, &internal_account);
+                    let account_path =
+                        crate::accounts::resolve_account_dir(workspace, &internal_account);
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
                         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
                     }

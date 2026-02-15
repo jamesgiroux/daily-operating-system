@@ -12,21 +12,22 @@ mod commands;
 mod db;
 mod db_backup;
 mod devtools;
-mod migrations;
+mod embeddings;
 pub mod entity;
 pub mod entity_intel;
 mod error;
 mod executor;
-pub mod helpers;
 mod focus_capacity;
 mod focus_prioritization;
 mod google;
 pub mod google_api;
+pub mod helpers;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
 mod json_loader;
 mod latency;
+mod migrations;
 mod notification;
 mod parser;
 pub mod people;
@@ -66,6 +67,14 @@ pub fn run() {
         .setup(|app| {
             // Create shared state
             let state = Arc::new(AppState::new());
+
+            // Initialize bundled embedding model once at startup.
+            // If loading fails, semantic features degrade gracefully to text-only paths.
+            let model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/models/snowflake-arctic-embed-s-int8.onnx");
+            if let Err(e) = state.embedding_model.initialize_from_path(&model_path) {
+                log::warn!("Embedding model unavailable at startup: {}", e);
+            }
 
             // Create channel for scheduler -> executor communication
             let (scheduler_tx, scheduler_rx) = mpsc::channel(SCHEDULER_CHANNEL_SIZE);
@@ -120,6 +129,14 @@ pub fn run() {
             let intel_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 intel_queue::run_intel_processor(intel_state, intel_handle).await;
+            });
+
+            // Spawn background embedding processor (Sprint 26)
+            let embedding_state = state.clone();
+            let embedding_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                processor::embeddings::run_embedding_processor(embedding_state, embedding_handle)
+                    .await;
             });
 
             // Spawn hygiene scanner loop (I145 — ADR-0058)
@@ -313,6 +330,10 @@ pub fn run() {
             commands::get_entity_files,
             commands::index_entity_files,
             commands::reveal_in_finder,
+            commands::chat_query_entity,
+            commands::chat_search_content,
+            commands::chat_get_briefing,
+            commands::chat_list_entities,
             // I72: Account Dashboards
             commands::get_accounts_list,
             commands::get_accounts_for_picker,
