@@ -12,10 +12,10 @@ function easeInOutCubic(t: number): number {
 
 const DURATION_MS = 800;
 
-/**
- * Smooth-scroll to an element by ID with editorial easing.
- */
-export function smoothScrollTo(elementId: string, offset = 0): void {
+/** True while a programmatic smooth scroll is animating. */
+export let isScrolling = false;
+
+export function smoothScrollTo(elementId: string, offset = 48): void {
   const el = document.getElementById(elementId);
   if (!el) return;
 
@@ -28,6 +28,8 @@ export function smoothScrollTo(elementId: string, offset = 0): void {
 
   let startTime: number | null = null;
 
+  isScrolling = true;
+
   function step(timestamp: number) {
     if (startTime === null) startTime = timestamp;
     const elapsed = timestamp - startTime;
@@ -36,7 +38,9 @@ export function smoothScrollTo(elementId: string, offset = 0): void {
 
     window.scrollTo(0, startY + distance * easedProgress);
 
-    if (progress < 1) {
+    if (progress >= 1) {
+      isScrolling = false;
+    } else {
       requestAnimationFrame(step);
     }
   }
