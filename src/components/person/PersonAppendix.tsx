@@ -4,8 +4,9 @@
  * duplicate detection candidates with merge buttons.
  */
 import React from "react";
-import type { PersonDetail, DuplicateCandidate } from "@/types";
+import type { PersonDetail, DuplicateCandidate, ContentFile } from "@/types";
 import { formatShortDate } from "@/lib/utils";
+import { FileListSection } from "@/components/entity/FileListSection";
 
 interface PersonAppendixProps {
   detail: PersonDetail;
@@ -21,6 +22,11 @@ interface PersonAppendixProps {
   duplicateCandidates: DuplicateCandidate[];
   onMergeSuggested: (candidate: DuplicateCandidate) => void;
   merging: boolean;
+  // Files
+  files?: ContentFile[];
+  onIndexFiles?: () => void;
+  indexing?: boolean;
+  indexFeedback?: string | null;
 }
 
 const sectionLabelStyle: React.CSSProperties = {
@@ -53,6 +59,10 @@ export function PersonAppendix({
   duplicateCandidates,
   onMergeSuggested,
   merging,
+  files,
+  onIndexFiles,
+  indexing,
+  indexFeedback,
 }: PersonAppendixProps) {
   const fieldDirty =
     editName !== detail.name ||
@@ -162,6 +172,18 @@ export function PersonAppendix({
             }}
           />
         </div>
+
+        {/* Files */}
+        {files && (
+          <div style={ruleStyle}>
+            <FileListSection
+              files={files}
+              onIndexFiles={onIndexFiles}
+              indexing={indexing}
+              indexFeedback={indexFeedback}
+            />
+          </div>
+        )}
 
         {/* Duplicate Detection */}
         {duplicateCandidates.length > 0 && (
