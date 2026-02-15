@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
@@ -8,7 +8,8 @@ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { smoothScrollTo } from "@/lib/smooth-scroll";
 import {
   AlignLeft,
-  Clock,
+  Zap,
+  RefreshCw,
   Network,
   Eye,
   Activity,
@@ -36,8 +37,8 @@ import {
 import { PersonHero } from "@/components/person/PersonHero";
 import { PersonNetwork } from "@/components/person/PersonNetwork";
 import { PersonAppendix } from "@/components/person/PersonAppendix";
+import { PersonInsightChapter } from "@/components/person/PersonInsightChapter";
 import { VitalsStrip } from "@/components/entity/VitalsStrip";
-import { StateOfPlay } from "@/components/entity/StateOfPlay";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -58,12 +59,7 @@ function buildPersonVitals(detail: {
   const sig = detail.signals;
 
   if (sig) {
-    const trendArrow =
-      sig.trend === "increasing" ? " \u2191" : sig.trend === "decreasing" ? " \u2193" : "";
-    vitals.push({ text: `${sig.meetingFrequency30d} meetings / 30d${trendArrow}` });
-    if (sig.meetingFrequency90d > 0) {
-      vitals.push({ text: `${sig.meetingFrequency90d} meetings / 90d` });
-    }
+    // Lead with temperature badge — relationship warmth signal
     if (sig.temperature) {
       vitals.push({
         text: sig.temperature,
@@ -76,6 +72,9 @@ function buildPersonVitals(detail: {
               : undefined,
       });
     }
+    const trendArrow =
+      sig.trend === "increasing" ? " \u2191" : sig.trend === "decreasing" ? " \u2193" : "";
+    vitals.push({ text: `${sig.meetingFrequency30d} meetings / 30d${trendArrow}` });
     if (sig.lastMeeting) {
       vitals.push({ text: `Last: ${formatShortDate(sig.lastMeeting)}` });
     }
@@ -88,15 +87,24 @@ function buildPersonVitals(detail: {
   return vitals;
 }
 
-/* ── Chapters ── */
+/* ── Chapters (adaptive based on relationship) ── */
 
-const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
-  { id: "headline", label: "The Profile", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
-  { id: "state-of-play", label: "State of Play", icon: <Clock size={18} strokeWidth={1.5} /> },
-  { id: "the-network", label: "The Network", icon: <Network size={18} strokeWidth={1.5} /> },
-  { id: "watch-list", label: "Watch List", icon: <Eye size={18} strokeWidth={1.5} /> },
-  { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
-];
+function buildChapters(relationship: string) {
+  const isInternal = relationship === "internal";
+  return [
+    { id: "headline", label: "The Profile", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
+    {
+      id: isInternal ? "the-rhythm" : "the-dynamic",
+      label: isInternal ? "The Rhythm" : "The Dynamic",
+      icon: isInternal
+        ? <RefreshCw size={18} strokeWidth={1.5} />
+        : <Zap size={18} strokeWidth={1.5} />,
+    },
+    { id: "the-network", label: "The Network", icon: <Network size={18} strokeWidth={1.5} /> },
+    { id: "the-landscape", label: "The Landscape", icon: <Eye size={18} strokeWidth={1.5} /> },
+    { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
+  ];
+}
 
 export default function PersonDetailEditorial() {
   const { personId } = useParams({ strict: false });
@@ -104,15 +112,16 @@ export default function PersonDetailEditorial() {
   const person = usePersonDetail(personId);
   useRevealObserver(!person.loading && !!person.detail);
 
+  const relationship = person.detail?.relationship ?? "unknown";
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Person",
       atmosphereColor: "larkspur" as const,
       activePage: "people" as const,
       backLink: { label: "People", onClick: () => navigate({ to: "/people" }) },
-      chapters: CHAPTERS,
+      chapters: buildChapters(relationship),
     }),
-    [navigate],
+    [navigate, relationship],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -173,9 +182,9 @@ export default function PersonDetailEditorial() {
         </div>
       </section>
 
-      {/* Chapter 2: State of Play */}
+      {/* Chapter 2: The Dynamic / The Rhythm */}
       <div className="editorial-reveal">
-        <StateOfPlay intelligence={intelligence} />
+        <PersonInsightChapter detail={detail} intelligence={intelligence} />
       </div>
 
       {/* Chapter 3: The Network */}
@@ -184,12 +193,18 @@ export default function PersonDetailEditorial() {
           entities={detail.entities}
           onLink={person.handleLinkEntity}
           onUnlink={person.handleUnlinkEntity}
+          sectionId="the-network"
+          chapterTitle="The Network"
         />
       </div>
 
-      {/* Chapter 4: Watch List */}
+      {/* Chapter 4: The Landscape */}
       <div className="editorial-reveal">
-        <WatchList intelligence={intelligence} />
+        <WatchList
+          intelligence={intelligence}
+          sectionId="the-landscape"
+          chapterTitle="The Landscape"
+        />
       </div>
 
       {/* Chapter 5: The Record */}
@@ -218,6 +233,10 @@ export default function PersonDetailEditorial() {
           duplicateCandidates={person.duplicateCandidates}
           onMergeSuggested={person.handleOpenSuggestedMerge}
           merging={person.merging}
+          files={person.files}
+          onIndexFiles={person.handleIndexFiles}
+          indexing={person.indexing}
+          indexFeedback={person.indexFeedback}
         />
       </div>
 
