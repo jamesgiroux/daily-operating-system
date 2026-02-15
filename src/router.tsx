@@ -4,6 +4,8 @@ import {
   createRootRoute,
   createRoute,
   Outlet,
+  useRouterState,
+  useNavigate,
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -23,7 +25,7 @@ import { useWorkflow } from "@/hooks/useWorkflow";
 
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
-import AccountDetailPage from "@/pages/AccountDetailPage";
+import AccountDetailEditorial, { CHAPTERS as ACCOUNT_CHAPTERS } from "@/pages/AccountDetailEditorial";
 import ActionDetailPage from "@/pages/ActionDetailPage";
 import ActionsPage from "@/pages/ActionsPage";
 import InboxPage from "@/pages/InboxPage";
@@ -39,11 +41,16 @@ import ProjectDetailPage from "@/pages/ProjectDetailPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
 
+
+// Magazine shell
+import MagazinePageLayout from "@/components/layout/MagazinePageLayout";
+
 // Global overlays
 import { PostMeetingPrompt } from "@/components/PostMeetingPrompt";
 import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanel } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useChapterObserver } from "@/hooks/useChapterObserver";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 
 const settingsTabs = new Set([
@@ -57,13 +64,25 @@ const settingsTabs = new Set([
 const peopleRelationshipTabs = new Set(["all", "external", "internal", "unknown"]);
 const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
+// Paths that use the magazine shell instead of the sidebar shell
+const MAGAZINE_SHELL_PATHS = /^\/accounts\/[^/]+$/;
+
 // Root layout that wraps all pages
 function RootLayout() {
   const { open: commandOpen, setOpen: setCommandOpen } = useCommandMenu();
   useNotifications();
+  const navigate = useNavigate();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
+
+  const routerState = useRouterState();
+  const currentPath = routerState.location.pathname;
+  const useMagazineShell = MAGAZINE_SHELL_PATHS.test(currentPath);
+
+  // Chapter navigation for editorial pages — hook always called (React rules)
+  const chapterIds = useMagazineShell ? ACCOUNT_CHAPTERS.map((c) => c.id) : [];
+  const activeChapterId = useChapterObserver(chapterIds);
 
   useEffect(() => {
     async function checkConfig() {
@@ -73,7 +92,6 @@ function RootLayout() {
           entityMode?: string;
           internalTeamSetupCompleted?: boolean;
         }>("get_config");
-        // Show onboarding if config exists but workspace is missing/empty
         if (!config.workspacePath) {
           setOnboardingMode("full");
           setNeedsOnboarding(true);
@@ -84,7 +102,6 @@ function RootLayout() {
           setNeedsOnboarding(true);
         }
       } catch {
-        // No config at all — needs onboarding
         setOnboardingMode("full");
         setNeedsOnboarding(true);
       } finally {
@@ -97,6 +114,21 @@ function RootLayout() {
   function handleOnboardingComplete() {
     setNeedsOnboarding(false);
     window.location.reload();
+  }
+
+  // Navigation handler for FloatingNavIsland
+  function handleNavNavigate(page: string) {
+    const routes: Record<string, string> = {
+      today: "/",
+      week: "/week",
+      inbox: "/inbox",
+      actions: "/actions",
+      people: "/people",
+      accounts: "/accounts",
+      settings: "/settings",
+    };
+    const path = routes[page];
+    if (path) navigate({ to: path });
   }
 
   if (checkingConfig) {
@@ -118,6 +150,35 @@ function RootLayout() {
     );
   }
 
+  // Magazine shell for account detail (and future editorial pages)
+  if (useMagazineShell) {
+    return (
+      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+        <PersonalityProvider>
+          <MagazinePageLayout
+            folioLabel="Account"
+            activePage="accounts"
+            atmosphereColor="turmeric"
+            heroSection={null}
+            onFolioSearch={() => setCommandOpen(true)}
+            onNavigate={handleNavNavigate}
+            onNavHome={() => navigate({ to: "/" })}
+            backLink={{ label: "Accounts", href: "/accounts" }}
+            chapters={ACCOUNT_CHAPTERS}
+            activeChapterId={activeChapterId}
+          >
+            <Outlet />
+          </MagazinePageLayout>
+          <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
+          <PostMeetingPrompt />
+          <Toaster position="bottom-right" />
+          <DevToolsPanel />
+        </PersonalityProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // Standard sidebar shell for all other pages
   return (
     <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
       <PersonalityProvider>
@@ -190,7 +251,7 @@ const accountsRoute = createRoute({
 const accountDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts/$accountId",
-  component: AccountDetailPage,
+  component: AccountDetailEditorial,
 });
 
 const inboxRoute = createRoute({
@@ -302,6 +363,7 @@ const routeTree = rootRoute.addChildren([
   focusRoute,
   historyRoute,
   inboxRoute,
+
   meetingHistoryDetailRoute,
   meetingDetailRoute,
   peopleRoute,
