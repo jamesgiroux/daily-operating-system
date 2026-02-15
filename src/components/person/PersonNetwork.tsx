@@ -17,6 +17,8 @@ interface PersonNetworkProps {
   entities?: LinkedEntity[];
   onLink?: (entityId: string) => void;
   onUnlink?: (entityId: string) => void;
+  sectionId?: string;
+  chapterTitle?: string;
 }
 
 const entityColor: Record<string, string> = {
@@ -24,13 +26,19 @@ const entityColor: Record<string, string> = {
   project: "var(--color-garden-olive)",
 };
 
-export function PersonNetwork({ entities, onLink, onUnlink }: PersonNetworkProps) {
+export function PersonNetwork({
+  entities,
+  onLink,
+  onUnlink,
+  sectionId = "the-network",
+  chapterTitle = "The Network",
+}: PersonNetworkProps) {
   const accounts = entities?.filter((e) => e.entityType === "account") ?? [];
   const projects = entities?.filter((e) => e.entityType === "project") ?? [];
 
   return (
-    <section id="the-network" style={{ scrollMarginTop: 60 }}>
-      <ChapterHeading title="The Network" />
+    <section id={sectionId} style={{ scrollMarginTop: 60 }}>
+      <ChapterHeading title={chapterTitle} />
 
       {accounts.length === 0 && projects.length === 0 && !onLink && (
         <p
