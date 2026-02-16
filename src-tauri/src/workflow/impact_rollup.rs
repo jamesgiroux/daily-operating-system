@@ -241,6 +241,7 @@ mod tests {
         ActionDb::open_at(path).expect("open db")
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn insert_capture(
         db: &ActionDb,
         id: &str,
