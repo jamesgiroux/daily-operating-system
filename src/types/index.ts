@@ -422,6 +422,40 @@ export interface EmailStats {
 }
 
 // =============================================================================
+// Enriched Email Briefing Types (Phase 4 — Email Intelligence)
+// =============================================================================
+
+export interface EnrichedEmail extends Email {
+  signals: EmailSignal[];
+}
+
+export interface EntityEmailThread {
+  entityId: string;
+  entityName: string;
+  entityType: string;
+  emailCount: number;
+  signalSummary: string;
+  signals: EmailSignal[];
+}
+
+export interface EmailBriefingStats {
+  total: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  needsAction: number;
+}
+
+export interface EmailBriefingData {
+  highPriority: EnrichedEmail[];
+  mediumPriority: EnrichedEmail[];
+  lowPriority: EnrichedEmail[];
+  entityThreads: EntityEmailThread[];
+  stats: EmailBriefingStats;
+  hasEnrichment: boolean;
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 

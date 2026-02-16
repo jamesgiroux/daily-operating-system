@@ -210,6 +210,7 @@ pub fn run() {
             commands::backfill_prep_semantics,
             commands::get_all_actions,
             commands::get_all_emails,
+            commands::get_emails_enriched,
             commands::get_inbox_files,
             commands::get_inbox_file_content,
             commands::process_inbox_file,
