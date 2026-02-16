@@ -2,13 +2,15 @@
  * ThePlanSlide — Strategy + actions + risk caveats.
  * Slide 5: recovery strategy with timeline and assumption caveats.
  */
+import { EditableText } from "@/components/ui/EditableText";
 import type { RiskThePlan } from "@/types";
 
 interface ThePlanSlideProps {
   data: RiskThePlan;
+  onUpdate?: (data: RiskThePlan) => void;
 }
 
-export function ThePlanSlide({ data }: ThePlanSlideProps) {
+export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
   return (
     <section
       id="the-plan"
@@ -26,93 +28,133 @@ export function ThePlanSlide({ data }: ThePlanSlideProps) {
       <div
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
-          color: "var(--color-text-tertiary)",
-          marginBottom: 20,
+          color: "var(--color-text-secondary)",
+          marginBottom: 24,
         }}
       >
         The Plan
       </div>
 
       {/* Strategy headline */}
-      <h2
+      <EditableText
+        as="h2"
+        value={data.strategy}
+        onChange={(v) => onUpdate?.({ ...data, strategy: v })}
         style={{
           fontFamily: "var(--font-serif)",
-          fontSize: 28,
+          fontSize: 32,
           fontWeight: 400,
           lineHeight: 1.25,
           color: "var(--color-text-primary)",
-          maxWidth: 540,
+          maxWidth: 800,
           margin: "0 0 28px",
         }}
-      >
-        {data.strategy}
-      </h2>
+      />
 
       {/* Timeline badge */}
       {data.timeline && (
-        <div
+        <EditableText
+          as="div"
+          value={data.timeline}
+          onChange={(v) => onUpdate?.({ ...data, timeline: v })}
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-spice-turmeric)",
+            fontSize: 14,
+            fontWeight: 600,
+            color: "var(--color-text-primary)",
             letterSpacing: "0.04em",
-            marginBottom: 24,
+            marginBottom: 28,
           }}
-        >
-          {data.timeline}
-        </div>
+        />
       )}
 
       {/* Actions — numbered steps */}
       {data.actions && data.actions.length > 0 && (
-        <div style={{ marginBottom: 28, maxWidth: 540 }}>
+        <div style={{ marginBottom: 32, maxWidth: 800 }}>
           {data.actions.slice(0, 3).map((action, i) => (
             <div
               key={i}
               style={{
                 display: "flex",
-                gap: 12,
+                gap: 16,
                 alignItems: "baseline",
-                padding: "10px 0",
+                padding: "12px 0",
                 borderBottom: "1px solid var(--color-rule-light)",
               }}
             >
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 16,
+                  fontSize: 20,
                   fontWeight: 600,
                   color: "var(--color-spice-terracotta)",
-                  minWidth: 20,
+                  minWidth: 24,
                   flexShrink: 0,
                 }}
               >
                 {i + 1}
               </span>
               <div style={{ flex: 1 }}>
-                <span
+                <EditableText
+                  value={action.step}
+                  onChange={(v) => {
+                    const updated = [...(data.actions ?? [])];
+                    updated[i] = { ...updated[i], step: v };
+                    onUpdate?.({ ...data, actions: updated });
+                  }}
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontSize: 14,
+                    fontSize: 17,
                     color: "var(--color-text-primary)",
                   }}
-                >
-                  {action.step}
-                </span>
+                />
                 {(action.owner || action.timeline) && (
                   <div
                     style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 2,
+                      display: "flex",
+                      gap: 8,
+                      marginTop: 4,
                     }}
                   >
-                    {[action.owner, action.timeline].filter(Boolean).join(" · ")}
+                    {action.owner && (
+                      <EditableText
+                        value={action.owner}
+                        onChange={(v) => {
+                          const updated = [...(data.actions ?? [])];
+                          updated[i] = { ...updated[i], owner: v };
+                          onUpdate?.({ ...data, actions: updated });
+                        }}
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 13,
+                          color: "var(--color-text-primary)",
+                          opacity: 0.7,
+                        }}
+                      />
+                    )}
+                    {action.owner && action.timeline && (
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-primary)", opacity: 0.7 }}>·</span>
+                    )}
+                    {action.timeline && (
+                      <EditableText
+                        value={action.timeline}
+                        onChange={(v) => {
+                          const updated = [...(data.actions ?? [])];
+                          updated[i] = { ...updated[i], timeline: v };
+                          onUpdate?.({ ...data, actions: updated });
+                        }}
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 13,
+                          color: "var(--color-text-primary)",
+                          opacity: 0.7,
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -121,37 +163,42 @@ export function ThePlanSlide({ data }: ThePlanSlideProps) {
         </div>
       )}
 
-      {/* Assumptions as caveats — folded from red team */}
+      {/* Assumptions as caveats */}
       {data.assumptions && data.assumptions.length > 0 && (
-        <div style={{ maxWidth: 540 }}>
+        <div style={{ maxWidth: 800 }}>
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 500,
+              fontSize: 11,
+              fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.1em",
-              color: "var(--color-text-tertiary)",
-              marginBottom: 10,
+              color: "var(--color-text-secondary)",
+              marginBottom: 12,
             }}
           >
             Assumptions
           </div>
           {data.assumptions.slice(0, 2).map((assumption, i) => (
-            <p
+            <EditableText
               key={i}
+              as="p"
+              value={assumption}
+              onChange={(v) => {
+                const updated = [...(data.assumptions ?? [])];
+                updated[i] = v;
+                onUpdate?.({ ...data, assumptions: updated });
+              }}
               style={{
                 fontFamily: "var(--font-sans)",
-                fontSize: 13,
+                fontSize: 15,
                 lineHeight: 1.5,
-                color: "var(--color-text-secondary)",
-                margin: "0 0 6px",
-                borderLeft: "2px solid var(--color-spice-turmeric)",
-                paddingLeft: 12,
+                color: "var(--color-text-primary)",
+                margin: "0 0 8px",
+                borderLeft: "3px solid var(--color-spice-terracotta)",
+                paddingLeft: 16,
               }}
-            >
-              {assumption}
-            </p>
+            />
           ))}
         </div>
       )}
