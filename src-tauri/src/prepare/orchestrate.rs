@@ -71,7 +71,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     log::info!("prepare_today: {} events fetched", events.len());
 
     // Step 3: Calendar gaps
-    let gap_list = gaps::compute_gaps(&events, today);
+    let gap_list = gaps::compute_gaps(&events, today, None);
     let total_gap_minutes: i64 = gap_list
         .iter()
         .filter_map(|g| g.get("duration_minutes").and_then(|v| v.as_i64()))
@@ -189,8 +189,14 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     let (profile, user_domains, _user_focus) = get_config(state);
 
-    // Week bounds
-    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    // Week bounds — on weekends, anchor to NEXT Monday (forecast the upcoming week)
+    let monday = if today.weekday() == chrono::Weekday::Sat {
+        today + chrono::Duration::days(2)
+    } else if today.weekday() == chrono::Weekday::Sun {
+        today + chrono::Duration::days(1)
+    } else {
+        today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+    };
     let friday = monday + chrono::Duration::days(4);
     let (iso_year, iso_week, _) = monday.iso_week_fields();
     let week_label = format!("W{:02}", iso_week);
@@ -225,8 +231,13 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref);
     drop(db_guard);
 
-    // Gap analysis
-    let gaps_by_day = gaps::compute_all_gaps(&events_by_day, monday);
+    // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion
+    let user_tz: Option<chrono_tz::Tz> = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.schedules.today.timezone.parse().ok()));
+    let gaps_by_day = gaps::compute_all_gaps(&events_by_day, monday, user_tz);
     let suggestions = gaps::suggest_focus_blocks(&gaps_by_day);
 
     // Build lean events by day (strip attendees)
@@ -1426,6 +1437,21 @@ fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
         .or_else(|| time_blocks_raw.get("gaps_by_day"))
         .cloned()
         .unwrap_or(json!({}));
+    // Generic suggestions ("Deep Work" / "Admin / Follow-up") keyed by (day, start)
+    let generic_suggestions: std::collections::HashMap<(String, String), String> = time_blocks_raw
+        .get("suggestions")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| {
+                    let day = s.get("day").and_then(|v| v.as_str())?.to_string();
+                    let start = s.get("start").and_then(|v| v.as_str())?.to_string();
+                    let use_str = s.get("suggested_use").and_then(|v| v.as_str())?.to_string();
+                    Some(((day, start), use_str))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     let mut shapes = Vec::new();
 
@@ -1522,12 +1548,22 @@ fn build_day_shapes(directive: &Value, data_dir: &Path) -> Vec<Value> {
                     .unwrap_or("")
                     .to_string();
                 if !start.is_empty() && !end.is_empty() {
-                    available_blocks.push(json!({
+                    let mut block = json!({
                         "day": day_name,
-                        "start": start,
+                        "start": start.clone(),
                         "end": end,
                         "durationMinutes": dur,
-                    }));
+                    });
+                    // Apply generic suggestion if available
+                    if let Some(suggestion) =
+                        generic_suggestions.get(&(day_name.to_string(), start))
+                    {
+                        block
+                            .as_object_mut()
+                            .unwrap()
+                            .insert("suggestedUse".to_string(), json!(suggestion));
+                    }
+                    available_blocks.push(block);
                 }
             }
         }
@@ -2418,5 +2454,61 @@ mod tests {
         let md =
             std::fs::read_to_string(workspace.join("_today").join("week-overview.md")).unwrap();
         assert!(md.contains("# Week W06"));
+    }
+
+    #[test]
+    fn test_week_date_anchoring_weekday() {
+        // Wednesday 2026-02-11 → Monday of same week = 2026-02-09
+        let today = NaiveDate::from_ymd_opt(2026, 2, 11).unwrap();
+        let monday = if today.weekday() == chrono::Weekday::Sat {
+            today + chrono::Duration::days(2)
+        } else if today.weekday() == chrono::Weekday::Sun {
+            today + chrono::Duration::days(1)
+        } else {
+            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+        };
+        assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 9).unwrap());
+    }
+
+    #[test]
+    fn test_week_date_anchoring_saturday() {
+        // Saturday 2026-02-14 → NEXT Monday = 2026-02-16
+        let today = NaiveDate::from_ymd_opt(2026, 2, 14).unwrap();
+        let monday = if today.weekday() == chrono::Weekday::Sat {
+            today + chrono::Duration::days(2)
+        } else if today.weekday() == chrono::Weekday::Sun {
+            today + chrono::Duration::days(1)
+        } else {
+            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+        };
+        assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 16).unwrap());
+    }
+
+    #[test]
+    fn test_week_date_anchoring_sunday() {
+        // Sunday 2026-02-15 → NEXT Monday = 2026-02-16
+        let today = NaiveDate::from_ymd_opt(2026, 2, 15).unwrap();
+        let monday = if today.weekday() == chrono::Weekday::Sat {
+            today + chrono::Duration::days(2)
+        } else if today.weekday() == chrono::Weekday::Sun {
+            today + chrono::Duration::days(1)
+        } else {
+            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+        };
+        assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 16).unwrap());
+    }
+
+    #[test]
+    fn test_week_date_anchoring_monday() {
+        // Monday 2026-02-09 → same Monday = 2026-02-09
+        let today = NaiveDate::from_ymd_opt(2026, 2, 9).unwrap();
+        let monday = if today.weekday() == chrono::Weekday::Sat {
+            today + chrono::Duration::days(2)
+        } else if today.weekday() == chrono::Weekday::Sun {
+            today + chrono::Duration::days(1)
+        } else {
+            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+        };
+        assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 9).unwrap());
     }
 }

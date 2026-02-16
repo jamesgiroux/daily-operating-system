@@ -213,6 +213,7 @@ export interface DashboardData {
   actions: Action[];
   emails?: Email[];
   emailSync?: EmailSyncStatus;
+  focus?: DailyFocus;
 }
 
 // =============================================================================
@@ -342,40 +343,20 @@ export interface LiveProactiveSuggestion {
 // Focus Data Types
 // =============================================================================
 
-export interface FocusData {
-  focusStatement?: string;
-  priorities: DbAction[];
-  keyMeetings: FocusMeeting[];
-  availableBlocks: TimeBlock[];
-  totalFocusMinutes: number;
-  availability: FocusAvailability;
-  prioritizedActions: PrioritizedFocusAction[];
-  topThree: string[];
-  implications: FocusImplications;
-}
-
-export interface FocusMeeting {
-  id: string;
-  title: string;
-  time: string;
-  endTime?: string;
-  meetingType: string;
-  hasPrep: boolean;
-  account?: string;
-  prepFile?: string;
-}
-
-export interface FocusAvailability {
-  source: "live" | "briefing_fallback" | string;
-  warnings: string[];
-  meetingCount: number;
-  meetingMinutes: number;
+/** Capacity-aware daily focus: ranked actions against today's available time. */
+export interface DailyFocus {
   availableMinutes: number;
   deepWorkMinutes: number;
-  deepWorkBlocks: TimeBlock[];
+  meetingMinutes: number;
+  meetingCount: number;
+  prioritizedActions: PrioritizedAction[];
+  topThree: string[];
+  implications: FocusImplications;
+  availableBlocks: TimeBlock[];
 }
 
-export interface PrioritizedFocusAction {
+/** A single action ranked by urgency/effort/feasibility against capacity. */
+export interface PrioritizedAction {
   action: DbAction;
   score: number;
   effortMinutes: number;
@@ -384,6 +365,7 @@ export interface PrioritizedFocusAction {
   reason: string;
 }
 
+/** High-level summary of achievable vs at-risk actions. */
 export interface FocusImplications {
   achievableCount: number;
   totalCount: number;
@@ -440,6 +422,40 @@ export interface EmailStats {
 }
 
 // =============================================================================
+// Enriched Email Briefing Types (Phase 4 — Email Intelligence)
+// =============================================================================
+
+export interface EnrichedEmail extends Email {
+  signals: EmailSignal[];
+}
+
+export interface EntityEmailThread {
+  entityId: string;
+  entityName: string;
+  entityType: string;
+  emailCount: number;
+  signalSummary: string;
+  signals: EmailSignal[];
+}
+
+export interface EmailBriefingStats {
+  total: number;
+  highCount: number;
+  mediumCount: number;
+  lowCount: number;
+  needsAction: number;
+}
+
+export interface EmailBriefingData {
+  highPriority: EnrichedEmail[];
+  mediumPriority: EnrichedEmail[];
+  lowPriority: EnrichedEmail[];
+  entityThreads: EntityEmailThread[];
+  stats: EmailBriefingStats;
+  hasEnrichment: boolean;
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 
@@ -472,6 +488,12 @@ export interface HygieneFixView {
   count: number;
 }
 
+export interface HygieneFixDetail {
+  fixType: string;
+  entityName?: string;
+  description: string;
+}
+
 export interface HygieneGapActionView {
   kind: "navigate" | "run_scan_now";
   label: string;
@@ -502,8 +524,10 @@ export interface HygieneStatusView {
   totalFixes: number;
   isRunning: boolean;
   fixes: HygieneFixView[];
+  fixDetails: HygieneFixDetail[];
   gaps: HygieneGapView[];
   budget: HygieneBudgetView;
+  scanDurationMs?: number;
 }
 
 export interface CalendarEvent {
@@ -1264,4 +1288,86 @@ export interface DuplicateCandidate {
   person2Name: string;
   confidence: number;
   reason: string;
+}
+
+// =============================================================================
+// Risk Briefing (6-Slide Executive Presentation)
+// =============================================================================
+
+export interface RiskBriefing {
+  accountId: string;
+  generatedAt: string;
+  cover: RiskCover;
+  bottomLine: RiskBottomLine;
+  whatHappened: RiskWhatHappened;
+  stakes: RiskStakes;
+  thePlan: RiskThePlan;
+  theAsk: RiskTheAsk;
+}
+
+export interface RiskCover {
+  accountName: string;
+  riskLevel?: string;
+  arrAtRisk?: number;
+  date: string;
+  tamName?: string;
+}
+
+export interface RiskBottomLine {
+  headline: string;
+  riskLevel?: string;
+  renewalWindow?: string;
+}
+
+export interface RiskWhatHappened {
+  narrative: string;
+  healthArc?: HealthSnapshot[];
+  keyLosses?: string[];
+}
+
+export interface HealthSnapshot {
+  period: string;
+  status: string;
+  detail?: string;
+}
+
+export interface RiskStakes {
+  financialHeadline?: string;
+  stakeholders?: RiskStakeholder[];
+  decisionMaker?: string;
+  worstCase?: string;
+}
+
+export interface RiskStakeholder {
+  name: string;
+  role?: string;
+  alignment?: string;
+  engagement?: string;
+  decisionWeight?: string;
+  assessment?: string;
+}
+
+export interface RiskThePlan {
+  strategy: string;
+  actions?: ActionStep[];
+  timeline?: string;
+  assumptions?: string[];
+}
+
+export interface ActionStep {
+  step: string;
+  owner?: string;
+  timeline?: string;
+}
+
+export interface RiskTheAsk {
+  requests?: ConcreteRequest[];
+  decisions?: string[];
+  escalation?: string;
+}
+
+export interface ConcreteRequest {
+  request: string;
+  urgency?: string;
+  from?: string;
 }
