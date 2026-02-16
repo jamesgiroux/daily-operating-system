@@ -119,6 +119,11 @@ pub enum DbTryRead<T> {
 
 impl AppState {
     pub fn new() -> Self {
+        // I298 recovery: if a dev-backup config exists, the app was quit during
+        // dev mode without calling restore_live(). Restore the live config before
+        // loading so startup sync doesn't import mock data into the live DB.
+        recover_from_unclean_dev_exit();
+
         let config = load_config().ok();
         let history = load_execution_history().unwrap_or_default();
 
@@ -384,6 +389,33 @@ pub fn run_startup_sync(state: &AppState) {
 
     // One-off: import master-task-list.md into SQLite (DELETE after confirmed)
     import_master_task_list(workspace, &db);
+}
+
+/// Recover from an unclean dev-mode exit (app quit without restore_live).
+///
+/// If `config.json.dev-backup` exists, the app was in dev mode when it last
+/// closed. Restore the backup so the live DB doesn't get polluted with mock
+/// data during startup sync.
+fn recover_from_unclean_dev_exit() {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return,
+    };
+    let config = home.join(".dailyos").join("config.json");
+    let backup = config.with_extension("json.dev-backup");
+
+    if backup.exists() {
+        log::warn!("Detected unclean dev-mode exit — restoring live config from backup");
+        match fs::copy(&backup, &config) {
+            Ok(_) => {
+                let _ = fs::remove_file(&backup);
+                log::info!("Live config restored successfully");
+            }
+            Err(e) => {
+                log::error!("Failed to restore config from dev backup: {}", e);
+            }
+        }
+    }
 }
 
 /// Get the canonical config file path (~/.dailyos/config.json)

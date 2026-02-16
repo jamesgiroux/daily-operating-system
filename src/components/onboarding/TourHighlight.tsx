@@ -1,5 +1,4 @@
 import { forwardRef } from "react";
-import { cn } from "@/lib/utils";
 
 interface TourHighlightProps {
   active: boolean;
@@ -11,10 +10,15 @@ export const TourHighlight = forwardRef<HTMLDivElement, TourHighlightProps>(
     return (
       <div
         ref={ref}
-        className={cn(
-          "relative rounded-xl transition-all duration-300",
-          active ? "ring-2 ring-primary opacity-100" : "opacity-40",
-        )}
+        style={{
+          position: "relative",
+          borderLeft: active
+            ? "3px solid var(--color-spice-turmeric)"
+            : "3px solid transparent",
+          paddingLeft: active ? 16 : 16,
+          opacity: active ? 1 : 0.4,
+          transition: "all 0.3s ease",
+        }}
       >
         <div className="pointer-events-none">{children}</div>
       </div>

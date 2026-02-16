@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { EntityMode } from "@/types";
 
 interface PopulateWorkspaceProps {
@@ -16,22 +17,47 @@ const COPY = {
     subtitle:
       "The customers, clients, or partners you work with most. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Acme Corp",
-    prompt: "Start with 3\u20135 \u2014 you can always add more from Settings.",
+    prompt: "Start with 3\u20135 \u2014 you can always add more later.",
   },
   project: {
     title: "Add your projects",
     subtitle:
       "The initiatives, features, or campaigns you\u2019re actively working on. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Q2 Platform Migration",
-    prompt: "Start with 3\u20135 \u2014 you can always add more from Settings.",
+    prompt: "Start with 3\u20135 \u2014 you can always add more later.",
   },
   both: {
     title: "Add your accounts and projects",
     subtitle:
       "The companies you work with and the initiatives you\u2019re driving. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Acme Corp",
-    prompt: "Start with a few of each \u2014 you can always add more from Settings.",
+    prompt: "Start with a few of each \u2014 you can always add more later.",
   },
+};
+
+/** Mono uppercase section label */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        fontWeight: 500,
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.1em",
+        color: "var(--color-text-tertiary)",
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  background: "var(--color-paper-warm-white)",
+  border: "1px solid var(--color-desk-charcoal)",
+  borderRadius: 4,
 };
 
 export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps) {
@@ -71,10 +97,7 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
 
   async function handleContinue() {
     try {
-      await invoke("populate_workspace", {
-        accounts,
-        projects,
-      });
+      await invoke("populate_workspace", { accounts, projects });
     } catch (e) {
       console.error("populate_workspace failed:", e);
     }
@@ -82,52 +105,55 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">{copy.title}</h2>
-        <p className="text-sm text-muted-foreground">{copy.subtitle}</p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading title={copy.title} epigraph={copy.subtitle} />
 
       {/* Account input */}
       {showAccounts && (
-        <div className="space-y-3">
-          {entityMode === "both" && (
-            <p className="text-sm font-medium">Accounts</p>
-          )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {entityMode === "both" && <SectionLabel>Accounts</SectionLabel>}
           <div className="flex gap-2">
             <Input
               type="text"
-              placeholder={
-                entityMode === "both"
-                  ? "e.g. Acme Corp"
-                  : copy.placeholder
-              }
+              placeholder={entityMode === "both" ? "e.g. Acme Corp" : copy.placeholder}
               value={accountInput}
               onChange={(e) => setAccountInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addAccount()}
+              style={inputStyle}
             />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={addAccount}
-              disabled={!accountInput.trim()}
-            >
+            <Button variant="outline" size="icon" onClick={addAccount} disabled={!accountInput.trim()}>
               <Plus className="size-4" />
             </Button>
           </div>
           {accounts.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {accounts.map((name) => (
                 <span
                   key={name}
-                  className="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 py-1 text-sm"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border: "1px solid var(--color-spice-turmeric)",
+                    borderRadius: 4,
+                    padding: "4px 10px",
+                    fontSize: 13,
+                    color: "var(--color-text-primary)",
+                  }}
                 >
                   {name}
                   <button
                     onClick={() => removeAccount(name)}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    style={{
+                      color: "var(--color-text-tertiary)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
                   >
-                    <X className="size-3" />
+                    <X size={12} />
                   </button>
                 </span>
               ))}
@@ -138,44 +164,50 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
 
       {/* Project input */}
       {showProjects && (
-        <div className="space-y-3">
-          {entityMode === "both" && (
-            <p className="text-sm font-medium">Projects</p>
-          )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {entityMode === "both" && <SectionLabel>Projects</SectionLabel>}
           <div className="flex gap-2">
             <Input
               type="text"
-              placeholder={
-                entityMode === "both"
-                  ? "e.g. Q2 Platform Migration"
-                  : copy.placeholder
-              }
+              placeholder={entityMode === "both" ? "e.g. Q2 Platform Migration" : copy.placeholder}
               value={projectInput}
               onChange={(e) => setProjectInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addProject()}
+              style={inputStyle}
             />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={addProject}
-              disabled={!projectInput.trim()}
-            >
+            <Button variant="outline" size="icon" onClick={addProject} disabled={!projectInput.trim()}>
               <Plus className="size-4" />
             </Button>
           </div>
           {projects.length > 0 && (
-            <div className="flex flex-wrap gap-2">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {projects.map((name) => (
                 <span
                   key={name}
-                  className="inline-flex items-center gap-1.5 rounded-md border bg-muted/50 px-2.5 py-1 text-sm"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border: "1px solid var(--color-garden-olive)",
+                    borderRadius: 4,
+                    padding: "4px 10px",
+                    fontSize: 13,
+                    color: "var(--color-text-primary)",
+                  }}
                 >
                   {name}
                   <button
                     onClick={() => removeProject(name)}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    style={{
+                      color: "var(--color-text-tertiary)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
                   >
-                    <X className="size-3" />
+                    <X size={12} />
                   </button>
                 </span>
               ))}
@@ -184,7 +216,7 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">{copy.prompt}</p>
+      <p style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>{copy.prompt}</p>
 
       <div className="flex justify-end">
         <Button onClick={handleContinue} disabled={!hasEntries}>
