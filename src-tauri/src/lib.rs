@@ -372,6 +372,7 @@ pub fn run() {
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
+            commands::save_risk_briefing,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
         ])
