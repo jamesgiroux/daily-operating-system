@@ -6,10 +6,11 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+mod backfill_meetings;
 mod calendar_merge;
 mod capture;
 mod commands;
-mod db;
+pub mod db;
 mod db_backup;
 mod devtools;
 mod migrations;
@@ -25,7 +26,7 @@ pub mod google_api;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
-mod json_loader;
+pub mod json_loader;
 mod latency;
 mod notification;
 mod parser;
@@ -34,10 +35,11 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
-mod queries;
+pub mod queries;
+mod risk_briefing;
 mod scheduler;
-mod state;
-mod types;
+pub mod state;
+pub mod types;
 pub mod util;
 mod watcher;
 mod workflow;
@@ -230,6 +232,7 @@ pub fn run() {
             commands::get_meeting_history_detail,
             commands::search_meetings,
             commands::get_action_detail,
+            commands::backfill_historical_meetings,
             // Phase 3.0: Google Auth
             commands::get_google_auth_status,
             commands::start_google_auth,
@@ -366,6 +369,11 @@ pub fn run() {
             commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
+            // Risk Briefing
+            commands::generate_risk_briefing,
+            commands::get_risk_briefing,
+            // MCP: Claude Desktop (ADR-0075)
+            commands::configure_claude_desktop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
