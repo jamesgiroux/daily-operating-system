@@ -134,7 +134,7 @@ function RootLayout() {
 
   if (checkingConfig) {
     return (
-      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+      <ThemeProvider>
         <div className="flex h-screen items-center justify-center bg-background" />
         <DevToolsPanel />
       </ThemeProvider>
@@ -143,7 +143,7 @@ function RootLayout() {
 
   if (needsOnboarding) {
     return (
-      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+      <ThemeProvider>
         <OnboardingFlow mode={onboardingMode} onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
@@ -154,7 +154,7 @@ function RootLayout() {
   // Magazine shell for editorial pages (account detail, future editorial pages)
   if (useMagazineShell) {
     return (
-      <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+      <ThemeProvider>
         <PersonalityProvider>
           <MagazineShellContext.Provider value={magazineShell}>
             <MagazinePageLayout
@@ -176,7 +176,7 @@ function RootLayout() {
 
   // Standard sidebar shell for all other pages
   return (
-    <ThemeProvider defaultTheme="system" storageKey="dailyos-theme">
+    <ThemeProvider>
       <PersonalityProvider>
         <SidebarProvider defaultOpen={false}>
           <AppSidebar />

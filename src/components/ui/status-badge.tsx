@@ -36,27 +36,27 @@ export function StatusBadge({
 
 export const healthStyles: Record<string, string> = {
   green:
-    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+    "bg-[rgba(126,170,123,0.12)] text-[#4a6741] border-[rgba(126,170,123,0.3)]",
   yellow:
-    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
+    "bg-[rgba(222,184,65,0.12)] text-[#3d2e27] border-[rgba(222,184,65,0.3)]",
   red:
-    "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
+    "bg-[rgba(196,101,74,0.12)] text-[#9b3a2a] border-[rgba(196,101,74,0.3)]",
 };
 
 export const projectStatusStyles: Record<string, string> = {
   active:
-    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
+    "bg-[rgba(126,170,123,0.12)] text-[#4a6741] border-[rgba(126,170,123,0.3)]",
   on_hold:
-    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
+    "bg-[rgba(222,184,65,0.12)] text-[#3d2e27] border-[rgba(222,184,65,0.3)]",
   completed:
-    "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700",
+    "bg-[rgba(143,163,196,0.12)] text-[#2a2b3d] border-[rgba(143,163,196,0.3)]",
   archived: "bg-muted text-muted-foreground border-muted",
 };
 
 export const progressStyles: Record<string, string> = {
   completed:
-    "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    "bg-[rgba(126,170,123,0.12)] text-[#4a6741]",
   in_progress:
-    "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    "bg-[rgba(143,163,196,0.12)] text-[#2a2b3d]",
   planned: "bg-muted text-muted-foreground",
 };
