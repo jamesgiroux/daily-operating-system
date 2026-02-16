@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { isScrolling } from "@/lib/smooth-scroll";
 
-export function useChapterObserver(chapterIds: string[], ready = true): string {
+export function useChapterObserver(chapterIds: string[], ready = true): [string, (id: string) => void] {
   const [activeId, setActiveId] = useState(chapterIds[0] ?? "");
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -38,5 +38,5 @@ export function useChapterObserver(chapterIds: string[], ready = true): string {
     };
   }, [chapterIds, ready]);
 
-  return activeId;
+  return [activeId, setActiveId];
 }
