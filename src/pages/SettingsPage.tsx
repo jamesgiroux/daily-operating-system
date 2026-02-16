@@ -1,46 +1,34 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { TabFilter } from "@/components/ui/tab-filter";
 import { ModeToggle } from "@/components/mode-toggle";
-import { cn } from "@/lib/utils";
-import {
-  AlertCircle,
-  ArrowDownToLine,
-  Building2,
-  Check,
-  FolderKanban,
-  FolderOpen,
-  Globe,
-  Layers,
-  Play,
-  RefreshCw,
-  Clock,
-  Settings,
-  CheckCircle,
-  Mail,
-  MessageSquare,
-  LogOut,
-  Loader2,
-  ToggleRight,
-  User,
-  Activity,
-  Cpu,
-  X,
-} from "lucide-react";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import { usePersonality, type Personality } from "@/hooks/usePersonality";
 import { toast } from "sonner";
+import {
+  User,
+  Cpu,
+  Layers,
+  Building2,
+  FolderKanban,
+  Globe,
+  Activity,
+  Check,
+  Loader2,
+  X,
+  RefreshCw,
+  Play,
+  ToggleRight,
+} from "lucide-react";
 import type {
   PostMeetingCaptureConfig,
   FeatureDefinition,
@@ -49,6 +37,10 @@ import type {
   SettingsTabId,
   HygieneStatusView,
 } from "@/types";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Types & Constants
+// ═══════════════════════════════════════════════════════════════════════════
 
 interface Config {
   workspacePath: string;
@@ -66,19 +58,6 @@ interface ScheduleEntry {
   timezone: string;
 }
 
-const allSettingsTabs: { key: SettingsTabId; label: string }[] = [
-  { key: "profile", label: "Profile" },
-  { key: "integrations", label: "Integrations" },
-  { key: "workflows", label: "Workflows" },
-  { key: "intelligence", label: "Intelligence" },
-  { key: "hygiene", label: "Intelligence Hygiene" },
-  { key: "diagnostics", label: "Diagnostics" },
-];
-
-const settingsTabs = import.meta.env.DEV
-  ? allSettingsTabs
-  : allSettingsTabs.filter((t) => t.key !== "diagnostics");
-
 function parseSettingsTab(value: unknown): SettingsTabId {
   if (
     value === "profile" ||
@@ -93,15 +72,129 @@ function parseSettingsTab(value: unknown): SettingsTabId {
   return "profile";
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared editorial styles
+// ═══════════════════════════════════════════════════════════════════════════
+
+const styles = {
+  subsectionLabel: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    color: "var(--color-text-tertiary)",
+    margin: 0,
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    fontFamily: "var(--font-sans)",
+    fontSize: 13,
+    fontWeight: 500,
+    color: "var(--color-text-secondary)",
+    marginBottom: 4,
+    display: "block" as const,
+  },
+  input: {
+    width: "100%",
+    fontFamily: "var(--font-sans)",
+    fontSize: 14,
+    color: "var(--color-text-primary)",
+    background: "none",
+    border: "none",
+    borderBottom: "1px solid var(--color-rule-light)",
+    padding: "8px 0",
+    outline: "none",
+  },
+  btn: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase" as const,
+    background: "none",
+    borderRadius: 4,
+    padding: "4px 14px",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+  },
+  btnPrimary: {
+    color: "var(--color-garden-olive)",
+    border: "1px solid var(--color-garden-olive)",
+  },
+  btnGhost: {
+    color: "var(--color-text-tertiary)",
+    border: "1px solid var(--color-rule-heavy)",
+  },
+  btnDanger: {
+    color: "var(--color-spice-terracotta)",
+    border: "1px solid var(--color-spice-terracotta)",
+  },
+  description: {
+    fontFamily: "var(--font-sans)",
+    fontSize: 13,
+    color: "var(--color-text-tertiary)",
+    lineHeight: 1.5,
+    margin: 0,
+  },
+  settingRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "12px 0",
+    borderBottom: "1px solid var(--color-rule-light)",
+  },
+  statusDot: (color: string) => ({
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    background: color,
+    flexShrink: 0 as const,
+  }),
+  monoLabel: {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    fontWeight: 500,
+    letterSpacing: "0.04em",
+    color: "var(--color-text-tertiary)",
+  },
+  sectionGap: {
+    marginBottom: 48,
+  },
+  thinRule: {
+    height: 1,
+    background: "var(--color-rule-light)",
+    border: "none",
+    margin: "16px 0",
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Main page
+// ═══════════════════════════════════════════════════════════════════════════
+
+const CHAPTER_DEFS = [
+  { id: "settings-profile", label: "Profile", icon: <User size={18} strokeWidth={1.5} /> },
+  { id: "settings-integrations", label: "Integrations", icon: <Globe size={18} strokeWidth={1.5} /> },
+  { id: "settings-workflows", label: "Workflows", icon: <Play size={18} strokeWidth={1.5} /> },
+  { id: "settings-intelligence", label: "Intelligence", icon: <Cpu size={18} strokeWidth={1.5} /> },
+  { id: "settings-hygiene", label: "Hygiene", icon: <Activity size={18} strokeWidth={1.5} /> },
+];
+
+const DIAGNOSTICS_CHAPTER = {
+  id: "settings-diagnostics",
+  label: "Diagnostics",
+  icon: <ToggleRight size={18} strokeWidth={1.5} />,
+};
+
 export default function SettingsPage() {
   const search = useSearch({ from: "/settings" });
-  const navigate = useNavigate();
-  const activeTab = parseSettingsTab(search.tab);
   const [config, setConfig] = useState<Config | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<{ workflow: string; success: boolean; message: string } | null>(null);
+  const scrolledRef = useRef(false);
 
   useEffect(() => {
     async function loadConfig() {
@@ -116,6 +209,19 @@ export default function SettingsPage() {
     }
     loadConfig();
   }, []);
+
+  // Deep-link scroll: if ?tab=X, scroll to that section on mount
+  useEffect(() => {
+    if (loading || scrolledRef.current) return;
+    const tab = parseSettingsTab(search.tab);
+    if (tab !== "profile") {
+      const el = document.getElementById(`settings-${tab}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        scrolledRef.current = true;
+      }
+    }
+  }, [loading, search.tab]);
 
   async function handleRunWorkflow(workflow: string) {
     setRunning(workflow);
@@ -147,270 +253,331 @@ export default function SettingsPage() {
     }
   }
 
-  function setActiveTab(tab: SettingsTabId) {
-    navigate({
-      to: "/settings",
-      search: (prev: Record<string, unknown>) => ({
-        ...prev,
-        tab,
-      }),
-    });
-  }
+  // Chapters: include diagnostics only in dev mode
+  const chapters = useMemo(() => {
+    if (import.meta.env.DEV) {
+      return [...CHAPTER_DEFS, DIAGNOSTICS_CHAPTER];
+    }
+    return CHAPTER_DEFS;
+  }, []);
+
+  // Register magazine shell
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Settings",
+      atmosphereColor: "olive" as const,
+      activePage: "settings" as const,
+      chapters,
+    }),
+    [chapters],
+  );
+  useRegisterMagazineShell(shellConfig);
 
   if (loading) {
-    return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-        <div className="space-y-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-48" />
-        </div>
-      </main>
-    );
+    return <EditorialLoading count={5} />;
   }
 
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error}</p>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Create a config file at <code className="rounded bg-muted px-1">~/.dailyos/config.json</code> with your workspace path.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-4"
-              onClick={handleReloadConfig}
-            >
-              <RefreshCw className="mr-2 size-4" />
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      </main>
+      <EditorialError
+        message={`${error} — Create a config file at ~/.dailyos/config.json with your workspace path.`}
+        onRetry={handleReloadConfig}
+      />
     );
   }
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-            <p className="text-sm text-muted-foreground">
-              Configure your workspace and schedules
-            </p>
-          </div>
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ═══ HERO ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 40 }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 42,
+            fontWeight: 400,
+            letterSpacing: "-0.02em",
+            color: "var(--color-text-primary)",
+            margin: 0,
+          }}
+        >
+          Settings
+        </h1>
+        <div
+          style={{
+            height: 2,
+            background: "var(--color-desk-charcoal)",
+            marginTop: 16,
+          }}
+        />
+      </section>
 
-          <div className="mb-6 overflow-x-auto pb-1">
-            <TabFilter
-              tabs={settingsTabs}
-              active={activeTab}
-              onChange={setActiveTab}
-              className="w-max min-w-full"
+      {/* ═══ CHAPTER 1: PROFILE ═══ */}
+      <section id="settings-profile" style={styles.sectionGap}>
+        <ChapterHeading title="Profile" epigraph="Who you are and how your workspace is organized." />
+        <UpdateCard />
+        <div style={{ height: 32 }} />
+        <UserProfileCard />
+        <div style={{ height: 32 }} />
+        <UserDomainsCard />
+        <div style={{ height: 32 }} />
+        <EntityModeCard
+          currentMode={config?.entityMode ?? "account"}
+          onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
+        />
+        <div style={{ height: 32 }} />
+        <WorkspaceCard
+          workspacePath={config?.workspacePath ?? ""}
+          onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
+        />
+        <div style={{ height: 32 }} />
+        <AppearanceSection />
+        <div style={{ height: 32 }} />
+        <PersonalityCard />
+      </section>
+
+      {/* ═══ CHAPTER 2: INTEGRATIONS ═══ */}
+      <section id="settings-integrations" style={styles.sectionGap}>
+        <ChapterHeading title="Integrations" epigraph="External services that feed your intelligence layer." />
+        <GoogleAccountCard />
+        <div style={{ height: 32 }} />
+        <ClaudeDesktopCard />
+      </section>
+
+      {/* ═══ CHAPTER 3: WORKFLOWS ═══ */}
+      <section id="settings-workflows" style={styles.sectionGap}>
+        <ChapterHeading title="Workflows" epigraph="Automated schedules and manual triggers." />
+        <CaptureSettingsCard />
+        <div style={{ height: 32 }} />
+        <SchedulesSection config={config} running={running} onRun={handleRunWorkflow} />
+        {runResult && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "12px 0",
+              borderBottom: "1px solid var(--color-rule-light)",
+              marginTop: 16,
+            }}
+          >
+            <div
+              style={styles.statusDot(
+                runResult.success ? "var(--color-garden-sage)" : "var(--color-spice-terracotta)"
+              )}
             />
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                color: runResult.success ? "var(--color-garden-sage)" : "var(--color-spice-terracotta)",
+              }}
+            >
+              {runResult.message}
+            </span>
           </div>
+        )}
+        <div style={{ height: 32 }} />
+        <ManualRunSection running={running} onRun={handleRunWorkflow} />
+      </section>
 
-          <div className="space-y-6">
-            {activeTab === "profile" && (
-              <>
-                <UpdateCard />
-                <UserProfileCard />
-                <UserDomainsCard />
-                <EntityModeCard
-                  currentMode={config?.entityMode ?? "account"}
-                  onModeChange={(mode) => setConfig(config ? { ...config, entityMode: mode } : null)}
-                />
-                <WorkspaceCard
-                  workspacePath={config?.workspacePath ?? ""}
-                  onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
-                />
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Settings className="size-4" />
-                      Appearance
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm">Theme</span>
-                      <ModeToggle />
-                    </div>
-                  </CardContent>
-                </Card>
-                <PersonalityCard />
-              </>
-            )}
+      {/* ═══ CHAPTER 4: INTELLIGENCE ═══ */}
+      <section id="settings-intelligence" style={styles.sectionGap}>
+        <ChapterHeading title="Intelligence" epigraph="Feature toggles and AI model configuration." />
+        <FeaturesCard />
+        <div style={{ height: 32 }} />
+        <AiModelsCard />
+      </section>
 
-            {activeTab === "integrations" && (
-              <>
-                <GoogleAccountCard />
-                <ClaudeDesktopCard />
-              </>
-            )}
+      {/* ═══ CHAPTER 5: HYGIENE ═══ */}
+      <section id="settings-hygiene" style={styles.sectionGap}>
+        <ChapterHeading title="Hygiene" epigraph="Proactive intelligence maintenance with clear next actions." />
+        <IntelligenceHygieneCard />
+      </section>
 
-            {activeTab === "workflows" && (
-              <>
-                <CaptureSettingsCard />
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Clock className="size-4" />
-                      Schedules
-                    </CardTitle>
-                    <CardDescription>
-                      Automated workflow execution times
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {config?.schedules && (
-                      <>
-                        <ScheduleRow
-                          label="Morning Briefing"
-                          schedule={config.schedules.today}
-                          running={running === "today"}
-                          onRun={() => handleRunWorkflow("today")}
-                        />
-                        <ScheduleRow
-                          label="Nightly Archive"
-                          schedule={config.schedules.archive}
-                          running={running === "archive"}
-                          onRun={() => handleRunWorkflow("archive")}
-                        />
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-                {runResult && (
-                  <Card className={cn(runResult.success ? "border-success" : "border-destructive")}>
-                    <CardContent className="pt-6">
-                      <div className="flex items-center gap-2">
-                        {runResult.success ? (
-                          <CheckCircle className="size-5 text-success" />
-                        ) : (
-                          <AlertCircle className="size-5 text-destructive" />
-                        )}
-                        <p className={cn("text-sm", runResult.success ? "text-success" : "text-destructive")}>
-                          {runResult.message}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Play className="size-4" />
-                      Manual Run
-                    </CardTitle>
-                    <CardDescription>
-                      Trigger workflows manually without waiting for schedule
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-wrap gap-3">
-                    <Button
-                      onClick={() => handleRunWorkflow("today")}
-                      disabled={running !== null}
-                    >
-                      {running === "today" ? (
-                        <RefreshCw className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 size-4" />
-                      )}
-                      Run Daily Briefing
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRunWorkflow("week")}
-                      disabled={running !== null}
-                    >
-                      {running === "week" ? (
-                        <RefreshCw className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 size-4" />
-                      )}
-                      Run Weekly Briefing
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRunWorkflow("archive")}
-                      disabled={running !== null}
-                    >
-                      {running === "archive" ? (
-                        <RefreshCw className="mr-2 size-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 size-4" />
-                      )}
-                      Run Archive
-                    </Button>
-                  </CardContent>
-                </Card>
-              </>
-            )}
+      {/* ═══ CHAPTER 6: DIAGNOSTICS (dev only) ═══ */}
+      {import.meta.env.DEV && (
+        <section id="settings-diagnostics" style={styles.sectionGap}>
+          <ChapterHeading title="Diagnostics" epigraph="Developer tools and debugging utilities." />
+          <DeveloperToggle config={config} setConfig={setConfig} />
+          <div style={{ height: 32 }} />
+          <MeetingBackfillCard />
+        </section>
+      )}
 
-            {activeTab === "intelligence" && (
-              <>
-                <FeaturesCard />
-                <AiModelsCard />
-              </>
-            )}
-
-            {activeTab === "hygiene" && <IntelligenceHygieneCard />}
-
-            {activeTab === "diagnostics" && (
-              <>
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <ToggleRight className="size-4" />
-                      Developer
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="text-sm">Developer Tools</span>
-                        <p className="text-xs text-muted-foreground">
-                          Show the devtools panel (wrench icon)
-                        </p>
-                      </div>
-                      <Button
-                        variant={config?.developerMode ? "default" : "outline"}
-                        size="sm"
-                        onClick={async () => {
-                          const next = !config?.developerMode;
-                          try {
-                            const updated = await invoke<Config>("set_developer_mode", { enabled: next });
-                            setConfig(updated);
-                            toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
-                          } catch (e) {
-                            toast.error(String(e));
-                          }
-                        }}
-                      >
-                        {config?.developerMode ? "On" : "Off"}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-                <MeetingBackfillCard />
-              </>
-            )}
-          </div>
-        </div>
-      </ScrollArea>
-    </main>
+      <FinisMarker />
+      <div style={{ height: 80 }} />
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Appearance (theme toggle) — extracted from inline Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+function AppearanceSection() {
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Appearance</p>
+      <div style={styles.settingRow}>
+        <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+          Theme
+        </span>
+        <ModeToggle />
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Developer Toggle — extracted from inline diagnostics Card
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DeveloperToggle({
+  config,
+  setConfig,
+}: {
+  config: Config | null;
+  setConfig: (c: Config | null) => void;
+}) {
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Developer Tools</p>
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            Developer Tools
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            Show the devtools panel (wrench icon)
+          </p>
+        </div>
+        <button
+          style={{
+            ...styles.btn,
+            ...(config?.developerMode ? styles.btnPrimary : styles.btnGhost),
+          }}
+          onClick={async () => {
+            const next = !config?.developerMode;
+            try {
+              const updated = await invoke<Config>("set_developer_mode", { enabled: next });
+              setConfig(updated);
+              toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
+            } catch (e) {
+              toast.error(String(e));
+            }
+          }}
+        >
+          {config?.developerMode ? "On" : "Off"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Schedules Section
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SchedulesSection({
+  config,
+  running,
+  onRun,
+}: {
+  config: Config | null;
+  running: string | null;
+  onRun: (workflow: string) => void;
+}) {
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Schedules</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Automated workflow execution times
+      </p>
+      {config?.schedules && (
+        <>
+          <ScheduleRow
+            label="Morning Briefing"
+            schedule={config.schedules.today}
+            running={running === "today"}
+            onRun={() => onRun("today")}
+          />
+          <ScheduleRow
+            label="Nightly Archive"
+            schedule={config.schedules.archive}
+            running={running === "archive"}
+            onRun={() => onRun("archive")}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Manual Run Section
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ManualRunSection({
+  running,
+  onRun,
+}: {
+  running: string | null;
+  onRun: (workflow: string) => void;
+}) {
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Manual Run</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Trigger workflows manually without waiting for schedule
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <button
+          style={{ ...styles.btn, ...styles.btnPrimary, opacity: running !== null ? 0.5 : 1 }}
+          onClick={() => onRun("today")}
+          disabled={running !== null}
+        >
+          {running === "today" ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Running...
+            </span>
+          ) : (
+            "Run Daily Briefing"
+          )}
+        </button>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: running !== null ? 0.5 : 1 }}
+          onClick={() => onRun("week")}
+          disabled={running !== null}
+        >
+          {running === "week" ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Running...
+            </span>
+          ) : (
+            "Run Weekly Briefing"
+          )}
+        </button>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: running !== null ? 0.5 : 1 }}
+          onClick={() => onRun("archive")}
+          disabled={running !== null}
+        >
+          {running === "archive" ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Running...
+            </span>
+          ) : (
+            "Run Archive"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UpdateCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 type UpdateState =
   | { phase: "idle" }
@@ -459,77 +626,72 @@ function UpdateCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ArrowDownToLine className="size-4" />
-          Updates
-        </CardTitle>
-        <CardDescription>
-          {appVersion ? `DailyOS v${appVersion}` : "DailyOS"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {state.phase === "idle" || state.phase === "error" ? (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              {state.phase === "error"
-                ? "Update check failed"
-                : "Check for new versions"}
+    <div>
+      <p style={styles.subsectionLabel}>Updates</p>
+      <p style={{ ...styles.description, marginBottom: 12 }}>
+        {appVersion ? `DailyOS v${appVersion}` : "DailyOS"}
+      </p>
+
+      {state.phase === "idle" || state.phase === "error" ? (
+        <div style={styles.settingRow}>
+          <span style={styles.description}>
+            {state.phase === "error" ? "Update check failed" : "Check for new versions"}
+          </span>
+          <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={handleCheck}>
+            Check for Updates
+          </button>
+        </div>
+      ) : state.phase === "checking" ? (
+        <div style={styles.settingRow}>
+          <span style={styles.description}>Checking for updates...</span>
+          <button style={{ ...styles.btn, ...styles.btnGhost, opacity: 0.5 }} disabled>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Checking
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleCheck}
-            >
-              <RefreshCw className="mr-1.5 size-3.5" />
-              Check for Updates
-            </Button>
-          </div>
-        ) : state.phase === "checking" ? (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Checking for updates...
-            </span>
-            <Button variant="outline" size="sm" disabled>
-              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-              Checking
-            </Button>
-          </div>
-        ) : state.phase === "available" ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium">
-                  v{state.update.version} available
+          </button>
+        </div>
+      ) : state.phase === "available" ? (
+        <div>
+          <div style={styles.settingRow}>
+            <div>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                v{state.update.version} available
+              </span>
+              {state.update.body && (
+                <p style={{ ...styles.description, fontSize: 12, marginTop: 4 }}>
+                  {state.update.body}
                 </p>
-                {state.update.body && (
-                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                    {state.update.body}
-                  </p>
-                )}
-              </div>
-              <Button size="sm" onClick={handleInstall}>
-                <ArrowDownToLine className="mr-1.5 size-3.5" />
-                Install & Restart
-              </Button>
+              )}
             </div>
+            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleInstall}>
+              Install &amp; Restart
+            </button>
           </div>
-        ) : state.phase === "installing" ? (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
-              Installing update...
+        </div>
+      ) : state.phase === "installing" ? (
+        <div style={styles.settingRow}>
+          <span style={styles.description}>Installing update...</span>
+          <button style={{ ...styles.btn, ...styles.btnGhost, opacity: 0.5 }} disabled>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Installing
             </span>
-            <Button size="sm" disabled>
-              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-              Installing
-            </Button>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ClaudeDesktopCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function ClaudeDesktopCard() {
   const [configuring, setConfiguring] = useState(false);
@@ -573,56 +735,65 @@ function ClaudeDesktopCard() {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MessageSquare className="size-4" />
-          Claude Desktop
-        </CardTitle>
-        <CardDescription>
-          Connect Claude Desktop to query your workspace via MCP
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {result && (
-          <div
-            className={cn(
-              "flex items-center gap-2 rounded-md border px-3 py-2",
-              result.success
-                ? "border-sage/40 bg-sage/10"
-                : "border-destructive/40 bg-destructive/10"
-            )}
-          >
-            {result.success ? (
-              <CheckCircle className="size-3.5 text-sage" />
-            ) : (
-              <AlertCircle className="size-3.5 text-destructive" />
-            )}
-            <span className="text-xs">{result.message}</span>
-          </div>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleConfigure}
-          disabled={configuring}
+    <div>
+      <p style={styles.subsectionLabel}>Claude Desktop</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Connect Claude Desktop to query your workspace via MCP
+      </p>
+
+      {result && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 0",
+            marginBottom: 12,
+          }}
         >
-          {configuring ? (
-            <Loader2 className="mr-2 size-3.5 animate-spin" />
-          ) : (
-            <Settings className="mr-2 size-3.5" />
-          )}
-          {result?.success ? "Reconfigure" : "Connect to Claude Desktop"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Adds DailyOS as an MCP server in Claude Desktop. After connecting,
-          Claude can query your briefing, accounts, projects, and meeting
-          history.
-        </p>
-      </CardContent>
-    </Card>
+          <div
+            style={styles.statusDot(
+              result.success ? "var(--color-garden-sage)" : "var(--color-spice-terracotta)"
+            )}
+          />
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>
+            {result.message}
+          </span>
+        </div>
+      )}
+
+      <button
+        style={{
+          ...styles.btn,
+          ...styles.btnGhost,
+          opacity: configuring ? 0.5 : 1,
+        }}
+        onClick={handleConfigure}
+        disabled={configuring}
+      >
+        {configuring ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Loader2 size={12} className="animate-spin" /> Configuring...
+          </span>
+        ) : result?.success ? (
+          "Reconfigure"
+        ) : (
+          "Connect to Claude Desktop"
+        )}
+      </button>
+
+      <p style={{ ...styles.description, fontSize: 12, marginTop: 12 }}>
+        Adds DailyOS as an MCP server in Claude Desktop. After connecting,
+        Claude can query your briefing, accounts, projects, and meeting
+        history.
+      </p>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GoogleAccountCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function GoogleAccountCard() {
   const {
@@ -638,92 +809,134 @@ function GoogleAccountCard() {
   } = useGoogleAuth();
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Mail className="size-4" />
-          Google Account
-        </CardTitle>
-        <CardDescription>
-          {status.status === "authenticated"
-            ? "Calendar and meeting features active"
-            : "Connect Google for calendar awareness and meeting features"}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <div className="mb-3 flex items-center justify-between rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
-            <span className="text-xs text-destructive">{error}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-destructive"
-              onClick={clearError}
-            >
-              Dismiss
-            </Button>
-          </div>
-        )}
+    <div>
+      <p style={styles.subsectionLabel}>Google Account</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        {status.status === "authenticated"
+          ? "Calendar and meeting features active"
+          : "Connect Google for calendar awareness and meeting features"}
+      </p>
 
-        {status.status === "authenticated" ? (
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="relative flex size-2">
-                  <span className="absolute inline-flex size-full rounded-full bg-success opacity-75" />
-                  <span className="relative inline-flex size-2 rounded-full bg-success" />
-                </span>
-                <span className="text-sm">{email}</span>
-              </div>
-              {justConnected && (
-                <p className="mt-1 text-xs text-success">Connected successfully.</p>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              onClick={disconnect}
-              disabled={loading || phase === "authorizing"}
-            >
-              {loading ? (
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-              ) : (
-                <LogOut className="mr-1.5 size-3.5" />
-              )}
-              Disconnect
-            </Button>
-          </div>
-        ) : status.status === "tokenexpired" ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="inline-flex size-2 rounded-full bg-destructive" />
-              <span className="text-sm text-muted-foreground">
-                Session expired
+      {error && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 0",
+            borderBottom: "1px solid var(--color-spice-terracotta)",
+            marginBottom: 12,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              color: "var(--color-spice-terracotta)",
+            }}
+          >
+            {error}
+          </span>
+          <button
+            style={{
+              ...styles.btn,
+              fontSize: 10,
+              padding: "2px 8px",
+              color: "var(--color-spice-terracotta)",
+              border: "none",
+            }}
+            onClick={clearError}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {status.status === "authenticated" ? (
+        <div style={styles.settingRow}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot("var(--color-garden-sage)")} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                {email}
               </span>
             </div>
-            <Button size="sm" onClick={connect} disabled={loading}>
-              {loading ? (
-                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1.5 size-3.5" />
-              )}
-              {phase === "authorizing" ? "Waiting for authorization..." : "Reconnect"}
-            </Button>
+            {justConnected && (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 12,
+                  color: "var(--color-garden-sage)",
+                  marginTop: 4,
+                }}
+              >
+                Connected successfully.
+              </p>
+            )}
           </div>
-        ) : (
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Not connected</span>
-            <Button size="sm" onClick={connect} disabled={loading}>
-              {loading && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-              {phase === "authorizing" ? "Waiting for authorization..." : "Connect"}
-            </Button>
+          <button
+            style={{ ...styles.btn, ...styles.btnGhost, opacity: loading || phase === "authorizing" ? 0.5 : 1 }}
+            onClick={disconnect}
+            disabled={loading || phase === "authorizing"}
+          >
+            {loading ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Loader2 size={12} className="animate-spin" /> ...
+              </span>
+            ) : (
+              "Disconnect"
+            )}
+          </button>
+        </div>
+      ) : status.status === "tokenexpired" ? (
+        <div style={styles.settingRow}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={styles.statusDot("var(--color-spice-terracotta)")} />
+            <span style={styles.description}>Session expired</span>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <button
+            style={{ ...styles.btn, ...styles.btnDanger, opacity: loading ? 0.5 : 1 }}
+            onClick={connect}
+            disabled={loading}
+          >
+            {loading ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Loader2 size={12} className="animate-spin" /> ...
+              </span>
+            ) : phase === "authorizing" ? (
+              "Waiting..."
+            ) : (
+              "Reconnect"
+            )}
+          </button>
+        </div>
+      ) : (
+        <div style={styles.settingRow}>
+          <span style={styles.description}>Not connected</span>
+          <button
+            style={{ ...styles.btn, ...styles.btnPrimary, opacity: loading ? 0.5 : 1 }}
+            onClick={connect}
+            disabled={loading}
+          >
+            {loading ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Loader2 size={12} className="animate-spin" /> ...
+              </span>
+            ) : phase === "authorizing" ? (
+              "Waiting for authorization..."
+            ) : (
+              "Connect"
+            )}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PersonalityCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 const PERSONALITY_OPTIONS = [
   {
@@ -762,48 +975,72 @@ function PersonalityCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MessageSquare className="size-4" />
-          Personality
-        </CardTitle>
-        <CardDescription>
-          Sets the tone for empty states, loading messages, and notifications
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-3">
-          {PERSONALITY_OPTIONS.map((option) => (
+    <div>
+      <p style={styles.subsectionLabel}>Personality</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Sets the tone for empty states, loading messages, and notifications
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {PERSONALITY_OPTIONS.map((option) => {
+          const isSelected = personality === option.value;
+          return (
             <button
               key={option.value}
               onClick={() => handleChange(option.value)}
-              className={cn(
-                "flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors",
-                personality === option.value
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:bg-muted/50",
-              )}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: 4,
+                padding: "12px 16px",
+                textAlign: "left" as const,
+                background: "none",
+                border: isSelected
+                  ? "1px solid var(--color-desk-charcoal)"
+                  : "1px solid var(--color-rule-light)",
+                borderRadius: 4,
+                cursor: "pointer",
+                transition: "border-color 0.15s ease",
+              }}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{option.label}</span>
-                {personality === option.value && (
-                  <Check className="size-3.5 text-primary" />
-                )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {option.label}
+                </span>
+                {isSelected && <Check size={14} style={{ color: "var(--color-garden-sage)" }} />}
               </div>
-              <span className="text-xs text-muted-foreground">
+              <span style={{ ...styles.description, fontSize: 12 }}>
                 {option.description}
               </span>
-              <span className="mt-1 text-xs italic text-muted-foreground/70">
+              <span
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 12,
+                  fontStyle: "italic",
+                  color: "var(--color-text-tertiary)",
+                  marginTop: 2,
+                }}
+              >
                 "{option.example}"
               </span>
             </button>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UserProfileCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function UserProfileCard() {
   const [name, setName] = useState("");
@@ -850,77 +1087,96 @@ function UserProfileCard() {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-24" />
-        </CardHeader>
-        <CardContent>
-          <Skeleton className="h-10 w-full" />
-        </CardContent>
-      </Card>
+      <div>
+        <p style={styles.subsectionLabel}>About You</p>
+        <div
+          style={{
+            height: 40,
+            background: "var(--color-rule-light)",
+            borderRadius: 4,
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        />
+      </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <User className="size-4" />
-          About You
-        </CardTitle>
-        <CardDescription>
-          Helps DailyOS personalize your briefings and meeting prep
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label htmlFor="profile-name" className="text-sm font-medium">Name</label>
-            <Input
-              id="profile-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Jamie"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="profile-company" className="text-sm font-medium">Company</label>
-            <Input
-              id="profile-company"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              placeholder="e.g. Acme Inc."
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="profile-title" className="text-sm font-medium">Title</label>
-            <Input
-              id="profile-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Customer Success Manager"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="profile-focus" className="text-sm font-medium">Current focus</label>
-            <Input
-              id="profile-focus"
-              value={focus}
-              onChange={(e) => setFocus(e.target.value)}
-              placeholder="e.g. Driving Q2 renewals"
-            />
-          </div>
+    <div>
+      <p style={styles.subsectionLabel}>About You</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Helps DailyOS personalize your briefings and meeting prep
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "20px 32px",
+        }}
+      >
+        <div>
+          <label htmlFor="profile-name" style={styles.fieldLabel}>Name</label>
+          <input
+            id="profile-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Jamie"
+            style={styles.input}
+          />
         </div>
-        <div className="flex justify-end">
-          <Button size="sm" onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-            Save
-          </Button>
+        <div>
+          <label htmlFor="profile-company" style={styles.fieldLabel}>Company</label>
+          <input
+            id="profile-company"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="e.g. Acme Inc."
+            style={styles.input}
+          />
         </div>
-      </CardContent>
-    </Card>
+        <div>
+          <label htmlFor="profile-title" style={styles.fieldLabel}>Title</label>
+          <input
+            id="profile-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Customer Success Manager"
+            style={styles.input}
+          />
+        </div>
+        <div>
+          <label htmlFor="profile-focus" style={styles.fieldLabel}>Current focus</label>
+          <input
+            id="profile-focus"
+            value={focus}
+            onChange={(e) => setFocus(e.target.value)}
+            placeholder="e.g. Driving Q2 renewals"
+            style={styles.input}
+          />
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+        <button
+          style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {saving ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Saving
+            </span>
+          ) : (
+            "Save"
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UserDomainsCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function UserDomainsCard() {
   const [domains, setDomains] = useState<string[]>([]);
@@ -981,57 +1237,86 @@ function UserDomainsCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Globe className="size-4" />
-          Your Domains
-        </CardTitle>
-        <CardDescription>
-          Your organization's email domains — used to distinguish internal vs external meetings
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div
-          className={cn(
-            "flex flex-wrap items-center gap-1.5 rounded-md border bg-background px-3 py-2 text-sm",
-            "focus-within:ring-1 focus-within:ring-ring",
-          )}
-        >
-          {domains.map((d) => (
-            <span
-              key={d}
-              className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-xs"
-            >
-              {d}
-              <button
-                type="button"
-                onClick={() => removeDomain(d)}
-                className="text-muted-foreground hover:text-foreground"
-                disabled={saving}
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value.replace(",", ""))}
-            onKeyDown={handleKeyDown}
-            onBlur={() => {
-              if (inputValue.trim()) addDomain(inputValue);
+    <div>
+      <p style={styles.subsectionLabel}>Your Domains</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Your organization's email domains -- used to distinguish internal vs external meetings
+      </p>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 6,
+          borderBottom: "1px solid var(--color-rule-light)",
+          padding: "8px 0",
+          minHeight: 36,
+        }}
+      >
+        {domains.map((d) => (
+          <span
+            key={d}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              color: "var(--color-text-primary)",
+              background: "var(--color-rule-light)",
+              padding: "2px 8px",
+              borderRadius: 3,
             }}
-            placeholder={domains.length === 0 ? "example.com" : ""}
-            className="min-w-[120px] flex-1 bg-transparent font-mono text-sm outline-none placeholder:text-muted-foreground/50"
-            disabled={loading}
-          />
-          {saving && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-        </div>
-      </CardContent>
-    </Card>
+          >
+            {d}
+            <button
+              type="button"
+              onClick={() => removeDomain(d)}
+              disabled={saving}
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                color: "var(--color-text-tertiary)",
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value.replace(",", ""))}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            if (inputValue.trim()) addDomain(inputValue);
+          }}
+          placeholder={domains.length === 0 ? "example.com" : ""}
+          style={{
+            minWidth: 120,
+            flex: 1,
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            color: "var(--color-text-primary)",
+            background: "transparent",
+            border: "none",
+            outline: "none",
+          }}
+          disabled={loading}
+        />
+        {saving && <Loader2 size={14} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />}
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CaptureSettingsCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function CaptureSettingsCard() {
   const [captureConfig, setCaptureConfig] = useState<PostMeetingCaptureConfig | null>(null);
@@ -1064,65 +1349,72 @@ function CaptureSettingsCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <MessageSquare className="size-4" />
-          Post-Meeting Capture
-        </CardTitle>
-        <CardDescription>
-          Prompt for quick outcomes after customer meetings
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm">
-              {captureConfig?.enabled ? "Enabled" : "Disabled"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {captureConfig?.enabled
-                ? "Prompts appear after customer meetings end"
-                : "Post-meeting prompts are turned off"}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleCapture}
-            disabled={!captureConfig}
-          >
-            {captureConfig?.enabled ? "Disable" : "Enable"}
-          </Button>
+    <div>
+      <p style={styles.subsectionLabel}>Post-Meeting Capture</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Prompt for quick outcomes after customer meetings
+      </p>
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {captureConfig?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {captureConfig?.enabled
+              ? "Prompts appear after customer meetings end"
+              : "Post-meeting prompts are turned off"}
+          </p>
         </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !captureConfig ? 0.5 : 1 }}
+          onClick={toggleCapture}
+          disabled={!captureConfig}
+        >
+          {captureConfig?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
 
-        {captureConfig?.enabled && (
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <p className="text-sm font-medium">Prompt delay</p>
-              <p className="text-xs text-muted-foreground">
-                Wait before showing the prompt
-              </p>
-            </div>
-            <div className="flex gap-1">
-              {[2, 5, 10].map((mins) => (
-                <Button
-                  key={mins}
-                  variant={captureConfig.delayMinutes === mins ? "default" : "outline"}
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => updateDelay(mins)}
-                >
-                  {mins}m
-                </Button>
-              ))}
-            </div>
+      {captureConfig?.enabled && (
+        <div style={{ ...styles.settingRow, marginTop: 8 }}>
+          <div>
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              Prompt delay
+            </span>
+            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              Wait before showing the prompt
+            </p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[2, 5, 10].map((mins) => (
+              <button
+                key={mins}
+                style={{
+                  ...styles.btn,
+                  ...(captureConfig.delayMinutes === mins ? styles.btnPrimary : styles.btnGhost),
+                  padding: "3px 10px",
+                }}
+                onClick={() => updateDelay(mins)}
+              >
+                {mins}m
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FeaturesCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function FeaturesCard() {
   const [features, setFeatures] = useState<FeatureDefinition[]>([]);
@@ -1147,44 +1439,54 @@ function FeaturesCard() {
   if (features.length === 0) return null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ToggleRight className="size-4" />
-          Features
-        </CardTitle>
-        <CardDescription>
-          Enable or disable pipeline operations
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div>
+      <p style={styles.subsectionLabel}>Features</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Enable or disable pipeline operations
+      </p>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         {features.map((feature) => (
-          <div key={feature.key} className="flex items-center justify-between rounded-md border p-3">
+          <div key={feature.key} style={styles.settingRow}>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{feature.label}</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {feature.label}
+                </span>
                 {feature.csOnly && (
-                  <Badge variant="outline" className="text-[10px]">CS</Badge>
+                  <span style={{ ...styles.monoLabel, fontSize: 10 }}>CS</span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
                 {feature.description}
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
+            <button
+              style={{
+                ...styles.btn,
+                ...(feature.enabled ? styles.btnPrimary : styles.btnGhost),
+                padding: "3px 10px",
+              }}
               onClick={() => toggleFeature(feature.key, feature.enabled)}
             >
               {feature.enabled ? "Enabled" : "Disabled"}
-            </Button>
+            </button>
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AiModelsCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 const modelOptions = ["haiku", "sonnet", "opus"] as const;
 
@@ -1228,47 +1530,60 @@ function AiModelsCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Cpu className="size-4" />
-          AI Models
-        </CardTitle>
-        <CardDescription>
-          Choose which Claude model handles each type of operation
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <div>
+      <p style={styles.subsectionLabel}>AI Models</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Choose which Claude model handles each type of operation
+      </p>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         {(["synthesis", "extraction", "mechanical"] as const).map((tier) => {
           const info = tierDescriptions[tier];
           const current = aiModels?.[tier] ?? "sonnet";
           return (
-            <div key={tier} className="flex items-center justify-between rounded-md border p-3">
+            <div key={tier} style={styles.settingRow}>
               <div>
-                <p className="text-sm font-medium">{info.label}</p>
-                <p className="text-xs text-muted-foreground">{info.description}</p>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {info.label}
+                </span>
+                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                  {info.description}
+                </p>
               </div>
-              <div className="flex gap-1">
+              <div style={{ display: "flex", gap: 4 }}>
                 {modelOptions.map((model) => (
-                  <Button
+                  <button
                     key={model}
-                    variant={current === model ? "default" : "outline"}
-                    size="sm"
-                    className="text-xs"
+                    style={{
+                      ...styles.btn,
+                      ...(current === model ? styles.btnPrimary : styles.btnGhost),
+                      padding: "3px 10px",
+                      opacity: !aiModels ? 0.5 : 1,
+                    }}
                     onClick={() => handleModelChange(tier, model)}
                     disabled={!aiModels}
                   >
                     {model}
-                  </Button>
+                  </button>
                 ))}
               </div>
             </div>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ScheduleRow
+// ═══════════════════════════════════════════════════════════════════════════
 
 function cronToHumanTime(cron: string): string {
   const parts = cron.split(" ");
@@ -1294,50 +1609,79 @@ function ScheduleRow({
   onRun: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-md border p-3">
+    <div style={styles.settingRow}>
       <div>
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{label}</span>
-          <Badge variant={schedule.enabled ? "default" : "secondary"}>
-            {schedule.enabled ? "Enabled" : "Disabled"}
-          </Badge>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {label}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div
+              style={styles.statusDot(
+                schedule.enabled ? "var(--color-garden-sage)" : "var(--color-text-tertiary)"
+              )}
+            />
+            <span style={styles.monoLabel}>
+              {schedule.enabled ? "Enabled" : "Disabled"}
+            </span>
+          </div>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            marginTop: 4,
+          }}
+        >
           {cronToHumanTime(schedule.cron)}{" "}
-          <span className="text-muted-foreground/60">({schedule.timezone})</span>
+          <span style={{ opacity: 0.6 }}>({schedule.timezone})</span>
         </p>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
+        style={{
+          background: "none",
+          border: "none",
+          cursor: running ? "default" : "pointer",
+          color: "var(--color-text-tertiary)",
+          padding: 4,
+          opacity: running ? 0.5 : 1,
+        }}
         onClick={onRun}
         disabled={running}
       >
         {running ? (
-          <RefreshCw className="size-4 animate-spin" />
+          <RefreshCw size={16} className="animate-spin" />
         ) : (
-          <Play className="size-4" />
+          <Play size={16} />
         )}
-      </Button>
+      </button>
     </div>
   );
 }
 
-// =============================================================================
-// Entity Mode Card
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// EntityModeCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 const entityModeOptions: { id: EntityMode; title: string; description: string; icon: typeof Building2 }[] = [
   {
     id: "account",
     title: "Account-based",
-    description: "External relationships — customers, clients, partners",
+    description: "External relationships -- customers, clients, partners",
     icon: Building2,
   },
   {
     id: "project",
     title: "Project-based",
-    description: "Internal efforts — features, campaigns, initiatives",
+    description: "Internal efforts -- features, campaigns, initiatives",
     icon: FolderKanban,
   },
   {
@@ -1363,7 +1707,7 @@ function EntityModeCard({
     try {
       await invoke("set_entity_mode", { mode });
       onModeChange(mode);
-      toast.success("Entity mode updated — reloading...");
+      toast.success("Entity mode updated -- reloading...");
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to update entity mode");
@@ -1373,17 +1717,12 @@ function EntityModeCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Layers className="size-4" />
-          Work Mode
-        </CardTitle>
-        <CardDescription>
-          How you organize your work — shapes workspace structure and sidebar
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-2">
+    <div>
+      <p style={styles.subsectionLabel}>Work Mode</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        How you organize your work -- shapes workspace structure and sidebar
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {entityModeOptions.map((option) => {
           const Icon = option.icon;
           const isSelected = currentMode === option.id;
@@ -1391,39 +1730,52 @@ function EntityModeCard({
             <button
               key={option.id}
               type="button"
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md border p-3 text-left transition-colors",
-                isSelected
-                  ? "border-primary bg-primary/5"
-                  : "hover:bg-muted/50",
-                saving && !isSelected && "pointer-events-none opacity-50",
-              )}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "12px 16px",
+                textAlign: "left" as const,
+                background: "none",
+                border: isSelected
+                  ? "1px solid var(--color-desk-charcoal)"
+                  : "1px solid var(--color-rule-light)",
+                borderRadius: 4,
+                cursor: saving && !isSelected ? "default" : "pointer",
+                opacity: saving && !isSelected ? 0.5 : 1,
+                transition: "all 0.15s ease",
+              }}
               onClick={() => handleSelect(option.id)}
               disabled={saving}
             >
-              <div className="flex size-8 items-center justify-center rounded-md bg-muted">
-                <Icon className="size-4" />
+              <Icon size={18} style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {option.title}
+                </span>
+                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                  {option.description}
+                </p>
               </div>
-              <div className="flex-1">
-                <p className="text-sm font-medium">{option.title}</p>
-                <p className="text-xs text-muted-foreground">{option.description}</p>
-              </div>
-              {isSelected && (
-                <div className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Check className="size-3" />
-                </div>
-              )}
+              {isSelected && <Check size={16} style={{ color: "var(--color-garden-sage)", flexShrink: 0 }} />}
             </button>
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-// =============================================================================
-// Workspace Card
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// WorkspaceCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function WorkspaceCard({
   workspacePath,
@@ -1445,7 +1797,7 @@ function WorkspaceCard({
     try {
       await invoke("set_workspace_path", { path: selected });
       onPathChange(selected);
-      toast.success("Workspace updated — reloading...");
+      toast.success("Workspace updated -- reloading...");
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to set workspace");
@@ -1455,46 +1807,45 @@ function WorkspaceCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <FolderOpen className="size-4" />
-          Workspace
-        </CardTitle>
-        <CardDescription>
-          The directory where DailyOS stores briefings, actions, and files
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <code className="rounded bg-muted px-3 py-1.5 font-mono text-sm">
-            {workspacePath || "Not configured"}
-          </code>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleChooseWorkspace}
-            disabled={saving}
-          >
-            {saving ? (
-              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-            ) : (
-              <FolderOpen className="mr-1.5 size-3.5" />
-            )}
-            Change
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <div>
+      <p style={styles.subsectionLabel}>Workspace</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        The directory where DailyOS stores briefings, actions, and files
+      </p>
+      <div style={styles.settingRow}>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {workspacePath || "Not configured"}
+        </span>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: saving ? 0.5 : 1 }}
+          onClick={handleChooseWorkspace}
+          disabled={saving}
+        >
+          {saving ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> ...
+            </span>
+          ) : (
+            "Change"
+          )}
+        </button>
+      </div>
+    </div>
   );
 }
 
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
 // Intelligence Hygiene Card (I213)
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
 
 function formatTime(iso?: string): string {
-  if (!iso) return "—";
+  if (!iso) return "--";
   try {
     const d = new Date(iso);
     return d.toLocaleString(undefined, {
@@ -1610,228 +1961,363 @@ function IntelligenceHygieneCard() {
     runScanNow();
   }
 
+  if (loading) {
+    return (
+      <div>
+        <div
+          style={{
+            height: 24,
+            width: 200,
+            background: "var(--color-rule-light)",
+            borderRadius: 4,
+            marginBottom: 12,
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        />
+        <div
+          style={{
+            height: 80,
+            background: "var(--color-rule-light)",
+            borderRadius: 4,
+            animation: "pulse 1.5s ease-in-out infinite",
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (!status) {
+    return (
+      <p style={styles.description}>
+        No scan completed yet -- runs automatically after startup.
+      </p>
+    );
+  }
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Activity className="size-4" />
-          Intelligence Hygiene
-        </CardTitle>
-        <CardDescription>
-          Proactive intelligence maintenance with clear next actions
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-20 w-full" />
+    <div>
+      {/* Status & Budget */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 24,
+          marginBottom: 32,
+        }}
+      >
+        <div>
+          <p style={styles.subsectionLabel}>Status</p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {status.statusLabel}
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div
+                style={styles.statusDot(
+                  status.totalGaps === 0 ? "var(--color-garden-sage)" : "var(--color-spice-turmeric)"
+                )}
+              />
+              <span style={styles.monoLabel}>{status.totalGaps} gaps</span>
+            </div>
           </div>
-        ) : status ? (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Status</p>
-                <div className="mt-1 flex items-center justify-between">
-                  <p className="text-sm font-medium">{status.statusLabel}</p>
-                  <Badge variant={status.totalGaps === 0 ? "secondary" : "outline"}>
-                    {status.totalGaps} gaps
-                  </Badge>
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Last scan: {formatTime(status.lastScanTime)}
-                  {status.scanDurationMs != null && (
-                    <span className="ml-1 text-muted-foreground/60">
-                      ({status.scanDurationMs < 1000
-                        ? `${status.scanDurationMs}ms`
-                        : `${(status.scanDurationMs / 1000).toFixed(1)}s`})
-                    </span>
-                  )}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Next scan: {formatTime(status.nextScanTime)}
-                </p>
-              </div>
-              <div className="rounded-md border p-3">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">AI Budget</p>
-                <p className="mt-1 text-sm font-medium">
-                  {status.budget.usedToday} / {status.budget.dailyLimit} used today
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Queued for next budget window: {status.budget.queuedForNextBudget}
-                </p>
-              </div>
-            </div>
+          <p style={{ ...styles.description, fontSize: 12 }}>
+            Last scan: {formatTime(status.lastScanTime)}
+            {status.scanDurationMs != null && (
+              <span style={{ opacity: 0.6, marginLeft: 4 }}>
+                ({status.scanDurationMs < 1000
+                  ? `${status.scanDurationMs}ms`
+                  : `${(status.scanDurationMs / 1000).toFixed(1)}s`})
+              </span>
+            )}
+          </p>
+          <p style={{ ...styles.description, fontSize: 12 }}>
+            Next scan: {formatTime(status.nextScanTime)}
+          </p>
+        </div>
+        <div>
+          <p style={styles.subsectionLabel}>AI Budget</p>
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {status.budget.usedToday} / {status.budget.dailyLimit} used today
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 8 }}>
+            Queued for next budget window: {status.budget.queuedForNextBudget}
+          </p>
+        </div>
+      </div>
 
-            <div className="rounded-md border p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium">Fixes Applied</p>
-                <Badge variant={status.totalFixes > 0 ? "default" : "secondary"}>
-                  {status.totalFixes}
-                </Badge>
-              </div>
-              {status.fixDetails && status.fixDetails.length > 0 ? (
-                <div className="space-y-1">
-                  {(showAllFixes ? status.fixDetails : status.fixDetails.slice(0, 5)).map((detail, i) => (
-                    <p key={i} className="text-xs text-muted-foreground">
-                      &bull; {detail.description}
-                    </p>
-                  ))}
-                  {status.fixDetails.length > 5 && !showAllFixes && (
-                    <button
-                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setShowAllFixes(true)}
-                    >
-                      &hellip; and {status.fixDetails.length - 5} more
-                    </button>
-                  )}
-                  {showAllFixes && status.fixDetails.length > 5 && (
-                    <button
-                      className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                      onClick={() => setShowAllFixes(false)}
-                    >
-                      Show less
-                    </button>
-                  )}
-                </div>
-              ) : status.fixes.length > 0 ? (
-                <div className="space-y-1">
-                  {status.fixes.map((fix) => (
-                    <div key={fix.key} className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{fix.label}</span>
-                      <span>{fix.count}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">No fixes were applied in the most recent scan.</p>
+      {/* Fixes Applied */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <p style={styles.subsectionLabel}>Fixes Applied</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={styles.statusDot(
+                status.totalFixes > 0 ? "var(--color-garden-sage)" : "var(--color-text-tertiary)"
               )}
-            </div>
-
-            <div className="rounded-md border p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium">Gaps Detected</p>
-                <Badge variant={status.gaps.length > 0 ? "outline" : "secondary"}>
-                  {status.gaps.length}
-                </Badge>
+            />
+            <span style={styles.monoLabel}>{status.totalFixes}</span>
+          </div>
+        </div>
+        {status.fixDetails && status.fixDetails.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {(showAllFixes ? status.fixDetails : status.fixDetails.slice(0, 5)).map((detail, i) => (
+              <p key={i} style={{ ...styles.description, fontSize: 12, margin: 0 }}>
+                &bull; {detail.description}
+              </p>
+            ))}
+            {status.fixDetails.length > 5 && !showAllFixes && (
+              <button
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  textAlign: "left",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                }}
+                onClick={() => setShowAllFixes(true)}
+              >
+                ... and {status.fixDetails.length - 5} more
+              </button>
+            )}
+            {showAllFixes && status.fixDetails.length > 5 && (
+              <button
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  textAlign: "left",
+                  textDecoration: "underline",
+                  textUnderlineOffset: "2px",
+                }}
+                onClick={() => setShowAllFixes(false)}
+              >
+                Show less
+              </button>
+            )}
+          </div>
+        ) : status.fixes.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {status.fixes.map((fix) => (
+              <div
+                key={fix.key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  ...styles.description,
+                  fontSize: 12,
+                }}
+              >
+                <span>{fix.label}</span>
+                <span>{fix.count}</span>
               </div>
-              {status.gaps.length > 0 ? (
-                <div className="space-y-2">
-                  {status.gaps.map((gap) => (
-                    <div key={gap.key} className="rounded-md border p-2.5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">
-                            {gap.label} <span className="text-muted-foreground">({gap.count})</span>
-                          </p>
-                          <p className="text-xs text-muted-foreground">{gap.description}</p>
-                        </div>
-                        <Badge variant="outline" className="text-[10px] uppercase">
-                          {gap.impact}
-                        </Badge>
-                      </div>
-                      <div className="mt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs"
-                          onClick={() => handleGapAction(gap.action.route)}
-                        >
-                          {gap.action.label}
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No open hygiene gaps. The system will continue scanning automatically.
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-md border p-3">
-              <p className="mb-3 text-sm font-medium">Configuration</p>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm">Scan Interval</p>
-                    <p className="text-xs text-muted-foreground">How often hygiene runs</p>
-                  </div>
-                  <div className="flex gap-1">
-                    {scanIntervalOptions.map((v) => (
-                      <Button
-                        key={v}
-                        variant={hygieneConfig.hygieneScanIntervalHours === v ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => handleHygieneConfigChange("scanIntervalHours", v)}
-                      >
-                        {v}hr
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm">Daily AI Budget</p>
-                    <p className="text-xs text-muted-foreground">Max AI enrichments per day</p>
-                  </div>
-                  <div className="flex gap-1">
-                    {aiBudgetOptions.map((v) => (
-                      <Button
-                        key={v}
-                        variant={hygieneConfig.hygieneAiBudget === v ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => handleHygieneConfigChange("aiBudget", v)}
-                      >
-                        {v}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm">Pre-Meeting Window</p>
-                    <p className="text-xs text-muted-foreground">Refresh intel before meetings</p>
-                  </div>
-                  <div className="flex gap-1">
-                    {preMeetingOptions.map((v) => (
-                      <Button
-                        key={v}
-                        variant={hygieneConfig.hygienePreMeetingHours === v ? "default" : "outline"}
-                        size="sm"
-                        className="text-xs"
-                        onClick={() => handleHygieneConfigChange("preMeetingHours", v)}
-                      >
-                        {v}hr
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button onClick={runScanNow} disabled={runningNow || status.isRunning}>
-                {(runningNow || status.isRunning) && <Loader2 className="mr-2 size-4 animate-spin" />}
-                Run Hygiene Scan Now
-              </Button>
-              <Button variant="ghost" size="sm" onClick={loadStatus}>
-                Refresh
-              </Button>
-            </div>
-          </>
+            ))}
+          </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No scan completed yet — runs automatically after startup.
+          <p style={{ ...styles.description, fontSize: 12 }}>
+            No fixes were applied in the most recent scan.
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      {/* Gaps Detected */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <p style={styles.subsectionLabel}>Gaps Detected</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={styles.statusDot(
+                status.gaps.length > 0 ? "var(--color-spice-terracotta)" : "var(--color-garden-sage)"
+              )}
+            />
+            <span style={styles.monoLabel}>{status.gaps.length}</span>
+          </div>
+        </div>
+        {status.gaps.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {status.gaps.map((gap) => (
+              <div
+                key={gap.key}
+                style={{
+                  padding: "12px 0",
+                  borderBottom: "1px solid var(--color-rule-light)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "var(--color-text-primary)",
+                      }}
+                    >
+                      {gap.label}{" "}
+                      <span style={{ color: "var(--color-text-tertiary)" }}>({gap.count})</span>
+                    </span>
+                    <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                      {gap.description}
+                    </p>
+                  </div>
+                  <span style={{ ...styles.monoLabel, fontSize: 10, textTransform: "uppercase" }}>
+                    {gap.impact}
+                  </span>
+                </div>
+                <button
+                  style={{ ...styles.btn, ...styles.btnGhost, marginTop: 8 }}
+                  onClick={() => handleGapAction(gap.action.route)}
+                >
+                  {gap.action.label}
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p style={{ ...styles.description, fontSize: 12 }}>
+            No open hygiene gaps. The system will continue scanning automatically.
+          </p>
+        )}
+      </div>
+
+      {/* Configuration */}
+      <div style={{ marginBottom: 32 }}>
+        <p style={styles.subsectionLabel}>Configuration</p>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Scan Interval
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                How often hygiene runs
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {scanIntervalOptions.map((v) => (
+                <button
+                  key={v}
+                  style={{
+                    ...styles.btn,
+                    ...(hygieneConfig.hygieneScanIntervalHours === v ? styles.btnPrimary : styles.btnGhost),
+                    padding: "3px 10px",
+                  }}
+                  onClick={() => handleHygieneConfigChange("scanIntervalHours", v)}
+                >
+                  {v}hr
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Daily AI Budget
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Max AI enrichments per day
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {aiBudgetOptions.map((v) => (
+                <button
+                  key={v}
+                  style={{
+                    ...styles.btn,
+                    ...(hygieneConfig.hygieneAiBudget === v ? styles.btnPrimary : styles.btnGhost),
+                    padding: "3px 10px",
+                  }}
+                  onClick={() => handleHygieneConfigChange("aiBudget", v)}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Pre-Meeting Window
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Refresh intel before meetings
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {preMeetingOptions.map((v) => (
+                <button
+                  key={v}
+                  style={{
+                    ...styles.btn,
+                    ...(hygieneConfig.hygienePreMeetingHours === v ? styles.btnPrimary : styles.btnGhost),
+                    padding: "3px 10px",
+                  }}
+                  onClick={() => handleHygieneConfigChange("preMeetingHours", v)}
+                >
+                  {v}hr
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button
+          style={{
+            ...styles.btn,
+            ...styles.btnPrimary,
+            opacity: runningNow || status.isRunning ? 0.5 : 1,
+          }}
+          onClick={runScanNow}
+          disabled={runningNow || status.isRunning}
+        >
+          {(runningNow || status.isRunning) ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <Loader2 size={12} className="animate-spin" /> Scanning...
+            </span>
+          ) : (
+            "Run Hygiene Scan Now"
+          )}
+        </button>
+        <button
+          style={{ ...styles.btn, color: "var(--color-text-tertiary)", border: "none" }}
+          onClick={loadStatus}
+        >
+          Refresh
+        </button>
+      </div>
+    </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MeetingBackfillCard
+// ═══════════════════════════════════════════════════════════════════════════
 
 function MeetingBackfillCard() {
   const [isRunning, setIsRunning] = useState(false);
@@ -1840,11 +2326,11 @@ function MeetingBackfillCard() {
   async function runBackfill() {
     setIsRunning(true);
     setResult(null);
-    
+
     try {
       const [created, skipped, errors] = await invoke<[number, number, string[]]>("backfill_historical_meetings");
       setResult({ created, skipped, errors });
-      
+
       if (errors.length === 0) {
         toast.success(`Backfilled ${created} meetings (${skipped} already existed)`);
       } else {
@@ -1859,74 +2345,93 @@ function MeetingBackfillCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <RefreshCw className="size-4" />
-          Historical Meeting Backfill
-        </CardTitle>
-        <CardDescription>
-          Import historical meeting files from your workspace into the database
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Scans account and project directories for meeting files (transcripts, notes, summaries)
-            and creates database records + entity links for any meetings not already in the system.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Looks for files in: <code className="text-xs">02-Meetings/</code>, <code className="text-xs">03-Call-Transcripts/</code>,{" "}
-            <code className="text-xs">Call-Transcripts/</code>, <code className="text-xs">Meeting-Notes/</code>
-          </p>
-        </div>
+    <div>
+      <p style={styles.subsectionLabel}>Historical Meeting Backfill</p>
+      <p style={{ ...styles.description, marginBottom: 12 }}>
+        Import historical meeting files from your workspace into the database.
+        Scans account and project directories for meeting files (transcripts, notes, summaries)
+        and creates database records + entity links for any meetings not already in the system.
+      </p>
+      <p style={{ ...styles.description, fontSize: 12, marginBottom: 16 }}>
+        Looks for files in: <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>02-Meetings/</code>,{" "}
+        <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>03-Call-Transcripts/</code>,{" "}
+        <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>Call-Transcripts/</code>,{" "}
+        <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>Meeting-Notes/</code>
+      </p>
 
-        {result && (
-          <div className="rounded-lg bg-muted p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              {result.errors.length === 0 ? (
-                <CheckCircle className="size-4 text-green-600" />
-              ) : (
-                <AlertCircle className="size-4 text-yellow-600" />
+      {result && (
+        <div style={{ padding: "12px 0", borderBottom: "1px solid var(--color-rule-light)", marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div
+              style={styles.statusDot(
+                result.errors.length === 0 ? "var(--color-garden-sage)" : "var(--color-spice-turmeric)"
               )}
-              <span className="text-sm font-medium">
-                Created {result.created} meetings, skipped {result.skipped}
-              </span>
-            </div>
-            
-            {result.errors.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-destructive">Errors:</p>
-                <ScrollArea className="h-32">
-                  <div className="space-y-1">
-                    {result.errors.map((err, i) => (
-                      <p key={i} className="text-xs text-muted-foreground font-mono">{err}</p>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
+            />
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+              }}
+            >
+              Created {result.created} meetings, skipped {result.skipped}
+            </span>
           </div>
-        )}
 
-        <Button 
-          onClick={runBackfill} 
-          disabled={isRunning}
-          className="w-full"
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Scanning directories...
-            </>
-          ) : (
-            <>
-              <RefreshCw className="mr-2 size-4" />
-              Run Backfill
-            </>
+          {result.errors.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--color-spice-terracotta)",
+                  marginBottom: 4,
+                }}
+              >
+                Errors:
+              </p>
+              <div style={{ maxHeight: 128, overflowY: "auto" }}>
+                {result.errors.map((err, i) => (
+                  <p
+                    key={i}
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: "var(--color-text-tertiary)",
+                      margin: 0,
+                      marginBottom: 2,
+                    }}
+                  >
+                    {err}
+                  </p>
+                ))}
+              </div>
+            </div>
           )}
-        </Button>
-      </CardContent>
-    </Card>
+        </div>
+      )}
+
+      <button
+        style={{
+          ...styles.btn,
+          ...styles.btnPrimary,
+          opacity: isRunning ? 0.5 : 1,
+          width: "100%",
+          textAlign: "center" as const,
+        }}
+        onClick={runBackfill}
+        disabled={isRunning}
+      >
+        {isRunning ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Loader2 size={12} className="animate-spin" /> Scanning directories...
+          </span>
+        ) : (
+          "Run Backfill"
+        )}
+      </button>
+    </div>
   );
 }

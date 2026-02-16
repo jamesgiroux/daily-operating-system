@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { History, AlertCircle } from "lucide-react";
-import { SectionEmpty } from "@/components/PageState";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
 import type { ProcessingLogEntry } from "@/types";
@@ -14,6 +14,16 @@ export default function HistoryPage() {
   const [entries, setEntries] = useState<ProcessingLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Processing History",
+      atmosphereColor: "olive" as const,
+      activePage: "inbox" as const,
+    }),
+    [],
+  );
+  useRegisterMagazineShell(shellConfig);
 
   useEffect(() => {
     async function load() {
@@ -33,104 +43,203 @@ export default function HistoryPage() {
   }, []);
 
   if (loading) {
-    return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-12" />
-          ))}
-        </div>
-      </main>
-    );
+    return <EditorialLoading count={5} />;
+  }
+
+  if (error) {
+    return <EditorialError message={error} />;
   }
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Processing History
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Recent inbox processing activity
-            </p>
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ═══ HERO ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 36,
+              fontWeight: 400,
+              letterSpacing: "-0.02em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Processing History
+          </h1>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            {entries.length} entr{entries.length !== 1 ? "ies" : "y"}
+          </span>
+        </div>
+        <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+      </section>
+
+      {/* ═══ ENTRIES ═══ */}
+      {entries.length === 0 ? (
+        <EditorialEmpty
+          {...getPersonalityCopy("history-empty", personality)}
+        />
+      ) : (
+        <>
+          {/* Column headers */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr",
+              gap: 12,
+              padding: "0 0 8px",
+              borderBottom: "1px solid var(--color-rule-light)",
+            }}
+          >
+            {["FILE", "CLASS", "STATUS", "DESTINATION", "TIME"].map((h) => (
+              <span
+                key={h}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                {h}
+              </span>
+            ))}
           </div>
 
-          {error ? (
-            <div className="flex items-center gap-2 rounded-md border border-destructive p-4 text-destructive">
-              <AlertCircle className="size-5" />
-              <p className="text-sm">{error}</p>
-            </div>
-          ) : entries.length === 0 ? (
-            <SectionEmpty
-              icon={History}
-              {...getPersonalityCopy("history-empty", personality)}
-            />
-          ) : (
-            <div className="rounded-md border">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/50">
-                    <th className="px-4 py-2 text-left font-medium">File</th>
-                    <th className="px-4 py-2 text-left font-medium">
-                      Classification
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium">Status</th>
-                    <th className="px-4 py-2 text-left font-medium">
-                      Destination
-                    </th>
-                    <th className="px-4 py-2 text-left font-medium">Time</th>
-                    <th className="px-4 py-2 text-left font-medium">Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {entries.map((entry) => (
-                    <tr key={entry.id} className="border-b last:border-0">
-                      <td className="max-w-[200px] truncate px-4 py-2 font-mono text-xs">
-                        {entry.filename}
-                      </td>
-                      <td className="px-4 py-2">
-                        <Badge variant="outline" className="text-xs">
-                          {entry.classification}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-2">
-                        <Badge
-                          variant={
-                            entry.status === "routed"
-                              ? "default"
-                              : entry.status === "error"
-                                ? "destructive"
-                                : "secondary"
-                          }
-                          className="text-xs"
-                        >
-                          {entry.status}
-                        </Badge>
-                      </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 font-mono text-xs text-muted-foreground">
-                        {entry.destinationPath || "-"}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2 text-xs text-muted-foreground">
-                        {formatTimestamp(entry.createdAt)}
-                      </td>
-                      <td className="max-w-[200px] truncate px-4 py-2 text-xs text-destructive">
-                        {entry.errorMessage || ""}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Rows */}
+          {entries.map((entry, i) => (
+            <HistoryRow key={entry.id} entry={entry} showBorder={i < entries.length - 1} />
+          ))}
+
+          <FinisMarker />
+        </>
+      )}
+    </div>
+  );
+}
+
+function HistoryRow({
+  entry,
+  showBorder,
+}: {
+  entry: ProcessingLogEntry;
+  showBorder: boolean;
+}) {
+  const isError = entry.status === "error";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "2fr 1fr 1fr 2fr 1fr",
+        gap: 12,
+        padding: "10px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        alignItems: "center",
+      }}
+    >
+      {/* Filename */}
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          color: "var(--color-text-primary)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={entry.filename}
+      >
+        {entry.filename}
+      </span>
+
+      {/* Classification */}
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+        }}
+      >
+        {entry.classification}
+      </span>
+
+      {/* Status — colored dot + mono label */}
+      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: isError
+              ? "var(--color-spice-terracotta)"
+              : "var(--color-garden-sage)",
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: isError
+              ? "var(--color-spice-terracotta)"
+              : "var(--color-text-tertiary)",
+          }}
+        >
+          {entry.status}
+        </span>
+      </span>
+
+      {/* Destination */}
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+        title={entry.destinationPath || undefined}
+      >
+        {entry.destinationPath || "\u2014"}
+      </span>
+
+      {/* Time */}
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-tertiary)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {formatTimestamp(entry.createdAt)}
+      </span>
+
+      {/* Error row — spans full width */}
+      {isError && entry.errorMessage && (
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-spice-terracotta)",
+            paddingTop: 2,
+          }}
+        >
+          {entry.errorMessage}
         </div>
-      </ScrollArea>
-    </main>
+      )}
+    </div>
   );
 }
 
