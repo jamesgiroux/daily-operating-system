@@ -3364,16 +3364,6 @@ pub fn enrich_week(
         .and_then(|v| v.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
-    let overdue_count = overview
-        .get("actionSummary")
-        .and_then(|s| s.get("overdueCount"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let due_this_week = overview
-        .get("actionSummary")
-        .and_then(|s| s.get("dueThisWeek"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
     let hygiene_count = overview
         .get("hygieneAlerts")
         .and_then(|v| v.as_array())
@@ -3395,7 +3385,8 @@ pub fn enrich_week(
                                 .filter_map(|b| {
                                     let start = b.get("start").and_then(|v| v.as_str())?;
                                     let mins = b.get("durationMinutes").and_then(|v| v.as_u64())?;
-                                    Some(format!("{} {} ({}min)", day, start, mins))
+                                    let display = format_time_display(start);
+                                    Some(format!("{} {} ({}min)", day, display, mins))
                                 })
                                 .collect::<Vec<_>>()
                         })
@@ -3435,48 +3426,95 @@ pub fn enrich_week(
         })
         .unwrap_or_default();
 
-    let candidate_action_ids: Vec<String> = overview
+    // Build rich action descriptions with titles for prompt context
+    let overdue_action_lines: Vec<String> = overview
         .get("actionSummary")
-        .and_then(|v| v.as_object())
-        .map(|summary| {
-            ["overdue", "dueThisWeekItems"]
-                .into_iter()
-                .flat_map(|key| {
-                    summary
-                        .get(key)
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default()
-                })
+        .and_then(|s| s.get("overdue"))
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
                 .filter_map(|item| {
-                    item.get("id")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
+                    let id = item.get("id").and_then(|v| v.as_str())?;
+                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+                    let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let days = item.get("daysOverdue").and_then(|v| v.as_u64()).unwrap_or(0);
+                    Some(format!(
+                        "{}: {} ({}, {}, {}d overdue)",
+                        id, title, account, priority, days
+                    ))
                 })
-                .collect::<Vec<_>>()
+                .collect()
         })
         .unwrap_or_default();
 
-    let candidate_meeting_ids: Vec<String> = day_shapes
+    let due_this_week_lines: Vec<String> = overview
+        .get("actionSummary")
+        .and_then(|s| s.get("dueThisWeekItems"))
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let id = item.get("id").and_then(|v| v.as_str())?;
+                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+                    let account = item.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                    let priority = item.get("priority").and_then(|v| v.as_str()).unwrap_or("P3");
+                    let due = item.get("dueDate").and_then(|v| v.as_str()).unwrap_or("");
+                    Some(format!(
+                        "{}: {} ({}, {}, due {})",
+                        id, title, account, priority, due
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let candidate_action_ids: Vec<String> = overdue_action_lines
+        .iter()
+        .chain(due_this_week_lines.iter())
+        .filter_map(|line| line.split(':').next().map(|s| s.to_string()))
+        .collect();
+
+    // Build rich meeting descriptions with titles
+    let meeting_lines: Vec<String> = day_shapes
         .map(|shapes| {
             shapes
                 .iter()
                 .flat_map(|shape| {
+                    let day = shape.get("dayName").and_then(|v| v.as_str()).unwrap_or("?");
                     shape
                         .get("meetings")
                         .and_then(|v| v.as_array())
-                        .cloned()
+                        .map(|meetings| {
+                            meetings
+                                .iter()
+                                .filter_map(|m| {
+                                    let id = m.get("meetingId").and_then(|v| v.as_str())?;
+                                    let title =
+                                        m.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+                                    let time =
+                                        m.get("time").and_then(|v| v.as_str()).unwrap_or("");
+                                    let acct =
+                                        m.get("account").and_then(|v| v.as_str()).unwrap_or("");
+                                    Some(format!(
+                                        "{}: {} ({} {} {})",
+                                        id, title, day, time, acct
+                                    ))
+                                })
+                                .collect::<Vec<_>>()
+                        })
                         .unwrap_or_default()
                 })
-                .filter_map(|meeting| {
-                    meeting
-                        .get("meetingId")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                })
-                .collect::<Vec<_>>()
+                .collect()
         })
         .unwrap_or_default();
+
+    let candidate_meeting_ids: Vec<String> = meeting_lines
+        .iter()
+        .filter_map(|line| line.split(':').next().map(|s| s.to_string()))
+        .collect();
 
     // I137: Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
@@ -3502,6 +3540,22 @@ pub fn enrich_week(
         )
     };
 
+    let overdue_lines_str = if overdue_action_lines.is_empty() {
+        "none".to_string()
+    } else {
+        overdue_action_lines.join("\n  ")
+    };
+    let due_lines_str = if due_this_week_lines.is_empty() {
+        "none".to_string()
+    } else {
+        due_this_week_lines.join("\n  ")
+    };
+    let meeting_lines_str = if meeting_lines.is_empty() {
+        "none".to_string()
+    } else {
+        meeting_lines.join("\n  ")
+    };
+
     let prompt = format!(
         "You are writing a weekly briefing for {role_label}.\n\
          {user_fragment}\n\
@@ -3511,24 +3565,37 @@ pub fn enrich_week(
          - Day breakdown: {day_breakdown}\n\
          - Key customer meetings: {key_meetings}\n\
          - Readiness checks: {readiness_checks} items needing attention\n\
-         - Actions: {overdue_count} overdue, {due_this_week} due this week\n\
          - Account health alerts: {hygiene_count}\n\
+         - Overdue actions:\n  {overdue_lines}\n\
+         - Due this week:\n  {due_lines}\n\
+         - Meetings:\n  {meeting_lines}\n\
          - Available focus blocks: {available_blocks}\n\
-         - Valid action IDs for references: {candidate_action_ids}\n\
-         - Valid meeting IDs for references: {candidate_meeting_ids}\n\
+         - Valid action IDs: {candidate_action_ids}\n\
+         - Valid meeting IDs: {candidate_meeting_ids}\n\
          {intel_section}\n\
-         Provide three sections in your response:\n\n\
-         1. A 2-3 sentence narrative framing the week. Focus on what makes this week \
-         distinct — customer commitments, deadlines, risks. Be direct, not chatty.\n\n\
-         2. The single top priority for the week. Pick the one thing that, if handled well, \
-         has the biggest impact. Return as a JSON object with title, reason, and optionally \
-         meetingId or actionId if it maps to a specific item.\n\n\
-         3. Suggestions for how to use the available time blocks. Return as a JSON array \
-         with blockDay, blockStart, suggestedUse, and optional actionId/meetingId fields. \
-         Include actionId or meetingId ONLY when you can confidently map to one of the valid IDs above.\n\n\
+         Respond with exactly three sections:\n\n\
+         1. WEEK_NARRATIVE — Two sentences maximum. First sentence: the shape of the week \
+         (e.g. \"Five customer meetings in three days, back-loaded toward Thursday.\"). \
+         Second sentence: the single most important thing to know (e.g. \"Nielsen is the \
+         priority — the monthly is Wednesday and the account just went yellow.\"). \
+         Never use words like \"pivotal\", \"high-stakes\", \"stewardship\", or \"landscape\". \
+         Write like a newsroom editor, not a consultant.\n\n\
+         2. TOP_PRIORITY — Pick ONE specific deliverable, meeting, or action from the lists \
+         above. Not a process (\"clear backlog\") or a strategy (\"maintain momentum\") — a \
+         thing you can finish. Return as JSON: {{\"title\": \"...\", \"reason\": \"...\"}} \
+         with optional \"actionId\" or \"meetingId\" ONLY when it maps to a specific item \
+         from the valid IDs above. The reason should explain WHY this week, in one sentence.\n\n\
+         3. SUGGESTIONS — For each available time block, suggest a specific use referencing \
+         an action title or meeting title from the context above. Return as JSON array: \
+         [{{\"blockDay\": \"Monday\", \"blockStart\": \"11:00 AM\", \"suggestedUse\": \"Review QBR deck ahead of Thursday's Acme meeting\"}}] \
+         Write suggestedUse as a complete sentence. Never include score labels, fit \
+         assessments, or reasoning metadata. Include actionId/meetingId ONLY when confident.\n\n\
+         All output text (narrative, title, reason, suggestedUse) must be editorial prose \
+         suitable for direct display to the user. Never include internal reasoning, score \
+         labels, confidence levels, or metadata in any output field.\n\n\
          Format your response EXACTLY as:\n\n\
          WEEK_NARRATIVE:\n\
-         <your 2-3 sentence narrative>\n\
+         <your narrative>\n\
          END_WEEK_NARRATIVE\n\n\
          TOP_PRIORITY:\n\
          {{\"title\": \"...\", \"reason\": \"...\"}}\n\
@@ -3548,9 +3615,10 @@ pub fn enrich_week(
             key_meetings.join("; ")
         },
         readiness_checks = readiness_checks,
-        overdue_count = overdue_count,
-        due_this_week = due_this_week,
         hygiene_count = hygiene_count,
+        overdue_lines = overdue_lines_str,
+        due_lines = due_lines_str,
+        meeting_lines = meeting_lines_str,
         available_blocks = if available_blocks.is_empty() {
             "none".to_string()
         } else {
@@ -3615,7 +3683,13 @@ pub fn enrich_week(
                     {
                         for block in blocks.iter_mut() {
                             let start = block.get("start").and_then(|v| v.as_str()).unwrap_or("");
-                            if start == suggestion.block_start {
+                            // Match by exact string OR by display-format time
+                            // Block start is ISO ("2026-02-16T09:30:00"), suggestion is display ("9:30 AM")
+                            let start_display = format_time_display(start);
+                            let matches = start == suggestion.block_start
+                                || start_display == suggestion.block_start
+                                || start_display.to_lowercase() == suggestion.block_start.to_lowercase();
+                            if matches {
                                 block.as_object_mut().unwrap().insert(
                                     "suggestedUse".to_string(),
                                     json!(suggestion.suggested_use),

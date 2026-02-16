@@ -10,6 +10,7 @@
  */
 
 import React from 'react';
+import { BrandMark } from '../ui/BrandMark';
 import {
   Grid3x3,
   Calendar,
@@ -99,7 +100,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
           aria-label="Home"
           title="Home"
         >
-          *
+          <BrandMark size={16} />
         </button>
 
         <div className={styles.navIslandDivider} aria-hidden="true" />
@@ -145,7 +146,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
         aria-label="Home"
         title="Home"
       >
-        *
+        <BrandMark size={16} />
       </button>
 
       {/* Main navigation items */}
