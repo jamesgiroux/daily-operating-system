@@ -22,9 +22,11 @@ import type {
   StakeholderInsight,
   ApplyPrepPrefillResult,
   DbAction,
+  LinkedEntity,
 } from "@/types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
+import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -113,6 +115,7 @@ export default function MeetingDetailPage() {
   const [outcomes, setOutcomes] = useState<MeetingOutcomeData | null>(null);
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
+  const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,6 +153,7 @@ export default function MeetingDetailPage() {
       setMeetingMeta(intel.meeting);
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
+      setLinkedEntities(intel.linkedEntities ?? []);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);
@@ -613,6 +617,19 @@ export default function MeetingDetailPage() {
                       >
                         {data.timeRange}
                       </p>
+                      {/* Entity assignment */}
+                      {meetingId && meetingMeta && (
+                        <div style={{ marginTop: 10 }}>
+                          <MeetingEntityChips
+                            meetingId={meetingId}
+                            meetingTitle={meetingMeta.title}
+                            meetingStartTime={meetingMeta.startTime ?? new Date().toISOString()}
+                            meetingType={meetingMeta.meetingType ?? "internal"}
+                            linkedEntities={linkedEntities}
+                            onEntitiesChanged={() => loadMeetingIntelligence()}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingTop: 4 }}>
                       {isEditable && (
