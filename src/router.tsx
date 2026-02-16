@@ -74,7 +74,6 @@ function RootLayout() {
   useNotifications();
   const navigate = useNavigate();
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-  const [onboardingMode, setOnboardingMode] = useState<"full" | "internal">("full");
   const [checkingConfig, setCheckingConfig] = useState(true);
 
   // Magazine shell context — pages register their config, layout consumes it
@@ -89,20 +88,11 @@ function RootLayout() {
       try {
         const config = await invoke<{
           workspacePath?: string;
-          entityMode?: string;
-          internalTeamSetupCompleted?: boolean;
         }>("get_config");
         if (!config.workspacePath) {
-          setOnboardingMode("full");
-          setNeedsOnboarding(true);
-          return;
-        }
-        if (!config.internalTeamSetupCompleted) {
-          setOnboardingMode("internal");
           setNeedsOnboarding(true);
         }
       } catch {
-        setOnboardingMode("full");
         setNeedsOnboarding(true);
       } finally {
         setCheckingConfig(false);
@@ -144,7 +134,7 @@ function RootLayout() {
   if (needsOnboarding) {
     return (
       <ThemeProvider>
-        <OnboardingFlow mode={onboardingMode} onComplete={handleOnboardingComplete} />
+        <OnboardingFlow onComplete={handleOnboardingComplete} />
         <Toaster position="bottom-right" />
         <DevToolsPanel />
       </ThemeProvider>

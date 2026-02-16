@@ -441,7 +441,8 @@ function DeveloperToggle({
             try {
               const updated = await invoke<Config>("set_developer_mode", { enabled: next });
               setConfig(updated);
-              toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
+              toast.success(next ? "Developer tools enabled — reloading..." : "Developer tools disabled — reloading...");
+              setTimeout(() => window.location.reload(), 500);
             } catch (e) {
               toast.error(String(e));
             }
