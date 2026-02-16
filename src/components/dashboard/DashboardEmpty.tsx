@@ -6,7 +6,6 @@
 
 import { Mail } from "lucide-react";
 import { BrandMark } from "@/components/ui/BrandMark";
-import { Button } from "@/components/ui/button";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { GoogleAuthStatus } from "@/types";
 
@@ -127,15 +126,26 @@ export function DashboardEmpty({ message, onGenerate, googleAuth }: DashboardEmp
                 Add calendar and email for a complete briefing
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
+            <button
               onClick={connect}
               disabled={authLoading}
-              style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase" as const,
+                padding: "6px 16px",
+                borderRadius: 4,
+                border: "1px solid var(--color-rule-heavy)",
+                background: "none",
+                color: "var(--color-text-primary)",
+                cursor: authLoading ? "wait" : "pointer",
+                opacity: authLoading ? 0.5 : 1,
+              }}
             >
               Connect
-            </Button>
+            </button>
           </div>
         )}
 
