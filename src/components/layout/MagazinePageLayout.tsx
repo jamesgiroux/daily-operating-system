@@ -12,7 +12,7 @@
  * the dependency so the router doesn't need to import page internals.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import styles from './MagazinePageLayout.module.css';
 import AtmosphereLayer from './AtmosphereLayer';
 import FolioBar from './FolioBar';
@@ -50,8 +50,9 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const chapters = pageConfig?.chapters;
   const folioActions = pageConfig?.folioActions;
 
-  // Chapter tracking — runs internally so pages don't need to manage it
-  const chapterIds = chapters?.map((c) => c.id) ?? [];
+  // Chapter tracking — runs internally so pages don't need to manage it.
+  // Memoize chapterIds so useChapterObserver doesn't reset active chapter on every render.
+  const chapterIds = useMemo(() => chapters?.map((c) => c.id) ?? [], [chapters]);
   const [activeChapterId, setActiveChapterId] = useChapterObserver(chapterIds, chapterIds.length > 0);
 
   return (
