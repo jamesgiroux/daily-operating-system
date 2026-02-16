@@ -25,6 +25,7 @@ import {
   getTemporalState,
   formatDuration,
 } from "./BriefingMeetingCard";
+import { RefreshCw } from "lucide-react";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
@@ -36,6 +37,7 @@ import s from "@/styles/editorial-briefing.module.css";
 interface DailyBriefingProps {
   data: DashboardData;
   freshness: DataFreshness;
+  onRunBriefing?: () => void;
 }
 
 // ─── Featured Meeting Selection ──────────────────────────────────────────────
@@ -110,7 +112,7 @@ function formatMinutes(minutes: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
+export function DailyBriefing({ data, freshness, onRunBriefing }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
@@ -147,6 +149,20 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
     return stats;
   }, [readiness.preppedCount, readiness.totalExternal, readiness.overdueCount]);
 
+  const folioActions = useMemo(() => {
+    if (!onRunBriefing) return undefined;
+    return (
+      <button
+        onClick={onRunBriefing}
+        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        title="Run morning briefing"
+      >
+        <RefreshCw className="h-3 w-3" />
+        <span>Refresh</span>
+      </button>
+    );
+  }, [onRunBriefing]);
+
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Daily Briefing",
@@ -154,8 +170,9 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
       activePage: "today" as const,
       folioDateText: formattedDate,
       folioReadinessStats: folioReadinessStats,
+      folioActions,
     }),
-    [formattedDate, folioReadinessStats],
+    [formattedDate, folioReadinessStats, folioActions],
   );
   useRegisterMagazineShell(shellConfig);
 
