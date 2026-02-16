@@ -35,6 +35,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 7,
     sql: include_str!("migrations/007_chat_interface.sql"),
+}, Migration {
+    version: 8,
+    sql: include_str!("migrations/008_missing_indexes.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -189,13 +192,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 7,
-            "should apply baseline + internal teams + account team + role index + email signals + content embeddings + chat interface migrations"
+            applied, 8,
+            "should apply baseline + internal teams + account team + role index + email signals + content embeddings + chat interface + missing indexes migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -324,6 +327,8 @@ mod tests {
             "CREATE TABLE actions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                due_date TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -355,7 +360,8 @@ mod tests {
                 title TEXT NOT NULL,
                 meeting_type TEXT NOT NULL,
                 start_time TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                calendar_event_id TEXT
              );
              CREATE TABLE people (
                 id TEXT PRIMARY KEY,
@@ -368,17 +374,23 @@ mod tests {
                 person_id TEXT NOT NULL,
                 relationship_type TEXT DEFAULT 'associated',
                 PRIMARY KEY (entity_id, person_id)
+             );
+             CREATE TABLE meeting_entities (
+                meeting_id TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                PRIMARY KEY (meeting_id, entity_id)
              );",
         )
         .expect("seed existing tables");
 
         // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5/v6/v7
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 6, "bootstrap should mark v1, then apply v2/v3/v4/v5/v6/v7");
+        assert_eq!(applied, 7, "bootstrap should mark v1, then apply v2/v3/v4/v5/v6/v7/v8");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
 
         // Verify existing data is untouched
         let title: String = conn
