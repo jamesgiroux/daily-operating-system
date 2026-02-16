@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatFullDate } from "@/lib/utils";
 import { classifyAction } from "@/lib/entity-utils";
-import { ArrowLeft, Check, Circle } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 import type { ActionDetail } from "@/types";
 
 // =============================================================================
@@ -66,12 +66,26 @@ export default function ActionDetailPage() {
   const { actionId } = useParams({ strict: false }) as {
     actionId?: string;
   };
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ActionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Register magazine shell
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: detail?.title ? (detail.title.length > 30 ? detail.title.slice(0, 30) + "\u2026" : detail.title) : "Action",
+      atmosphereColor: "terracotta" as const,
+      activePage: "actions" as const,
+      backLink: { label: "Actions", onClick: () => navigate({ to: "/actions", search: { search: undefined } }) },
+      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    }),
+    [detail?.title, navigate, saveStatus],
+  );
+  useRegisterMagazineShell(shellConfig);
 
   const load = useCallback(async () => {
     if (!actionId) return;
@@ -128,18 +142,16 @@ export default function ActionDetailPage() {
 
   if (loading) {
     return (
-      <main style={{ flex: 1, overflow: "auto" }}>
-        <div className="editorial-loading" style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
-          <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="mb-2 h-10 w-96" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="mb-6 h-4 w-48" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="h-px w-full" style={{ background: "var(--color-rule-heavy)" }} />
-          <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 24 }}>
-            <Skeleton className="h-20 w-full" style={{ background: "var(--color-rule-light)" }} />
-            <Skeleton className="h-32 w-full" style={{ background: "var(--color-rule-light)" }} />
-          </div>
+      <div className="editorial-loading" style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
+        <div style={{ height: 16, width: 96, marginBottom: 16, background: "var(--color-rule-light)", borderRadius: 2 }} />
+        <div style={{ height: 40, width: 384, marginBottom: 8, background: "var(--color-rule-light)", borderRadius: 2 }} />
+        <div style={{ height: 16, width: 192, marginBottom: 24, background: "var(--color-rule-light)", borderRadius: 2 }} />
+        <div style={{ height: 1, width: "100%", background: "var(--color-rule-heavy)" }} />
+        <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 24 }}>
+          <div style={{ height: 80, width: "100%", background: "var(--color-rule-light)", borderRadius: 2 }} />
+          <div style={{ height: 128, width: "100%", background: "var(--color-rule-light)", borderRadius: 2 }} />
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -147,34 +159,32 @@ export default function ActionDetailPage() {
 
   if (error || !detail) {
     return (
-      <main style={{ flex: 1, overflow: "auto" }}>
-        <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto", textAlign: "center" }}>
-          <p style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--color-text-primary)", marginBottom: 16 }}>
-            Something went wrong
-          </p>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
-            {error ?? "Action not found"}
-          </p>
-          <button
-            onClick={load}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 500,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              padding: "8px 20px",
-              border: "1px solid var(--color-rule-light)",
-              borderRadius: 4,
-              background: "none",
-              color: "var(--color-text-primary)",
-              cursor: "pointer",
-            }}
-          >
-            Try again
-          </button>
-        </div>
-      </main>
+      <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto", textAlign: "center" }}>
+        <p style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--color-text-primary)", marginBottom: 16 }}>
+          Something went wrong
+        </p>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
+          {error ?? "Action not found"}
+        </p>
+        <button
+          onClick={load}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 500,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            padding: "8px 20px",
+            border: "1px solid var(--color-rule-light)",
+            borderRadius: 4,
+            background: "none",
+            color: "var(--color-text-primary)",
+            cursor: "pointer",
+          }}
+        >
+          Try again
+        </button>
+      </div>
     );
   }
 
@@ -194,32 +204,9 @@ export default function ActionDetailPage() {
         : undefined;
 
   return (
-    <main style={{ flex: 1, overflow: "auto" }}>
-      <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
+    <div style={{ padding: "120px 120px 80px", maxWidth: 680, margin: "0 auto" }}>
 
-        {/* ── 1. Back link ── */}
-        <Link
-          to="/actions"
-          search={{ search: undefined }}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "var(--color-text-tertiary)",
-            textDecoration: "none",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            marginBottom: 24,
-          }}
-        >
-          <ArrowLeft size={12} strokeWidth={1.5} />
-          Actions
-        </Link>
-
-        {/* ── 2. Title band ── */}
+        {/* ── Title band ── */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 8 }}>
           {/* Status toggle circle */}
           <button
@@ -548,8 +535,7 @@ export default function ActionDetailPage() {
             {isCompleted ? "Reopen" : "Mark Complete"}
           </button>
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
 
