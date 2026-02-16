@@ -5,7 +5,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { ModeToggle } from "@/components/mode-toggle";
+
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
@@ -330,8 +330,6 @@ export default function SettingsPage() {
           onPathChange={(path) => setConfig(config ? { ...config, workspacePath: path } : null)}
         />
         <div style={{ height: 32 }} />
-        <AppearanceSection />
-        <div style={{ height: 32 }} />
         <PersonalityCard />
       </section>
 
@@ -406,24 +404,6 @@ export default function SettingsPage() {
 
       <FinisMarker />
       <div style={{ height: 80 }} />
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Appearance (theme toggle) — extracted from inline Card
-// ═══════════════════════════════════════════════════════════════════════════
-
-function AppearanceSection() {
-  return (
-    <div>
-      <p style={styles.subsectionLabel}>Appearance</p>
-      <div style={styles.settingRow}>
-        <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
-          Theme
-        </span>
-        <ModeToggle />
-      </div>
     </div>
   );
 }
