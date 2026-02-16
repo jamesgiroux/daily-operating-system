@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
@@ -159,6 +160,25 @@ export default function AccountDetailEditorial() {
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
+  // Intelligence field update callback (I261)
+  const handleUpdateIntelField = useCallback(
+    async (fieldPath: string, value: string) => {
+      if (!accountId) return;
+      try {
+        await invoke("update_intelligence_field", {
+          entityId: accountId,
+          entityType: "account",
+          fieldPath,
+          value,
+        });
+        acct.load(); // Re-fetch to reflect changes
+      } catch (e) {
+        console.error("Failed to update intelligence field:", e);
+      }
+    },
+    [accountId, acct],
+  );
+
   if (acct.loading) return <EditorialLoading />;
 
   if (acct.error || !acct.detail) {
@@ -192,7 +212,7 @@ export default function AccountDetailEditorial() {
 
       {/* Chapter 2: State of Play */}
       <div className="editorial-reveal">
-        <StateOfPlay intelligence={intelligence} />
+        <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Room */}
@@ -201,6 +221,9 @@ export default function AccountDetailEditorial() {
           intelligence={intelligence}
           linkedPeople={detail.linkedPeople}
           accountTeam={detail.accountTeam}
+          entityId={accountId}
+          entityType="account"
+          onIntelligenceUpdated={acct.load}
         />
       </div>
 
@@ -208,6 +231,7 @@ export default function AccountDetailEditorial() {
       <div className="editorial-reveal">
         <WatchList
           intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
           bottomSection={
             <WatchListPrograms
               programs={programs}

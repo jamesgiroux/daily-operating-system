@@ -3,10 +3,13 @@
  * Risks, Wins, Unknowns (from intelligence) + optional bottom section slot.
  * Generalized: programs extracted to WatchListPrograms (account-specific),
  * passed as `bottomSection` ReactNode.
+ *
+ * I261: Optional onUpdateField prop enables click-to-edit on risk/win/unknown text.
  */
 import { useState } from "react";
 import type { EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditableText } from "@/components/ui/EditableText";
 
 interface WatchListProps {
   intelligence: EntityIntelligence | null;
@@ -15,6 +18,8 @@ interface WatchListProps {
   emptyMessage?: string;
   /** Slot for entity-specific bottom content (e.g., programs, milestones). */
   bottomSection?: React.ReactNode;
+  /** When provided, items become editable. Called with (fieldPath, newValue). */
+  onUpdateField?: (fieldPath: string, value: string) => void;
 }
 
 /* ── type-specific colors ── */
@@ -57,9 +62,10 @@ interface WatchItemRowProps {
   source?: string;
   isCallout?: boolean;
   isLast: boolean;
+  onTextChange?: (value: string) => void;
 }
 
-function WatchItemRow({ type, text, source, isCallout, isLast }: WatchItemRowProps) {
+function WatchItemRow({ type, text, source, isCallout, isLast, onTextChange }: WatchItemRowProps) {
   const dot = (
     <span
       style={{
@@ -96,17 +102,33 @@ function WatchItemRow({ type, text, source, isCallout, isLast }: WatchItemRowPro
           {source}
         </div>
       )}
-      <p
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 14,
-          lineHeight: 1.6,
-          color: "var(--color-text-primary)",
-          margin: 0,
-        }}
-      >
-        {text}
-      </p>
+      {onTextChange ? (
+        <EditableText
+          value={text}
+          onChange={onTextChange}
+          as="p"
+          multiline
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-primary)",
+            margin: 0,
+          }}
+        />
+      ) : (
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-primary)",
+            margin: 0,
+          }}
+        >
+          {text}
+        </p>
+      )}
     </div>
   );
 
@@ -155,6 +177,7 @@ export function WatchList({
   chapterTitle = "Watch List",
   emptyMessage = "Build intelligence to surface risks, wins, and unknowns.",
   bottomSection,
+  onUpdateField,
 }: WatchListProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -206,6 +229,11 @@ export function WatchList({
                       source={r.source}
                       isCallout={i === 0}
                       isLast={i === visibleRisks.length - 1}
+                      onTextChange={
+                        onUpdateField
+                          ? (v) => onUpdateField(`risks[${i}].text`, v)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -222,6 +250,11 @@ export function WatchList({
                       source={w.source}
                       isCallout={i === 0}
                       isLast={i === visibleWins.length - 1}
+                      onTextChange={
+                        onUpdateField
+                          ? (v) => onUpdateField(`recentWins[${i}].text`, v)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -236,6 +269,11 @@ export function WatchList({
                       type="unknown"
                       text={u}
                       isLast={i === visibleUnknowns.length - 1}
+                      onTextChange={
+                        onUpdateField
+                          ? (v) => onUpdateField(`currentState.unknowns[${i}]`, v)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>

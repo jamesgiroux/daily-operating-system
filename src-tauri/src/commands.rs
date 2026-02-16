@@ -8188,3 +8188,185 @@ fn resolve_mcp_binary_path(
 
     None
 }
+
+// =============================================================================
+// Intelligence Field Editing (I261)
+// =============================================================================
+
+/// Update a single field in an entity's intelligence.json.
+///
+/// Reads the file, applies the update via JSON path navigation, records a
+/// UserEdit entry (protecting the field from AI overwrite), and writes back
+/// to filesystem + SQLite cache.
+#[tauri::command]
+pub fn update_intelligence_field(
+    entity_id: String,
+    entity_type: String,
+    field_path: String,
+    value: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = config.as_ref().ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+
+    // Look up entity to resolve directory
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = if entity_type == "account" {
+        db.get_account(&entity_id).map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+
+    let entity_name = match entity_type.as_str() {
+        "account" => account.as_ref().map(|a| a.name.clone()),
+        "project" => db
+            .get_project(&entity_id)
+            .map_err(|e| e.to_string())?
+            .map(|p| p.name),
+        "person" => db
+            .get_person(&entity_id)
+            .map_err(|e| e.to_string())?
+            .map(|p| p.name),
+        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+    }
+    .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+    let dir = crate::entity_intel::resolve_entity_dir(
+        workspace,
+        &entity_type,
+        &entity_name,
+        account.as_ref(),
+    )?;
+
+    let intel = crate::entity_intel::apply_intelligence_field_update(&dir, &field_path, &value)?;
+
+    // Update SQLite cache
+    let _ = db.upsert_entity_intelligence(&intel);
+
+    Ok(())
+}
+
+/// Bulk-replace the stakeholder list in an entity's intelligence.json.
+///
+/// Used for add/remove stakeholder operations. Replaces the entire
+/// stakeholderInsights array and marks it as user-edited.
+#[tauri::command]
+pub fn update_stakeholders(
+    entity_id: String,
+    entity_type: String,
+    stakeholders_json: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let stakeholders: Vec<crate::entity_intel::StakeholderInsight> =
+        serde_json::from_str(&stakeholders_json)
+            .map_err(|e| format!("Invalid stakeholders JSON: {}", e))?;
+
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    let config = config.as_ref().ok_or("No configuration loaded")?;
+    let workspace = Path::new(&config.workspace_path);
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let account = if entity_type == "account" {
+        db.get_account(&entity_id).map_err(|e| e.to_string())?
+    } else {
+        None
+    };
+
+    let entity_name = match entity_type.as_str() {
+        "account" => account.as_ref().map(|a| a.name.clone()),
+        "project" => db
+            .get_project(&entity_id)
+            .map_err(|e| e.to_string())?
+            .map(|p| p.name),
+        "person" => db
+            .get_person(&entity_id)
+            .map_err(|e| e.to_string())?
+            .map(|p| p.name),
+        _ => return Err(format!("Unsupported entity type: {}", entity_type)),
+    }
+    .ok_or_else(|| format!("{} '{}' not found", entity_type, entity_id))?;
+
+    let dir = crate::entity_intel::resolve_entity_dir(
+        workspace,
+        &entity_type,
+        &entity_name,
+        account.as_ref(),
+    )?;
+
+    let intel = crate::entity_intel::apply_stakeholders_update(&dir, stakeholders)?;
+
+    // Update SQLite cache
+    let _ = db.upsert_entity_intelligence(&intel);
+
+    Ok(())
+}
+
+/// Create a person entity from a stakeholder name (no email required).
+///
+/// Used when a stakeholder card references someone who doesn't yet exist as
+/// a person entity. Creates with empty email, links to the parent entity.
+#[tauri::command]
+pub fn create_person_from_stakeholder(
+    entity_id: String,
+    entity_type: String,
+    name: String,
+    role: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<String, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("Name is required".to_string());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    // Generate ID from name (no email available)
+    let id = crate::util::slugify(&name);
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let person = crate::db::DbPerson {
+        id: id.clone(),
+        email: String::new(), // Empty email — no address known
+        name: name.clone(),
+        organization: None,
+        role,
+        relationship: "external".to_string(),
+        notes: None,
+        tracker_path: None,
+        last_seen: None,
+        first_seen: Some(now.clone()),
+        meeting_count: 0,
+        updated_at: now,
+        archived: false,
+    };
+
+    db.upsert_person(&person).map_err(|e| e.to_string())?;
+
+    // Link to the parent entity
+    db.link_person_to_entity(&id, &entity_id, &entity_type)
+        .map_err(|e| e.to_string())?;
+
+    // Write person files to workspace
+    let config = state.config.read().map_err(|_| "Lock poisoned")?;
+    if let Some(ref config) = *config {
+        let workspace = Path::new(&config.workspace_path);
+        let _ = crate::people::write_person_json(workspace, &person, db);
+        let _ = crate::people::write_person_markdown(workspace, &person, db);
+    }
+
+    log::info!(
+        "Created person '{}' (id={}) from stakeholder, linked to {} '{}'",
+        name,
+        id,
+        entity_type,
+        entity_id,
+    );
+
+    Ok(id)
+}

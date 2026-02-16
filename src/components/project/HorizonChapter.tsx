@@ -11,6 +11,8 @@ import { formatShortDate } from "@/lib/utils";
 interface HorizonChapterProps {
   detail: ProjectDetail;
   intelligence: EntityIntelligence | null;
+  /** When provided, items become editable. Called with (fieldPath, newValue). */
+  onUpdateField?: (fieldPath: string, value: string) => void;
 }
 
 /** Find a risk mentioning timeline/deadline/schedule/target/delay. */
@@ -31,7 +33,7 @@ function daysUntil(dateStr: string): number | null {
   return Math.round((startOfTarget.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function HorizonChapter({ detail, intelligence }: HorizonChapterProps) {
+export function HorizonChapter({ detail, intelligence, onUpdateField }: HorizonChapterProps) {
   const nextMilestone = detail.milestones.find(
     (m) => m.status.toLowerCase() !== "completed" && m.status.toLowerCase() !== "done",
   );
@@ -162,6 +164,11 @@ export function HorizonChapter({ detail, intelligence }: HorizonChapterProps) {
             label="Decisions Pending"
             items={unknowns}
             labelColor="var(--color-garden-larkspur)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.unknowns[${index}]`, value)
+                : undefined
+            }
           />
 
           {/* Meeting Readiness */}

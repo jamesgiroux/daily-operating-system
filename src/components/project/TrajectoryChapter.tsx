@@ -11,6 +11,8 @@ import { StateBlock } from "@/components/editorial/StateBlock";
 interface TrajectoryChapterProps {
   detail: ProjectDetail;
   intelligence: EntityIntelligence | null;
+  /** When provided, state items become editable. Called with (fieldPath, newValue). */
+  onUpdateField?: (fieldPath: string, value: string) => void;
 }
 
 /* ── Velocity Strip ── */
@@ -77,7 +79,7 @@ function VelocityStrip({ detail }: { detail: ProjectDetail }) {
 
 /* ── Main component ── */
 
-export function TrajectoryChapter({ detail, intelligence }: TrajectoryChapterProps) {
+export function TrajectoryChapter({ detail, intelligence, onUpdateField }: TrajectoryChapterProps) {
   const working = intelligence?.currentState?.working ?? [];
   const notWorking = intelligence?.currentState?.notWorking ?? [];
 
@@ -100,11 +102,21 @@ export function TrajectoryChapter({ detail, intelligence }: TrajectoryChapterPro
             label="Momentum"
             items={working}
             labelColor="var(--color-garden-olive)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.working[${index}]`, value)
+                : undefined
+            }
           />
           <StateBlock
             label="Headwinds"
             items={notWorking}
             labelColor="var(--color-spice-terracotta)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.notWorking[${index}]`, value)
+                : undefined
+            }
           />
 
           <VelocityStrip detail={detail} />
