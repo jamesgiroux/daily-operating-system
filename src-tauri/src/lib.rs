@@ -399,6 +399,10 @@ pub fn run() {
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
             commands::save_risk_briefing,
+            // I261: Intelligence Field Editing
+            commands::update_intelligence_field,
+            commands::update_stakeholders,
+            commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
         ])
