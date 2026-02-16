@@ -222,17 +222,22 @@ export function TheWork({
               </span>
             )}
           </div>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 15,
-              lineHeight: 1.65,
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            {readiness.prepItems.join(" ")}
-          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {readiness.prepItems.map((item, i) => (
+              <p
+                key={i}
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 15,
+                  lineHeight: 1.65,
+                  color: "var(--color-text-primary)",
+                  margin: 0,
+                }}
+              >
+                {item}
+              </p>
+            ))}
+          </div>
         </div>
       )}
 
