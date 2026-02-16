@@ -25,6 +25,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Chat tools for querying entities, searching content, and retrieving briefings via external AI assistants (Claude Desktop via MCP)
 - Chat session persistence — conversations are remembered across sessions
 
+### Security
+
+- Content Security Policy (CSP) enforced on the webview — restricts script, style, image, and connection sources to the app itself
+- `reveal_in_finder` command validates paths against workspace and config directories before opening Finder — prevents arbitrary filesystem traversal
+- `copy_to_inbox` command restricts source paths to Documents, Desktop, and Downloads — prevents copying from arbitrary filesystem locations
+
+### Reliability
+
+- Database indexes added for meeting-entity lookups, calendar event deduplication, and action filtering — faster page loads as data grows
+- Removed unused frontend dependencies (lighter install, smaller attack surface)
+
 ## [0.7.5] - 2026-02-14
 
 ### Fixed
