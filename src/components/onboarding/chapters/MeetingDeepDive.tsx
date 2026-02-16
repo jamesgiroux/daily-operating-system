@@ -1,124 +1,178 @@
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 
 interface MeetingDeepDiveProps {
   onNext: () => void;
 }
 
+/** Mono uppercase section label */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        fontWeight: 500,
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.1em",
+        color: "var(--color-text-tertiary)",
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Editorial chip — replaces shadcn Badge */
+function Chip({ children, color }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        letterSpacing: "0.02em",
+        border: "1px solid var(--color-rule-heavy)",
+        borderRadius: 4,
+        padding: "2px 8px",
+        color: color || "var(--color-text-secondary)",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function MeetingDeepDive({ onNext }: MeetingDeepDiveProps) {
   return (
-    <div className="space-y-6">
-      <div className="space-y-2 text-center">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          This is what prepared looks like
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Every meeting gets this automatically. History, context, risks, talking
-          points — compiled from your data, past meetings, and AI analysis.
-        </p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title="This is what prepared looks like"
+        epigraph="Every meeting gets this automatically. History, context, risks, talking points — compiled from your data, past meetings, and AI analysis."
+      />
 
       {/* Mock expanded meeting card */}
-      <div className="rounded-lg border border-l-4 border-l-primary bg-card shadow-sm">
-        <div className="p-5 space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-muted-foreground">10:30 AM</span>
-            <span className="text-muted-foreground/50">—</span>
-            <span className="font-mono text-sm text-muted-foreground/70">11:30 AM</span>
+      <div
+        style={{
+          borderTop: "2px solid var(--color-spice-turmeric)",
+          paddingTop: 20,
+        }}
+      >
+        {/* Meeting header */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
+              10:30 AM
+            </span>
+            <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>—</span>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)", opacity: 0.7 }}>
+              11:30 AM
+            </span>
           </div>
-          <h3 className="font-semibold">Acme Corp Quarterly Sync</h3>
-          <p className="text-sm text-primary">Acme Corp</p>
+          <h3
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 22,
+              fontWeight: 400,
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Acme Corp Quarterly Sync
+          </h3>
+          <span style={{ fontSize: 14, color: "var(--color-spice-turmeric)" }}>Acme Corp</span>
         </div>
 
         {/* Prep content */}
-        <div className="border-t bg-muted/30 p-5 space-y-5">
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           {/* Quick Context */}
-          <div>
-            <h4 className="text-sm font-medium mb-2">At a Glance</h4>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary">Enterprise</Badge>
-              <Badge variant="secondary">$1.2M ARR</Badge>
-              <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                Health: Green
-              </Badge>
-              <Badge variant="secondary">Ring 1</Badge>
+          <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+            <SectionLabel>At a Glance</SectionLabel>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              <Chip>Enterprise</Chip>
+              <Chip>$1.2M ARR</Chip>
+              <Chip color="var(--color-garden-sage)">Health: Green</Chip>
+              <Chip>Ring 1</Chip>
             </div>
           </div>
 
           {/* Attendees */}
-          <div>
-            <h4 className="text-sm font-medium mb-2">Attendees</h4>
-            <div className="space-y-1 text-sm text-muted-foreground">
-              <p><span className="font-medium text-foreground">Sarah Chen</span> — VP Engineering <span className="text-xs text-primary">(Decision-maker for expansion)</span></p>
-              <p><span className="font-medium text-foreground">Marcus Rivera</span> — Director, Platform <span className="text-xs text-primary">(Day-to-day contact)</span></p>
+          <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+            <SectionLabel>Attendees</SectionLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 14 }}>
+              <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
+                <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>Sarah Chen</span> — VP Engineering{" "}
+                <span style={{ fontSize: 12, color: "var(--color-spice-turmeric)" }}>(Decision-maker for expansion)</span>
+              </p>
+              <p style={{ margin: 0, color: "var(--color-text-secondary)" }}>
+                <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>Marcus Rivera</span> — Director, Platform{" "}
+                <span style={{ fontSize: 12, color: "var(--color-spice-turmeric)" }}>(Day-to-day contact)</span>
+              </p>
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
             {/* Since Last Meeting */}
-            <div>
-              <h4 className="text-sm font-medium mb-2">Since Last Meeting</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-foreground" />
-                  Phase 1 migration completed ahead of schedule
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-foreground" />
-                  NPS survey deployed — 3 detractors identified
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-foreground" />
-                  SOW for Phase 2 sent to legal
-                </li>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+              <SectionLabel>Since Last Meeting</SectionLabel>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                {["Phase 1 migration completed ahead of schedule", "NPS survey deployed — 3 detractors identified", "SOW for Phase 2 sent to legal"].map((item) => (
+                  <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <span style={{ marginTop: 6, width: 5, height: 5, borderRadius: "50%", background: "var(--color-text-primary)", flexShrink: 0 }} />
+                    {item}
+                  </li>
+                ))}
               </ul>
             </div>
 
             {/* Talking Points */}
-            <div>
-              <h4 className="text-sm font-medium text-primary mb-2">Talking Points</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                  Celebrate Phase 1 completion — set up case study
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                  Address NPS detractor concerns
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                  Phase 2 timeline and resource needs
-                </li>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+              <SectionLabel><span style={{ color: "var(--color-spice-turmeric)" }}>Talking Points</span></SectionLabel>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                {["Celebrate Phase 1 completion — set up case study", "Address NPS detractor concerns", "Phase 2 timeline and resource needs"].map((item) => (
+                  <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <span style={{ marginTop: 6, width: 5, height: 5, borderRadius: "50%", background: "var(--color-spice-turmeric)", flexShrink: 0 }} />
+                    {item}
+                  </li>
+                ))}
               </ul>
             </div>
 
             {/* Risks */}
-            <div>
-              <h4 className="text-sm font-medium text-destructive mb-2">Risks</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
-                  Key engineer leaving in March — knowledge transfer at risk
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
-                  NPS trending down — 3 detractors need follow-up
-                </li>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+              <SectionLabel><span style={{ color: "var(--color-spice-terracotta)" }}>Risks</span></SectionLabel>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                {["Key engineer leaving in March — knowledge transfer at risk", "NPS trending down — 3 detractors need follow-up"].map((item) => (
+                  <li key={item} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                    <span style={{ marginTop: 6, width: 5, height: 5, borderRadius: "50%", background: "var(--color-spice-terracotta)", flexShrink: 0 }} />
+                    {item}
+                  </li>
+                ))}
               </ul>
             </div>
 
             {/* Open Items */}
-            <div>
-              <h4 className="text-sm font-medium mb-2">Open Items</h4>
-              <ul className="space-y-1 text-sm text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <span className="mt-1 text-xs text-destructive font-medium">OVERDUE</span>
+            <div style={{ borderTop: "1px solid var(--color-rule-light)", paddingTop: 16 }}>
+              <SectionLabel>Open Items</SectionLabel>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      color: "var(--color-spice-terracotta)",
+                      marginTop: 2,
+                      flexShrink: 0,
+                    }}
+                  >
+                    OVERDUE
+                  </span>
                   Send updated SOW to legal team
                 </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
+                <li style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--color-text-secondary)" }}>
+                  <span style={{ marginTop: 6, width: 5, height: 5, borderRadius: "50%", background: "var(--color-text-tertiary)", flexShrink: 0 }} />
                   Follow up on NPS survey responses
                 </li>
               </ul>
@@ -128,12 +182,17 @@ export function MeetingDeepDive({ onNext }: MeetingDeepDiveProps) {
       </div>
 
       {/* Post-meeting teaser */}
-      <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <p>
-          <span className="font-medium text-foreground">After a meeting:</span> attach a
-          transcript or capture quick outcomes. They feed into the next prep — wins, risks,
-          actions, and decisions carry forward automatically.
-        </p>
+      <div
+        style={{
+          borderTop: "1px solid var(--color-rule-light)",
+          paddingTop: 20,
+          fontSize: 14,
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        <span style={{ fontWeight: 500, color: "var(--color-text-primary)" }}>After a meeting:</span>{" "}
+        attach a transcript or capture quick outcomes. They feed into the next prep — wins, risks,
+        actions, and decisions carry forward automatically.
       </div>
 
       <div className="flex justify-end">

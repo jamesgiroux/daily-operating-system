@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowRight, CalendarDays, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import type { OnboardingPrimingContext } from "@/types";
 
 interface PrimeBriefingProps {
@@ -44,32 +46,64 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">Prime Your First Briefing</h2>
-        <p className="text-sm text-muted-foreground">
-          {context?.prompt ?? "Load your calendar context, then run a full today workflow preview."}
-        </p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title="Prime Your First Briefing"
+        epigraph={context?.prompt ?? "Load your calendar context, then run a full today workflow preview."}
+      />
 
       {loading ? (
-        <div className="h-32" />
+        <div style={{ height: 128 }} />
       ) : (
-        <div className="space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {cards.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+            <p
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontStyle: "italic",
+                fontSize: 14,
+                color: "var(--color-text-tertiary)",
+                margin: 0,
+              }}
+            >
               No upcoming events found yet. You can still generate a preview briefing now.
-            </div>
+            </p>
           ) : (
             cards.map((card) => (
-              <div key={card.id} className="rounded-lg border p-3">
-                <div className="flex items-start justify-between gap-3">
+              <div
+                key={card.id}
+                style={{
+                  borderTop: "1px solid var(--color-rule-light)",
+                  paddingTop: 12,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                   <div>
-                    <div className="text-xs text-muted-foreground">{card.dayLabel}</div>
-                    <div className="font-medium">{card.title}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">{card.suggestedAction}</div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        color: "var(--color-text-tertiary)",
+                      }}
+                    >
+                      {card.dayLabel}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "var(--color-text-primary)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {card.title}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                      {card.suggestedAction}
+                    </div>
                     {card.suggestedEntityName && (
-                      <div className="mt-1 text-xs text-muted-foreground">
+                      <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 2 }}>
                         Entity: {card.suggestedEntityName}
                       </div>
                     )}
@@ -95,16 +129,36 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
         </div>
       )}
 
-      <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-        <div className="mb-2 flex items-center gap-2 text-foreground">
-          <CalendarDays className="size-4" />
-          <span>Full Workflow Preview</span>
+      {/* Full Workflow Preview */}
+      <div
+        style={{
+          borderTop: "1px solid var(--color-rule-light)",
+          paddingTop: 20,
+          fontSize: 14,
+          color: "var(--color-text-secondary)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, color: "var(--color-text-primary)" }}>
+          <CalendarDays size={16} />
+          <span style={{ fontWeight: 500 }}>Full Workflow Preview</span>
         </div>
-        Run <code>today</code> now to generate a complete preview briefing immediately.
+        Run{" "}
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>today</span>{" "}
+        now to generate a complete preview briefing immediately.
       </div>
 
       {runMessage && (
-        <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">{runMessage}</div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            borderTop: "1px solid var(--color-rule-light)",
+            paddingTop: 12,
+          }}
+        >
+          {runMessage}
+        </div>
       )}
 
       <div className="flex justify-between">
@@ -117,6 +171,9 @@ export function PrimeBriefing({ onComplete }: PrimeBriefingProps) {
           <ArrowRight className="ml-2 size-4" />
         </Button>
       </div>
+
+      {/* Editorial close — FinisMarker */}
+      <FinisMarker />
     </div>
   );
 }

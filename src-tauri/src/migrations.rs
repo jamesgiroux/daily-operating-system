@@ -38,6 +38,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 8,
     sql: include_str!("migrations/008_missing_indexes.sql"),
+}, Migration {
+    version: 9,
+    sql: include_str!("migrations/009_fix_embeddings_column.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -157,8 +160,20 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
     // Apply each pending migration in order
     for migration in &pending {
-        conn.execute_batch(migration.sql)
-            .map_err(|e| format!("Migration v{} failed: {}", migration.version, e))?;
+        if let Err(e) = conn.execute_batch(migration.sql) {
+            let msg = e.to_string();
+            // Tolerate "duplicate column name" errors — the ALTER TABLE may have
+            // already been applied out-of-band (e.g. baseline schema included the
+            // column but migration 006 wasn't tracked). All other errors are fatal.
+            if msg.contains("duplicate column name") {
+                log::info!(
+                    "Migration v{}: duplicate column (already exists), continuing",
+                    migration.version
+                );
+            } else {
+                return Err(format!("Migration v{} failed: {}", migration.version, e));
+            }
+        }
 
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?1)",
@@ -187,13 +202,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 8,
-            "should apply baseline + internal teams + account team + role index + email signals + content embeddings + chat interface + missing indexes migrations"
+            applied, 9,
+            "should apply all migrations including fix_embeddings_column"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -395,13 +410,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5/v6/v7/v8
+        // Run migrations — should bootstrap v1 and apply v2 through v9
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 7, "bootstrap should mark v1, then apply v2/v3/v4/v5/v6/v7/v8");
+        assert_eq!(applied, 8, "bootstrap should mark v1, then apply v2 through v9");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
 
         // Verify existing data is untouched
         let title: String = conn

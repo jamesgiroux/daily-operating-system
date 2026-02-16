@@ -7,7 +7,7 @@
 //! Usage: spawned by Claude Desktop as configured in claude_desktop_config.json.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
@@ -15,6 +15,7 @@ use rmcp::{tool, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
 use dailyos_lib::db::ActionDb;
+use dailyos_lib::embeddings::EmbeddingModel;
 use dailyos_lib::state::load_config;
 use dailyos_lib::types::Config;
 
@@ -27,8 +28,10 @@ use dailyos_lib::types::Config;
 struct DailyOsMcp {
     /// Read-only database connection. Wrapped in Arc<Mutex> because rusqlite::Connection
     /// is not Send+Sync, and MCP tool calls are sequential over stdio anyway.
-    db: std::sync::Arc<Mutex<ActionDb>>,
+    db: Arc<Mutex<ActionDb>>,
     config: Config,
+    /// Embedding model for semantic search (nomic-embed-text-v1.5).
+    embedding_model: Arc<EmbeddingModel>,
 }
 
 // =============================================================================
@@ -67,6 +70,19 @@ struct SearchMeetingsParams {
     /// Maximum number of results (default 20, max 50).
     #[schemars(description = "Max results (default 20, max 50)")]
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SearchContentParams {
+    /// Entity name or ID to search within.
+    #[schemars(description = "Entity name or ID to search within")]
+    entity_id: String,
+    /// Natural language search query.
+    #[schemars(description = "What to search for in workspace files")]
+    query: String,
+    /// Maximum number of results (default 10, max 30).
+    #[schemars(description = "Max results (default 10, max 30)")]
+    top_k: Option<usize>,
 }
 
 // =============================================================================
@@ -145,10 +161,11 @@ struct MeetingSearchItem {
 
 #[tool(tool_box)]
 impl DailyOsMcp {
-    fn new(db: ActionDb, config: Config) -> Self {
+    fn new(db: ActionDb, config: Config, embedding_model: Arc<EmbeddingModel>) -> Self {
         Self {
-            db: std::sync::Arc::new(Mutex::new(db)),
+            db: Arc::new(Mutex::new(db)),
             config,
+            embedding_model,
         }
     }
 
@@ -382,6 +399,55 @@ impl DailyOsMcp {
 
         serde_json::to_string_pretty(&results).unwrap_or_else(|e| format!("Error: {e}"))
     }
+
+    #[tool(description = "Semantic search over workspace files for an entity. Returns the most relevant text passages from documents, transcripts, and notes. Use when the user asks about specific details, information, or topics within their files for a particular account, project, or person.")]
+    fn search_content(&self, #[tool(aggr)] params: SearchContentParams) -> String {
+        if params.query.trim().is_empty() {
+            return "[]".to_string();
+        }
+
+        let db = match self.db.lock() {
+            Ok(db) => db,
+            Err(_) => return "Error: DB lock poisoned".to_string(),
+        };
+
+        // Resolve entity_id: try exact match first, then fuzzy match on name
+        let resolved_id = resolve_entity_id(&db, &params.entity_id);
+        let entity_id = resolved_id.as_deref().unwrap_or(&params.entity_id);
+
+        let top_k = params.top_k.unwrap_or(10).min(30);
+        let model_ref = if self.embedding_model.is_ready() {
+            Some(self.embedding_model.as_ref())
+        } else {
+            None
+        };
+
+        match dailyos_lib::queries::search::search_entity_content(
+            &db, model_ref, entity_id, &params.query, top_k, 0.7, 0.3,
+        ) {
+            Ok(matches) if matches.is_empty() => {
+                format!("No content found for entity '{}' matching '{}'.", params.entity_id, params.query)
+            }
+            Ok(matches) => {
+                let mut output = String::new();
+                for (i, m) in matches.iter().enumerate() {
+                    output.push_str(&format!(
+                        "## Result {} — {} ({})\n**File:** {}\n**Score:** {:.2} (vector: {:.2}, text: {:.2})\n\n{}\n\n---\n\n",
+                        i + 1,
+                        m.filename,
+                        m.content_type,
+                        m.relative_path,
+                        m.combined_score,
+                        m.vector_score,
+                        m.text_score,
+                        m.chunk_text.chars().take(1000).collect::<String>(),
+                    ));
+                }
+                output
+            }
+            Err(e) => format!("Search error: {e}"),
+        }
+    }
 }
 
 // =============================================================================
@@ -400,9 +466,10 @@ impl ServerHandler for DailyOsMcp {
             },
             instructions: Some(
                 "DailyOS MCP server. Provides read-only access to your daily briefing, \
-                 accounts, projects, people, and meeting history. Use get_briefing for \
-                 today's schedule, query_entity for entity details, list_entities for \
-                 portfolio overview, and search_meetings for meeting history."
+                 accounts, projects, people, meeting history, and workspace file contents. \
+                 Use get_briefing for today's schedule, query_entity for entity details, \
+                 list_entities for portfolio overview, search_meetings for meeting history, \
+                 and search_content for semantic search over workspace files."
                     .to_string(),
             ),
         }
@@ -412,6 +479,52 @@ impl ServerHandler for DailyOsMcp {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/// Resolve a user-provided entity identifier (name or ID) to an entity ID.
+/// Tries exact ID match first, then fuzzy name match across accounts, projects, people.
+fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
+    let query_lower = query.to_lowercase();
+
+    // Check accounts
+    if let Ok(accounts) = db.get_all_accounts() {
+        for acct in &accounts {
+            if acct.id == query {
+                return Some(acct.id.clone());
+            }
+            if acct.name.to_lowercase().contains(&query_lower) {
+                return Some(acct.id.clone());
+            }
+        }
+    }
+
+    // Check projects
+    if let Ok(projects) = db.get_all_projects() {
+        for proj in &projects {
+            if proj.id == query {
+                return Some(proj.id.clone());
+            }
+            if proj.name.to_lowercase().contains(&query_lower) {
+                return Some(proj.id.clone());
+            }
+        }
+    }
+
+    // Check people
+    if let Ok(people) = db.get_people(None) {
+        for person in &people {
+            if person.id == query {
+                return Some(person.id.clone());
+            }
+            if person.name.to_lowercase().contains(&query_lower)
+                || person.email.to_lowercase().contains(&query_lower)
+            {
+                return Some(person.id.clone());
+            }
+        }
+    }
+
+    None
+}
 
 fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {
     std::fs::read_to_string(path)
@@ -473,7 +586,18 @@ async fn main() -> anyhow::Result<()> {
     let db =
         ActionDb::open_readonly().map_err(|e| anyhow::anyhow!("Failed to open database: {e}"))?;
 
-    let server = DailyOsMcp::new(db, config);
+    // Initialize embedding model synchronously — MCP server starts before any
+    // tool calls so this won't block user interaction.
+    let embedding_model = Arc::new(EmbeddingModel::new());
+    let models_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".dailyos")
+        .join("models");
+    if let Err(e) = embedding_model.initialize(models_dir) {
+        eprintln!("Embedding model unavailable: {e}");
+    }
+
+    let server = DailyOsMcp::new(db, config, embedding_model);
 
     let service = server.serve(rmcp::transport::io::stdio()).await?;
     service.waiting().await?;
