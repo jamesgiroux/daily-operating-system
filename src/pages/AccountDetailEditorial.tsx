@@ -12,6 +12,7 @@ import {
   Eye,
   Activity,
   CheckSquare2,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,8 +123,24 @@ export default function AccountDetailEditorial() {
       activePage: "accounts" as const,
       backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
+      folioActions: (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            navigate({
+              to: "/accounts/$accountId/risk-briefing",
+              params: { accountId: accountId! },
+            })
+          }
+          style={{ fontSize: 12, gap: 6 }}
+        >
+          <FileText size={14} />
+          Reports
+        </Button>
+      ),
     }),
-    [navigate],
+    [navigate, accountId],
   );
   useRegisterMagazineShell(shellConfig);
 

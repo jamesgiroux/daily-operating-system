@@ -1,21 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchInput } from "@/components/ui/search-input";
-import { TabFilter } from "@/components/ui/tab-filter";
+import { Link } from "@tanstack/react-router";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
   BulkCreateForm,
   parseBulkCreateInput,
 } from "@/components/ui/bulk-create-form";
-import { ListRow, ListColumn } from "@/components/ui/list-row";
-import { PageError } from "@/components/PageState";
-import { Building2, ChevronDown, ChevronRight, Plus, RefreshCw } from "lucide-react";
-import { cn, formatArr } from "@/lib/utils";
+import { formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
+import type { ReadinessStat } from "@/components/layout/FolioBar";
 
 /** Lightweight shape returned by get_archived_accounts (DbAccount from Rust). */
 interface ArchivedAccount {
@@ -28,44 +22,25 @@ interface ArchivedAccount {
 }
 
 type ArchiveTab = "active" | "archived";
-type ScopeTab = "all" | "internal" | "external";
 
-type HealthTab = "all" | "green" | "yellow" | "red";
-
-const healthTabs: { key: HealthTab; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "green", label: "Green" },
-  { key: "yellow", label: "Yellow" },
-  { key: "red", label: "Red" },
-];
-
-const archiveTabs: { key: ArchiveTab; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "archived", label: "Archived" },
-];
-
-const scopeTabs: { key: ScopeTab; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "internal", label: "Internal" },
-  { key: "external", label: "External" },
-];
+const healthDotColor: Record<string, string> = {
+  green: "var(--color-garden-sage)",
+  yellow: "var(--color-spice-saffron)",
+  red: "var(--color-spice-terracotta)",
+};
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<HealthTab>("all");
-  const [scopeTab, setScopeTab] = useState<ScopeTab>("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  // I114: expanded parent tracking + cached children
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [childrenCache, setChildrenCache] = useState<Record<string, AccountListItem[]>>({});
-  // I176: archive tab
   const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
   const [archivedAccounts, setArchivedAccounts] = useState<ArchivedAccount[]>([]);
-  // I162: bulk create mode
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkValue, setBulkValue] = useState("");
 
@@ -82,7 +57,6 @@ export default function AccountsPage() {
     }
   }, []);
 
-  // I176: load archived accounts
   const loadArchivedAccounts = useCallback(async () => {
     try {
       setLoading(true);
@@ -116,7 +90,6 @@ export default function AccountsPage() {
     }
   }
 
-  // I162: bulk create
   async function handleBulkCreate() {
     const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
@@ -136,7 +109,6 @@ export default function AccountsPage() {
       next.delete(parentId);
     } else {
       next.add(parentId);
-      // Fetch children if not cached
       if (!childrenCache[parentId]) {
         try {
           const children = await invoke<AccountListItem[]>(
@@ -153,323 +125,493 @@ export default function AccountsPage() {
     setExpandedParents(next);
   }
 
-  const healthFiltered =
-    tab === "all"
-      ? accounts
-      : accounts.filter((a) => {
-          // Show parent if it matches OR if any cached child matches
-          if (a.health === tab) return true;
-          if (a.isParent) {
-            const children = childrenCache[a.id];
-            if (children?.some((c) => c.health === tab)) return true;
-          }
-          return false;
-        });
+  // Lifecycle values derived from data
+  const lifecycleValues = useMemo(() => {
+    const values = new Set<string>();
+    for (const a of accounts) {
+      if (a.lifecycle) values.add(a.lifecycle);
+    }
+    return Array.from(values).sort();
+  }, [accounts]);
 
-  const scopeFiltered = healthFiltered.filter((a) => {
-    if (scopeTab === "internal") return a.isInternal;
-    if (scopeTab === "external") return !a.isInternal;
-    return true;
-  });
+  // Filters
+  const lifecycleFiltered =
+    lifecycleFilter === "all"
+      ? accounts
+      : accounts.filter((a) => a.lifecycle === lifecycleFilter);
 
   const filtered = searchQuery
-    ? scopeFiltered.filter(
+    ? lifecycleFiltered.filter(
         (a) =>
           a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (a.teamSummary ?? "").toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : scopeFiltered;
+    : lifecycleFiltered;
 
-  const tabCounts: Record<HealthTab, number> = {
-    all: accounts.length,
-    green: accounts.filter((a) => a.health === "green").length,
-    yellow: accounts.filter((a) => a.health === "yellow").length,
-    red: accounts.filter((a) => a.health === "red").length,
-  };
-  const scopeCounts: Record<ScopeTab, number> = {
-    all: accounts.length,
-    internal: accounts.filter((a) => a.isInternal).length,
-    external: accounts.filter((a) => !a.isInternal).length,
-  };
-
-  // I176: filter archived accounts by search query
   const filteredArchived = searchQuery
     ? archivedAccounts.filter(
-        (a) =>
-          a.name.toLowerCase().includes(searchQuery.toLowerCase())
+        (a) => a.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : archivedAccounts;
 
   const isArchived = archiveTab === "archived";
+  const displayList = isArchived ? filteredArchived : filtered;
+  const activeCount = accounts.filter((a) => !a.archived).length;
 
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).toUpperCase();
+
+  // FolioBar stats
+  const folioStats = useMemo((): ReadinessStat[] => {
+    const stats: ReadinessStat[] = [];
+    if (activeCount > 0) stats.push({ label: `${activeCount} active`, color: "sage" });
+    return stats;
+  }, [activeCount]);
+
+  // Folio actions: archive toggle + new button
+  const folioActions = useMemo(() => {
+    const archiveButtonStyle = {
+      fontFamily: "var(--font-mono)",
+      fontSize: 11,
+      fontWeight: 500,
+      letterSpacing: "0.06em",
+      background: "none",
+      border: "none",
+      padding: 0,
+      cursor: "pointer",
+    } as const;
+
+    return (
+      <>
+        <button
+          onClick={() => setArchiveTab(isArchived ? "active" : "archived")}
+          style={{
+            ...archiveButtonStyle,
+            color: isArchived ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
+          }}
+        >
+          {isArchived ? "← Active" : "Archive"}
+        </button>
+        {!isArchived && (
+          <button
+            onClick={() => setCreating(true)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-spice-turmeric)",
+              background: "none",
+              border: "1px solid var(--color-spice-turmeric)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              cursor: "pointer",
+            }}
+          >
+            + New
+          </button>
+        )}
+      </>
+    );
+  }, [isArchived]);
+
+  // Register magazine shell
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Accounts",
+      atmosphereColor: "turmeric" as const,
+      activePage: "accounts" as const,
+      folioDateText: formattedDate,
+      folioReadinessStats: folioStats,
+      folioActions: folioActions,
+    }),
+    [formattedDate, folioStats, folioActions],
+  );
+  useRegisterMagazineShell(shellConfig);
+
+  // Loading state
   if (loading && (isArchived ? archivedAccounts.length === 0 : accounts.length === 0)) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="space-y-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
-        </div>
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            style={{
+              height: 52,
+              background: "var(--color-rule-light)",
+              borderRadius: 8,
+              marginBottom: 12,
+            }}
+          />
+        ))}
+      </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <PageError message={error} onRetry={loadAccounts} />
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>{error}</p>
+        <button
+          onClick={loadAccounts}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "1px solid var(--color-rule-heavy)",
+            borderRadius: 4,
+            padding: "4px 12px",
+            cursor: "pointer",
+            marginTop: 12,
+          }}
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
+  // Empty state
   if (!isArchived && accounts.length === 0) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
-          <Building2 className="size-16 text-muted-foreground/40" />
-          <div className="text-center">
-            <h2 className="text-lg font-semibold">No accounts yet</h2>
-            <p className="text-sm text-muted-foreground">
-              Create your first account to get started.
-            </p>
-          </div>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
+        <h1
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 36,
+            fontWeight: 400,
+            letterSpacing: "-0.02em",
+            color: "var(--color-text-primary)",
+            margin: "0 0 24px 0",
+          }}
+        >
+          Your Book
+        </h1>
+        <div style={{ textAlign: "center", padding: "64px 0" }}>
+          <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
+            No accounts yet
+          </p>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
+            Create your first account to get started.
+          </p>
           {creating ? (
-            <InlineCreateForm
-              value={newName}
-              onChange={setNewName}
-              onCreate={handleCreate}
-              onCancel={() => setCreating(false)}
-              placeholder="Account name"
-            />
+            <div style={{ maxWidth: 400, margin: "24px auto 0" }}>
+              <InlineCreateForm
+                value={newName}
+                onChange={setNewName}
+                onCreate={handleCreate}
+                onCancel={() => setCreating(false)}
+                placeholder="Account name"
+              />
+            </div>
           ) : (
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="mr-1 size-4" />
-              New Account
-            </Button>
+            <button
+              onClick={() => setCreating(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--color-spice-turmeric)",
+                background: "none",
+                border: "1px solid var(--color-spice-turmeric)",
+                borderRadius: 4,
+                padding: "6px 16px",
+                cursor: "pointer",
+                marginTop: 24,
+              }}
+            >
+              + New Account
+            </button>
           )}
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Accounts
-                <span className="ml-2 text-base font-normal text-muted-foreground">
-                  {isArchived ? filteredArchived.length : filtered.length}
-                </span>
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {isArchived
-                  ? "Previously tracked accounts"
-                  : "Account health, engagement signals, and renewal tracking"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {!isArchived && (
-                <>
-                  {creating ? (
-                    <>
-                      {bulkMode ? (
-                        <BulkCreateForm
-                          value={bulkValue}
-                          onChange={setBulkValue}
-                          onCreate={handleBulkCreate}
-                          onSingleMode={() => {
-                            setBulkMode(false);
-                            setBulkValue("");
-                          }}
-                          onCancel={() => {
-                            setCreating(false);
-                            setBulkMode(false);
-                            setBulkValue("");
-                            setNewName("");
-                          }}
-                          placeholder="One account name per line"
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <InlineCreateForm
-                            value={newName}
-                            onChange={setNewName}
-                            onCreate={handleCreate}
-                            onCancel={() => {
-                              setCreating(false);
-                              setNewName("");
-                            }}
-                            placeholder="Account name"
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setBulkMode(true)}
-                          >
-                            Bulk
-                          </Button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCreating(true)}
-                    >
-                      <Plus className="mr-1 size-4" />
-                      New Account
-                    </Button>
-                  )}
-                </>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                onClick={isArchived ? loadArchivedAccounts : loadAccounts}
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ═══ PAGE HEADER ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 36,
+              fontWeight: 400,
+              letterSpacing: "-0.02em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Your Book
+          </h1>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            {isArchived ? filteredArchived.length : filtered.length} {isArchived ? "archived" : "active"}
+          </span>
+        </div>
+
+        {/* Section rule */}
+        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
+
+        {/* Lifecycle filter (active only, only when lifecycle values exist) */}
+        {!isArchived && lifecycleValues.length > 0 && (
+          <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+            <button
+              onClick={() => setLifecycleFilter("all")}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: lifecycleFilter === "all" ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                textDecoration: lifecycleFilter === "all" ? "underline" : "none",
+                textUnderlineOffset: "4px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              all
+            </button>
+            {lifecycleValues.map((lc) => (
+              <button
+                key={lc}
+                onClick={() => setLifecycleFilter(lc)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: lifecycleFilter === lc ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  textDecoration: lifecycleFilter === lc ? "underline" : "none",
+                  textUnderlineOffset: "4px",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
               >
-                <RefreshCw className="size-4" />
-              </Button>
-            </div>
+                {lc}
+              </button>
+            ))}
           </div>
+        )}
 
-          <TabFilter
-            tabs={archiveTabs}
-            active={archiveTab}
-            onChange={setArchiveTab}
-            className="mb-4"
-          />
+        {/* Search */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="⌘  Search accounts..."
+          style={{
+            width: "100%",
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            color: "var(--color-text-primary)",
+            background: "none",
+            border: "none",
+            borderBottom: "1px solid var(--color-rule-light)",
+            padding: "8px 0",
+            outline: "none",
+          }}
+        />
+      </section>
 
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search accounts..."
-            className="mb-4"
-          />
-
-          {!isArchived && (
-            <TabFilter
-              tabs={scopeTabs}
-              active={scopeTab}
-              onChange={setScopeTab}
-              counts={scopeCounts}
-              className="mb-4"
+      {/* ═══ CREATE FORM ═══ */}
+      {creating && !isArchived && (
+        <div style={{ marginBottom: 16 }}>
+          {bulkMode ? (
+            <BulkCreateForm
+              value={bulkValue}
+              onChange={setBulkValue}
+              onCreate={handleBulkCreate}
+              onSingleMode={() => { setBulkMode(false); setBulkValue(""); }}
+              onCancel={() => { setCreating(false); setBulkMode(false); setBulkValue(""); setNewName(""); }}
+              placeholder="One account name per line"
             />
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <InlineCreateForm
+                value={newName}
+                onChange={setNewName}
+                onCreate={handleCreate}
+                onCancel={() => { setCreating(false); setNewName(""); }}
+                placeholder="Account name"
+              />
+              <button
+                onClick={() => setBulkMode(true)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Bulk
+              </button>
+            </div>
           )}
+        </div>
+      )}
 
-          {!isArchived && (
-            <TabFilter
-              tabs={healthTabs}
-              active={tab}
-              onChange={setTab}
-              counts={tabCounts}
-              className="mb-6"
-            />
-          )}
-
-          {/* Accounts list */}
-          <div>
-            {isArchived ? (
-              filteredArchived.length === 0 ? (
-                <Card>
-                  <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                    <Building2 className="mb-4 size-12 text-muted-foreground/40" />
-                    <p className="text-lg font-medium">No archived accounts</p>
-                    <p className="text-sm text-muted-foreground">
-                      Archived accounts will appear here.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredArchived.map((account) => (
-                  <ArchivedAccountRow key={account.id} account={account} />
-                ))
-              )
-            ) : filtered.length === 0 ? (
-              <Card>
-                <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-                  <Building2 className="mb-4 size-12 text-muted-foreground/40" />
-                  <p className="text-lg font-medium">No matches</p>
-                  <p className="text-sm text-muted-foreground">
-                    Try a different search or filter.
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              filtered.map((account) => (
-                <div key={account.id}>
-                  <AccountRow
+      {/* ═══ ACCOUNT ROWS ═══ */}
+      <section>
+        {displayList.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "64px 0" }}>
+            <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
+              {isArchived ? "No archived accounts" : "No matches"}
+            </p>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
+              {isArchived ? "Archived accounts will appear here." : "Try a different search or filter."}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {isArchived
+              ? filteredArchived.map((account, i) => (
+                  <ArchivedAccountRow
+                    key={account.id}
                     account={account}
-                    isExpanded={expandedParents.has(account.id)}
-                    onToggleExpand={
-                      account.isParent
-                        ? () => toggleExpand(account.id)
-                        : undefined
-                    }
+                    showBorder={i < filteredArchived.length - 1}
                   />
-                  {/* Render children when expanded */}
-                  {account.isParent &&
-                    expandedParents.has(account.id) &&
-                    childrenCache[account.id]?.map((child) => (
-                      <AccountRow
-                        key={child.id}
-                        account={child}
-                        isChild
-                      />
-                    ))}
-                </div>
-              ))
-            )}
+                ))
+              : filtered.map((account, i) => (
+                  <div key={account.id}>
+                    <AccountRow
+                      account={account}
+                      isExpanded={expandedParents.has(account.id)}
+                      onToggleExpand={account.isParent ? () => toggleExpand(account.id) : undefined}
+                      showBorder={i < filtered.length - 1 || (expandedParents.has(account.id) && !!childrenCache[account.id]?.length)}
+                    />
+                    {account.isParent && expandedParents.has(account.id) &&
+                      childrenCache[account.id]?.map((child, ci) => (
+                        <AccountRow
+                          key={child.id}
+                          account={child}
+                          isChild
+                          showBorder={ci < (childrenCache[account.id]?.length ?? 0) - 1 || i < filtered.length - 1}
+                        />
+                      ))}
+                  </div>
+                ))}
+          </div>
+        )}
+      </section>
+
+      {/* ═══ END MARK ═══ */}
+      {displayList.length > 0 && (
+        <div
+          style={{
+            borderTop: "1px solid var(--color-rule-heavy)",
+            marginTop: 48,
+            paddingTop: 32,
+            paddingBottom: 120,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 14,
+              fontStyle: "italic",
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            That's everything.
           </div>
         </div>
-      </ScrollArea>
-    </main>
+      )}
+    </div>
   );
 }
+
+// ─── Account Row ────────────────────────────────────────────────────────────
 
 function AccountRow({
   account,
   isExpanded,
   onToggleExpand,
   isChild,
+  showBorder,
 }: {
   account: AccountListItem;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   isChild?: boolean;
+  showBorder: boolean;
 }) {
-  const healthDot: Record<string, string> = {
-    green: "bg-success",
-    yellow: "bg-primary",
-    red: "bg-destructive",
-  };
-
   const daysSince = account.daysSinceLastMeeting;
   const isStale = daysSince != null && daysSince > 14;
 
-  const Chevron = isExpanded ? ChevronDown : ChevronRight;
-  const hasInternalBadge = account.isInternal;
-
   return (
-    <ListRow
+    <Link
       to="/accounts/$accountId"
       params={{ accountId: account.id }}
-      signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
-      name={account.name}
-      subtitle={account.teamSummary}
-      className={isChild ? "pl-8" : undefined}
-      badges={
-        <div className="inline-flex items-center gap-2">
-          {hasInternalBadge && (
-            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        paddingLeft: isChild ? 28 : 0,
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        textDecoration: "none",
+        transition: "background 0.12s ease",
+      }}
+    >
+      {/* Health dot */}
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)",
+          flexShrink: 0,
+          marginTop: 8,
+        }}
+      />
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 17,
+              fontWeight: 400,
+              color: "var(--color-text-primary)",
+            }}
+          >
+            {account.name}
+          </span>
+          {account.isInternal && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--color-text-tertiary)",
+              }}
+            >
               Internal
             </span>
           )}
@@ -480,73 +622,123 @@ function AccountRow({
                 e.stopPropagation();
                 onToggleExpand();
               }}
-              className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
             >
-              <Chevron className="size-3.5" />
-              <span>{account.childCount} BU{account.childCount !== 1 ? "s" : ""}</span>
+              {isExpanded ? "▾" : "▸"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
             </button>
           )}
         </div>
-      }
-      columns={
-        <>
-          {account.arr != null && (
-            <ListColumn
-              value={<span className="font-mono">${formatArr(account.arr)}</span>}
-              className="w-20"
-            />
-          )}
-          {account.openActionCount > 0 && (
-            <ListColumn
-              value={account.openActionCount}
-              label="actions"
-              className="w-14"
-            />
-          )}
-          {daysSince != null && (
-            <ListColumn
-              value={
-                <span className={cn(isStale && "text-destructive")}>
-                  {daysSince === 0 ? "Today" : `${daysSince}d`}
-                </span>
-              }
-              label="last mtg"
-              className="w-14"
-            />
-          )}
-        </>
-      }
-    />
+        {account.teamSummary && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: 300,
+              color: "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
+          >
+            {account.teamSummary}
+            {account.openActionCount > 0 && (
+              <span> · {account.openActionCount} action{account.openActionCount !== 1 ? "s" : ""}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Right metrics */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexShrink: 0 }}>
+        {account.arr != null && (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+            ${formatArr(account.arr)}
+          </span>
+        )}
+        {daysSince != null && (
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+            }}
+          >
+            {daysSince === 0 ? "Today" : `${daysSince}d`}
+          </span>
+        )}
+      </div>
+    </Link>
   );
 }
 
-/** I176: Simplified row for archived accounts (no active metrics). */
-function ArchivedAccountRow({ account }: { account: ArchivedAccount }) {
-  const healthDot: Record<string, string> = {
-    green: "bg-success",
-    yellow: "bg-primary",
-    red: "bg-destructive",
-  };
+// ─── Archived Account Row ───────────────────────────────────────────────────
 
+function ArchivedAccountRow({
+  account,
+  showBorder,
+}: {
+  account: ArchivedAccount;
+  showBorder: boolean;
+}) {
   return (
-    <ListRow
+    <Link
       to="/accounts/$accountId"
       params={{ accountId: account.id }}
-      signalColor={healthDot[account.health ?? ""] ?? "bg-muted-foreground/30"}
-      name={account.name}
-      subtitle={
-        [account.lifecycle]
-          .filter(Boolean)
-          .join(" \u00B7 ") || undefined
-      }
-      columns={
-        account.arr != null ? (
-          <ListColumn
-            value={<span className="font-mono">${formatArr(account.arr)}</span>}
-            className="w-20"
-          />
-        ) : undefined
-      }
-    />
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        textDecoration: "none",
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)",
+          flexShrink: 0,
+          marginTop: 8,
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 17,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {account.name}
+        </span>
+        {account.lifecycle && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: 300,
+              color: "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
+          >
+            {account.lifecycle}
+          </div>
+        )}
+      </div>
+      {account.arr != null && (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)", flexShrink: 0 }}>
+          ${formatArr(account.arr)}
+        </span>
+      )}
+    </Link>
   );
 }
