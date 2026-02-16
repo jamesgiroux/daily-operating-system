@@ -84,6 +84,169 @@ Read `dashboard.md` for a comprehensive overview of this {etype}. For structured
     Ok(())
 }
 
+// ─── Managed Workspace Files (I275) ─────────────────────────────────────────
+//
+// CLAUDE.md and .claude/settings.json are written to the workspace root so that
+// Claude Code / Cowork automatically understands the workspace structure.
+// Files are overwritten when the app version changes (sentinel check).
+
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// CLAUDE.md template written to workspace root.
+/// First line is a version sentinel so we can detect staleness.
+const CLAUDE_MD_TEMPLATE: &str = r#"<!-- dailyos:{{VERSION}} — managed by DailyOS, do not edit -->
+# DailyOS Workspace
+
+This is a DailyOS operational intelligence workspace. It contains structured intelligence about meetings, accounts, projects, people, and actions maintained by the DailyOS app.
+
+## How to Use This Workspace
+
+You have access to rich operational intelligence. Use it to help with meeting prep, account reviews, action completion, reports, and strategic thinking.
+
+### Quick Start
+
+- **Today's briefing:** Read `_today/data/briefing.json` for your daily narrative
+- **Today's meetings:** Read `_today/data/schedule.json` for timeline and context
+- **Account intelligence:** Read `Accounts/<name>/intelligence.json` for AI assessment
+- **Open actions:** Read `_today/data/actions.json` for prioritized tasks
+
+### Workspace Structure
+
+```
+_today/data/           → Today's briefing, schedule, actions, emails
+_archive/YYYY-MM-DD/   → Historical briefings
+Accounts/<name>/       → Account intelligence (dashboard.json, intelligence.json, dashboard.md)
+Projects/<name>/       → Project intelligence (same structure)
+People/<slug>.md       → Stakeholder profiles
+_inbox/                → Incoming files for processing
+```
+
+### Intelligence Files
+
+Each entity (account or project) has up to three files:
+
+- **intelligence.json** — AI-synthesized assessment: executive summary, risks, wins, stakeholder insights, meeting readiness
+- **dashboard.json** — Mechanical data: lifecycle, health, team, domains, metadata
+- **dashboard.md** — Rich human-readable artifact combining both
+
+### Schedule & Actions
+
+- **schedule.json** — Array of today's meetings with `id`, `title`, `start_time`, `end_time`, `meeting_type`, `attendees`, `account_id`, `prep_status`
+- **actions.json** — Prioritized open actions with `id`, `title`, `priority`, `status`, `due_date`, `account_id`, `project_id`, `context`
+- **briefing.json** — Narrative daily briefing with `focus`, `sections[]`, AI-written synthesis
+
+### Principles
+
+- Intelligence files are current — trust them as the source of truth
+- JSON files are for structured queries, markdown files are for narrative context
+- Lead with conclusions, not data — the intelligence already synthesizes meaning
+- Actions have entity context — follow `entity_id` links for full background
+
+### Writing Deliverables
+
+Place deliverables in entity subdirectories so DailyOS detects and indexes them:
+
+- `Accounts/<name>/Documents/` — reports, analyses, deliverables
+- `Accounts/<name>/Meeting-Notes/` — meeting summaries and outcomes
+- `Accounts/<name>/Call-Transcripts/` — transcript files with YAML frontmatter
+- `Projects/<name>/Documents/` — same structure for projects
+"#;
+
+/// Write managed workspace files (CLAUDE.md + .claude/settings.json).
+///
+/// Overwrites when the app version changes. Skips if already current.
+/// Called from `initialize_workspace()` and on app startup.
+pub fn write_managed_workspace_files(workspace: &Path) -> Result<(), String> {
+    write_workspace_claude_md(workspace)?;
+    write_workspace_claude_settings(workspace)?;
+    Ok(())
+}
+
+/// Write CLAUDE.md with version sentinel. Skips if already current version.
+fn write_workspace_claude_md(workspace: &Path) -> Result<(), String> {
+    let claude_md_path = workspace.join("CLAUDE.md");
+    let sentinel = format!("<!-- dailyos:{} ", APP_VERSION);
+
+    // Check existing file for version match
+    if claude_md_path.exists() {
+        if let Ok(first_line) = read_first_line(&claude_md_path) {
+            if first_line.contains(&sentinel) {
+                return Ok(()); // Already current
+            }
+        }
+    }
+
+    let content = CLAUDE_MD_TEMPLATE.replace("{{VERSION}}", APP_VERSION);
+    atomic_write_str(&claude_md_path, &content)
+        .map_err(|e| format!("Failed to write CLAUDE.md: {}", e))?;
+
+    log::info!(
+        "Wrote workspace CLAUDE.md (v{}): {}",
+        APP_VERSION,
+        claude_md_path.display()
+    );
+    Ok(())
+}
+
+/// Write .claude/settings.json with version sentinel. Skips if already current.
+fn write_workspace_claude_settings(workspace: &Path) -> Result<(), String> {
+    let claude_dir = workspace.join(".claude");
+    let settings_path = claude_dir.join("settings.json");
+
+    // Check existing file for version match
+    if settings_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&settings_path) {
+            let version_field = format!("\"_version\": \"{}\"", APP_VERSION);
+            if content.contains(&version_field) {
+                return Ok(()); // Already current
+            }
+        }
+    }
+
+    // Ensure .claude/ directory exists
+    if !claude_dir.exists() {
+        std::fs::create_dir_all(&claude_dir)
+            .map_err(|e| format!("Failed to create .claude/: {}", e))?;
+    }
+
+    let settings = format!(
+        r#"{{
+  "_version": "{}",
+  "_managedBy": "DailyOS",
+  "permissions": {{
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep"
+    ]
+  }}
+}}"#,
+        APP_VERSION
+    );
+
+    atomic_write_str(&settings_path, &settings)
+        .map_err(|e| format!("Failed to write .claude/settings.json: {}", e))?;
+
+    log::info!(
+        "Wrote workspace .claude/settings.json (v{}): {}",
+        APP_VERSION,
+        settings_path.display()
+    );
+    Ok(())
+}
+
+/// Read the first line of a file (for sentinel checking).
+fn read_first_line(path: &Path) -> Result<String, std::io::Error> {
+    use std::io::BufRead;
+    let file = std::fs::File::open(path)?;
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    Ok(line)
+}
+
 /// Validates a filename resolves within the inbox directory.
 /// Returns the resolved path or an error if traversal is detected.
 pub fn validate_inbox_path(workspace: &Path, filename: &str) -> Result<PathBuf, String> {
@@ -121,22 +284,24 @@ pub fn validate_entity_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-/// Validate a slug/identifier passed across IPC boundaries.
+/// Validate an identifier passed across IPC boundaries.
+///
+/// Allows alphanumeric, hyphens, underscores, spaces, and dots — covers both
+/// UUID-style IDs and AI-generated action IDs (e.g. "ai-2026-02-05 meeting_name-0").
+/// Rejects path traversal sequences and control characters.
 pub fn validate_id_slug(value: &str, field: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
         return Err(format!("{field} cannot be empty"));
     }
-    if trimmed.len() > 128 {
-        return Err(format!("{field} is too long (max 128 chars)"));
+    if trimmed.len() > 200 {
+        return Err(format!("{field} is too long (max 200 chars)"));
     }
-    if !trimmed
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
-    {
-        return Err(format!(
-            "{field} contains invalid characters (allowed: a-z, A-Z, 0-9, -, _)"
-        ));
+    if trimmed.contains("..") || trimmed.contains('/') || trimmed.contains('\\') {
+        return Err(format!("{field} contains path traversal characters"));
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(format!("{field} contains control characters"));
     }
     Ok(trimmed.to_string())
 }
@@ -641,5 +806,86 @@ mod tests {
             "other.io".to_string(),
         ];
         assert_eq!(normalize_domains(&input), vec!["acme.com", "other.io"]);
+    }
+
+    // Managed workspace files tests (I275)
+
+    #[test]
+    fn test_managed_files_fresh_write() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_managed_workspace_files(dir.path()).unwrap();
+
+        // CLAUDE.md exists with sentinel
+        let claude_md = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(claude_md.starts_with(&format!("<!-- dailyos:{}", APP_VERSION)));
+        assert!(claude_md.contains("DailyOS Workspace"));
+        assert!(claude_md.contains("briefing.json"));
+
+        // .claude/settings.json exists with version
+        let settings =
+            std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+        assert!(settings.contains(&format!("\"_version\": \"{}\"", APP_VERSION)));
+        assert!(settings.contains("\"_managedBy\": \"DailyOS\""));
+        assert!(settings.contains("\"Read\""));
+    }
+
+    #[test]
+    fn test_managed_files_idempotent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_managed_workspace_files(dir.path()).unwrap();
+
+        let md1 = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        let settings1 =
+            std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+
+        // Call again — should be a no-op
+        write_managed_workspace_files(dir.path()).unwrap();
+
+        let md2 = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        let settings2 =
+            std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+
+        assert_eq!(md1, md2);
+        assert_eq!(settings1, settings2);
+    }
+
+    #[test]
+    fn test_managed_files_version_bump_overwrites() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // Write an old-version sentinel
+        let old_content = "<!-- dailyos:0.0.0 — managed by DailyOS, do not edit -->\n# Old";
+        std::fs::write(dir.path().join("CLAUDE.md"), old_content).unwrap();
+
+        // Also write old settings
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join("settings.json"),
+            r#"{"_version": "0.0.0"}"#,
+        )
+        .unwrap();
+
+        write_managed_workspace_files(dir.path()).unwrap();
+
+        // Should be overwritten with current version
+        let claude_md = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(claude_md.contains(&format!("dailyos:{}", APP_VERSION)));
+        assert!(!claude_md.contains("0.0.0"));
+
+        let settings =
+            std::fs::read_to_string(dir.path().join(".claude/settings.json")).unwrap();
+        assert!(settings.contains(&format!("\"_version\": \"{}\"", APP_VERSION)));
+    }
+
+    #[test]
+    fn test_managed_files_creates_claude_dir() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert!(!dir.path().join(".claude").exists());
+
+        write_managed_workspace_files(dir.path()).unwrap();
+
+        assert!(dir.path().join(".claude").is_dir());
+        assert!(dir.path().join(".claude/settings.json").exists());
     }
 }

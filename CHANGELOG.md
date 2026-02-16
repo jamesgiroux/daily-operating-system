@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Risk Briefing
+
+- Executive risk briefing redesigned as a 6-slide presentation (Cover, Bottom Line, What Happened, The Stakes, The Plan, The Ask) — each slide fills the viewport with scroll-snap navigation
+- Keyboard shortcuts: keys 1-6 jump to slides, arrow keys navigate
+- All text fields are click-to-edit — fix names, titles, or facts before presenting, changes auto-save silently to disk
+- Tighter AI output: hard word limits prevent verbose slides, health arc rendered as color-coded timeline bars
+
+### Semantic Search
+
+- Local embedding model (nomic-embed-text-v1.5) for semantic vector search over entity content — downloads automatically on first launch, works offline after that
+- Background embedding processor: entity files are chunked and embedded automatically as they change
+- Hybrid search combining vector similarity (70%) and keyword matching (30%) for best-of-both retrieval
+- Semantic search integrated into entity intelligence enrichment — AI now finds relevant historical content instead of relying on recency alone
+
+### Conversational Interface
+
+- Chat tools for querying entities, searching content, and retrieving briefings via external AI assistants (Claude Desktop via MCP)
+- Chat session persistence — conversations are remembered across sessions
+
+### Security
+
+- Content Security Policy (CSP) enforced on the webview — restricts script, style, image, and connection sources to the app itself
+- `reveal_in_finder` command validates paths against workspace and config directories before opening Finder — prevents arbitrary filesystem traversal
+- `copy_to_inbox` command restricts source paths to Documents, Desktop, and Downloads — prevents copying from arbitrary filesystem locations
+
+### Reliability
+
+- Database indexes added for meeting-entity lookups, calendar event deduplication, and action filtering — faster page loads as data grows
+- Removed unused frontend dependencies (lighter install, smaller attack surface)
+
 ## [0.7.5] - 2026-02-14
 
 ### Fixed

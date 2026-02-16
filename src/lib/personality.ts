@@ -22,7 +22,7 @@ type CopyKey =
   | "actions-waiting-empty"
   | "emails-empty"
   | "emails-clear"
-  | "focus-empty"
+  | "inbox-empty"
   | "people-empty"
   | "people-archived-empty"
   | "people-no-matches"
@@ -58,10 +58,10 @@ const COPY: Record<CopyKey, Record<Personality, Copy>> = {
     friendly: { title: "You're good!", message: "All emails handled. Nothing needs your attention." },
     playful: { title: "Inbox zero hero", message: "Everything's handled. You may now take a bow." },
   },
-  "focus-empty": {
-    professional: { title: "No focus data yet", message: "Your focus priorities will appear here after the daily briefing runs." },
-    friendly: { title: "Focus priorities loading", message: "Once your daily briefing runs, your top priorities will be right here." },
-    playful: { title: "Priorities incoming", message: "The focus crystal ball is warming up. Check back after your briefing." },
+  "inbox-empty": {
+    professional: { title: "Inbox is clear", message: "Drag files here or drop them into _inbox/" },
+    friendly: { title: "Nothing waiting", message: "Drop files here and DailyOS will sort them for you." },
+    playful: { title: "Blissfully empty", message: "Drag something in. We'll figure out where it goes." },
   },
   "people-empty": {
     professional: { title: "No people discovered yet", message: "People are discovered automatically from your calendar. Connect Google in Settings to get started." },

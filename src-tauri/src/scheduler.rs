@@ -21,6 +21,9 @@ use crate::types::{ExecutionTrigger, ScheduleEntry, WorkflowId};
 /// Grace period for missed jobs (2 hours)
 const MISSED_JOB_GRACE_PERIOD_SECS: i64 = 7200;
 
+/// Extended grace period for weekly jobs (24 hours) — catches Monday morning sleep/wake gaps
+const MISSED_WEEKLY_JOB_GRACE_PERIOD_SECS: i64 = 86400;
+
 /// Time jump threshold to detect sleep/wake (5 minutes)
 const TIME_JUMP_THRESHOLD_SECS: i64 = 300;
 
@@ -214,7 +217,8 @@ impl Scheduler {
         }
     }
 
-    /// Find a missed job within the grace period
+    /// Find a missed job within the grace period.
+    /// Weekly jobs use an extended 24-hour grace period to catch Monday sleep/wake gaps.
     fn find_missed_job(
         &self,
         entry: &ScheduleEntry,
@@ -227,7 +231,11 @@ impl Scheduler {
         })?;
 
         let now_local = now.with_timezone(&tz);
-        let grace_period = chrono::Duration::seconds(MISSED_JOB_GRACE_PERIOD_SECS);
+        let grace_secs = match workflow {
+            WorkflowId::Week => MISSED_WEEKLY_JOB_GRACE_PERIOD_SECS,
+            _ => MISSED_JOB_GRACE_PERIOD_SECS,
+        };
+        let grace_period = chrono::Duration::seconds(grace_secs);
         let grace_start = now_local - grace_period;
 
         // Get last run time

@@ -34,13 +34,13 @@ impl HygieneBudget {
         Self {
             daily_ai_calls: AtomicU32::new(0),
             daily_limit: limit,
-            last_reset: Mutex::new(Utc::now().format("%Y-%m-%d").to_string()),
+            last_reset: Mutex::new(chrono::Local::now().format("%Y-%m-%d").to_string()),
         }
     }
 
     /// Check if budget allows another AI call, resetting counter if day changed.
     pub fn try_consume(&self) -> bool {
-        let today = Utc::now().format("%Y-%m-%d").to_string();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         if let Ok(mut last) = self.last_reset.lock() {
             if *last != today {
                 self.daily_ai_calls
@@ -102,6 +102,11 @@ pub struct AppState {
     /// TTL cache for live week calendar events used by proactive suggestions (W6).
     /// Stores classified CalendarEvents for Mon-Fri + the instant they were fetched.
     pub week_calendar_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
+    /// Whether the first-run full orphan scan has been completed (I271).
+    pub hygiene_full_orphan_scan_done: AtomicBool,
+    /// Stashed live workspace path before switching to dev mode (I298).
+    /// `restore_live()` reads this back to return to the user's real workspace.
+    pub pre_dev_workspace: Mutex<Option<String>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -131,6 +136,11 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
+        let hygiene_budget_limit = config
+            .as_ref()
+            .map(|c| c.hygiene_ai_budget)
+            .unwrap_or(10);
+
         Self {
             config: RwLock::new(config),
             workflow_status: RwLock::new(HashMap::new()),
@@ -149,8 +159,10 @@ impl AppState {
             hygiene_scan_running: AtomicBool::new(false),
             last_hygiene_scan_at: Mutex::new(None),
             next_hygiene_scan_at: Mutex::new(None),
-            hygiene_budget: HygieneBudget::new(10),
+            hygiene_budget: HygieneBudget::new(hygiene_budget_limit),
             week_calendar_cache: RwLock::new(None),
+            hygiene_full_orphan_scan_done: AtomicBool::new(false),
+            pre_dev_workspace: Mutex::new(None),
         }
     }
 
@@ -315,6 +327,11 @@ pub fn run_startup_sync(state: &AppState) {
         return;
     }
 
+    // Refresh managed workspace files if version changed (I275)
+    if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
+        log::warn!("Startup sync: failed to write managed workspace files: {}", e);
+    }
+
     let db = match crate::db::ActionDb::open() {
         Ok(db) => db,
         Err(e) => {
@@ -412,6 +429,9 @@ pub fn create_or_update_config(
                 internal_team_setup_completed: false,
                 internal_team_setup_version: 0,
                 internal_org_account_id: None,
+                hygiene_scan_interval_hours: 4,
+                hygiene_ai_budget: 10,
+                hygiene_pre_meeting_hours: 12,
             }
         }
     };
@@ -488,6 +508,9 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
                 .map_err(|e| format!("Failed to create Projects: {}", e))?;
         }
     }
+
+    // Write managed CLAUDE.md + .claude/settings.json (I275)
+    crate::util::write_managed_workspace_files(path)?;
 
     Ok(())
 }
