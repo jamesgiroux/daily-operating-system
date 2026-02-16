@@ -18,7 +18,7 @@ pub const DOCUMENT_PREFIX: &str = "search_document: ";
 enum EmbeddingModelInner {
     /// Real model loaded via fastembed (nomic-embed-text-v1.5).
     Fastembed {
-        model: fastembed::TextEmbedding,
+        model: Box<fastembed::TextEmbedding>,
         dimension: usize,
     },
     /// Fallback: deterministic hash-based embeddings (dev/test/offline).
@@ -87,7 +87,7 @@ impl EmbeddingModel {
                     .lock()
                     .map_err(|_| "embedding model lock poisoned".to_string())?;
                 *guard = EmbeddingModelInner::Fastembed {
-                    model,
+                    model: Box::new(model),
                     dimension: DEFAULT_DIMENSION,
                 };
                 Ok(())
@@ -194,7 +194,7 @@ impl EmbeddingModel {
                 model, dimension, ..
             } => {
                 let results = model
-                    .embed(texts.to_vec(), None)
+                    .embed(texts, None)
                     .map_err(|e| format!("fastembed batch embed failed: {e}"))?;
                 Ok(results
                     .into_iter()
@@ -283,7 +283,7 @@ pub fn f32_vec_to_blob(values: &[f32]) -> Vec<u8> {
 }
 
 pub fn blob_to_f32_vec(blob: &[u8]) -> Result<Vec<f32>, String> {
-    if blob.len() % 4 != 0 {
+    if !blob.len().is_multiple_of(4) {
         return Err("invalid embedding blob length".to_string());
     }
 
