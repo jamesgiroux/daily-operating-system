@@ -640,6 +640,7 @@ pub struct IntelligenceContext {
 }
 
 /// Build intelligence context by gathering all signals from SQLite + files.
+#[allow(clippy::too_many_arguments)]
 pub fn build_intelligence_context(
     _workspace: &Path,
     db: &ActionDb,
