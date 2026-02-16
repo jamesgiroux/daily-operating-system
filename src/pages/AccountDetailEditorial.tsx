@@ -211,12 +211,12 @@ export default function AccountDetailEditorial() {
       </section>
 
       {/* Chapter 2: State of Play */}
-      <div className="editorial-reveal">
+      <div id="state-of-play" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <StateOfPlay intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Room */}
-      <div className="editorial-reveal">
+      <div id="the-room" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <StakeholderGallery
           intelligence={intelligence}
           linkedPeople={detail.linkedPeople}
@@ -228,7 +228,7 @@ export default function AccountDetailEditorial() {
       </div>
 
       {/* Chapter 4: Watch List (full-bleed linen band) */}
-      <div className="editorial-reveal">
+      <div id="watch-list" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -244,12 +244,12 @@ export default function AccountDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Record */}
-      <div className="editorial-reveal">
+      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <UnifiedTimeline data={detail} />
       </div>
 
       {/* Chapter 6: The Work */}
-      <div className="editorial-reveal">
+      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <TheWork
           data={detail}
           intelligence={intelligence}
