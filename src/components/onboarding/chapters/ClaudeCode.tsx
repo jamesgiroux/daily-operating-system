@@ -91,11 +91,14 @@ export function ClaudeCode({ onNext }: ClaudeCodeProps) {
             <div>
               <p className="text-sm font-medium">Claude Code is installed but not signed in</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Open your terminal and run:
+                Open your terminal, navigate to your workspace, and authenticate:
               </p>
               <code className="mt-2 block rounded bg-muted px-3 py-2 text-xs font-mono">
-                claude login
+                cd ~/Documents/DailyOS{"\n"}claude login
               </code>
+              <p className="text-xs text-muted-foreground mt-2">
+                Running from your workspace directory scopes Claude's access to just that folder.
+              </p>
             </div>
           </div>
           <Button
@@ -123,8 +126,11 @@ export function ClaudeCode({ onNext }: ClaudeCodeProps) {
                 npm install -g @anthropic-ai/claude-code
               </code>
               <p className="text-xs text-muted-foreground mt-2">
-                Then run <code className="rounded bg-muted px-1">claude login</code> to sign in.
+                Then navigate to your workspace and sign in:
               </p>
+              <code className="mt-2 block rounded bg-muted px-3 py-2 text-xs font-mono">
+                cd ~/Documents/DailyOS{"\n"}claude login
+              </code>
             </div>
           </div>
           <Button
