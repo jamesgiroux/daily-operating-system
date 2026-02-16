@@ -1120,6 +1120,56 @@ pub struct EmailStats {
 }
 
 // =============================================================================
+// Enriched Email Briefing Types (Phase 4 — Email Intelligence)
+// =============================================================================
+
+/// An email enriched with entity signals from the database.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichedEmail {
+    #[serde(flatten)]
+    pub email: Email,
+    /// Signals linked to this email from the email_signals table
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub signals: Vec<EmailSignal>,
+}
+
+/// Thread of emails linked to a specific entity, with aggregated signal info.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityEmailThread {
+    pub entity_id: String,
+    pub entity_name: String,
+    pub entity_type: String,
+    pub email_count: usize,
+    pub signal_summary: String,
+    pub signals: Vec<EmailSignal>,
+}
+
+/// Stats for the email briefing hero section.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailBriefingStats {
+    pub total: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub needs_action: usize,
+}
+
+/// Full enriched email briefing data returned by get_emails_enriched.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailBriefingData {
+    pub high_priority: Vec<EnrichedEmail>,
+    pub medium_priority: Vec<EnrichedEmail>,
+    pub low_priority: Vec<EnrichedEmail>,
+    pub entity_threads: Vec<EntityEmailThread>,
+    pub stats: EmailBriefingStats,
+    pub has_enrichment: bool,
+}
+
+// =============================================================================
 // Full Meeting Prep (from individual prep files)
 // =============================================================================
 
