@@ -6,6 +6,7 @@
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { BrandMark } from "../ui/BrandMark";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
@@ -45,7 +46,7 @@ export function AccountHero({
   return (
     <div className={styles.hero}>
       {/* Watermark asterisk */}
-      <div className={styles.watermark}>*</div>
+      <div className={styles.watermark}><BrandMark size="100%" /></div>
 
       {/* Parent breadcrumb */}
       {detail.parentId && detail.parentName && (

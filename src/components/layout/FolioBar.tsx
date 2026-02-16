@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { BrandMark } from '../ui/BrandMark';
 import { capitalize } from '@/lib/utils';
 import styles from './FolioBar.module.css';
 
@@ -79,7 +80,7 @@ export const FolioBar: React.FC<FolioBarProps> = ({
           </button>
         ) : (
           <>
-            <span className={styles.folioMark}>*</span>
+            <BrandMark className={styles.folioMark} size={18} />
             <span className={styles.folioPub}>{publicationLabel}</span>
           </>
         )}

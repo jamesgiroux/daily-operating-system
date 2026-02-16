@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Risk Briefing
+
+- Executive risk briefing redesigned as a 6-slide presentation (Cover, Bottom Line, What Happened, The Stakes, The Plan, The Ask) — each slide fills the viewport with scroll-snap navigation
+- Keyboard shortcuts: keys 1-6 jump to slides, arrow keys navigate
+- All text fields are click-to-edit — fix names, titles, or facts before presenting, changes auto-save silently to disk
+- Tighter AI output: hard word limits prevent verbose slides, health arc rendered as color-coded timeline bars
+
 ### Semantic Search
 
 - Local embedding model (nomic-embed-text-v1.5) for semantic vector search over entity content — downloads automatically on first launch, works offline after that

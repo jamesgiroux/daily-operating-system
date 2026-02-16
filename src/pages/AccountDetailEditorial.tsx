@@ -12,7 +12,6 @@ import {
   Eye,
   Activity,
   CheckSquare2,
-  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,20 +123,29 @@ export default function AccountDetailEditorial() {
       backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
       folioActions: (
-        <Button
-          variant="ghost"
-          size="sm"
+        <button
           onClick={() =>
             navigate({
               to: "/accounts/$accountId/risk-briefing",
               params: { accountId: accountId! },
             })
           }
-          style={{ fontSize: 12, gap: 6 }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase" as const,
+            color: "var(--color-spice-turmeric)",
+            background: "none",
+            border: "1px solid var(--color-spice-turmeric)",
+            borderRadius: 4,
+            padding: "2px 10px",
+            cursor: "pointer",
+          }}
         >
-          <FileText size={14} />
           Reports
-        </Button>
+        </button>
       ),
     }),
     [navigate, accountId],

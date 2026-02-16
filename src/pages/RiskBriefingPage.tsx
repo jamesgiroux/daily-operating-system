@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import { RiskCover } from "@/components/risk-briefing/RiskCover";
 import { BottomLineSlide } from "@/components/risk-briefing/BottomLineSlide";
 import { WhatHappenedSlide } from "@/components/risk-briefing/WhatHappenedSlide";
@@ -272,7 +273,16 @@ export default function RiskBriefingPage() {
 
   // Generating state
   if (generating) {
-    return <GeneratingProgress elapsed={genSeconds} />;
+    return (
+      <GeneratingProgress
+        title="Building Risk Briefing"
+        accentColor="var(--color-spice-terracotta)"
+        phases={ANALYSIS_PHASES}
+        currentPhaseKey={ANALYSIS_PHASES[Math.min(Math.floor(genSeconds / 20), ANALYSIS_PHASES.length - 1)].key}
+        quotes={EDITORIAL_QUOTES}
+        elapsed={genSeconds}
+      />
+    );
   }
 
   // Render the 6-slide briefing with scroll-snap
@@ -340,12 +350,12 @@ export default function RiskBriefingPage() {
 // =============================================================================
 
 const ANALYSIS_PHASES = [
-  { label: "Gathering intelligence", detail: "Reading account data, meeting history, and stakeholder signals" },
-  { label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship signals" },
-  { label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
-  { label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
-  { label: "Developing the plan", detail: "Building recovery strategy and action steps" },
-  { label: "Finalizing", detail: "Assembling executive briefing and resource asks" },
+  { key: "gathering", label: "Gathering intelligence", detail: "Reading account data, meeting history, and stakeholder signals" },
+  { key: "reading", label: "Reading the room", detail: "Analyzing stakeholder dynamics and relationship signals" },
+  { key: "building", label: "Building the story", detail: "Synthesizing situation, complication, and decline arc" },
+  { key: "mapping", label: "Mapping stakes", detail: "Assessing financial exposure and decision-maker landscape" },
+  { key: "planning", label: "Developing the plan", detail: "Building recovery strategy and action steps" },
+  { key: "finalizing", label: "Finalizing", detail: "Assembling executive briefing and resource asks" },
 ];
 
 const EDITORIAL_QUOTES = [
@@ -357,200 +367,3 @@ const EDITORIAL_QUOTES = [
   "The most dangerous phrase is: we've always done it this way.",
 ];
 
-function GeneratingProgress({ elapsed }: { elapsed: number }) {
-  const [quoteIndex, setQuoteIndex] = useState(0);
-  const quotes = useRef(
-    [...EDITORIAL_QUOTES].sort(() => Math.random() - 0.5)
-  );
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setQuoteIndex((i) => (i + 1) % quotes.current.length);
-    }, 8000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const currentPhaseIndex = Math.min(
-    Math.floor(elapsed / 20),
-    ANALYSIS_PHASES.length - 1
-  );
-
-  const formatElapsed = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
-  };
-
-  return (
-    <div
-      style={{
-        padding: "120px 120px 80px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "70vh",
-      }}
-    >
-      <div
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: "var(--color-spice-terracotta)",
-          marginBottom: 40,
-        }}
-      >
-        Building Risk Briefing
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 0,
-          width: "100%",
-          maxWidth: 480,
-          marginBottom: 48,
-        }}
-      >
-        {ANALYSIS_PHASES.map((phase, i) => {
-          const isComplete = i < currentPhaseIndex;
-          const isCurrent = i === currentPhaseIndex;
-          const isPending = i > currentPhaseIndex;
-
-          return (
-            <div
-              key={i}
-              style={{
-                display: "flex",
-                gap: 16,
-                alignItems: "flex-start",
-                padding: "10px 0",
-                opacity: isPending ? 0.3 : 1,
-                transition: "opacity 0.5s ease",
-              }}
-            >
-              <div
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: "50%",
-                  border: `2px solid ${
-                    isComplete
-                      ? "var(--color-garden-sage)"
-                      : isCurrent
-                        ? "var(--color-spice-terracotta)"
-                        : "var(--color-rule-light)"
-                  }`,
-                  background: isComplete ? "var(--color-garden-sage)" : "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  transition: "all 0.3s ease",
-                }}
-              >
-                {isComplete && (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-                {isCurrent && (
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "var(--color-spice-terracotta)",
-                      animation: "pulse-dot 1.5s ease infinite",
-                    }}
-                  />
-                )}
-              </div>
-
-              <div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: isCurrent ? 600 : 400,
-                    color: isCurrent
-                      ? "var(--color-text-primary)"
-                      : isComplete
-                        ? "var(--color-text-secondary)"
-                        : "var(--color-text-tertiary)",
-                    transition: "all 0.3s ease",
-                  }}
-                >
-                  {phase.label}
-                </div>
-                {isCurrent && (
-                  <div
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: 12,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 2,
-                    }}
-                  >
-                    {phase.detail}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: 17,
-          fontStyle: "italic",
-          color: "var(--color-text-tertiary)",
-          textAlign: "center",
-          maxWidth: 400,
-          lineHeight: 1.5,
-          marginBottom: 24,
-          transition: "opacity 0.5s ease",
-        }}
-      >
-        "{quotes.current[quoteIndex]}"
-      </p>
-
-      <div style={{ textAlign: "center" }}>
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--color-text-tertiary)",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {formatElapsed(elapsed)}
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            opacity: 0.6,
-            marginTop: 8,
-          }}
-        >
-          This runs in the background — feel free to navigate away
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.5; transform: scale(0.8); }
-        }
-      `}</style>
-    </div>
-  );
-}
