@@ -324,6 +324,7 @@ pub fn gather_enrichment_input(
         account.as_ref(),
         project.as_ref(),
         prior.as_ref(),
+        Some(state.embedding_model.as_ref()),
     );
 
     // Build prompt (pure function, but easier to do here while we have the data)
