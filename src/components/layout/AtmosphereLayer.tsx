@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { BrandMark } from '../ui/BrandMark';
 import { capitalize } from '@/lib/utils';
 import styles from './AtmosphereLayer.module.css';
 
@@ -32,7 +33,7 @@ export const AtmosphereLayer: React.FC<AtmosphereLayerProps> = ({
     <div className={`${styles.atmosphere} ${styles[color]} ${className}`}>
       {/* Watermark asterisk — subtly visible, for visual interest */}
       <div className={`${styles.watermark} ${styles[`watermark${capitalize(color)}`] || ''}`}>
-        *
+        <BrandMark size="100%" />
       </div>
     </div>
   );

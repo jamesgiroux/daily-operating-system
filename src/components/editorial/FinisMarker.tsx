@@ -3,6 +3,8 @@
  * Mockup: Montserrat 18px, turmeric color, 0.4em letter-spacing.
  * Marks the end of an editorial briefing. "When you've read it, you're briefed."
  */
+import { BrandMark } from '../ui/BrandMark';
+
 interface FinisMarkerProps {
   enrichedAt?: string;
 }
@@ -12,13 +14,15 @@ export function FinisMarker({ enrichedAt }: FinisMarkerProps) {
     <div style={{ textAlign: "center", padding: "72px 0 24px" }}>
       <div
         style={{
-          fontFamily: "var(--font-mark)",
-          fontSize: 18,
-          letterSpacing: "0.4em",
+          display: "flex",
+          justifyContent: "center",
+          gap: "0.4em",
           color: "var(--color-spice-turmeric)",
         }}
       >
-        * * *
+        <BrandMark size={18} />
+        <BrandMark size={18} />
+        <BrandMark size={18} />
       </div>
       {enrichedAt && (
         <div
