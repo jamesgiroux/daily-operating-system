@@ -1,0 +1,1051 @@
+/* =============================================================================
+   editorial-briefing.module.css
+
+   CSS module for the DailyBriefing editorial surface. Provides the margin grid,
+   section rules, schedule rows, expansion panels, prep grids, and responsive
+   breakpoints that make the briefing feel like a magazine, not a dashboard.
+
+   Design reference: design/mockups/daily-briefing-reimagined-v2.html
+   ============================================================================= */
+
+@import './design-tokens.css';
+
+/* =============================================================================
+   MARGIN GRID — Editorial left-label / right-content layout
+   ============================================================================= */
+
+.marginGrid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 0 32px;
+  align-items: first baseline;
+}
+
+.marginLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  padding-top: 3px;
+  text-align: right;
+  user-select: none;
+}
+
+.marginLabelCount {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+.marginContent {
+  min-width: 0;
+}
+
+/* =============================================================================
+   SECTION RULES — Heavy horizontal lines between sections
+   ============================================================================= */
+
+.sectionRule {
+  height: 1px;
+  background: var(--color-rule-heavy);
+  margin-bottom: 24px;
+}
+
+/* =============================================================================
+   1. THE HERO
+   ============================================================================= */
+
+.hero {
+  padding-top: 80px;
+  padding-bottom: 64px;
+}
+
+.heroHeadline {
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  color: var(--color-text-primary);
+  margin: 0 0 28px 0;
+  max-width: 780px;
+}
+
+.heroNarrative {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 660px;
+  margin: 0;
+}
+
+.staleness {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 12px;
+}
+
+/* =============================================================================
+   2. THE FOCUS
+   ============================================================================= */
+
+.focusSection {
+  padding-bottom: 56px;
+}
+
+.focusBlock {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: 20px 0 20px 28px;
+}
+
+.focusText {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.focusCapacity {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: 14px;
+  padding-left: 28px;
+}
+
+/* =============================================================================
+   3. THE LEAD STORY — Featured meeting, always expanded
+   ============================================================================= */
+
+.leadStory {
+  padding-bottom: 56px;
+}
+
+.leadTitle {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+  margin: 0 0 12px 0;
+}
+
+.leadMeta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
+  margin-bottom: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.leadMetaSep {
+  opacity: 0.4;
+}
+
+.leadNarrative {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  margin: 0 0 32px 0;
+  max-width: 640px;
+}
+
+.nowPillInline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(201, 162, 39, 0.15);
+  color: var(--color-spice-turmeric);
+  margin-left: 8px;
+}
+
+/* =============================================================================
+   KEY PEOPLE — Compact inline flow
+   ============================================================================= */
+
+.keyPeople {
+  margin-bottom: 32px;
+}
+
+.keyPeopleLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: 10px;
+}
+
+.keyPeopleFlow {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.75;
+  color: var(--color-text-primary);
+}
+
+.keyPeoplePerson {
+  white-space: nowrap;
+}
+
+.keyPeopleName {
+  font-weight: 500;
+}
+
+.keyPeopleRole {
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  margin-left: 4px;
+}
+
+.keyPeopleTemp {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+
+.keyPeopleTempHot { background: var(--color-garden-sage); }
+.keyPeopleTempWarm { background: var(--color-spice-saffron); }
+.keyPeopleTempNeutral { background: var(--color-paper-linen); }
+.keyPeopleTempCold { background: var(--color-spice-terracotta); }
+
+.keyPeopleSep {
+  color: var(--color-text-tertiary);
+  opacity: 0.4;
+  margin: 0 10px;
+}
+
+/* =============================================================================
+   PREP GRID — 2-column editorial layout
+   ============================================================================= */
+
+.prepGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px 40px;
+  margin-bottom: 32px;
+}
+
+.prepSection {
+  min-width: 0;
+}
+
+.prepLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.prepLabelDiscuss { color: var(--color-spice-turmeric); }
+.prepLabelWatch { color: var(--color-spice-terracotta); }
+.prepLabelWins { color: var(--color-garden-sage); }
+.prepLabelGlance { color: var(--color-text-tertiary); }
+
+.prepItem {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  padding: 4px 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.prepDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+.prepDotTurmeric { background: var(--color-spice-turmeric); }
+.prepDotTerracotta { background: var(--color-spice-terracotta); }
+.prepDotSage { background: var(--color-garden-sage); }
+
+.prepKv {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
+}
+
+.prepKvKey {
+  color: var(--color-text-tertiary);
+  margin-right: 6px;
+}
+
+.prepKvValue {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+/* =============================================================================
+   MEETING ACTIONS — "Before this meeting" checklist
+   ============================================================================= */
+
+.meetingActions {
+  margin-bottom: 28px;
+}
+
+.meetingActionsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 14px;
+}
+
+.meetingActionsItem {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  padding: 6px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  transition: opacity 0.3s ease;
+}
+
+.meetingActionsItemCompleted {
+  opacity: 0.4;
+}
+
+.meetingActionsItemCompleted .meetingActionsText {
+  text-decoration: line-through;
+}
+
+.meetingActionsCheck {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-rule-heavy);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 0;
+}
+
+.meetingActionsCheck:hover {
+  border-color: var(--color-garden-sage);
+}
+
+.meetingActionsCheckChecked {
+  background: var(--color-garden-sage);
+  border-color: var(--color-garden-sage);
+}
+
+.meetingActionsCheckOverdue {
+  border-color: var(--color-spice-terracotta);
+}
+
+.meetingActionsText {
+  transition: text-decoration 0.3s ease;
+}
+
+.meetingActionsContext {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.meetingActionsContextOverdue {
+  color: var(--color-spice-terracotta);
+  font-weight: 500;
+}
+
+/* =============================================================================
+   MEETING LINKS — Bridge to depth
+   ============================================================================= */
+
+.meetingLinks {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+}
+
+.meetingLinkPrimary {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.meetingLinkPrimary:hover {
+  opacity: 0.75;
+}
+
+.meetingLinkSecondary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.meetingLinkSecondary:hover {
+  color: var(--color-text-secondary);
+}
+
+/* =============================================================================
+   4. THE SCHEDULE — Schedule rows with inline expansion
+   ============================================================================= */
+
+.scheduleSection {
+  padding-bottom: 56px;
+}
+
+.scheduleRows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Collapsed Row --- */
+
+.scheduleRow {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0 20px;
+  align-items: first baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  position: relative;
+}
+
+.scheduleRow:last-child {
+  border-bottom: none;
+}
+
+/* Entity accent: thin 3px left border via pseudo-element */
+.scheduleRow::before {
+  content: '';
+  position: absolute;
+  left: -28px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: bottom 0.35s ease;
+}
+
+.scheduleRowCustomer::before { background: var(--color-spice-turmeric); }
+.scheduleRowInternal::before { background: var(--color-paper-linen); }
+.scheduleRowPersonal::before { background: var(--color-garden-sage); }
+.scheduleRowLarkspur::before { background: var(--color-garden-larkspur); }
+
+/* In-progress: warm glow background */
+.scheduleRowActive {
+  background: rgba(201, 162, 39, 0.05);
+  margin: 0 -20px;
+  padding: 14px 20px;
+  border-bottom-color: transparent;
+}
+
+.scheduleRowActive::before {
+  left: -8px;
+}
+
+/* Past meetings: muted */
+.scheduleRowPast {
+  opacity: 0.4;
+}
+
+.scheduleRowPast .scheduleTitle {
+  color: var(--color-text-tertiary);
+}
+
+/* Cancelled meetings */
+.scheduleRowCancelled {
+  opacity: 0.3;
+}
+
+.scheduleRowCancelled .scheduleTitle {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary);
+}
+
+/* Expandable rows: pointer + hover */
+.scheduleRowExpandable {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.scheduleRowExpandable:hover {
+  background: rgba(30, 37, 48, 0.015);
+}
+
+.scheduleRowActive.scheduleRowExpandable:hover {
+  background: rgba(201, 162, 39, 0.07);
+}
+
+/* Past rows: navigate affordance */
+.scheduleRowPastNavigate {
+  cursor: pointer;
+}
+
+.scheduleTime {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-align: right;
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.scheduleRowPast .scheduleTime,
+.scheduleRowCancelled .scheduleTime {
+  color: var(--color-text-tertiary);
+}
+
+.scheduleTimeDuration {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  display: block;
+  margin-top: 2px;
+}
+
+.scheduleContent {
+  min-width: 0;
+}
+
+.scheduleTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scheduleTitle {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.nowPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  background: rgba(201, 162, 39, 0.18);
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.scheduleSubtitle {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedulePrepDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.expandHint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.05em;
+  transition: opacity 0.15s ease;
+  opacity: 0;
+  margin-left: auto;
+  flex-shrink: 0;
+  text-transform: lowercase;
+}
+
+.scheduleRowExpandable:hover .expandHint {
+  opacity: 1;
+}
+
+.scheduleRowExpanded .expandHint {
+  opacity: 1;
+}
+
+.pastArrow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  margin-left: 6px;
+}
+
+.scheduleRowPastNavigate:hover .pastArrow {
+  opacity: 1;
+}
+
+/* =============================================================================
+   EXPANSION PANEL — Inline fold-out below schedule row
+   ============================================================================= */
+
+.expansionPanel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease;
+  opacity: 0;
+  position: relative;
+  margin-left: 92px; /* 72px time col + 20px gap */
+}
+
+.expansionPanelOpen {
+  opacity: 1;
+}
+
+.expansionInner {
+  padding: 24px 0 20px 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+/* Tint variants */
+.expansionTintTurmeric .expansionInner {
+  background: linear-gradient(
+    to right,
+    rgba(201, 162, 39, 0.02) 0%,
+    rgba(201, 162, 39, 0.01) 60%,
+    transparent 100%
+  );
+  margin-left: -20px;
+  padding-left: 20px;
+  margin-right: -20px;
+  padding-right: 20px;
+}
+
+.expansionTintSage .expansionInner {
+  background: linear-gradient(
+    to right,
+    rgba(126, 170, 123, 0.02) 0%,
+    rgba(126, 170, 123, 0.01) 60%,
+    transparent 100%
+  );
+  margin-left: -20px;
+  padding-left: 20px;
+  margin-right: -20px;
+  padding-right: 20px;
+}
+
+.expansionTintLarkspur .expansionInner {
+  background: linear-gradient(
+    to right,
+    rgba(143, 163, 196, 0.02) 0%,
+    rgba(143, 163, 196, 0.01) 60%,
+    transparent 100%
+  );
+  margin-left: -20px;
+  padding-left: 20px;
+  margin-right: -20px;
+  padding-right: 20px;
+}
+
+.expansionNarrative {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  margin: 0 0 28px 0;
+  max-width: 580px;
+}
+
+.expansionCollapse {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.15s ease;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 16px;
+  background: none;
+  border: none;
+}
+
+.expansionCollapse:hover {
+  color: var(--color-text-secondary);
+}
+
+/* =============================================================================
+   5. PRIORITIES — Tapering density action groups
+   ============================================================================= */
+
+.prioritiesSection {
+  padding-bottom: 56px;
+}
+
+.prioritiesIntro {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  margin: 0 0 28px 0;
+  max-width: 640px;
+}
+
+.priorityGroupLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  margin-top: 28px;
+}
+
+.priorityGroupLabel:first-of-type {
+  margin-top: 0;
+}
+
+.priorityGroupLabelOverdue { color: var(--color-spice-terracotta); }
+.priorityGroupLabelToday { color: var(--color-spice-turmeric); }
+.priorityGroupLabelUpcoming { color: var(--color-text-tertiary); }
+
+.priorityItems {
+  display: flex;
+  flex-direction: column;
+}
+
+.priorityItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  position: relative;
+  transition: opacity 0.3s ease;
+}
+
+.priorityItem:last-child {
+  border-bottom: none;
+}
+
+.priorityItemCompleted {
+  opacity: 0.4;
+}
+
+.priorityItemCompleted .priorityTitle {
+  text-decoration: line-through;
+}
+
+/* Entity accent on left */
+.priorityItem::before {
+  content: '';
+  position: absolute;
+  left: -28px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.priorityItemAccount::before { background: var(--color-spice-turmeric); }
+.priorityItemEmail::before { background: var(--color-garden-larkspur); }
+
+/* Checkbox */
+.priorityCheck {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--color-rule-heavy);
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 0;
+}
+
+.priorityCheck:hover {
+  border-color: var(--color-garden-sage);
+}
+
+.priorityCheckChecked {
+  background: var(--color-garden-sage);
+  border-color: var(--color-garden-sage);
+}
+
+.priorityCheckOverdue {
+  border-color: var(--color-spice-terracotta);
+}
+
+.priorityCheckOverdue:hover {
+  border-color: var(--color-garden-sage);
+}
+
+/* Email dot (no checkbox) */
+.priorityDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+  margin-left: 5px;
+  margin-right: 4px;
+}
+
+.priorityDotTerracotta { background: var(--color-spice-terracotta); }
+.priorityDotTurmeric { background: var(--color-spice-turmeric); }
+
+.priorityContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.priorityTitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  transition: text-decoration 0.3s ease;
+}
+
+/* Tapering weights */
+.priorityItemOverdue .priorityTitle {
+  font-weight: 500;
+}
+
+.priorityItemToday .priorityTitle {
+  font-weight: 400;
+}
+
+.priorityItemUpcoming .priorityTitle {
+  font-weight: 300;
+  color: var(--color-text-secondary);
+}
+
+.priorityContext {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  line-height: 1.45;
+  margin-top: 3px;
+}
+
+.priorityItemOverdue .priorityContext {
+  color: var(--color-spice-terracotta);
+  font-weight: 500;
+}
+
+.priorityItemToday .priorityContext {
+  color: var(--color-text-tertiary);
+}
+
+.priorityItemUpcoming .priorityContext {
+  color: var(--color-text-tertiary);
+  font-weight: 300;
+}
+
+.priorityWhy {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  max-width: 540px;
+}
+
+/* Email-specific */
+.priorityItemEmailType .priorityTitle {
+  font-weight: 400;
+}
+
+.prioritySender {
+  font-weight: 500;
+}
+
+.prioritySubjectSep {
+  color: var(--color-text-tertiary);
+  margin: 0 6px;
+}
+
+.priorityAction {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  margin-top: 3px;
+}
+
+.priorityEmailWhy {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 3px;
+}
+
+.prioritiesViewAll {
+  display: flex;
+  gap: 28px;
+  margin-top: 20px;
+}
+
+.viewAllLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.viewAllLink:hover {
+  opacity: 0.75;
+}
+
+/* =============================================================================
+   RESPONSIVE BREAKPOINTS
+   ============================================================================= */
+
+@media (max-width: 1000px) {
+  .marginGrid {
+    grid-template-columns: 80px 1fr;
+    gap: 0 24px;
+  }
+
+  .heroHeadline {
+    font-size: 60px;
+  }
+
+  .prepGrid {
+    gap: 24px 28px;
+  }
+
+  .expansionPanel {
+    margin-left: 72px;
+  }
+}
+
+@media (max-width: 820px) {
+  .marginGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .marginLabel {
+    text-align: left;
+    margin-bottom: 16px;
+  }
+
+  .heroHeadline {
+    font-size: 48px;
+  }
+
+  .scheduleRow::before,
+  .priorityItem::before {
+    left: -16px;
+  }
+
+  .scheduleRowActive {
+    margin: 0 -12px;
+    padding: 14px 12px;
+  }
+
+  .scheduleRowActive::before {
+    left: -4px;
+  }
+
+  .expansionPanel {
+    margin-left: 0;
+  }
+
+  .prepGrid {
+    grid-template-columns: 1fr;
+    gap: 24px 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .heroHeadline {
+    font-size: 40px;
+  }
+
+  .heroNarrative {
+    font-size: 18px;
+  }
+
+  .leadTitle {
+    font-size: 24px;
+  }
+
+  .focusText {
+    font-size: 19px;
+  }
+}

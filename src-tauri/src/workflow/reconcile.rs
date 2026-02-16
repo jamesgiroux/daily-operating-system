@@ -918,7 +918,7 @@ mod tests {
         .expect("write prep");
 
         let db_dir = tempfile::TempDir::new().expect("db temp dir");
-        let db = ActionDb::open_at(db_dir.path().join("actions.db")).expect("open db");
+        let db = ActionDb::open_at(db_dir.path().join("test.db")).expect("open db");
 
         let recon = ReconciliationResult {
             date: "2026-02-12".to_string(),

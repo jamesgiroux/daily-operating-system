@@ -1,68 +1,156 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+/**
+ * DashboardSkeleton — Editorial loading state for the daily briefing.
+ * Matches the margin grid layout: left label placeholders + right content.
+ * Renders inside MagazinePageLayout's page container.
+ */
+
+import s from "@/styles/editorial-briefing.module.css";
+
+const skeletonBg = "var(--color-rule-light)";
+
+function Pulse({ w, h, mb, mt, round }: { w?: number | string; h: number; mb?: number; mt?: number; round?: boolean }) {
+  return (
+    <div
+      style={{
+        width: w ?? "100%",
+        height: h,
+        marginBottom: mb,
+        marginTop: mt,
+        background: skeletonBg,
+        borderRadius: round ? 9999 : 2,
+      }}
+    />
+  );
+}
 
 export function DashboardSkeleton() {
   return (
-    <ScrollArea className="flex-1">
-      <div className="px-8 pt-10 pb-8">
-        <div className="mx-auto max-w-6xl">
-          <div className="space-y-8">
-            <div className="space-y-1">
-              <Skeleton className="h-8 w-72" />
-            </div>
+    <div className="editorial-loading">
+      {/* Hero skeleton */}
+      <div className={s.hero}>
+        <Pulse w="75%" h={72} mb={28} />
+        <Pulse w={480} h={20} mb={8} />
+        <Pulse w={360} h={20} />
+      </div>
 
-            {/* Focus skeleton */}
-            <div className="rounded-lg border p-3.5">
-              <div className="flex items-start gap-2.5">
-                <Skeleton className="size-4 shrink-0 mt-0.5" />
-                <div className="min-w-0 space-y-1.5 flex-1">
-                  <Skeleton className="h-3 w-10" />
-                  <Skeleton className="h-4 w-full max-w-md" />
-                </div>
-              </div>
+      {/* Focus skeleton — margin grid */}
+      <div className={s.focusSection}>
+        <div className={s.marginGrid}>
+          <div>
+            <Pulse w={56} h={10} />
+          </div>
+          <div className={s.marginContent}>
+            <div style={{ borderLeft: `3px solid ${skeletonBg}`, paddingLeft: 28, paddingTop: 20, paddingBottom: 20 }}>
+              <Pulse h={22} mb={8} />
+              <Pulse w={240} h={22} />
             </div>
-
-            {/* Meeting card skeletons */}
-            <div className="space-y-4">
-              {[...Array(4)].map((_, i) => (
-                <Card key={i}>
-                  <CardContent className="p-5">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-4 w-16" />
-                        <Skeleton className="h-4 w-4" />
-                        <Skeleton className="h-4 w-16" />
-                      </div>
-                      <Skeleton className="h-5 w-48" />
-                      <Skeleton className="h-4 w-24" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+            <div style={{ paddingLeft: 28, marginTop: 14 }}>
+              <Pulse w={200} h={12} />
             </div>
-
-            {/* Actions skeleton */}
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3 w-12" />
-              </div>
-              <div className="space-y-2">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-md p-3">
-                    <Skeleton className="size-5 rounded-full" />
-                    <div className="flex-1 space-y-1">
-                      <Skeleton className="h-4 w-full max-w-sm" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         </div>
       </div>
-    </ScrollArea>
+
+      {/* Lead story skeleton — margin grid */}
+      <div className={s.leadStory}>
+        <div className={s.marginGrid}>
+          <div>
+            <Pulse w={72} h={10} />
+          </div>
+          <div className={s.marginContent}>
+            <div className={s.sectionRule} />
+            <Pulse w={400} h={28} mb={12} />
+            <div style={{ display: "flex", gap: 6, marginBottom: 24 }}>
+              <Pulse w={96} h={12} />
+              <Pulse w={48} h={12} />
+              <Pulse w={112} h={12} />
+            </div>
+            <Pulse h={18} mb={8} />
+            <Pulse h={18} mb={8} />
+            <Pulse w="80%" h={18} mb={32} />
+            {/* Prep grid placeholder */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px 40px" }}>
+              <div>
+                <Pulse w={64} h={10} mb={12} />
+                <Pulse h={14} mb={6} />
+                <Pulse h={14} mb={6} />
+                <Pulse w="80%" h={14} />
+              </div>
+              <div>
+                <Pulse w={48} h={10} mb={12} />
+                <Pulse h={14} mb={6} />
+                <Pulse h={14} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Schedule skeleton — margin grid */}
+      <div className={s.scheduleSection}>
+        <div className={s.marginGrid}>
+          <div>
+            <Pulse w={64} h={10} mb={4} />
+            <Pulse w={56} h={10} />
+          </div>
+          <div className={s.marginContent}>
+            <div className={s.sectionRule} />
+            {[...Array(4)].map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "72px 1fr",
+                  gap: "0 20px",
+                  padding: "14px 0",
+                  borderBottom: i < 3 ? "1px solid var(--color-rule-light)" : "none",
+                }}
+              >
+                <div style={{ textAlign: "right" }}>
+                  <Pulse w={52} h={14} />
+                  <Pulse w={28} h={11} mt={2} />
+                </div>
+                <div>
+                  <Pulse w={240} h={18} mb={4} />
+                  <Pulse w={128} h={13} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Priorities skeleton — margin grid */}
+      <div className={s.prioritiesSection}>
+        <div className={s.marginGrid}>
+          <div>
+            <Pulse w={64} h={10} />
+          </div>
+          <div className={s.marginContent}>
+            <div className={s.sectionRule} />
+            <Pulse h={16} mb={8} />
+            <Pulse w="80%" h={16} mb={28} />
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 16,
+                  padding: "12px 0",
+                  borderBottom: i < 2 ? "1px solid var(--color-rule-light)" : "none",
+                }}
+              >
+                <Pulse w={18} h={18} round />
+                <div style={{ flex: 1 }}>
+                  <Pulse h={15} mb={4} />
+                  <Pulse w={160} h={13} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

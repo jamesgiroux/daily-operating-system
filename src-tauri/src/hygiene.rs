@@ -31,9 +31,24 @@ const ORPHANED_MEETING_LOOKBACK_DAYS: i32 = 90;
 const MAX_DOMAIN_GROUP_SIZE: usize = 200;
 
 /// Public interval getter for UI/command next-scan calculations.
-pub fn scan_interval_secs() -> u64 {
-    SCAN_INTERVAL_SECS
+/// Uses config value if provided, otherwise falls back to constant.
+pub fn scan_interval_secs(config: Option<&Config>) -> u64 {
+    config
+        .map(|c| c.hygiene_scan_interval_hours as u64 * 3600)
+        .unwrap_or(SCAN_INTERVAL_SECS)
 }
+
+/// A single narrative fix description for the UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneFixDetail {
+    pub fix_type: String,
+    pub entity_name: Option<String>,
+    pub description: String,
+}
+
+/// Maximum number of fix details to store per report.
+const MAX_FIX_DETAILS: usize = 20;
 
 /// Report from a hygiene scan: gaps detected + mechanical fixes applied.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -47,7 +62,9 @@ pub struct HygieneReport {
     pub orphaned_meetings: usize,
     pub duplicate_people: usize,
     pub fixes: MechanicalFixes,
+    pub fix_details: Vec<HygieneFixDetail>,
     pub scanned_at: String,
+    pub scan_duration_ms: u64,
 }
 
 /// Counts of mechanical fixes applied during a hygiene scan.
@@ -66,13 +83,16 @@ pub struct MechanicalFixes {
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
 /// If `budget` is provided, enqueue AI enrichment for remaining gaps.
+/// If `first_run` is true, scans ALL orphaned meetings (no lookback limit).
 pub fn run_hygiene_scan(
     db: &ActionDb,
     config: &Config,
     workspace: &Path,
     budget: Option<&crate::state::HygieneBudget>,
     queue: Option<&crate::intel_queue::IntelligenceQueue>,
+    first_run: bool,
 ) -> HygieneReport {
+    let scan_start = std::time::Instant::now();
     let mut report = HygieneReport {
         scanned_at: Utc::now().to_rfc3339(),
         ..Default::default()
@@ -96,28 +116,54 @@ pub fn run_hygiene_scan(
         .get_unsummarized_content_files()
         .map(|v| v.len())
         .unwrap_or(0);
+    let orphan_lookback = if first_run { 36500 } else { ORPHANED_MEETING_LOOKBACK_DAYS };
     report.orphaned_meetings = db
-        .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
+        .get_orphaned_meetings(orphan_lookback)
         .map(|v| v.len())
         .unwrap_or(0);
     report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
 
     // --- Phase 1: Mechanical fixes (free, instant) ---
     let user_domains = config.resolved_user_domains();
-    report.fixes.relationships_reclassified = fix_unknown_relationships(db, &user_domains);
-    report.fixes.summaries_extracted = backfill_file_summaries(db);
-    report.fixes.orphaned_meetings_linked = fix_orphaned_meetings(db);
-    report.fixes.meeting_counts_updated = fix_meeting_counts(db);
-    report.fixes.renewals_rolled_over = fix_renewal_rollovers(db);
+    let mut all_details: Vec<HygieneFixDetail> = Vec::new();
+
+    let (count, details) = fix_unknown_relationships(db, &user_domains);
+    report.fixes.relationships_reclassified = count;
+    all_details.extend(details);
+
+    let (count, details) = backfill_file_summaries(db);
+    report.fixes.summaries_extracted = count;
+    all_details.extend(details);
+
+    let (count, details) = fix_orphaned_meetings(db, orphan_lookback);
+    report.fixes.orphaned_meetings_linked = count;
+    all_details.extend(details);
+
+    let (count, details) = fix_meeting_counts(db);
+    report.fixes.meeting_counts_updated = count;
+    all_details.extend(details);
+
+    let (count, details) = fix_renewal_rollovers(db);
+    report.fixes.renewals_rolled_over = count;
+    all_details.extend(details);
 
     // --- Phase 2: Email name resolution + domain linking (free) ---
-    report.fixes.names_resolved = resolve_names_from_emails(db, workspace);
-    report.fixes.people_linked_by_domain = auto_link_people_by_domain(db);
+    let (count, details) = resolve_names_from_emails(db, workspace);
+    report.fixes.names_resolved = count;
+    all_details.extend(details);
+
+    let (count, details) = auto_link_people_by_domain(db);
+    report.fixes.people_linked_by_domain = count;
+    all_details.extend(details);
 
     // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
     }
+
+    // Truncate details to max and store on report
+    all_details.truncate(MAX_FIX_DETAILS);
+    report.fix_details = all_details;
 
     // --- Re-count gaps after fixes so UI shows remaining problems, not stale pre-fix counts ---
     report.unnamed_people = db.get_unnamed_people().map(|v| v.len()).unwrap_or(0);
@@ -130,73 +176,110 @@ pub fn run_hygiene_scan(
         .map(|v| v.len())
         .unwrap_or(0);
     report.orphaned_meetings = db
-        .get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS)
+        .get_orphaned_meetings(orphan_lookback)
         .map(|v| v.len())
         .unwrap_or(0);
     // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
     // duplicate_people is also unchanged (no auto-merge).
 
+    report.scan_duration_ms = scan_start.elapsed().as_millis() as u64;
     report
 }
 
 /// Reclassify people with "unknown" relationship using the user's domains (I171).
-fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> usize {
+fn fix_unknown_relationships(db: &ActionDb, user_domains: &[String]) -> (usize, Vec<HygieneFixDetail>) {
     if user_domains.is_empty() {
-        return 0; // Can't classify without user domains
+        return (0, Vec::new());
     }
 
     let people = match db.get_unknown_relationship_people() {
         Ok(p) => p,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     let mut fixed = 0;
+    let mut details = Vec::new();
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
         if new_rel != "unknown" && db.update_person_relationship(&person.id, &new_rel).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "relationship_reclassified".to_string(),
+                entity_name: Some(person.name.clone()),
+                description: format!("Reclassified {} ({}) as {}", person.name, person.email, new_rel),
+            });
             fixed += 1;
         }
     }
-    fixed
+    (fixed, details)
 }
 
 /// Extract summaries for content files that have none.
-fn backfill_file_summaries(db: &ActionDb) -> usize {
+fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let files = match db.get_unsummarized_content_files() {
         Ok(f) => f,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     // Cap per scan to avoid blocking too long (mechanical extraction is fast but IO-bound)
     let batch_limit = 50;
     let mut extracted = 0;
+    let mut details = Vec::new();
+    let now = chrono::Utc::now().to_rfc3339();
 
     for file in files.iter().take(batch_limit) {
         let path = std::path::Path::new(&file.absolute_path);
+        let filename = path
+            .file_name()
+            .map(|f| f.to_string_lossy().to_string())
+            .unwrap_or_default();
+
         if !path.exists() {
+            // File was deleted since indexing — mark so it exits the unsummarized pool
+            let _ = db.conn_ref().execute(
+                "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
+                rusqlite::params![&now, "[file not found]", file.id],
+            );
             continue;
         }
 
         let (extracted_at, summary) = crate::entity_intel::extract_and_summarize(path);
-        if let (Some(ext_at), Some(summ)) = (extracted_at, summary) {
-            let _ = db.conn_ref().execute(
-                "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
-                rusqlite::params![ext_at, summ, file.id],
-            );
-            extracted += 1;
+        match (extracted_at, summary) {
+            (Some(ext_at), Some(summ)) => {
+                let _ = db.conn_ref().execute(
+                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
+                    rusqlite::params![ext_at, summ, file.id],
+                );
+                if details.len() < 5 {
+                    details.push(HygieneFixDetail {
+                        fix_type: "summary_extracted".to_string(),
+                        entity_name: Some(filename.clone()),
+                        description: format!("Extracted summary for {}", filename),
+                    });
+                }
+                extracted += 1;
+            }
+            _ => {
+                // Extraction failed or returned empty — mark as attempted so the file
+                // doesn't reappear as an unsummarized gap on every scan forever.
+                let _ = db.conn_ref().execute(
+                    "UPDATE content_index SET extracted_at = ?1, summary = ?2 WHERE id = ?3",
+                    rusqlite::params![&now, "[extraction failed]", file.id],
+                );
+            }
         }
     }
-    extracted
+    (extracted, details)
 }
 
 /// Link orphaned meetings to entities via account name resolution.
-fn fix_orphaned_meetings(db: &ActionDb) -> usize {
-    let meetings = match db.get_orphaned_meetings(ORPHANED_MEETING_LOOKBACK_DAYS) {
+fn fix_orphaned_meetings(db: &ActionDb, lookback_days: i32) -> (usize, Vec<HygieneFixDetail>) {
+    let meetings = match db.get_orphaned_meetings(lookback_days) {
         Ok(m) => m,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     let mut linked = 0;
+    let mut details = Vec::new();
     for meeting in &meetings {
         let account_name = match &meeting.account_id {
             Some(name) if !name.is_empty() => name,
@@ -209,39 +292,57 @@ fn fix_orphaned_meetings(db: &ActionDb) -> usize {
                 .link_meeting_entity(&meeting.id, &account.id, "account")
                 .is_ok()
             {
+                details.push(HygieneFixDetail {
+                    fix_type: "meeting_linked".to_string(),
+                    entity_name: Some(account.name.clone()),
+                    description: format!("Linked \"{}\" to {}", meeting.title, account.name),
+                });
                 linked += 1;
             }
         }
     }
-    linked
+    (linked, details)
 }
 
 /// Recompute meeting counts for people whose counts may be stale.
 /// Only fixes people whose stored count differs from actual attendee records.
-fn fix_meeting_counts(db: &ActionDb) -> usize {
+fn fix_meeting_counts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     // Find people with mismatched counts via a single query
-    let mismatched: Vec<String> = db
+    let mismatched: Vec<(String, String, i64, i64)> = db
         .conn_ref()
         .prepare(
-            "SELECT p.id FROM people p
+            "SELECT p.id, p.name, p.meeting_count, COALESCE(ma.actual, 0) FROM people p
              LEFT JOIN (
                  SELECT person_id, COUNT(*) AS actual FROM meeting_attendees GROUP BY person_id
              ) ma ON ma.person_id = p.id
              WHERE p.meeting_count != COALESCE(ma.actual, 0)",
         )
         .and_then(|mut stmt| {
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                ))
+            })?;
             Ok(rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default();
 
     let mut fixed = 0;
-    for person_id in &mismatched {
+    let mut details = Vec::new();
+    for (person_id, name, old_count, new_count) in &mismatched {
         if db.recompute_person_meeting_count(person_id).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "meeting_count_updated".to_string(),
+                entity_name: Some(name.clone()),
+                description: format!("Updated meeting count for {}: {} \u{2192} {}", name, old_count, new_count),
+            });
             fixed += 1;
         }
     }
-    fixed
+    (fixed, details)
 }
 
 /// Auto-rollover renewal dates for accounts that passed their renewal without churning.
@@ -254,13 +355,14 @@ fn fix_meeting_counts(db: &ActionDb) -> usize {
 ///
 /// This ensures renewals don't silently go stale when the user simply continues the
 /// relationship without explicitly recording the event.
-fn fix_renewal_rollovers(db: &ActionDb) -> usize {
+fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let past_renewal = match db.get_accounts_past_renewal() {
         Ok(accounts) => accounts,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     let mut fixed = 0;
+    let mut details = Vec::new();
     for account in &past_renewal {
         // Defensive: skip if a churn event exists
         if db.has_churn_event(&account.id).unwrap_or(false) {
@@ -298,10 +400,15 @@ fn fix_renewal_rollovers(db: &ActionDb) -> usize {
             "UPDATE accounts SET contract_end = ?1 WHERE id = ?2",
             rusqlite::params![next_str, account.id],
         );
+        details.push(HygieneFixDetail {
+            fix_type: "renewal_rolled_over".to_string(),
+            entity_name: Some(account.name.clone()),
+            description: format!("Rolled over {} renewal: {} \u{2192} {}", account.name, renewal_date, next_str),
+        });
         fixed += 1;
     }
 
-    fixed
+    (fixed, details)
 }
 
 // =============================================================================
@@ -312,27 +419,28 @@ fn fix_renewal_rollovers(db: &ActionDb) -> usize {
 ///
 /// Reads `_today/data/emails.json` (created by daily briefing), extracts display
 /// names from From headers, and updates people who only have email-derived names.
-pub fn resolve_names_from_emails(db: &ActionDb, workspace: &Path) -> usize {
+pub fn resolve_names_from_emails(db: &ActionDb, workspace: &Path) -> (usize, Vec<HygieneFixDetail>) {
     let emails_path = workspace.join("_today").join("data").join("emails.json");
     let raw = match std::fs::read_to_string(&emails_path) {
         Ok(r) => r,
-        Err(_) => return 0, // No emails.json yet
+        Err(_) => return (0, Vec::new()),
     };
 
     let data: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(d) => d,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     // Get unnamed people to match against
     let unnamed = match db.get_unnamed_people() {
         Ok(p) if !p.is_empty() => p,
-        _ => return 0,
+        _ => return (0, Vec::new()),
     };
     let unnamed_emails: std::collections::HashSet<String> =
         unnamed.iter().map(|p| p.email.to_lowercase()).collect();
 
     let mut resolved = 0;
+    let mut details = Vec::new();
 
     // Scan all email categories
     for key in &["highPriority", "mediumPriority", "lowPriority"] {
@@ -358,31 +466,36 @@ pub fn resolve_names_from_emails(db: &ActionDb, workspace: &Path) -> usize {
 
                 let person_id = crate::util::person_id_from_email(&addr);
                 if db.update_person_name(&person_id, &display_name).is_ok() {
+                    details.push(HygieneFixDetail {
+                        fix_type: "name_resolved".to_string(),
+                        entity_name: Some(display_name.clone()),
+                        description: format!("Resolved {}'s name from {}", display_name, addr),
+                    });
                     resolved += 1;
                 }
             }
         }
     }
 
-    resolved
+    (resolved, details)
 }
 
 /// Auto-link people to entities by matching email domain to account names.
 ///
 /// If `schen@acme.com` is a person and there's an account whose name contains
 /// "acme", link them via the entity_people junction table.
-pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
+pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     let accounts = match db.get_all_accounts() {
         Ok(a) => a,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
     if accounts.is_empty() {
-        return 0;
+        return (0, Vec::new());
     }
 
-    // Build a domain-hint → account_id map
+    // Build a domain-hint → (account_id, account_name) map
     // E.g., account "Acme Corp" → hint "acme"
-    let account_hints: Vec<(String, String)> = accounts
+    let account_hints: Vec<(String, String, String)> = accounts
         .iter()
         .map(|a| {
             let hint = a
@@ -394,22 +507,23 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
                 .chars()
                 .filter(|c| c.is_alphanumeric())
                 .collect::<String>();
-            (hint, a.id.clone())
+            (hint, a.id.clone(), a.name.clone())
         })
-        .filter(|(hint, _)| hint.len() >= 3)
+        .filter(|(hint, _, _)| hint.len() >= 3)
         .collect();
 
     if account_hints.is_empty() {
-        return 0;
+        return (0, Vec::new());
     }
 
     // Get external people not yet linked to any entity
     let people = match db.get_people(Some("external")) {
         Ok(p) => p,
-        Err(_) => return 0,
+        Err(_) => return (0, Vec::new()),
     };
 
     let mut linked = 0;
+    let mut details = Vec::new();
     for person in &people {
         // Check if already linked
         let already_linked = db
@@ -428,19 +542,24 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> usize {
         }
 
         // Match against account hints
-        for (hint, account_id) in &account_hints {
+        for (hint, account_id, account_name) in &account_hints {
             if (&domain_base == hint || (hint.len() >= 4 && domain_base.contains(hint.as_str())))
                 && db
                     .link_person_to_entity(&person.id, account_id, "associated")
                     .is_ok()
             {
+                details.push(HygieneFixDetail {
+                    fix_type: "person_linked_by_domain".to_string(),
+                    entity_name: Some(person.name.clone()),
+                    description: format!("Linked {} to {} via {}", person.name, account_name, domain),
+                });
                 linked += 1;
                 break; // One link per person
             }
         }
     }
 
-    linked
+    (linked, details)
 }
 
 // =============================================================================
@@ -710,16 +829,21 @@ const OVERNIGHT_AI_BUDGET: u32 = 20;
 
 /// Check upcoming meetings and enqueue intelligence refresh for stale linked entities.
 ///
-/// Called after each calendar poll. Looks for meetings in the next 2 hours
-/// with linked entities whose intelligence is older than 7 days.
+/// Called after each calendar poll. Looks for meetings within the configured
+/// pre-meeting window (default 12h) with linked entities whose intelligence
+/// is older than 7 days.
 pub fn check_upcoming_meeting_readiness(
     db: &ActionDb,
     queue: &crate::intel_queue::IntelligenceQueue,
+    config: Option<&Config>,
 ) -> Vec<String> {
     use crate::intel_queue::{IntelPriority, IntelRequest};
     use std::time::Instant;
 
-    let window_end = Utc::now() + chrono::Duration::hours(PRE_MEETING_WINDOW_HOURS);
+    let window_hours = config
+        .map(|c| c.hygiene_pre_meeting_hours as i64)
+        .unwrap_or(PRE_MEETING_WINDOW_HOURS);
+    let window_end = Utc::now() + chrono::Duration::hours(window_hours);
     let stale_threshold = Utc::now() - chrono::Duration::days(PRE_MEETING_STALE_DAYS);
     let stale_str = stale_threshold.to_rfc3339();
 
@@ -825,10 +949,11 @@ pub fn run_overnight_scan(
     workspace: &Path,
     queue: &crate::intel_queue::IntelligenceQueue,
 ) -> OvernightReport {
-    // Use expanded overnight budget
-    let overnight_budget = crate::state::HygieneBudget::new(OVERNIGHT_AI_BUDGET);
+    // Use expanded overnight budget (2x daytime from config)
+    let overnight_limit = config.hygiene_ai_budget.saturating_mul(2).max(OVERNIGHT_AI_BUDGET);
+    let overnight_budget = crate::state::HygieneBudget::new(overnight_limit);
 
-    let report = run_hygiene_scan(db, config, workspace, Some(&overnight_budget), Some(queue));
+    let report = run_hygiene_scan(db, config, workspace, Some(&overnight_budget), Some(queue), false);
 
     let overnight = OvernightReport {
         ran_at: Utc::now().to_rfc3339(),
@@ -851,13 +976,10 @@ pub fn run_overnight_scan(
     overnight
 }
 
-/// Check if current time is in the overnight window (2-3 AM UTC).
+/// Check if current time is in the overnight window (2-3 AM local time).
 fn is_overnight_window() -> bool {
-    let hour = Utc::now()
-        .format("%H")
-        .to_string()
-        .parse::<u32>()
-        .unwrap_or(12);
+    use chrono::Local;
+    let hour = Local::now().format("%H").to_string().parse::<u32>().unwrap_or(12);
     (2..=3).contains(&hour)
 }
 
@@ -869,6 +991,14 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
     log::info!("HygieneLoop: started");
 
     loop {
+        // Read config-driven interval each iteration (changes take effect next cycle)
+        let interval = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().map(|c| c.hygiene_scan_interval_hours as u64 * 3600))
+            .unwrap_or(SCAN_INTERVAL_SECS);
+
         // Prevent overlap with manual scan runs.
         let began_scan = state
             .hygiene_scan_running
@@ -882,7 +1012,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
 
         if !began_scan {
             log::debug!("HygieneLoop: skipping scan (another hygiene scan is already running)");
-            tokio::time::sleep(std::time::Duration::from_secs(SCAN_INTERVAL_SECS)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
             continue;
         }
 
@@ -951,14 +1081,14 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
 
         if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
             *guard = Some(
-                (Utc::now() + chrono::Duration::seconds(SCAN_INTERVAL_SECS as i64)).to_rfc3339(),
+                (Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339(),
             );
         }
         state
             .hygiene_scan_running
             .store(false, std::sync::atomic::Ordering::Release);
 
-        tokio::time::sleep(std::time::Duration::from_secs(SCAN_INTERVAL_SECS)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
     }
 }
 
@@ -985,6 +1115,11 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
 
     let db = crate::db::ActionDb::open().ok()?;
 
+    // First run does a full orphan scan (no lookback limit)
+    let first_run = !state
+        .hygiene_full_orphan_scan_done
+        .swap(true, std::sync::atomic::Ordering::AcqRel);
+
     let workspace = std::path::Path::new(&config.workspace_path);
     Some(run_hygiene_scan(
         &db,
@@ -992,6 +1127,7 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
         workspace,
         Some(&state.hygiene_budget),
         Some(&state.intel_queue),
+        first_run,
     ))
 }
 
@@ -1045,8 +1181,10 @@ pub struct HygieneStatusView {
     pub total_fixes: usize,
     pub is_running: bool,
     pub fixes: Vec<HygieneFixView>,
+    pub fix_details: Vec<HygieneFixDetail>,
     pub gaps: Vec<HygieneGapView>,
     pub budget: HygieneBudgetView,
+    pub scan_duration_ms: Option<u64>,
 }
 
 fn hygiene_gap_action(key: &str) -> HygieneGapActionView {
@@ -1256,6 +1394,10 @@ pub fn build_intelligence_hygiene_status(
         .ok()
         .and_then(|g| g.clone());
 
+    let fix_details = report
+        .map(|r| r.fix_details.clone())
+        .unwrap_or_default();
+
     HygieneStatusView {
         status,
         status_label,
@@ -1265,12 +1407,14 @@ pub fn build_intelligence_hygiene_status(
         total_fixes,
         is_running,
         fixes,
+        fix_details,
         gaps,
         budget: HygieneBudgetView {
             used_today: state.hygiene_budget.used_today(),
             daily_limit: state.hygiene_budget.daily_limit,
             queued_for_next_budget,
         },
+        scan_duration_ms: report.map(|r| r.scan_duration_ms),
     }
 }
 
@@ -1399,7 +1543,7 @@ mod tests {
         seed_person(&db, "p2", "them@other.com", "Them", "unknown");
 
         let domains = vec!["myco.com".to_string()];
-        let fixed = fix_unknown_relationships(&db, &domains);
+        let (fixed, _) = fix_unknown_relationships(&db, &domains);
         assert_eq!(fixed, 2);
 
         let p1 = db.get_person("p1").unwrap().unwrap();
@@ -1414,7 +1558,7 @@ mod tests {
         let db = test_db();
         seed_person(&db, "p1", "me@myco.com", "Me", "unknown");
 
-        let fixed = fix_unknown_relationships(&db, &[]);
+        let (fixed, _) = fix_unknown_relationships(&db, &[]);
         assert_eq!(fixed, 0);
     }
 
@@ -1424,9 +1568,9 @@ mod tests {
         seed_person(&db, "p1", "me@myco.com", "Me", "unknown");
 
         let domains = vec!["myco.com".to_string()];
-        fix_unknown_relationships(&db, &domains);
+        let _ = fix_unknown_relationships(&db, &domains);
         // Second run: person is now "internal", not "unknown", so shouldn't be re-processed
-        let fixed = fix_unknown_relationships(&db, &domains);
+        let (fixed, _) = fix_unknown_relationships(&db, &domains);
         assert_eq!(fixed, 0);
     }
 
@@ -1448,7 +1592,7 @@ mod tests {
         let orphaned = db.get_orphaned_meetings(90).unwrap();
         assert_eq!(orphaned.len(), 1);
 
-        let linked = fix_orphaned_meetings(&db);
+        let (linked, _) = fix_orphaned_meetings(&db, 90);
         assert_eq!(linked, 1);
 
         // Should no longer be orphaned
@@ -1470,8 +1614,8 @@ mod tests {
             )
             .unwrap();
 
-        fix_orphaned_meetings(&db);
-        let linked = fix_orphaned_meetings(&db);
+        let _ = fix_orphaned_meetings(&db, 90);
+        let (linked, _) = fix_orphaned_meetings(&db, 90);
         assert_eq!(linked, 0); // Nothing to fix on second run
     }
 
@@ -1485,7 +1629,7 @@ mod tests {
             .execute("UPDATE people SET meeting_count = 99 WHERE id = 'p1'", [])
             .unwrap();
 
-        let fixed = fix_meeting_counts(&db);
+        let (fixed, _) = fix_meeting_counts(&db);
         assert_eq!(fixed, 1);
 
         let person = db.get_person("p1").unwrap().unwrap();
@@ -1498,7 +1642,7 @@ mod tests {
         seed_person(&db, "p1", "a@test.com", "A Test", "external");
 
         // Count is already correct (0 meetings, 0 count)
-        let fixed = fix_meeting_counts(&db);
+        let (fixed, _) = fix_meeting_counts(&db);
         assert_eq!(fixed, 0);
     }
 
@@ -1511,7 +1655,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
 
         assert_eq!(report.unnamed_people, 0);
         assert_eq!(report.unknown_relationships, 0);
@@ -1534,7 +1678,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
 
         // Fixes applied
         assert_eq!(report.fixes.relationships_reclassified, 2);
@@ -1570,7 +1714,7 @@ mod tests {
         )
         .unwrap();
 
-        let resolved = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
         assert_eq!(resolved, 1);
 
         let person = db.get_person("jane-customer-com").unwrap().unwrap();
@@ -1580,7 +1724,7 @@ mod tests {
     #[test]
     fn test_resolve_names_no_emails_file() {
         let db = test_db();
-        let resolved = resolve_names_from_emails(&db, Path::new("/nonexistent"));
+        let (resolved, _) = resolve_names_from_emails(&db, Path::new("/nonexistent"));
         assert_eq!(resolved, 0);
     }
 
@@ -1605,7 +1749,7 @@ mod tests {
         .unwrap();
 
         // "Jane Doe" has spaces so not in unnamed set
-        let resolved = resolve_names_from_emails(&db, workspace.path());
+        let (resolved, _) = resolve_names_from_emails(&db, workspace.path());
         assert_eq!(resolved, 0);
     }
 
@@ -1621,7 +1765,7 @@ mod tests {
             "external",
         );
 
-        let linked = auto_link_people_by_domain(&db);
+        let (linked, _) = auto_link_people_by_domain(&db);
         assert_eq!(linked, 1);
 
         let entities = db.get_entities_for_person("jane-acme-com").unwrap();
@@ -1641,8 +1785,8 @@ mod tests {
             "external",
         );
 
-        auto_link_people_by_domain(&db);
-        let linked = auto_link_people_by_domain(&db);
+        let _ = auto_link_people_by_domain(&db);
+        let (linked, _) = auto_link_people_by_domain(&db);
         assert_eq!(linked, 0); // Already linked
     }
 
@@ -1652,7 +1796,7 @@ mod tests {
         seed_account(&db, "acme-corp", "Acme Corp");
         seed_person(&db, "me-acme-com", "me@acme.com", "Me", "internal");
 
-        let linked = auto_link_people_by_domain(&db);
+        let (linked, _) = auto_link_people_by_domain(&db);
         assert_eq!(linked, 0); // Internal people not auto-linked
     }
 
@@ -1736,7 +1880,7 @@ mod tests {
         seed_upcoming_meeting(&db, "m1", 1);
         link_meeting_entity(&db, "m1", "acme");
 
-        let enqueued = check_upcoming_meeting_readiness(&db, &queue);
+        let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
         assert_eq!(enqueued.len(), 1);
         assert_eq!(enqueued[0], "acme");
     }
@@ -1755,7 +1899,7 @@ mod tests {
         seed_upcoming_meeting(&db, "m1", 1);
         link_meeting_entity(&db, "m1", "acme");
 
-        let enqueued = check_upcoming_meeting_readiness(&db, &queue);
+        let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
         assert!(enqueued.is_empty());
     }
 
@@ -1773,7 +1917,7 @@ mod tests {
         seed_upcoming_meeting(&db, "m1", 5);
         link_meeting_entity(&db, "m1", "acme");
 
-        let enqueued = check_upcoming_meeting_readiness(&db, &queue);
+        let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
         assert!(enqueued.is_empty());
     }
 
@@ -1789,7 +1933,7 @@ mod tests {
         seed_upcoming_meeting(&db, "m1", 1);
         link_meeting_entity(&db, "m1", "acme");
 
-        let enqueued = check_upcoming_meeting_readiness(&db, &queue);
+        let enqueued = check_upcoming_meeting_readiness(&db, &queue, None);
         assert_eq!(enqueued.len(), 1);
     }
 
@@ -2033,7 +2177,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
         assert_eq!(report.duplicate_people, 1);
     }
 
@@ -2095,7 +2239,7 @@ mod tests {
             .to_string();
         seed_account_with_renewal(&db, "acme", "Acme Corp", &past, Some(120_000.0));
 
-        let fixed = fix_renewal_rollovers(&db);
+        let (fixed, _) = fix_renewal_rollovers(&db);
         assert_eq!(fixed, 1);
 
         // Verify the renewal event was recorded
@@ -2135,7 +2279,7 @@ mod tests {
         db.record_account_event("churned-co", "churn", &past, Some(50_000.0), Some("Lost"))
             .unwrap();
 
-        let fixed = fix_renewal_rollovers(&db);
+        let (fixed, _) = fix_renewal_rollovers(&db);
         assert_eq!(fixed, 0);
 
         // contract_end should be unchanged
@@ -2158,11 +2302,11 @@ mod tests {
             .to_string();
         seed_account_with_renewal(&db, "acme", "Acme Corp", &past, None);
 
-        let fixed1 = fix_renewal_rollovers(&db);
+        let (fixed1, _) = fix_renewal_rollovers(&db);
         assert_eq!(fixed1, 1);
 
         // Second run: contract_end is now in the future, so no rollover
-        let fixed2 = fix_renewal_rollovers(&db);
+        let (fixed2, _) = fix_renewal_rollovers(&db);
         assert_eq!(fixed2, 0);
     }
 
@@ -2180,7 +2324,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
         assert_eq!(report.fixes.renewals_rolled_over, 1);
     }
 
@@ -2207,6 +2351,9 @@ mod tests {
             personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
             embeddings: crate::types::EmbeddingConfig::default(),
+            hygiene_scan_interval_hours: 4,
+            hygiene_ai_budget: 10,
+            hygiene_pre_meeting_hours: 12,
         }
     }
 }
