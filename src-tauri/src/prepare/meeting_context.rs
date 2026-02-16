@@ -1572,7 +1572,7 @@ mod tests {
         .unwrap();
         std::fs::create_dir_all(dir.path().join("Accounts/Slack")).unwrap();
 
-        let db = crate::db::ActionDb::open_at(dir.path().join("actions.db")).expect("open test db");
+        let db = crate::db::ActionDb::open_at(dir.path().join("test.db")).expect("open test db");
         let now = chrono::Utc::now().to_rfc3339();
 
         db.upsert_entity(&crate::entity::DbEntity {
