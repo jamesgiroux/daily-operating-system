@@ -52,7 +52,7 @@ pub fn read_risk_briefing(account_dir: &Path) -> Result<RiskBriefing, String> {
 }
 
 /// Write risk briefing to `<account_dir>/risk-briefing.json`.
-fn write_risk_briefing(account_dir: &Path, briefing: &RiskBriefing) -> Result<(), String> {
+pub fn write_risk_briefing(account_dir: &Path, briefing: &RiskBriefing) -> Result<(), String> {
     let path = account_dir.join("risk-briefing.json");
     let json = serde_json::to_string_pretty(briefing)
         .map_err(|e| format!("Failed to serialize risk briefing: {}", e))?;
@@ -138,18 +138,19 @@ fn build_risk_briefing_prompt(
 
     prompt.push_str("# Output Format\n\n");
     prompt.push_str("This is a SLIDE DECK for a 5-minute risk huddle. Each slide fills one screen.\n");
-    prompt.push_str("The story: severity → decline arc → stakes → recovery → ask.\n\n");
+    prompt.push_str("The story: severity → decline arc → stakes → recovery → ask.\n");
+    prompt.push_str("BREVITY IS ABSOLUTE. Every field has a hard word limit. Exceeding limits is a failure.\n\n");
     prompt.push_str("Respond with ONLY a valid JSON object (no markdown fences, no commentary) matching this exact schema:\n\n");
     prompt.push_str(r#"{
   "bottomLine": {
-    "headline": "The whole story in one breath. ~20 words max. e.g. 'Account at risk: MUV dispute blocks $308K renewal. Plan: scraping pilot plus analytics fix by April.'",
+    "headline": "The whole story in one breath. MAX 20 WORDS. e.g. 'Account at risk: MUV dispute blocks $308K renewal. Plan: scraping pilot plus analytics fix by April.'",
     "riskLevel": "high|medium|low — one word ONLY",
     "renewalWindow": "e.g. '9 weeks ending April 20' or null"
   },
   "whatHappened": {
-    "narrative": "Exactly 3 sentences. Sentence 1: baseline state. Sentence 2: what disrupted it. Sentence 3: where we are now. Be specific — cite dates, names, numbers.",
-    "healthArc": [{"period": "Q3 2025", "status": "green", "detail": "2-3 words only"}],
-    "keyLosses": ["Max 3 one-liners. Merge stakeholder changes + perception shifts. e.g. 'VP Eng disengaged since Jan 15'"]
+    "narrative": "EXACTLY 3 SENTENCES. MAX 60 WORDS TOTAL. Sentence 1: baseline (~15 words). Sentence 2: disruption (~20 words). Sentence 3: current state (~20 words). Cite dates and names. Do NOT write a paragraph.",
+    "healthArc": [{"period": "Q3 2025", "status": "green", "detail": "2-3 words ONLY, not a sentence"}],
+    "keyLosses": ["Max 3 items. Max 10 words each. Action title format: 'VP Eng disengaged since Jan 15'"]
   },
   "stakes": {
     "financialHeadline": "ACTION HEADLINE, max 10 words. e.g. '$308K base plus $150K expansion at risk through April'",
@@ -185,12 +186,13 @@ fn build_risk_briefing_prompt(
 
     prompt.push_str("\n\n# Writing Rules\n\n");
     prompt.push_str("1. This is a SLIDE DECK for a 5-minute risk huddle. If the exec reads only bottomLine.headline, they get the whole story.\n");
-    prompt.push_str("2. whatHappened.narrative must be EXACTLY 3 sentences — baseline → disruption → now.\n");
+    prompt.push_str("2. WORD LIMITS ARE HARD CONSTRAINTS. Count your words. whatHappened.narrative = 3 sentences, 60 words max. headline = 20 words. keyLosses = 10 words each. Violating word limits is a failure.\n");
     prompt.push_str("3. McKinsey action titles, not prose. 'Champion intact, budget frozen' not 'The champion relationship remains stable.'\n");
     prompt.push_str("4. Name names, cite dates, state numbers. 'No VP Eng meeting since Jan 15' not 'engagement decreased.'\n");
     prompt.push_str("5. Max items: stakeholders=4, everything else=3 or fewer.\n");
     prompt.push_str("6. Assumptions max 2, each must state: 'If [assumption], plan fails because [consequence].'\n");
     prompt.push_str("7. Do NOT wrap the JSON in markdown code fences.\n");
+    prompt.push_str("8. healthArc.detail must be 2-3 WORDS (e.g. 'Strong engagement', 'MUV dispute'), never a full sentence.\n");
 
     prompt
 }
