@@ -99,10 +99,8 @@
   top: 50%;
   right: -40px;
   transform: translateY(-50%) rotate(12deg);
-  font-family: var(--font-mark);
-  font-weight: 800;
-  font-size: 420px;
-  line-height: 1;
+  width: 420px;
+  height: 420px;
   pointer-events: none;
   user-select: none;
   z-index: -1;

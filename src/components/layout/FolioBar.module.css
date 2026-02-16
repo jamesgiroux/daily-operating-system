@@ -40,10 +40,6 @@
 }
 
 .folioMark {
-  font-family: var(--font-mark);
-  font-weight: 800;
-  font-size: 18px;
-  line-height: 1;
   color: var(--color-spice-turmeric);
   cursor: pointer;
   user-select: none;

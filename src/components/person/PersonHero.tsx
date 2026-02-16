@@ -5,6 +5,7 @@
  */
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { BrandMark } from "../ui/BrandMark";
 import styles from "./PersonHero.module.css";
 
 interface PersonHeroProps {
@@ -65,7 +66,7 @@ export function PersonHero({
 
   return (
     <div className={styles.hero}>
-      <div className={styles.watermark}>*</div>
+      <div className={styles.watermark}><BrandMark size="100%" /></div>
 
       {/* Archived banner */}
       {detail.archived && (

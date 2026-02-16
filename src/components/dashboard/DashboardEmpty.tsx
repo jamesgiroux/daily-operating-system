@@ -5,6 +5,7 @@
  */
 
 import { Mail } from "lucide-react";
+import { BrandMark } from "@/components/ui/BrandMark";
 import { Button } from "@/components/ui/button";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { GoogleAuthStatus } from "@/types";
@@ -25,14 +26,11 @@ export function DashboardEmpty({ message, onGenerate, googleAuth }: DashboardEmp
         {/* Sunrise mark */}
         <div
           style={{
-            fontFamily: "var(--font-mark)",
-            fontSize: 32,
-            letterSpacing: "0.4em",
             color: "var(--color-spice-turmeric)",
             marginBottom: 32,
           }}
         >
-          *
+          <BrandMark size={32} />
         </div>
 
         {/* Heading */}
