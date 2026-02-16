@@ -76,10 +76,10 @@ export function useAccountDetail(accountId: string | undefined) {
 
   // ─── Core data loading ────────────────────────────────────────────────
 
-  const load = useCallback(async () => {
+  const fetchDetail = useCallback(async (showLoading: boolean) => {
     if (!accountId) return;
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const result = await invoke<AccountDetail>("get_account_detail", {
         accountId,
@@ -107,9 +107,15 @@ export function useAccountDetail(accountId: string | undefined) {
     } catch (e) {
       setError(String(e));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [accountId]);
+
+  /** Full load with loading spinner (initial + navigation). */
+  const load = useCallback(() => fetchDetail(true), [fetchDetail]);
+
+  /** Silent refresh — updates data without flipping loading state or resetting scroll. */
+  const silentRefresh = useCallback(() => fetchDetail(false), [fetchDetail]);
 
   useEffect(() => {
     load();
@@ -371,6 +377,7 @@ export function useAccountDetail(accountId: string | undefined) {
 
     // Handlers
     load,
+    silentRefresh,
     handleSave: fields.handleSave,
     handleCancelEdit: fields.handleCancelEdit,
     handleIndexFiles,

@@ -129,12 +129,11 @@ export default function ProjectDetailEditorial() {
           fieldPath,
           value,
         });
-        proj.load();
       } catch (e) {
         console.error("Failed to update intelligence field:", e);
       }
     },
-    [projectId, proj],
+    [projectId],
   );
 
   if (proj.loading) return <EditorialLoading />;
@@ -199,7 +198,7 @@ export default function ProjectDetailEditorial() {
           sectionId="the-room"
           entityId={projectId}
           entityType="project"
-          onIntelligenceUpdated={proj.load}
+          onIntelligenceUpdated={proj.silentRefresh}
         />
       </div>
 

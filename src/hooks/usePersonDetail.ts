@@ -48,17 +48,19 @@ export function usePersonDetail(personId: string | undefined) {
 
   // ─── Core data loading ────────────────────────────────────────────────
 
-  const load = useCallback(async () => {
+  const fetchDetail = useCallback(async (showLoading: boolean) => {
     if (!personId) return;
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const result = await invoke<PersonDetail>("get_person_detail", { personId });
       setDetail(result);
-      setEditName(result.name);
-      setEditRole(result.role ?? "");
-      setEditNotes(result.notes ?? "");
-      setDirty(false);
+      if (showLoading) {
+        setEditName(result.name);
+        setEditRole(result.role ?? "");
+        setEditNotes(result.notes ?? "");
+        setDirty(false);
+      }
 
       // Load files
       try {
@@ -73,9 +75,12 @@ export function usePersonDetail(personId: string | undefined) {
     } catch (e) {
       setError(String(e));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [personId]);
+
+  const load = useCallback(() => fetchDetail(true), [fetchDetail]);
+  const silentRefresh = useCallback(() => fetchDetail(false), [fetchDetail]);
 
   useEffect(() => {
     load();
@@ -338,6 +343,7 @@ export function usePersonDetail(personId: string | undefined) {
     loading,
     error,
     load,
+    silentRefresh,
 
     // Field editing
     editName, setEditName,

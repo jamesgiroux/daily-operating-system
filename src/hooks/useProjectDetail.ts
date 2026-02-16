@@ -39,20 +39,22 @@ export function useProjectDetail(projectId: string | undefined) {
   const [indexing, setIndexing] = useState(false);
   const [indexFeedback, setIndexFeedback] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const fetchDetail = useCallback(async (showLoading: boolean) => {
     if (!projectId) return;
     try {
-      setLoading(true);
+      if (showLoading) setLoading(true);
       setError(null);
       const result = await invoke<ProjectDetail>("get_project_detail", { projectId });
       setDetail(result);
-      setEditName(result.name);
-      setEditStatus(result.status ?? "active");
-      setEditMilestone(result.milestone ?? "");
-      setEditOwner(result.owner ?? "");
-      setEditTargetDate(result.targetDate ?? "");
-      setEditNotes(result.notes ?? "");
-      setDirty(false);
+      if (showLoading) {
+        setEditName(result.name);
+        setEditStatus(result.status ?? "active");
+        setEditMilestone(result.milestone ?? "");
+        setEditOwner(result.owner ?? "");
+        setEditTargetDate(result.targetDate ?? "");
+        setEditNotes(result.notes ?? "");
+        setDirty(false);
+      }
 
       // Load files
       try {
@@ -67,9 +69,12 @@ export function useProjectDetail(projectId: string | undefined) {
     } catch (e) {
       setError(String(e));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [projectId]);
+
+  const load = useCallback(() => fetchDetail(true), [fetchDetail]);
+  const silentRefresh = useCallback(() => fetchDetail(false), [fetchDetail]);
 
   useEffect(() => {
     load();
@@ -217,6 +222,7 @@ export function useProjectDetail(projectId: string | undefined) {
     error,
     files,
     load,
+    silentRefresh,
     // Field editing
     editName, setEditName,
     editStatus, setEditStatus,
