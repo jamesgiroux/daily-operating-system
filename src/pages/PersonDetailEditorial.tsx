@@ -14,9 +14,9 @@ import {
   Eye,
   Activity,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
 import {
   Dialog,
   DialogContent,
@@ -125,33 +125,10 @@ export default function PersonDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  if (person.loading) {
-    return (
-      <div className="editorial-loading" style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-8 h-5 w-full max-w-2xl" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="h-px w-full" style={{ background: "var(--color-rule-heavy)" }} />
-        <div style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 32 }}>
-          <Skeleton className="h-32 w-full" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="h-24 w-full" style={{ background: "var(--color-rule-light)" }} />
-        </div>
-      </div>
-    );
-  }
+  if (person.loading) return <EditorialLoading />;
 
   if (person.error || !person.detail) {
-    return (
-      <div style={{ padding: "120px 120px 80px", textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--color-text-primary)", marginBottom: 16 }}>
-          Something went wrong
-        </p>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
-          {person.error ?? "Person not found"}
-        </p>
-        <Button onClick={person.load} variant="outline">Try again</Button>
-      </div>
-    );
+    return <EditorialError message={person.error ?? "Person not found"} onRetry={person.load} />;
   }
 
   const { detail, intelligence } = person;
