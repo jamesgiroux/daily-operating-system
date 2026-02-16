@@ -3557,6 +3557,14 @@ pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> 
         .map(|c| c.workspace_path.clone())
         .ok_or("No workspace configured")?;
 
+    if !crate::devtools::is_dev_workspace(&state) {
+        return Err(
+            "Refused: demo data can only be installed in the dev sandbox \
+             (~/Documents/DailyOS-dev). Switch workspace first."
+                .into(),
+        );
+    }
+
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
@@ -7278,7 +7286,7 @@ mod tests {
     #[test]
     fn test_backfill_db_prep_contexts_apply_updates_rows() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let meeting = DbMeeting {
@@ -7340,7 +7348,7 @@ mod tests {
     #[test]
     fn test_apply_meeting_prep_prefill_additive_and_idempotent() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let meeting = DbMeeting {
@@ -7403,7 +7411,7 @@ mod tests {
     #[test]
     fn test_apply_meeting_prep_prefill_blocks_past_or_frozen() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let past = DbMeeting {
@@ -7648,6 +7656,29 @@ pub fn get_risk_briefing(
     let workspace = std::path::Path::new(&config.workspace_path);
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
     crate::risk_briefing::read_risk_briefing(&account_dir)
+}
+
+/// Save an edited risk briefing back to disk (user corrections).
+#[tauri::command]
+pub fn save_risk_briefing(
+    state: State<Arc<AppState>>,
+    account_id: String,
+    briefing: crate::types::RiskBriefing,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+    crate::risk_briefing::write_risk_briefing(&account_dir, &briefing)
 }
 
 // =============================================================================
