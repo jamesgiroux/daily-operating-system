@@ -1,7 +1,7 @@
 //! SQLite backup and rebuild-from-filesystem (I76 / ADR-0048)
 //!
 //! **Backup**: Uses `rusqlite::backup::Backup` API to create a hot copy at
-//! `~/.dailyos/actions.db.bak`. Runs on app startup and after daily archive.
+//! `~/.dailyos/dailyos.db.bak`. Runs on app startup and after daily archive.
 //!
 //! **Rebuild**: Scans `Accounts/` and `People/` workspace directories,
 //! re-populates SQLite from JSON files. Known gap: email enrichment state
@@ -14,13 +14,13 @@ use crate::db::ActionDb;
 use crate::people;
 use crate::projects;
 
-/// Back up the live database to `~/.dailyos/actions.db.bak`.
+/// Back up the live database to `~/.dailyos/dailyos.db.bak`.
 ///
 /// Uses SQLite's online backup API so the source DB can remain open and
 /// in use during the backup. Returns the backup file path on success.
 pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     let home = dirs::home_dir().ok_or("Home directory not found")?;
-    let backup_path = home.join(".dailyos").join("actions.db.bak");
+    let backup_path = home.join(".dailyos").join("dailyos.db.bak");
 
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
@@ -83,7 +83,7 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
-        // The backup function uses a hardcoded path (~/.dailyos/actions.db.bak),
+        // The backup function uses a hardcoded path (~/.dailyos/dailyos.db.bak),
         // so we test the Backup API directly with a custom path.
         let backup_path = dir.path().join("test.db.bak");
         let mut backup_conn = rusqlite::Connection::open(&backup_path).expect("open backup");

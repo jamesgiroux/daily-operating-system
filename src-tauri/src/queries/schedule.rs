@@ -47,6 +47,7 @@ pub fn available_blocks_from_live(events: &[CalendarEvent], day_date: NaiveDate)
     map_gaps_to_blocks(crate::prepare::gaps::compute_gaps(
         &meeting_events,
         day_date,
+        None, // Live events are already in UTC; gap computation uses NaiveDateTime within work hours
     ))
 }
 
@@ -74,6 +75,7 @@ pub fn available_blocks_from_schedule_start_iso(
     map_gaps_to_blocks(crate::prepare::gaps::compute_gaps(
         &meeting_events,
         day_date,
+        None, // Schedule fallback uses startIso which is already UTC-converted
     ))
 }
 
