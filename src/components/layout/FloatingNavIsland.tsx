@@ -12,7 +12,6 @@
 import React from 'react';
 import { BrandMark } from '../ui/BrandMark';
 import {
-  Grid3x3,
   Calendar,
   Inbox,
   CheckSquare2,
@@ -69,10 +68,15 @@ export interface FloatingNavIslandProps {
    * Currently active chapter ID (chapter mode)
    */
   activeChapterId?: string;
+
+  /**
+   * Callback when a chapter is clicked — sets active state immediately
+   */
+  onChapterClick?: (id: string) => void;
 }
 
 interface NavItem {
-  id: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
+  id: 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
   label: string;
   icon: React.ReactNode;
   group: 'main' | 'entity' | 'admin';
@@ -86,6 +90,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   onHome,
   chapters,
   activeChapterId,
+  onChapterClick,
 }) => {
   const activeClass = styles[`active${capitalize(activeColor)}`] || '';
 
@@ -112,7 +117,10 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
               key={chapter.id}
               className={`${styles.navIslandItem} ${isActive ? activeClass : ''}`}
               data-label={chapter.label}
-              onClick={() => smoothScrollTo(chapter.id)}
+              onClick={() => {
+                onChapterClick?.(chapter.id);
+                smoothScrollTo(chapter.id);
+              }}
               aria-label={chapter.label}
               title={chapter.label}
             >
@@ -126,7 +134,6 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
   // App mode — icon-based page navigation
   const items: NavItem[] = [
-    { id: 'today', label: 'Today', icon: <Grid3x3 size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'week', label: 'This Week', icon: <Calendar size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'inbox', label: 'Inbox', icon: <Inbox size={18} strokeWidth={1.8} />, group: 'main' },
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
@@ -139,12 +146,12 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
   return (
     <nav className={`${styles.navIsland} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
-      {/* Home button — Brand mark */}
+      {/* Home / Today button — Brand mark */}
       <button
-        className={styles.navIslandMark}
+        className={`${styles.navIslandMark} ${activePage === 'today' ? styles.navIslandMarkActive : ''}`}
         onClick={onHome}
-        aria-label="Home"
-        title="Home"
+        aria-label="Today"
+        title="Today"
       >
         <BrandMark size={16} />
       </button>
