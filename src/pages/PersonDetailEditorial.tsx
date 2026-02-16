@@ -179,12 +179,12 @@ export default function PersonDetailEditorial() {
       </section>
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
-      <div className="editorial-reveal">
+      <div id={relationship === "internal" ? "the-rhythm" : "the-dynamic"} className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Network */}
-      <div className="editorial-reveal">
+      <div id="the-network" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <PersonNetwork
           entities={detail.entities}
           onLink={person.handleLinkEntity}
@@ -195,7 +195,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 4: The Landscape */}
-      <div className="editorial-reveal">
+      <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -205,7 +205,7 @@ export default function PersonDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Record */}
-      <div className="editorial-reveal">
+      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <UnifiedTimeline data={timelineData} />
       </div>
 
