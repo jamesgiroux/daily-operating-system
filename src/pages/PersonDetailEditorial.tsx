@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
@@ -125,6 +126,25 @@ export default function PersonDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
+  // Intelligence field update callback (I261)
+  const handleUpdateIntelField = useCallback(
+    async (fieldPath: string, value: string) => {
+      if (!personId) return;
+      try {
+        await invoke("update_intelligence_field", {
+          entityId: personId,
+          entityType: "person",
+          fieldPath,
+          value,
+        });
+        person.load();
+      } catch (e) {
+        console.error("Failed to update intelligence field:", e);
+      }
+    },
+    [personId, person],
+  );
+
   if (person.loading) return <EditorialLoading />;
 
   if (person.error || !person.detail) {
@@ -161,7 +181,7 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 2: The Dynamic / The Rhythm */}
       <div className="editorial-reveal">
-        <PersonInsightChapter detail={detail} intelligence={intelligence} />
+        <PersonInsightChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Network */}
@@ -179,6 +199,7 @@ export default function PersonDetailEditorial() {
       <div className="editorial-reveal">
         <WatchList
           intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
         />
