@@ -137,12 +137,11 @@ export default function PersonDetailEditorial() {
           fieldPath,
           value,
         });
-        person.load();
       } catch (e) {
         console.error("Failed to update intelligence field:", e);
       }
     },
-    [personId, person],
+    [personId],
   );
 
   if (person.loading) return <EditorialLoading />;
