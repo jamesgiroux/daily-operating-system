@@ -19,9 +19,10 @@ use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState, DbTryRead};
 use crate::types::{
-    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
-    ExecutionRecord, FocusAvailability, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus,
-    InboxFile, LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
+    Action, CalendarEvent, CapturedOutcome, Config, DailyFocus, DashboardData, DayStats,
+    EmailBriefingData, EmailBriefingStats, EmailSignal, EmailSyncStatus, EnrichedEmail,
+    EntityEmailThread, ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
+    LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
     PostMeetingCaptureConfig, Priority, SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
@@ -370,6 +371,44 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 ),
             };
 
+        // Compute capacity-aware focus priorities (live, not a briefing artifact)
+        let focus: Option<DailyFocus> = (|| {
+            let today_date = chrono::Local::now().date_naive();
+            let capacity = crate::focus_capacity::compute_focus_capacity(
+                crate::focus_capacity::FocusCapacityInput {
+                    meetings: meetings.clone(),
+                    source: if live_events.is_empty() {
+                        crate::focus_capacity::FocusCapacitySource::BriefingFallback
+                    } else {
+                        crate::focus_capacity::FocusCapacitySource::Live
+                    },
+                    timezone: tz,
+                    work_hours_start: config.google.work_hours_start,
+                    work_hours_end: config.google.work_hours_end,
+                    day_date: today_date,
+                },
+            );
+            let candidates = match state.with_db_try_read(|db| db.get_focus_candidate_actions(7)) {
+                DbTryRead::Ok(Ok(c)) => c,
+                _ => return None,
+            };
+            let (prioritized, top_three, implications) =
+                crate::focus_prioritization::prioritize_actions(
+                    candidates,
+                    capacity.available_minutes,
+                );
+            Some(DailyFocus {
+                available_minutes: capacity.available_minutes,
+                deep_work_minutes: capacity.deep_work_minutes,
+                meeting_minutes: capacity.meeting_minutes,
+                meeting_count: capacity.meeting_count,
+                prioritized_actions: prioritized,
+                top_three,
+                implications,
+                available_blocks: capacity.available_blocks,
+            })
+        })();
+
         // Calculate stats (exclude cancelled meetings)
         let inbox_count = count_inbox(workspace);
         let active_meetings: Vec<_> = meetings
@@ -396,6 +435,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 actions,
                 emails,
                 email_sync,
+                focus,
             },
             freshness,
             google_auth,
@@ -1280,198 +1320,6 @@ pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<St
 // Focus Data Command
 // =============================================================================
 
-/// Result type for focus data
-#[derive(Debug, serde::Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum FocusResult {
-    Success { data: FocusData },
-    NotFound { message: String },
-    Error { message: String },
-}
-
-fn focus_capacity_source_for_live_events(
-    live_events: &[CalendarEvent],
-) -> crate::focus_capacity::FocusCapacitySource {
-    if live_events.is_empty() {
-        crate::focus_capacity::FocusCapacitySource::BriefingFallback
-    } else {
-        crate::focus_capacity::FocusCapacitySource::Live
-    }
-}
-
-fn is_focus_key_meeting_type(meeting_type: &MeetingType) -> bool {
-    matches!(
-        meeting_type,
-        MeetingType::Customer
-            | MeetingType::Qbr
-            | MeetingType::Partnership
-            | MeetingType::External
-            | MeetingType::OneOnOne
-    )
-}
-
-/// Get focus/priority data — assembled from schedule + live calendar + SQLite actions.
-#[tauri::command]
-pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
-    let started = std::time::Instant::now();
-    let mut db_busy = false;
-
-    let result = (|| {
-        // Get config
-        let config = match state.config.read() {
-            Ok(guard) => match guard.clone() {
-                Some(c) => c,
-                None => {
-                    return FocusResult::Error {
-                        message: "No configuration loaded".to_string(),
-                    }
-                }
-            },
-            Err(_) => {
-                return FocusResult::Error {
-                    message: "Internal error: config lock poisoned".to_string(),
-                }
-            }
-        };
-
-        let workspace = Path::new(&config.workspace_path);
-        let today_dir = workspace.join("_today");
-
-        // 1. Load schedule.json — if missing, nothing to show
-        let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
-            Ok(data) => data,
-            Err(_) => {
-                return FocusResult::NotFound {
-                    message: "No briefing data available. Run a briefing first.".to_string(),
-                }
-            }
-        };
-
-        // 2. Focus statement from schedule
-        let focus_statement = overview.focus;
-
-        // 3. Merge briefing meetings with live calendar (ADR-0032 pattern)
-        let live_events = state
-            .calendar_events
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        let meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
-
-        // 4. Compute capacity from merged meetings (live-first with fallback warning)
-        let source = focus_capacity_source_for_live_events(&live_events);
-        let day_date = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let mut capacity = crate::focus_capacity::compute_focus_capacity(
-            crate::focus_capacity::FocusCapacityInput {
-                meetings: meetings.clone(),
-                source,
-                timezone: tz,
-                work_hours_start: config.google.work_hours_start,
-                work_hours_end: config.google.work_hours_end,
-                day_date,
-            },
-        );
-
-        // Suppress stale-data warning when the briefing schedule is from today —
-        // it was generated from today's Google Calendar and is fresh enough.
-        if overview.date == day_date.format("%Y-%m-%d").to_string() {
-            capacity.warnings.clear();
-        }
-
-        // 5. Filter meetings to "key" types (where prep matters)
-        let key_meetings: Vec<FocusMeeting> = meetings
-            .iter()
-            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-            .filter(|m| is_focus_key_meeting_type(&m.meeting_type))
-            .map(|m| {
-                let type_str = match m.meeting_type {
-                    MeetingType::Customer => "customer",
-                    MeetingType::Qbr => "qbr",
-                    MeetingType::Partnership => "partnership",
-                    MeetingType::External => "external",
-                    MeetingType::OneOnOne => "one_on_one",
-                    MeetingType::Training => "training",
-                    MeetingType::Internal => "internal",
-                    MeetingType::TeamSync => "team_sync",
-                    MeetingType::AllHands => "all_hands",
-                    MeetingType::Personal => "personal",
-                };
-                FocusMeeting {
-                    id: m.id.clone(),
-                    title: m.title.clone(),
-                    time: m.time.clone(),
-                    end_time: m.end_time.clone(),
-                    meeting_type: type_str.to_string(),
-                    has_prep: m.has_prep,
-                    account: m.account.clone(),
-                    prep_file: m.prep_file.clone(),
-                }
-            })
-            .collect();
-
-        // 6. Legacy priorities list (backward compatible) + candidate actions for ranker.
-        let priorities = match state.with_db_try_read(|db| db.get_due_actions(1)) {
-            DbTryRead::Ok(Ok(actions)) => actions,
-            DbTryRead::Busy => {
-                db_busy = true;
-                Vec::new()
-            }
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => Vec::new(),
-        };
-        let candidate_actions = match state.with_db_try_read(|db| db.get_focus_candidate_actions(7))
-        {
-            DbTryRead::Ok(Ok(actions)) => actions,
-            DbTryRead::Busy => {
-                db_busy = true;
-                Vec::new()
-            }
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => Vec::new(),
-        };
-
-        // 7. Deterministic action prioritization informed by capacity (I179)
-        let (prioritized_actions, top_three, implications) =
-            crate::focus_prioritization::prioritize_actions(
-                candidate_actions,
-                capacity.available_minutes,
-            );
-
-        FocusResult::Success {
-            data: FocusData {
-                focus_statement,
-                priorities,
-                key_meetings,
-                available_blocks: capacity.available_blocks.clone(),
-                total_focus_minutes: capacity.available_minutes,
-                availability: FocusAvailability {
-                    source: capacity.source.as_str().to_string(),
-                    warnings: capacity.warnings,
-                    meeting_count: capacity.meeting_count,
-                    meeting_minutes: capacity.meeting_minutes,
-                    available_minutes: capacity.available_minutes,
-                    deep_work_minutes: capacity.deep_work_minutes,
-                    deep_work_blocks: capacity.deep_work_blocks,
-                },
-                prioritized_actions,
-                top_three,
-                implications,
-            },
-        }
-    })();
-
-    log_command_latency("get_focus_data", started, READ_CMD_LATENCY_BUDGET_MS);
-    if db_busy {
-        crate::latency::increment_degraded("get_focus_data");
-    }
-    result
-}
-
 // =============================================================================
 // Actions Command
 // =============================================================================
@@ -1841,6 +1689,14 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<
             .map_err(|e| format!("Failed to create _inbox: {}", e))?;
     }
 
+    // Build allowlist of source directories
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let allowed_source_dirs: Vec<std::path::PathBuf> = vec![
+        home.join("Documents"),
+        home.join("Desktop"),
+        home.join("Downloads"),
+    ];
+
     let mut copied = 0;
 
     for path_str in &paths {
@@ -1848,6 +1704,23 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<
 
         // Skip directories
         if !source.is_file() {
+            continue;
+        }
+
+        // Validate source path is within allowed directories
+        let canonical_source = std::fs::canonicalize(source)
+            .map_err(|e| format!("Invalid source path '{}': {}", path_str, e))?;
+        let source_str = canonical_source.to_string_lossy();
+        let source_allowed = allowed_source_dirs.iter().any(|dir| {
+            std::fs::canonicalize(dir)
+                .map(|cd| source_str.starts_with(&*cd.to_string_lossy()))
+                .unwrap_or(false)
+        });
+        if !source_allowed {
+            log::warn!(
+                "Rejected copy_to_inbox source outside allowed directories: {}",
+                path_str
+            );
             continue;
         }
 
@@ -1951,6 +1824,150 @@ pub fn get_all_emails(state: State<Arc<AppState>>) -> EmailsResult {
     }
 }
 
+/// Get emails enriched with entity signals from SQLite.
+///
+/// Loads emails from emails.json, then batch-queries the email_signals table
+/// for all email IDs to build enriched emails and entity thread summaries.
+#[tauri::command]
+pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingData, String> {
+    let config = state
+        .config
+        .read()
+        .map_err(|_| "Config lock poisoned".to_string())?
+        .clone()
+        .ok_or_else(|| "No configuration loaded".to_string())?;
+
+    let workspace = Path::new(&config.workspace_path);
+    let today_dir = workspace.join("_today");
+
+    let emails = load_emails_json(&today_dir).unwrap_or_default();
+
+    // Collect email IDs for batch signal lookup
+    let email_ids: Vec<String> = emails.iter().map(|e| e.id.clone()).collect();
+
+    // Batch-query signals from DB
+    let db_signals = match state.with_db_try_read(|db| db.list_email_signals_by_email_ids(&email_ids)) {
+        crate::state::DbTryRead::Ok(Ok(sigs)) => sigs,
+        _ => Vec::new(),
+    };
+
+    let has_enrichment = !db_signals.is_empty()
+        || emails.iter().any(|e| e.summary.is_some());
+
+    // Index signals by email_id
+    let mut signals_by_email: HashMap<String, Vec<EmailSignal>> = HashMap::new();
+    for sig in &db_signals {
+        signals_by_email
+            .entry(sig.email_id.clone())
+            .or_default()
+            .push(EmailSignal {
+                signal_type: sig.signal_type.clone(),
+                signal_text: sig.signal_text.clone(),
+                confidence: sig.confidence,
+                sentiment: sig.sentiment.clone(),
+                urgency: sig.urgency.clone(),
+                detected_at: Some(sig.detected_at.clone()),
+            });
+    }
+
+    // Build enriched emails by priority
+    let mut high = Vec::new();
+    let mut medium = Vec::new();
+    let mut low = Vec::new();
+    let mut needs_action = 0usize;
+
+    for email in emails {
+        let sigs = signals_by_email.remove(&email.id).unwrap_or_default();
+        if email.recommended_action.is_some() {
+            needs_action += 1;
+        }
+        let enriched = EnrichedEmail {
+            email: email.clone(),
+            signals: sigs,
+        };
+        match email.priority {
+            crate::types::EmailPriority::High => high.push(enriched),
+            crate::types::EmailPriority::Medium => medium.push(enriched),
+            crate::types::EmailPriority::Low => low.push(enriched),
+        }
+    }
+
+    // Build entity threads from signals
+    let mut entity_map: HashMap<String, (String, Vec<EmailSignal>, HashSet<String>)> =
+        HashMap::new();
+    for sig in &db_signals {
+        let entry = entity_map
+            .entry(sig.entity_id.clone())
+            .or_insert_with(|| (sig.entity_type.clone(), Vec::new(), HashSet::new()));
+        entry.1.push(EmailSignal {
+            signal_type: sig.signal_type.clone(),
+            signal_text: sig.signal_text.clone(),
+            confidence: sig.confidence,
+            sentiment: sig.sentiment.clone(),
+            urgency: sig.urgency.clone(),
+            detected_at: Some(sig.detected_at.clone()),
+        });
+        entry.2.insert(sig.email_id.clone());
+    }
+
+    // Resolve entity names from DB
+    let entity_threads: Vec<EntityEmailThread> = entity_map
+        .into_iter()
+        .map(|(entity_id, (entity_type, signals, email_set))| {
+            let entity_name: String = {
+                let eid = entity_id.clone();
+                let etype = entity_type.clone();
+                match state.with_db_try_read(|db| -> Result<String, crate::db::DbError> {
+                    if &etype == "account" {
+                        Ok(db.get_account(&eid)?.map(|a| a.name).unwrap_or_else(|| eid.clone()))
+                    } else {
+                        Ok(db.get_project(&eid)?.map(|p| p.name).unwrap_or_else(|| eid.clone()))
+                    }
+                }) {
+                    crate::state::DbTryRead::Ok(Ok(name)) => name,
+                    _ => entity_id.clone(),
+                }
+            };
+
+            // Build signal summary like "2 risks, 1 expansion signal"
+            let mut type_counts: HashMap<String, usize> = HashMap::new();
+            for s in &signals {
+                *type_counts.entry(s.signal_type.clone()).or_insert(0) += 1;
+            }
+            let summary_parts: Vec<String> = type_counts
+                .iter()
+                .map(|(t, c)| format!("{} {}", c, t))
+                .collect();
+            let signal_summary = summary_parts.join(", ");
+
+            EntityEmailThread {
+                entity_id,
+                entity_name,
+                entity_type,
+                email_count: email_set.len(),
+                signal_summary,
+                signals,
+            }
+        })
+        .collect();
+
+    let total = high.len() + medium.len() + low.len();
+    Ok(EmailBriefingData {
+        stats: EmailBriefingStats {
+            total,
+            high_count: high.len(),
+            medium_count: medium.len(),
+            low_count: low.len(),
+            needs_action,
+        },
+        high_priority: high,
+        medium_priority: medium,
+        low_priority: low,
+        entity_threads,
+        has_enrichment,
+    })
+}
+
 /// Refresh emails independently without re-running the full /today pipeline (I20).
 ///
 /// Re-fetches from Gmail, classifies, and updates emails.json.
@@ -1978,32 +1995,6 @@ pub async fn refresh_emails(
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))?
     .map(|_| "Email refresh complete".to_string())
-}
-
-/// Refresh focus/briefing narrative without running full /today pipeline.
-#[tauri::command]
-pub async fn refresh_focus(
-    state: State<'_, Arc<AppState>>,
-    app_handle: tauri::AppHandle,
-) -> Result<String, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let state_clone = state.inner().clone();
-    let workspace_path = config.workspace_path.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let workspace = std::path::Path::new(&workspace_path);
-        let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_focus_refresh(workspace).await
-    })
-    .await
-    .map_err(|e| format!("Focus refresh task panicked: {}", e))?
-    .map(|_| "Focus refreshed".to_string())
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
@@ -2213,6 +2204,44 @@ pub fn set_ai_model(
             "extraction" => config.ai_models.extraction = model.clone(),
             "mechanical" => config.ai_models.mechanical = model.clone(),
             _ => {} // unreachable after validation
+        }
+    })
+}
+
+/// Set hygiene configuration (I271)
+#[tauri::command]
+pub fn set_hygiene_config(
+    scan_interval_hours: Option<u32>,
+    ai_budget: Option<u32>,
+    pre_meeting_hours: Option<u32>,
+    state: State<Arc<AppState>>,
+) -> Result<Config, String> {
+    // Validate values
+    if let Some(v) = scan_interval_hours {
+        if ![1, 2, 4, 8].contains(&v) {
+            return Err(format!("Invalid scan interval: {}. Must be 1, 2, 4, or 8.", v));
+        }
+    }
+    if let Some(v) = ai_budget {
+        if ![5, 10, 20, 50].contains(&v) {
+            return Err(format!("Invalid AI budget: {}. Must be 5, 10, 20, or 50.", v));
+        }
+    }
+    if let Some(v) = pre_meeting_hours {
+        if ![2, 4, 12, 24].contains(&v) {
+            return Err(format!("Invalid pre-meeting window: {}. Must be 2, 4, 12, or 24.", v));
+        }
+    }
+
+    crate::state::create_or_update_config(&state, |config| {
+        if let Some(v) = scan_interval_hours {
+            config.hygiene_scan_interval_hours = v;
+        }
+        if let Some(v) = ai_budget {
+            config.hygiene_ai_budget = v;
+        }
+        if let Some(v) = pre_meeting_hours {
+            config.hygiene_pre_meeting_hours = v;
         }
     })
 }
@@ -3518,6 +3547,14 @@ pub fn install_demo_data(state: State<Arc<AppState>>) -> Result<String, String> 
         .map(|c| c.workspace_path.clone())
         .ok_or("No workspace configured")?;
 
+    if !crate::devtools::is_dev_workspace(&state) {
+        return Err(
+            "Refused: demo data can only be installed in the dev sandbox \
+             (~/Documents/DailyOS-dev). Switch workspace first."
+                .into(),
+        );
+    }
+
     let workspace = std::path::Path::new(&workspace_path);
     crate::devtools::write_fixtures(workspace)?;
 
@@ -3980,6 +4017,40 @@ pub fn dev_run_week_full(state: State<Arc<AppState>>) -> Result<String, String> 
         return Err("Dev tools not available in release builds".into());
     }
     crate::devtools::run_week_full(&state)
+}
+
+/// Restore from dev mode to live mode (I298).
+///
+/// Deactivates dev DB isolation, reopens the live database, and restores the
+/// original workspace path. Returns a confirmation message.
+#[tauri::command]
+pub fn dev_restore_live(state: State<Arc<AppState>>) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::restore_live(&state)
+}
+
+/// Purge all known mock/dev data from the current database (I298).
+///
+/// Removes exact mock IDs seeded by devtools scenarios. Safe for the live DB.
+#[tauri::command]
+pub fn dev_purge_mock_data(state: State<Arc<AppState>>) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::purge_mock_data(&state)
+}
+
+/// Delete stale dev artifact files from disk (I298).
+///
+/// Removes dailyos-dev.db and optionally ~/Documents/DailyOS-dev/.
+#[tauri::command]
+pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::clean_dev_artifacts(include_workspace)
 }
 
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
@@ -5919,8 +5990,44 @@ pub fn index_entity_files(
 }
 
 /// Reveal a file in macOS Finder.
+///
+/// Path must resolve to within the workspace directory or ~/.dailyos/ (I293).
 #[tauri::command]
-pub fn reveal_in_finder(path: String) -> Result<(), String> {
+pub fn reveal_in_finder(
+    path: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|e| format!("Invalid path: {}", e))?;
+    let canonical_str = canonical.to_string_lossy();
+
+    // Allow workspace directory
+    let workspace_ok = state
+        .config
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|cfg| cfg.workspace_path.clone()))
+        .map(|wp| {
+            std::fs::canonicalize(&wp)
+                .map(|cwp| canonical_str.starts_with(&*cwp.to_string_lossy()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    // Allow ~/.dailyos/
+    let config_ok = dirs::home_dir()
+        .map(|h| {
+            let config_dir = h.join(".dailyos");
+            std::fs::canonicalize(&config_dir)
+                .map(|cd| canonical_str.starts_with(&*cd.to_string_lossy()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    if !workspace_ok && !config_ok {
+        return Err("Path is outside the workspace directory".to_string());
+    }
+
     std::process::Command::new("open")
         .arg("-R")
         .arg(&path)
@@ -6694,6 +6801,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             workspace,
             Some(&state.hygiene_budget),
             Some(&state.intel_queue),
+            false,
         );
 
         if let Ok(mut guard) = state.last_hygiene_report.lock() {
@@ -6705,7 +6813,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
         if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
             *guard = Some(
                 (chrono::Utc::now()
-                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs() as i64))
+                    + chrono::Duration::seconds(crate::hygiene::scan_interval_secs(Some(&config)) as i64))
                 .to_rfc3339(),
             );
         }
@@ -7447,39 +7555,6 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn focus_capacity_source_prefers_live_when_events_exist() {
-        let live = vec![CalendarEvent {
-            id: "evt-1".to_string(),
-            title: "Sync".to_string(),
-            start: Utc::now(),
-            end: Utc::now() + chrono::Duration::minutes(30),
-            meeting_type: MeetingType::Customer,
-            account: None,
-            attendees: Vec::new(),
-            is_all_day: false,
-        }];
-        let source = focus_capacity_source_for_live_events(&live);
-        assert_eq!(source.as_str(), "live");
-    }
-
-    #[test]
-    fn focus_capacity_source_falls_back_without_live_events() {
-        let source = focus_capacity_source_for_live_events(&[]);
-        assert_eq!(source.as_str(), "briefing_fallback");
-    }
-
-    #[test]
-    fn key_meeting_filter_matches_expected_types() {
-        assert!(is_focus_key_meeting_type(&MeetingType::Customer));
-        assert!(is_focus_key_meeting_type(&MeetingType::Qbr));
-        assert!(is_focus_key_meeting_type(&MeetingType::Partnership));
-        assert!(is_focus_key_meeting_type(&MeetingType::External));
-        assert!(is_focus_key_meeting_type(&MeetingType::OneOnOne));
-        assert!(!is_focus_key_meeting_type(&MeetingType::Internal));
-        assert!(!is_focus_key_meeting_type(&MeetingType::AllHands));
-    }
-
-    #[test]
     fn test_backfill_prep_semantics_value_derives_recent_wins_and_sources() {
         let mut prep = json!({
             "talkingPoints": [
@@ -7559,7 +7634,7 @@ mod tests {
     #[test]
     fn test_backfill_db_prep_contexts_apply_updates_rows() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let meeting = DbMeeting {
@@ -7621,7 +7696,7 @@ mod tests {
     #[test]
     fn test_apply_meeting_prep_prefill_additive_and_idempotent() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let meeting = DbMeeting {
@@ -7685,7 +7760,7 @@ mod tests {
     #[test]
     fn test_apply_meeting_prep_prefill_blocks_past_or_frozen() {
         let dir = tempdir().expect("tempdir");
-        let db_path = dir.path().join("actions.db");
+        let db_path = dir.path().join("test.db");
         let db = ActionDb::open_at(db_path).expect("open db");
 
         let past = DbMeeting {
@@ -7826,4 +7901,290 @@ mod tests {
         assert!(draft.body.contains("Cover timeline risks"));
         assert!(draft.body.contains("Please reply with additions or edits."));
     }
+}
+
+// ==================== Backfill ====================
+
+/// Backfill historical meetings from filesystem into database.
+///
+/// Scans account/project directories for meeting files (transcripts, notes, summaries)
+/// and creates database records + entity links for meetings not already in the system.
+///
+/// Returns (meetings_created, meetings_skipped, errors).
+#[tauri::command]
+pub fn backfill_historical_meetings(
+    state: State<Arc<AppState>>,
+) -> Result<(usize, usize, Vec<String>), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    crate::backfill_meetings::backfill_historical_meetings(db, config)
+}
+
+// ==================== Risk Briefing ====================
+
+/// Generate a strategic risk briefing for an account via AI.
+/// All blocking work (DB lock + file I/O + PTY) runs in spawn_blocking
+/// so the async runtime stays responsive and the UI can render the
+/// progress page without beachballing.
+#[tauri::command]
+pub async fn generate_risk_briefing(
+    state: State<'_, Arc<AppState>>,
+    account_id: String,
+) -> Result<crate::types::RiskBriefing, String> {
+    let app_state = state.inner().clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        // Phase 1: Brief DB lock — gather context + build prompt
+        let input = {
+            let db_guard = app_state
+                .db
+                .lock()
+                .map_err(|_| "Lock poisoned".to_string())?;
+            let db = db_guard
+                .as_ref()
+                .ok_or_else(|| "Database not initialized".to_string())?;
+
+            let config_guard = app_state
+                .config
+                .read()
+                .map_err(|_| "Config lock poisoned".to_string())?;
+            let config = config_guard
+                .as_ref()
+                .ok_or_else(|| "Config not initialized".to_string())?;
+
+            let workspace = std::path::Path::new(&config.workspace_path);
+            crate::risk_briefing::gather_risk_input(
+                workspace,
+                db,
+                &account_id,
+                config.user_name.clone(),
+                config.ai_models.clone(),
+            )?
+        }; // locks dropped here
+
+        // Phase 2: No lock — PTY enrichment (long-running)
+        crate::risk_briefing::run_risk_enrichment(&input)
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(e) => Err(format!("Risk briefing task panicked: {}", e)),
+    }
+}
+
+/// Read a cached risk briefing for an account (fast, no AI).
+#[tauri::command]
+pub fn get_risk_briefing(
+    state: State<Arc<AppState>>,
+    account_id: String,
+) -> Result<crate::types::RiskBriefing, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+    crate::risk_briefing::read_risk_briefing(&account_dir)
+}
+
+/// Save an edited risk briefing back to disk (user corrections).
+#[tauri::command]
+pub fn save_risk_briefing(
+    state: State<Arc<AppState>>,
+    account_id: String,
+    briefing: crate::types::RiskBriefing,
+) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+    crate::risk_briefing::write_risk_briefing(&account_dir, &briefing)
+}
+
+// =============================================================================
+// MCP: Claude Desktop Configuration (ADR-0075)
+// =============================================================================
+
+/// Result of Claude Desktop MCP configuration.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeDesktopConfigResult {
+    pub success: bool,
+    pub message: String,
+    pub config_path: Option<String>,
+    pub binary_path: Option<String>,
+}
+
+/// Configure Claude Desktop to use the DailyOS MCP server.
+///
+/// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
+/// and adds/updates the `mcpServers.dailyos` entry pointing to the bundled binary.
+#[tauri::command]
+pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not find home directory".to_string(),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    // Resolve MCP binary path: check common locations
+    let binary_name = "dailyos-mcp";
+    let binary_path = resolve_mcp_binary_path(&home, binary_name);
+
+    let binary_path_str = match &binary_path {
+        Some(p) => p.to_string_lossy().to_string(),
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: format!(
+                    "Could not find {binary_name} binary. Build it with: \
+                     cd src-tauri && cargo build --features mcp --bin dailyos-mcp"
+                ),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    // Claude Desktop config path
+    let config_path = home
+        .join("Library")
+        .join("Application Support")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    // Read existing config or start fresh
+    let mut config: serde_json::Value = if config_path.exists() {
+        match std::fs::read_to_string(&config_path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| {
+                serde_json::json!({})
+            }),
+            Err(_) => serde_json::json!({}),
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    // Ensure mcpServers object exists
+    if !config.get("mcpServers").is_some() {
+        config["mcpServers"] = serde_json::json!({});
+    }
+
+    // Set the dailyos entry
+    config["mcpServers"]["dailyos"] = serde_json::json!({
+        "command": binary_path_str,
+        "args": [],
+        "env": {}
+    });
+
+    // Ensure parent directory exists
+    if let Some(parent) = config_path.parent() {
+        if !parent.exists() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return ClaudeDesktopConfigResult {
+                    success: false,
+                    message: format!("Failed to create config directory: {e}"),
+                    config_path: None,
+                    binary_path: Some(binary_path_str),
+                };
+            }
+        }
+    }
+
+    // Write config
+    let formatted = match serde_json::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: format!("Failed to serialize config: {e}"),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: Some(binary_path_str),
+            }
+        }
+    };
+
+    match std::fs::write(&config_path, formatted) {
+        Ok(()) => ClaudeDesktopConfigResult {
+            success: true,
+            message: "Claude Desktop configured. Restart Claude Desktop to connect.".to_string(),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: Some(binary_path_str),
+        },
+        Err(e) => ClaudeDesktopConfigResult {
+            success: false,
+            message: format!("Failed to write config: {e}"),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: Some(binary_path_str),
+        },
+    }
+}
+
+/// Resolve the MCP binary path by checking common locations.
+fn resolve_mcp_binary_path(
+    home: &std::path::Path,
+    binary_name: &str,
+) -> Option<std::path::PathBuf> {
+    // 1. Check if in PATH (cargo install location)
+    let cargo_bin = home.join(".cargo").join("bin").join(binary_name);
+    if cargo_bin.exists() {
+        return Some(cargo_bin);
+    }
+
+    // 2. Check alongside the running executable (app bundle)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let sibling = exe_dir.join(binary_name);
+            if sibling.exists() {
+                return Some(sibling);
+            }
+            // macOS .app bundle: Contents/MacOS/
+            let macos_sibling = exe_dir.join(binary_name);
+            if macos_sibling.exists() {
+                return Some(macos_sibling);
+            }
+        }
+    }
+
+    // 3. Check dev build location (target/debug)
+    let cwd = std::env::current_dir().ok()?;
+    let dev_paths = [
+        cwd.join("target/debug").join(binary_name),
+        cwd.join("src-tauri/target/debug").join(binary_name),
+        cwd.join("target/release").join(binary_name),
+        cwd.join("src-tauri/target/release").join(binary_name),
+    ];
+    for path in &dev_paths {
+        if path.exists() {
+            return Some(path.clone());
+        }
+    }
+
+    None
 }
