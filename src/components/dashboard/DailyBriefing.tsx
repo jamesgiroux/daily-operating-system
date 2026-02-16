@@ -660,13 +660,16 @@ function PrioritizedActionItem({
   }[urgency];
 
   return (
-    <div
+    <Link
+      to="/actions/$actionId"
+      params={{ actionId: action.id }}
       className={clsx(
         s.priorityItem,
         urgencyClass,
         done && s.priorityItemCompleted,
         action.accountName && s.priorityItemAccount,
       )}
+      style={{ textDecoration: "none" }}
     >
       <button
         className={clsx(
@@ -674,7 +677,7 @@ function PrioritizedActionItem({
           done && s.priorityCheckChecked,
           urgency === "overdue" && !done && s.priorityCheckOverdue,
         )}
-        onClick={() => !done && onComplete(action.id)}
+        onClick={(e) => { e.preventDefault(); !done && onComplete(action.id); }}
         disabled={done}
       >
         {done && (
@@ -690,7 +693,7 @@ function PrioritizedActionItem({
           <div className={s.priorityWhy}>{pa.reason}</div>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 
