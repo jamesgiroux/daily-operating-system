@@ -2,10 +2,12 @@
  * TheAskSlide — Decisions + resources + escalation.
  * Slide 6: what we need from leadership to execute the plan.
  */
+import { EditableText } from "@/components/ui/EditableText";
 import type { RiskTheAsk } from "@/types";
 
 interface TheAskSlideProps {
   data: RiskTheAsk;
+  onUpdate?: (data: RiskTheAsk) => void;
 }
 
 const urgencyColors: Record<string, string> = {
@@ -14,7 +16,7 @@ const urgencyColors: Record<string, string> = {
   this_month: "var(--color-spice-turmeric)",
 };
 
-export function TheAskSlide({ data }: TheAskSlideProps) {
+export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
   return (
     <section
       id="the-ask"
@@ -32,12 +34,12 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
       <div
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
-          color: "var(--color-text-tertiary)",
-          marginBottom: 20,
+          color: "var(--color-text-secondary)",
+          marginBottom: 24,
         }}
       >
         The Ask
@@ -45,25 +47,25 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
 
       {/* Requests — numbered with urgency dot */}
       {data.requests && data.requests.length > 0 && (
-        <div style={{ marginBottom: 28, maxWidth: 540 }}>
+        <div style={{ marginBottom: 32, maxWidth: 800 }}>
           {data.requests.slice(0, 3).map((req, i) => (
             <div
               key={i}
               style={{
                 display: "flex",
                 alignItems: "baseline",
-                gap: 12,
-                padding: "10px 0",
+                gap: 16,
+                padding: "12px 0",
                 borderBottom: "1px solid var(--color-rule-light)",
               }}
             >
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 16,
+                  fontSize: 20,
                   fontWeight: 600,
                   color: "var(--color-spice-terracotta)",
-                  minWidth: 20,
+                  minWidth: 24,
                   flexShrink: 0,
                 }}
               >
@@ -72,12 +74,12 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
               {req.urgency && (
                 <span
                   style={{
-                    width: 7,
-                    height: 7,
+                    width: 9,
+                    height: 9,
                     borderRadius: "50%",
                     background:
                       urgencyColors[req.urgency] ??
-                      "var(--color-text-tertiary)",
+                      "var(--color-text-secondary)",
                     flexShrink: 0,
                     marginTop: 4,
                   }}
@@ -85,26 +87,36 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
                 />
               )}
               <div style={{ flex: 1 }}>
-                <span
+                <EditableText
+                  value={req.request}
+                  onChange={(v) => {
+                    const updated = [...(data.requests ?? [])];
+                    updated[i] = { ...updated[i], request: v };
+                    onUpdate?.({ ...data, requests: updated });
+                  }}
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontSize: 14,
+                    fontSize: 17,
                     color: "var(--color-text-primary)",
                   }}
-                >
-                  {req.request}
-                </span>
+                />
                 {req.from && (
-                  <div
+                  <EditableText
+                    as="div"
+                    value={req.from}
+                    onChange={(v) => {
+                      const updated = [...(data.requests ?? [])];
+                      updated[i] = { ...updated[i], from: v };
+                      onUpdate?.({ ...data, requests: updated });
+                    }}
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary)",
-                      marginTop: 2,
+                      fontSize: 13,
+                      color: "var(--color-text-primary)",
+                      opacity: 0.7,
+                      marginTop: 4,
                     }}
-                  >
-                    {req.from}
-                  </div>
+                  />
                 )}
               </div>
             </div>
@@ -114,16 +126,16 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
 
       {/* Decisions — checkbox visual, max 2 */}
       {data.decisions && data.decisions.length > 0 && (
-        <div style={{ marginBottom: 28, maxWidth: 540 }}>
+        <div style={{ marginBottom: 32, maxWidth: 800 }}>
           <div
             style={{
               fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              fontWeight: 500,
+              fontSize: 11,
+              fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.1em",
-              color: "var(--color-text-tertiary)",
-              marginBottom: 10,
+              color: "var(--color-text-secondary)",
+              marginBottom: 12,
             }}
           >
             Decisions Needed
@@ -133,29 +145,33 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
               key={i}
               style={{
                 display: "flex",
-                gap: 10,
+                gap: 12,
                 alignItems: "center",
-                marginBottom: 8,
+                marginBottom: 10,
               }}
             >
               <span
                 style={{
-                  width: 14,
-                  height: 14,
+                  width: 16,
+                  height: 16,
                   borderRadius: 2,
-                  border: "1.5px solid var(--color-spice-turmeric)",
+                  border: "2px solid var(--color-spice-terracotta)",
                   flexShrink: 0,
                 }}
               />
-              <span
+              <EditableText
+                value={d}
+                onChange={(v) => {
+                  const updated = [...(data.decisions ?? [])];
+                  updated[i] = v;
+                  onUpdate?.({ ...data, decisions: updated });
+                }}
                 style={{
                   fontFamily: "var(--font-sans)",
-                  fontSize: 14,
+                  fontSize: 17,
                   color: "var(--color-text-primary)",
                 }}
-              >
-                {d}
-              </span>
+              />
             </div>
           ))}
         </div>
@@ -163,20 +179,21 @@ export function TheAskSlide({ data }: TheAskSlideProps) {
 
       {/* Escalation — single line */}
       {data.escalation && (
-        <p
+        <EditableText
+          as="p"
+          value={data.escalation}
+          onChange={(v) => onUpdate?.({ ...data, escalation: v })}
           style={{
             fontFamily: "var(--font-sans)",
-            fontSize: 13,
+            fontSize: 15,
             lineHeight: 1.5,
-            color: "var(--color-text-secondary)",
+            color: "var(--color-text-primary)",
             margin: 0,
-            maxWidth: 540,
-            borderLeft: "2px solid var(--color-spice-terracotta)",
-            paddingLeft: 14,
+            maxWidth: 800,
+            borderLeft: "3px solid var(--color-spice-terracotta)",
+            paddingLeft: 16,
           }}
-        >
-          {data.escalation}
-        </p>
+        />
       )}
     </section>
   );
