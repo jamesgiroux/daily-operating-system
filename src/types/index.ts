@@ -213,6 +213,7 @@ export interface DashboardData {
   actions: Action[];
   emails?: Email[];
   emailSync?: EmailSyncStatus;
+  focus?: DailyFocus;
 }
 
 // =============================================================================
@@ -342,40 +343,20 @@ export interface LiveProactiveSuggestion {
 // Focus Data Types
 // =============================================================================
 
-export interface FocusData {
-  focusStatement?: string;
-  priorities: DbAction[];
-  keyMeetings: FocusMeeting[];
-  availableBlocks: TimeBlock[];
-  totalFocusMinutes: number;
-  availability: FocusAvailability;
-  prioritizedActions: PrioritizedFocusAction[];
-  topThree: string[];
-  implications: FocusImplications;
-}
-
-export interface FocusMeeting {
-  id: string;
-  title: string;
-  time: string;
-  endTime?: string;
-  meetingType: string;
-  hasPrep: boolean;
-  account?: string;
-  prepFile?: string;
-}
-
-export interface FocusAvailability {
-  source: "live" | "briefing_fallback" | string;
-  warnings: string[];
-  meetingCount: number;
-  meetingMinutes: number;
+/** Capacity-aware daily focus: ranked actions against today's available time. */
+export interface DailyFocus {
   availableMinutes: number;
   deepWorkMinutes: number;
-  deepWorkBlocks: TimeBlock[];
+  meetingMinutes: number;
+  meetingCount: number;
+  prioritizedActions: PrioritizedAction[];
+  topThree: string[];
+  implications: FocusImplications;
+  availableBlocks: TimeBlock[];
 }
 
-export interface PrioritizedFocusAction {
+/** A single action ranked by urgency/effort/feasibility against capacity. */
+export interface PrioritizedAction {
   action: DbAction;
   score: number;
   effortMinutes: number;
@@ -384,6 +365,7 @@ export interface PrioritizedFocusAction {
   reason: string;
 }
 
+/** High-level summary of achievable vs at-risk actions. */
 export interface FocusImplications {
   achievableCount: number;
   totalCount: number;
