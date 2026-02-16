@@ -164,12 +164,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
             "INSERT INTO schema_version (version) VALUES (?1)",
             [migration.version],
         )
-        .map_err(|e| {
-            format!(
-                "Failed to record migration v{}: {}",
-                migration.version, e
-            )
-        })?;
+        .map_err(|e| format!("Failed to record migration v{}: {}", migration.version, e))?;
 
         log::info!("Applied migration v{}", migration.version);
     }
@@ -380,11 +375,27 @@ mod tests {
                 entity_id TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
                 PRIMARY KEY (meeting_id, entity_id)
+             );
+             CREATE TABLE content_index (
+                id TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                filename TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                absolute_path TEXT NOT NULL,
+                format TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                modified_at TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                extracted_at TEXT,
+                summary TEXT,
+                content_type TEXT NOT NULL DEFAULT 'general',
+                priority INTEGER NOT NULL DEFAULT 5
              );",
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5/v6/v7
+        // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5/v6/v7/v8
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(applied, 7, "bootstrap should mark v1, then apply v2/v3/v4/v5/v6/v7/v8");
 

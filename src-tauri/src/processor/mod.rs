@@ -6,6 +6,7 @@
 //! Files classified as Unknown are flagged for AI processing (Step 2.5).
 
 pub mod classifier;
+pub mod embeddings;
 pub mod enrich;
 pub mod extract;
 pub mod hooks;
@@ -93,7 +94,8 @@ pub fn process_file(
     log::info!("Classified '{}' as '{}'", filename, class_label);
 
     // Resolve destination
-    let destination = resolve_destination(&classification, workspace, filename, entity_tracker_path);
+    let destination =
+        resolve_destination(&classification, workspace, filename, entity_tracker_path);
 
     let result = match destination {
         Some(dest) => {

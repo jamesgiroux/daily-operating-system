@@ -41,10 +41,10 @@ fn resolve_claude_binary() -> Option<&'static PathBuf> {
             // 2. Check common install locations (Finder-launched apps won't have shell PATH)
             let home = dirs::home_dir().unwrap_or_default();
             let candidates = [
-                home.join(".local/bin/claude"),        // npm global (default)
-                home.join(".npm/bin/claude"),           // npm alternate
-                home.join(".nvm/current/bin/claude"),   // nvm
-                PathBuf::from("/usr/local/bin/claude"), // Homebrew / manual
+                home.join(".local/bin/claude"),            // npm global (default)
+                home.join(".npm/bin/claude"),              // npm alternate
+                home.join(".nvm/current/bin/claude"),      // nvm
+                PathBuf::from("/usr/local/bin/claude"),    // Homebrew / manual
                 PathBuf::from("/opt/homebrew/bin/claude"), // Homebrew on Apple Silicon
             ];
 
@@ -199,8 +199,7 @@ impl PtyManager {
     pub fn is_claude_authenticated() -> Result<bool, ExecutionError> {
         use std::process::Stdio;
 
-        let claude_path = resolve_claude_binary()
-            .ok_or(ExecutionError::ClaudeCodeNotFound)?;
+        let claude_path = resolve_claude_binary().ok_or(ExecutionError::ClaudeCodeNotFound)?;
 
         let mut child = Command::new(claude_path)
             .args(["--print", "hello"])
@@ -251,8 +250,7 @@ impl PtyManager {
         workspace: &Path,
         command: &str,
     ) -> Result<ClaudeOutput, ExecutionError> {
-        let claude_path = resolve_claude_binary()
-            .ok_or(ExecutionError::ClaudeCodeNotFound)?;
+        let claude_path = resolve_claude_binary().ok_or(ExecutionError::ClaudeCodeNotFound)?;
         let claude_str = claude_path.to_string_lossy();
 
         let pty_system = NativePtySystem::default();
@@ -293,7 +291,11 @@ impl PtyManager {
 
         // Remove Claude Code session env vars so the child process doesn't
         // detect itself as a nested session and refuse to run.
-        for key in ["CLAUDECODE", "CLAUDE_CODE_SSE_PORT", "CLAUDE_CODE_ENTRYPOINT"] {
+        for key in [
+            "CLAUDECODE",
+            "CLAUDE_CODE_SSE_PORT",
+            "CLAUDE_CODE_ENTRYPOINT",
+        ] {
             cmd.env_remove(key);
         }
 
@@ -413,10 +415,7 @@ mod tests {
 
     #[test]
     fn strip_ansi_removes_csi_sequences() {
-        assert_eq!(
-            strip_ansi("\x1b[1mENRICHMENT:e1\x1b[0m"),
-            "ENRICHMENT:e1"
-        );
+        assert_eq!(strip_ansi("\x1b[1mENRICHMENT:e1\x1b[0m"), "ENRICHMENT:e1");
         assert_eq!(
             strip_ansi("\x1b[32mSUMMARY: hello world\x1b[0m"),
             "SUMMARY: hello world"

@@ -54,6 +54,9 @@ calamine = "0.33"
 html2text = "0.16"
 rtf-parser = "0.4"
 
+# Semantic embeddings (ADR-0074): nomic-embed-text-v1.5 via fastembed
+fastembed = "5"
+
 # MCP Server (ADR-0075)
 rmcp = { version = "0.1", features = ["server", "transport-io", "macros"], optional = true }
 schemars = { version = "0.8", optional = true }
