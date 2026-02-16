@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { BrandMark } from "@/components/ui/BrandMark";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
@@ -35,17 +36,15 @@ import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { PullQuote } from "@/components/editorial/PullQuote";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import {
   Target,
   Users,
   Clock,
   CheckSquare,
   BarChart,
-  Check,
   Play,
-  RefreshCw,
   AlertTriangle,
-  Sparkles,
   Database,
   Wand2,
   Package,
@@ -95,10 +94,10 @@ const waitingMessages = [
 // Chapter definitions for the editorial layout
 const CHAPTERS = [
   { id: "the-three", label: "The Three", icon: <Target size={18} strokeWidth={1.5} /> },
+  { id: "the-shape", label: "The Shape", icon: <BarChart size={18} strokeWidth={1.5} /> },
   { id: "your-meetings", label: "Meetings", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "open-time", label: "Open Time", icon: <Clock size={18} strokeWidth={1.5} /> },
   { id: "commitments", label: "Commitments", icon: <CheckSquare size={18} strokeWidth={1.5} /> },
-  { id: "the-shape", label: "The Shape", icon: <BarChart size={18} strokeWidth={1.5} /> },
 ];
 
 // Circled number glyphs for The Three
@@ -285,22 +284,28 @@ export default function WeekPage() {
   // Register magazine shell — larkspur atmosphere, chapter mode
   const folioActions = useMemo(
     () => (
-      <Button
-        variant="ghost"
-        size="sm"
+      <button
         onClick={handleRunWeek}
         disabled={running}
-        style={{ fontSize: 12, gap: 6 }}
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase" as const,
+          color: "var(--color-garden-larkspur)",
+          background: "none",
+          border: "1px solid var(--color-garden-larkspur)",
+          borderRadius: 4,
+          padding: "2px 10px",
+          cursor: running ? "wait" : "pointer",
+          opacity: running ? 0.6 : 1,
+        }}
       >
-        {running ? (
-          <RefreshCw size={14} className="animate-spin" />
-        ) : (
-          <RefreshCw size={14} />
-        )}
         {running
           ? (phaseSteps.find((s) => s.key === phase)?.label ?? "Running...")
           : "Refresh"}
-      </Button>
+      </button>
     ),
     [handleRunWeek, running, phase]
   );
@@ -335,7 +340,7 @@ export default function WeekPage() {
     [folioActions, data, folioReadinessStats]
   );
   useRegisterMagazineShell(shellConfig);
-  useRevealObserver(!loading && !!data);
+  useRevealObserver(!loading && !!data, data);
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const enrichmentIncomplete = data && !running && (!data.weekNarrative || !data.topPriority);
@@ -349,10 +354,11 @@ export default function WeekPage() {
             data.topPriority,
             data.actionSummary?.overdue ?? [],
             data.actionSummary?.dueThisWeekItems ?? [],
-            liveSuggestions
+            liveSuggestions,
+            days
           )
         : [],
-    [data, liveSuggestions]
+    [data, liveSuggestions, days]
   );
 
   const meetingDays = useMemo(() => filterRelevantMeetings(days), [days]);
@@ -394,8 +400,9 @@ export default function WeekPage() {
 
     const totalCount = overdue.length + dueThisWeek.length;
     const overdueCount = overdue.length;
-    // Show all overdue + top 5 due-this-week
-    const visible = [...overdue, ...dueThisWeek.slice(0, 5)];
+    // Cap: max 5 overdue (by priority) + top 3 due-this-week = max 8 items
+    const cappedOverdue = overdue.slice(0, 5);
+    const visible = [...cappedOverdue, ...dueThisWeek.slice(0, 3)];
     return { visible, totalCount, overdueCount };
   }, [data?.actionSummary, topThreeTitles]);
 
@@ -417,34 +424,87 @@ export default function WeekPage() {
     [days]
   );
 
-  // ─── Loading skeleton ──────────────────────────────────────────────────────
+  // ─── Loading skeleton — editorial shaped ────────────────────────────────────
   if (loading) {
+    const skeletonBg = { background: "var(--color-rule-light)" };
     return (
-      <div style={{ padding: "120px 120px 80px", maxWidth: 860, margin: "0 auto" }}>
-        {/* Week number placeholder */}
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <Skeleton className="mx-auto h-3 w-40" style={{ background: "var(--color-rule-light)" }} />
+      <div style={{ maxWidth: 760, margin: "0 auto", padding: "0 40px" }}>
+        {/* Hero skeleton */}
+        <div style={{ paddingTop: 80, textAlign: "center" }}>
+          {/* Week number */}
+          <Skeleton className="mx-auto h-3 w-44 mb-8" style={skeletonBg} />
+          {/* Narrative lines */}
+          <Skeleton className="mx-auto h-8 w-[520px] mb-3" style={skeletonBg} />
+          <Skeleton className="mx-auto h-8 w-[440px] mb-3" style={skeletonBg} />
+          <Skeleton className="mx-auto h-8 w-[280px] mb-10" style={skeletonBg} />
+          {/* Vitals */}
+          <Skeleton className="mx-auto h-3 w-52" style={skeletonBg} />
         </div>
-        {/* Narrative placeholder */}
-        <div style={{ textAlign: "center", marginBottom: 48 }}>
-          <Skeleton className="mx-auto mb-3 h-8 w-[500px]" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="mx-auto mb-3 h-8 w-[460px]" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="mx-auto h-8 w-[300px]" style={{ background: "var(--color-rule-light)" }} />
+
+        {/* Chapter 2: The Three skeleton */}
+        <div style={{ paddingTop: 64 }}>
+          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
+          <Skeleton className="h-7 w-32 mb-8" style={skeletonBg} />
+          {[1, 2, 3].map((i) => (
+            <div key={i} style={{ display: "flex", gap: 16, marginBottom: 36 }}>
+              <Skeleton className="h-5 w-5 rounded-full shrink-0" style={skeletonBg} />
+              <div style={{ flex: 1 }}>
+                <Skeleton className="h-5 w-64 mb-2" style={skeletonBg} />
+                <Skeleton className="h-4 w-full mb-1" style={skeletonBg} />
+                <Skeleton className="h-3 w-40" style={skeletonBg} />
+              </div>
+            </div>
+          ))}
         </div>
-        {/* Vitals placeholder */}
-        <div style={{ textAlign: "center", marginBottom: 64 }}>
-          <Skeleton className="mx-auto h-3 w-56" style={{ background: "var(--color-rule-light)" }} />
+
+        {/* Chapter 3: Meetings skeleton */}
+        <div style={{ paddingTop: 64 }}>
+          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
+          <Skeleton className="h-7 w-40 mb-4" style={skeletonBg} />
+          <Skeleton className="h-4 w-72 mb-8" style={skeletonBg} />
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <Skeleton className="h-2 w-2 rounded-full shrink-0 mt-2" style={skeletonBg} />
+              <Skeleton className="h-3 w-16 shrink-0" style={skeletonBg} />
+              <Skeleton className="h-4 w-56" style={skeletonBg} />
+            </div>
+          ))}
         </div>
-        {/* Chapter rule */}
-        <Skeleton className="mb-6 h-[2px] w-full" style={{ background: "var(--color-rule-light)" }} />
-        {/* Items */}
-        {[1, 2, 3].map((i) => (
-          <div key={i} style={{ marginBottom: 32 }}>
-            <Skeleton className="mb-2 h-5 w-80" style={{ background: "var(--color-rule-light)" }} />
-            <Skeleton className="mb-1 h-4 w-full" style={{ background: "var(--color-rule-light)" }} />
-            <Skeleton className="h-3 w-48" style={{ background: "var(--color-rule-light)" }} />
-          </div>
-        ))}
+
+        {/* Chapter 6: Shape skeleton */}
+        <div style={{ paddingTop: 64 }}>
+          <div style={{ borderTop: "2px solid var(--color-rule-light)", marginBottom: 16 }} />
+          <Skeleton className="h-7 w-28 mb-8" style={skeletonBg} />
+          {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
+            <div key={d} style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--color-rule-light)",
+                  width: 36,
+                  textTransform: "uppercase",
+                }}
+              >
+                {d}
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 8,
+                  borderRadius: 4,
+                  background: "var(--color-paper-linen)",
+                }}
+              />
+              <Skeleton className="h-3 w-28" style={skeletonBg} />
+            </div>
+          ))}
+        </div>
+
+        {/* Finis skeleton */}
+        <div style={{ textAlign: "center", padding: "72px 0 48px" }}>
+          <Skeleton className="mx-auto h-4 w-16" style={skeletonBg} />
+        </div>
       </div>
     );
   }
@@ -469,15 +529,11 @@ export default function WeekPage() {
           <>
             <div
               style={{
-                fontFamily: "var(--font-mark)",
-                fontSize: 48,
-                fontWeight: 800,
                 color: "var(--color-garden-larkspur)",
                 marginBottom: 24,
-                letterSpacing: "0.1em",
               }}
             >
-              *
+              <BrandMark size={48} />
             </div>
             <p
               style={{
@@ -751,7 +807,107 @@ export default function WeekPage() {
           )}
         </section>
 
-        {/* ── Chapter 3: Your Meetings ───────────────────────────────────── */}
+        {/* ── Chapter 3: The Shape ───────────────────────────────────────── */}
+        {dayShapes.length > 0 && (
+          <section
+            id="the-shape"
+            className="editorial-reveal"
+            style={{ paddingTop: 64 }}
+          >
+            <ChapterHeading title="The Shape" epigraph={shapeEpigraph} />
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {dayShapes.map((shape) => {
+                const maxMinutes = 480;
+                const barWidth = Math.min(
+                  100,
+                  (shape.meetingMinutes / maxMinutes) * 100
+                );
+                const densityLabel = shape.density || (
+                  shape.meetingCount === 0
+                    ? "clear"
+                    : shape.meetingCount <= 2
+                      ? "light"
+                      : shape.meetingCount <= 4
+                        ? "moderate"
+                        : shape.meetingCount <= 6
+                          ? "busy"
+                          : "packed"
+                );
+
+                return (
+                  <div
+                    key={shape.dayName}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 16,
+                    }}
+                  >
+                    {/* Day label */}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        color: "var(--color-text-primary)",
+                        width: 36,
+                        flexShrink: 0,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {shape.dayName.slice(0, 3)}
+                    </span>
+
+                    {/* Bar */}
+                    <div
+                      style={{
+                        flex: 1,
+                        height: 8,
+                        borderRadius: 4,
+                        background: "var(--color-paper-linen)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${barWidth}%`,
+                          borderRadius: 4,
+                          background: "var(--color-spice-turmeric)",
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+
+                    {/* Count + density */}
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        color: "var(--color-text-tertiary)",
+                        flexShrink: 0,
+                        minWidth: 130,
+                        textAlign: "right",
+                      }}
+                    >
+                      {shape.meetingCount} meeting
+                      {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
+                      {densityLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Chapter 4: Your Meetings ───────────────────────────────────── */}
         <section
           id="your-meetings"
           className="editorial-reveal"
@@ -767,9 +923,18 @@ export default function WeekPage() {
           />
 
           {meetingDays.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-              {meetingDays.map((group) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {meetingDays.map((group, groupIdx) => (
                 <div key={group.date}>
+                  {/* Day separator (between days, not before first) */}
+                  {groupIdx > 0 && (
+                    <div
+                      style={{
+                        borderTop: "1px solid var(--color-rule-light)",
+                        margin: "24px 0 20px",
+                      }}
+                    />
+                  )}
                   {/* Day subheading */}
                   <p
                     style={{
@@ -1256,106 +1421,6 @@ export default function WeekPage() {
           )}
         </section>
 
-        {/* ── Chapter 6: The Shape ───────────────────────────────────────── */}
-        {dayShapes.length > 0 && (
-          <section
-            id="the-shape"
-            className="editorial-reveal"
-            style={{ paddingTop: 64 }}
-          >
-            <ChapterHeading title="The Shape" epigraph={shapeEpigraph} />
-
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-              }}
-            >
-              {dayShapes.map((shape) => {
-                const maxMinutes = 480;
-                const barWidth = Math.min(
-                  100,
-                  (shape.meetingMinutes / maxMinutes) * 100
-                );
-                const densityLabel = shape.density || (
-                  shape.meetingCount === 0
-                    ? "clear"
-                    : shape.meetingCount <= 2
-                      ? "light"
-                      : shape.meetingCount <= 4
-                        ? "moderate"
-                        : shape.meetingCount <= 6
-                          ? "busy"
-                          : "packed"
-                );
-
-                return (
-                  <div
-                    key={shape.dayName}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 16,
-                    }}
-                  >
-                    {/* Day label */}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-primary)",
-                        width: 36,
-                        flexShrink: 0,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {shape.dayName.slice(0, 3)}
-                    </span>
-
-                    {/* Bar */}
-                    <div
-                      style={{
-                        flex: 1,
-                        height: 8,
-                        borderRadius: 4,
-                        background: "var(--color-paper-linen)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: `${barWidth}%`,
-                          borderRadius: 4,
-                          background: "var(--color-spice-turmeric)",
-                          transition: "width 0.3s ease",
-                        }}
-                      />
-                    </div>
-
-                    {/* Count + density */}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-tertiary)",
-                        flexShrink: 0,
-                        minWidth: 130,
-                        textAlign: "right",
-                      }}
-                    >
-                      {shape.meetingCount} meeting
-                      {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
-                      {densityLabel}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
         {/* ── Error display ──────────────────────────────────────────────── */}
         {error && (
           <div style={{ marginTop: 48 }}>
@@ -1419,102 +1484,20 @@ function ErrorCard({ error }: { error: string }) {
   );
 }
 
+const FORECAST_PHASES = [
+  { key: "preparing", label: "Reading your calendar", detail: "Fetching meetings, classifying events, gathering account context" },
+  { key: "enriching", label: "Writing the forecast", detail: "Synthesizing narrative, priorities, and time suggestions from your week" },
+  { key: "delivering", label: "Assembling the briefing", detail: "Building day shapes, readiness checks, and commitment summaries" },
+];
+
 function WorkflowProgress({ phase }: { phase: WorkflowPhase }) {
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [elapsed, setElapsed] = useState(0);
-  const startTime = useRef(Date.now());
-  const messages = useRef(
-    [...waitingMessages].sort(() => Math.random() - 0.5)
-  );
-
-  const currentStepIndex = phaseSteps.findIndex((s) => s.key === phase);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex((i) => (i + 1) % messages.current.length);
-    }, 6000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime.current) / 1000));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const formatElapsed = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
-  };
-
   return (
-    <div className="flex flex-col items-center gap-6 py-8">
-      <Sparkles className="size-10 animate-pulse text-primary" />
-
-      <div className="flex items-center gap-2">
-        {phaseSteps.map((step, i) => {
-          const StepIcon = step.icon;
-          const isComplete = i < currentStepIndex;
-          const isCurrent = i === currentStepIndex;
-
-          return (
-            <div key={step.key} className="flex items-center gap-2">
-              {i > 0 && (
-                <div
-                  className={cn(
-                    "h-px w-8",
-                    i <= currentStepIndex ? "bg-primary" : "bg-border"
-                  )}
-                />
-              )}
-              <div className="flex flex-col items-center gap-1.5">
-                <div
-                  className={cn(
-                    "flex size-8 items-center justify-center rounded-full border-2 transition-colors",
-                    isComplete &&
-                      "border-primary bg-primary text-primary-foreground",
-                    isCurrent && "border-primary bg-primary/10 text-primary",
-                    !isComplete &&
-                      !isCurrent &&
-                      "border-border text-muted-foreground"
-                  )}
-                >
-                  {isComplete ? (
-                    <Check className="size-4" />
-                  ) : (
-                    <StepIcon
-                      className={cn("size-4", isCurrent && "animate-pulse")}
-                    />
-                  )}
-                </div>
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    isCurrent ? "text-primary" : "text-muted-foreground"
-                  )}
-                >
-                  {step.label}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <p className="max-w-md text-sm italic text-muted-foreground">
-        {messages.current[messageIndex]}
-      </p>
-
-      <div className="space-y-1 text-center">
-        <p className="font-mono text-xs text-muted-foreground/60">
-          {formatElapsed(elapsed)}
-        </p>
-        <p className="text-xs text-muted-foreground/50">
-          This runs in the background — feel free to navigate away
-        </p>
-      </div>
-    </div>
+    <GeneratingProgress
+      title="Building Weekly Forecast"
+      accentColor="var(--color-garden-larkspur)"
+      phases={FORECAST_PHASES}
+      currentPhaseKey={phase}
+      quotes={waitingMessages}
+    />
   );
 }
