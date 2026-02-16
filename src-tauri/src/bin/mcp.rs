@@ -541,6 +541,7 @@ fn read_entity_intelligence(workspace: &str, tracker_path: Option<&str>) -> Opti
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_entity_result(
     id: &str, name: &str, entity_type: &str,
     health: Option<&str>, status: Option<&str>,

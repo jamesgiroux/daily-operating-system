@@ -545,7 +545,7 @@ mod tests {
             .format("%Y-%m-%d")
             .to_string();
         let days = days_until_date(&future);
-        assert!(days >= 29 && days <= 31);
+        assert!((29..=31).contains(&days));
 
         let past = "2020-01-01";
         let days = days_until_date(past);

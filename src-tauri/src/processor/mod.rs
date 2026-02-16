@@ -447,7 +447,7 @@ mod tests {
         let filename = "photo.png";
         std::fs::write(
             workspace.join("_inbox").join(filename),
-            &[0x89, 0x50, 0x4E, 0x47],
+            [0x89, 0x50, 0x4E, 0x47],
         )
         .unwrap();
 

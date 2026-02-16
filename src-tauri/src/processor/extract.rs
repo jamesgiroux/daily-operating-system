@@ -572,7 +572,7 @@ mod tests {
     fn test_extract_unsupported() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("image.png");
-        std::fs::write(&path, &[0x89, 0x50, 0x4E, 0x47]).unwrap();
+        std::fs::write(&path, [0x89, 0x50, 0x4E, 0x47]).unwrap();
 
         let result = extract_text(&path);
         assert!(result.is_err());
