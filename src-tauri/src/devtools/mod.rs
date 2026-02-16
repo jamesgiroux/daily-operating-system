@@ -10,7 +10,6 @@ use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::Serialize;
 
 use crate::db::ActionDb;
-use crate::google_api::GoogleToken;
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
 
@@ -32,6 +31,29 @@ fn dev_workspace() -> std::path::PathBuf {
         .unwrap_or_default()
         .join("Documents")
         .join("DailyOS-dev")
+}
+
+/// Backup config.json before dev mode so restore_live can recover it.
+fn backup_config() -> Result<(), String> {
+    let config = crate::state::config_path()?;
+    if config.exists() {
+        let backup = config.with_extension("json.dev-backup");
+        std::fs::copy(&config, &backup)
+            .map_err(|e| format!("Config backup failed: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Restore config.json from the dev-backup file.
+fn restore_config_backup() -> Result<(), String> {
+    let config = crate::state::config_path()?;
+    let backup = config.with_extension("json.dev-backup");
+    if backup.exists() {
+        std::fs::copy(&backup, &config)
+            .map_err(|e| format!("Config restore failed: {}", e))?;
+        let _ = std::fs::remove_file(&backup);
+    }
+    Ok(())
 }
 
 /// State snapshot for the dev tools panel.
@@ -94,6 +116,9 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
     if destructive {
         // Stash current workspace path (only if not already in dev mode)
         if !crate::db::is_dev_db_mode() {
+            // Backup config.json BEFORE any mutations
+            backup_config()?;
+
             let current_ws = state
                 .config
                 .read()
@@ -161,7 +186,7 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         return Err("Already in live mode".into());
     }
 
-    // 1. Read stashed workspace path
+    // 1. Read stashed workspace path (fallback only)
     let original_workspace = state
         .pre_dev_workspace
         .lock()
@@ -176,34 +201,57 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
         *guard = ActionDb::open().ok();
     }
 
-    // 4. Restore workspace config (reload from disk — it was never overwritten)
+    // 4. Restore config from backup (written before dev entry)
+    restore_config_backup()?;
+
+    // 5. Reload config from (now-restored) disk file
     match crate::state::load_config() {
         Ok(config) => {
             if let Ok(mut guard) = state.config.write() {
                 *guard = Some(config.clone());
             }
-            Ok(format!(
-                "Restored to live mode — workspace: {}",
-                config.workspace_path
-            ))
         }
         Err(_) => {
-            // If no live config exists, try using the stashed path
+            // Fallback: use stashed workspace path
             if let Some(ws) = original_workspace {
                 crate::state::create_or_update_config(state, |config| {
                     config.workspace_path = ws;
                 })?;
             }
-            Ok("Restored to live mode (config recreated)".into())
         }
     }
+
+    // 6. Re-probe Google auth state from Keychain (restore real auth, not mock)
+    match crate::google_api::token_store::load_token() {
+        Ok(token) => {
+            let email = token.account.unwrap_or_else(|| "unknown".to_string());
+            if let Ok(mut guard) = state.google_auth.lock() {
+                *guard = GoogleAuthStatus::Authenticated { email: email.clone() };
+            }
+        }
+        Err(_) => {
+            if let Ok(mut guard) = state.google_auth.lock() {
+                *guard = GoogleAuthStatus::NotConfigured;
+            }
+        }
+    }
+
+    let ws = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .unwrap_or_else(|| "unknown".to_string());
+    Ok(format!("Restored to live mode — workspace: {}", ws))
 }
 
 /// Purge all known mock/dev data from the current database (I298).
 ///
-/// Targets the exact IDs seeded by `seed_database()` and `seed_intelligence_data()`.
-/// Safe to run against the live DB — only removes rows with known mock IDs.
-/// Returns a summary of how many rows were deleted per table.
+/// Uses LIKE patterns to catch workspace-scanner variants (e.g., slugified
+/// folder names that differ from seed IDs). Also cleans content_index,
+/// content_embeddings, account_domains, account_events, account_team.
+///
+/// Safe to run against the live DB — patterns are specific to mock entity names.
 pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
     if !cfg!(debug_assertions) {
         return Err("Dev tools not available in release builds".into());
@@ -217,165 +265,126 @@ pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
 
     let mut summary = Vec::new();
 
-    // Known mock account IDs
-    let mock_account_ids = [
-        "acme-corp",
-        "globex-industries",
-        "initech",
-        "contoso",
-        "contoso--enterprise",
-        "contoso--smb",
-    ];
+    // LIKE patterns that match mock entity IDs + workspace-scanner variants.
+    // These cover: exact seed IDs, slugified folder names, child accounts (--suffix).
+    let entity_like_sql = "\
+        id LIKE 'acme-corp%' OR id LIKE 'acme-phase-2%' \
+        OR id LIKE 'globex-industries%' OR id LIKE 'globex-team-b%' \
+        OR id LIKE 'initech%' OR id LIKE 'contoso%' \
+        OR id LIKE 'platform-migration%'";
 
-    // Known mock project IDs
-    let mock_project_ids = [
-        "acme-phase-2",
-        "globex-team-b-recovery",
-        "platform-migration",
-    ];
+    // Same patterns for columns named entity_id
+    let entity_id_like_sql = "\
+        entity_id LIKE 'acme-corp%' OR entity_id LIKE 'acme-phase-2%' \
+        OR entity_id LIKE 'globex-industries%' OR entity_id LIKE 'globex-team-b%' \
+        OR entity_id LIKE 'initech%' OR entity_id LIKE 'contoso%' \
+        OR entity_id LIKE 'platform-migration%'";
 
-    // Known mock entity IDs (accounts + projects)
-    let mock_entity_ids: Vec<&str> = mock_account_ids
-        .iter()
-        .chain(mock_project_ids.iter())
-        .copied()
-        .collect();
+    // Same for account_id columns
+    let account_id_like_sql = "\
+        account_id LIKE 'acme-corp%' OR account_id LIKE 'acme-phase-2%' \
+        OR account_id LIKE 'globex-industries%' OR account_id LIKE 'globex-team-b%' \
+        OR account_id LIKE 'initech%' OR account_id LIKE 'contoso%' \
+        OR account_id LIKE 'platform-migration%'";
 
-    // Known mock action ID prefixes and exact IDs
-    let mock_action_ids = [
-        "act-sow-acme",
-        "act-qbr-deck-globex",
-        "act-kickoff-initech",
-        "act-nps-acme",
-        "act-quarterly-summary",
-        "act-phase2-scope",
-        "act-phase2-stakeholders",
-        "act-teamb-usage-audit",
-        "act-teamb-interview",
-        "act-migration-arch",
-        "act-transcript-kt-plan",
-        "act-transcript-phase2-scope",
-        "act-legal-review-acme",
-        "act-finance-approval-initech",
-    ];
-
-    // Known mock capture IDs
-    let mock_capture_ids = [
-        "cap-acme-win-1",
-        "cap-acme-risk-1",
-        "cap-globex-win-1",
-        "cap-globex-risk-1",
-        "cap-today-acme-win-1",
-        "cap-today-acme-win-2",
-        "cap-today-acme-risk-1",
-        "cap-today-acme-decision-1",
-        "cap-today-acme-decision-2",
-    ];
-
-    // Known mock people IDs
-    let mock_people_ids = [
-        "sarah-chen-acme-com",
-        "alex-torres-acme-com",
-        "pat-kim-acme-com",
-        "pat-reynolds-globex-com",
-        "jamie-morrison-globex-com",
-        "casey-lee-globex-com",
-        "dana-patel-initech-com",
-        "priya-sharma-initech-com",
-        "mike-chen-dailyos-test",
-        "lisa-park-dailyos-test",
-        "jordan-wells-example-com",
-        "taylor-nguyen-contractor-io",
-    ];
-
-    // Helper: delete by exact IDs from a table
-    let delete_by_ids = |table: &str, column: &str, ids: &[&str]| -> Result<usize, String> {
-        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
-        let sql = format!(
-            "DELETE FROM {} WHERE {} IN ({})",
-            table,
-            column,
-            placeholders.join(", ")
-        );
-        let params: Vec<&dyn rusqlite::types::ToSql> = ids
-            .iter()
-            .map(|id| id as &dyn rusqlite::types::ToSql)
-            .collect();
-        conn.execute(&sql, params.as_slice())
-            .map_err(|e| format!("{} delete: {}", table, e))
+    // Helper: delete by LIKE patterns
+    let delete_like = |table: &str, where_clause: &str| -> usize {
+        let sql = format!("DELETE FROM {} WHERE {}", table, where_clause);
+        conn.execute(&sql, []).unwrap_or(0)
     };
 
-    // --- Junction tables first (FK dependencies) ---
+    // --- Content tables first (FK dependencies) ---
 
-    // meeting_entities: delete by entity_id (accounts + projects)
-    let n = delete_by_ids("meeting_entities", "entity_id", &mock_entity_ids)?;
-    // Also delete by meeting_id pattern (mh-* and mtg-*)
-    let n2 = conn
-        .execute(
-            "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
-            [],
-        )
-        .map_err(|e| format!("meeting_entities pattern delete: {}", e))?;
+    // content_embeddings → content_index (FK cascade, but be explicit)
+    let n = conn.execute(
+        &format!(
+            "DELETE FROM content_embeddings WHERE content_file_id IN (SELECT id FROM content_index WHERE {})",
+            entity_id_like_sql
+        ),
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("content_embeddings: {}", n));
+
+    let n = delete_like("content_index", entity_id_like_sql);
+    summary.push(format!("content_index: {}", n));
+
+    // --- Junction tables ---
+
+    let n = delete_like("meeting_entities", entity_id_like_sql);
+    let n2 = conn.execute(
+        "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("meeting_entities: {}", n + n2));
 
-    // meeting_attendees: delete by person_id
-    let n = delete_by_ids("meeting_attendees", "person_id", &mock_people_ids)?;
+    let n = conn.execute(
+        "DELETE FROM meeting_attendees WHERE person_id LIKE '%-acme-com' OR person_id LIKE '%-globex-com' OR person_id LIKE '%-initech-com' OR person_id LIKE '%-dailyos-test' OR person_id LIKE '%-example-com' OR person_id LIKE '%-contractor-io'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("meeting_attendees: {}", n));
 
-    // entity_people: delete by entity_id
-    let n = delete_by_ids("entity_people", "entity_id", &mock_entity_ids)?;
+    let n = delete_like("entity_people", entity_id_like_sql);
     summary.push(format!("entity_people: {}", n));
+
+    let n = delete_like("entity_intelligence", entity_id_like_sql);
+    summary.push(format!("entity_intelligence: {}", n));
+
+    // --- Account-specific tables ---
+
+    let n = delete_like("account_domains", account_id_like_sql);
+    summary.push(format!("account_domains: {}", n));
+
+    let n = delete_like("account_events", account_id_like_sql);
+    summary.push(format!("account_events: {}", n));
+
+    let n = delete_like("account_team", account_id_like_sql);
+    summary.push(format!("account_team: {}", n));
 
     // --- Primary tables ---
 
-    let n = delete_by_ids("accounts", "id", &mock_account_ids)?;
+    let n = delete_like("accounts", entity_like_sql);
     summary.push(format!("accounts: {}", n));
 
-    let n = delete_by_ids("entities", "id", &mock_entity_ids)?;
+    let n = delete_like("entities", entity_like_sql);
     summary.push(format!("entities: {}", n));
 
-    let n = delete_by_ids("projects", "id", &mock_project_ids)?;
+    let n = delete_like("projects", entity_like_sql);
     summary.push(format!("projects: {}", n));
 
-    let n = delete_by_ids("actions", "id", &mock_action_ids)?;
+    // Actions: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM actions WHERE id LIKE 'act-sow-%' OR id LIKE 'act-qbr-%' OR id LIKE 'act-kickoff-%' OR id LIKE 'act-nps-%' OR id LIKE 'act-quarterly-%' OR id LIKE 'act-phase2-%' OR id LIKE 'act-teamb-%' OR id LIKE 'act-migration-%' OR id LIKE 'act-transcript-%' OR id LIKE 'act-legal-%' OR id LIKE 'act-finance-%'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("actions: {}", n));
 
-    // meetings_history: delete by exact IDs + patterns
-    let n = conn
-        .execute(
-            "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
-            [],
-        )
-        .map_err(|e| format!("meetings_history delete: {}", e))?;
+    // Meetings: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("meetings_history: {}", n));
 
-    let n = delete_by_ids("captures", "id", &mock_capture_ids)?;
+    // Captures: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM captures WHERE id LIKE 'cap-acme-%' OR id LIKE 'cap-globex-%' OR id LIKE 'cap-today-%'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("captures: {}", n));
 
-    let n = delete_by_ids("people", "id", &mock_people_ids)?;
+    // People: by known mock domains
+    let n = conn.execute(
+        "DELETE FROM people WHERE id LIKE '%-acme-com' OR id LIKE '%-globex-com' OR id LIKE '%-initech-com' OR id LIKE '%-dailyos-test' OR id LIKE '%-example-com' OR id LIKE '%-contractor-io'",
+        [],
+    ).unwrap_or(0);
     summary.push(format!("people: {}", n));
 
-    // entity_intelligence: delete by entity_id
-    let n = conn
-        .execute(
-            "DELETE FROM entity_intelligence WHERE entity_id IN ('acme-corp', 'globex-industries', 'initech', 'contoso', 'contoso--enterprise', 'contoso--smb', 'acme-phase-2', 'globex-team-b-recovery', 'platform-migration')",
-            [],
-        )
-        .unwrap_or(0);
-    if n > 0 {
-        summary.push(format!("entity_intelligence: {}", n));
-    }
-
-    // meeting_prep_state: delete mock prep entries
-    let n = conn
-        .execute(
-            "DELETE FROM meeting_prep_state WHERE prep_file LIKE 'preps/acme-%' OR prep_file LIKE 'preps/globex-%' OR prep_file LIKE 'preps/initech-%' OR calendar_event_id LIKE 'cal-acme-%' OR calendar_event_id LIKE 'cal-globex-%' OR calendar_event_id LIKE 'cal-initech-%'",
-            [],
-        )
-        .unwrap_or(0);
-    if n > 0 {
-        summary.push(format!("meeting_prep_state: {}", n));
-    }
+    // Meeting prep state
+    let n = conn.execute(
+        "DELETE FROM meeting_prep_state WHERE prep_file LIKE '%acme%' OR prep_file LIKE '%globex%' OR prep_file LIKE '%initech%' OR calendar_event_id LIKE 'cal-acme%' OR calendar_event_id LIKE 'cal-globex%' OR calendar_event_id LIKE 'cal-initech%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("meeting_prep_state: {}", n));
 
     let total: usize = summary
         .iter()
@@ -685,9 +694,8 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Plus Initech Onboarding (not in briefing) → it becomes "new".
     seed_calendar_events(state)?;
 
-    // Google auth
+    // Google auth — set in-memory only, NEVER write to Keychain (I298 fix)
     if with_auth {
-        write_mock_google_token()?;
         if let Ok(mut guard) = state.google_auth.lock() {
             *guard = GoogleAuthStatus::Authenticated {
                 email: "dev@dailyos.test".to_string(),
@@ -712,8 +720,7 @@ fn install_mock_empty(state: &AppState) -> Result<(), String> {
 
     crate::state::initialize_workspace(&workspace, "both")?;
 
-    // Write mock Google token so we pass the auth check
-    write_mock_google_token()?;
+    // Set in-memory Google auth only — NEVER write to Keychain (I298 fix)
     if let Ok(mut guard) = state.google_auth.lock() {
         *guard = GoogleAuthStatus::Authenticated {
             email: "dev@dailyos.test".to_string(),
@@ -2815,26 +2822,8 @@ On hold until Q2. Architecture proposal draft needed first.
     Ok(())
 }
 
-/// Write a mock Google token file.
-fn write_mock_google_token() -> Result<(), String> {
-    let token = GoogleToken {
-        token: "mock-dev-token".to_string(),
-        refresh_token: Some("mock-refresh".to_string()),
-        token_uri: "https://oauth2.googleapis.com/token".to_string(),
-        client_id: "mock-client-id".to_string(),
-        client_secret: "mock-client-secret".to_string().into(),
-        scopes: vec![
-            "https://www.googleapis.com/auth/calendar".to_string(),
-            "https://www.googleapis.com/auth/gmail.modify".to_string(),
-        ],
-        expiry: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
-        account: Some("dev@dailyos.test".to_string()),
-        universe_domain: Some("googleapis.com".to_string()),
-    };
-
-    crate::google_api::token_store::save_token(&token)
-        .map_err(|e| format!("Failed to write mock token: {}", e))
-}
+// write_mock_google_token removed (I298 fix) — mock scenarios must NEVER
+// persist tokens to Keychain. Use in-memory GoogleAuthStatus::Authenticated instead.
 
 #[cfg(test)]
 mod tests {
