@@ -122,7 +122,11 @@ pub fn process_transcript(
         "Transcript AI output for '{}' ({} bytes): {}",
         meeting.title,
         output.len(),
-        if output.len() > 500 { &output[..500] } else { &output }
+        if output.len() > 500 {
+            &output[..500]
+        } else {
+            &output
+        }
     );
 
     // 4. Parse response
