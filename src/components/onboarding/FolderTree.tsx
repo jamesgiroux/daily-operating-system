@@ -1,33 +1,39 @@
 import { Folder, FileText, Inbox, Archive } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 interface FolderEntry {
   name: string;
   annotation: string;
   icon: React.ElementType;
-  indent?: boolean;
+  iconColor: string;
 }
 
 interface FolderTreeProps {
   entityMode: string;
+  rootPath?: string;
 }
 
-export function FolderTree({ entityMode }: FolderTreeProps) {
+export function FolderTree({ entityMode, rootPath }: FolderTreeProps) {
+  const displayPath = rootPath
+    ? rootPath.replace(/^\/Users\/[^/]+/, "~").replace(/\/?$/, "/")
+    : "~/Documents/DailyOS/";
   const folders: FolderEntry[] = [
     {
       name: "_today/",
       annotation: "Your daily briefing — updated automatically each morning",
       icon: FileText,
+      iconColor: "var(--color-spice-turmeric)",
     },
     {
       name: "_inbox/",
       annotation: "Drop files here — transcripts, notes, docs — AI processes them",
       icon: Inbox,
+      iconColor: "var(--color-spice-turmeric)",
     },
     {
       name: "_archive/",
       annotation: "Yesterday's briefings — the system maintains your history",
       icon: Archive,
+      iconColor: "var(--color-spice-turmeric)",
     },
   ];
 
@@ -36,6 +42,7 @@ export function FolderTree({ entityMode }: FolderTreeProps) {
       name: "Accounts/",
       annotation: "One folder per account with context that enriches meeting prep",
       icon: Folder,
+      iconColor: "var(--color-spice-turmeric)",
     });
   }
   if (entityMode === "project" || entityMode === "both") {
@@ -43,28 +50,69 @@ export function FolderTree({ entityMode }: FolderTreeProps) {
       name: "Projects/",
       annotation: "One folder per project with context and tracking",
       icon: Folder,
+      iconColor: "var(--color-garden-olive)",
     });
   }
 
   return (
-    <div className="rounded-lg border bg-muted/30 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Folder className="size-4 text-primary" />
-        <span className="font-mono text-sm font-medium">~/Documents/DailyOS/</span>
-      </div>
-      <div className="space-y-2 pl-6">
-        {folders.map((entry) => {
-          const Icon = entry.icon;
-          return (
-            <div key={entry.name} className="flex items-start gap-3">
-              <Icon className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground")} />
-              <div className="min-w-0">
-                <span className="font-mono text-sm">{entry.name}</span>
-                <p className="text-xs text-muted-foreground">{entry.annotation}</p>
+    <div style={{ paddingTop: 20 }}>
+      <div
+        style={{
+          borderTop: "1px solid var(--color-rule-light)",
+          paddingTop: 16,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+          <Folder size={16} style={{ color: "var(--color-spice-turmeric)" }} />
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              fontWeight: 500,
+              color: "var(--color-spice-turmeric)",
+            }}
+          >
+            {displayPath}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingLeft: 24 }}>
+          {folders.map((entry) => {
+            const Icon = entry.icon;
+            return (
+              <div key={entry.name} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <Icon
+                  size={16}
+                  style={{
+                    marginTop: 2,
+                    flexShrink: 0,
+                    color: entry.iconColor,
+                  }}
+                />
+                <div>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 13,
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    {entry.name}
+                  </span>
+                  <p
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 12,
+                      color: "var(--color-text-secondary)",
+                      margin: "2px 0 0",
+                    }}
+                  >
+                    {entry.annotation}
+                  </p>
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

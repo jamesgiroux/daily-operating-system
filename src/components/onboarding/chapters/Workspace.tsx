@@ -5,6 +5,7 @@ import { homeDir } from "@tauri-apps/api/path";
 import { toast } from "sonner";
 import { FolderOpen, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FolderTree } from "@/components/onboarding/FolderTree";
 
 interface WorkspaceProps {
@@ -49,21 +50,16 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Your files, on your machine
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Everything DailyOS creates lives in a folder you control.
-          Briefings, meeting prep, actions — plain files you can open, search, or move anywhere.
-        </p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title="Your files, on your machine"
+        epigraph="Everything DailyOS creates lives in a folder you control. Briefings, meeting prep, actions — plain files you can open, search, or move anywhere."
+      />
 
       {selectedPath ? (
-        <FolderTree entityMode={entityMode} />
+        <FolderTree entityMode={entityMode} rootPath={selectedPath} />
       ) : (
-        <div className="space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Button
             className="w-full justify-between"
             onClick={() => defaultWorkspacePath && handleWorkspacePath(defaultWorkspacePath)}
@@ -73,16 +69,31 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
               <FolderOpen className="size-4" />
               <span>Use default location</span>
             </div>
-            <code className="text-xs opacity-70">{defaultWorkspaceDisplay}</code>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                opacity: 0.7,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              {defaultWorkspaceDisplay}
+            </span>
           </Button>
 
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">or</span>
-            </div>
+          {/* "or" divider — short centered rule */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: "4px 0" }}>
+            <div style={{ width: 40, borderTop: "1px solid var(--color-rule-light)" }} />
+            <span
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              or
+            </span>
+            <div style={{ width: 40, borderTop: "1px solid var(--color-rule-light)" }} />
           </div>
 
           <Button
@@ -103,10 +114,25 @@ export function Workspace({ entityMode, onNext }: WorkspaceProps) {
 
       {selectedPath && (
         <>
-          <p className="text-xs text-muted-foreground text-center">
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              textAlign: "center",
+            }}
+          >
             Drop transcripts, notes, or documents into{" "}
-            <code className="rounded bg-muted px-1">_inbox/</code> anytime. DailyOS processes them
-            automatically.
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+              }}
+            >
+              _inbox/
+            </span>{" "}
+            anytime. DailyOS processes them automatically.
           </p>
 
           <div className="flex justify-end">
