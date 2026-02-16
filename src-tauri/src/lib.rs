@@ -6,10 +6,11 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+mod backfill_meetings;
 mod calendar_merge;
 mod capture;
 mod commands;
-mod db;
+pub mod db;
 mod db_backup;
 mod devtools;
 mod embeddings;
@@ -25,7 +26,7 @@ pub mod helpers;
 mod hygiene;
 mod intel_queue;
 pub mod intelligence;
-mod json_loader;
+pub mod json_loader;
 mod latency;
 mod migrations;
 mod notification;
@@ -35,10 +36,11 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
-mod queries;
+pub mod queries;
+mod risk_briefing;
 mod scheduler;
-mod state;
-mod types;
+pub mod state;
+pub mod types;
 pub mod util;
 mod watcher;
 mod workflow;
@@ -228,6 +230,7 @@ pub fn run() {
             commands::backfill_prep_semantics,
             commands::get_all_actions,
             commands::get_all_emails,
+            commands::get_emails_enriched,
             commands::get_inbox_files,
             commands::get_inbox_file_content,
             commands::process_inbox_file,
@@ -241,6 +244,7 @@ pub fn run() {
             commands::set_developer_mode,
             commands::set_personality,
             commands::set_ai_model,
+            commands::set_hygiene_config,
             commands::set_schedule,
             commands::get_actions_from_db,
             commands::complete_action,
@@ -249,6 +253,7 @@ pub fn run() {
             commands::get_meeting_history_detail,
             commands::search_meetings,
             commands::get_action_detail,
+            commands::backfill_historical_meetings,
             // Phase 3.0: Google Auth
             commands::get_google_auth_status,
             commands::start_google_auth,
@@ -267,7 +272,6 @@ pub fn run() {
             commands::get_week_data,
             commands::get_live_proactive_suggestions,
             commands::retry_week_enrichment,
-            commands::get_focus_data,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
@@ -282,7 +286,6 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
-            commands::refresh_focus,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             // I39: Feature Toggles
@@ -305,6 +308,9 @@ pub fn run() {
             commands::dev_run_today_full,
             commands::dev_run_week_mechanical,
             commands::dev_run_week_full,
+            commands::dev_restore_live,
+            commands::dev_purge_mock_data,
+            commands::dev_clean_artifacts,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
@@ -389,6 +395,12 @@ pub fn run() {
             commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
             commands::update_meeting_user_notes,
+            // Risk Briefing
+            commands::generate_risk_briefing,
+            commands::get_risk_briefing,
+            commands::save_risk_briefing,
+            // MCP: Claude Desktop (ADR-0075)
+            commands::configure_claude_desktop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

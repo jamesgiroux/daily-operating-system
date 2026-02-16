@@ -1,59 +1,22 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useSearch, Link } from "@tanstack/react-router";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchInput } from "@/components/ui/search-input";
-import { TabFilter } from "@/components/ui/tab-filter";
+import { useActions } from "@/hooks/useActions";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
-import { useActions } from "@/hooks/useActions";
+import { usePersonality } from "@/hooks/usePersonality";
+import { getPersonalityCopy } from "@/lib/personality";
 import type { CreateActionParams } from "@/hooks/useActions";
 import type { DbAction } from "@/types";
-import { cn, stripMarkdown } from "@/lib/utils";
-import { getPersonalityCopy } from "@/lib/personality";
-import { usePersonality } from "@/hooks/usePersonality";
-import { PageError, SectionEmpty } from "@/components/PageState";
-import {
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Circle,
-  Clock,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
+import type { ReadinessStat } from "@/components/layout/FolioBar";
+import { stripMarkdown } from "@/lib/utils";
+import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 
-type StatusTab = "all" | "pending" | "completed" | "waiting";
+type StatusTab = "pending" | "completed" | "waiting" | "all";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
-const statusTabs: { key: StatusTab; label: string }[] = [
-  { key: "pending", label: "Pending" },
-  { key: "completed", label: "Completed" },
-  { key: "waiting", label: "Waiting" },
-  { key: "all", label: "All" },
-];
-
-const priorityTabs: { key: PriorityTab; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "P1", label: "P1" },
-  { key: "P2", label: "P2" },
-  { key: "P3", label: "P3" },
-];
-
-const priorityStyles: Record<string, string> = {
-  P1: "bg-destructive/15 text-destructive border-destructive/30",
-  P2: "bg-primary/15 text-primary border-primary/30",
-  P3: "bg-muted text-muted-foreground border-muted-foreground/30",
-};
-
-const priorityLabels: Record<string, string> = {
-  P1: "Critical",
-  P2: "High",
-  P3: "Normal",
-};
+const statusTabs: StatusTab[] = ["pending", "completed", "waiting", "all"];
+const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
 export default function ActionsPage() {
   const { personality } = usePersonality();
@@ -76,253 +39,402 @@ export default function ActionsPage() {
 
   const [showCreate, setShowCreate] = useState(false);
 
-  const statusCounts: Record<StatusTab, number> = {
-    all: allActions.length,
-    pending: allActions.filter((a) => a.status === "pending").length,
-    completed: allActions.filter((a) => a.status === "completed").length,
-    waiting: allActions.filter((a) => a.status === "waiting").length,
-  };
+  // Computed stats
+  const pendingCount = allActions.filter((a) => a.status === "pending").length;
+  const overdueCount = allActions.filter(
+    (a) => a.status === "pending" && a.dueDate && new Date(a.dueDate) < new Date()
+  ).length;
 
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).toUpperCase();
+
+  // FolioBar readiness stats
+  const folioStats = useMemo((): ReadinessStat[] => {
+    const stats: ReadinessStat[] = [];
+    if (pendingCount > 0) stats.push({ label: `${pendingCount} pending`, color: "sage" });
+    if (overdueCount > 0) stats.push({ label: `${overdueCount} overdue`, color: "terracotta" });
+    return stats;
+  }, [pendingCount, overdueCount]);
+
+  // Register magazine shell
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Actions",
+      atmosphereColor: "terracotta" as const,
+      activePage: "actions" as const,
+      folioDateText: formattedDate,
+      folioReadinessStats: folioStats,
+      folioActions: (
+        <button
+          onClick={() => setShowCreate(true)}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase" as const,
+            color: "var(--color-spice-terracotta)",
+            background: "none",
+            border: "1px solid var(--color-spice-terracotta)",
+            borderRadius: 4,
+            padding: "2px 10px",
+            cursor: "pointer",
+          }}
+        >
+          + Add
+        </button>
+      ),
+    }),
+    [formattedDate, folioStats],
+  );
+  useRegisterMagazineShell(shellConfig);
+
+  // Loading state
   if (loading) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="space-y-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-24 w-full" />
-          ))}
-        </div>
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <div
+            key={i}
+            style={{
+              height: 60,
+              background: "var(--color-rule-light)",
+              borderRadius: 8,
+              marginBottom: 12,
+              animation: "pulse 1.5s ease-in-out infinite",
+            }}
+          />
+        ))}
+      </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <PageError message={error} onRetry={refresh} />
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>
+          {error}
+        </p>
+        <button
+          onClick={refresh}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "1px solid var(--color-rule-heavy)",
+            borderRadius: 4,
+            padding: "4px 12px",
+            cursor: "pointer",
+            marginTop: 12,
+          }}
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Actions</h1>
-              <p className="text-sm text-muted-foreground">
-                Track, complete, and manage action items across days
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
-              {!showCreate && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1"
-                  onClick={() => setShowCreate(true)}
-                >
-                  <Plus className="size-3.5" />
-                  Add action
-                </Button>
-              )}
-              <Button variant="ghost" size="icon" className="size-8" onClick={refresh}>
-                <RefreshCw className="size-4" />
-              </Button>
-            </div>
-          </div>
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ═══ PAGE HEADER ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 36,
+              fontWeight: 400,
+              letterSpacing: "-0.02em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Actions
+          </h1>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            {actions.length} item{actions.length !== 1 ? "s" : ""}
+          </span>
+        </div>
 
-          {showCreate && (
-            <ActionCreateForm
-              onSubmit={async (params) => {
-                await createAction(params);
-                setShowCreate(false);
+        {/* Section rule */}
+        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
+
+        {/* Status filter toggles */}
+        <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+          {statusTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setStatusFilter(tab)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: statusFilter === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                textDecoration: statusFilter === tab ? "underline" : "none",
+                textUnderlineOffset: "4px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                transition: "color 0.15s ease",
               }}
-              onCancel={() => setShowCreate(false)}
-            />
-          )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
 
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search actions..."
-            className="mb-4"
+        {/* Priority filter toggles */}
+        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+          {priorityTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setPriorityFilter(tab)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: priorityFilter === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                textDecoration: priorityFilter === tab ? "underline" : "none",
+                textUnderlineOffset: "4px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                transition: "color 0.15s ease",
+              }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="⌘  Search actions..."
+          style={{
+            width: "100%",
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            color: "var(--color-text-primary)",
+            background: "none",
+            border: "none",
+            borderBottom: "1px solid var(--color-rule-light)",
+            padding: "8px 0",
+            outline: "none",
+          }}
+        />
+      </section>
+
+      {/* ═══ CREATE FORM ═══ */}
+      {showCreate && (
+        <ActionCreateForm
+          onSubmit={async (params) => {
+            await createAction(params);
+            setShowCreate(false);
+          }}
+          onCancel={() => setShowCreate(false)}
+        />
+      )}
+
+      {/* ═══ ACTION ROWS ═══ */}
+      <section>
+        {actions.length === 0 ? (
+          <EditorialEmpty
+            {...getPersonalityCopy(
+              statusFilter === "completed"
+                ? "actions-completed-empty"
+                : statusFilter === "waiting"
+                  ? "actions-waiting-empty"
+                  : "actions-empty",
+              personality,
+            )}
           />
-
-          <TabFilter
-            tabs={statusTabs}
-            active={statusFilter}
-            onChange={setStatusFilter}
-            counts={statusCounts}
-            className="mb-4"
-          />
-
-          {/* Priority filter */}
-          <div className="mb-6 flex gap-1.5">
-            {priorityTabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setPriorityFilter(tab.key)}
-                className={cn(
-                  "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                  priorityFilter === tab.key
-                    ? "bg-foreground/10 text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {tab.label}
-              </button>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {actions.map((action, i) => (
+              <ActionRow
+                key={action.id}
+                action={action}
+                onToggle={() => toggleAction(action.id)}
+                showBorder={i < actions.length - 1}
+              />
             ))}
           </div>
+        )}
+      </section>
 
-          {/* Actions list */}
-          <div className="space-y-3">
-            {actions.length === 0 ? (
-              <SectionEmpty
-                icon={CheckCircle2}
-                {...getPersonalityCopy(
-                  statusFilter === "completed"
-                    ? "actions-completed-empty"
-                    : statusFilter === "waiting"
-                      ? "actions-waiting-empty"
-                      : "actions-empty",
-                  personality,
-                )}
-              />
-            ) : (
-              actions.map((action) => (
-                <ActionCard
-                  key={action.id}
-                  action={action}
-                  onToggle={() => toggleAction(action.id)}
-                />
-              ))
-            )}
+      {/* ═══ END MARK ═══ */}
+      {actions.length > 0 && (
+        <div
+          style={{
+            borderTop: "1px solid var(--color-rule-heavy)",
+            marginTop: 48,
+            paddingTop: 32,
+            paddingBottom: 120,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 14,
+              fontStyle: "italic",
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            That's everything.
           </div>
         </div>
-      </ScrollArea>
-    </main>
+      )}
+    </div>
   );
 }
 
-function ActionCard({
+// ─── Action Row ─────────────────────────────────────────────────────────────
+
+function ActionRow({
   action,
   onToggle,
+  showBorder,
 }: {
   action: DbAction;
   onToggle: () => void;
+  showBorder: boolean;
 }) {
+  const isCompleted = action.status === "completed";
   const isOverdue =
     action.dueDate &&
     action.status === "pending" &&
     new Date(action.dueDate) < new Date();
 
-  const isCompleted = action.status === "completed";
-  const isWaiting = action.status === "waiting";
-
-  const dueLabel = action.dueDate
-    ? formatDueDate(action.dueDate)
-    : null;
+  // Context line parts
+  const contextParts: string[] = [];
+  if (isOverdue && action.dueDate) {
+    const days = Math.floor(
+      (new Date().getTime() - new Date(action.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (days > 0) contextParts.push(`${days} day${days !== 1 ? "s" : ""} overdue`);
+  } else if (action.dueDate) {
+    contextParts.push(formatDueDate(action.dueDate));
+  }
+  if (action.accountName || action.accountId) {
+    contextParts.push(action.accountName || action.accountId!);
+  }
+  if (action.sourceLabel) contextParts.push(action.sourceLabel);
 
   return (
-    <Card
-      className={cn(
-        "transition-all hover:-translate-y-0.5 hover:shadow-md",
-        isOverdue && "border-l-4 border-l-destructive",
-        isCompleted && "opacity-60"
-      )}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        opacity: isCompleted ? 0.4 : 1,
+        transition: "opacity 0.15s ease",
+      }}
     >
-      <CardContent className="p-5">
-        <div className="flex items-start gap-3">
-          {/* Completion toggle */}
-          <button
-            onClick={onToggle}
-            className={cn(
-              "mt-0.5 shrink-0 transition-colors",
-              isCompleted
-                ? "text-primary hover:text-muted-foreground"
-                : "text-muted-foreground/50 hover:text-primary"
-            )}
+      {/* Checkbox */}
+      <button
+        onClick={onToggle}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          border: `2px solid ${isOverdue ? "var(--color-spice-terracotta)" : "var(--color-rule-heavy)"}`,
+          background: isCompleted ? "var(--color-garden-sage)" : "transparent",
+          cursor: "pointer",
+          flexShrink: 0,
+          marginTop: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "all 0.15s ease",
+        }}
+      >
+        {isCompleted && (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Link
+          to="/actions/$actionId"
+          params={{ actionId: action.id }}
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 17,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+            textDecoration: isCompleted ? "line-through" : "none",
+            lineHeight: 1.4,
+          }}
+        >
+          {stripMarkdown(action.title)}
+        </Link>
+        {contextParts.length > 0 && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: isOverdue ? 500 : 300,
+              color: isOverdue
+                ? "var(--color-spice-terracotta)"
+                : "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
           >
-            {isCompleted ? (
-              <CheckCircle2 className="size-5" />
-            ) : (
-              <Circle className="size-5" />
-            )}
-          </button>
-
-          <div className="flex-1 space-y-1">
-            <div className="flex items-center gap-2">
-              <Link
-                to="/actions/$actionId"
-                params={{ actionId: action.id }}
-                className={cn(
-                  "font-medium transition-colors hover:text-primary",
-                  isCompleted && "line-through"
-                )}
-              >
-                {stripMarkdown(action.title)}
-              </Link>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-xs",
-                  priorityStyles[action.priority] || priorityStyles.P2
-                )}
-              >
-                {priorityLabels[action.priority] || action.priority}
-              </Badge>
-              {isWaiting && action.waitingOn && (
-                <Badge variant="secondary" className="text-xs">
-                  <Clock className="mr-1 size-3" />
-                  Waiting on {action.waitingOn}
-                </Badge>
-              )}
-            </div>
-
-            {(action.accountName || action.accountId) && (
-              <p className="text-sm text-primary">
-                {action.accountName || action.accountId}
-              </p>
-            )}
-
-            {action.context && (
-              <p className="text-sm text-muted-foreground">{action.context}</p>
-            )}
-
-            {action.sourceLabel && (
-              <p className="text-xs text-muted-foreground/70">
-                Source: {action.sourceLabel}
-              </p>
-            )}
+            {contextParts.join(" \u00B7 ")}
           </div>
+        )}
+      </div>
 
-          <div className="flex flex-col items-end gap-1 text-right">
-            {dueLabel && (
-              <span
-                className={cn(
-                  "text-sm",
-                  isOverdue ? "font-medium text-destructive" : "text-muted-foreground"
-                )}
-              >
-                {dueLabel}
-              </span>
-            )}
-            {isCompleted && action.completedAt && (
-              <span className="text-xs text-muted-foreground">
-                Done {formatDueDate(action.completedAt)}
-              </span>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+      {/* Priority badge */}
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.04em",
+          color: action.priority === "P1"
+            ? "var(--color-spice-terracotta)"
+            : action.priority === "P2"
+              ? "var(--color-spice-turmeric)"
+              : "var(--color-text-tertiary)",
+          flexShrink: 0,
+          marginTop: 4,
+        }}
+      >
+        {action.priority}
+      </span>
+    </div>
   );
 }
+
+// ─── Create Form (editorial style) ─────────────────────────────────────────
 
 function ActionCreateForm({
   onSubmit,
@@ -337,9 +449,7 @@ function ActionCreateForm({
   const [showDetails, setShowDetails] = useState(false);
   const [priority, setPriority] = useState("P2");
   const [dueDate, setDueDate] = useState("");
-  const [accountId, setAccountId] = useState<string | null>(
-    defaultAccountId ?? null
-  );
+  const [accountId, setAccountId] = useState<string | null>(defaultAccountId ?? null);
   const [sourceLabel, setSourceLabel] = useState("");
   const [context, setContext] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -362,127 +472,223 @@ function ActionCreateForm({
   }
 
   return (
-    <Card className="mb-4">
-      <CardContent className="space-y-3 p-4">
-        {/* Stage 1: Title */}
-        <div className="flex items-center gap-3">
-          <Circle className="size-5 shrink-0 text-muted-foreground/30" />
+    <div
+      style={{
+        borderBottom: "1px solid var(--color-rule-heavy)",
+        paddingBottom: 20,
+        marginBottom: 8,
+      }}
+    >
+      {/* Title input */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        <div
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            border: "2px solid var(--color-rule-heavy)",
+            flexShrink: 0,
+          }}
+        />
+        <input
+          type="text"
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !showDetails) handleSubmit();
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder="What needs to be done?"
+          style={{
+            flex: 1,
+            fontFamily: "var(--font-serif)",
+            fontSize: 17,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+            background: "none",
+            border: "none",
+            outline: "none",
+          }}
+        />
+      </div>
+
+      {/* Details toggle */}
+      {!showDetails ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingLeft: 32 }}>
+          <button
+            type="button"
+            onClick={() => setShowDetails(true)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            + details
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleSubmit}
+            disabled={!title.trim() || submitting}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              color: !title.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
+              background: "none",
+              border: "1px solid",
+              borderColor: !title.trim() ? "var(--color-rule-heavy)" : "var(--color-spice-terracotta)",
+              borderRadius: 4,
+              padding: "3px 12px",
+              cursor: !title.trim() ? "default" : "pointer",
+            }}
+          >
+            Create
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div style={{ paddingLeft: 32 }}>
+          <button
+            type="button"
+            onClick={() => setShowDetails(false)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              marginBottom: 12,
+            }}
+          >
+            - hide details
+          </button>
+
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <PriorityPicker value={priority} onChange={setPriority} />
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-text-secondary)",
+                background: "none",
+                border: "1px solid var(--color-rule-heavy)",
+                borderRadius: 4,
+                padding: "3px 8px",
+                outline: "none",
+              }}
+            />
+            <EntityPicker
+              value={accountId}
+              onChange={(id) => setAccountId(id)}
+              locked={!!defaultAccountId}
+            />
+          </div>
+
           <input
             type="text"
-            autoFocus
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !showDetails) handleSubmit();
-              if (e.key === "Escape") onCancel();
+            value={sourceLabel}
+            onChange={(e) => setSourceLabel(e.target.value)}
+            placeholder="Source (e.g., Slack, call with Jane)"
+            style={{
+              width: "100%",
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              color: "var(--color-text-primary)",
+              background: "none",
+              border: "none",
+              borderBottom: "1px solid var(--color-rule-light)",
+              padding: "6px 0",
+              outline: "none",
+              marginBottom: 8,
             }}
-            placeholder="What needs to be done?"
-            className="flex-1 bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/60"
           />
-        </div>
 
-        {/* Toggle details */}
-        {!showDetails ? (
-          <div className="flex items-center gap-2 pl-8">
+          <textarea
+            value={context}
+            onChange={(e) => setContext(e.target.value)}
+            placeholder="Additional context..."
+            rows={2}
+            style={{
+              width: "100%",
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              color: "var(--color-text-primary)",
+              background: "none",
+              border: "none",
+              borderBottom: "1px solid var(--color-rule-light)",
+              padding: "6px 0",
+              outline: "none",
+              resize: "none",
+              marginBottom: 12,
+            }}
+          />
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
             <button
-              type="button"
-              onClick={() => setShowDetails(true)}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <ChevronDown className="size-3" />
-              Add details
-            </button>
-            <div className="flex-1" />
-            <Button
-              size="sm"
-              variant="default"
-              className="h-7 text-xs"
-              disabled={!title.trim() || submitting}
               onClick={handleSubmit}
+              disabled={!title.trim() || submitting}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                color: !title.trim() ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
+                background: "none",
+                border: "1px solid",
+                borderColor: !title.trim() ? "var(--color-rule-heavy)" : "var(--color-spice-terracotta)",
+                borderRadius: 4,
+                padding: "3px 12px",
+                cursor: !title.trim() ? "default" : "pointer",
+              }}
             >
               Create
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
+            </button>
+            <button
               onClick={onCancel}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
             >
               Cancel
-            </Button>
+            </button>
           </div>
-        ) : (
-          <>
-            {/* Stage 2: Details */}
-            <div className="space-y-3 pl-8">
-              <button
-                type="button"
-                onClick={() => setShowDetails(false)}
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <ChevronUp className="size-3" />
-                Hide details
-              </button>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <PriorityPicker value={priority} onChange={setPriority} />
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="h-7 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-ring"
-                />
-                <EntityPicker
-                  value={accountId}
-                  onChange={(id) => setAccountId(id)}
-                  locked={!!defaultAccountId}
-                />
-              </div>
-
-              <input
-                type="text"
-                value={sourceLabel}
-                onChange={(e) => setSourceLabel(e.target.value)}
-                placeholder="Source (e.g., Slack, call with Jane)"
-                className="w-full rounded-md border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"
-              />
-
-              <textarea
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="Additional context..."
-                rows={2}
-                className="w-full resize-none rounded-md border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pl-8">
-              <Button
-                size="sm"
-                variant="default"
-                className="h-7 text-xs"
-                disabled={!title.trim() || submitting}
-                onClick={handleSubmit}
-              >
-                Create
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs"
-                onClick={onCancel}
-              >
-                Cancel
-              </Button>
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** Format a date string into a human-readable label. */
+// ─── Date Formatting ────────────────────────────────────────────────────────
+
 function formatDueDate(dateStr: string): string {
   try {
     const date = new Date(dateStr);
@@ -490,17 +696,12 @@ function formatDueDate(dateStr: string): string {
     const diffDays = Math.floor(
       (date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
     );
-
     if (diffDays === 0) return "Today";
     if (diffDays === 1) return "Tomorrow";
     if (diffDays === -1) return "Yesterday";
     if (diffDays < -1) return `${Math.abs(diffDays)} days ago`;
     if (diffDays <= 7) return `In ${diffDays} days`;
-
-    return date.toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-    });
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   } catch {
     return dateStr;
   }

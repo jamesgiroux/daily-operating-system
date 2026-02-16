@@ -1,6 +1,6 @@
 //! SQLite-based local state management for actions, accounts, and meeting history.
 //!
-//! The database lives at `~/.dailyos/actions.db` and serves as the working store
+//! The database lives at `~/.dailyos/dailyos.db` and serves as the working store
 //! for operational data (ADR-0048). The filesystem (markdown + JSON) is the durable
 //! layer; SQLite enables fast queries, state tracking, and cross-entity intelligence.
 //! SQLite is not disposable — important state lives here and is written back to the
@@ -8,14 +8,36 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::entity::{DbEntity, EntityType};
 use crate::types::LinkedEntity;
+
+// ---------------------------------------------------------------------------
+// Dev DB isolation (I298)
+// ---------------------------------------------------------------------------
+
+/// Process-wide flag steering `ActionDb::db_path()` between live and dev files.
+/// Background threads (executor, intel_queue, watcher, hygiene) all call
+/// `ActionDb::open()` independently — the static flag means they automatically
+/// pick up the right path without plumbing config through every thread.
+static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
+/// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
+pub fn set_dev_db_mode(enabled: bool) {
+    DEV_DB_MODE.store(enabled, Ordering::Relaxed);
+}
+
+/// Check whether dev-mode DB isolation is active.
+pub fn is_dev_db_mode() -> bool {
+    DEV_DB_MODE.load(Ordering::Relaxed)
+}
 
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
@@ -460,7 +482,7 @@ impl ActionDb {
         }
     }
 
-    /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
+    /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
         Self::open_at(path)
@@ -492,10 +514,63 @@ impl ActionDb {
         Ok(Self { conn })
     }
 
-    /// Resolve the default database path: `~/.dailyos/actions.db`.
+    /// Open the database in read-only mode. Used by the MCP binary for safe
+    /// concurrent reads while the Tauri app owns writes.
+    pub fn open_readonly() -> Result<Self, DbError> {
+        let path = Self::db_path()?;
+        Self::open_readonly_at(&path)
+    }
+
+    /// Open a database at an explicit path in read-only mode.
+    pub fn open_readonly_at(path: &std::path::Path) -> Result<Self, DbError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        Ok(Self { conn })
+    }
+
+    /// Resolve the default database path: `~/.dailyos/dailyos.db`.
+    ///
+    /// When dev-mode DB isolation is active (`set_dev_db_mode(true)`), returns
+    /// `~/.dailyos/dailyos-dev.db` instead. Migration logic only applies to the
+    /// live path — the dev DB is always created fresh.
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
-        Ok(home.join(".dailyos").join("actions.db"))
+        let dailyos_dir = home.join(".dailyos");
+
+        // Dev-mode: isolated DB, no migration needed
+        if is_dev_db_mode() {
+            return Ok(dailyos_dir.join("dailyos-dev.db"));
+        }
+
+        let new_path = dailyos_dir.join("dailyos.db");
+        let legacy_path = dailyos_dir.join("actions.db");
+
+        // One-time migration: rename actions.db → dailyos.db
+        if !new_path.exists() && legacy_path.exists() {
+            // Checkpoint WAL into the main file before renaming, otherwise
+            // data written to the WAL but not yet flushed would be lost.
+            if let Ok(conn) = Connection::open(&legacy_path) {
+                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                drop(conn);
+            }
+
+            if let Err(e) = std::fs::rename(&legacy_path, &new_path) {
+                log::warn!(
+                    "Failed to rename actions.db → dailyos.db: {}. Will open at legacy path.",
+                    e
+                );
+                return Ok(legacy_path);
+            }
+            // Clean up WAL/SHM files (SQLite recreates them under the new name)
+            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-wal"));
+            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-shm"));
+            log::info!("Migrated database: actions.db → dailyos.db");
+        }
+
+        Ok(new_path)
     }
 
     /// Convert reviewed-prep keys from legacy prep file paths to meeting IDs.
@@ -1629,12 +1704,13 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id, prep_context_json
-             FROM meetings_history
-             WHERE account_id = ?1
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id, m.prep_context_json
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![account_id, limit], |row| {
@@ -1672,12 +1748,14 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
-             FROM meetings_history
-             WHERE account_id = ?1 AND start_time >= datetime('now')
-             ORDER BY start_time ASC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+               AND m.start_time >= datetime('now')
+             ORDER BY m.start_time ASC
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![account_id, limit], |row| {
@@ -3261,6 +3339,55 @@ impl ActionDb {
         Ok(signals)
     }
 
+    /// Batch-query email signals for multiple email IDs.
+    /// Returns all signals whose email_id is in the provided list.
+    pub fn list_email_signals_by_email_ids(
+        &self,
+        email_ids: &[String],
+    ) -> Result<Vec<DbEmailSignal>, DbError> {
+        if email_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             FROM email_signals
+             WHERE email_id IN ({})
+             ORDER BY detected_at DESC, id DESC",
+            placeholders.join(", ")
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = email_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let rows = stmt.query_map(&*params, |row| {
+            Ok(DbEmailSignal {
+                id: row.get(0)?,
+                email_id: row.get(1)?,
+                sender_email: row.get(2)?,
+                person_id: row.get(3)?,
+                entity_id: row.get(4)?,
+                entity_type: row.get(5)?,
+                signal_type: row.get(6)?,
+                signal_text: row.get(7)?,
+                confidence: row.get(8)?,
+                sentiment: row.get(9)?,
+                urgency: row.get(10)?,
+                detected_at: row.get(11)?,
+            })
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
+    }
+
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -4223,7 +4350,7 @@ impl ActionDb {
                     embeddings_generated_at, content_type, priority
              FROM content_index
              WHERE summary IS NULL
-               AND format IN ('Markdown', 'Text', 'Pdf', 'Docx', 'Html')
+               AND format IN ('Markdown', 'PlainText', 'Pdf', 'Docx', 'Xlsx', 'Pptx', 'Html', 'Rtf')
              ORDER BY priority DESC, modified_at DESC",
         )?;
         let rows = stmt.query_map([], |row| {

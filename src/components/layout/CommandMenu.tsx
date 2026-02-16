@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   CommandDialog,
   CommandEmpty,
@@ -125,11 +126,19 @@ export function CommandMenu({ open, onOpenChange }: CommandMenuProps) {
         <CommandSeparator />
 
         <CommandGroup heading="Quick Actions">
-          <CommandItem onSelect={() => onOpenChange(false)}>
+          <CommandItem onSelect={() => {
+            onOpenChange(false);
+            invoke("run_workflow", { workflow: "today" })
+              .then(() => toast.success("Morning briefing started"))
+              .catch(() => toast.error("Failed to start briefing"));
+          }}>
             <Play className="mr-2 size-4" />
             <span>Run Morning Briefing</span>
           </CommandItem>
-          <CommandItem onSelect={() => onOpenChange(false)}>
+          <CommandItem onSelect={() => {
+            onOpenChange(false);
+            window.location.reload();
+          }}>
             <RefreshCw className="mr-2 size-4" />
             <span>Refresh Dashboard</span>
           </CommandItem>

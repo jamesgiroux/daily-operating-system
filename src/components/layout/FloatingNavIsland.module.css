@@ -1,0 +1,196 @@
+/* =============================================================================
+   FloatingNavIsland.module.css
+
+   Right-margin floating toolbar with icon-based navigation, tooltips, and
+   page-specific active state. Fixed position, centered vertically at 28px from right.
+   ============================================================================= */
+
+@import '../../styles/design-tokens.css';
+
+/* ─────────────────────────────────────────────────────────────────────────
+   NAV ISLAND — Main Container
+   ───────────────────────────────────────────────────────────────────────── */
+.navIsland {
+  position: fixed;
+  right: var(--nav-island-right);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-app-shell);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--frosted-glass-nav);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HOME BUTTON — Brand mark asterisk
+   ───────────────────────────────────────────────────────────────────────── */
+.navIslandMark {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-editorial-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  margin-bottom: 4px;
+  padding: 0;
+  transition: all var(--transition-normal);
+  user-select: none;
+}
+
+.navIslandMark:hover {
+  background: rgba(30, 37, 48, 0.04);
+}
+
+.navIslandMark:focus {
+  outline: none;
+  background: rgba(30, 37, 48, 0.08);
+}
+
+.navIslandMarkActive {
+  background: rgba(201, 162, 39, 0.1);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   NAV ITEMS — Icon buttons
+   ───────────────────────────────────────────────────────────────────────── */
+.navIslandItem {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-editorial-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-normal);
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.navIslandItem:hover {
+  background: rgba(30, 37, 48, 0.04);
+  color: var(--color-text-secondary);
+}
+
+.navIslandItem:focus {
+  outline: none;
+  background: rgba(30, 37, 48, 0.08);
+}
+
+.navIslandItem svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ACTIVE STATE — Color-based variants
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Turmeric active state */
+.activeTurmeric {
+  background: rgba(201, 162, 39, 0.1);
+  color: var(--color-spice-turmeric);
+}
+
+/* Terracotta active state */
+.activeTerracotta {
+  background: rgba(196, 101, 74, 0.1);
+  color: var(--color-spice-terracotta);
+}
+
+/* Larkspur active state */
+.activeLarkspur {
+  background: rgba(143, 163, 196, 0.1);
+  color: var(--color-garden-larkspur);
+}
+
+/* Olive active state */
+.activeOlive {
+  background: rgba(107, 124, 82, 0.1);
+  color: var(--color-garden-olive);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DIVIDER — Thin separator lines between nav groups
+   ───────────────────────────────────────────────────────────────────────── */
+.navIslandDivider {
+  width: 20px;
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: 4px 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TOOLTIPS — CSS pseudo-element labels
+
+   Shows on hover: position absolute to the right of nav item,
+   styled as floating labels with shadow and rounded corners.
+   ───────────────────────────────────────────────────────────────────────── */
+.navIslandItem::after {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.navIslandItem:hover::after {
+  opacity: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   COLOR SCHEME VARIANTS
+
+   The parent NavIsland can have a color class that affects active state styling
+   throughout the component tree. This is applied via className in the component.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* These classes are applied to the nav island container itself
+   to change the active color scheme for all child items */
+
+.colorTurmeric .activeTurmeric {
+  background: rgba(201, 162, 39, 0.1);
+  color: var(--color-spice-turmeric);
+}
+
+.colorTerracotta .activeTerracotta {
+  background: rgba(196, 101, 74, 0.1);
+  color: var(--color-spice-terracotta);
+}
+
+.colorLarkspur .activeLarkspur {
+  background: rgba(143, 163, 196, 0.1);
+  color: var(--color-garden-larkspur);
+}
+
+.colorOlive .activeOlive {
+  background: rgba(107, 124, 82, 0.1);
+  color: var(--color-garden-olive);
+}
+

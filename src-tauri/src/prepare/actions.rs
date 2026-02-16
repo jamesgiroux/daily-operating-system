@@ -340,8 +340,15 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
 /// Used by the /week orchestrator which reads from SQLite rather than
 /// parsing markdown.
 pub fn fetch_actions_from_db(db: &crate::db::ActionDb) -> Value {
-    let today = Utc::now().date_naive();
-    let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    let today = chrono::Local::now().date_naive();
+    // On weekends, anchor to NEXT Monday (same logic as prepare_week)
+    let monday = if today.weekday() == chrono::Weekday::Sat {
+        today + chrono::Duration::days(2)
+    } else if today.weekday() == chrono::Weekday::Sun {
+        today + chrono::Duration::days(1)
+    } else {
+        today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+    };
     let friday = monday + chrono::Duration::days(4);
 
     let today_str = today.to_string();
