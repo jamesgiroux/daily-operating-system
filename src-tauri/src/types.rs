@@ -62,6 +62,9 @@ pub struct Config {
     /// AI model configuration for tiered operations (I174).
     #[serde(default)]
     pub ai_models: AiModelConfig,
+    /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
+    #[serde(default)]
+    pub embeddings: EmbeddingConfig,
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
     #[serde(default = "default_hygiene_scan_interval_hours")]
     pub hygiene_scan_interval_hours: u32,
@@ -158,6 +161,54 @@ fn default_mechanical_model() -> String {
 
 fn default_entity_mode() -> String {
     "account".to_string()
+}
+
+/// Embedding runtime configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbeddingConfig {
+    #[serde(default = "default_embeddings_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_embedding_sweep_interval_secs")]
+    pub sweep_interval_secs: u64,
+    #[serde(default = "default_embedding_chunk_tokens")]
+    pub chunk_tokens: usize,
+    #[serde(default = "default_embedding_chunk_overlap_tokens")]
+    pub chunk_overlap_tokens: usize,
+    #[serde(default = "default_embedding_max_files_per_sweep")]
+    pub max_files_per_sweep: usize,
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_embeddings_enabled(),
+            sweep_interval_secs: default_embedding_sweep_interval_secs(),
+            chunk_tokens: default_embedding_chunk_tokens(),
+            chunk_overlap_tokens: default_embedding_chunk_overlap_tokens(),
+            max_files_per_sweep: default_embedding_max_files_per_sweep(),
+        }
+    }
+}
+
+fn default_embeddings_enabled() -> bool {
+    true
+}
+
+fn default_embedding_sweep_interval_secs() -> u64 {
+    5 * 60
+}
+
+fn default_embedding_chunk_tokens() -> usize {
+    500
+}
+
+fn default_embedding_chunk_overlap_tokens() -> usize {
+    80
+}
+
+fn default_embedding_max_files_per_sweep() -> usize {
+    100
 }
 
 fn default_hygiene_scan_interval_hours() -> u32 {
@@ -1619,11 +1670,44 @@ impl UserContext {
 }
 
 // =============================================================================
+// Chat Interface Types (Sprint 26)
+// =============================================================================
+
+/// Summary item for entity listings in the chat/MCP interface.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatEntityListItem {
+    pub id: String,
+    pub name: String,
+    pub entity_type: String,
+    pub status: Option<String>,
+    pub health: Option<String>,
+    pub open_action_count: usize,
+}
+
+/// Convert a slice of `DbMeeting` records to a JSON array of summary objects.
+///
+/// Shared helper for chat commands that return meeting context.
+pub fn meetings_to_json(meetings: &[crate::db::DbMeeting]) -> Vec<serde_json::Value> {
+    meetings
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "title": m.title,
+                "startTime": m.start_time,
+                "meetingType": m.meeting_type,
+            })
+        })
+        .collect()
+}
+
+// =============================================================================
 // Risk Briefing (6-Slide Executive Presentation)
 // =============================================================================
 
 /// Complete risk briefing for an at-risk account.
-/// 6-slide narrative structure: Cover → Bottom Line → What Happened → Stakes → The Plan → The Ask.
+/// 6-slide narrative structure: Cover -> Bottom Line -> What Happened -> Stakes -> The Plan -> The Ask.
 /// SCQA is the internal thinking tool; the output is a presentation deck.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1782,6 +1866,7 @@ mod tests {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
+            embeddings: EmbeddingConfig::default(),
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,
