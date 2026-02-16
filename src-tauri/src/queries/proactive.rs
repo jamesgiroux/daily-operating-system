@@ -61,7 +61,11 @@ fn urgency_impact(action: &DbAction, today: NaiveDate) -> f32 {
     (baseline + priority_lift).clamp(0.0, 1.0)
 }
 
-fn confidence(action: &DbAction, nearest_meeting_id: Option<&str>, day_events: &[CalendarEvent]) -> f32 {
+fn confidence(
+    action: &DbAction,
+    nearest_meeting_id: Option<&str>,
+    day_events: &[CalendarEvent],
+) -> f32 {
     let mut score: f32 = 0.45;
     if action.due_date.is_some() {
         score += 0.1;
@@ -132,7 +136,12 @@ fn due_reason(action: &DbAction, today: NaiveDate) -> String {
     }
 }
 
-fn build_reason(action: &DbAction, block_minutes: u32, capacity_fit: f32, today: NaiveDate) -> String {
+fn build_reason(
+    action: &DbAction,
+    block_minutes: u32,
+    capacity_fit: f32,
+    today: NaiveDate,
+) -> String {
     let fit_label = if capacity_fit >= 0.75 {
         "strong"
     } else if capacity_fit >= 0.55 {
@@ -278,7 +287,9 @@ pub async fn fetch_week_events(
     let user_domains = config.resolved_user_domains();
     let live_events: Vec<CalendarEvent> = raw_events
         .iter()
-        .map(|raw| crate::google_api::classify::classify_meeting_multi(raw, &user_domains, account_hints))
+        .map(|raw| {
+            crate::google_api::classify::classify_meeting_multi(raw, &user_domains, account_hints)
+        })
         .map(|classified| classified.to_calendar_event())
         .filter(|event| !event.is_all_day)
         .collect();
@@ -303,7 +314,12 @@ pub fn compute_suggestions_from_events(
     let today = Utc::now().with_timezone(&tz).date_naive();
     let monday = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
 
-    Ok(suggest_from_live_inputs(monday, live_events, actions, today))
+    Ok(suggest_from_live_inputs(
+        monday,
+        live_events,
+        actions,
+        today,
+    ))
 }
 
 /// Full fetch + compute pipeline. Convenience for callers that don't need caching.
@@ -433,7 +449,10 @@ mod tests {
         let day = NaiveDate::from_ymd_opt(2026, 2, 9).unwrap();
         let actions = vec![make_action("a1", "Do work", "P2", Some("2026-02-09"))];
 
-        let with_extra = vec![make_event("evt-am", 10, 11, day), make_event("evt-midday", 12, 13, day)];
+        let with_extra = vec![
+            make_event("evt-am", 10, 11, day),
+            make_event("evt-midday", 12, 13, day),
+        ];
         let reduced = suggest_from_live_inputs(day, &with_extra, &actions, day);
 
         let without_extra = vec![make_event("evt-am", 10, 11, day)];

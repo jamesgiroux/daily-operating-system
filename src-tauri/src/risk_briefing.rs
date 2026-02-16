@@ -326,6 +326,7 @@ pub fn gather_risk_input(
         Some(&account),
         None,
         prior_intel.as_ref(),
+        None, // embedding_model — not needed for risk briefing context
     );
 
     // Serialize existing intelligence for cross-reference
