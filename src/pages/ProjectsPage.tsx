@@ -1,26 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchInput } from "@/components/ui/search-input";
-import { TabFilter } from "@/components/ui/tab-filter";
+import { Link } from "@tanstack/react-router";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
   BulkCreateForm,
   parseBulkCreateInput,
 } from "@/components/ui/bulk-create-form";
-import { ListRow, ListColumn } from "@/components/ui/list-row";
-import {
-  StatusBadge,
-  projectStatusStyles,
-} from "@/components/ui/status-badge";
-import { PageError, SectionEmpty } from "@/components/PageState";
-import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
-import { FolderKanban, Plus, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { getPersonalityCopy } from "@/lib/personality";
 import type { ProjectListItem } from "@/types";
+import type { ReadinessStat } from "@/components/layout/FolioBar";
 
 /** Lightweight shape returned by get_archived_projects (DbProject from Rust). */
 interface ArchivedProject {
@@ -34,35 +24,34 @@ interface ArchivedProject {
 }
 
 type ArchiveTab = "active" | "archived";
-
 type StatusTab = "all" | "active" | "on_hold" | "completed";
 
-const archiveTabs: { key: ArchiveTab; label: string }[] = [
-  { key: "active", label: "Active" },
-  { key: "archived", label: "Archived" },
-];
+const archiveTabs: ArchiveTab[] = ["active", "archived"];
+const statusTabs: StatusTab[] = ["all", "active", "on_hold", "completed"];
 
-const statusTabs: { key: StatusTab; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "on_hold", label: "On Hold" },
-  { key: "completed", label: "Completed" },
-];
+const statusDotColor: Record<string, string> = {
+  active: "var(--color-garden-sage)",
+  on_hold: "var(--color-spice-turmeric)",
+  completed: "var(--color-garden-larkspur)",
+};
 
+const statusLabel: Record<string, string> = {
+  active: "Active",
+  on_hold: "On Hold",
+  completed: "Completed",
+};
 
 export default function ProjectsPage() {
   const { personality } = usePersonality();
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<StatusTab>("all");
+  const [statusTab, setStatusTab] = useState<StatusTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
-  // I176: archive tab
   const [archiveTab, setArchiveTab] = useState<ArchiveTab>("active");
   const [archivedProjects, setArchivedProjects] = useState<ArchivedProject[]>([]);
-  // I162: bulk create mode
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkValue, setBulkValue] = useState("");
 
@@ -79,7 +68,6 @@ export default function ProjectsPage() {
     }
   }, []);
 
-  // I176: load archived projects
   const loadArchivedProjects = useCallback(async () => {
     try {
       setLoading(true);
@@ -113,7 +101,6 @@ export default function ProjectsPage() {
     }
   }
 
-  // I162: bulk create
   async function handleBulkCreate() {
     const names = parseBulkCreateInput(bulkValue);
     if (names.length === 0) return;
@@ -127,8 +114,9 @@ export default function ProjectsPage() {
     }
   }
 
+  // Filters
   const statusFiltered =
-    tab === "all" ? projects : projects.filter((p) => p.status === tab);
+    statusTab === "all" ? projects : projects.filter((p) => p.status === statusTab);
 
   const filtered = searchQuery
     ? statusFiltered.filter(
@@ -138,14 +126,6 @@ export default function ProjectsPage() {
       )
     : statusFiltered;
 
-  const tabCounts: Record<StatusTab, number> = {
-    all: projects.length,
-    active: projects.filter((p) => p.status === "active").length,
-    on_hold: projects.filter((p) => p.status === "on_hold").length,
-    completed: projects.filter((p) => p.status === "completed").length,
-  };
-
-  // I176: filter archived projects by search query
   const filteredArchived = searchQuery
     ? archivedProjects.filter(
         (p) =>
@@ -155,273 +135,391 @@ export default function ProjectsPage() {
     : archivedProjects;
 
   const isArchived = archiveTab === "archived";
+  const displayList = isArchived ? filteredArchived : filtered;
+  const activeCount = projects.filter((p) => p.status === "active").length;
 
+  const formattedDate = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).toUpperCase();
+
+  // FolioBar stats
+  const folioStats = useMemo((): ReadinessStat[] => {
+    const stats: ReadinessStat[] = [];
+    if (activeCount > 0) stats.push({ label: `${activeCount} active`, color: "sage" });
+    return stats;
+  }, [activeCount]);
+
+  const folioNewButton = useMemo(() => (
+    <button
+      onClick={() => setCreating(true)}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.06em",
+        textTransform: "uppercase" as const,
+        color: "var(--color-garden-olive)",
+        background: "none",
+        border: "1px solid var(--color-garden-olive)",
+        borderRadius: 4,
+        padding: "2px 10px",
+        cursor: "pointer",
+      }}
+    >
+      + New
+    </button>
+  ), []);
+
+  // Register magazine shell
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Projects",
+      atmosphereColor: "olive" as const,
+      activePage: "projects" as const,
+      folioDateText: formattedDate,
+      folioReadinessStats: folioStats,
+      folioActions: isArchived ? undefined : folioNewButton,
+    }),
+    [formattedDate, folioStats, isArchived, folioNewButton],
+  );
+  useRegisterMagazineShell(shellConfig);
+
+  // Loading
   if (loading && (isArchived ? archivedProjects.length === 0 : projects.length === 0)) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-6 space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="space-y-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-20 w-full" />
-          ))}
-        </div>
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} style={{ height: 52, background: "var(--color-rule-light)", borderRadius: 8, marginBottom: 12 }} />
+        ))}
+      </div>
     );
   }
 
+  // Error
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <PageError message={error} onRetry={loadProjects} />
-      </main>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
+        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>{error}</p>
+        <button
+          onClick={loadProjects}
+          style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", background: "none", border: "1px solid var(--color-rule-heavy)", borderRadius: 4, padding: "4px 12px", cursor: "pointer", marginTop: 12 }}
+        >
+          Retry
+        </button>
+      </div>
     );
   }
 
+  // Empty
   if (!isArchived && projects.length === 0) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <div className="flex h-full flex-col items-center justify-center gap-4 p-6">
-          <FolderKanban className="size-16 text-muted-foreground/40" />
-          <div className="text-center">
-            <h2 className="text-lg font-semibold">No projects yet</h2>
-            <p className="text-sm text-muted-foreground">
-              Create your first project to get started.
-            </p>
-          </div>
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
+        <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
+          Projects
+        </h1>
+        <div style={{ textAlign: "center", padding: "64px 0" }}>
+          <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
+            {getPersonalityCopy("projects-no-matches", personality).title}
+          </p>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
+            Create your first project to get started.
+          </p>
           {creating ? (
-            <InlineCreateForm
-              value={newName}
-              onChange={setNewName}
-              onCreate={handleCreate}
-              onCancel={() => setCreating(false)}
-              placeholder="Project name"
-            />
+            <div style={{ maxWidth: 400, margin: "24px auto 0" }}>
+              <InlineCreateForm
+                value={newName}
+                onChange={setNewName}
+                onCreate={handleCreate}
+                onCancel={() => setCreating(false)}
+                placeholder="Project name"
+              />
+            </div>
           ) : (
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="mr-1 size-4" />
-              New Project
-            </Button>
+            <button
+              onClick={() => setCreating(true)}
+              style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600, color: "var(--color-garden-olive)", background: "none", border: "1px solid var(--color-garden-olive)", borderRadius: 4, padding: "6px 16px", cursor: "pointer", marginTop: 24 }}
+            >
+              + New Project
+            </button>
           )}
         </div>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Projects
-                <span className="ml-2 text-base font-normal text-muted-foreground">
-                  {isArchived ? filteredArchived.length : filtered.length}
-                </span>
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {isArchived
-                  ? "Previously tracked projects"
-                  : "Project status, milestones, and deliverables"}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {!isArchived && (
-                <>
-                  {creating ? (
-                    <>
-                      {bulkMode ? (
-                        <BulkCreateForm
-                          value={bulkValue}
-                          onChange={setBulkValue}
-                          onCreate={handleBulkCreate}
-                          onSingleMode={() => {
-                            setBulkMode(false);
-                            setBulkValue("");
-                          }}
-                          onCancel={() => {
-                            setCreating(false);
-                            setBulkMode(false);
-                            setBulkValue("");
-                            setNewName("");
-                          }}
-                          placeholder="One project name per line"
-                        />
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <InlineCreateForm
-                            value={newName}
-                            onChange={setNewName}
-                            onCreate={handleCreate}
-                            onCancel={() => {
-                              setCreating(false);
-                              setNewName("");
-                            }}
-                            placeholder="Project name"
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setBulkMode(true)}
-                          >
-                            Bulk
-                          </Button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCreating(true)}
-                    >
-                      <Plus className="mr-1 size-4" />
-                      New Project
-                    </Button>
-                  )}
-                </>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                onClick={isArchived ? loadArchivedProjects : loadProjects}
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* ═══ PAGE HEADER ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: 0 }}>
+            Projects
+          </h1>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            {isArchived ? filteredArchived.length : filtered.length} {isArchived ? "archived" : "active"}
+          </span>
+        </div>
+
+        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
+
+        {/* Archive toggle */}
+        <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
+          {archiveTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setArchiveTab(tab)}
+              style={{
+                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase",
+                color: archiveTab === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                textDecoration: archiveTab === tab ? "underline" : "none", textUnderlineOffset: "4px",
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+              }}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Status filter (active only) */}
+        {!isArchived && (
+          <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+            {statusTabs.map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setStatusTab(tab)}
+                style={{
+                  fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase",
+                  color: statusTab === tab ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  textDecoration: statusTab === tab ? "underline" : "none", textUnderlineOffset: "4px",
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
+                }}
               >
-                <RefreshCw className="size-4" />
-              </Button>
-            </div>
+                {tab === "on_hold" ? "on hold" : tab}
+              </button>
+            ))}
           </div>
+        )}
 
-          <TabFilter
-            tabs={archiveTabs}
-            active={archiveTab}
-            onChange={setArchiveTab}
-            className="mb-4"
-          />
+        {/* Search */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="⌘  Search projects..."
+          style={{ width: "100%", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)", background: "none", border: "none", borderBottom: "1px solid var(--color-rule-light)", padding: "8px 0", outline: "none" }}
+        />
+      </section>
 
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search projects..."
-            className="mb-4"
-          />
-
-          {!isArchived && (
-            <TabFilter
-              tabs={statusTabs}
-              active={tab}
-              onChange={setTab}
-              counts={tabCounts}
-              className="mb-6"
+      {/* ═══ CREATE FORM ═══ */}
+      {creating && !isArchived && (
+        <div style={{ marginBottom: 16 }}>
+          {bulkMode ? (
+            <BulkCreateForm
+              value={bulkValue}
+              onChange={setBulkValue}
+              onCreate={handleBulkCreate}
+              onSingleMode={() => { setBulkMode(false); setBulkValue(""); }}
+              onCancel={() => { setCreating(false); setBulkMode(false); setBulkValue(""); setNewName(""); }}
+              placeholder="One project name per line"
             />
-          )}
-
-          {/* Projects list */}
-          <div>
-            {isArchived ? (
-              filteredArchived.length === 0 ? (
-                <SectionEmpty
-                  icon={FolderKanban}
-                  {...getPersonalityCopy("projects-archived-empty", personality)}
-                />
-              ) : (
-                filteredArchived.map((project) => (
-                  <ArchivedProjectRow key={project.id} project={project} />
-                ))
-              )
-            ) : filtered.length === 0 ? (
-              <SectionEmpty
-                icon={FolderKanban}
-                {...getPersonalityCopy("projects-no-matches", personality)}
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <InlineCreateForm
+                value={newName}
+                onChange={setNewName}
+                onCreate={handleCreate}
+                onCancel={() => { setCreating(false); setNewName(""); }}
+                placeholder="Project name"
               />
-            ) : (
-              filtered.map((project) => (
-                <ProjectRow key={project.id} project={project} />
-              ))
-            )}
+              <button
+                onClick={() => setBulkMode(true)}
+                style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", background: "none", border: "none", cursor: "pointer" }}
+              >
+                Bulk
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ PROJECT ROWS ═══ */}
+      <section>
+        {displayList.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "64px 0" }}>
+            <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
+              {isArchived
+                ? getPersonalityCopy("projects-archived-empty", personality).title
+                : getPersonalityCopy("projects-no-matches", personality).title}
+            </p>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
+              {isArchived
+                ? getPersonalityCopy("projects-archived-empty", personality).message ?? ""
+                : getPersonalityCopy("projects-no-matches", personality).message ?? ""}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {isArchived
+              ? filteredArchived.map((project, i) => (
+                  <ArchivedProjectRow key={project.id} project={project} showBorder={i < filteredArchived.length - 1} />
+                ))
+              : filtered.map((project, i) => (
+                  <ProjectRow key={project.id} project={project} showBorder={i < filtered.length - 1} />
+                ))}
+          </div>
+        )}
+      </section>
+
+      {/* ═══ END MARK ═══ */}
+      {displayList.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--color-rule-heavy)", marginTop: 48, paddingTop: 32, paddingBottom: 120, textAlign: "center" }}>
+          <div style={{ fontFamily: "var(--font-serif)", fontSize: 14, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
+            That's everything.
           </div>
         </div>
-      </ScrollArea>
-    </main>
+      )}
+    </div>
   );
 }
 
-const statusDot: Record<string, string> = {
-  active: "bg-success",
-  on_hold: "bg-primary",
-  completed: "bg-blue-500",
-};
+// ─── Project Row ────────────────────────────────────────────────────────────
 
-function ProjectRow({ project }: { project: ProjectListItem }) {
+function ProjectRow({ project, showBorder }: { project: ProjectListItem; showBorder: boolean }) {
   const daysSince = project.daysSinceLastMeeting;
   const isStale = daysSince != null && daysSince > 30;
 
   const subtitle = [
-    project.owner ? `Owner: ${project.owner}` : null,
+    project.owner,
     project.milestone,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  ].filter(Boolean).join(" \u00B7 ");
 
   return (
-    <ListRow
+    <Link
       to="/projects/$projectId"
       params={{ projectId: project.id }}
-      signalColor={statusDot[project.status] ?? "bg-muted-foreground/30"}
-      name={project.name}
-      badges={
-        <StatusBadge
-          value={project.status}
-          styles={projectStatusStyles}
-          fallback={projectStatusStyles.active}
-        />
-      }
-      subtitle={subtitle || undefined}
-      columns={
-        <>
-          {project.targetDate && (
-            <ListColumn value={project.targetDate} label="target" className="w-20" />
-          )}
-          {project.openActionCount > 0 && (
-            <ListColumn
-              value={project.openActionCount}
-              label="actions"
-              className="w-14"
-            />
-          )}
-          {daysSince != null && (
-            <ListColumn
-              value={
-                <span className={cn(isStale && "text-destructive")}>
-                  {daysSince === 0 ? "Today" : `${daysSince}d`}
-                </span>
-              }
-              label="last mtg"
-              className="w-14"
-            />
-          )}
-        </>
-      }
-    />
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        textDecoration: "none",
+      }}
+    >
+      {/* Status dot */}
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: statusDotColor[project.status] ?? "var(--color-paper-linen)",
+          flexShrink: 0,
+          marginTop: 8,
+        }}
+      />
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "var(--font-serif)", fontSize: 17, fontWeight: 400, color: "var(--color-text-primary)" }}>
+            {project.name}
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: project.status === "active"
+                ? "var(--color-garden-sage)"
+                : project.status === "on_hold"
+                  ? "var(--color-spice-turmeric)"
+                  : "var(--color-garden-larkspur)",
+            }}
+          >
+            {statusLabel[project.status] ?? project.status}
+          </span>
+        </div>
+        {subtitle && (
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+
+      {/* Right metrics */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexShrink: 0 }}>
+        {project.targetDate && (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            {project.targetDate}
+          </span>
+        )}
+        {project.openActionCount > 0 && (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            {project.openActionCount} action{project.openActionCount !== 1 ? "s" : ""}
+          </span>
+        )}
+        {daysSince != null && (
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+            }}
+          >
+            {daysSince === 0 ? "Today" : `${daysSince}d`}
+          </span>
+        )}
+      </div>
+    </Link>
   );
 }
 
-/** I176: Simplified row for archived projects (no active metrics). */
-function ArchivedProjectRow({ project }: { project: ArchivedProject }) {
+// ─── Archived Project Row ───────────────────────────────────────────────────
+
+function ArchivedProjectRow({ project, showBorder }: { project: ArchivedProject; showBorder: boolean }) {
+  const subtitle = [
+    project.owner ? `Owner: ${project.owner}` : "",
+    project.status,
+  ].filter(Boolean).join(" \u00B7 ");
+
   return (
-    <ListRow
+    <Link
       to="/projects/$projectId"
       params={{ projectId: project.id }}
-      signalColor={statusDot[project.status] ?? "bg-muted-foreground/30"}
-      name={project.name}
-      subtitle={
-        [project.owner ? `Owner: ${project.owner}` : "", project.status]
-          .filter(Boolean)
-          .join(" \u00B7 ") || undefined
-      }
-    />
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        textDecoration: "none",
+      }}
+    >
+      <div
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          background: statusDotColor[project.status] ?? "var(--color-paper-linen)",
+          flexShrink: 0,
+          marginTop: 8,
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontFamily: "var(--font-serif)", fontSize: 17, fontWeight: 400, color: "var(--color-text-primary)" }}>
+          {project.name}
+        </span>
+        {subtitle && (
+          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+    </Link>
   );
 }

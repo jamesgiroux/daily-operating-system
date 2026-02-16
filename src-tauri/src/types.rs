@@ -1307,10 +1307,10 @@ fn default_poll_interval() -> u32 {
     5
 }
 fn default_work_hours_start() -> u8 {
-    8
+    9
 }
 fn default_work_hours_end() -> u8 {
-    18
+    17
 }
 
 impl Default for GoogleConfig {
@@ -1549,6 +1549,144 @@ impl UserContext {
     pub fn title_or_default(&self) -> &str {
         self.title.as_deref().unwrap_or("a professional")
     }
+}
+
+// =============================================================================
+// Risk Briefing (6-Slide Executive Presentation)
+// =============================================================================
+
+/// Complete risk briefing for an at-risk account.
+/// 6-slide narrative structure: Cover → Bottom Line → What Happened → Stakes → The Plan → The Ask.
+/// SCQA is the internal thinking tool; the output is a presentation deck.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskBriefing {
+    pub account_id: String,
+    pub generated_at: String,
+    pub cover: RiskCover,
+    pub bottom_line: RiskBottomLine,
+    pub what_happened: RiskWhatHappened,
+    pub stakes: RiskStakes,
+    pub the_plan: RiskThePlan,
+    pub the_ask: RiskTheAsk,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskCover {
+    pub account_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arr_at_risk: Option<f64>,
+    pub date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tam_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskBottomLine {
+    pub headline: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub renewal_window: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskWhatHappened {
+    pub narrative: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub health_arc: Vec<HealthSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_losses: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthSnapshot {
+    pub period: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskStakes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub financial_headline: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stakeholders: Vec<RiskStakeholder>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_maker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worst_case: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskStakeholder {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// "champion", "neutral", "detractor", "unknown"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alignment: Option<String>,
+    /// "high", "medium", "low", "disengaged"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engagement: Option<String>,
+    /// "decision_maker", "influencer", "user", "blocker"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision_weight: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assessment: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskThePlan {
+    pub strategy: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<ActionStep>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeline: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assumptions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionStep {
+    pub step: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeline: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskTheAsk {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requests: Vec<ConcreteRequest>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub escalation: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConcreteRequest {
+    pub request: String,
+    /// "immediate", "this_week", "this_month"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub urgency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 #[cfg(test)]
