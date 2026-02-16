@@ -10,33 +10,33 @@
  */
 
 @theme {
-  /* Light mode colors */
-  --color-background: hsl(35 33% 95%);
-  --color-foreground: hsl(210 16% 12%);
-  --color-card: hsl(35 33% 97%);
-  --color-card-foreground: hsl(210 16% 12%);
-  --color-popover: hsl(35 33% 97%);
-  --color-popover-foreground: hsl(210 16% 12%);
-  --color-primary: hsl(46 72% 47%);
-  --color-primary-foreground: hsl(35 33% 97%);
-  --color-secondary: hsl(210 10% 90%);
-  --color-secondary-foreground: hsl(210 16% 20%);
-  --color-muted: hsl(35 20% 90%);
-  --color-muted-foreground: hsl(210 10% 40%);
-  --color-accent: hsl(46 72% 92%);
-  --color-accent-foreground: hsl(46 72% 30%);
-  --color-destructive: hsl(14 69% 69%);
-  --color-destructive-foreground: hsl(35 33% 97%);
-  --color-success: hsl(130 33% 61%);
-  --color-success-foreground: hsl(35 33% 97%);
-  --color-border: hsl(35 20% 85%);
-  --color-input: hsl(35 20% 85%);
-  --color-ring: hsl(46 72% 47%);
+  /* Light mode colors — exact editorial palette (ADR-0076) */
+  --color-background: #f5f2ef;           /* cream */
+  --color-foreground: #1e2530;           /* charcoal */
+  --color-card: #faf8f6;                 /* warm white */
+  --color-card-foreground: #1e2530;      /* charcoal */
+  --color-popover: #faf8f6;              /* warm white */
+  --color-popover-foreground: #1e2530;   /* charcoal */
+  --color-primary: #c9a227;              /* turmeric */
+  --color-primary-foreground: #faf8f6;   /* warm white */
+  --color-secondary: #e8e2d9;            /* linen */
+  --color-secondary-foreground: #1e2530; /* charcoal */
+  --color-muted: #e8e2d9;               /* linen */
+  --color-muted-foreground: #6b7280;     /* text-tertiary */
+  --color-accent: #e8e2d9;              /* linen */
+  --color-accent-foreground: #1e2530;    /* charcoal */
+  --color-destructive: #c4654a;          /* terracotta */
+  --color-destructive-foreground: #faf8f6; /* warm white */
+  --color-success: #7eaa7b;             /* sage */
+  --color-success-foreground: #faf8f6;   /* warm white */
+  --color-border: rgba(30, 37, 48, 0.06);  /* rule-light */
+  --color-input: rgba(30, 37, 48, 0.06);   /* rule-light */
+  --color-ring: #c9a227;                /* turmeric */
 
-  /* Radius */
+  /* Radius — ADR-0073 editorial specs */
   --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
+  --radius-md: 0.625rem;  /* 10px */
+  --radius-lg: 1rem;      /* 16px */
 
   /* Animations */
   --animate-accordion-down: accordion-down 0.2s ease-out;
@@ -45,52 +45,18 @@
   --animate-pulse-gold: pulse-gold 2s ease-in-out infinite;
 }
 
-/* Sidebar colors - light mode (matches cream palette) */
+/* Sidebar colors - light mode (exact editorial palette) */
 :root {
-  --sidebar: hsl(35 33% 97%);
-  --sidebar-foreground: hsl(210 16% 12%);
-  --sidebar-primary: hsl(46 72% 47%);
-  --sidebar-primary-foreground: hsl(35 33% 97%);
-  --sidebar-accent: hsl(35 20% 90%);
-  --sidebar-accent-foreground: hsl(210 16% 12%);
-  --sidebar-border: hsl(35 20% 85%);
-  --sidebar-ring: hsl(46 72% 47%);
+  --sidebar: #faf8f6;                          /* warm white */
+  --sidebar-foreground: #1e2530;               /* charcoal */
+  --sidebar-primary: #c9a227;                  /* turmeric */
+  --sidebar-primary-foreground: #faf8f6;       /* warm white */
+  --sidebar-accent: #e8e2d9;                   /* linen */
+  --sidebar-accent-foreground: #1e2530;        /* charcoal */
+  --sidebar-border: rgba(30, 37, 48, 0.06);   /* rule-light */
+  --sidebar-ring: #c9a227;                     /* turmeric */
 }
 
-/* Dark mode overrides */
-.dark {
-  --color-background: hsl(210 16% 12%);
-  --color-foreground: hsl(35 33% 95%);
-  --color-card: hsl(210 16% 16%);
-  --color-card-foreground: hsl(35 33% 95%);
-  --color-popover: hsl(210 16% 16%);
-  --color-popover-foreground: hsl(35 33% 95%);
-  --color-primary: hsl(46 72% 47%);
-  --color-primary-foreground: hsl(210 16% 12%);
-  --color-secondary: hsl(210 12% 22%);
-  --color-secondary-foreground: hsl(35 33% 90%);
-  --color-muted: hsl(210 12% 20%);
-  --color-muted-foreground: hsl(35 20% 60%);
-  --color-accent: hsl(46 50% 20%);
-  --color-accent-foreground: hsl(46 72% 60%);
-  --color-destructive: hsl(14 60% 55%);
-  --color-destructive-foreground: hsl(35 33% 95%);
-  --color-success: hsl(130 33% 50%);
-  --color-success-foreground: hsl(35 33% 95%);
-  --color-border: hsl(210 12% 25%);
-  --color-input: hsl(210 12% 25%);
-  --color-ring: hsl(46 72% 47%);
-
-  /* Sidebar dark mode */
-  --sidebar: hsl(210 16% 14%);
-  --sidebar-foreground: hsl(35 33% 95%);
-  --sidebar-primary: hsl(46 72% 47%);
-  --sidebar-primary-foreground: hsl(210 16% 12%);
-  --sidebar-accent: hsl(210 12% 20%);
-  --sidebar-accent-foreground: hsl(35 33% 95%);
-  --sidebar-border: hsl(210 12% 25%);
-  --sidebar-ring: hsl(46 72% 47%);
-}
 
 @theme inline {
   --color-sidebar: var(--sidebar);
@@ -136,10 +102,10 @@
 @keyframes pulse-gold {
   0%,
   100% {
-    box-shadow: 0 0 0 2px hsl(46 72% 47%);
+    box-shadow: 0 0 0 2px #c9a227;
   }
   50% {
-    box-shadow: 0 0 0 6px hsl(46 72% 47% / 0.3);
+    box-shadow: 0 0 0 6px rgba(201, 162, 39, 0.3);
   }
 }
 
