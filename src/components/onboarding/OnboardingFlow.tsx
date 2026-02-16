@@ -1,6 +1,22 @@
-import { useEffect, useState } from "react";
-import { cn } from "@/lib/utils";
+import { useState } from "react";
 import type { EntityMode } from "@/types";
+
+import { AtmosphereLayer } from "@/components/layout/AtmosphereLayer";
+import { FolioBar } from "@/components/layout/FolioBar";
+import { FloatingNavIsland, type ChapterItem } from "@/components/layout/FloatingNavIsland";
+import {
+  Sparkles,
+  Layers,
+  FolderOpen,
+  Mail,
+  Terminal,
+  User,
+  Package,
+  Inbox,
+  LayoutDashboard,
+  CalendarCheck,
+  Rocket,
+} from "lucide-react";
 
 import { Welcome } from "./chapters/Welcome";
 import { EntityMode as EntityModeChapter } from "./chapters/EntityMode";
@@ -12,22 +28,19 @@ import { PopulateWorkspace } from "./chapters/PopulateWorkspace";
 import { InboxTraining } from "./chapters/InboxTraining";
 import { DashboardTour } from "./chapters/DashboardTour";
 import { MeetingDeepDive } from "./chapters/MeetingDeepDive";
-import { InternalTeamSetup } from "./chapters/InternalTeamSetup";
 import { PrimeBriefing } from "./chapters/PrimeBriefing";
 
 interface OnboardingFlowProps {
-  mode?: "full" | "internal";
   onComplete: () => void;
 }
 
-const FULL_CHAPTERS = [
+const CHAPTERS = [
   "welcome",
   "entity-mode",
   "workspace",
   "google",
   "claude-code",
   "about-you",
-  "internal-team-setup",
   "populate",
   "inbox-training",
   "dashboard-tour",
@@ -35,12 +48,21 @@ const FULL_CHAPTERS = [
   "prime-briefing",
 ] as const;
 
-const INTERNAL_ONLY_CHAPTERS = [
-  "internal-team-setup",
-  "prime-briefing",
-] as const;
+type Chapter = (typeof CHAPTERS)[number];
 
-type Chapter = (typeof FULL_CHAPTERS)[number];
+const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
+  "welcome": <Sparkles size={16} strokeWidth={1.8} />,
+  "entity-mode": <Layers size={16} strokeWidth={1.8} />,
+  "workspace": <FolderOpen size={16} strokeWidth={1.8} />,
+  "google": <Mail size={16} strokeWidth={1.8} />,
+  "claude-code": <Terminal size={16} strokeWidth={1.8} />,
+  "about-you": <User size={16} strokeWidth={1.8} />,
+  "populate": <Package size={16} strokeWidth={1.8} />,
+  "inbox-training": <Inbox size={16} strokeWidth={1.8} />,
+  "dashboard-tour": <LayoutDashboard size={16} strokeWidth={1.8} />,
+  "meeting-deep-dive": <CalendarCheck size={16} strokeWidth={1.8} />,
+  "prime-briefing": <Rocket size={16} strokeWidth={1.8} />,
+};
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
   "welcome": "Welcome",
@@ -49,7 +71,6 @@ const CHAPTER_LABELS: Record<Chapter, string> = {
   "google": "Google",
   "claude-code": "Claude",
   "about-you": "About You",
-  "internal-team-setup": "Internal Team",
   "populate": "Your Work",
   "inbox-training": "Inbox",
   "dashboard-tour": "Dashboard",
@@ -57,20 +78,18 @@ const CHAPTER_LABELS: Record<Chapter, string> = {
   "prime-briefing": "Prime",
 };
 
-export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProps) {
-  const chapterOrder = (mode === "internal" ? INTERNAL_ONLY_CHAPTERS : FULL_CHAPTERS) as readonly Chapter[];
-  const [chapter, setChapter] = useState<Chapter>(chapterOrder[0]);
+export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
+  const [chapter, setChapter] = useState<Chapter>(CHAPTERS[0]);
   const [entityMode, setEntityMode] = useState<EntityMode>("account");
+  const [workspacePath, setWorkspacePath] = useState("~/Documents/DailyOS");
   const [quickSetup, setQuickSetup] = useState(false);
+  const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
 
-  const chapterIndex = chapterOrder.indexOf(chapter);
-
-  useEffect(() => {
-    setChapter(chapterOrder[0]);
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const chapterIndex = CHAPTERS.indexOf(chapter);
 
   function goToChapter(c: Chapter) {
     setChapter(c);
+    setVisitedChapters((prev) => new Set([...prev, c]));
   }
 
   function handleSkipToQuickSetup() {
@@ -78,34 +97,55 @@ export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProp
     setChapter("entity-mode");
   }
 
-  // Determine width class based on chapter
-  const widthClass = chapter === "dashboard-tour"
-    ? "max-w-5xl"
-    : chapter === "meeting-deep-dive"
-      ? "max-w-2xl"
-      : "max-w-lg";
+  // Build chapter items for FloatingNavIsland
+  const navChapters: ChapterItem[] = CHAPTERS.map((c) => ({
+    id: c,
+    label: CHAPTER_LABELS[c],
+    icon: CHAPTER_ICONS[c],
+  }));
+
+  // Determine max width based on chapter
+  const maxWidth = chapter === "dashboard-tour" ? 1200 : 720;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className={cn("w-full space-y-6 transition-all duration-300", widthClass)}>
-        {/* Progress dots */}
-        <div className="flex items-center justify-center gap-2">
-          {chapterOrder.map((c, i) => (
-            <div
-              key={c}
-              className={cn(
-                "size-2 rounded-full transition-colors",
-                i < chapterIndex
-                  ? "bg-primary/40"
-                  : i === chapterIndex
-                    ? "bg-primary"
-                    : "bg-muted",
-              )}
-              title={CHAPTER_LABELS[c]}
-            />
-          ))}
-        </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--color-paper-cream)",
+        position: "relative",
+      }}
+    >
+      <AtmosphereLayer color="turmeric" />
+      <FolioBar publicationLabel="Setup" />
 
+      {/* FloatingNavIsland in chapter mode */}
+      <FloatingNavIsland
+        mode="chapters"
+        chapters={navChapters}
+        activeChapterId={chapter}
+        activeColor="turmeric"
+        onChapterClick={(id) => {
+          // Only allow navigating to previously visited chapters
+          if (visitedChapters.has(id as Chapter)) {
+            goToChapter(id as Chapter);
+          }
+        }}
+      />
+
+      {/* Content column */}
+      <div
+        style={{
+          maxWidth,
+          margin: "0 auto",
+          paddingTop: 80,
+          paddingBottom: 120,
+          paddingLeft: "var(--page-padding-horizontal)",
+          paddingRight: "var(--page-padding-horizontal)",
+          position: "relative",
+          zIndex: "var(--z-page-content)",
+          transition: "max-width 0.3s ease",
+        }}
+      >
         {/* Chapter content */}
         {chapter === "welcome" && (
           <Welcome onNext={() => goToChapter("entity-mode")} />
@@ -123,7 +163,10 @@ export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProp
         {chapter === "workspace" && (
           <Workspace
             entityMode={entityMode}
-            onNext={(_path) => goToChapter("google")}
+            onNext={(path) => {
+              setWorkspacePath(path.replace(/^\/Users\/[^/]+/, "~"));
+              goToChapter("google");
+            }}
           />
         )}
 
@@ -135,25 +178,14 @@ export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProp
 
         {chapter === "claude-code" && (
           <ClaudeCode
+            workspacePath={workspacePath}
             onNext={(_installed) => goToChapter("about-you")}
           />
         )}
 
         {chapter === "about-you" && (
           <AboutYou
-            onNext={() => goToChapter("internal-team-setup")}
-          />
-        )}
-
-        {chapter === "internal-team-setup" && (
-          <InternalTeamSetup
-            onNext={() => {
-              if (mode === "internal") {
-                goToChapter("prime-briefing");
-              } else {
-                goToChapter("populate");
-              }
-            }}
+            onNext={() => goToChapter("populate")}
           />
         )}
 
@@ -192,10 +224,21 @@ export function OnboardingFlow({ mode = "full", onComplete }: OnboardingFlowProp
         )}
 
         {/* Skip to Quick Setup — visible on chapters 1-4 when not already in quick setup */}
-        {mode === "full" && !quickSetup && chapterIndex <= 3 && (
-          <div className="text-center pt-2">
+        {!quickSetup && chapterIndex <= 3 && (
+          <div style={{ textAlign: "center", paddingTop: 24 }}>
             <button
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                letterSpacing: "0.04em",
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                transition: "color 0.15s ease",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-text-primary)")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "var(--color-text-tertiary)")}
               onClick={handleSkipToQuickSetup}
             >
               Skip to Quick Setup

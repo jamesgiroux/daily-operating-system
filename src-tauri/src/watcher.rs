@@ -434,6 +434,12 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates person.md.
 fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
+    // I298: Skip in dev DB mode
+    if crate::db::is_dev_db_mode() {
+        log::debug!("Watcher: skipping people sync — dev DB mode active");
+        return;
+    }
+
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
     let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
@@ -483,6 +489,14 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
 fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+    // I298: Skip watcher sync when dev DB mode is active. The watcher watches
+    // the live workspace, but the DB is pointing at the dev DB — syncing would
+    // leak live account data into the dev sandbox.
+    if crate::db::is_dev_db_mode() {
+        log::debug!("Watcher: skipping account sync — dev DB mode active");
+        return;
+    }
+
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
     let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
@@ -512,6 +526,12 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
 fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
+    // I298: Skip watcher sync in dev DB mode (same rationale as accounts above)
+    if crate::db::is_dev_db_mode() {
+        log::debug!("Watcher: skipping project sync — dev DB mode active");
+        return;
+    }
+
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
     let db = match crate::db::ActionDb::open().ok() {
         Some(db) => db,
@@ -546,6 +566,11 @@ fn handle_account_content_changes(
     _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
+    // I298: Skip in dev DB mode
+    if crate::db::is_dev_db_mode() {
+        return None;
+    }
+
     // Own DB connection to avoid holding state.db Mutex during content indexing
     let db = crate::db::ActionDb::open().ok()?;
 
@@ -607,6 +632,11 @@ fn handle_project_content_changes(
     _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
+    // I298: Skip in dev DB mode
+    if crate::db::is_dev_db_mode() {
+        return None;
+    }
+
     // Own DB connection to avoid holding state.db Mutex during content indexing
     let db = crate::db::ActionDb::open().ok()?;
 
