@@ -1273,3 +1273,85 @@ export interface DuplicateCandidate {
   confidence: number;
   reason: string;
 }
+
+// =============================================================================
+// Risk Briefing (6-Slide Executive Presentation)
+// =============================================================================
+
+export interface RiskBriefing {
+  accountId: string;
+  generatedAt: string;
+  cover: RiskCover;
+  bottomLine: RiskBottomLine;
+  whatHappened: RiskWhatHappened;
+  stakes: RiskStakes;
+  thePlan: RiskThePlan;
+  theAsk: RiskTheAsk;
+}
+
+export interface RiskCover {
+  accountName: string;
+  riskLevel?: string;
+  arrAtRisk?: number;
+  date: string;
+  tamName?: string;
+}
+
+export interface RiskBottomLine {
+  headline: string;
+  riskLevel?: string;
+  renewalWindow?: string;
+}
+
+export interface RiskWhatHappened {
+  narrative: string;
+  healthArc?: HealthSnapshot[];
+  keyLosses?: string[];
+}
+
+export interface HealthSnapshot {
+  period: string;
+  status: string;
+  detail?: string;
+}
+
+export interface RiskStakes {
+  financialHeadline?: string;
+  stakeholders?: RiskStakeholder[];
+  decisionMaker?: string;
+  worstCase?: string;
+}
+
+export interface RiskStakeholder {
+  name: string;
+  role?: string;
+  alignment?: string;
+  engagement?: string;
+  decisionWeight?: string;
+  assessment?: string;
+}
+
+export interface RiskThePlan {
+  strategy: string;
+  actions?: ActionStep[];
+  timeline?: string;
+  assumptions?: string[];
+}
+
+export interface ActionStep {
+  step: string;
+  owner?: string;
+  timeline?: string;
+}
+
+export interface RiskTheAsk {
+  requests?: ConcreteRequest[];
+  decisions?: string[];
+  escalation?: string;
+}
+
+export interface ConcreteRequest {
+  request: string;
+  urgency?: string;
+  from?: string;
+}

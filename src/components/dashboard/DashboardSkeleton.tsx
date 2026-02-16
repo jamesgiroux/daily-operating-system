@@ -1,68 +1,119 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent } from "@/components/ui/card";
+/**
+ * DashboardSkeleton — Editorial loading state for the daily briefing.
+ * Renders inside MagazinePageLayout's page container.
+ */
+
 import { Skeleton } from "@/components/ui/skeleton";
+
+const skeletonBg = "var(--color-rule-light)";
 
 export function DashboardSkeleton() {
   return (
-    <ScrollArea className="flex-1">
-      <div className="px-8 pt-10 pb-8">
-        <div className="mx-auto max-w-6xl">
-          <div className="space-y-8">
-            <div className="space-y-1">
-              <Skeleton className="h-8 w-72" />
-            </div>
-
-            {/* Focus skeleton */}
-            <div className="rounded-lg border p-3.5">
-              <div className="flex items-start gap-2.5">
-                <Skeleton className="size-4 shrink-0 mt-0.5" />
-                <div className="min-w-0 space-y-1.5 flex-1">
-                  <Skeleton className="h-3 w-10" />
-                  <Skeleton className="h-4 w-full max-w-md" />
-                </div>
-              </div>
-            </div>
-
-            {/* Meeting card skeletons */}
-            <div className="space-y-4">
-              {[...Array(4)].map((_, i) => (
-                <Card key={i}>
-                  <CardContent className="p-5">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-4 w-16" />
-                        <Skeleton className="h-4 w-4" />
-                        <Skeleton className="h-4 w-16" />
-                      </div>
-                      <Skeleton className="h-5 w-48" />
-                      <Skeleton className="h-4 w-24" />
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {/* Actions skeleton */}
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <Skeleton className="h-3 w-20" />
-                <Skeleton className="h-3 w-12" />
-              </div>
-              <div className="space-y-2">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 rounded-md p-3">
-                    <Skeleton className="size-5 rounded-full" />
-                    <div className="flex-1 space-y-1">
-                      <Skeleton className="h-4 w-full max-w-sm" />
-                      <Skeleton className="h-3 w-20" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Hero skeleton */}
+      <div style={{ paddingTop: 80, paddingBottom: 48 }}>
+        <Skeleton className="h-3 w-48 mb-4" style={{ background: skeletonBg }} />
+        <Skeleton className="h-12 w-full max-w-lg mb-3" style={{ background: skeletonBg }} />
+        <Skeleton className="h-12 w-80 mb-6" style={{ background: skeletonBg }} />
+        <div style={{ display: "flex", gap: 8 }}>
+          <Skeleton className="h-6 w-28 rounded-full" style={{ background: skeletonBg }} />
+          <Skeleton className="h-6 w-36 rounded-full" style={{ background: skeletonBg }} />
         </div>
       </div>
-    </ScrollArea>
+
+      {/* Focus strip skeleton */}
+      <div
+        style={{
+          borderLeft: "3px solid var(--color-rule-light)",
+          borderRadius: 16,
+          padding: "20px 24px",
+          marginBottom: 48,
+          background: "rgba(30, 37, 48, 0.02)",
+        }}
+      >
+        <Skeleton className="h-3 w-24 mb-2" style={{ background: skeletonBg }} />
+        <Skeleton className="h-5 w-full max-w-md" style={{ background: skeletonBg }} />
+      </div>
+
+      {/* Featured meeting skeleton */}
+      <div style={{ marginBottom: 48 }}>
+        <Skeleton className="h-6 w-32 mb-5" style={{ background: skeletonBg }} />
+        <div
+          style={{
+            borderRadius: 16,
+            borderLeft: "6px solid var(--color-rule-light)",
+            padding: "28px 32px",
+            background: "rgba(30, 37, 48, 0.02)",
+          }}
+        >
+          <Skeleton className="h-4 w-32 mb-3" style={{ background: skeletonBg }} />
+          <Skeleton className="h-7 w-72 mb-2" style={{ background: skeletonBg }} />
+          <Skeleton className="h-3 w-48 mb-4" style={{ background: skeletonBg }} />
+          <Skeleton className="h-4 w-full max-w-xl mb-2" style={{ background: skeletonBg }} />
+          <Skeleton className="h-4 w-full max-w-lg" style={{ background: skeletonBg }} />
+        </div>
+      </div>
+
+      {/* Schedule skeleton */}
+      <div style={{ marginBottom: 48 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
+          <Skeleton className="h-7 w-24" style={{ background: skeletonBg }} />
+          <Skeleton className="h-3 w-20" style={{ background: skeletonBg }} />
+        </div>
+        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginBottom: 20 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {[...Array(3)].map((_, i) => (
+            <div
+              key={i}
+              style={{
+                borderRadius: 16,
+                borderLeft: "4px solid var(--color-rule-light)",
+                padding: "20px 24px",
+                background: "rgba(30, 37, 48, 0.02)",
+                display: "flex",
+                gap: 16,
+              }}
+            >
+              <div style={{ width: 72, flexShrink: 0, textAlign: "right" }}>
+                <Skeleton className="h-4 w-16 ml-auto" style={{ background: skeletonBg }} />
+                <Skeleton className="h-3 w-10 ml-auto mt-1" style={{ background: skeletonBg }} />
+              </div>
+              <div style={{ width: 1, background: "var(--color-rule-light)" }} />
+              <div style={{ flex: 1 }}>
+                <Skeleton className="h-5 w-56 mb-2" style={{ background: skeletonBg }} />
+                <Skeleton className="h-3 w-32" style={{ background: skeletonBg }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Loose Threads skeleton */}
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
+          <Skeleton className="h-7 w-32" style={{ background: skeletonBg }} />
+          <Skeleton className="h-3 w-8" style={{ background: skeletonBg }} />
+        </div>
+        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginBottom: 16 }} />
+        {[...Array(3)].map((_, i) => (
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "12px 0",
+              borderBottom: i < 2 ? "1px solid var(--color-rule-light)" : "none",
+            }}
+          >
+            <Skeleton className="size-5 rounded-full shrink-0 mt-0.5" style={{ background: skeletonBg }} />
+            <div style={{ flex: 1 }}>
+              <Skeleton className="h-4 w-full max-w-sm mb-1" style={{ background: skeletonBg }} />
+              <Skeleton className="h-3 w-40" style={{ background: skeletonBg }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

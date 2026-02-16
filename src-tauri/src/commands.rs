@@ -7554,3 +7554,266 @@ mod tests {
         assert!(draft.body.contains("Please reply with additions or edits."));
     }
 }
+
+// ==================== Backfill ====================
+
+/// Backfill historical meetings from filesystem into database.
+///
+/// Scans account/project directories for meeting files (transcripts, notes, summaries)
+/// and creates database records + entity links for meetings not already in the system.
+///
+/// Returns (meetings_created, meetings_skipped, errors).
+#[tauri::command]
+pub fn backfill_historical_meetings(
+    state: State<Arc<AppState>>,
+) -> Result<(usize, usize, Vec<String>), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    crate::backfill_meetings::backfill_historical_meetings(db, config)
+}
+
+// ==================== Risk Briefing ====================
+
+/// Generate a strategic risk briefing for an account via AI.
+/// All blocking work (DB lock + file I/O + PTY) runs in spawn_blocking
+/// so the async runtime stays responsive and the UI can render the
+/// progress page without beachballing.
+#[tauri::command]
+pub async fn generate_risk_briefing(
+    state: State<'_, Arc<AppState>>,
+    account_id: String,
+) -> Result<crate::types::RiskBriefing, String> {
+    let app_state = state.inner().clone();
+
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        // Phase 1: Brief DB lock — gather context + build prompt
+        let input = {
+            let db_guard = app_state
+                .db
+                .lock()
+                .map_err(|_| "Lock poisoned".to_string())?;
+            let db = db_guard
+                .as_ref()
+                .ok_or_else(|| "Database not initialized".to_string())?;
+
+            let config_guard = app_state
+                .config
+                .read()
+                .map_err(|_| "Config lock poisoned".to_string())?;
+            let config = config_guard
+                .as_ref()
+                .ok_or_else(|| "Config not initialized".to_string())?;
+
+            let workspace = std::path::Path::new(&config.workspace_path);
+            crate::risk_briefing::gather_risk_input(
+                workspace,
+                db,
+                &account_id,
+                config.user_name.clone(),
+                config.ai_models.clone(),
+            )?
+        }; // locks dropped here
+
+        // Phase 2: No lock — PTY enrichment (long-running)
+        crate::risk_briefing::run_risk_enrichment(&input)
+    });
+
+    match task.await {
+        Ok(result) => result,
+        Err(e) => Err(format!("Risk briefing task panicked: {}", e)),
+    }
+}
+
+/// Read a cached risk briefing for an account (fast, no AI).
+#[tauri::command]
+pub fn get_risk_briefing(
+    state: State<Arc<AppState>>,
+    account_id: String,
+) -> Result<crate::types::RiskBriefing, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let config_guard = state.config.read().map_err(|_| "Config lock poisoned")?;
+    let config = config_guard.as_ref().ok_or("Config not initialized")?;
+
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| format!("DB error: {}", e))?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
+
+    let workspace = std::path::Path::new(&config.workspace_path);
+    let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+    crate::risk_briefing::read_risk_briefing(&account_dir)
+}
+
+// =============================================================================
+// MCP: Claude Desktop Configuration (ADR-0075)
+// =============================================================================
+
+/// Result of Claude Desktop MCP configuration.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeDesktopConfigResult {
+    pub success: bool,
+    pub message: String,
+    pub config_path: Option<String>,
+    pub binary_path: Option<String>,
+}
+
+/// Configure Claude Desktop to use the DailyOS MCP server.
+///
+/// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
+/// and adds/updates the `mcpServers.dailyos` entry pointing to the bundled binary.
+#[tauri::command]
+pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not find home directory".to_string(),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    // Resolve MCP binary path: check common locations
+    let binary_name = "dailyos-mcp";
+    let binary_path = resolve_mcp_binary_path(&home, binary_name);
+
+    let binary_path_str = match &binary_path {
+        Some(p) => p.to_string_lossy().to_string(),
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: format!(
+                    "Could not find {binary_name} binary. Build it with: \
+                     cd src-tauri && cargo build --features mcp --bin dailyos-mcp"
+                ),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    // Claude Desktop config path
+    let config_path = home
+        .join("Library")
+        .join("Application Support")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    // Read existing config or start fresh
+    let mut config: serde_json::Value = if config_path.exists() {
+        match std::fs::read_to_string(&config_path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|_| {
+                serde_json::json!({})
+            }),
+            Err(_) => serde_json::json!({}),
+        }
+    } else {
+        serde_json::json!({})
+    };
+
+    // Ensure mcpServers object exists
+    if !config.get("mcpServers").is_some() {
+        config["mcpServers"] = serde_json::json!({});
+    }
+
+    // Set the dailyos entry
+    config["mcpServers"]["dailyos"] = serde_json::json!({
+        "command": binary_path_str,
+        "args": [],
+        "env": {}
+    });
+
+    // Ensure parent directory exists
+    if let Some(parent) = config_path.parent() {
+        if !parent.exists() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return ClaudeDesktopConfigResult {
+                    success: false,
+                    message: format!("Failed to create config directory: {e}"),
+                    config_path: None,
+                    binary_path: Some(binary_path_str),
+                };
+            }
+        }
+    }
+
+    // Write config
+    let formatted = match serde_json::to_string_pretty(&config) {
+        Ok(s) => s,
+        Err(e) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: format!("Failed to serialize config: {e}"),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: Some(binary_path_str),
+            }
+        }
+    };
+
+    match std::fs::write(&config_path, formatted) {
+        Ok(()) => ClaudeDesktopConfigResult {
+            success: true,
+            message: "Claude Desktop configured. Restart Claude Desktop to connect.".to_string(),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: Some(binary_path_str),
+        },
+        Err(e) => ClaudeDesktopConfigResult {
+            success: false,
+            message: format!("Failed to write config: {e}"),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: Some(binary_path_str),
+        },
+    }
+}
+
+/// Resolve the MCP binary path by checking common locations.
+fn resolve_mcp_binary_path(
+    home: &std::path::Path,
+    binary_name: &str,
+) -> Option<std::path::PathBuf> {
+    // 1. Check if in PATH (cargo install location)
+    let cargo_bin = home.join(".cargo").join("bin").join(binary_name);
+    if cargo_bin.exists() {
+        return Some(cargo_bin);
+    }
+
+    // 2. Check alongside the running executable (app bundle)
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let sibling = exe_dir.join(binary_name);
+            if sibling.exists() {
+                return Some(sibling);
+            }
+            // macOS .app bundle: Contents/MacOS/
+            let macos_sibling = exe_dir.join(binary_name);
+            if macos_sibling.exists() {
+                return Some(macos_sibling);
+            }
+        }
+    }
+
+    // 3. Check dev build location (target/debug)
+    let cwd = std::env::current_dir().ok()?;
+    let dev_paths = [
+        cwd.join("target/debug").join(binary_name),
+        cwd.join("src-tauri/target/debug").join(binary_name),
+        cwd.join("target/release").join(binary_name),
+        cwd.join("src-tauri/target/release").join(binary_name),
+    ];
+    for path in &dev_paths {
+        if path.exists() {
+            return Some(path.clone());
+        }
+    }
+
+    None
+}

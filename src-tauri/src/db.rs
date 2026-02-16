@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -450,6 +450,23 @@ impl ActionDb {
         let _ = Self::backfill_meeting_identity(&conn);
         let _ = Self::backfill_meeting_user_layer(&conn);
 
+        Ok(Self { conn })
+    }
+
+    /// Open the database in read-only mode. Used by the MCP binary for safe
+    /// concurrent reads while the Tauri app owns writes.
+    pub fn open_readonly() -> Result<Self, DbError> {
+        let path = Self::db_path()?;
+        Self::open_readonly_at(&path)
+    }
+
+    /// Open a database at an explicit path in read-only mode.
+    pub fn open_readonly_at(path: &std::path::Path) -> Result<Self, DbError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         Ok(Self { conn })
     }
 
@@ -1593,12 +1610,13 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id, prep_context_json
-             FROM meetings_history
-             WHERE account_id = ?1
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id, m.prep_context_json
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![account_id, limit], |row| {
@@ -1636,12 +1654,14 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
-             FROM meetings_history
-             WHERE account_id = ?1 AND start_time >= datetime('now')
-             ORDER BY start_time ASC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+               AND m.start_time >= datetime('now')
+             ORDER BY m.start_time ASC
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![account_id, limit], |row| {
