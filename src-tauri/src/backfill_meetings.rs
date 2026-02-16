@@ -260,8 +260,10 @@ fn extract_title_from_filename(filename: &str, date_re: &Regex) -> String {
         title.truncate(pos);
     }
 
-    // Remove date prefix
+    // Remove date prefix, then normalize separators so type prefix check works
     title = date_re.replace(&title, "").to_string();
+    title = title.replace('_', "-");
+    title = title.trim_matches(|c: char| c == '-' || c.is_whitespace()).to_string();
 
     // Remove type prefixes (summary-, meeting-, strategy-, transcript-)
     let prefixes = ["summary-", "meeting-", "strategy-", "transcript-", "call-"];
@@ -275,14 +277,17 @@ fn extract_title_from_filename(filename: &str, date_re: &Regex) -> String {
     // Clean up: trim hyphens, replace remaining hyphens with spaces, title case
     title = title.trim_matches('-').replace('-', " ");
 
-    // Basic title case (capitalize first letter of each word)
+    // Basic title case (capitalize first letter, lowercase rest)
     title
         .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
             match chars.next() {
                 None => String::new(),
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                Some(first) => {
+                    first.to_uppercase().collect::<String>()
+                        + &chars.as_str().to_lowercase()
+                }
             }
         })
         .collect::<Vec<_>>()
@@ -410,7 +415,7 @@ mod tests {
                 "2026-02-05 SlackWPVIP-sync_-transcript.md",
                 &date_re
             ),
-            "Slackwpvip Sync  Transcript"
+            "Slackwpvip Sync Transcript"
         );
     }
 
