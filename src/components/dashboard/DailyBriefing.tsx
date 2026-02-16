@@ -25,7 +25,8 @@ import {
   getTemporalState,
   formatDuration,
 } from "./BriefingMeetingCard";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
+import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
@@ -38,6 +39,8 @@ interface DailyBriefingProps {
   data: DashboardData;
   freshness: DataFreshness;
   onRunBriefing?: () => void;
+  isRunning?: boolean;
+  workflowStatus?: WorkflowStatus;
 }
 
 // ─── Featured Meeting Selection ──────────────────────────────────────────────
@@ -112,7 +115,7 @@ function formatMinutes(minutes: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DailyBriefing({ data, freshness, onRunBriefing }: DailyBriefingProps) {
+export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
@@ -121,6 +124,12 @@ export function DailyBriefing({ data, freshness, onRunBriefing }: DailyBriefingP
   const actions = data.actions;
   const emails = data.emails ?? [];
   const highPriorityEmails = emails.filter((e) => e.priority === "high").slice(0, 4);
+  const briefingEmails = highPriorityEmails.length > 0
+    ? highPriorityEmails
+    : emails.filter((e) => e.priority === "medium").slice(0, 3);
+  const emailSectionLabel = highPriorityEmails.length > 0
+    ? "Emails Needing Response"
+    : "Emails Worth Noting";
 
   // Featured meeting
   const featured = selectFeaturedMeeting(meetings, now);
@@ -151,17 +160,25 @@ export function DailyBriefing({ data, freshness, onRunBriefing }: DailyBriefingP
 
   const folioActions = useMemo(() => {
     if (!onRunBriefing) return undefined;
+    const phaseLabel = isRunning && workflowStatus?.status === "running"
+      ? { preparing: "Preparing\u2026", enriching: "AI Processing\u2026", delivering: "Delivering\u2026" }[workflowStatus.phase]
+      : null;
     return (
       <button
         onClick={onRunBriefing}
-        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-        title="Run morning briefing"
+        disabled={isRunning}
+        className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+        title={isRunning ? "Briefing in progress" : "Run morning briefing"}
       >
-        <RefreshCw className="h-3 w-3" />
-        <span>Refresh</span>
+        {isRunning ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3 w-3" />
+        )}
+        <span>{phaseLabel ?? "Refresh"}</span>
       </button>
     );
-  }, [onRunBriefing]);
+  }, [onRunBriefing, isRunning, workflowStatus]);
 
   const shellConfig = useMemo(
     () => ({
@@ -368,14 +385,15 @@ export function DailyBriefing({ data, freshness, onRunBriefing }: DailyBriefingP
           focus={data.focus}
           completedIds={completedIds}
           onComplete={handleComplete}
-          highPriorityEmails={highPriorityEmails}
+          briefingEmails={briefingEmails}
+          emailSectionLabel={emailSectionLabel}
           allEmails={emails}
           totalPendingActions={pendingActions.length}
         />
-      ) : (pendingActions.length > 0 || highPriorityEmails.length > 0) ? (
+      ) : (pendingActions.length > 0 || briefingEmails.length > 0) ? (
         <LooseThreadsSection
           pendingActions={pendingActions}
-          highPriorityEmails={highPriorityEmails}
+          briefingEmails={briefingEmails}
           allEmails={emails}
           completedIds={completedIds}
           onComplete={handleComplete}
@@ -394,14 +412,16 @@ function PrioritiesSection({
   focus,
   completedIds,
   onComplete,
-  highPriorityEmails,
+  briefingEmails,
+  emailSectionLabel,
   allEmails,
   totalPendingActions,
 }: {
   focus: NonNullable<DashboardData["focus"]>;
   completedIds: Set<string>;
   onComplete: (id: string) => void;
-  highPriorityEmails: Email[];
+  briefingEmails: Email[];
+  emailSectionLabel: string;
   allEmails: Email[];
   totalPendingActions: number;
 }) {
@@ -461,11 +481,11 @@ function PrioritiesSection({
           )}
 
           {/* EMAILS group (woven between action groups) */}
-          {highPriorityEmails.length > 0 && (
+          {briefingEmails.length > 0 && (
             <>
-              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>Emails Needing Response</div>
+              <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>{emailSectionLabel}</div>
               <div className={s.priorityItems}>
-                {highPriorityEmails.map((email) => (
+                {briefingEmails.map((email) => (
                   <PriorityEmailItem key={email.id} email={email} />
                 ))}
               </div>
@@ -497,7 +517,7 @@ function PrioritiesSection({
                 View all {totalPendingActions} actions &rarr;
               </Link>
             )}
-            {allEmails.length > highPriorityEmails.length && (
+            {allEmails.length > briefingEmails.length && (
               <Link to="/emails" className={s.viewAllLink}>
                 View all emails &rarr;
               </Link>
@@ -513,13 +533,13 @@ function PrioritiesSection({
 
 function LooseThreadsSection({
   pendingActions,
-  highPriorityEmails,
+  briefingEmails,
   allEmails,
   completedIds,
   onComplete,
 }: {
   pendingActions: Action[];
-  highPriorityEmails: Email[];
+  briefingEmails: Email[];
   allEmails: Email[];
   completedIds: Set<string>;
   onComplete: (id: string) => void;
@@ -585,7 +605,7 @@ function LooseThreadsSection({
               );
             })}
 
-            {highPriorityEmails.map((email) => (
+            {briefingEmails.map((email) => (
               <PriorityEmailItem key={email.id} email={email} />
             ))}
           </div>
@@ -597,7 +617,7 @@ function LooseThreadsSection({
                 View all {pendingActions.length} actions &rarr;
               </Link>
             )}
-            {allEmails.length > highPriorityEmails.length && (
+            {allEmails.length > briefingEmails.length && (
               <Link to="/emails" className={s.viewAllLink}>
                 View all emails &rarr;
               </Link>
