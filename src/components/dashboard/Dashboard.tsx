@@ -1,5 +1,4 @@
-import { Target, ChevronRight } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Target } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MeetingTimeline } from "./MeetingTimeline";
 import { ActionList } from "./ActionList";
@@ -43,16 +42,13 @@ export function Dashboard({ data, freshness }: DashboardProps) {
             </div>
 
             {data.overview.focus && (
-              <Link to="/focus" className="block rounded-lg bg-success/10 border border-success/15 px-4 py-3.5 transition-colors hover:bg-success/15">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Target className="size-5 shrink-0 text-success" />
-                    <span className="text-sm font-semibold text-success">Focus</span>
-                  </div>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              <div className="block rounded-lg bg-success/10 border border-success/15 px-4 py-3.5">
+                <div className="flex items-center gap-2 mb-2">
+                  <Target className="size-5 shrink-0 text-success" />
+                  <span className="text-sm font-semibold text-success">Focus</span>
                 </div>
                 <p className="text-sm font-medium text-foreground leading-relaxed">{data.overview.focus}</p>
-              </Link>
+              </div>
             )}
 
             <MeetingTimeline meetings={data.meetings} />

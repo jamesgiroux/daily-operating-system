@@ -4,7 +4,7 @@
  * A morning document, not a dashboard. You read it top to bottom.
  * When you reach the end, you're briefed.
  *
- * Sections: Hero > Focus > Featured Meeting > Schedule > Loose Threads > End Mark
+ * Sections: Hero > Focus > Featured Meeting > Schedule > Priorities (or Loose Threads fallback) > End Mark
  */
 
 import { useState, useCallback, useMemo } from "react";
@@ -15,7 +15,7 @@ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { BriefingMeetingCard } from "./BriefingMeetingCard";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email } from "@/types";
+import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email, PrioritizedAction } from "@/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -137,6 +137,15 @@ function getMeetingAccentColor(meeting: Meeting, state: TemporalState): string {
   }
 }
 
+// ─── Capacity Formatting ─────────────────────────────────────────────────────
+
+function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const hrs = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
@@ -256,8 +265,7 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
 
       {/* ═══ FOCUS ═══ */}
       {data.overview.focus && (
-        <Link
-          to="/focus"
+        <div
           style={{
             display: "block",
             borderLeft: "3px solid var(--color-spice-turmeric)",
@@ -265,11 +273,7 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
             borderRadius: 16,
             padding: "20px 24px",
             marginBottom: 48,
-            textDecoration: "none",
-            transition: "background 0.15s ease",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(201, 162, 39, 0.12)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(201, 162, 39, 0.08)")}
         >
           <div
             style={{
@@ -295,7 +299,23 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
           >
             {data.overview.focus}
           </div>
-        </Link>
+          {data.focus && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                marginTop: 10,
+              }}
+            >
+              {formatMinutes(data.focus.availableMinutes)} available
+              {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length > 0 && (
+                <> &middot; {data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length} deep work block{data.focus.availableBlocks.filter((b) => b.durationMinutes >= 60).length !== 1 ? "s" : ""}</>
+              )}
+              {" "}&middot; {data.focus.meetingCount} meeting{data.focus.meetingCount !== 1 ? "s" : ""}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ═══ FEATURED MEETING (Lead Story) ═══ */}
@@ -527,8 +547,17 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
         </section>
       )}
 
-      {/* ═══ LOOSE THREADS ═══ */}
-      {(visibleActions.length > 0 || highPriorityEmails.length > 0) && (
+      {/* ═══ PRIORITIES / LOOSE THREADS ═══ */}
+      {data.focus && data.focus.prioritizedActions.length > 0 ? (
+        <PrioritiesSection
+          focus={data.focus}
+          completedIds={completedIds}
+          onComplete={handleComplete}
+          highPriorityEmails={highPriorityEmails}
+          allEmails={emails}
+          totalPendingActions={pendingActions.length}
+        />
+      ) : (visibleActions.length > 0 || highPriorityEmails.length > 0) ? (
         <section style={{ marginBottom: 48 }}>
           {/* Section header */}
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
@@ -617,7 +646,7 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
             )}
           </div>
         </section>
-      )}
+      ) : null}
 
       {/* ═══ END MARK ═══ */}
       <div
@@ -649,6 +678,234 @@ export function DailyBriefing({ data, freshness }: DailyBriefingProps) {
           }}
         >
           You're briefed. Go get it.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Priorities Section (capacity-aware) ─────────────────────────────────────
+
+function PrioritiesSection({
+  focus,
+  completedIds,
+  onComplete,
+  highPriorityEmails,
+  allEmails,
+  totalPendingActions,
+}: {
+  focus: NonNullable<DashboardData["focus"]>;
+  completedIds: Set<string>;
+  onComplete: (id: string) => void;
+  highPriorityEmails: Email[];
+  allEmails: Email[];
+  totalPendingActions: number;
+}) {
+  const visible = focus.prioritizedActions.slice(0, 5);
+  const hasMore = totalPendingActions > 5;
+
+  return (
+    <section style={{ marginBottom: 48 }}>
+      {/* Section header */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
+        <h2
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 26,
+            fontWeight: 400,
+            letterSpacing: "-0.01em",
+            color: "var(--color-text-primary)",
+            margin: 0,
+          }}
+        >
+          Priorities
+        </h2>
+      </div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 13,
+          color: "var(--color-text-tertiary)",
+          marginBottom: 20,
+        }}
+      >
+        {focus.implications.summary}
+      </div>
+      <div
+        style={{
+          height: 1,
+          background: "var(--color-rule-heavy)",
+          marginBottom: 16,
+        }}
+      />
+
+      {/* Prioritized action rows */}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {visible.map((pa, i) => (
+          <BriefingPrioritizedActionRow
+            key={pa.action.id}
+            pa={pa}
+            isCompleted={completedIds.has(pa.action.id)}
+            onComplete={onComplete}
+            showBorder={i < visible.length - 1 || highPriorityEmails.length > 0}
+          />
+        ))}
+
+        {/* Email rows */}
+        {highPriorityEmails.map((email, i) => (
+          <BriefingEmailRow
+            key={email.id}
+            email={email}
+            showBorder={i < highPriorityEmails.length - 1}
+          />
+        ))}
+      </div>
+
+      {/* View all links */}
+      <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
+        {hasMore && (
+          <Link
+            to="/actions"
+            search={{ search: undefined }}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-spice-turmeric)",
+              textDecoration: "none",
+            }}
+          >
+            View all {totalPendingActions} actions &rarr;
+          </Link>
+        )}
+        {allEmails.length > highPriorityEmails.length && (
+          <Link
+            to="/emails"
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "var(--color-spice-turmeric)",
+              textDecoration: "none",
+            }}
+          >
+            View all emails &rarr;
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ─── Prioritized Action Row ──────────────────────────────────────────────────
+
+function BriefingPrioritizedActionRow({
+  pa,
+  isCompleted,
+  onComplete,
+  showBorder,
+}: {
+  pa: PrioritizedAction;
+  isCompleted: boolean;
+  onComplete: (id: string) => void;
+  showBorder: boolean;
+}) {
+  const action = pa.action;
+  const done = action.status === "completed" || isCompleted;
+
+  // Context: effort + reason
+  const contextParts: string[] = [];
+  contextParts.push(`~${formatMinutes(pa.effortMinutes)}`);
+  if (action.accountName) contextParts.push(action.accountName);
+  else if (action.accountId) contextParts.push(action.accountId);
+
+  const borderColor = pa.atRisk
+    ? "var(--color-spice-terracotta)"
+    : "var(--color-rule-heavy)";
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "12px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        opacity: done ? 0.4 : pa.feasible ? 1 : 0.5,
+        transition: "opacity 0.15s ease",
+      }}
+    >
+      {/* Checkbox */}
+      <button
+        onClick={() => !done && onComplete(action.id)}
+        disabled={done}
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          border: `2px solid ${borderColor}`,
+          background: done ? "var(--color-garden-sage)" : "transparent",
+          cursor: done ? "default" : "pointer",
+          flexShrink: 0,
+          marginTop: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "all 0.15s ease",
+        }}
+      >
+        {done && (
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <Link
+            to="/actions/$actionId"
+            params={{ actionId: action.id }}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              fontWeight: 400,
+              color: "var(--color-text-primary)",
+              textDecoration: done ? "line-through" : "none",
+              lineHeight: 1.4,
+            }}
+          >
+            {stripMarkdown(action.title)}
+          </Link>
+          {pa.atRisk && (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                padding: "1px 6px",
+                borderRadius: 3,
+                background: "rgba(196, 101, 74, 0.12)",
+                color: "var(--color-spice-terracotta)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              AT RISK
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            fontWeight: 300,
+            color: "var(--color-text-tertiary)",
+            marginTop: 2,
+          }}
+        >
+          {contextParts.join(" \u00B7 ")}
         </div>
       </div>
     </div>
