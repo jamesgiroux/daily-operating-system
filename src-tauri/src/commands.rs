@@ -7567,7 +7567,6 @@ fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::Pa
 mod tests {
     use super::*;
     use crate::db::{ActionDb, DbMeeting};
-    use crate::types::MeetingType;
     use chrono::Utc;
     use serde_json::json;
     use tempfile::tempdir;

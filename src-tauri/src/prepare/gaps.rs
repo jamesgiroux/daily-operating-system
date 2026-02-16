@@ -266,7 +266,7 @@ mod tests {
         for gap in &gaps {
             let end_str = gap.get("end").and_then(|v| v.as_str()).unwrap_or("");
             let end_dt = parse_event_dt(end_str, None).unwrap();
-            assert!(end_dt.hour() <= WORK_DAY_END_HOUR as u32);
+            assert!(end_dt.hour() <= WORK_DAY_END_HOUR);
         }
     }
 
