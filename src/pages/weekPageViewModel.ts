@@ -1,4 +1,14 @@
-import type { ReadinessCheck, TimeBlock } from "@/types";
+import type {
+  DayShape,
+  LiveProactiveSuggestion,
+  MeetingType,
+  ReadinessCheck,
+  TimeBlock,
+  TopPriority,
+  WeekAction,
+  WeekDay,
+  WeekMeeting,
+} from "@/types";
 
 /** Format a due date as a relative phrase: "due Wednesday", "1 day overdue" */
 export function formatDueContext(
@@ -115,4 +125,318 @@ export function classifyWeekShapeState(
   if (blocks.length === 0) return "no_blocks";
   const hasSuggestions = blocks.some((block) => !!block.suggestedUse?.trim());
   return hasSuggestions ? "suggestions" : "no_suggestions";
+}
+
+// =============================================================================
+// Editorial Week Forecast helpers
+// =============================================================================
+
+/** An item in the "Top Three" priorities section. */
+export interface TopThreeItem {
+  number: 1 | 2 | 3;
+  title: string;
+  reason: string;
+  contextLine: string;
+  actionId?: string;
+  meetingId?: string;
+}
+
+/**
+ * Pick exactly 3 priorities for "The Three" chapter.
+ * Item 1 is always the AI topPriority. Items 2-3 are the most urgent
+ * remaining actions scored by: overdue severity + meeting proximity.
+ */
+export function pickTopThree(
+  topPriority: TopPriority | undefined,
+  overdue: WeekAction[],
+  dueThisWeek: WeekAction[],
+  liveSuggestions: LiveProactiveSuggestion[]
+): TopThreeItem[] {
+  const items: TopThreeItem[] = [];
+
+  // Item 1: AI top priority (if available)
+  if (topPriority) {
+    items.push({
+      number: 1,
+      title: topPriority.title,
+      reason: topPriority.reason,
+      contextLine: topPriority.actionId
+        ? "Action"
+        : topPriority.meetingId
+          ? "Meeting"
+          : "",
+      actionId: topPriority.actionId,
+      meetingId: topPriority.meetingId,
+    });
+  }
+
+  // Candidates pool: overdue first (highest severity), then due-this-week by priority
+  const candidates: {
+    title: string;
+    reason: string;
+    contextLine: string;
+    actionId?: string;
+    score: number;
+  }[] = [];
+
+  for (const a of overdue) {
+    const severity = (a.daysOverdue ?? 1) * 10;
+    const priorityScore = a.priority === "P1" ? 30 : a.priority === "P2" ? 20 : 10;
+    candidates.push({
+      title: a.title,
+      reason: a.daysOverdue
+        ? `${a.daysOverdue} day${a.daysOverdue !== 1 ? "s" : ""} overdue.`
+        : "Overdue.",
+      contextLine: [a.account, formatDueContext(a.dueDate, a.daysOverdue)]
+        .filter(Boolean)
+        .join(" \u00b7 "),
+      actionId: a.id,
+      score: severity + priorityScore,
+    });
+  }
+
+  for (const a of dueThisWeek) {
+    const priorityScore = a.priority === "P1" ? 30 : a.priority === "P2" ? 20 : 10;
+    candidates.push({
+      title: a.title,
+      reason: formatDueContext(a.dueDate) ?? "Due this week.",
+      contextLine: [a.account, formatDueContext(a.dueDate)]
+        .filter(Boolean)
+        .join(" \u00b7 "),
+      actionId: a.id,
+      score: priorityScore,
+    });
+  }
+
+  // Add live suggestions that reference meetings (not already covered)
+  for (const s of liveSuggestions) {
+    if (s.meetingId && !candidates.some((c) => c.actionId === s.actionId)) {
+      candidates.push({
+        title: s.title,
+        reason: s.reason,
+        contextLine: `${s.day} \u00b7 ${formatBlockRange(s.start, s.end)}`,
+        actionId: s.actionId,
+        score: s.totalScore * 10,
+      });
+    }
+  }
+
+  // Sort by score descending, fill remaining slots
+  candidates.sort((a, b) => b.score - a.score);
+  const usedTitles = new Set(items.map((i) => i.title));
+
+  for (const c of candidates) {
+    if (items.length >= 3) break;
+    if (usedTitles.has(c.title)) continue;
+    usedTitles.add(c.title);
+    items.push({
+      number: (items.length + 1) as 1 | 2 | 3,
+      title: c.title,
+      reason: c.reason,
+      contextLine: c.contextLine,
+      actionId: c.actionId,
+    });
+  }
+
+  return items.slice(0, 3);
+}
+
+/** Filter deep work blocks (>= 60 min) from day shapes. */
+export interface DeepWorkBlock {
+  day: string;
+  date: string;
+  start: string;
+  end: string;
+  durationMinutes: number;
+  suggestedUse?: string;
+  actionId?: string;
+  meetingId?: string;
+  /** Matched live suggestion reason */
+  reason?: string;
+}
+
+export function filterDeepWorkBlocks(
+  dayShapes: DayShape[],
+  liveSuggestions: LiveProactiveSuggestion[]
+): DeepWorkBlock[] {
+  const blocks: DeepWorkBlock[] = [];
+
+  for (const shape of dayShapes) {
+    for (const block of shape.availableBlocks) {
+      if (block.durationMinutes < 60) continue;
+
+      // Try to match a live suggestion to this block
+      const matched = liveSuggestions.find(
+        (s) => s.day === shape.dayName && s.start === block.start
+      );
+
+      blocks.push({
+        day: shape.dayName,
+        date: shape.date,
+        start: block.start,
+        end: block.end,
+        durationMinutes: block.durationMinutes,
+        suggestedUse: matched?.title ?? block.suggestedUse,
+        actionId: matched?.actionId ?? block.actionId,
+        meetingId: matched?.meetingId ?? block.meetingId,
+        reason: matched?.reason,
+      });
+    }
+  }
+
+  return blocks;
+}
+
+/** Compute total deep work minutes from blocks >= 60 min. */
+export function computeDeepWorkHours(dayShapes: DayShape[]): number {
+  let total = 0;
+  for (const shape of dayShapes) {
+    for (const block of shape.availableBlocks) {
+      if (block.durationMinutes >= 60) total += block.durationMinutes;
+    }
+  }
+  return total;
+}
+
+/** Compute an editorial epigraph for The Shape chapter. */
+export function computeShapeEpigraph(dayShapes: DayShape[]): string {
+  if (dayShapes.length === 0) return "";
+
+  // Find the busiest day
+  const sorted = [...dayShapes].sort(
+    (a, b) => b.meetingMinutes - a.meetingMinutes
+  );
+  const busiest = sorted[0];
+  const lightest = sorted[sorted.length - 1];
+
+  // Classify the shape
+  const frontHalf = dayShapes.slice(0, Math.ceil(dayShapes.length / 2));
+  const backHalf = dayShapes.slice(Math.ceil(dayShapes.length / 2));
+  const frontLoad = frontHalf.reduce((s, d) => s + d.meetingMinutes, 0);
+  const backLoad = backHalf.reduce((s, d) => s + d.meetingMinutes, 0);
+
+  let shape = "Balanced";
+  if (frontLoad > backLoad * 1.5) shape = "Front-loaded";
+  else if (backLoad > frontLoad * 1.5) shape = "Back-loaded";
+
+  const crux = busiest.dayName;
+  const recovery =
+    lightest.meetingCount <= 1 ? ` Clear ${lightest.dayName} for recovery.` : "";
+
+  return `${shape}. ${crux} is the crux${recovery ? " \u2014" + recovery : "."}`;
+}
+
+/** External meeting types for filtering. */
+const EXTERNAL_MEETING_TYPES: Set<MeetingType> = new Set([
+  "customer",
+  "qbr",
+  "partnership",
+  "external",
+]);
+
+/** Group and filter meetings for the "Your Meetings" chapter. */
+export interface MeetingDayGroup {
+  dayName: string;
+  date: string;
+  meetings: (WeekMeeting & { isExternal: boolean })[];
+}
+
+export function filterRelevantMeetings(days: WeekDay[]): MeetingDayGroup[] {
+  const groups: MeetingDayGroup[] = [];
+
+  for (const day of days) {
+    const hasExternal = day.meetings.some((m) =>
+      EXTERNAL_MEETING_TYPES.has(m.type)
+    );
+
+    // Skip days with no external meetings
+    if (!hasExternal) continue;
+
+    const meetings = day.meetings.map((m) => ({
+      ...m,
+      isExternal: EXTERNAL_MEETING_TYPES.has(m.type),
+    }));
+
+    groups.push({
+      dayName: day.dayName,
+      date: day.date,
+      meetings,
+    });
+  }
+
+  return groups;
+}
+
+/** Count external meetings across all days. */
+export function countExternalMeetings(days: WeekDay[]): number {
+  let count = 0;
+  for (const day of days) {
+    for (const m of day.meetings) {
+      if (EXTERNAL_MEETING_TYPES.has(m.type)) count++;
+    }
+  }
+  return count;
+}
+
+/** Count unique accounts from external meetings. */
+export function countMeetingAccounts(days: WeekDay[]): number {
+  const accounts = new Set<string>();
+  for (const day of days) {
+    for (const m of day.meetings) {
+      if (EXTERNAL_MEETING_TYPES.has(m.type) && m.account) {
+        accounts.add(m.account);
+      }
+    }
+  }
+  return accounts.size;
+}
+
+/** Synthesize readiness into FolioBar stats. */
+export function synthesizeReadinessStats(
+  checks: ReadinessCheck[]
+): { preppedLabel: string; overdueLabel: string | null } {
+  const totalExternal = checks.filter(
+    (c) => c.checkType !== "overdue_action" && c.checkType !== "stale_contact"
+  );
+  const needsPrep = checks.filter(
+    (c) =>
+      c.checkType === "no_prep" ||
+      c.checkType === "prep_needed" ||
+      c.checkType === "agenda_needed"
+  ).length;
+
+  const prepped = totalExternal.length - needsPrep;
+  const preppedLabel = `${prepped}/${totalExternal.length} prepped`;
+
+  const overdueActions = checks.filter(
+    (c) => c.checkType === "overdue_action"
+  );
+  let overdueLabel: string | null = null;
+  if (overdueActions.length > 0) {
+    const msg = overdueActions[0].message;
+    const match = msg.match(/^(\d+)/);
+    const count = match ? match[1] : overdueActions.length.toString();
+    overdueLabel = `${count} overdue`;
+  }
+
+  return { preppedLabel, overdueLabel };
+}
+
+/** Format prep status as display text. */
+export function formatPrepStatus(
+  status: string
+): { text: string; color: "sage" | "terracotta" | "muted" } {
+  switch (status) {
+    case "prep_ready":
+    case "done":
+    case "draft_ready":
+      return { text: "prepped", color: "sage" };
+    case "prep_needed":
+    case "agenda_needed":
+    case "context_needed":
+    case "bring_updates":
+      return { text: "needs prep", color: "terracotta" };
+    default:
+      return { text: "\u2014", color: "muted" };
+  }
 }
