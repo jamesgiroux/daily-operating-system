@@ -150,7 +150,8 @@ export function pickTopThree(
   topPriority: TopPriority | undefined,
   overdue: WeekAction[],
   dueThisWeek: WeekAction[],
-  liveSuggestions: LiveProactiveSuggestion[]
+  liveSuggestions: LiveProactiveSuggestion[],
+  days?: WeekDay[]
 ): TopThreeItem[] {
   const items: TopThreeItem[] = [];
 
@@ -176,6 +177,7 @@ export function pickTopThree(
     reason: string;
     contextLine: string;
     actionId?: string;
+    meetingId?: string;
     score: number;
   }[] = [];
 
@@ -221,6 +223,22 @@ export function pickTopThree(
     }
   }
 
+  // Fallback: when actions are empty, fill from key external meetings
+  if (candidates.length === 0 && days) {
+    for (const day of days) {
+      for (const m of day.meetings) {
+        if (!EXTERNAL_MEETING_TYPES.has(m.type)) continue;
+        candidates.push({
+          title: m.title,
+          reason: `${day.dayName}${m.account ? ` \u2014 ${m.account}` : ""}`,
+          contextLine: `${day.dayName} ${m.time}`,
+          meetingId: m.meetingId,
+          score: m.type === "customer" || m.type === "qbr" ? 20 : 10,
+        });
+      }
+    }
+  }
+
   // Sort by score descending, fill remaining slots
   candidates.sort((a, b) => b.score - a.score);
   const usedTitles = new Set(items.map((i) => i.title));
@@ -235,6 +253,7 @@ export function pickTopThree(
       reason: c.reason,
       contextLine: c.contextLine,
       actionId: c.actionId,
+      meetingId: c.meetingId,
     });
   }
 
@@ -255,20 +274,47 @@ export interface DeepWorkBlock {
   reason?: string;
 }
 
+/** Max blocks to show across the entire week (one per day, largest first). */
+const MAX_DEEP_WORK_BLOCKS = 5;
+
+/** Parse an HH:MM or ISO time string to minutes-since-midnight for comparison. */
+function timeToMinutes(timeStr: string): number {
+  if (timeStr.includes("T")) {
+    const dt = new Date(timeStr);
+    if (!Number.isNaN(dt.getTime())) return dt.getHours() * 60 + dt.getMinutes();
+  }
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (match) return Number.parseInt(match[1], 10) * 60 + Number.parseInt(match[2], 10);
+  return 0;
+}
+
+/** Work hours boundary (minutes since midnight). */
+const WORK_END_MINUTES = 17 * 60; // 5 PM
+
 export function filterDeepWorkBlocks(
   dayShapes: DayShape[],
   liveSuggestions: LiveProactiveSuggestion[]
 ): DeepWorkBlock[] {
+  // Use briefing blocks as the canonical source
   const blocks: DeepWorkBlock[] = [];
 
   for (const shape of dayShapes) {
     for (const block of shape.availableBlocks) {
       if (block.durationMinutes < 60) continue;
 
-      // Try to match a live suggestion to this block
-      const matched = liveSuggestions.find(
-        (s) => s.day === shape.dayName && s.start === block.start
-      );
+      // Skip blocks starting after work hours (safety net for timezone issues)
+      if (timeToMinutes(block.start) >= WORK_END_MINUTES) continue;
+
+      // Match live suggestions by day + overlapping time range (not exact start)
+      const blockStartMin = timeToMinutes(block.start);
+      const blockEndMin = timeToMinutes(block.end);
+      const matched = liveSuggestions.find((s) => {
+        if (s.day !== shape.dayName) return false;
+        const sStart = timeToMinutes(s.start);
+        const sEnd = timeToMinutes(s.end);
+        // Overlapping: not (sEnd <= blockStart || sStart >= blockEnd)
+        return sStart < blockEndMin && sEnd > blockStartMin;
+      });
 
       blocks.push({
         day: shape.dayName,
@@ -284,7 +330,9 @@ export function filterDeepWorkBlocks(
     }
   }
 
-  return blocks;
+  // Cap: sort by duration descending, take max 5 (largest blocks first)
+  blocks.sort((a, b) => b.durationMinutes - a.durationMinutes);
+  return blocks.slice(0, MAX_DEEP_WORK_BLOCKS);
 }
 
 /** Compute total deep work minutes from blocks >= 60 min. */
@@ -378,13 +426,25 @@ export function countExternalMeetings(days: WeekDay[]): number {
   return count;
 }
 
-/** Count unique accounts from external meetings. */
+/** Count unique accounts from external meetings.
+ *  Falls back to extracting account names from meeting titles (e.g. "Acme <> VIP Kickoff")
+ *  when the `account` field is not populated (meeting not yet entity-linked). */
 export function countMeetingAccounts(days: WeekDay[]): number {
   const accounts = new Set<string>();
   for (const day of days) {
     for (const m of day.meetings) {
-      if (EXTERNAL_MEETING_TYPES.has(m.type) && m.account) {
+      if (!EXTERNAL_MEETING_TYPES.has(m.type)) continue;
+      if (m.account) {
         accounts.add(m.account);
+      } else {
+        // Extract account from title patterns: "Acme <> VIP" or "Acme / VIP" or "Acme - Topic"
+        const sep = m.title.match(/^(.+?)\s*(?:<>|\/|—|–)\s*/);
+        if (sep?.[1]) {
+          accounts.add(sep[1].trim());
+        } else {
+          // Last resort: use full title as pseudo-account to avoid "0 accounts"
+          accounts.add(m.title);
+        }
       }
     }
   }
