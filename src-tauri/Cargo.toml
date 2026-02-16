@@ -5,6 +5,7 @@ default-run = "dailyos"
 description = "AI-native productivity for humans who skip days"
 authors = ["DailyOS"]
 edition = "2021"
+autobins = false
 
 [lib]
 name = "dailyos_lib"
@@ -67,6 +68,10 @@ tempfile = "3"
 
 [features]
 mcp = ["rmcp", "schemars", "anyhow"]
+
+[[bin]]
+name = "dailyos"
+path = "src/main.rs"
 
 [[bin]]
 name = "dailyos-mcp"
