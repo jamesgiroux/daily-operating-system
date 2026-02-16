@@ -1,7 +1,7 @@
 {
   "name": "dailyos",
   "version": "0.8.0",
-  "description": "AI-native productivity for humans who skip days",
+  "description": "Operational intelligence for your workday. Open the app, your day is ready.",
   "type": "module",
   "pnpm": {
     "onlyBuiltDependencies": [
