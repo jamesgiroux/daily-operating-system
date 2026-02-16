@@ -3,8 +3,6 @@
  * Renders inside MagazinePageLayout's page container.
  */
 
-import { Button } from "@/components/ui/button";
-
 interface DashboardErrorProps {
   message: string;
   onRetry: () => void;
@@ -39,13 +37,24 @@ export function DashboardError({ message, onRetry }: DashboardErrorProps) {
         >
           {message}
         </p>
-        <Button
+        <button
           onClick={onRetry}
-          variant="outline"
-          style={{ fontFamily: "var(--font-sans)", fontSize: 13 }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            fontWeight: 500,
+            letterSpacing: "0.04em",
+            textTransform: "uppercase",
+            padding: "8px 24px",
+            borderRadius: 4,
+            border: "1px solid var(--color-rule-heavy)",
+            background: "none",
+            color: "var(--color-text-primary)",
+            cursor: "pointer",
+          }}
         >
           Try again
-        </Button>
+        </button>
       </div>
     </div>
   );
