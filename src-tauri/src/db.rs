@@ -481,6 +481,13 @@ impl ActionDb {
 
         // One-time migration: rename actions.db → dailyos.db
         if !new_path.exists() && legacy_path.exists() {
+            // Checkpoint WAL into the main file before renaming, otherwise
+            // data written to the WAL but not yet flushed would be lost.
+            if let Ok(conn) = Connection::open(&legacy_path) {
+                let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+                drop(conn);
+            }
+
             if let Err(e) = std::fs::rename(&legacy_path, &new_path) {
                 log::warn!(
                     "Failed to rename actions.db → dailyos.db: {}. Will open at legacy path.",
@@ -488,7 +495,7 @@ impl ActionDb {
                 );
                 return Ok(legacy_path);
             }
-            // Clean up WAL/SHM files (SQLite recreates them)
+            // Clean up WAL/SHM files (SQLite recreates them under the new name)
             let _ = std::fs::remove_file(dailyos_dir.join("actions.db-wal"));
             let _ = std::fs::remove_file(dailyos_dir.join("actions.db-shm"));
             log::info!("Migrated database: actions.db → dailyos.db");
