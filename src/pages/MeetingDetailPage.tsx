@@ -1,24 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, Link } from "@tanstack/react-router";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AgendaDraftDialog,
   useAgendaDraft,
 } from "@/components/ui/agenda-draft-dialog";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import type {
   FullMeetingPrep,
   Stakeholder,
@@ -33,14 +21,17 @@ import type {
   CalendarEvent,
   StakeholderInsight,
   ApplyPrepPrefillResult,
+  DbAction,
+  LinkedEntity,
 } from "@/types";
-import { cn, parseDate, formatRelativeDateLong } from "@/lib/utils";
+import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
+import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { MeetingOutcomes } from "@/components/dashboard/MeetingOutcomes";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Clock,
@@ -56,22 +47,96 @@ import {
   CalendarDays,
   Paperclip,
   Loader2,
+  Trophy,
+  CircleDot,
 } from "lucide-react";
+
+// ── Shared style fragments ──
+
+const monoOverline: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.2em",
+  color: "var(--color-text-tertiary)",
+};
+
+const chapterHeading: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: "0.12em",
+  color: "var(--color-text-tertiary)",
+};
+
+const editorialRule: React.CSSProperties = {
+  height: 1,
+  background: "var(--color-rule-heavy)",
+};
+
+const editorialBtn: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 12,
+  fontWeight: 500,
+  letterSpacing: "0.04em",
+  padding: "6px 14px",
+  border: "1px solid var(--color-rule-light)",
+  borderRadius: 4,
+  background: "transparent",
+  color: "var(--color-text-secondary)",
+  cursor: "pointer",
+};
+
+const sidebarCard: React.CSSProperties = {
+  border: "1px solid var(--color-rule-light)",
+  padding: 20,
+};
+
+const bulletDot = (color: string): React.CSSProperties => ({
+  width: 6,
+  height: 6,
+  borderRadius: "50%",
+  background: color,
+  flexShrink: 0,
+  marginTop: 7,
+});
+
+const pulseBg: React.CSSProperties = {
+  background: "var(--color-rule-light)",
+  borderRadius: 4,
+};
 
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
+  const navigate = useNavigate();
   const [data, setData] = useState<FullMeetingPrep | null>(null);
   const [outcomes, setOutcomes] = useState<MeetingOutcomeData | null>(null);
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
+  const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Transcript attach (from MeetingDetailPage)
+  // Transcript attach
   const [attaching, setAttaching] = useState(false);
   const draft = useAgendaDraft({ onError: setError });
   const [prefillNotice, setPrefillNotice] = useState(false);
   const [prefilling, setPrefilling] = useState(false);
+
+  // Save status for folio bar
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+
+  // Register magazine shell
+  const shellConfig = useMemo(() => ({
+    folioLabel: "Intelligence Report",
+    atmosphereColor: "turmeric" as const,
+    activePage: "today" as const,
+    backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
+    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+  }), [navigate, saveStatus]);
+  useRegisterMagazineShell(shellConfig);
 
   const loadMeetingIntelligence = useCallback(async () => {
     if (!meetingId) {
@@ -88,6 +153,7 @@ export default function MeetingDetailPage() {
       setMeetingMeta(intel.meeting);
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
+      setLinkedEntities(intel.linkedEntities ?? []);
       const formatRange = (startRaw?: string, endRaw?: string) => {
         if (!startRaw) return "";
         const start = parseDate(startRaw);
@@ -222,63 +288,106 @@ export default function MeetingDetailPage() {
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // ── Loading state ──
   if (loading) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Skeleton className="mb-4 h-8 w-32" />
-        <Skeleton className="mb-2 h-10 w-3/4" />
-        <Skeleton className="mb-6 h-4 w-48" />
-        <div className="space-y-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-48" />
-          <Skeleton className="h-32" />
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
+        <div style={{ ...pulseBg, height: 14, width: 120, marginBottom: 20, animation: "pulse 2s ease-in-out infinite" }} />
+        <div style={{ ...pulseBg, height: 32, width: "75%", marginBottom: 12, animation: "pulse 2s ease-in-out infinite" }} />
+        <div style={{ ...pulseBg, height: 12, width: 200, marginBottom: 40, animation: "pulse 2s ease-in-out infinite" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div style={{ ...pulseBg, height: 120, animation: "pulse 2s ease-in-out infinite" }} />
+          <div style={{ ...pulseBg, height: 180, animation: "pulse 2s ease-in-out infinite" }} />
+          <div style={{ ...pulseBg, height: 120, animation: "pulse 2s ease-in-out infinite" }} />
         </div>
-      </main>
+      </div>
     );
   }
 
+  // ── Error state ──
   if (error) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Link to="/">
-          <Button variant="ghost" size="sm" className="mb-4">
-            <ArrowLeft className="mr-2 size-4" />
-            Back to Dashboard
-          </Button>
-        </Link>
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-destructive">
-              <AlertCircle className="size-5" />
-              <p>{error}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
+        <div
+          style={{
+            borderLeft: "3px solid var(--color-spice-terracotta)",
+            paddingLeft: 24,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <AlertCircle style={{ width: 20, height: 20, color: "var(--color-spice-terracotta)" }} />
+            <h2
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 22,
+                fontWeight: 600,
+                color: "var(--color-text-primary)",
+                margin: 0,
+              }}
+            >
+              Unable to Load Intelligence
+            </h2>
+          </div>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              lineHeight: 1.65,
+              color: "var(--color-text-secondary)",
+              margin: "0 0 20px",
+            }}
+          >
+            {error}
+          </p>
+          <button
+            onClick={() => loadMeetingIntelligence()}
+            style={editorialBtn}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
     );
   }
 
+  // ── Empty / not-ready state ──
   if (!data) {
     return (
-      <main className="flex-1 overflow-hidden p-6">
-        <Link to="/">
-          <Button variant="ghost" size="sm" className="mb-4">
-            <ArrowLeft className="mr-2 size-4" />
-            Back to Dashboard
-          </Button>
-        </Link>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Clock className="size-5" />
-              <p>Prep not ready yet</p>
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Meeting context will appear here after the daily briefing runs.
-            </p>
-          </CardContent>
-        </Card>
-      </main>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
+        <div style={{ textAlign: "center", padding: "60px 0" }}>
+          <Clock
+            style={{
+              width: 32,
+              height: 32,
+              color: "var(--color-text-tertiary)",
+              opacity: 0.5,
+              margin: "0 auto 16px",
+              display: "block",
+            }}
+          />
+          <h2
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 20,
+              fontWeight: 600,
+              color: "var(--color-text-primary)",
+              margin: "0 0 8px",
+            }}
+          >
+            Prep not ready yet
+          </h2>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              color: "var(--color-text-tertiary)",
+              margin: 0,
+            }}
+          >
+            Meeting context will appear here after the daily briefing runs.
+          </p>
+        </div>
+      </div>
     );
   }
 
@@ -346,560 +455,737 @@ export default function MeetingDetailPage() {
   ].filter((item) => item.show);
 
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="mx-auto max-w-6xl p-6 pb-16">
-          {/* Back button */}
-          <Link to="/">
-            <Button variant="ghost" size="sm" className="mb-4">
-              <ArrowLeft className="mr-2 size-4" />
-              Back to Dashboard
-            </Button>
-          </Link>
+    <>
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 0 80px" }}>
+        {/* Post-meeting: outcomes first (I195) */}
+        {isPastMeeting && outcomes && (
+          <>
+            <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+            <div style={{ ...editorialRule, margin: "48px 0" }} />
+            <p style={{ ...chapterHeading, marginBottom: 20 }}>
+              Pre-Meeting Context
+            </p>
+          </>
+        )}
 
-          {/* Post-meeting: outcomes first (I195) */}
-          {isPastMeeting && outcomes && (
-            <>
-              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} />
-              <Separator className="my-8" />
-              <p className="text-sm font-medium text-muted-foreground mb-4">
-                Pre-Meeting Context
+        {/* Past meeting without outcomes: prompt to attach transcript */}
+        {isPastMeeting && !outcomes && (
+          <div
+            style={{
+              border: "1px dashed var(--color-rule-light)",
+              padding: "20px 24px",
+              marginBottom: 32,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <p
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--color-text-primary)",
+                  margin: "0 0 4px",
+                }}
+              >
+                No outcomes captured yet
               </p>
-            </>
-          )}
-
-          {/* Past meeting without outcomes: prompt to attach transcript */}
-          {isPastMeeting && !outcomes && (
-            <Card className="mb-6 border-dashed">
-              <CardContent className="flex items-center justify-between py-4">
-                <div className="text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">No outcomes captured yet</p>
-                  <p>Attach a transcript or manually capture meeting outcomes.</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAttachTranscript}
-                  disabled={attaching}
-                >
-                  {attaching ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <Paperclip className="mr-2 size-4" />
-                  )}
-                  {attaching ? "Processing..." : "Attach Transcript"}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-
-          {!hasAnyContent && !outcomes && (
-            <div className="text-center py-12 text-muted-foreground">
-              <Clock className="mx-auto mb-3 size-8 opacity-50" />
-              <p className="text-lg font-medium">Prep is being generated</p>
-              <p className="text-sm mt-2">
-                Meeting context will appear here once AI enrichment completes.
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "var(--color-text-tertiary)",
+                  margin: 0,
+                }}
+              >
+                Attach a transcript or manually capture meeting outcomes.
               </p>
             </div>
-          )}
+            <button
+              onClick={handleAttachTranscript}
+              disabled={attaching}
+              style={{
+                ...editorialBtn,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                opacity: attaching ? 0.6 : 1,
+              }}
+            >
+              {attaching ? (
+                <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />
+              ) : (
+                <Paperclip style={{ width: 14, height: 14 }} />
+              )}
+              {attaching ? "Processing..." : "Attach Transcript"}
+            </button>
+          </div>
+        )}
 
-          {(hasAnyContent || outcomes) && (
-            <div className={cn(isPastMeeting && outcomes && "opacity-70")}>
-              <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="space-y-10">
-                  <section
-                    id="executive-brief"
-                    className="relative overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-primary/5 p-6"
-                  >
-                    <div className="absolute -right-10 -top-10 size-36 rounded-full bg-primary/10 blur-2xl" />
-                    <div className="relative">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                            Meeting Intelligence Report
-                          </p>
-                          <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                              {data.title}
-                            </h1>
-                            {lifecycle && (
-                              <Badge
-                                variant="outline"
-                                className="border-primary/30 bg-primary/10 text-primary font-medium tracking-wide"
-                              >
-                                {lifecycle}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="font-mono text-xs tracking-wide text-muted-foreground">
-                            {data.timeRange}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {isEditable && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handlePrefillFromContext}
-                              disabled={prefilling}
+        {!hasAnyContent && !outcomes && (
+          <div style={{ textAlign: "center", padding: "60px 0" }}>
+            <Clock
+              style={{
+                width: 32,
+                height: 32,
+                color: "var(--color-text-tertiary)",
+                opacity: 0.5,
+                margin: "0 auto 16px",
+                display: "block",
+              }}
+            />
+            <p
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 18,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+                margin: "0 0 8px",
+              }}
+            >
+              Prep is being generated
+            </p>
+            <p
+              style={{
+                fontSize: 14,
+                color: "var(--color-text-tertiary)",
+                margin: 0,
+              }}
+            >
+              Meeting context will appear here once AI enrichment completes.
+            </p>
+          </div>
+        )}
+
+        {(hasAnyContent || outcomes) && (
+          <div style={isPastMeeting && outcomes ? { opacity: 0.7 } : undefined}>
+            <div
+              style={{
+                display: "grid",
+                gap: 48,
+                gridTemplateColumns: "minmax(0, 1fr) 260px",
+              }}
+            >
+              {/* ── Main column ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
+                {/* ── Hero section ── */}
+                <section id="executive-brief">
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <p style={monoOverline}>
+                        Meeting Intelligence Report
+                      </p>
+                      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+                        <h1
+                          style={{
+                            fontFamily: "var(--font-serif)",
+                            fontSize: 34,
+                            fontWeight: 600,
+                            letterSpacing: "-0.01em",
+                            color: "var(--color-text-primary)",
+                            margin: 0,
+                            lineHeight: 1.15,
+                          }}
+                        >
+                          {data.title}
+                        </h1>
+                        {lifecycle && (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                            <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
+                            <span
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 11,
+                                fontWeight: 500,
+                                letterSpacing: "0.06em",
+                                color: "var(--color-spice-turmeric)",
+                              }}
                             >
-                              {prefilling ? "Prefilling..." : "Prefill Prep"}
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleDraftAgendaMessage}
-                          >
-                            Draft agenda message
-                          </Button>
-                          <CopyAllButton data={data} />
-                        </div>
+                              {lifecycle}
+                            </span>
+                          </span>
+                        )}
                       </div>
-
-                      {(data.intelligenceSummary || data.meetingContext) ? (
-                        <blockquote className="mt-6 border-l-2 border-l-primary/45 pl-5">
-                          {(data.intelligenceSummary || data.meetingContext || "")
-                            .split("\n")
-                            .filter((line) => line.trim())
-                            .slice(0, 3)
-                            .map((line, i) => (
-                              <p
-                                key={i}
-                                className={cn(
-                                  "text-base leading-8 text-foreground/90 sm:text-[17px]",
-                                  i > 0 && "mt-2",
-                                )}
-                              >
-                                {line}
-                              </p>
-                            ))}
-                        </blockquote>
-                      ) : (
-                        <p className="mt-6 text-sm text-muted-foreground/80">
-                          Intelligence builds as you meet with this account.
-                        </p>
-                      )}
-
-                      {topRisks.length > 0 && (
-                        <div className="mt-6 grid gap-2 sm:grid-cols-3">
-                          {topRisks.map((risk, i) => (
-                            <div key={i} className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-wider text-destructive/80">Risk {i + 1}</p>
-                              <p className="mt-1 text-sm leading-relaxed">{risk}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {heroMeta.length > 0 && (
-                        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                          {heroMeta.map((item) => (
-                            <div key={item.label} className="rounded-lg border border-border/70 bg-card/60 px-3 py-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                                {item.label}
-                              </p>
-                              <p className={cn("mt-1 text-sm font-medium", item.tone)}>
-                                {item.value}
-                              </p>
-                            </div>
-                          ))}
+                      <p
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12,
+                          letterSpacing: "0.04em",
+                          color: "var(--color-text-tertiary)",
+                          margin: 0,
+                        }}
+                      >
+                        {data.timeRange}
+                      </p>
+                      {/* Entity assignment */}
+                      {meetingId && meetingMeta && (
+                        <div style={{ marginTop: 10 }}>
+                          <MeetingEntityChips
+                            meetingId={meetingId}
+                            meetingTitle={meetingMeta.title}
+                            meetingStartTime={meetingMeta.startTime ?? new Date().toISOString()}
+                            meetingType={meetingMeta.meetingType ?? "internal"}
+                            linkedEntities={linkedEntities}
+                            onEntitiesChanged={() => loadMeetingIntelligence()}
+                          />
                         </div>
                       )}
                     </div>
-                  </section>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingTop: 4 }}>
+                      {isEditable && (
+                        <button
+                          onClick={handlePrefillFromContext}
+                          disabled={prefilling}
+                          style={{
+                            ...editorialBtn,
+                            opacity: prefilling ? 0.6 : 1,
+                          }}
+                        >
+                          {prefilling ? "Prefilling..." : "Prefill Prep"}
+                        </button>
+                      )}
+                      <button
+                        onClick={handleDraftAgendaMessage}
+                        style={editorialBtn}
+                      >
+                        Draft agenda message
+                      </button>
+                      <CopyAllButton data={data} />
+                    </div>
+                  </div>
 
-                  <section id="agenda" className="space-y-5">
-                    <SectionLabel
-                      label="Agenda"
-                      icon={<Target className="size-3.5" />}
-                      copyText={agendaDisplayItems.length > 0 ? formatProposedAgenda(agendaDisplayItems) : undefined}
-                      copyLabel="agenda"
-                    />
-                    {agendaDisplayItems.length > 0 ? (
-                      <ol className="space-y-3">
-                        {agendaDisplayItems.map((item, i) => (
-                          <li key={i} className="flex items-start gap-3 rounded-lg border border-border/70 bg-card/50 p-3">
-                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                              {i + 1}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium leading-snug">{item.topic}</p>
-                              {item.why && (
-                                <p className="mt-1 text-xs text-muted-foreground">{item.why}</p>
-                              )}
-                            </div>
-                            {item.source && (
-                              <span
-                                className={cn(
-                                  "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                                  item.source === "calendar_note" && "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-                                  item.source === "risk" && "bg-destructive/10 text-destructive",
-                                  item.source === "question" && "bg-muted text-muted-foreground",
-                                  item.source === "open_item" && "bg-primary/10 text-primary",
-                                  item.source === "talking_point" && "bg-success/10 text-success",
-                                )}
-                              >
-                                {item.source === "calendar_note"
-                                  ? "calendar"
-                                  : item.source === "talking_point"
-                                  ? "win"
-                                  : item.source === "open_item"
-                                    ? "action"
-                                    : item.source}
-                              </span>
+                  {(data.intelligenceSummary || data.meetingContext) ? (
+                    <blockquote
+                      style={{
+                        marginTop: 28,
+                        marginBottom: 0,
+                        marginLeft: 0,
+                        marginRight: 0,
+                        borderLeft: "3px solid var(--color-spice-turmeric)",
+                        paddingLeft: 24,
+                      }}
+                    >
+                      {(data.intelligenceSummary || data.meetingContext || "")
+                        .split("\n")
+                        .filter((line) => line.trim())
+                        .slice(0, 3)
+                        .map((line, i) => (
+                          <p
+                            key={i}
+                            style={{
+                              fontFamily: "var(--font-sans)",
+                              fontSize: 17,
+                              lineHeight: 1.75,
+                              color: "var(--color-text-primary)",
+                              margin: 0,
+                              marginTop: i > 0 ? 8 : 0,
+                            }}
+                          >
+                            {line}
+                          </p>
+                        ))}
+                    </blockquote>
+                  ) : (
+                    <p
+                      style={{
+                        marginTop: 28,
+                        fontSize: 14,
+                        color: "var(--color-text-tertiary)",
+                      }}
+                    >
+                      Intelligence builds as you meet with this account.
+                    </p>
+                  )}
+
+                  {topRisks.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 28,
+                        display: "grid",
+                        gap: 10,
+                        gridTemplateColumns: "repeat(3, 1fr)",
+                      }}
+                    >
+                      {topRisks.map((risk, i) => (
+                        <div
+                          key={i}
+                          style={{
+                            borderLeft: "3px solid var(--color-spice-terracotta)",
+                            paddingLeft: 14,
+                            paddingTop: 10,
+                            paddingBottom: 10,
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.12em",
+                              color: "var(--color-spice-terracotta)",
+                              margin: 0,
+                            }}
+                          >
+                            Risk {i + 1}
+                          </p>
+                          <p
+                            style={{
+                              fontSize: 14,
+                              lineHeight: 1.55,
+                              color: "var(--color-text-primary)",
+                              marginTop: 4,
+                              marginBottom: 0,
+                            }}
+                          >
+                            {risk}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {heroMeta.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 28,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, 1fr)",
+                        gap: 12,
+                      }}
+                    >
+                      {heroMeta.map((item) => (
+                        <div
+                          key={item.label}
+                          style={{
+                            borderLeft: "1px solid var(--color-rule-light)",
+                            paddingLeft: 12,
+                            paddingTop: 4,
+                            paddingBottom: 4,
+                          }}
+                        >
+                          <p
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.14em",
+                              color: "var(--color-text-tertiary)",
+                              margin: 0,
+                            }}
+                          >
+                            {item.label}
+                          </p>
+                          <p
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 500,
+                              color: resolveMetaToneColor(item.tone),
+                              marginTop: 4,
+                              marginBottom: 0,
+                            }}
+                          >
+                            {item.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* ── Agenda section ── */}
+                <section id="agenda" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <SectionLabel
+                    label="Agenda"
+                    icon={<Target style={{ width: 14, height: 14 }} />}
+                    copyText={agendaDisplayItems.length > 0 ? formatProposedAgenda(agendaDisplayItems) : undefined}
+                    copyLabel="agenda"
+                  />
+                  {agendaDisplayItems.length > 0 ? (
+                    <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                      {agendaDisplayItems.map((item, i) => (
+                        <li
+                          key={i}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            borderBottom: "1px solid var(--color-rule-light)",
+                            paddingBottom: 10,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "var(--color-spice-turmeric)",
+                              width: 24,
+                              textAlign: "right",
+                              flexShrink: 0,
+                              paddingTop: 1,
+                            }}
+                          >
+                            {i + 1}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, margin: 0, color: "var(--color-text-primary)" }}>
+                              {item.topic}
+                            </p>
+                            {item.why && (
+                              <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", marginTop: 3, marginBottom: 0, lineHeight: 1.5 }}>
+                                {item.why}
+                              </p>
                             )}
-                          </li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <div className="rounded-lg border border-dashed border-border/80 bg-card/40 px-4 py-3 text-sm text-muted-foreground">
-                        No proposed agenda yet. Add your own agenda items below.
-                      </div>
-                    )}
-                    {meetingId && (
-                      <>
-                        {prefillNotice && (
-                          <div className="rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary">
-                            Prefill appended new agenda/notes content.
                           </div>
-                        )}
-                      </>
-                    )}
-                    {meetingId && (
-                      <UserAgendaEditor
-                        meetingId={meetingId}
-                        initialAgenda={data.userAgenda}
-                        isEditable={isEditable}
-                      />
-                    )}
-                    {meetingId && (
-                      <UserNotesEditor
-                        meetingId={meetingId}
-                        initialNotes={data.userNotes}
-                        isEditable={isEditable}
-                      />
-                    )}
-                    {calendarNotes && (
-                      <section>
-                        <SectionLabel label="Calendar Notes" icon={<CalendarDays className="size-3.5" />} />
-                        <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
-                          {calendarNotes}
-                        </p>
-                      </section>
-                    )}
-                  </section>
-
-                  {((data.entityRisks && data.entityRisks.length > 0) || (data.risks && data.risks.length > 0)) && (
-                    <section id="risks" className="space-y-4">
-                      <SectionLabel
-                        label="Risks"
-                        icon={<AlertTriangle className="size-3.5" />}
-                        className="text-destructive"
-                        copyText={formatBulletList([
-                          ...(data.entityRisks?.map((r) => r.text) ?? []),
-                          ...(data.risks ?? []),
-                        ])}
-                        copyLabel="risks"
-                      />
-                      <ul className="space-y-2.5">
-                        {data.entityRisks?.map((risk, i) => (
-                          <li key={`entity-${i}`} className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-card/50 p-3 text-sm leading-relaxed">
+                          {item.source && (
                             <span
-                              className={cn(
-                                "mt-2 size-1.5 shrink-0 rounded-full",
-                                risk.urgency === "high" ? "bg-destructive" : "bg-destructive/50",
-                              )}
-                            />
-                            <span className="flex-1">{risk.text}</span>
-                          </li>
-                        ))}
-                        {data.risks?.map((risk, i) => (
-                          <li key={`ai-${i}`} className="flex items-start gap-2.5 rounded-lg border border-border/70 bg-card/50 p-3 text-sm leading-relaxed">
-                            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-destructive/50" />
-                            <span>{risk}</span>
+                              style={{
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 10,
+                                fontWeight: 500,
+                                letterSpacing: "0.04em",
+                                flexShrink: 0,
+                                color: agendaSourceColor(item.source),
+                              }}
+                            >
+                              {item.source === "calendar_note"
+                                ? "calendar"
+                                : item.source === "talking_point"
+                                ? "win"
+                                : item.source === "open_item"
+                                  ? "action"
+                                  : item.source}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p
+                      style={{
+                        fontSize: 14,
+                        color: "var(--color-text-tertiary)",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      No proposed agenda yet. Add your own agenda items below.
+                    </p>
+                  )}
+                  {meetingId && prefillNotice && (
+                    <div
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        color: "var(--color-spice-turmeric)",
+                        borderLeft: "3px solid var(--color-spice-turmeric)",
+                        paddingLeft: 12,
+                        paddingTop: 6,
+                        paddingBottom: 6,
+                      }}
+                    >
+                      Prefill appended new agenda/notes content.
+                    </div>
+                  )}
+                  {meetingId && (
+                    <UserAgendaEditor
+                      meetingId={meetingId}
+                      initialAgenda={data.userAgenda}
+                      isEditable={isEditable}
+                      onSaveStatus={setSaveStatus}
+                    />
+                  )}
+                  {meetingId && (
+                    <UserNotesEditor
+                      meetingId={meetingId}
+                      initialNotes={data.userNotes}
+                      isEditable={isEditable}
+                      onSaveStatus={setSaveStatus}
+                    />
+                  )}
+                  {calendarNotes && (
+                    <section>
+                      <SectionLabel label="Calendar Notes" icon={<CalendarDays style={{ width: 14, height: 14 }} />} />
+                      <p
+                        style={{
+                          marginTop: 12,
+                          whiteSpace: "pre-wrap",
+                          fontSize: 14,
+                          color: "var(--color-text-tertiary)",
+                          lineHeight: 1.65,
+                        }}
+                      >
+                        {calendarNotes}
+                      </p>
+                    </section>
+                  )}
+                </section>
+
+                {/* ── Risks section ── */}
+                {((data.entityRisks && data.entityRisks.length > 0) || (data.risks && data.risks.length > 0)) && (
+                  <section id="risks" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <SectionLabel
+                      label="Risks"
+                      icon={<AlertTriangle style={{ width: 14, height: 14, color: "var(--color-spice-terracotta)" }} />}
+                      labelColor="var(--color-spice-terracotta)"
+                      copyText={formatBulletList([
+                        ...(data.entityRisks?.map((r) => r.text) ?? []),
+                        ...(data.risks ?? []),
+                      ])}
+                      copyLabel="risks"
+                    />
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {data.entityRisks?.map((risk, i) => (
+                        <li
+                          key={`entity-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 10,
+                            fontSize: 14,
+                            lineHeight: 1.65,
+                            borderBottom: "1px solid var(--color-rule-light)",
+                            paddingBottom: 8,
+                          }}
+                        >
+                          <span
+                            style={bulletDot(
+                              risk.urgency === "high"
+                                ? "var(--color-spice-terracotta)"
+                                : "rgba(196, 101, 74, 0.5)"
+                            )}
+                          />
+                          <span style={{ flex: 1, color: "var(--color-text-primary)" }}>{risk.text}</span>
+                        </li>
+                      ))}
+                      {data.risks?.map((risk, i) => (
+                        <li
+                          key={`ai-${i}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 10,
+                            fontSize: 14,
+                            lineHeight: 1.65,
+                            borderBottom: "1px solid var(--color-rule-light)",
+                            paddingBottom: 8,
+                          }}
+                        >
+                          <span style={bulletDot("rgba(196, 101, 74, 0.5)")} />
+                          <span style={{ color: "var(--color-text-primary)" }}>{risk}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+
+                {/* ── People section ── */}
+                <section id="people" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  <PeopleInTheRoom attendeeContext={data.attendeeContext} attendees={data.attendees} />
+
+                  {matchingStakeholderInsights.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <p style={chapterHeading}>
+                        Attendee Intelligence
+                      </p>
+                      <StakeholderInsightList people={matchingStakeholderInsights} />
+                    </div>
+                  )}
+
+                  {extendedStakeholderInsights.length > 0 && (
+                    <ExtendedStakeholderToggle people={extendedStakeholderInsights} />
+                  )}
+                </section>
+
+                {/* ── Open Items section ── */}
+                {data.openItems && data.openItems.length > 0 && (
+                  <section id="actions" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <SectionLabel
+                      label="Open Items"
+                      icon={<CheckCircle style={{ width: 14, height: 14 }} />}
+                      copyText={formatOpenItems(data.openItems)}
+                      copyLabel="open items"
+                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {data.openItems.map((item, i) => (
+                        <ActionItem key={i} action={item} />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* ── Appendix section ── */}
+                {(hasReferenceContent(data) || (data.sinceLast?.length ?? 0) > 0 || (data.strategicPrograms?.length ?? 0) > 0) && (
+                  <AppendixSection data={data} />
+                )}
+
+                {/* ── End of Brief ── */}
+                <FinisMarker />
+              </div>
+
+              {/* ── Sidebar ── */}
+              <aside>
+                <div style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 24 }}>
+                  {/* Jump To nav */}
+                  <div style={sidebarCard}>
+                    <p style={{ ...chapterHeading, letterSpacing: "0.16em", marginBottom: 12 }}>Jump To</p>
+                    <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      {reportNav.map((item) => (
+                        <a
+                          key={item.id}
+                          href={`#${item.id}`}
+                          style={{
+                            display: "block",
+                            padding: "6px 8px",
+                            fontSize: 14,
+                            color: "var(--color-text-tertiary)",
+                            textDecoration: "none",
+                            borderRadius: 3,
+                          }}
+                        >
+                          {item.label}
+                        </a>
+                      ))}
+                    </nav>
+                  </div>
+
+                  {/* Relationship Signals */}
+                  {data.stakeholderSignals && (
+                    <div style={sidebarCard}>
+                      <p style={{ ...chapterHeading, letterSpacing: "0.16em", marginBottom: 12 }}>Relationship Signals</p>
+                      <RelationshipPills signals={data.stakeholderSignals} />
+                    </div>
+                  )}
+
+                  {/* Before This Meeting */}
+                  {data.entityReadiness && data.entityReadiness.length > 0 && (
+                    <div
+                      style={{
+                        ...sidebarCard,
+                        borderColor: "var(--color-spice-turmeric)",
+                        borderLeftWidth: 3,
+                      }}
+                    >
+                      <p
+                        style={{
+                          ...chapterHeading,
+                          letterSpacing: "0.16em",
+                          color: "var(--color-spice-turmeric)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Before This Meeting
+                      </p>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {data.entityReadiness.slice(0, 4).map((item, i) => (
+                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14, color: "var(--color-text-primary)" }}>
+                            <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
+                            <span>{item}</span>
                           </li>
                         ))}
                       </ul>
-                    </section>
+                    </div>
                   )}
 
-                  <section id="people" className="space-y-5">
-                    <PeopleInTheRoom attendeeContext={data.attendeeContext} attendees={data.attendees} />
-
-                    {matchingStakeholderInsights.length > 0 && (
-                      <div className="space-y-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                          Attendee Intelligence
-                        </p>
-                        <StakeholderInsightList people={matchingStakeholderInsights} />
-                      </div>
-                    )}
-
-                    {extendedStakeholderInsights.length > 0 && (
-                      <Collapsible defaultOpen={false}>
-                        <CollapsibleTrigger className="group flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground w-full py-1">
-                          <ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
-                          Extended Stakeholder Map ({extendedStakeholderInsights.length})
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-4">
-                          <StakeholderInsightList people={extendedStakeholderInsights} />
-                        </CollapsibleContent>
-                      </Collapsible>
-                    )}
-                  </section>
-
-                  {data.openItems && data.openItems.length > 0 && (
-                    <section id="actions" className="space-y-8">
-                      <section>
-                        <SectionLabel
-                          label="Open Items"
-                          icon={<CheckCircle className="size-3.5" />}
-                          copyText={formatOpenItems(data.openItems)}
-                          copyLabel="open items"
-                        />
-                        <div className="mt-3 space-y-2">
-                          {data.openItems.map((item, i) => (
-                            <ActionItem key={i} action={item} />
-                          ))}
-                        </div>
-                      </section>
-                    </section>
-                  )}
-
-                  {(hasReferenceContent(data) || (data.sinceLast?.length ?? 0) > 0 || (data.strategicPrograms?.length ?? 0) > 0) && (
-                    <section id="appendix" className="space-y-4 border-t border-border/70 pt-6">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Appendix
+                  {/* Recent Email Signals */}
+                  {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+                    <div
+                      style={{
+                        ...sidebarCard,
+                        borderColor: "var(--color-spice-turmeric)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          ...chapterHeading,
+                          letterSpacing: "0.16em",
+                          color: "var(--color-spice-turmeric)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Recent Email Signals
                       </p>
-                      <Collapsible defaultOpen={false}>
-                        <CollapsibleTrigger className="group flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground w-full py-1">
-                          <ChevronRight className="size-3.5 transition-transform duration-200 [[data-state=open]>&]:rotate-90" />
-                          Open Supporting Context
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="mt-4 space-y-6">
-                          {data.sinceLast && data.sinceLast.length > 0 && (
-                            <section>
-                              <SectionLabel
-                                label="Since Last Meeting"
-                                icon={<History className="size-3.5" />}
-                                copyText={formatBulletList(data.sinceLast)}
-                                copyLabel="since last meeting"
-                              />
-                              <ul className="mt-3 space-y-2">
-                                {data.sinceLast.map((item, i) => (
-                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
-                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
-                                    <span>{item}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </section>
-                          )}
-
-                          {data.strategicPrograms && data.strategicPrograms.length > 0 && (
-                            <section>
-                              <SectionLabel
-                                label="Strategic Programs"
-                                icon={<Target className="size-3.5" />}
-                                copyText={formatBulletList(data.strategicPrograms)}
-                                copyLabel="programs"
-                              />
-                              <ul className="mt-3 space-y-2">
-                                {data.strategicPrograms.map((item, i) => (
-                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
-                                    <span className={cn("mt-0.5", item.startsWith("✓") ? "text-success" : "text-muted-foreground")}>
-                                      {item.startsWith("✓") ? "✓" : "○"}
-                                    </span>
-                                    <span>{item.replace(/^[✓○]\s*/, "")}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </section>
-                          )}
-
-                          {data.meetingContext && data.meetingContext.split("\n").length > 3 && (
-                            <section>
-                              <SectionLabel
-                                label="Full Context"
-                                icon={<FileText className="size-3.5" />}
-                                copyText={data.meetingContext}
-                                copyLabel="context"
-                              />
-                              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed">{data.meetingContext}</p>
-                            </section>
-                          )}
-
-                          {data.currentState && data.currentState.length > 0 && (
-                            <section>
-                              <SectionLabel label="Current State" copyText={formatBulletList(data.currentState)} copyLabel="current state" />
-                              <ul className="mt-3 space-y-2">
-                                {data.currentState.map((item, i) => (
-                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
-                                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground" />
-                                    <span>{item}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </section>
-                          )}
-
-                          {data.questions && data.questions.length > 0 && (
-                            <section>
-                              <SectionLabel
-                                label="Questions to Surface"
-                                icon={<HelpCircle className="size-3.5" />}
-                                copyText={formatNumberedList(data.questions)}
-                                copyLabel="questions"
-                              />
-                              <ol className="mt-3 space-y-2">
-                                {data.questions.map((q, i) => (
-                                  <li key={i} className="flex items-start gap-2.5 text-sm leading-relaxed">
-                                    <span className="mt-0.5 text-xs font-medium text-muted-foreground w-4 shrink-0 text-right">{i + 1}.</span>
-                                    <span>{q}</span>
-                                  </li>
-                                ))}
-                              </ol>
-                            </section>
-                          )}
-
-                          {data.keyPrinciples && data.keyPrinciples.length > 0 && (
-                            <section>
-                              <SectionLabel
-                                label="Key Principles"
-                                icon={<BookOpen className="size-3.5" />}
-                                copyText={formatBulletList(data.keyPrinciples)}
-                                copyLabel="principles"
-                              />
-                              <div className="mt-3 space-y-3">
-                                {data.keyPrinciples.map((principle, i) => (
-                                  <blockquote key={i} className="border-l-2 border-primary/30 pl-4 text-sm italic text-muted-foreground">
-                                    {principle}
-                                  </blockquote>
-                                ))}
-                              </div>
-                            </section>
-                          )}
-
-                          {data.references && data.references.length > 0 && (
-                            <section>
-                              <SectionLabel label="References" />
-                              <div className="mt-3 space-y-2">
-                                {data.references.map((ref_, i) => (
-                                  <ReferenceRow key={i} reference={ref_} />
-                                ))}
-                              </div>
-                            </section>
-                          )}
-                        </CollapsibleContent>
-                      </Collapsible>
-                    </section>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+                        {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
+                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                              <span
+                                style={{
+                                  fontFamily: "var(--font-mono)",
+                                  fontSize: 10,
+                                  fontWeight: 500,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  color: "var(--color-spice-turmeric)",
+                                }}
+                              >
+                                {signal.signalType}
+                              </span>
+                              {signal.detectedAt && (
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-mono)",
+                                    fontSize: 10,
+                                    color: "var(--color-text-tertiary)",
+                                  }}
+                                >
+                                  {formatRelativeDateLong(signal.detectedAt)}
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ marginTop: 4, marginBottom: 0, lineHeight: 1.55, color: "var(--color-text-primary)" }}>
+                              {signal.signalText}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
 
-                  <div className="mt-12 flex items-center gap-3">
-                    <div className="h-px flex-1 bg-border" />
-                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/40">
-                      End of Brief
-                    </span>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
-                </div>
-
-                <aside className="hidden lg:block">
-                  <div className="sticky top-6 space-y-5">
-                    <section className="rounded-xl border border-border/70 bg-card/60 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Jump To</p>
-                      <nav className="mt-3 space-y-2">
-                        {reportNav.map((item) => (
-                          <a
-                            key={item.id}
-                            href={`#${item.id}`}
-                            className="block rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
-                          >
-                            {item.label}
-                          </a>
+                  {/* Recent Wins */}
+                  {recentWinsForSidebar.length > 0 && (
+                    <div
+                      style={{
+                        ...sidebarCard,
+                        borderColor: "var(--color-garden-sage)",
+                        borderLeftWidth: 3,
+                      }}
+                    >
+                      <p
+                        style={{
+                          ...chapterHeading,
+                          letterSpacing: "0.16em",
+                          color: "var(--color-garden-sage)",
+                          marginBottom: 12,
+                        }}
+                      >
+                        Recent Wins
+                      </p>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+                        {recentWinsForSidebar.slice(0, 4).map((win, i) => (
+                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14 }}>
+                            <span style={bulletDot("rgba(126, 170, 123, 0.7)")} />
+                            <span style={{ lineHeight: 1.55, color: "var(--color-text-primary)" }}>{win}</span>
+                          </li>
                         ))}
-                      </nav>
-                    </section>
-
-                    {data.stakeholderSignals && (
-                      <section className="rounded-xl border border-border/70 bg-card/60 p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Relationship Signals</p>
-                        <div className="mt-3">
-                          <RelationshipPills signals={data.stakeholderSignals} />
-                        </div>
-                      </section>
-                    )}
-
-                    {data.entityReadiness && data.entityReadiness.length > 0 && (
-                      <section className="rounded-xl border border-primary/20 bg-primary/[0.05] p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary/80">Before This Meeting</p>
-                        <ul className="mt-3 space-y-2">
-                          {data.entityReadiness.slice(0, 4).map((item, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm">
-                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/60" />
-                              <span>{item}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-
-                    {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
-                      <section className="rounded-xl border border-amber-500/20 bg-amber-500/[0.08] p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
-                          Recent Email Signals
-                        </p>
-                        <ul className="mt-3 space-y-2.5">
-                          {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
-                            <li key={`${signal.id ?? i}-${signal.signalType}`} className="text-sm">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-200">
-                                  {signal.signalType}
-                                </span>
-                                {signal.detectedAt && (
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {formatRelativeDateLong(signal.detectedAt)}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-1 leading-relaxed">{signal.signalText}</p>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-
-                    {recentWinsForSidebar.length > 0 && (
-                      <section className="rounded-xl border border-success/20 bg-success/[0.08] p-4">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success">
-                          Recent Wins
-                        </p>
-                        <ul className="mt-3 space-y-2.5">
-                          {recentWinsForSidebar.slice(0, 4).map((win, i) => (
-                            <li key={i} className="flex items-start gap-2 text-sm">
-                              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-success/70" />
-                              <span className="leading-relaxed text-foreground">{win}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-                  </div>
-                </aside>
-              </div>
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </aside>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* Pre-meeting: outcomes below prep if they exist (I195) */}
-          {!isPastMeeting && outcomes && (
-            <>
-              <Separator className="my-8" />
-              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} />
-            </>
-          )}
-        </div>
-      </ScrollArea>
+        {/* Pre-meeting: outcomes below prep if they exist (I195) */}
+        {!isPastMeeting && outcomes && (
+          <>
+            <div style={{ ...editorialRule, margin: "48px 0" }} />
+            <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+          </>
+        )}
+      </div>
       <AgendaDraftDialog
         open={draft.open}
         onOpenChange={draft.setOpen}
@@ -907,63 +1193,86 @@ export default function MeetingDetailPage() {
         subject={draft.subject}
         body={draft.body}
       />
-    </main>
+    </>
   );
 }
 
-/** Thin section label used throughout report sections. */
+// =============================================================================
+// SectionLabel (chapter heading pattern)
+// =============================================================================
+
 function SectionLabel({
   label,
   icon,
-  className,
+  labelColor,
   copyText,
   copyLabel,
 }: {
   label: string;
   icon?: React.ReactNode;
-  className?: string;
+  labelColor?: string;
   copyText?: string;
   copyLabel?: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className={cn(
-        "flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground",
-        className,
-      )}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div
+        style={{
+          ...chapterHeading,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          color: labelColor || "var(--color-text-tertiary)",
+        }}
+      >
         {icon}
         {label}
       </div>
+      <div style={{ flex: 1, height: 1, background: "var(--color-rule-light)" }} />
       {copyText && (
-        <CopyButton text={copyText} label={copyLabel} className="ml-auto" />
+        <CopyButton text={copyText} label={copyLabel} />
       )}
     </div>
   );
 }
 
+// =============================================================================
+// RelationshipPills
+// =============================================================================
+
 function RelationshipPills({ signals }: { signals: StakeholderSignals }) {
-  const tempColor = {
-    hot: "text-success",
-    warm: "text-primary",
-    cool: "text-muted-foreground",
-    cold: "text-destructive",
-  }[signals.temperature] ?? "text-muted-foreground";
+  const tempColor: Record<string, string> = {
+    hot: "var(--color-garden-sage)",
+    warm: "var(--color-spice-turmeric)",
+    cool: "var(--color-text-tertiary)",
+    cold: "var(--color-spice-terracotta)",
+  };
+  const color = tempColor[signals.temperature] ?? "var(--color-text-tertiary)";
 
   const lastMeetingText = signals.lastMeeting
     ? formatRelativeDateLong(signals.lastMeeting)
     : "No meetings recorded";
 
+  const pillStyle: React.CSSProperties = {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    letterSpacing: "0.04em",
+    padding: "3px 8px",
+    border: "1px solid var(--color-rule-light)",
+    borderRadius: 3,
+  };
+
   return (
-    <div className="flex flex-wrap gap-2">
-      <Badge variant="outline" className={cn("font-normal capitalize", tempColor)}>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      <span style={{ ...pillStyle, color, textTransform: "capitalize" }}>
         {signals.temperature}
-      </Badge>
-      <Badge variant="outline" className="font-normal">
+      </span>
+      <span style={{ ...pillStyle, color: "var(--color-text-secondary)" }}>
         Last: {lastMeetingText}
-      </Badge>
-      <Badge variant="outline" className="font-normal">
+      </span>
+      <span style={{ ...pillStyle, color: "var(--color-text-secondary)" }}>
         {signals.meetingFrequency30d} meeting{signals.meetingFrequency30d !== 1 ? "s" : ""} / 30d
-      </Badge>
+      </span>
     </div>
   );
 }
@@ -976,13 +1285,14 @@ function UserNotesEditor({
   meetingId,
   initialNotes,
   isEditable,
+  onSaveStatus,
 }: {
   meetingId: string;
   initialNotes?: string;
   isEditable: boolean;
+  onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
   const [notes, setNotes] = useState(initialNotes || "");
-  const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
 
   // Don't render if no notes and not editable (past meeting)
@@ -992,33 +1302,71 @@ function UserNotesEditor({
     setNotes(value);
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    onSaveStatus("saving");
     saveTimer.current = setTimeout(async () => {
-      setSaving(true);
       try {
         await invoke("update_meeting_user_notes", { meetingId, notes: value });
+        onSaveStatus("saved");
+        setTimeout(() => onSaveStatus("idle"), 2000);
       } catch (err) {
         console.error("Save failed:", err);
-      } finally {
-        setSaving(false);
+        onSaveStatus("idle");
       }
     }, 1000);
   }
 
   return (
-    <div className="rounded-lg border border-primary/10 bg-primary/[0.03] p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/70">My Notes</span>
-        {saving && <span className="text-[10px] text-muted-foreground animate-pulse">Saving...</span>}
-      </div>
+    <div
+      style={{
+        borderLeft: "3px solid rgba(201, 162, 39, 0.2)",
+        paddingLeft: 20,
+        paddingTop: 16,
+        paddingBottom: 16,
+      }}
+    >
+      <p
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: "rgba(201, 162, 39, 0.7)",
+          margin: "0 0 12px",
+        }}
+      >
+        My Notes
+      </p>
       {isEditable ? (
         <textarea
           value={notes}
           onChange={(e) => handleChange(e.target.value)}
-          className="w-full min-h-[80px] rounded-md border-0 bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-0 resize-y"
           placeholder="Add your own notes for this meeting..."
+          style={{
+            width: "100%",
+            minHeight: 80,
+            border: "none",
+            background: "transparent",
+            padding: 0,
+            fontSize: 14,
+            lineHeight: 1.65,
+            color: "var(--color-text-primary)",
+            fontFamily: "var(--font-sans)",
+            resize: "vertical",
+            outline: "none",
+          }}
         />
       ) : (
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">{notes}</div>
+        <div
+          style={{
+            whiteSpace: "pre-wrap",
+            fontSize: 14,
+            lineHeight: 1.65,
+            color: "var(--color-text-primary)",
+          }}
+        >
+          {notes}
+        </div>
       )}
     </div>
   );
@@ -1028,27 +1376,29 @@ function UserAgendaEditor({
   meetingId,
   initialAgenda,
   isEditable,
+  onSaveStatus,
 }: {
   meetingId: string;
   initialAgenda?: string[];
   isEditable: boolean;
+  onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
   const [agenda, setAgenda] = useState(initialAgenda || []);
   const [newItem, setNewItem] = useState("");
-  const [saving, setSaving] = useState(false);
 
   // Don't render if no agenda and not editable
   if (!isEditable && agenda.length === 0) return null;
 
   async function saveAgenda(updatedAgenda: string[]) {
-    setSaving(true);
+    onSaveStatus("saving");
     try {
       await invoke("update_meeting_user_agenda", { meetingId, agenda: updatedAgenda });
       setAgenda(updatedAgenda);
+      onSaveStatus("saved");
+      setTimeout(() => onSaveStatus("idle"), 2000);
     } catch (err) {
       console.error("Save failed:", err);
-    } finally {
-      setSaving(false);
+      onSaveStatus("idle");
     }
   }
 
@@ -1063,36 +1413,97 @@ function UserAgendaEditor({
   }
 
   return (
-    <div className="rounded-lg border border-primary/10 bg-primary/[0.03] p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-primary/70">My Agenda</span>
-        {saving && <span className="text-[10px] text-muted-foreground animate-pulse">Saving...</span>}
-      </div>
+    <div
+      style={{
+        borderLeft: "3px solid rgba(201, 162, 39, 0.2)",
+        paddingLeft: 20,
+        paddingTop: 16,
+        paddingBottom: 16,
+      }}
+    >
+      <p
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: "rgba(201, 162, 39, 0.7)",
+          margin: "0 0 12px",
+        }}
+      >
+        My Agenda
+      </p>
       {agenda.length > 0 && (
-        <ol className="space-y-2 mb-4">
+        <ol style={{ listStyle: "none", margin: "0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
           {agenda.map((item, i) => (
-            <li key={i} className="flex items-start gap-2.5">
-              <span className="text-xs font-medium text-primary/50 w-4 shrink-0 text-right mt-0.5">{i + 1}.</span>
-              <span className="flex-1 text-sm leading-relaxed">{item}</span>
+            <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "rgba(201, 162, 39, 0.5)",
+                  width: 16,
+                  textAlign: "right",
+                  flexShrink: 0,
+                  paddingTop: 1,
+                }}
+              >
+                {i + 1}.
+              </span>
+              <span style={{ flex: 1, fontSize: 14, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{item}</span>
               {isEditable && (
-                <Button size="sm" variant="ghost" className="h-5 w-5 p-0 opacity-0 hover:opacity-100 transition-opacity" onClick={() => removeItem(i)}>
-                  <span className="text-muted-foreground hover:text-foreground">&times;</span>
-                </Button>
+                <button
+                  onClick={() => removeItem(i)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 16,
+                    lineHeight: 1,
+                    color: "var(--color-text-tertiary)",
+                    padding: "0 4px",
+                    opacity: 0.5,
+                  }}
+                >
+                  &times;
+                </button>
               )}
             </li>
           ))}
         </ol>
       )}
       {isEditable && (
-        <div className="flex gap-2">
-          <Input
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
             value={newItem}
             onChange={(e) => setNewItem(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addItem()}
             placeholder="Add agenda item..."
-            className="h-8 border-0 bg-transparent text-sm shadow-none placeholder:text-muted-foreground/50 focus-visible:ring-0"
+            style={{
+              flex: 1,
+              border: "none",
+              borderBottom: "1px solid var(--color-rule-light)",
+              background: "transparent",
+              padding: "4px 0",
+              fontSize: 14,
+              color: "var(--color-text-primary)",
+              fontFamily: "var(--font-sans)",
+              outline: "none",
+            }}
           />
-          <Button size="sm" variant="ghost" className="h-8 text-primary hover:text-primary" onClick={addItem}>Add</Button>
+          <button
+            onClick={addItem}
+            style={{
+              ...editorialBtn,
+              color: "var(--color-spice-turmeric)",
+              borderColor: "transparent",
+              padding: "4px 12px",
+            }}
+          >
+            Add
+          </button>
         </div>
       )}
     </div>
@@ -1106,14 +1517,249 @@ function UserAgendaEditor({
 function OutcomesSection({
   outcomes,
   onRefresh,
+  onSaveStatus: _onSaveStatus,
 }: {
   outcomes: MeetingOutcomeData;
   onRefresh: () => void;
+  onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Meeting Outcomes</h2>
-      <MeetingOutcomes outcomes={outcomes} onRefresh={onRefresh} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <h2
+        style={{
+          fontFamily: "var(--font-serif)",
+          fontSize: 22,
+          fontWeight: 600,
+          color: "var(--color-text-primary)",
+          margin: 0,
+        }}
+      >
+        Meeting Outcomes
+      </h2>
+      {/* Inlined MeetingOutcomes */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, fontSize: 14 }}>
+        {/* Summary */}
+        {outcomes.summary && (
+          <p style={{ color: "var(--color-text-tertiary)", margin: 0, lineHeight: 1.65 }}>{outcomes.summary}</p>
+        )}
+
+        <div style={{ display: "grid", gap: 20, gridTemplateColumns: "repeat(2, 1fr)" }}>
+          {/* Wins */}
+          {outcomes.wins.length > 0 && (
+            <OutcomeSection
+              title="Wins"
+              icon={<Trophy style={{ width: 13, height: 13, color: "var(--color-garden-sage)" }} />}
+              items={outcomes.wins}
+            />
+          )}
+
+          {/* Risks */}
+          {outcomes.risks.length > 0 && (
+            <OutcomeSection
+              title="Risks"
+              icon={<AlertTriangle style={{ width: 13, height: 13, color: "var(--color-spice-terracotta)" }} />}
+              items={outcomes.risks}
+            />
+          )}
+
+          {/* Decisions */}
+          {outcomes.decisions.length > 0 && (
+            <OutcomeSection
+              title="Decisions"
+              icon={<CircleDot style={{ width: 13, height: 13, color: "var(--color-spice-turmeric)" }} />}
+              items={outcomes.decisions}
+            />
+          )}
+        </div>
+
+        {/* Actions */}
+        {outcomes.actions.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <h4
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+                margin: 0,
+              }}
+            >
+              Actions
+            </h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {outcomes.actions.map((action) => (
+                <OutcomeActionRow
+                  key={action.id}
+                  action={action}
+                  onRefresh={onRefresh}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OutcomeSection({
+  title,
+  icon,
+  items,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  items: string[];
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <h4
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontFamily: "var(--font-sans)",
+          fontSize: 14,
+          fontWeight: 500,
+          color: "var(--color-text-primary)",
+          margin: 0,
+        }}
+      >
+        {icon}
+        {title}
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            fontWeight: 400,
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          ({items.length})
+        </span>
+      </h4>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+        {items.map((item, i) => (
+          <li
+            key={i}
+            style={{
+              fontSize: 14,
+              color: "var(--color-text-tertiary)",
+              lineHeight: 1.55,
+            }}
+          >
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function OutcomeActionRow({
+  action,
+  onRefresh,
+}: {
+  action: DbAction;
+  onRefresh: () => void;
+}) {
+  const isCompleted = action.status === "completed";
+
+  const handleComplete = useCallback(async () => {
+    try {
+      if (isCompleted) {
+        await invoke("reopen_action", { id: action.id });
+      } else {
+        await invoke("complete_action", { id: action.id });
+      }
+      onRefresh();
+    } catch (err) {
+      console.error("Failed to toggle action:", err);
+    }
+  }, [action.id, isCompleted, onRefresh]);
+
+  const handleCyclePriority = useCallback(async () => {
+    const cycle: Record<string, string> = { P1: "P2", P2: "P3", P3: "P1" };
+    const next = cycle[action.priority] || "P2";
+    try {
+      await invoke("update_action_priority", {
+        id: action.id,
+        priority: next,
+      });
+      onRefresh();
+    } catch (err) {
+      console.error("Failed to update priority:", err);
+    }
+  }, [action.id, action.priority, onRefresh]);
+
+  const priorityColor: Record<string, string> = {
+    P1: "var(--color-spice-terracotta)",
+    P3: "var(--color-text-tertiary)",
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 4px" }}>
+      <button
+        onClick={handleComplete}
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 3,
+          border: isCompleted
+            ? "1px solid var(--color-garden-sage)"
+            : "1px solid var(--color-text-tertiary)",
+          background: isCompleted ? "rgba(126, 170, 123, 0.2)" : "transparent",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          padding: 0,
+        }}
+      >
+        {isCompleted && <Check style={{ width: 12, height: 12, color: "var(--color-garden-sage)" }} />}
+      </button>
+
+      <button
+        onClick={handleCyclePriority}
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 10,
+          fontWeight: 500,
+          letterSpacing: "0.04em",
+          padding: "1px 6px",
+          border: "1px solid var(--color-rule-light)",
+          borderRadius: 3,
+          background: "transparent",
+          color: priorityColor[action.priority] ?? "var(--color-text-secondary)",
+          cursor: "pointer",
+        }}
+      >
+        {action.priority}
+      </button>
+
+      <span
+        style={{
+          flex: 1,
+          fontSize: 13,
+          color: isCompleted ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
+          textDecoration: isCompleted ? "line-through" : "none",
+        }}
+      >
+        {action.title}
+      </span>
+
+      {action.dueDate && (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          {action.dueDate}
+        </span>
+      )}
     </div>
   );
 }
@@ -1126,18 +1772,23 @@ function CopyAllButton({ data }: { data: FullMeetingPrep }) {
   const { copied, copy } = useCopyToClipboard();
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="text-muted-foreground hover:text-foreground shrink-0"
+    <button
       onClick={() => copy(formatFullPrep(data))}
+      style={{
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 4,
+        color: "var(--color-text-tertiary)",
+        flexShrink: 0,
+      }}
     >
       {copied ? (
-        <Check className="size-3.5 text-success" />
+        <Check style={{ width: 14, height: 14, color: "var(--color-garden-sage)" }} />
       ) : (
-        <Copy className="size-3.5" />
+        <Copy style={{ width: 14, height: 14 }} />
       )}
-    </Button>
+    </button>
   );
 }
 
@@ -1153,11 +1804,11 @@ function PeopleInTheRoom({
       <section>
         <SectionLabel
           label="People in the Room"
-          icon={<Users className="size-3.5" />}
+          icon={<Users style={{ width: 14, height: 14 }} />}
           copyText={formatAttendeeContext(attendeeContext)}
           copyLabel="people"
         />
-        <div className="mt-3 space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
           {attendeeContext.map((person, i) => (
             <AttendeeRow key={i} person={person} />
           ))}
@@ -1171,23 +1822,43 @@ function PeopleInTheRoom({
       <section>
         <SectionLabel
           label="Key Attendees"
-          icon={<Users className="size-3.5" />}
+          icon={<Users style={{ width: 14, height: 14 }} />}
           copyText={formatAttendees(attendees)}
           copyLabel="attendees"
         />
-        <div className="mt-3 space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
           {attendees.map((attendee, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: "rgba(201, 162, 39, 0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: "var(--color-spice-turmeric)",
+                  flexShrink: 0,
+                }}
+              >
                 {attendee.name.charAt(0)}
               </div>
               <div>
-                <p className="text-sm font-medium">{attendee.name}</p>
+                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
+                  {attendee.name}
+                </p>
                 {attendee.role && (
-                  <p className="text-xs text-muted-foreground">{attendee.role}</p>
+                  <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>
+                    {attendee.role}
+                  </p>
                 )}
                 {attendee.focus && (
-                  <p className="text-xs text-muted-foreground">{attendee.focus}</p>
+                  <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>
+                    {attendee.focus}
+                  </p>
                 )}
               </div>
             </div>
@@ -1201,34 +1872,76 @@ function PeopleInTheRoom({
 }
 
 function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
+  const engagementColor: Record<string, string> = {
+    champion: "var(--color-garden-sage)",
+    detractor: "var(--color-spice-terracotta)",
+    neutral: "var(--color-text-tertiary)",
+  };
+
   return (
-    <div className="space-y-3">
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {people.map((person, i) => (
-        <div key={i} className="flex items-start gap-3 rounded-lg border border-border/70 bg-card/50 p-3">
-          <div className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary shrink-0">
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            borderBottom: "1px solid var(--color-rule-light)",
+            paddingBottom: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "rgba(201, 162, 39, 0.1)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--color-spice-turmeric)",
+              flexShrink: 0,
+            }}
+          >
             {person.name.charAt(0)}
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium">{person.name}</p>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
+                {person.name}
+              </p>
               {person.role && (
-                <span className="text-xs text-muted-foreground">{sanitizeInlineText(person.role)}</span>
+                <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                  {sanitizeInlineText(person.role)}
+                </span>
               )}
               {person.engagement && (
                 <span
-                  className={cn(
-                    "text-[10px] font-medium capitalize",
-                    person.engagement === "champion" && "text-success",
-                    person.engagement === "detractor" && "text-destructive",
-                    person.engagement === "neutral" && "text-muted-foreground",
-                  )}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    fontWeight: 500,
+                    textTransform: "capitalize",
+                    color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
+                  }}
                 >
                   {person.engagement}
                 </span>
               )}
             </div>
             {person.assessment && (
-              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+              <p
+                style={{
+                  marginTop: 3,
+                  marginBottom: 0,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
                 {truncateText(sanitizeInlineText(person.assessment), 180)}
               </p>
             )}
@@ -1239,77 +1952,190 @@ function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
   );
 }
 
+function ExtendedStakeholderToggle({ people }: { people: StakeholderInsight[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 0",
+          width: "100%",
+          ...chapterHeading,
+        }}
+      >
+        <ChevronRight
+          style={{
+            width: 14,
+            height: 14,
+            transition: "transform 0.2s",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+          }}
+        />
+        Extended Stakeholder Map ({people.length})
+      </button>
+      {open && (
+        <div style={{ marginTop: 16 }}>
+          <StakeholderInsightList people={people} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AttendeeRow({ person }: { person: AttendeeContext }) {
-  const tempColor = {
-    hot: "text-success",
-    warm: "text-primary",
-    cool: "text-muted-foreground",
-    cold: "text-destructive",
-  }[person.temperature ?? ""] ?? "text-muted-foreground";
+  const tempColorMap: Record<string, string> = {
+    hot: "var(--color-garden-sage)",
+    warm: "var(--color-spice-turmeric)",
+    cool: "var(--color-text-tertiary)",
+    cold: "var(--color-spice-terracotta)",
+  };
+  const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
 
   const isNew = person.meetingCount === 0;
   const isCold = person.temperature === "cold";
   const lastSeenText = person.lastSeen ? formatRelativeDateLong(person.lastSeen) : undefined;
 
+  const circleColor = isCold
+    ? { bg: "rgba(196, 101, 74, 0.1)", fg: "var(--color-spice-terracotta)" }
+    : isNew
+    ? { bg: "rgba(126, 170, 123, 0.1)", fg: "var(--color-garden-sage)" }
+    : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
+
   const inner = (
-    <div className={cn(
-      "flex items-start gap-3 rounded-md p-2 -mx-2",
-      person.personId && "hover:bg-muted/50 cursor-pointer",
-    )}>
-      <div className={cn(
-        "flex size-8 items-center justify-center rounded-full text-sm font-medium",
-        isCold ? "bg-destructive/10 text-destructive" :
-        isNew ? "bg-success/10 text-success" :
-        "bg-primary/10 text-primary",
-      )}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "8px 0",
+        borderBottom: "1px solid var(--color-rule-light)",
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          background: circleColor.bg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 14,
+          fontWeight: 500,
+          color: circleColor.fg,
+          flexShrink: 0,
+        }}
+      >
         {person.name.charAt(0)}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="font-medium">{person.name}</p>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <p style={{ fontWeight: 500, color: "var(--color-text-primary)", margin: 0, fontSize: 14 }}>
+            {person.name}
+          </p>
           {person.temperature && (
-            <span className={cn("text-xs font-medium capitalize", tempColor)}>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 500,
+                textTransform: "capitalize",
+                color: tempColor,
+              }}
+            >
               {person.temperature}
             </span>
           )}
           {isNew && (
-            <span className="text-xs font-medium text-success">New contact</span>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 500,
+                color: "var(--color-garden-sage)",
+              }}
+            >
+              New contact
+            </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
           {person.role && (
-            <p className="text-sm text-muted-foreground">{person.role}</p>
+            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
+              {person.role}
+            </p>
           )}
           {person.organization && (
-            <p className="text-sm text-muted-foreground">{person.organization}</p>
+            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
+              {person.organization}
+            </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 2 }}>
           {person.meetingCount != null && person.meetingCount > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
               {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
             </span>
           )}
           {lastSeenText && (
-            <span className={cn("text-xs", isCold ? "text-destructive" : "text-muted-foreground")}>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: isCold ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+              }}
+            >
               Last seen {lastSeenText}
             </span>
           )}
         </div>
         {isCold && (
-          <p className="mt-1 text-xs text-destructive">
-            Cold — hasn't been seen in 60+ days
+          <p
+            style={{
+              marginTop: 4,
+              marginBottom: 0,
+              fontSize: 12,
+              color: "var(--color-spice-terracotta)",
+            }}
+          >
+            Cold -- hasn't been seen in 60+ days
           </p>
         )}
         {person.notes && (
-          <p className="mt-1 text-xs text-muted-foreground italic">{person.notes}</p>
+          <p
+            style={{
+              marginTop: 4,
+              marginBottom: 0,
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              fontStyle: "italic",
+            }}
+          >
+            {person.notes}
+          </p>
         )}
       </div>
     </div>
   );
 
   if (person.personId) {
-    return <Link to="/people/$personId" params={{ personId: person.personId }}>{inner}</Link>;
+    return (
+      <Link
+        to="/people/$personId"
+        params={{ personId: person.personId }}
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
+        {inner}
+      </Link>
+    );
   }
   return inner;
 }
@@ -1317,33 +2143,43 @@ function AttendeeRow({ person }: { person: AttendeeContext }) {
 function ActionItem({ action }: { action: ActionWithContext }) {
   return (
     <div
-      className={cn(
-        "rounded-md border p-3",
-        action.isOverdue && "border-destructive bg-destructive/5"
-      )}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        borderBottom: action.isOverdue
+          ? "1px solid var(--color-spice-terracotta)"
+          : "1px solid var(--color-rule-light)",
+        paddingBottom: 10,
+        paddingLeft: action.isOverdue ? 12 : 0,
+        borderLeft: action.isOverdue ? "3px solid var(--color-spice-terracotta)" : "none",
+      }}
     >
-      <div className="flex items-start gap-2">
-        {action.isOverdue ? (
-          <AlertTriangle className="mt-0.5 size-4 text-destructive" />
-        ) : (
-          <CheckCircle className="mt-0.5 size-4 text-muted-foreground" />
+      {action.isOverdue ? (
+        <AlertTriangle style={{ width: 16, height: 16, color: "var(--color-spice-terracotta)", marginTop: 2, flexShrink: 0 }} />
+      ) : (
+        <CheckCircle style={{ width: 16, height: 16, color: "var(--color-text-tertiary)", marginTop: 2, flexShrink: 0 }} />
+      )}
+      <div style={{ flex: 1 }}>
+        <p style={{ fontWeight: 500, fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
+          {action.title}
+        </p>
+        {action.dueDate && (
+          <p
+            style={{
+              fontSize: 13,
+              color: action.isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+              margin: "2px 0 0",
+            }}
+          >
+            Due: {action.dueDate}
+          </p>
         )}
-        <div className="flex-1">
-          <p className="font-medium">{action.title}</p>
-          {action.dueDate && (
-            <p
-              className={cn(
-                "text-sm",
-                action.isOverdue ? "text-destructive" : "text-muted-foreground"
-              )}
-            >
-              Due: {action.dueDate}
-            </p>
-          )}
-          {action.context && (
-            <p className="mt-1 text-sm text-muted-foreground">{action.context}</p>
-          )}
-        </div>
+        {action.context && (
+          <p style={{ marginTop: 4, marginBottom: 0, fontSize: 13, color: "var(--color-text-tertiary)" }}>
+            {action.context}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -1351,17 +2187,40 @@ function ActionItem({ action }: { action: ActionWithContext }) {
 
 function ReferenceRow({ reference }: { reference: SourceReference }) {
   return (
-    <div className="flex items-center justify-between rounded-md bg-muted/50 p-2">
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "8px 12px",
+        borderBottom: "1px solid var(--color-rule-light)",
+      }}
+    >
       <div>
-        <p className="text-sm font-medium">{reference.label}</p>
+        <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
+          {reference.label}
+        </p>
         {reference.path && (
-          <p className="font-mono text-xs text-muted-foreground">
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              margin: "2px 0 0",
+            }}
+          >
             {reference.path}
           </p>
         )}
       </div>
       {reference.lastUpdated && (
-        <span className="text-xs text-muted-foreground">
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+          }}
+        >
           {reference.lastUpdated}
         </span>
       )}
@@ -1370,8 +2229,223 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
 }
 
 // =============================================================================
+// Appendix Section (useState toggle replaces Collapsible)
+// =============================================================================
+
+function AppendixSection({ data }: { data: FullMeetingPrep }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <section id="appendix" style={{ borderTop: "1px solid var(--color-rule-heavy)", paddingTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+      <p style={monoOverline}>Appendix</p>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "4px 0",
+          width: "100%",
+          ...chapterHeading,
+        }}
+      >
+        <ChevronRight
+          style={{
+            width: 14,
+            height: 14,
+            transition: "transform 0.2s",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+          }}
+        />
+        Open Supporting Context
+      </button>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 28, marginTop: 8 }}>
+          {data.sinceLast && data.sinceLast.length > 0 && (
+            <section>
+              <SectionLabel
+                label="Since Last Meeting"
+                icon={<History style={{ width: 14, height: 14 }} />}
+                copyText={formatBulletList(data.sinceLast)}
+                copyLabel="since last meeting"
+              />
+              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {data.sinceLast.map((item, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
+                    <span style={bulletDot("var(--color-spice-turmeric)")} />
+                    <span style={{ color: "var(--color-text-primary)" }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {data.strategicPrograms && data.strategicPrograms.length > 0 && (
+            <section>
+              <SectionLabel
+                label="Strategic Programs"
+                icon={<Target style={{ width: 14, height: 14 }} />}
+                copyText={formatBulletList(data.strategicPrograms)}
+                copyLabel="programs"
+              />
+              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {data.strategicPrograms.map((item, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
+                    <span
+                      style={{
+                        marginTop: 3,
+                        fontSize: 14,
+                        color: item.startsWith("\u2713") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
+                      }}
+                    >
+                      {item.startsWith("\u2713") ? "\u2713" : "\u25CB"}
+                    </span>
+                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[\u2713\u25CB]\s*/, "")}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {data.meetingContext && data.meetingContext.split("\n").length > 3 && (
+            <section>
+              <SectionLabel
+                label="Full Context"
+                icon={<FileText style={{ width: 14, height: 14 }} />}
+                copyText={data.meetingContext}
+                copyLabel="context"
+              />
+              <p
+                style={{
+                  marginTop: 12,
+                  marginBottom: 0,
+                  whiteSpace: "pre-wrap",
+                  fontSize: 14,
+                  lineHeight: 1.65,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {data.meetingContext}
+              </p>
+            </section>
+          )}
+
+          {data.currentState && data.currentState.length > 0 && (
+            <section>
+              <SectionLabel label="Current State" copyText={formatBulletList(data.currentState)} copyLabel="current state" />
+              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {data.currentState.map((item, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
+                    <span style={bulletDot("var(--color-text-tertiary)")} />
+                    <span style={{ color: "var(--color-text-primary)" }}>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {data.questions && data.questions.length > 0 && (
+            <section>
+              <SectionLabel
+                label="Questions to Surface"
+                icon={<HelpCircle style={{ width: 14, height: 14 }} />}
+                copyText={formatNumberedList(data.questions)}
+                copyLabel="questions"
+              />
+              <ol style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {data.questions.map((q, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color: "var(--color-text-tertiary)",
+                        width: 16,
+                        textAlign: "right",
+                        flexShrink: 0,
+                        paddingTop: 2,
+                      }}
+                    >
+                      {i + 1}.
+                    </span>
+                    <span style={{ color: "var(--color-text-primary)" }}>{q}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {data.keyPrinciples && data.keyPrinciples.length > 0 && (
+            <section>
+              <SectionLabel
+                label="Key Principles"
+                icon={<BookOpen style={{ width: 14, height: 14 }} />}
+                copyText={formatBulletList(data.keyPrinciples)}
+                copyLabel="principles"
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+                {data.keyPrinciples.map((principle, i) => (
+                  <blockquote
+                    key={i}
+                    style={{
+                      borderLeft: "2px solid rgba(201, 162, 39, 0.3)",
+                      paddingLeft: 16,
+                      margin: 0,
+                      fontSize: 14,
+                      fontStyle: "italic",
+                      color: "var(--color-text-tertiary)",
+                      lineHeight: 1.55,
+                    }}
+                  >
+                    {principle}
+                  </blockquote>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {data.references && data.references.length > 0 && (
+            <section>
+              <SectionLabel label="References" />
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 12 }}>
+                {data.references.map((ref_, i) => (
+                  <ReferenceRow key={i} reference={ref_} />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
+
+function agendaSourceColor(source: string): string {
+  switch (source) {
+    case "calendar_note": return "var(--color-spice-turmeric)";
+    case "risk": return "var(--color-spice-terracotta)";
+    case "question": return "var(--color-text-tertiary)";
+    case "open_item": return "var(--color-spice-turmeric)";
+    case "talking_point": return "var(--color-garden-sage)";
+    default: return "var(--color-text-tertiary)";
+  }
+}
+
+function resolveMetaToneColor(tone?: string): string {
+  if (!tone) return "var(--color-text-primary)";
+  if (tone === "text-destructive") return "var(--color-spice-terracotta)";
+  if (tone === "text-success") return "var(--color-garden-sage)";
+  if (tone === "text-primary") return "var(--color-spice-turmeric)";
+  return "var(--color-text-primary)";
+}
 
 function hasReferenceContent(data: FullMeetingPrep): boolean {
   return Boolean(
@@ -1591,7 +2665,7 @@ function deriveRecentWins(data: FullMeetingPrep): { wins: string[]; sources: Sou
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars - 1).trim()}…`;
+  return `${value.slice(0, maxChars - 1).trim()}\u2026`;
 }
 
 // =============================================================================
@@ -1614,7 +2688,7 @@ function formatProposedAgenda(items: AgendaItem[]): string {
   return items
     .map((a, i) => {
       let line = `${i + 1}. ${cleanPrepLine(a.topic)}`;
-      if (a.why) line += ` — ${cleanPrepLine(a.why)}`;
+      if (a.why) line += ` \u2014 ${cleanPrepLine(a.why)}`;
       return line;
     })
     .join("\n");
@@ -1630,7 +2704,7 @@ function formatAttendeeContext(people: AttendeeContext[]): string {
       if (p.temperature) meta.push(p.temperature);
       if (p.meetingCount != null) meta.push(`${p.meetingCount} meetings`);
       if (meta.length > 0) parts.push(`(${meta.join(", ")})`);
-      return `- ${parts.join(" — ")}`;
+      return `- ${parts.join(" \u2014 ")}`;
     })
     .join("\n");
 }
@@ -1640,7 +2714,7 @@ function formatAttendees(attendees: Stakeholder[]): string {
     .map((a) => {
       const parts = [a.name];
       if (a.role) parts.push(a.role);
-      return `- ${parts.join(" — ")}`;
+      return `- ${parts.join(" \u2014 ")}`;
     })
     .join("\n");
 }
@@ -1672,9 +2746,9 @@ function formatFullPrep(data: FullMeetingPrep): string {
     sections.push(`\n## Context\n${data.meetingContext}`);
   }
 
-  const calendarNotes = normalizeCalendarNotes(data.calendarNotes);
-  if (calendarNotes) {
-    sections.push(`\n## Calendar Notes\n${calendarNotes}`);
+  const calNotes = normalizeCalendarNotes(data.calendarNotes);
+  if (calNotes) {
+    sections.push(`\n## Calendar Notes\n${calNotes}`);
   }
 
   if (data.proposedAgenda && data.proposedAgenda.length > 0) {

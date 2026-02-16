@@ -328,7 +328,9 @@ pub fn gather_enrichment_input(
     );
 
     // Build prompt (pure function, but easier to do here while we have the data)
-    let prompt = build_intelligence_prompt(&entity_name, &request.entity_type, &ctx);
+    // Extract relationship for person entities so the prompt adapts framing
+    let relationship = person.as_ref().map(|p| p.relationship.as_str());
+    let prompt = build_intelligence_prompt(&entity_name, &request.entity_type, &ctx, relationship);
 
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
