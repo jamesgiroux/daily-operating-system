@@ -1256,7 +1256,11 @@ pub fn build_intelligence_prompt(
           low = mostly silent, reactive only, brief responses, or absent from recent calls\n\
           unknown = person not present in available transcripts)\n\
          VALUE: <date> | <value statement> | SOURCE: <filename> | IMPACT: <impact>\n\
-         NEXT_MEETING_PREP: <preparation item for next meeting>\n",
+         NEXT_MEETING_PREP: <1-2 sentence forward-looking prep item>\n\
+         (Max 3 NEXT_MEETING_PREP items. Each should be a specific action or question \
+         for the next meeting — not a recap of known context. Other sections already \
+         cover risks, state, and stakeholders. These items answer ONLY: \
+         \"What do I need to do or ask before/during this meeting?\")\n",
     ));
 
     // Company context (initial only)
