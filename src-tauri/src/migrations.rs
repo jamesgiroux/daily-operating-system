@@ -375,6 +375,22 @@ mod tests {
                 entity_id TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
                 PRIMARY KEY (meeting_id, entity_id)
+             );
+             CREATE TABLE content_index (
+                id TEXT PRIMARY KEY,
+                entity_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                filename TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                absolute_path TEXT NOT NULL,
+                format TEXT NOT NULL,
+                file_size INTEGER NOT NULL DEFAULT 0,
+                modified_at TEXT NOT NULL,
+                indexed_at TEXT NOT NULL,
+                extracted_at TEXT,
+                summary TEXT,
+                content_type TEXT NOT NULL DEFAULT 'general',
+                priority INTEGER NOT NULL DEFAULT 5
              );",
         )
         .expect("seed existing tables");
