@@ -4018,6 +4018,40 @@ pub fn dev_run_week_full(state: State<Arc<AppState>>) -> Result<String, String> 
     crate::devtools::run_week_full(&state)
 }
 
+/// Restore from dev mode to live mode (I298).
+///
+/// Deactivates dev DB isolation, reopens the live database, and restores the
+/// original workspace path. Returns a confirmation message.
+#[tauri::command]
+pub fn dev_restore_live(state: State<Arc<AppState>>) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::restore_live(&state)
+}
+
+/// Purge all known mock/dev data from the current database (I298).
+///
+/// Removes exact mock IDs seeded by devtools scenarios. Safe for the live DB.
+#[tauri::command]
+pub fn dev_purge_mock_data(state: State<Arc<AppState>>) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::purge_mock_data(&state)
+}
+
+/// Delete stale dev artifact files from disk (I298).
+///
+/// Removes dailyos-dev.db and optionally ~/Documents/DailyOS-dev/.
+#[tauri::command]
+pub fn dev_clean_artifacts(include_workspace: bool) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+    crate::devtools::clean_dev_artifacts(include_workspace)
+}
+
 /// Build MeetingOutcomeData from a TranscriptResult + state lookups.
 fn build_outcome_data(
     meeting_id: &str,

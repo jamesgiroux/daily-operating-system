@@ -1,8 +1,8 @@
 {
   "date": "{{DATE}}",
-  "greeting": "Good morning, here's your day",
-  "summary": "8 meetings today — Acme weekly done, Initech kickoff cancelled. Globex QBR at 1 PM is the priority.",
-  "focus": "Prepare for Globex QBR — renewal decision expected this quarter",
+  "greeting": "Good morning",
+  "summary": "A Renewal Week Begins",
+  "focus": "Globex QBR at 1 PM is the week's highest-stakes meeting — the renewal decision will hinge on what you present today",
   "meetings": [
     {
       "id": "mtg-acme-weekly-{{DATE}}",
@@ -19,7 +19,13 @@
         "atAGlance": ["Enterprise tier, $1.2M ARR", "Health: Green", "Phase 1 migration complete"],
         "discuss": ["Q2 expansion timeline", "Phase 2 scoping"],
         "watch": ["Key engineer leaving in March"],
-        "wins": ["Completed Phase 1 migration ahead of schedule"]
+        "wins": ["Completed Phase 1 migration ahead of schedule"],
+        "context": "Phase 1 wrapped early. The conversation shifts to Phase 2 scoping — Sarah Chen has executive sponsorship, but Alex Torres' departure in March means the technical handoff needs to happen before kickoff.",
+        "stakeholders": [
+          {"name": "Sarah Chen", "role": "VP Engineering", "focus": "Phase 2 executive sponsor"},
+          {"name": "David Park", "role": "Tech Lead", "focus": "Taking over from Alex Torres"}
+        ],
+        "openItems": ["Phase 2 SOW needs legal review before scoping", "APAC expansion contract terms unresolved"]
       }
     },
     {
@@ -49,8 +55,13 @@
       "prepSummary": {
         "atAGlance": ["Growth tier, $350K ARR", "Health: Green", "Phase 1 complete"],
         "discuss": ["Phase 2 scope and timeline", "Team onboarding plan"],
-        "watch": ["Budget approval pending"],
-        "wins": ["Phase 1 delivered on time"]
+        "watch": ["Budget approval pending from finance"],
+        "wins": ["Phase 1 delivered on time and under budget"],
+        "context": "Phase 1 was a clean success. Initech wants to move fast on Phase 2 but finance hasn't released the budget yet. James Liu is the day-to-day contact — keep the kickoff focused on scope so budget approval can follow.",
+        "stakeholders": [
+          {"name": "James Liu", "role": "Project Manager", "focus": "Day-to-day delivery lead"}
+        ],
+        "openItems": ["Budget approval pending — expected by end of month"]
       }
     },
     {
@@ -79,9 +90,15 @@
       "prepFile": "preps/globex-industries-qbr.json",
       "prepSummary": {
         "atAGlance": ["Power tier, $800K ARR", "Health: Yellow", "Renewal in 90 days"],
-        "discuss": ["Renewal terms", "Expansion to new teams"],
+        "discuss": ["Renewal terms and pricing", "Expansion to new teams"],
         "watch": ["Key stakeholder departing Q2", "Usage declining in Team B"],
-        "wins": ["Expanded to 3 new teams this quarter"]
+        "wins": ["Expanded to 3 new teams this quarter"],
+        "context": "This is the most consequential meeting of the week. Renewal is 90 days out and health is Yellow. Marcus Webb controls the budget; Dana Kim owns the technical evaluation. Team B's declining usage is the biggest risk — address it head-on before they raise it.",
+        "stakeholders": [
+          {"name": "Marcus Webb", "role": "VP Operations", "focus": "Budget holder for renewal"},
+          {"name": "Dana Kim", "role": "Director of Engineering", "focus": "Technical evaluation lead"}
+        ],
+        "openItems": ["Renewal terms need draft by next week", "Team B recovery plan presentation", "Competitive positioning vs Contoso pitch"]
       }
     },
     {
