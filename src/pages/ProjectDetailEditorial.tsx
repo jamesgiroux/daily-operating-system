@@ -165,17 +165,17 @@ export default function ProjectDetailEditorial() {
       </section>
 
       {/* Chapter 2: Trajectory */}
-      <div className="editorial-reveal">
+      <div id="trajectory" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <TrajectoryChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Horizon */}
-      <div className="editorial-reveal">
+      <div id="the-horizon" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <HorizonChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 4: The Landscape */}
-      <div className="editorial-reveal">
+      <div id="the-landscape" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <WatchList
           intelligence={intelligence}
           onUpdateField={handleUpdateIntelField}
@@ -190,7 +190,7 @@ export default function ProjectDetailEditorial() {
       </div>
 
       {/* Chapter 5: The Team */}
-      <div className="editorial-reveal">
+      <div id="the-room" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <StakeholderGallery
           intelligence={intelligence}
           linkedPeople={detail.linkedPeople}
@@ -203,7 +203,7 @@ export default function ProjectDetailEditorial() {
       </div>
 
       {/* Chapter 6: The Record */}
-      <div className="editorial-reveal">
+      <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
         <UnifiedTimeline data={detail} />
       </div>
 

@@ -140,7 +140,7 @@ fn scan_entity_directory(
         let path = entry.path();
 
         // Skip if not a markdown file
-        if !path.extension().is_some_and(|ext| ext == "md") {
+        if path.extension().is_none_or(|ext| ext != "md") {
             continue;
         }
 
