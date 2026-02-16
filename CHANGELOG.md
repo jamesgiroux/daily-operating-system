@@ -4,7 +4,27 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [0.8.0] - 2026-02-16
+
+The editorial release. Every page redesigned as a magazine-style document you read top to bottom. New typography, new color system, new layout engine. Plus semantic search, MCP integration, and security hardening.
+
+### Editorial Design
+
+- Complete visual overhaul: every page now renders as a magazine-style editorial document with chapter-based navigation
+- New typography: Newsreader (serif body) and Montserrat (sans headings) replace the previous system fonts
+- New color palette: 14 material-named colors across four families (Paper, Desk, Spice, Garden) replace generic tokens
+- Magazine shell layout with atmosphere layer, floating navigation island, and folio bar replaces the sidebar
+- Daily briefing reimagined: hero headline, focus block, featured meeting with full prep, schedule rows, tapering priorities — read top to bottom, then you're briefed
+- Briefing refresh button shows live workflow progress (Preparing / AI Processing / Delivering) instead of silent wait
+- Email visibility: briefing falls through to medium-priority emails when no high-priority exist, with contextual section labels
+- Account, project, and person detail pages rebuilt as 7-chapter editorial narratives with shared layout template
+- Meeting detail page redesigned with editorial treatment
+- Action detail page redesigned with editorial treatment
+- Emails, Inbox, History, and Settings pages moved into magazine shell
+- Focus capacity and action prioritization folded directly into the daily briefing
+- Week page editorial polish with folio bar integration
+- Shared editorial components: ChapterHeading, FinisMarker, PullQuote, StateBlock, TimelineEntry, WatchItem, EditableText
+- Asterisk brand mark integrated into navigation
 
 ### Risk Briefing
 
@@ -20,10 +40,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Hybrid search combining vector similarity (70%) and keyword matching (30%) for best-of-both retrieval
 - Semantic search integrated into entity intelligence enrichment — AI now finds relevant historical content instead of relying on recency alone
 
-### Conversational Interface
+### MCP Server
 
 - Chat tools for querying entities, searching content, and retrieving briefings via external AI assistants (Claude Desktop via MCP)
 - Chat session persistence — conversations are remembered across sessions
+- Managed CLAUDE.md and settings written to workspace for Claude Desktop discovery
 
 ### Security
 
@@ -33,8 +54,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Reliability
 
+- Database renamed from `actions.db` to `dailyos.db` with automatic migration and WAL checkpoint
 - Database indexes added for meeting-entity lookups, calendar event deduplication, and action filtering — faster page loads as data grows
 - Removed unused frontend dependencies (lighter install, smaller attack surface)
+- Dev database isolation: pattern-based purge, config backup, no Keychain writes in dev mode
+- Apple notarization re-enabled in CI release pipeline
 
 ## [0.7.5] - 2026-02-14
 
