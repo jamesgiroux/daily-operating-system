@@ -26,7 +26,14 @@ import { WhatHappenedSlide } from "@/components/risk-briefing/WhatHappenedSlide"
 import { StakesSlide } from "@/components/risk-briefing/StakesSlide";
 import { ThePlanSlide } from "@/components/risk-briefing/ThePlanSlide";
 import { TheAskSlide } from "@/components/risk-briefing/TheAskSlide";
-import type { RiskBriefing } from "@/types";
+import type {
+  RiskBriefing,
+  RiskBottomLine,
+  RiskWhatHappened,
+  RiskStakes,
+  RiskThePlan,
+  RiskTheAsk,
+} from "@/types";
 
 const SLIDES = [
   { id: "cover", label: "Cover", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
@@ -45,7 +52,41 @@ export default function RiskBriefingPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [genSeconds, setGenSeconds] = useState(0);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved">("idle");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounced save — persists edited briefing to disk
+  const debouncedSave = useCallback(
+    (updated: RiskBriefing) => {
+      if (!accountId) return;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        invoke("save_risk_briefing", { accountId, briefing: updated })
+          .then(() => {
+            setSaveStatus("saved");
+            if (fadeTimerRef.current) clearTimeout(fadeTimerRef.current);
+            fadeTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
+          })
+          .catch((e) => console.error("Failed to save risk briefing:", e));
+      }, 500);
+    },
+    [accountId],
+  );
+
+  // Slide update handlers — update local state + trigger save
+  const updateSlide = useCallback(
+    <K extends keyof RiskBriefing>(key: K, value: RiskBriefing[K]) => {
+      setBriefing((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, [key]: value };
+        debouncedSave(updated);
+        return updated;
+      });
+    },
+    [debouncedSave],
+  );
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -58,8 +99,9 @@ export default function RiskBriefingPage() {
         onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
       },
       chapters: briefing ? SLIDES : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
     }),
-    [navigate, accountId, briefing],
+    [navigate, accountId, briefing, saveStatus],
   );
   useRegisterMagazineShell(shellConfig);
   useRevealObserver(!loading && !!briefing);
@@ -247,27 +289,42 @@ export default function RiskBriefingPage() {
 
       {/* Slide 2: Bottom Line */}
       <div className="editorial-reveal">
-        <BottomLineSlide data={briefing!.bottomLine} />
+        <BottomLineSlide
+          data={briefing!.bottomLine}
+          onUpdate={(v: RiskBottomLine) => updateSlide("bottomLine", v)}
+        />
       </div>
 
       {/* Slide 3: What Happened */}
       <div className="editorial-reveal">
-        <WhatHappenedSlide data={briefing!.whatHappened} />
+        <WhatHappenedSlide
+          data={briefing!.whatHappened}
+          onUpdate={(v: RiskWhatHappened) => updateSlide("whatHappened", v)}
+        />
       </div>
 
       {/* Slide 4: The Stakes */}
       <div className="editorial-reveal">
-        <StakesSlide data={briefing!.stakes} />
+        <StakesSlide
+          data={briefing!.stakes}
+          onUpdate={(v: RiskStakes) => updateSlide("stakes", v)}
+        />
       </div>
 
       {/* Slide 5: The Plan */}
       <div className="editorial-reveal">
-        <ThePlanSlide data={briefing!.thePlan} />
+        <ThePlanSlide
+          data={briefing!.thePlan}
+          onUpdate={(v: RiskThePlan) => updateSlide("thePlan", v)}
+        />
       </div>
 
       {/* Slide 6: The Ask */}
       <div className="editorial-reveal">
-        <TheAskSlide data={briefing!.theAsk} />
+        <TheAskSlide
+          data={briefing!.theAsk}
+          onUpdate={(v: RiskTheAsk) => updateSlide("theAsk", v)}
+        />
       </div>
 
       {/* Finis marker */}

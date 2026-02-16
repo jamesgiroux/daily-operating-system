@@ -3,20 +3,22 @@
  * Slide 4: financial headline + stakeholder cards + worst case.
  * Merges TheRoom + Commercial from v2 into one stakes view.
  */
+import { EditableText } from "@/components/ui/EditableText";
 import type { RiskStakes } from "@/types";
 
 interface StakesSlideProps {
   data: RiskStakes;
+  onUpdate?: (data: RiskStakes) => void;
 }
 
 const alignmentColors: Record<string, string> = {
   champion: "var(--color-garden-sage)",
   neutral: "var(--color-spice-turmeric)",
   detractor: "var(--color-spice-chili)",
-  unknown: "var(--color-text-tertiary)",
+  unknown: "var(--color-text-secondary)",
 };
 
-export function StakesSlide({ data }: StakesSlideProps) {
+export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
   return (
     <section
       id="stakes"
@@ -34,12 +36,12 @@ export function StakesSlide({ data }: StakesSlideProps) {
       <div
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: 10,
+          fontSize: 12,
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.12em",
-          color: "var(--color-text-tertiary)",
-          marginBottom: 20,
+          color: "var(--color-text-secondary)",
+          marginBottom: 24,
         }}
       >
         The Stakes
@@ -47,37 +49,38 @@ export function StakesSlide({ data }: StakesSlideProps) {
 
       {/* Financial headline */}
       {data.financialHeadline && (
-        <h2
+        <EditableText
+          as="h2"
+          value={data.financialHeadline}
+          onChange={(v) => onUpdate?.({ ...data, financialHeadline: v })}
           style={{
             fontFamily: "var(--font-serif)",
-            fontSize: 28,
+            fontSize: 32,
             fontWeight: 400,
             lineHeight: 1.25,
             color: "var(--color-text-primary)",
-            maxWidth: 540,
-            margin: "0 0 32px",
+            maxWidth: 800,
+            margin: "0 0 36px",
           }}
-        >
-          {data.financialHeadline}
-        </h2>
+        />
       )}
 
-      {/* Stakeholder cards — max 4 */}
+      {/* Stakeholder cards — max 4, full width */}
       {data.stakeholders && data.stakeholders.length > 0 && (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             gap: 16,
-            marginBottom: 32,
-            maxWidth: 600,
+            marginBottom: 36,
+            maxWidth: 800,
           }}
         >
           {data.stakeholders.slice(0, 4).map((s, i) => (
             <div
               key={i}
               style={{
-                padding: "14px 16px",
+                padding: "16px 20px",
                 border: "1px solid var(--color-rule-light)",
                 borderRadius: 6,
               }}
@@ -86,44 +89,53 @@ export function StakesSlide({ data }: StakesSlideProps) {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
-                  marginBottom: 6,
+                  gap: 10,
+                  marginBottom: 8,
                 }}
               >
                 {/* Alignment dot */}
                 <span
                   style={{
-                    width: 7,
-                    height: 7,
+                    width: 9,
+                    height: 9,
                     borderRadius: "50%",
                     background:
                       alignmentColors[s.alignment?.toLowerCase() ?? ""] ??
-                      "var(--color-text-tertiary)",
+                      "var(--color-text-secondary)",
                     flexShrink: 0,
                   }}
                 />
-                <span
+                <EditableText
+                  value={s.name}
+                  onChange={(v) => {
+                    const updated = [...(data.stakeholders ?? [])];
+                    updated[i] = { ...updated[i], name: v };
+                    onUpdate?.({ ...data, stakeholders: updated });
+                  }}
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: 600,
                     color: "var(--color-text-primary)",
                   }}
-                >
-                  {s.name}
-                </span>
+                />
               </div>
               {s.role && (
-                <div
+                <EditableText
+                  as="div"
+                  value={s.role}
+                  onChange={(v) => {
+                    const updated = [...(data.stakeholders ?? [])];
+                    updated[i] = { ...updated[i], role: v };
+                    onUpdate?.({ ...data, stakeholders: updated });
+                  }}
                   style={{
                     fontFamily: "var(--font-sans)",
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    marginBottom: 4,
+                    fontSize: 14,
+                    color: "var(--color-text-primary)",
+                    marginBottom: 8,
                   }}
-                >
-                  {s.role}
-                </div>
+                />
               )}
               {/* Badges row */}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -131,14 +143,14 @@ export function StakesSlide({ data }: StakesSlideProps) {
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 9,
+                      fontSize: 10,
                       fontWeight: 600,
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
-                      color: "var(--color-text-tertiary)",
+                      color: "var(--color-text-secondary)",
                       border: "1px solid var(--color-rule-light)",
                       borderRadius: 3,
-                      padding: "2px 6px",
+                      padding: "3px 8px",
                     }}
                   >
                     {s.engagement}
@@ -148,14 +160,14 @@ export function StakesSlide({ data }: StakesSlideProps) {
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 9,
+                      fontSize: 10,
                       fontWeight: 600,
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
-                      color: "var(--color-text-tertiary)",
+                      color: "var(--color-text-secondary)",
                       border: "1px solid var(--color-rule-light)",
                       borderRadius: 3,
-                      padding: "2px 6px",
+                      padding: "3px 8px",
                     }}
                   >
                     {s.decisionWeight.replace("_", " ")}
@@ -168,46 +180,47 @@ export function StakesSlide({ data }: StakesSlideProps) {
       )}
 
       {/* Decision maker + worst case */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 540 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 800 }}>
         {data.decisionMaker && (
-          <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 600,
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
-                color: "var(--color-text-tertiary)",
+                color: "var(--color-text-secondary)",
               }}
             >
               Decision Maker
             </span>
-            <span
+            <EditableText
+              value={data.decisionMaker}
+              onChange={(v) => onUpdate?.({ ...data, decisionMaker: v })}
               style={{
                 fontFamily: "var(--font-sans)",
-                fontSize: 14,
+                fontSize: 16,
                 color: "var(--color-text-primary)",
               }}
-            >
-              {data.decisionMaker}
-            </span>
+            />
           </div>
         )}
         {data.worstCase && (
-          <p
+          <EditableText
+            as="p"
+            value={data.worstCase}
+            onChange={(v) => onUpdate?.({ ...data, worstCase: v })}
             style={{
               fontFamily: "var(--font-sans)",
-              fontSize: 14,
+              fontSize: 16,
               lineHeight: 1.5,
-              color: "var(--color-spice-terracotta)",
+              color: "var(--color-spice-chili)",
               margin: 0,
-              borderLeft: "2px solid var(--color-spice-terracotta)",
-              paddingLeft: 14,
+              borderLeft: "3px solid var(--color-spice-chili)",
+              paddingLeft: 16,
             }}
-          >
-            {data.worstCase}
-          </p>
+          />
         )}
       </div>
     </section>
