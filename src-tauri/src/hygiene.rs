@@ -621,7 +621,9 @@ pub fn detect_duplicate_people(db: &ActionDb) -> Result<Vec<DuplicateCandidate>,
         if group.len() > MAX_DOMAIN_GROUP_SIZE {
             log::warn!(
                 "Skipping duplicate detection for domain {} ({} people exceeds limit of {})",
-                domain, group.len(), MAX_DOMAIN_GROUP_SIZE
+                domain,
+                group.len(),
+                MAX_DOMAIN_GROUP_SIZE
             );
             continue;
         }
@@ -998,12 +1000,15 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             .unwrap_or(SCAN_INTERVAL_SECS);
 
         // Prevent overlap with manual scan runs.
-        let began_scan = state.hygiene_scan_running.compare_exchange(
-            false,
-            true,
-            std::sync::atomic::Ordering::AcqRel,
-            std::sync::atomic::Ordering::Acquire,
-        ).is_ok();
+        let began_scan = state
+            .hygiene_scan_running
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok();
 
         if !began_scan {
             log::debug!("HygieneLoop: skipping scan (another hygiene scan is already running)");
@@ -1079,7 +1084,9 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
                 (Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339(),
             );
         }
-        state.hygiene_scan_running.store(false, std::sync::atomic::Ordering::Release);
+        state
+            .hygiene_scan_running
+            .store(false, std::sync::atomic::Ordering::Release);
 
         tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
     }
@@ -1365,10 +1372,7 @@ pub fn build_intelligence_hygiene_status(
     } else if total_gaps == 0 {
         ("healthy".to_string(), "Healthy".to_string())
     } else {
-        (
-            "needs_attention".to_string(),
-            "Needs Attention".to_string(),
-        )
+        ("needs_attention".to_string(), "Needs Attention".to_string())
     };
 
     let queued_for_next_budget = report
@@ -2346,6 +2350,7 @@ mod tests {
             developer_mode: false,
             personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
+            embeddings: crate::types::EmbeddingConfig::default(),
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

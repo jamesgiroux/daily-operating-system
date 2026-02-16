@@ -2,16 +2,18 @@
 --
 -- Adds content_embeddings table to store chunk-level vector embeddings for
 -- semantic search over entity content. One file produces multiple chunks (1:N).
--- Uses snowflake-arctic-embed-s model (384 dimensions, ~1536 bytes per vector).
+-- Uses nomic-embed-text-v1.5 model (768 dimensions) via fastembed.
 
 CREATE TABLE content_embeddings (
     id TEXT PRIMARY KEY,
     content_file_id TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
     chunk_text TEXT NOT NULL,
-    embedding BLOB NOT NULL,        -- f32 vector, 384 dimensions (1536 bytes)
+    embedding BLOB NOT NULL,        -- f32 vector, 768 dimensions
     created_at TEXT NOT NULL,
     FOREIGN KEY (content_file_id) REFERENCES content_index(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_embeddings_file ON content_embeddings(content_file_id);
+
+ALTER TABLE content_index ADD COLUMN embeddings_generated_at TEXT;
