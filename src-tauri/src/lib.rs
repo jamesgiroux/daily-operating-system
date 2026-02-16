@@ -13,7 +13,7 @@ mod commands;
 pub mod db;
 mod db_backup;
 mod devtools;
-mod embeddings;
+pub mod embeddings;
 pub mod entity;
 pub mod entity_intel;
 mod error;
@@ -70,15 +70,24 @@ pub fn run() {
             // Create shared state
             let state = Arc::new(AppState::new());
 
-            // Initialize embedding model via fastembed (nomic-embed-text-v1.5).
-            // Downloads on first run, caches in ~/.dailyos/models/.
-            // If loading fails, degrades gracefully to hash-based fallback.
-            let models_dir = dirs::home_dir()
-                .unwrap_or_default()
-                .join(".dailyos")
-                .join("models");
-            if let Err(e) = state.embedding_model.initialize(models_dir) {
-                log::warn!("Embedding model unavailable at startup: {}", e);
+            // Initialize embedding model asynchronously (nomic-embed-text-v1.5).
+            // Downloads ~137MB on first run, caches in ~/.dailyos/models/.
+            // Runs in background so the window appears immediately. The embedding
+            // processor has a 20-second startup delay and checks is_ready() before
+            // processing, so there's no race condition.
+            {
+                let model = state.embedding_model.clone();
+                tauri::async_runtime::spawn(async move {
+                    let models_dir = dirs::home_dir()
+                        .unwrap_or_default()
+                        .join(".dailyos")
+                        .join("models");
+                    match tokio::task::spawn_blocking(move || model.initialize(models_dir)).await {
+                        Ok(Ok(())) => log::info!("Embedding model ready (background init)"),
+                        Ok(Err(e)) => log::warn!("Embedding model unavailable: {}", e),
+                        Err(e) => log::warn!("Embedding model init panicked: {}", e),
+                    }
+                });
             }
 
             // Create channel for scheduler -> executor communication
