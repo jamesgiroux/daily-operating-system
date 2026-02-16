@@ -12,8 +12,8 @@ import {
   Eye,
   Activity,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -117,33 +117,10 @@ export default function ProjectDetailEditorial() {
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
-  if (proj.loading) {
-    return (
-      <div className="editorial-loading" style={{ padding: "120px 120px 80px" }}>
-        <Skeleton className="mb-4 h-4 w-24" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-2 h-12 w-96" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="mb-8 h-5 w-full max-w-2xl" style={{ background: "var(--color-rule-light)" }} />
-        <Skeleton className="h-px w-full" style={{ background: "var(--color-rule-heavy)" }} />
-        <div style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 32 }}>
-          <Skeleton className="h-32 w-full" style={{ background: "var(--color-rule-light)" }} />
-          <Skeleton className="h-24 w-full" style={{ background: "var(--color-rule-light)" }} />
-        </div>
-      </div>
-    );
-  }
+  if (proj.loading) return <EditorialLoading />;
 
   if (proj.error || !proj.detail) {
-    return (
-      <div style={{ padding: "120px 120px 80px", textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-serif)", fontSize: 24, color: "var(--color-text-primary)", marginBottom: 16 }}>
-          Something went wrong
-        </p>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-secondary)", marginBottom: 24 }}>
-          {proj.error ?? "Project not found"}
-        </p>
-        <Button onClick={proj.load} variant="outline">Try again</Button>
-      </div>
-    );
+    return <EditorialError message={proj.error ?? "Project not found"} onRetry={proj.load} />;
   }
 
   const { detail, intelligence, files } = proj;
