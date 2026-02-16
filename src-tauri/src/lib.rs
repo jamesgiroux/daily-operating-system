@@ -251,7 +251,6 @@ pub fn run() {
             commands::get_week_data,
             commands::get_live_proactive_suggestions,
             commands::retry_week_enrichment,
-            commands::get_focus_data,
             // I44/I45: Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::get_meeting_outcomes,
@@ -266,7 +265,6 @@ pub fn run() {
             commands::get_processing_history,
             // I20: Email Refresh
             commands::refresh_emails,
-            commands::refresh_focus,
             // I144: Archive low-priority emails
             commands::archive_low_priority_emails,
             // I39: Feature Toggles
