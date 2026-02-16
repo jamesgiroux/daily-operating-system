@@ -1,6 +1,6 @@
 //! SQLite-based local state management for actions, accounts, and meeting history.
 //!
-//! The database lives at `~/.dailyos/actions.db` and serves as the working store
+//! The database lives at `~/.dailyos/dailyos.db` and serves as the working store
 //! for operational data (ADR-0048). The filesystem (markdown + JSON) is the durable
 //! layer; SQLite enables fast queries, state tracking, and cross-entity intelligence.
 //! SQLite is not disposable — important state lives here and is written back to the
@@ -421,7 +421,7 @@ impl ActionDb {
         }
     }
 
-    /// Open (or create) the database at `~/.dailyos/actions.db` and apply the schema.
+    /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
     pub fn open() -> Result<Self, DbError> {
         let path = Self::db_path()?;
         Self::open_at(path)
@@ -470,10 +470,31 @@ impl ActionDb {
         Ok(Self { conn })
     }
 
-    /// Resolve the default database path: `~/.dailyos/actions.db`.
+    /// Resolve the default database path: `~/.dailyos/dailyos.db`.
+    ///
+    /// Migrates from legacy `actions.db` name on first call if needed.
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
-        Ok(home.join(".dailyos").join("actions.db"))
+        let dailyos_dir = home.join(".dailyos");
+        let new_path = dailyos_dir.join("dailyos.db");
+        let legacy_path = dailyos_dir.join("actions.db");
+
+        // One-time migration: rename actions.db → dailyos.db
+        if !new_path.exists() && legacy_path.exists() {
+            if let Err(e) = std::fs::rename(&legacy_path, &new_path) {
+                log::warn!(
+                    "Failed to rename actions.db → dailyos.db: {}. Will open at legacy path.",
+                    e
+                );
+                return Ok(legacy_path);
+            }
+            // Clean up WAL/SHM files (SQLite recreates them)
+            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-wal"));
+            let _ = std::fs::remove_file(dailyos_dir.join("actions.db-shm"));
+            log::info!("Migrated database: actions.db → dailyos.db");
+        }
+
+        Ok(new_path)
     }
 
     /// Convert reviewed-prep keys from legacy prep file paths to meeting IDs.

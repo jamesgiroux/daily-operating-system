@@ -52,7 +52,7 @@ pub struct DevState {
 }
 
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
-fn is_dev_workspace(state: &AppState) -> bool {
+pub(crate) fn is_dev_workspace(state: &AppState) -> bool {
     let current = state
         .config
         .read()
@@ -230,6 +230,10 @@ fn reset_all(state: &AppState) -> Result<(), String> {
     // 2. Delete config and state files
     let files_to_delete = [
         dailyos_dir.join("config.json"),
+        dailyos_dir.join("dailyos.db"),
+        dailyos_dir.join("dailyos.db-wal"),
+        dailyos_dir.join("dailyos.db-shm"),
+        // Legacy DB name (pre-0.7.6)
         dailyos_dir.join("actions.db"),
         dailyos_dir.join("actions.db-wal"),
         dailyos_dir.join("actions.db-shm"),
