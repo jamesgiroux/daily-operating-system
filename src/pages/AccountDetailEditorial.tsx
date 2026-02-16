@@ -161,6 +161,7 @@ export default function AccountDetailEditorial() {
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
   // Intelligence field update callback (I261)
+  // No reload needed — EditableText already shows the edited value locally.
   const handleUpdateIntelField = useCallback(
     async (fieldPath: string, value: string) => {
       if (!accountId) return;
@@ -171,12 +172,11 @@ export default function AccountDetailEditorial() {
           fieldPath,
           value,
         });
-        acct.load(); // Re-fetch to reflect changes
       } catch (e) {
         console.error("Failed to update intelligence field:", e);
       }
     },
-    [accountId, acct],
+    [accountId],
   );
 
   if (acct.loading) return <EditorialLoading />;
@@ -223,7 +223,7 @@ export default function AccountDetailEditorial() {
           accountTeam={detail.accountTeam}
           entityId={accountId}
           entityType="account"
-          onIntelligenceUpdated={acct.load}
+          onIntelligenceUpdated={acct.silentRefresh}
         />
       </div>
 
