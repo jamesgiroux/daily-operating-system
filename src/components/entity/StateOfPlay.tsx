@@ -2,6 +2,8 @@
  * StateOfPlay — Two StateBlocks (working/struggling) + PullQuote.
  * Renders current state data from intelligence.
  * Generalized: already entity-generic (only uses EntityIntelligence).
+ *
+ * I261: Optional onUpdateField prop enables click-to-edit on state items.
  */
 import type { EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -13,6 +15,8 @@ interface StateOfPlayProps {
   sectionId?: string;
   chapterTitle?: string;
   emptyMessage?: string;
+  /** When provided, items become editable. Called with (fieldPath, newValue). */
+  onUpdateField?: (fieldPath: string, value: string) => void;
 }
 
 export function StateOfPlay({
@@ -20,6 +24,7 @@ export function StateOfPlay({
   sectionId = "state-of-play",
   chapterTitle = "State of Play",
   emptyMessage = "Build intelligence to populate this section.",
+  onUpdateField,
 }: StateOfPlayProps) {
   const working = intelligence?.currentState?.working ?? [];
   const struggling = intelligence?.currentState?.notWorking ?? [];
@@ -39,11 +44,21 @@ export function StateOfPlay({
             label="What's Working"
             items={working}
             labelColor="var(--color-garden-sage)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.working[${index}]`, value)
+                : undefined
+            }
           />
           <StateBlock
             label="Where It's Struggling"
             items={struggling}
             labelColor="var(--color-spice-terracotta)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.notWorking[${index}]`, value)
+                : undefined
+            }
           />
           {pullQuote && <PullQuote text={pullQuote} />}
         </>

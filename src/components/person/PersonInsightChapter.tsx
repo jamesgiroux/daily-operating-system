@@ -14,6 +14,8 @@ import { StateBlock } from "@/components/editorial/StateBlock";
 interface PersonInsightChapterProps {
   detail: PersonDetail;
   intelligence: EntityIntelligence | null;
+  /** When provided, state items become editable. Called with (fieldPath, newValue). */
+  onUpdateField?: (fieldPath: string, value: string) => void;
 }
 
 const ADAPTATION = {
@@ -90,7 +92,7 @@ function CadenceStrip({ detail }: { detail: PersonDetail }) {
 
 /* ── Main component ── */
 
-export function PersonInsightChapter({ detail, intelligence }: PersonInsightChapterProps) {
+export function PersonInsightChapter({ detail, intelligence, onUpdateField }: PersonInsightChapterProps) {
   const adapt = getAdaptation(detail.relationship);
 
   const working = intelligence?.currentState?.working ?? [];
@@ -111,11 +113,21 @@ export function PersonInsightChapter({ detail, intelligence }: PersonInsightChap
             label={adapt.workingLabel}
             items={working}
             labelColor="var(--color-garden-sage)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.working[${index}]`, value)
+                : undefined
+            }
           />
           <StateBlock
             label={adapt.notWorkingLabel}
             items={notWorking}
             labelColor="var(--color-spice-terracotta)"
+            onItemChange={
+              onUpdateField
+                ? (index, value) => onUpdateField(`currentState.notWorking[${index}]`, value)
+                : undefined
+            }
           />
           {pullQuote && <PullQuote text={pullQuote} />}
           <CadenceStrip detail={detail} />

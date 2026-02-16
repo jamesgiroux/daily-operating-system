@@ -377,12 +377,25 @@ pub fn write_enrichment_results(
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
 ) -> Result<(), String> {
+    // Preserve user-edited fields from existing intelligence (I261)
+    let mut final_intel = intel.clone();
+    if let Ok(existing) = read_intelligence_json(&input.entity_dir) {
+        if !existing.user_edits.is_empty() {
+            crate::entity_intel::preserve_user_edits(&mut final_intel, &existing);
+            log::info!(
+                "IntelProcessor: preserved {} user edits for {}",
+                existing.user_edits.len(),
+                input.entity_id,
+            );
+        }
+    }
+
     // Write intelligence.json to disk (no DB needed)
-    write_intelligence_json(&input.entity_dir, intel)?;
+    write_intelligence_json(&input.entity_dir, &final_intel)?;
 
     // Own DB connection for cache update
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
-    let _ = db.upsert_entity_intelligence(intel);
+    let _ = db.upsert_entity_intelligence(&final_intel);
 
     log::debug!(
         "IntelProcessor: wrote intelligence for {} to file + DB",

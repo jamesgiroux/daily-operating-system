@@ -21,6 +21,19 @@ use crate::util::atomic_write_str;
 // Intelligence JSON Schema
 // =============================================================================
 
+/// A record of a user edit to an intelligence field.
+///
+/// Stored in intelligence.json to protect user corrections from being
+/// overwritten by subsequent AI enrichment cycles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserEdit {
+    /// JSON path to the edited field (e.g. "executiveAssessment", "stakeholderInsights[0].name").
+    pub field_path: String,
+    /// ISO 8601 timestamp of when the edit was made.
+    pub edited_at: String,
+}
+
 /// Top-level intelligence file (intelligence.json).
 ///
 /// Entity-generic — same schema for accounts, projects, and people per ADR-0057.
@@ -70,6 +83,11 @@ pub struct IntelligenceJson {
     /// Company/project context from web search or overview.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub company_context: Option<CompanyContext>,
+
+    /// User edits — field paths that the user has manually corrected.
+    /// Enrichment cycles preserve these fields instead of overwriting them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub user_edits: Vec<UserEdit>,
 }
 
 fn default_version() -> u32 {
@@ -202,6 +220,217 @@ pub fn write_intelligence_json(dir: &Path, intel: &IntelligenceJson) -> Result<(
 /// Check if intelligence.json exists in an entity directory.
 pub fn intelligence_exists(dir: &Path) -> bool {
     dir.join(INTEL_FILENAME).exists()
+}
+
+// =============================================================================
+// Field Update (User Edits)
+// =============================================================================
+
+/// Navigate a serde_json::Value by a dotted/indexed path and set the value.
+///
+/// Supports paths like:
+/// - `"executiveAssessment"` → root field
+/// - `"stakeholderInsights[0].name"` → array index + field
+/// - `"currentState.working[0]"` → nested field + array index
+/// - `"risks[2].text"` → array index + field
+fn set_json_path(root: &mut serde_json::Value, path: &str, value: serde_json::Value) -> Result<(), String> {
+    let segments = parse_path_segments(path)?;
+    let mut current = root;
+
+    for (i, seg) in segments.iter().enumerate() {
+        let is_last = i == segments.len() - 1;
+        match seg {
+            PathSegment::Field(name) => {
+                if is_last {
+                    current[name.as_str()] = value;
+                    return Ok(());
+                }
+                current = current
+                    .get_mut(name.as_str())
+                    .ok_or_else(|| format!("Field '{}' not found at segment '{}'", path, name))?;
+            }
+            PathSegment::Index(name, idx) => {
+                let arr = current
+                    .get_mut(name.as_str())
+                    .ok_or_else(|| format!("Field '{}' not found", name))?;
+                let arr = arr
+                    .as_array_mut()
+                    .ok_or_else(|| format!("Field '{}' is not an array", name))?;
+                if *idx >= arr.len() {
+                    return Err(format!("Index {} out of bounds for '{}' (len {})", idx, name, arr.len()));
+                }
+                if is_last {
+                    arr[*idx] = value;
+                    return Ok(());
+                }
+                current = &mut arr[*idx];
+            }
+        }
+    }
+    Err(format!("Empty path: '{}'", path))
+}
+
+enum PathSegment {
+    Field(String),
+    Index(String, usize),
+}
+
+/// Parse "stakeholderInsights[0].name" into [Index("stakeholderInsights", 0), Field("name")]
+fn parse_path_segments(path: &str) -> Result<Vec<PathSegment>, String> {
+    let mut segments = Vec::new();
+    for part in path.split('.') {
+        if let Some(bracket_pos) = part.find('[') {
+            let name = &part[..bracket_pos];
+            let rest = &part[bracket_pos + 1..];
+            let idx_str = rest.trim_end_matches(']');
+            let idx: usize = idx_str
+                .parse()
+                .map_err(|_| format!("Invalid index in path segment: '{}'", part))?;
+            segments.push(PathSegment::Index(name.to_string(), idx));
+        } else {
+            segments.push(PathSegment::Field(part.to_string()));
+        }
+    }
+    Ok(segments)
+}
+
+/// Apply a field update to an intelligence.json on disk.
+///
+/// Reads the file, applies the update via JSON path navigation,
+/// records a UserEdit entry, validates by re-parsing, and writes back.
+pub fn apply_intelligence_field_update(
+    dir: &Path,
+    field_path: &str,
+    value: &str,
+) -> Result<IntelligenceJson, String> {
+    let intel_path = dir.join(INTEL_FILENAME);
+    let content = std::fs::read_to_string(&intel_path)
+        .map_err(|e| format!("Failed to read {}: {}", intel_path.display(), e))?;
+
+    let mut json_val: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse {}: {}", intel_path.display(), e))?;
+
+    // Apply the update
+    let new_value: serde_json::Value = serde_json::from_str(value)
+        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
+    set_json_path(&mut json_val, field_path, new_value)?;
+
+    // Record user edit (dedup: replace existing edit for same path)
+    let edits = json_val
+        .get_mut("userEdits")
+        .and_then(|v| v.as_array_mut());
+    let edit_entry = serde_json::json!({
+        "fieldPath": field_path,
+        "editedAt": Utc::now().to_rfc3339(),
+    });
+    if let Some(arr) = edits {
+        arr.retain(|e| e.get("fieldPath").and_then(|v| v.as_str()) != Some(field_path));
+        arr.push(edit_entry);
+    } else {
+        json_val["userEdits"] = serde_json::json!([edit_entry]);
+    }
+
+    // Validate by re-parsing into typed struct
+    let intel: IntelligenceJson = serde_json::from_value(json_val)
+        .map_err(|e| format!("Updated JSON is invalid: {}", e))?;
+
+    // Write back
+    write_intelligence_json(dir, &intel)?;
+
+    Ok(intel)
+}
+
+/// Replace the stakeholderInsights array and record as user-edited.
+pub fn apply_stakeholders_update(
+    dir: &Path,
+    stakeholders: Vec<StakeholderInsight>,
+) -> Result<IntelligenceJson, String> {
+    let mut intel = read_intelligence_json(dir)?;
+    intel.stakeholder_insights = stakeholders;
+
+    // Record user edit
+    let now = Utc::now().to_rfc3339();
+    intel.user_edits.retain(|e| e.field_path != "stakeholderInsights");
+    intel.user_edits.push(UserEdit {
+        field_path: "stakeholderInsights".to_string(),
+        edited_at: now,
+    });
+
+    write_intelligence_json(dir, &intel)?;
+    Ok(intel)
+}
+
+/// Resolve entity directory from workspace, entity_type, and DB records.
+pub fn resolve_entity_dir(
+    workspace: &Path,
+    entity_type: &str,
+    entity_name: &str,
+    account: Option<&DbAccount>,
+) -> Result<std::path::PathBuf, String> {
+    match entity_type {
+        "account" => {
+            if let Some(acct) = account {
+                Ok(crate::accounts::resolve_account_dir(workspace, acct))
+            } else {
+                Ok(crate::accounts::account_dir(workspace, entity_name))
+            }
+        }
+        "project" => Ok(crate::projects::project_dir(workspace, entity_name)),
+        "person" => Ok(crate::people::person_dir(workspace, entity_name)),
+        _ => Err(format!("Unsupported entity type: {}", entity_type)),
+    }
+}
+
+/// Preserve user-edited fields from an existing intelligence after AI enrichment.
+///
+/// For each field in `user_edits`, copies the value from `existing` into `new_intel`,
+/// then carries forward the `user_edits` list.
+pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &IntelligenceJson) {
+    if existing.user_edits.is_empty() {
+        return;
+    }
+
+    // Serialize both to serde_json::Value for field-level operations
+    let existing_val: serde_json::Value = match serde_json::to_value(existing) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let mut new_val: serde_json::Value = match serde_json::to_value(&*new_intel) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    for edit in &existing.user_edits {
+        // Read the user-edited value from existing
+        if let Some(val) = get_json_path(&existing_val, &edit.field_path) {
+            let _ = set_json_path(&mut new_val, &edit.field_path, val.clone());
+        }
+    }
+
+    // Re-parse and carry forward user_edits
+    if let Ok(mut restored) = serde_json::from_value::<IntelligenceJson>(new_val) {
+        restored.user_edits = existing.user_edits.clone();
+        *new_intel = restored;
+    }
+}
+
+/// Read a value at a JSON path (for preserve_user_edits).
+fn get_json_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    let segments = parse_path_segments(path).ok()?;
+    let mut current = root;
+
+    for seg in &segments {
+        match seg {
+            PathSegment::Field(name) => {
+                current = current.get(name.as_str())?;
+            }
+            PathSegment::Index(name, idx) => {
+                let arr = current.get(name.as_str())?.as_array()?;
+                current = arr.get(*idx)?;
+            }
+        }
+    }
+    Some(current)
 }
 
 // =============================================================================
@@ -358,6 +587,7 @@ impl ActionDb {
                 value_delivered: Vec::new(), // Not cached in DB (stored in file only)
                 next_meeting_readiness: readiness_json.and_then(|j| serde_json::from_str(&j).ok()),
                 company_context: company_json.and_then(|j| serde_json::from_str(&j).ok()),
+                user_edits: Vec::new(), // Not cached in DB (stored in file only)
             })
         });
 
@@ -1398,13 +1628,26 @@ pub fn enrich_entity_intelligence(
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
     // Step 5: Parse response
-    let intel = parse_intelligence_response(
+    let mut intel = parse_intelligence_response(
         &output.stdout,
         entity_id,
         entity_type,
         ctx.file_manifest.len(),
         ctx.file_manifest,
     )?;
+
+    // Step 5.5: Preserve user-edited fields (I261)
+    if let Some(ref existing) = prior {
+        if !existing.user_edits.is_empty() {
+            preserve_user_edits(&mut intel, existing);
+            log::info!(
+                "Preserved {} user edits for {} '{}'",
+                existing.user_edits.len(),
+                entity_type,
+                entity_name,
+            );
+        }
+    }
 
     // Step 6: Write intelligence.json
     write_intelligence_json(&entity_dir, &intel)?;
@@ -2062,6 +2305,7 @@ mod tests {
                 headquarters: Some("San Francisco, USA".to_string()),
                 additional_context: None,
             }),
+            user_edits: Vec::new(),
         }
     }
 
@@ -2631,6 +2875,7 @@ Some trailing text"#;
                 headquarters: Some("San Francisco".to_string()),
                 additional_context: None,
             }),
+            user_edits: Vec::new(),
         };
 
         let md = format_intelligence_markdown(&intel);

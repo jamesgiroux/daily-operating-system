@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { useProjectDetail } from "@/hooks/useProjectDetail";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -117,6 +118,25 @@ export default function ProjectDetailEditorial() {
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
+  // Intelligence field update callback (I261)
+  const handleUpdateIntelField = useCallback(
+    async (fieldPath: string, value: string) => {
+      if (!projectId) return;
+      try {
+        await invoke("update_intelligence_field", {
+          entityId: projectId,
+          entityType: "project",
+          fieldPath,
+          value,
+        });
+        proj.load();
+      } catch (e) {
+        console.error("Failed to update intelligence field:", e);
+      }
+    },
+    [projectId, proj],
+  );
+
   if (proj.loading) return <EditorialLoading />;
 
   if (proj.error || !proj.detail) {
@@ -147,18 +167,19 @@ export default function ProjectDetailEditorial() {
 
       {/* Chapter 2: Trajectory */}
       <div className="editorial-reveal">
-        <TrajectoryChapter detail={detail} intelligence={intelligence} />
+        <TrajectoryChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 3: The Horizon */}
       <div className="editorial-reveal">
-        <HorizonChapter detail={detail} intelligence={intelligence} />
+        <HorizonChapter detail={detail} intelligence={intelligence} onUpdateField={handleUpdateIntelField} />
       </div>
 
       {/* Chapter 4: The Landscape */}
       <div className="editorial-reveal">
         <WatchList
           intelligence={intelligence}
+          onUpdateField={handleUpdateIntelField}
           sectionId="the-landscape"
           chapterTitle="The Landscape"
           bottomSection={
@@ -176,6 +197,9 @@ export default function ProjectDetailEditorial() {
           linkedPeople={detail.linkedPeople}
           chapterTitle="The Team"
           sectionId="the-room"
+          entityId={projectId}
+          entityType="project"
+          onIntelligenceUpdated={proj.load}
         />
       </div>
 

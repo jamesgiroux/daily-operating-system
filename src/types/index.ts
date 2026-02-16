@@ -1026,6 +1026,12 @@ export interface ContentFile {
 // Entity Intelligence (I130 / ADR-0057)
 // =============================================================================
 
+/** A record of a user edit to an intelligence field (protects from AI overwrite). */
+export interface UserEdit {
+  fieldPath: string;
+  editedAt: string;
+}
+
 /** Synthesized intelligence for an entity (account, project, or person). */
 export interface EntityIntelligence {
   version: number;
@@ -1042,6 +1048,7 @@ export interface EntityIntelligence {
   valueDelivered: ValueItem[];
   nextMeetingReadiness?: IntelMeetingReadiness;
   companyContext?: IntelCompanyContext;
+  userEdits?: UserEdit[];
 }
 
 export interface SourceManifestEntry {
