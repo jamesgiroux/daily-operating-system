@@ -22,11 +22,15 @@ On first launch, macOS Gatekeeper may block the app. Right-click the app, select
 
 ## Features
 
-- Daily briefing with AI-enriched meeting prep
+- Editorial magazine-style interface — every page reads like a document, not a dashboard
+- Daily briefing with AI-enriched meeting prep, focus priorities, and tapering density
 - Account and project intelligence (executive assessments, risks, wins, stakeholder insights)
 - People tracking with relationship history and meeting patterns
+- Semantic search over workspace files using local embedding model (nomic-embed-text-v1.5) — works offline
+- MCP server for Claude Desktop integration — query entities, search content, retrieve briefings
 - Email triage with three-tier AI priority classification
 - Action tracking across briefings, transcripts, and inbox
+- Executive risk briefing as a 6-slide presentation with inline editing
 - Transcript processing with outcome extraction (actions, decisions, captures)
 - Weekly narrative with priority synthesis and gap analysis
 - Background scheduling (daily briefing, archive, intelligence refresh)
@@ -48,7 +52,7 @@ pnpm tauri dev
 cd src-tauri && cargo test
 ```
 
-There are approximately 500 Rust tests covering the backend.
+There are approximately 684 Rust tests covering the backend.
 
 ### Google OAuth Secret Management
 
