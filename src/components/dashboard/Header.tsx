@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { ModeToggle } from "@/components/mode-toggle";
+
 import { StatusIndicator } from "./StatusIndicator";
 import { RunNowIconButton } from "./RunNowButton";
 import { useWorkflow } from "@/hooks/useWorkflow";
@@ -59,7 +59,6 @@ export function Header({ onCommandMenuOpen }: HeaderProps) {
               <span className="text-xs">⌘</span>K
             </kbd>
           </Button>
-          <ModeToggle />
         </div>
       </div>
     </header>
