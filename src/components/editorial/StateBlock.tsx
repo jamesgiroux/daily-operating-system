@@ -2,14 +2,20 @@
  * StateBlock — colored label (uppercase mono) + items as prose paragraphs.
  * Used in State of Play chapter for "Working" and "Struggling" sections.
  * Mockup: no dots, prose paragraphs, label 10px with 0.1em spacing, sage/terracotta label color.
+ *
+ * I261: Optional onItemChange prop wraps items in EditableText for inline editing.
  */
+import { EditableText } from "@/components/ui/EditableText";
+
 interface StateBlockProps {
   label: string;
   items: string[];
   labelColor?: string;
+  /** When provided, items become click-to-edit. Called with (index, newValue). */
+  onItemChange?: (index: number, value: string) => void;
 }
 
-export function StateBlock({ label, items, labelColor = "var(--color-text-tertiary)" }: StateBlockProps) {
+export function StateBlock({ label, items, labelColor = "var(--color-text-tertiary)", onItemChange }: StateBlockProps) {
   if (items.length === 0) return null;
 
   return (
@@ -27,21 +33,39 @@ export function StateBlock({ label, items, labelColor = "var(--color-text-tertia
       >
         {label}
       </div>
-      {items.map((item, i) => (
-        <p
-          key={i}
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            lineHeight: 1.65,
-            color: "var(--color-text-primary)",
-            maxWidth: 620,
-            margin: i < items.length - 1 ? "0 0 12px" : 0,
-          }}
-        >
-          {item}
-        </p>
-      ))}
+      {items.map((item, i) =>
+        onItemChange ? (
+          <EditableText
+            key={i}
+            value={item}
+            onChange={(v) => onItemChange(i, v)}
+            as="p"
+            multiline
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              lineHeight: 1.65,
+              color: "var(--color-text-primary)",
+              maxWidth: 620,
+              margin: i < items.length - 1 ? "0 0 12px" : 0,
+            }}
+          />
+        ) : (
+          <p
+            key={i}
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              lineHeight: 1.65,
+              color: "var(--color-text-primary)",
+              maxWidth: 620,
+              margin: i < items.length - 1 ? "0 0 12px" : 0,
+            }}
+          >
+            {item}
+          </p>
+        ),
+      )}
     </div>
   );
 }
