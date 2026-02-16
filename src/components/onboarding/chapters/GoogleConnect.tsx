@@ -1,16 +1,35 @@
 import {
   Mail,
   Calendar,
-  Check,
   Loader2,
   ArrowRight,
   Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 
 interface GoogleConnectProps {
   onNext: () => void;
+}
+
+/** Mono uppercase section label */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        fontWeight: 500,
+        textTransform: "uppercase" as const,
+        letterSpacing: "0.1em",
+        color: "var(--color-text-tertiary)",
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function GoogleConnect({ onNext }: GoogleConnectProps) {
@@ -18,23 +37,40 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
   const isConnected = authStatus.status === "authenticated";
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          Every meeting, prepared. Every email, triaged.
-        </h2>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title="Every meeting, prepared. Every email, triaged."
+      />
 
       {/* Calendar explanation */}
-      <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Calendar className="size-4 text-primary" />
-          <span className="text-sm font-medium">Calendar Intelligence</span>
-        </div>
-        <p className="text-sm text-muted-foreground leading-relaxed">
+      <div
+        style={{
+          borderTop: "1px solid var(--color-rule-light)",
+          paddingTop: 20,
+        }}
+      >
+        <SectionLabel>
+          <Calendar size={12} style={{ display: "inline", verticalAlign: "-1px", marginRight: 6 }} />
+          Calendar Intelligence
+        </SectionLabel>
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-secondary)",
+            margin: 0,
+          }}
+        >
           DailyOS reads your calendar overnight. For each meeting, it builds a prep: relationship
           history, open action items, talking points, risks. The lifecycle:{" "}
-          <span className="font-medium text-foreground">
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              color: "var(--color-spice-turmeric)",
+            }}
+          >
             Prep &rarr; Meeting &rarr; Capture &rarr; Next Prep
           </span>
           . Each meeting feeds the next.
@@ -42,12 +78,25 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
       </div>
 
       {/* Email explanation */}
-      <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <Mail className="size-4 text-primary" />
-          <span className="text-sm font-medium">Email Triage</span>
-        </div>
-        <p className="text-sm text-muted-foreground leading-relaxed">
+      <div
+        style={{
+          borderTop: "1px solid var(--color-rule-light)",
+          paddingTop: 20,
+        }}
+      >
+        <SectionLabel>
+          <Mail size={12} style={{ display: "inline", verticalAlign: "-1px", marginRight: 6 }} />
+          Email Triage
+        </SectionLabel>
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-secondary)",
+            margin: 0,
+          }}
+        >
           DailyOS triages your email by priority. Important emails surface first. Each gets an AI
           summary and a recommended action. You scan and decide — no inbox-zero required.
         </p>
@@ -55,13 +104,36 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
 
       {/* Auth status / button */}
       {isConnected ? (
-        <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-4">
-          <div className="flex size-8 items-center justify-center rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-            <Check className="size-4" />
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 8 }}>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "var(--color-garden-sage)",
+              flexShrink: 0,
+            }}
+          />
           <div>
-            <p className="text-sm font-medium">Connected</p>
-            <p className="text-xs text-muted-foreground">
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+                margin: 0,
+              }}
+            >
+              Connected
+            </p>
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                color: "var(--color-text-tertiary)",
+                margin: "2px 0 0",
+              }}
+            >
               {authStatus.status === "authenticated" ? authStatus.email : ""}
             </p>
           </div>
@@ -83,9 +155,17 @@ export function GoogleConnect({ onNext }: GoogleConnectProps) {
       )}
 
       {/* Privacy note */}
-      <div className="flex items-start gap-2 text-xs text-muted-foreground">
-        <Shield className="mt-0.5 size-3 shrink-0" />
-        <span>Everything processes locally. Your data never leaves your machine.</span>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <Shield size={12} style={{ marginTop: 2, flexShrink: 0, color: "var(--color-text-tertiary)" }} />
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          Everything processes locally. Your data never leaves your machine.
+        </span>
       </div>
 
       {/* Continue / skip */}

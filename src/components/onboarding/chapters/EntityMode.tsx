@@ -2,8 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Building2, FolderKanban, Layers, Check } from "lucide-react";
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { EntityMode as EntityModeType } from "@/types";
 
 interface EntityModeProps {
@@ -61,52 +60,96 @@ export function EntityMode({ onNext }: EntityModeProps) {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          How do you organize your work?
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          This shapes your workspace. You can switch anytime in Settings.
-        </p>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title="How do you organize your work?"
+        epigraph="This shapes your workspace. You can switch anytime in Settings."
+      />
 
-      <div className="grid gap-3">
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         {options.map((option) => {
           const Icon = option.icon;
           const isSelected = selected === option.id;
           return (
-            <Card
+            <button
               key={option.id}
-              className={cn(
-                "cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-lg",
-                isSelected && "border-primary ring-1 ring-primary",
-                saving && !isSelected && "pointer-events-none opacity-50",
-              )}
               onClick={() => !saving && handleSelect(option.id)}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 16,
+                padding: "16px 0",
+                borderTop: "1px solid var(--color-rule-light)",
+                borderLeft: isSelected ? "3px solid var(--color-spice-turmeric)" : "3px solid transparent",
+                paddingLeft: isSelected ? 16 : 16,
+                background: isSelected ? "var(--color-paper-warm-white)" : "transparent",
+                cursor: saving && !isSelected ? "default" : "pointer",
+                opacity: saving && !isSelected ? 0.5 : 1,
+                textAlign: "left",
+                border: "none",
+                borderTopStyle: "solid",
+                borderTopWidth: 1,
+                borderTopColor: "var(--color-rule-light)",
+                borderLeftStyle: "solid",
+                borderLeftWidth: 3,
+                borderLeftColor: isSelected ? "var(--color-spice-turmeric)" : "transparent",
+                transition: "all 0.15s ease",
+              }}
             >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
-                      <Icon className="size-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{option.title}</CardTitle>
-                      <CardDescription>{option.description}</CardDescription>
-                      <p className="mt-1 text-xs text-muted-foreground/70">
-                        {option.detail}
-                      </p>
-                    </div>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <Icon
+                  size={20}
+                  style={{
+                    marginTop: 2,
+                    flexShrink: 0,
+                    color: "var(--color-text-tertiary)",
+                  }}
+                />
+                <div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 15,
+                      fontWeight: 500,
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    {option.title}
                   </div>
-                  {isSelected && (
-                    <div className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                      <Check className="size-4" />
-                    </div>
-                  )}
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 13,
+                      color: "var(--color-text-secondary)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {option.description}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 12,
+                      color: "var(--color-text-tertiary)",
+                      marginTop: 4,
+                    }}
+                  >
+                    {option.detail}
+                  </div>
                 </div>
-              </CardHeader>
-            </Card>
+              </div>
+              {isSelected && (
+                <Check
+                  size={18}
+                  style={{
+                    flexShrink: 0,
+                    color: "var(--color-spice-turmeric)",
+                    marginTop: 2,
+                  }}
+                />
+              )}
+            </button>
           );
         })}
       </div>

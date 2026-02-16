@@ -8,6 +8,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
@@ -75,11 +76,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
   }, []);
 
   const handleFileDrop = useCallback(async (paths: string[]) => {
-    // Copy files to inbox
     try {
       const count = await invoke<number>("copy_to_inbox", { paths });
       if (count > 0) {
-        // Get filenames from paths
         const filenames = paths
           .map((p) => p.split("/").pop() ?? p)
           .slice(0, count);
@@ -103,18 +102,15 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
   async function processFiles(filenames: string[]) {
     setPhase("processing");
 
-    // Initialize file progress
     const initial: FileProgress[] = filenames.map((f) => ({
       filename: f,
       step: "received" as FileStep,
     }));
     setFiles(initial);
 
-    // Process each file sequentially
     for (let i = 0; i < filenames.length; i++) {
       const filename = filenames[i];
 
-      // Step: classifying
       setFiles((prev) =>
         prev.map((f, idx) =>
           idx === i ? { ...f, step: "classifying" as FileStep } : f
@@ -122,7 +118,6 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
       );
 
       try {
-        // Small delay so users see the "classifying" state
         await new Promise((r) => setTimeout(r, 500));
 
         const result = await invoke<{
@@ -157,8 +152,6 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                 : f
             )
           );
-
-          // Fire AI enrichment in background (don't await)
           invoke("enrich_inbox_file", { filename }).catch(() => {});
         } else if (result.status === "error") {
           setFiles((prev) =>
@@ -206,35 +199,54 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
   // Phase A: Introduction
   if (phase === "intro") {
     return (
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Drop things in, intelligence comes out.
-          </h2>
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <ChapterHeading
+          title="Drop things in, intelligence comes out."
+        />
 
-        <p className="text-sm text-muted-foreground leading-relaxed">
+        <p
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: "var(--color-text-secondary)",
+            margin: 0,
+          }}
+        >
           Every productivity app teaches you to manage. DailyOS flips the script.
           Drop meeting notes, transcripts, or documents into your inbox — the system
           classifies, extracts actions, and routes them automatically. This is the core behavior.
         </p>
 
-        {/* Drop zone */}
+        {/* Drop zone — editorial rules, no dashed border */}
         <div
-          className={`flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 transition-colors ${
-            isDragging
-              ? "border-primary bg-primary/5"
-              : "border-muted-foreground/20"
-          }`}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            borderTop: "1px solid var(--color-rule-light)",
+            borderBottom: "1px solid var(--color-rule-light)",
+            padding: "32px 0",
+            transition: "all 0.15s ease",
+            ...(isDragging
+              ? {
+                  borderTopColor: "var(--color-spice-turmeric)",
+                  borderBottomColor: "var(--color-spice-turmeric)",
+                  background: "var(--color-paper-warm-white)",
+                }
+              : {}),
+          }}
         >
-          <Inbox className="size-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">
+          <Inbox size={32} style={{ color: "var(--color-text-tertiary)", opacity: 0.4 }} />
+          <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
             Drag a file here to try it
           </p>
         </div>
 
-        <div className="flex items-center gap-2 justify-center">
-          <span className="text-xs text-muted-foreground">or</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+          <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>or</span>
         </div>
 
         <Button
@@ -247,9 +259,17 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
         </Button>
 
         {/* Skip */}
-        <div className="flex justify-end">
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+            }}
             onClick={() =>
               onNext({
                 filesDropped: 0,
@@ -268,35 +288,42 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
   // Phase B / C: Processing / Done
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-semibold tracking-tight">
-          {phase === "done" ? "Processing complete" : "Processing your file..."}
-        </h2>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <ChapterHeading
+        title={phase === "done" ? "Processing complete" : "Processing your file..."}
+      />
 
       {/* File progress */}
-      <div className="space-y-3">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {files.map((file) => (
           <div
             key={file.filename}
-            className="rounded-lg border bg-muted/30 p-4 space-y-2"
+            style={{
+              borderTop: "1px solid var(--color-rule-light)",
+              paddingTop: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
           >
-            <div className="flex items-center gap-2">
-              <FileText className="size-4 text-muted-foreground shrink-0" />
-              <span className="text-sm font-medium truncate">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <FileText size={16} style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }} />
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 500,
+                  color: "var(--color-text-primary)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {file.filename}
               </span>
             </div>
 
-            <div className="space-y-1.5 pl-6">
-              {/* Step 1: File received */}
-              <StepIndicator
-                label="File received"
-                status={file.step === "received" ? "current" : "done"}
-              />
-
-              {/* Step 2: Classifying */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingLeft: 24 }}>
+              <StepIndicator label="File received" status={file.step === "received" ? "current" : "done"} />
               {file.step !== "received" && (
                 <StepIndicator
                   label="Classifying..."
@@ -309,8 +336,6 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                   }
                 />
               )}
-
-              {/* Step 3: Result */}
               {(file.step === "classified" || file.step === "enriching") && (
                 <StepIndicator
                   label={
@@ -323,13 +348,8 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
                   status={file.error ? "error" : "done"}
                 />
               )}
-
-              {/* Step 4: AI enrichment */}
               {file.step === "enriching" && (
-                <StepIndicator
-                  label="AI enrichment running..."
-                  status="current"
-                />
+                <StepIndicator label="AI enrichment running..." status="current" />
               )}
             </div>
           </div>
@@ -338,9 +358,9 @@ export function InboxTraining({ onNext }: InboxTrainingProps) {
 
       {/* Continue */}
       {phase === "done" && (
-        <div className="space-y-3">
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {files.some((f) => f.step === "enriching") && (
-            <p className="text-xs text-muted-foreground text-center">
+            <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", textAlign: "center" }}>
               AI enrichment continues in the background — check your Inbox page in a minute.
             </p>
           )}
@@ -362,27 +382,36 @@ function StepIndicator({
   status: "pending" | "current" | "done" | "error";
 }) {
   return (
-    <div className="flex items-center gap-2 text-xs">
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
       {status === "done" && (
-        <Check className="size-3 text-green-600 shrink-0" />
+        <Check size={12} style={{ flexShrink: 0, color: "var(--color-garden-sage)" }} />
       )}
       {status === "current" && (
-        <Loader2 className="size-3 animate-spin text-primary shrink-0" />
+        <Loader2 size={12} className="animate-spin" style={{ flexShrink: 0, color: "var(--color-spice-turmeric)" }} />
       )}
       {status === "pending" && (
-        <div className="size-3 rounded-full border shrink-0" />
+        <div
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: "50%",
+            border: "1px solid var(--color-rule-heavy)",
+            flexShrink: 0,
+          }}
+        />
       )}
       {status === "error" && (
-        <Sparkles className="size-3 text-amber-500 shrink-0" />
+        <Sparkles size={12} style={{ flexShrink: 0, color: "var(--color-spice-terracotta)" }} />
       )}
       <span
-        className={
-          status === "done"
-            ? "text-foreground"
-            : status === "error"
-              ? "text-amber-600"
-              : "text-muted-foreground"
-        }
+        style={{
+          color:
+            status === "done"
+              ? "var(--color-text-primary)"
+              : status === "error"
+                ? "var(--color-spice-terracotta)"
+                : "var(--color-text-tertiary)",
+        }}
       >
         {label}
       </span>
