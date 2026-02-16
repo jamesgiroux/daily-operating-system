@@ -1,31 +1,15 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useSearch } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useInbox } from "@/hooks/useInbox";
+import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
+import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { usePersonality } from "@/hooks/usePersonality";
+import { getPersonalityCopy } from "@/lib/personality";
 import type { InboxFile, InboxFileType } from "@/types";
-import { cn } from "@/lib/utils";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { PageError } from "@/components/PageState";
-import {
-  Building2,
-  Calendar,
-  CheckSquare,
-  ChevronDown,
-  Database,
-  Download,
-  FileSpreadsheet,
-  FileText,
-  Image,
-  Lightbulb,
-  Loader2,
-  RefreshCw,
-  Zap,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
 // =============================================================================
 // Types
@@ -61,23 +45,23 @@ interface ProcessingResultPayload {
 interface FileClassification {
   type: string;
   label: string;
-  icon: LucideIcon;
+  dotColor: string;
 }
 
 const fileTypeClassifications: Record<string, Omit<FileClassification, "type">> = {
-  image:       { label: "Image",       icon: Image },
-  spreadsheet: { label: "Spreadsheet", icon: FileSpreadsheet },
-  document:    { label: "Document",    icon: FileText },
-  data:        { label: "Data",        icon: Database },
-  text:        { label: "Text",        icon: FileText },
-  other:       { label: "File",        icon: FileText },
+  image:       { label: "Image",       dotColor: "var(--color-garden-sage)" },
+  spreadsheet: { label: "Spreadsheet", dotColor: "var(--color-spice-turmeric)" },
+  document:    { label: "Document",    dotColor: "var(--color-text-tertiary)" },
+  data:        { label: "Data",        dotColor: "var(--color-spice-turmeric)" },
+  text:        { label: "Text",        dotColor: "var(--color-text-tertiary)" },
+  other:       { label: "File",        dotColor: "var(--color-text-tertiary)" },
 };
 
 const mdClassifications: Record<string, Omit<FileClassification, "type">> = {
-  meeting:  { label: "Meeting Notes", icon: Calendar },
-  actions:  { label: "Actions",       icon: CheckSquare },
-  account:  { label: "Account",       icon: Building2 },
-  context:  { label: "Context",       icon: Lightbulb },
+  meeting:  { label: "Meeting Notes", dotColor: "var(--color-spice-terracotta)" },
+  actions:  { label: "Actions",       dotColor: "var(--color-spice-terracotta)" },
+  account:  { label: "Account",       dotColor: "var(--color-spice-turmeric)" },
+  context:  { label: "Context",       dotColor: "var(--color-garden-sage)" },
 };
 
 function classifyFile(file: InboxFile): FileClassification {
@@ -101,7 +85,7 @@ function classifyFile(file: InboxFile): FileClassification {
     mdType = "context";
   }
 
-  const cls = mdClassifications[mdType] ?? { label: "Markdown", icon: FileText };
+  const cls = mdClassifications[mdType] ?? { label: "Markdown", dotColor: "var(--color-text-tertiary)" };
   return { type: mdType, ...cls };
 }
 
@@ -160,29 +144,23 @@ function getProcessingQuote(): string {
 }
 
 // =============================================================================
-// Persistent processing status styles (StatusBadge)
+// Status formatting
 // =============================================================================
-
-const inboxStatusStyles: Record<string, string> = {
-  completed:
-    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  routed:
-    "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-700",
-  needs_enrichment:
-    "bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-700",
-  error:
-    "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-700",
-  unprocessed:
-    "bg-muted text-muted-foreground border-border",
-};
 
 function formatInboxStatus(value: string): string {
   if (value === "completed") return "Processed";
   if (value === "routed") return "Processed";
   if (value === "needs_enrichment") return "Needs AI";
   if (value === "error") return "Error";
-  if (value === "unprocessed") return "Unprocessed";
+  if (value === "unprocessed") return "New";
   return value.replace(/_/g, " ");
+}
+
+function statusDotColor(value: string): string {
+  if (value === "completed" || value === "routed") return "var(--color-garden-sage)";
+  if (value === "needs_enrichment") return "var(--color-spice-turmeric)";
+  if (value === "error") return "var(--color-spice-terracotta)";
+  return "var(--color-text-tertiary)";
 }
 
 // =============================================================================
@@ -190,6 +168,7 @@ function formatInboxStatus(value: string): string {
 // =============================================================================
 
 export default function InboxPage() {
+  const { personality } = usePersonality();
   const { entityId } = useSearch({ from: "/inbox" });
   const { files, loading, error, refresh } = useInbox();
   const [refreshing, setRefreshing] = useState(false);
@@ -540,38 +519,95 @@ export default function InboxPage() {
   const allProcessing = processingCount === files.length && files.length > 0;
 
   // ---------------------------------------------------------------------------
+  // Magazine shell registration
+  // ---------------------------------------------------------------------------
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Inbox",
+      atmosphereColor: "olive" as const,
+      activePage: "inbox" as const,
+      folioActions: (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {processingAll ? (
+            <button
+              onClick={cancelAll}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-spice-terracotta)",
+                background: "none",
+                border: "1px solid var(--color-spice-terracotta)",
+                borderRadius: 4,
+                padding: "2px 10px",
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          ) : (
+            visibleFiles.length > 0 && (
+              <button
+                onClick={processAll}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase" as const,
+                  color: "var(--color-text-secondary)",
+                  background: "none",
+                  border: "1px solid var(--color-rule-heavy)",
+                  borderRadius: 4,
+                  padding: "2px 10px",
+                  cursor: "pointer",
+                }}
+              >
+                Process All
+              </button>
+            )
+          )}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing || processingAll}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: refreshing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+              background: "none",
+              border: "1px solid var(--color-rule-heavy)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              cursor: refreshing || processingAll ? "default" : "pointer",
+              opacity: refreshing || processingAll ? 0.5 : 1,
+            }}
+          >
+            {refreshing ? "..." : "Refresh"}
+          </button>
+        </div>
+      ),
+    }),
+    [processingAll, visibleFiles.length, cancelAll, processAll, handleRefresh, refreshing],
+  );
+  useRegisterMagazineShell(shellConfig);
+
+  // ---------------------------------------------------------------------------
   // Loading
   // ---------------------------------------------------------------------------
   if (loading) {
-    return (
-      <main className="flex-1 overflow-hidden p-6">
-        <div className="mb-8 space-y-2">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-4 w-48" />
-        </div>
-        <div className="space-y-0 divide-y rounded-lg border">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex items-center gap-3 px-4 py-3">
-              <Skeleton className="size-5 shrink-0 rounded" />
-              <Skeleton className="h-4 w-40" />
-              <div className="flex-1" />
-              <Skeleton className="h-3 w-16" />
-            </div>
-          ))}
-        </div>
-      </main>
-    );
+    return <EditorialLoading count={4} />;
   }
 
   // ---------------------------------------------------------------------------
   // Error
   // ---------------------------------------------------------------------------
   if (error) {
-    return (
-      <main className="flex-1 overflow-hidden">
-        <PageError message={error} onRetry={refresh} />
-      </main>
-    );
+    return <EditorialError message={error} onRetry={refresh} />;
   }
 
   // ---------------------------------------------------------------------------
@@ -579,40 +615,65 @@ export default function InboxPage() {
   // ---------------------------------------------------------------------------
   if (files.length === 0) {
     return (
-      <main className="flex-1 overflow-hidden">
-        <div className="p-6">
-          <div className="mb-8">
-            <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Drop documents here — DailyOS classifies and routes them
-            </p>
-          </div>
-
-          <div
-            className={cn(
-              "flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-20 text-center transition-all",
-              isDragging
-                ? "border-primary bg-accent/50"
-                : "border-border"
-            )}
+      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+        {/* Hero */}
+        <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 36,
+              fontWeight: 400,
+              letterSpacing: "-0.02em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
           >
-            <Download
-              className={cn(
-                "mb-3 size-10",
-                isDragging ? "text-primary" : "text-muted-foreground/20"
-              )}
-            />
-            <p className="font-medium">
-              {isDragging ? "Drop files here" : "Inbox is clear"}
+            Inbox
+          </h1>
+          <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+        </section>
+
+        {/* Drop zone */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "80px 0",
+            border: `2px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
+            borderRadius: 8,
+            textAlign: "center",
+            transition: "border-color 0.2s ease, background 0.2s ease",
+            background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+          }}
+        >
+          <p
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 18,
+              fontStyle: "italic",
+              color: isDragging ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
+              margin: 0,
+            }}
+          >
+            {isDragging ? "Drop files here" : getPersonalityCopy("inbox-empty", personality).title}
+          </p>
+          {!isDragging && (
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 13,
+                fontWeight: 300,
+                color: "var(--color-text-tertiary)",
+                marginTop: 8,
+              }}
+            >
+              {getPersonalityCopy("inbox-empty", personality).message}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {isDragging
-                ? "Files will be copied to your inbox"
-                : "Drag files here or drop them into _inbox/"}
-            </p>
-          </div>
+          )}
         </div>
-      </main>
+      </div>
     );
   }
 
@@ -620,123 +681,219 @@ export default function InboxPage() {
   // File list
   // ---------------------------------------------------------------------------
   return (
-    <main className="flex-1 overflow-hidden">
-      <ScrollArea className="h-full">
-        <div className="p-6">
-          {/* Drop result toast */}
-          {dropResult && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-success/30 bg-success/10 px-4 py-2.5 text-sm text-success">
-              <Download className="size-4" />
-              {dropResult.count} file{dropResult.count === 1 ? "" : "s"} added to inbox
-            </div>
-          )}
-
-          {/* Result banner */}
-          {resultBanner && !processingAll && (
-            <div className="mb-4 flex items-center justify-between rounded-md border bg-muted/50 px-4 py-2.5">
-              <div className="flex items-center gap-4 text-sm">
-                {resultBanner.routed > 0 && (
-                  <span className="text-success">
-                    {resultBanner.routed} processed
-                  </span>
-                )}
-                {resultBanner.errors > 0 && (
-                  <span className="text-destructive">{resultBanner.errors} failed</span>
-                )}
-                {resultBanner.routed === 0 && resultBanner.errors === 0 && (
-                  <span className="text-muted-foreground">Nothing to process</span>
-                )}
-              </div>
-              <button
-                onClick={() => setResultBanner(null)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Header */}
-          <div className="mb-6 flex items-end justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {processingAll
-                  ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
-                  : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {processingAll ? (
-                <Button variant="ghost" size="sm" onClick={cancelAll} className="h-8 text-xs">
-                  Cancel
-                </Button>
-              ) : (
-                visibleFiles.length > 0 && (
-                  <Button variant="ghost" size="sm" onClick={processAll} className="h-8 text-xs">
-                    <Zap className="mr-1 size-3.5" />
-                    Process All
-                  </Button>
-                )
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-8"
-                onClick={handleRefresh}
-                disabled={refreshing || processingAll}
-              >
-                <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-              </Button>
-            </div>
-          </div>
-
-          {/* Drop zone */}
-          <div
-            className={cn(
-              "mb-5 flex flex-col items-center justify-center gap-1.5 rounded-lg border bg-card py-8 text-sm transition-all",
-              isDragging
-                ? "border-primary bg-accent/60 text-primary"
-                : "text-muted-foreground"
-            )}
-          >
-            <Download className={cn("size-5", isDragging ? "text-primary" : "text-muted-foreground/40")} />
-            <span>{isDragging ? "Drop to add" : "Drop files here"}</span>
-          </div>
-
-          {/* Batch processing banner */}
-          {allProcessing && (
-            <div className="mb-5 flex flex-col items-center py-6 text-center">
-              <div className="mb-3 h-1 w-40 overflow-hidden rounded-full bg-muted">
-                <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
-              </div>
-              <p className="text-sm text-muted-foreground">{processingQuote}</p>
-            </div>
-          )}
-
-          {/* File list — compact rows inside a single container */}
-          <div className="overflow-hidden rounded-lg border">
-            {visibleFiles.map((file, i) => (
-              <InboxRow
-                key={file.filename}
-                file={file}
-                state={getFileState(file.filename)}
-                processingAll={processingAll}
-                isLast={i === visibleFiles.length - 1}
-                onToggleExpand={() => toggleExpand(file.filename)}
-                onProcess={() => processFile(file.filename)}
-                onCancel={() => cancelFile(file.filename)}
-              />
-            ))}
-          </div>
+    <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
+      {/* Drop result toast */}
+      {dropResult && (
+        <div
+          style={{
+            position: "fixed",
+            top: 80,
+            left: "50%",
+            transform: "translateX(-50%)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-garden-sage)",
+            background: "var(--color-text-primary)",
+            borderRadius: 6,
+            padding: "8px 16px",
+            zIndex: 50,
+          }}
+        >
+          {dropResult.count} file{dropResult.count === 1 ? "" : "s"} added to inbox
         </div>
-      </ScrollArea>
-    </main>
+      )}
+
+      {/* Result banner */}
+      {resultBanner && !processingAll && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "10px 0",
+            marginBottom: 16,
+            borderBottom: "1px solid var(--color-rule-light)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {resultBanner.routed > 0 && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--color-garden-sage)",
+                }}
+              >
+                {resultBanner.routed} processed
+              </span>
+            )}
+            {resultBanner.errors > 0 && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--color-spice-terracotta)",
+                }}
+              >
+                {resultBanner.errors} failed
+              </span>
+            )}
+            {resultBanner.routed === 0 && resultBanner.errors === 0 && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                Nothing to process
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setResultBanner(null)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* ═══ HERO ═══ */}
+      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <h1
+            style={{
+              fontFamily: "var(--font-serif)",
+              fontSize: 36,
+              fontWeight: 400,
+              letterSpacing: "-0.02em",
+              color: "var(--color-text-primary)",
+              margin: 0,
+            }}
+          >
+            Inbox
+          </h1>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 13,
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            {processingAll
+              ? `Processing ${files.length} file${files.length === 1 ? "" : "s"}...`
+              : `${visibleFiles.length} file${visibleFiles.length === 1 ? "" : "s"}`}
+          </span>
+        </div>
+        <div style={{ height: 2, background: "var(--color-desk-charcoal)", marginTop: 16 }} />
+      </section>
+
+      {/* ═══ DROP ZONE ═══ */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "20px 0",
+          marginBottom: 20,
+          border: `1px dashed ${isDragging ? "var(--color-spice-turmeric)" : "var(--color-rule-heavy)"}`,
+          borderRadius: 6,
+          transition: "border-color 0.2s ease, background 0.2s ease",
+          background: isDragging ? "rgba(201, 162, 39, 0.04)" : "transparent",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 14,
+            fontStyle: "italic",
+            color: isDragging ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
+          }}
+        >
+          {isDragging ? "Drop to add" : "Drop files here"}
+        </span>
+      </div>
+
+      {/* ═══ BATCH PROCESSING BANNER ═══ */}
+      {allProcessing && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            padding: "24px 0",
+            marginBottom: 20,
+          }}
+        >
+          <div
+            style={{
+              width: 160,
+              height: 2,
+              background: "var(--color-rule-light)",
+              borderRadius: 1,
+              overflow: "hidden",
+              marginBottom: 12,
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                background: "var(--color-spice-turmeric)",
+                borderRadius: 1,
+                animation: "heartbeat 1.5s ease-in-out infinite",
+              }}
+            />
+          </div>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: 300,
+              color: "var(--color-text-tertiary)",
+              margin: 0,
+            }}
+          >
+            {processingQuote}
+          </p>
+        </div>
+      )}
+
+      {/* ═══ FILE LIST ═══ */}
+      <section>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {visibleFiles.map((file, i) => (
+            <InboxRow
+              key={file.filename}
+              file={file}
+              state={getFileState(file.filename)}
+              processingAll={processingAll}
+              isLast={i === visibleFiles.length - 1}
+              onToggleExpand={() => toggleExpand(file.filename)}
+              onProcess={() => processFile(file.filename)}
+              onCancel={() => cancelFile(file.filename)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ END MARK ═══ */}
+      {visibleFiles.length > 0 && <FinisMarker />}
+    </div>
   );
 }
 
 // =============================================================================
-// Inbox Row — compact, scannable
+// Inbox Row — editorial, scannable
 // =============================================================================
 
 function InboxRow({
@@ -756,23 +913,48 @@ function InboxRow({
   onProcess: () => void;
   onCancel: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
   const isProcessing = state.status === "processing";
   const isError = state.status === "error";
   const classification = classifyFile(file);
   const title = humanizeFilename(file.filename);
-  const Icon = classification.icon;
   const time = file.modified ? formatModified(file.modified) : "";
 
+  // Determine status display
+  const displayStatus = isProcessing
+    ? "processing"
+    : isError
+      ? "error"
+      : file.processingStatus ?? "unprocessed";
+
   return (
-    <div className={cn(!isLast && !state.expanded && "border-b")}>
-      {/* Row — the main scannable line */}
-      <div className="group flex items-center gap-3 px-4 py-3">
-        {/* Icon */}
-        <Icon
-          className={cn(
-            "size-[18px] shrink-0",
-            isProcessing ? "text-primary" : "text-muted-foreground/50"
-          )}
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Row */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 0",
+          borderBottom: !isLast && !state.expanded
+            ? "1px solid var(--color-rule-light)"
+            : "none",
+        }}
+      >
+        {/* Colored dot */}
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: isProcessing
+              ? "var(--color-spice-turmeric)"
+              : classification.dotColor,
+            flexShrink: 0,
+          }}
         />
 
         {/* Expand toggle + title */}
@@ -780,46 +962,118 @@ function InboxRow({
           type="button"
           onClick={onToggleExpand}
           disabled={isProcessing}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          style={{
+            display: "flex",
+            flex: 1,
+            minWidth: 0,
+            alignItems: "baseline",
+            gap: 8,
+            textAlign: "left",
+            background: "none",
+            border: "none",
+            padding: 0,
+            cursor: isProcessing ? "default" : "pointer",
+          }}
         >
-          <span className={cn(
-            "truncate text-sm",
-            isProcessing && "text-muted-foreground",
-          )}>
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              fontWeight: 400,
+              color: isProcessing ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
             {title}
           </span>
-          <span className="shrink-0 text-xs text-muted-foreground/50">
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              letterSpacing: "0.04em",
+              color: "var(--color-text-tertiary)",
+              flexShrink: 0,
+              opacity: 0.6,
+            }}
+          >
             {classification.label}
           </span>
         </button>
 
-        {/* Right side: status / time / actions */}
-        <div className="flex shrink-0 items-center gap-2">
-          {isProcessing && (
-            <Loader2 className="size-3.5 animate-spin text-primary" />
+        {/* Right side: status dot + label, time, actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {/* Status dot + label */}
+          {isProcessing ? (
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                letterSpacing: "0.04em",
+                color: "var(--color-spice-turmeric)",
+              }}
+            >
+              Processing...
+            </span>
+          ) : (
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: statusDotColor(displayStatus),
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  letterSpacing: "0.04em",
+                  color: isError
+                    ? "var(--color-spice-terracotta)"
+                    : "var(--color-text-tertiary)",
+                }}
+              >
+                {formatInboxStatus(displayStatus)}
+              </span>
+            </span>
           )}
 
-          {isError && (
-            <StatusBadge value="error" styles={inboxStatusStyles} formatLabel={formatInboxStatus} />
-          )}
-
-          {!isProcessing && !isError && (
-            <StatusBadge
-              value={file.processingStatus ?? "unprocessed"}
-              styles={inboxStatusStyles}
-              formatLabel={formatInboxStatus}
-            />
-          )}
-
+          {/* Time */}
           {!isProcessing && !isError && time && (
-            <span className="text-xs text-muted-foreground/40">{time}</span>
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "var(--color-text-tertiary)",
+                opacity: 0.5,
+              }}
+            >
+              {time}
+            </span>
           )}
 
-          {/* Process button — always visible */}
+          {/* Process / Cancel button */}
           {isProcessing ? (
             <button
               onClick={onCancel}
-              className="text-xs text-muted-foreground/40 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                opacity: hovered ? 1 : 0,
+                transition: "opacity 0.15s ease",
+              }}
             >
               Cancel
             </button>
@@ -827,49 +1081,107 @@ function InboxRow({
             <button
               onClick={(e) => { e.stopPropagation(); onProcess(); }}
               disabled={processingAll}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-all",
-                "text-muted-foreground/50 hover:bg-muted hover:text-foreground",
-              )}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: hovered ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                background: "none",
+                border: `1px solid ${hovered ? "var(--color-rule-heavy)" : "transparent"}`,
+                borderRadius: 4,
+                padding: "2px 8px",
+                cursor: processingAll ? "default" : "pointer",
+                opacity: hovered || processingAll ? 1 : 0,
+                transition: "opacity 0.15s ease, border-color 0.15s ease, color 0.15s ease",
+              }}
             >
-              <Zap className="size-3" />
               Process
             </button>
           )}
 
-          {/* Expand chevron */}
-          <ChevronDown
-            className={cn(
-              "size-3.5 text-muted-foreground/30 transition-transform",
-              state.expanded && "rotate-180"
-            )}
-          />
+          {/* Expand indicator */}
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color: "var(--color-text-tertiary)",
+              opacity: 0.4,
+              transition: "transform 0.15s ease",
+              display: "inline-block",
+              transform: state.expanded ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          >
+            v
+          </span>
         </div>
       </div>
 
       {/* Error inline */}
       {isError && state.error && (
-        <div className="border-t border-destructive/10 bg-destructive/5 px-4 py-2 text-xs text-destructive">
+        <div
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--color-spice-terracotta)",
+            padding: "4px 0 8px 20px",
+            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
+          }}
+        >
           {state.error}
         </div>
       )}
 
       {/* Expanded content */}
       {!isProcessing && state.expanded && (
-        <div className={cn("border-t bg-muted/20 px-4 py-4", !isLast && "border-b")}>
+        <div
+          style={{
+            padding: "12px 0 16px 20px",
+            borderBottom: !isLast ? "1px solid var(--color-rule-light)" : "none",
+          }}
+        >
           {state.loadingContent ? (
-            <div className="space-y-2">
-              <Skeleton className="h-3.5 w-full" />
-              <Skeleton className="h-3.5 w-3/4" />
-              <Skeleton className="h-3.5 w-1/2" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  style={{
+                    height: 14,
+                    width: `${100 - i * 25}%`,
+                    background: "var(--color-rule-light)",
+                    borderRadius: 4,
+                    animation: "pulse 1.5s ease-in-out infinite",
+                  }}
+                />
+              ))}
             </div>
           ) : (
             <>
               {/* File metadata line */}
-              <div className="mb-3 flex items-center gap-3 text-xs text-muted-foreground/50">
-                <span className="font-mono">{file.filename}</span>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--color-text-tertiary)",
+                  opacity: 0.6,
+                  marginBottom: 8,
+                }}
+              >
+                {file.filename}
               </div>
-              <pre className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-muted-foreground">
+              <pre
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: "var(--color-text-secondary)",
+                  whiteSpace: "pre-wrap",
+                  maxHeight: 256,
+                  overflow: "auto",
+                  margin: 0,
+                }}
+              >
                 {state.content
                   ? state.content.length > 2000
                     ? state.content.slice(0, 2000) + "\n\n... (truncated)"
@@ -883,8 +1195,23 @@ function InboxRow({
 
       {/* Processing progress bar */}
       {isProcessing && (
-        <div className="h-0.5 w-full bg-muted">
-          <div className="animate-heartbeat h-full w-full rounded-full bg-primary" />
+        <div
+          style={{
+            height: 2,
+            width: "100%",
+            background: "var(--color-rule-light)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              height: "100%",
+              background: "var(--color-spice-turmeric)",
+              borderRadius: 1,
+              animation: "heartbeat 1.5s ease-in-out infinite",
+            }}
+          />
         </div>
       )}
     </div>

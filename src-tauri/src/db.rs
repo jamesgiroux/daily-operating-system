@@ -3142,6 +3142,55 @@ impl ActionDb {
         Ok(signals)
     }
 
+    /// Batch-query email signals for multiple email IDs.
+    /// Returns all signals whose email_id is in the provided list.
+    pub fn list_email_signals_by_email_ids(
+        &self,
+        email_ids: &[String],
+    ) -> Result<Vec<DbEmailSignal>, DbError> {
+        if email_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: Vec<String> = (1..=email_ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "SELECT id, email_id, sender_email, person_id, entity_id, entity_type,
+                    signal_type, signal_text, confidence, sentiment, urgency, detected_at
+             FROM email_signals
+             WHERE email_id IN ({})
+             ORDER BY detected_at DESC, id DESC",
+            placeholders.join(", ")
+        );
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = email_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let rows = stmt.query_map(&*params, |row| {
+            Ok(DbEmailSignal {
+                id: row.get(0)?,
+                email_id: row.get(1)?,
+                sender_email: row.get(2)?,
+                person_id: row.get(3)?,
+                entity_id: row.get(4)?,
+                entity_type: row.get(5)?,
+                signal_type: row.get(6)?,
+                signal_text: row.get(7)?,
+                confidence: row.get(8)?,
+                sentiment: row.get(9)?,
+                urgency: row.get(10)?,
+                detected_at: row.get(11)?,
+            })
+        })?;
+
+        let mut signals = Vec::new();
+        for row in rows {
+            signals.push(row?);
+        }
+        Ok(signals)
+    }
+
     /// Query actions extracted from a transcript for a specific meeting.
     pub fn get_actions_for_meeting(&self, meeting_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
