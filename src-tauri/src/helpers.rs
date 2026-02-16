@@ -28,7 +28,10 @@ pub fn normalize_domains(domains: &[String]) -> Vec<String> {
 pub fn build_external_account_hints(db: &ActionDb) -> HashSet<String> {
     let mut hints = HashSet::new();
     if let Ok(accounts) = db.get_all_accounts() {
-        for account in accounts.into_iter().filter(|a| !a.is_internal && !a.archived) {
+        for account in accounts
+            .into_iter()
+            .filter(|a| !a.is_internal && !a.archived)
+        {
             let id_key = normalize_key(&account.id);
             if id_key.len() >= 3 {
                 hints.insert(id_key);
