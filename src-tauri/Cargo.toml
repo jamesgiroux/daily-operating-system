@@ -75,7 +75,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "dailyos-mcp"
-path = "src/bin/mcp.rs"
+path = "src/mcp/main.rs"
 required-features = ["mcp"]
 
 [profile.release]
