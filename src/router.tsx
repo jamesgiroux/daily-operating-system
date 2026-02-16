@@ -16,7 +16,7 @@ import { Header } from "@/components/dashboard/Header";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 
 // Lazy load pages for code splitting
-import { Dashboard } from "@/components/dashboard/Dashboard";
+import { DailyBriefing } from "@/components/dashboard/DailyBriefing";
 import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
 import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
 import { DashboardError } from "@/components/dashboard/DashboardError";
@@ -38,6 +38,7 @@ import PeoplePage from "@/pages/PeoplePage";
 import PersonDetailEditorial from "@/pages/PersonDetailEditorial";
 import ProjectsPage from "@/pages/ProjectsPage";
 import ProjectDetailEditorial from "@/pages/ProjectDetailEditorial";
+import RiskBriefingPage from "@/pages/RiskBriefingPage";
 import SettingsPage from "@/pages/SettingsPage";
 import WeekPage from "@/pages/WeekPage";
 
@@ -66,7 +67,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/accounts/$accountId", "/projects/$projectId", "/people/$personId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/projects/$projectId", "/people/$personId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {
@@ -207,7 +208,7 @@ function DashboardPage() {
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
-      return <Dashboard data={state.data} freshness={state.freshness} />;
+      return <DailyBriefing data={state.data} freshness={state.freshness} />;
   }
 }
 
@@ -248,6 +249,12 @@ const accountDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts/$accountId",
   component: AccountDetailEditorial,
+});
+
+const riskBriefingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts/$accountId/risk-briefing",
+  component: RiskBriefingPage,
 });
 
 const inboxRoute = createRoute({
@@ -353,6 +360,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   accountsRoute,
   accountDetailRoute,
+  riskBriefingRoute,
   actionDetailRoute,
   actionsRoute,
   emailsRoute,

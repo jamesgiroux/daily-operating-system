@@ -251,7 +251,12 @@ export default function SettingsPage() {
               </>
             )}
 
-            {activeTab === "integrations" && <GoogleAccountCard />}
+            {activeTab === "integrations" && (
+              <>
+                <GoogleAccountCard />
+                <ClaudeDesktopCard />
+              </>
+            )}
 
             {activeTab === "workflows" && (
               <>
@@ -362,40 +367,43 @@ export default function SettingsPage() {
             {activeTab === "hygiene" && <IntelligenceHygieneCard />}
 
             {activeTab === "diagnostics" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <ToggleRight className="size-4" />
-                    Developer
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm">Developer Tools</span>
-                      <p className="text-xs text-muted-foreground">
-                        Show the devtools panel (wrench icon)
-                      </p>
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ToggleRight className="size-4" />
+                      Developer
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm">Developer Tools</span>
+                        <p className="text-xs text-muted-foreground">
+                          Show the devtools panel (wrench icon)
+                        </p>
+                      </div>
+                      <Button
+                        variant={config?.developerMode ? "default" : "outline"}
+                        size="sm"
+                        onClick={async () => {
+                          const next = !config?.developerMode;
+                          try {
+                            const updated = await invoke<Config>("set_developer_mode", { enabled: next });
+                            setConfig(updated);
+                            toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
+                          } catch (e) {
+                            toast.error(String(e));
+                          }
+                        }}
+                      >
+                        {config?.developerMode ? "On" : "Off"}
+                      </Button>
                     </div>
-                    <Button
-                      variant={config?.developerMode ? "default" : "outline"}
-                      size="sm"
-                      onClick={async () => {
-                        const next = !config?.developerMode;
-                        try {
-                          const updated = await invoke<Config>("set_developer_mode", { enabled: next });
-                          setConfig(updated);
-                          toast.success(next ? "Developer tools enabled" : "Developer tools disabled");
-                        } catch (e) {
-                          toast.error(String(e));
-                        }
-                      }}
-                    >
-                      {config?.developerMode ? "On" : "Off"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+                <MeetingBackfillCard />
+              </>
             )}
           </div>
         </div>
@@ -518,6 +526,99 @@ function UpdateCard() {
             </Button>
           </div>
         ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ClaudeDesktopCard() {
+  const [configuring, setConfiguring] = useState(false);
+  const [result, setResult] = useState<{
+    success: boolean;
+    message: string;
+    configPath?: string;
+    binaryPath?: string;
+  } | null>(null);
+
+  const handleConfigure = async () => {
+    setConfiguring(true);
+    setResult(null);
+    try {
+      const res = await invoke<{
+        success: boolean;
+        message: string;
+        configPath: string | null;
+        binaryPath: string | null;
+      }>("configure_claude_desktop");
+      setResult({
+        success: res.success,
+        message: res.message,
+        configPath: res.configPath ?? undefined,
+        binaryPath: res.binaryPath ?? undefined,
+      });
+      if (res.success) {
+        toast.success("Claude Desktop configured");
+      } else {
+        toast.error(res.message);
+      }
+    } catch (e) {
+      setResult({
+        success: false,
+        message: String(e),
+      });
+      toast.error("Failed to configure Claude Desktop");
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <MessageSquare className="size-4" />
+          Claude Desktop
+        </CardTitle>
+        <CardDescription>
+          Connect Claude Desktop to query your workspace via MCP
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {result && (
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-md border px-3 py-2",
+              result.success
+                ? "border-sage/40 bg-sage/10"
+                : "border-destructive/40 bg-destructive/10"
+            )}
+          >
+            {result.success ? (
+              <CheckCircle className="size-3.5 text-sage" />
+            ) : (
+              <AlertCircle className="size-3.5 text-destructive" />
+            )}
+            <span className="text-xs">{result.message}</span>
+          </div>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleConfigure}
+          disabled={configuring}
+        >
+          {configuring ? (
+            <Loader2 className="mr-2 size-3.5 animate-spin" />
+          ) : (
+            <Settings className="mr-2 size-3.5" />
+          )}
+          {result?.success ? "Reconfigure" : "Connect to Claude Desktop"}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Adds DailyOS as an MCP server in Claude Desktop. After connecting,
+          Claude can query your briefing, accounts, projects, and meeting
+          history.
+        </p>
       </CardContent>
     </Card>
   );
@@ -1727,6 +1828,104 @@ function IntelligenceHygieneCard() {
             No scan completed yet — runs automatically after startup.
           </p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MeetingBackfillCard() {
+  const [isRunning, setIsRunning] = useState(false);
+  const [result, setResult] = useState<{ created: number; skipped: number; errors: string[] } | null>(null);
+
+  async function runBackfill() {
+    setIsRunning(true);
+    setResult(null);
+    
+    try {
+      const [created, skipped, errors] = await invoke<[number, number, string[]]>("backfill_historical_meetings");
+      setResult({ created, skipped, errors });
+      
+      if (errors.length === 0) {
+        toast.success(`Backfilled ${created} meetings (${skipped} already existed)`);
+      } else {
+        toast.warning(`Backfilled ${created} meetings with ${errors.length} errors`);
+      }
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to run backfill");
+      setResult({ created: 0, skipped: 0, errors: [String(err)] });
+    } finally {
+      setIsRunning(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <RefreshCw className="size-4" />
+          Historical Meeting Backfill
+        </CardTitle>
+        <CardDescription>
+          Import historical meeting files from your workspace into the database
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Scans account and project directories for meeting files (transcripts, notes, summaries)
+            and creates database records + entity links for any meetings not already in the system.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Looks for files in: <code className="text-xs">02-Meetings/</code>, <code className="text-xs">03-Call-Transcripts/</code>,{" "}
+            <code className="text-xs">Call-Transcripts/</code>, <code className="text-xs">Meeting-Notes/</code>
+          </p>
+        </div>
+
+        {result && (
+          <div className="rounded-lg bg-muted p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              {result.errors.length === 0 ? (
+                <CheckCircle className="size-4 text-green-600" />
+              ) : (
+                <AlertCircle className="size-4 text-yellow-600" />
+              )}
+              <span className="text-sm font-medium">
+                Created {result.created} meetings, skipped {result.skipped}
+              </span>
+            </div>
+            
+            {result.errors.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-destructive">Errors:</p>
+                <ScrollArea className="h-32">
+                  <div className="space-y-1">
+                    {result.errors.map((err, i) => (
+                      <p key={i} className="text-xs text-muted-foreground font-mono">{err}</p>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </div>
+        )}
+
+        <Button 
+          onClick={runBackfill} 
+          disabled={isRunning}
+          className="w-full"
+        >
+          {isRunning ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Scanning directories...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 size-4" />
+              Run Backfill
+            </>
+          )}
+        </Button>
       </CardContent>
     </Card>
   );

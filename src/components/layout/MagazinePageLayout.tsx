@@ -62,6 +62,9 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
       {/* Fixed folio bar — top masthead */}
       <FolioBar
         publicationLabel={folioLabel}
+        dateText={pageConfig?.folioDateText}
+        readinessStats={pageConfig?.folioReadinessStats}
+        statusText={pageConfig?.folioStatusText}
         onSearchClick={onFolioSearch}
         backLink={backLink}
         actions={folioActions}
