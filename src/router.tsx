@@ -207,7 +207,7 @@ function DashboardPage() {
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
-      return <DailyBriefing data={state.data} freshness={state.freshness} />;
+      return <DailyBriefing data={state.data} freshness={state.freshness} onRunBriefing={runNow} />;
   }
 }
 
