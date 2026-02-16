@@ -100,6 +100,9 @@ pub struct AppState {
     pub week_calendar_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
     /// Whether the first-run full orphan scan has been completed (I271).
     pub hygiene_full_orphan_scan_done: AtomicBool,
+    /// Stashed live workspace path before switching to dev mode (I298).
+    /// `restore_live()` reads this back to return to the user's real workspace.
+    pub pre_dev_workspace: Mutex<Option<String>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -153,6 +156,7 @@ impl AppState {
             hygiene_budget: HygieneBudget::new(hygiene_budget_limit),
             week_calendar_cache: RwLock::new(None),
             hygiene_full_orphan_scan_done: AtomicBool::new(false),
+            pre_dev_workspace: Mutex::new(None),
         }
     }
 

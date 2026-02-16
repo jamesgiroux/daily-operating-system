@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Inbox, Zap, Sun, Calendar, Sparkles, Brain, Undo2, Trash2, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,8 +33,12 @@ interface DevState {
   accountCount: number;
   projectCount: number;
   meetingCount: number;
+  peopleCount: number;
   hasTodayData: boolean;
   googleAuthStatus: string;
+  isDevDbMode: boolean;
+  hasDevDbFile: boolean;
+  hasDevWorkspace: boolean;
 }
 
 interface LatencyCommandRollup {
@@ -108,12 +112,16 @@ function DevToolsPanelInner() {
     }
   }
 
-  async function runCommand(key: string, command: string) {
+  async function runCommand(key: string, command: string, reload = false) {
     setLoading(key);
     try {
       const result = await invoke<string>(command);
       devToast("success", result);
-      await refreshState();
+      if (reload) {
+        setTimeout(() => window.location.reload(), 500);
+      } else {
+        await refreshState();
+      }
     } catch (err) {
       devToast("error", typeof err === "string" ? err : "Command failed");
     } finally {
@@ -147,6 +155,32 @@ function DevToolsPanelInner() {
           </SheetHeader>
 
           <div className="space-y-6 px-4 pb-6">
+            {/* Dev DB Mode Indicator + Return to Live */}
+            {devState?.isDevDbMode && (
+              <section className="rounded-md border border-amber-500/30 bg-amber-50 p-3 dark:bg-amber-950/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                      Dev DB Active
+                    </p>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-500/80">
+                      Using isolated dailyos-dev.db
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-500/50 text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30"
+                    disabled={loading !== null}
+                    onClick={() => runCommand("restore_live", "dev_restore_live", true)}
+                  >
+                    <Undo2 className="mr-1.5 h-3 w-3" />
+                    {loading === "restore_live" ? "Restoring..." : "Return to Live"}
+                  </Button>
+                </div>
+              </section>
+            )}
+
             {/* Current State */}
             <section>
               <h3 className="mb-3 text-sm font-medium text-muted-foreground">
@@ -320,6 +354,57 @@ function DevToolsPanelInner() {
                 />
               </div>
             </section>
+
+            {/* Cleanup — visible when dev artifacts or mock data may exist */}
+            {(devState?.hasDevDbFile || devState?.hasDevWorkspace || !devState?.isDevDbMode) && (
+              <section>
+                <h3 className="mb-3 text-sm font-medium text-muted-foreground">
+                  Cleanup
+                </h3>
+                <div className="space-y-2">
+                  {/* Purge mock data from current (live) DB */}
+                  {!devState?.isDevDbMode && (
+                    <ScenarioButton
+                      icon={Eraser}
+                      label="Purge Mock Data from Live DB"
+                      description="Remove known mock accounts, meetings, actions, people"
+                      variant="destructive"
+                      loading={loading === "purge_mock"}
+                      disabled={loading !== null}
+                      onClick={() => runCommand("purge_mock", "dev_purge_mock_data")}
+                    />
+                  )}
+                  {/* Clean dev artifact files from disk */}
+                  {(devState?.hasDevDbFile || devState?.hasDevWorkspace) && (
+                    <ScenarioButton
+                      icon={Trash2}
+                      label="Clean Dev Artifacts"
+                      description={[
+                        devState?.hasDevDbFile && "dailyos-dev.db",
+                        devState?.hasDevWorkspace && "DailyOS-dev/",
+                      ].filter(Boolean).join(" + ")}
+                      variant="outline"
+                      loading={loading === "clean_artifacts"}
+                      disabled={loading !== null}
+                      onClick={async () => {
+                        setLoading("clean_artifacts");
+                        try {
+                          const result = await invoke<string>("dev_clean_artifacts", {
+                            includeWorkspace: true,
+                          });
+                          devToast("success", result);
+                          await refreshState();
+                        } catch (err) {
+                          devToast("error", typeof err === "string" ? err : "Cleanup failed");
+                        } finally {
+                          setLoading(null);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Workspace info */}
             <section className="border-t pt-4">
