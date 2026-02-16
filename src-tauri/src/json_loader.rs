@@ -131,6 +131,17 @@ pub struct JsonPrepSummary {
     pub discuss: Option<Vec<String>>,
     pub watch: Option<Vec<String>>,
     pub wins: Option<Vec<String>>,
+    pub context: Option<String>,
+    pub stakeholders: Option<Vec<JsonStakeholder>>,
+    pub open_items: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JsonStakeholder {
+    pub name: String,
+    pub role: Option<String>,
+    pub focus: Option<String>,
 }
 
 /// Load schedule from JSON
@@ -173,10 +184,19 @@ pub fn load_schedule_json(today_dir: &Path) -> Result<(DayOverview, Vec<Meeting>
                 risks: ps.watch,
                 wins: ps.wins,
                 actions: ps.discuss,
-                context: None,
-                stakeholders: None,
+                context: ps.context,
+                stakeholders: ps.stakeholders.map(|slist| {
+                    slist
+                        .into_iter()
+                        .map(|s| crate::types::Stakeholder {
+                            name: s.name,
+                            role: s.role,
+                            focus: s.focus,
+                        })
+                        .collect()
+                }),
                 questions: None,
-                open_items: None,
+                open_items: ps.open_items,
                 historical_context: None,
                 source_references: None,
             });
@@ -427,14 +447,6 @@ pub struct JsonPrep {
     pub stakeholder_insights: Option<Vec<crate::entity_intel::StakeholderInsight>>,
     /// Recent email-derived signals linked to this entity (I215)
     pub recent_email_signals: Option<Vec<crate::db::DbEmailSignal>>,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct JsonStakeholder {
-    pub name: String,
-    pub role: Option<String>,
-    pub focus: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]

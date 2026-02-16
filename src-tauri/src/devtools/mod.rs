@@ -49,6 +49,12 @@ pub struct DevState {
     pub people_count: usize,
     pub has_today_data: bool,
     pub google_auth_status: String,
+    /// Whether the app is currently using the isolated dev DB (I298).
+    pub is_dev_db_mode: bool,
+    /// Stale `dailyos-dev.db` file exists on disk (I298).
+    pub has_dev_db_file: bool,
+    /// `~/Documents/DailyOS-dev/` workspace directory exists (I298).
+    pub has_dev_workspace: bool,
 }
 
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
@@ -82,12 +88,28 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             | "simulate_briefing"
             | "mock_enriched"
     );
-    if destructive && !is_dev_workspace(state) {
-        return Err(
-            "Refused: workspace points to real data, not the dev sandbox \
-             (~/Documents/DailyOS-dev). Switch workspace back to DailyOS-dev first."
-                .into(),
-        );
+
+    // I298: On destructive scenario entry, activate dev DB isolation and stash
+    // the current workspace path so restore_live() can return to it.
+    if destructive {
+        // Stash current workspace path (only if not already in dev mode)
+        if !crate::db::is_dev_db_mode() {
+            let current_ws = state
+                .config
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+            if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+                *guard = current_ws;
+            }
+        }
+
+        // Switch to dev DB
+        crate::db::set_dev_db_mode(true);
+        // Reopen DB at the dev path
+        if let Ok(mut guard) = state.db.lock() {
+            *guard = ActionDb::open().ok();
+        }
     }
 
     match scenario {
@@ -121,6 +143,298 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             Ok("Enriched mock installed — intelligence signals populated".into())
         }
         _ => Err(format!("Unknown scenario: {}", scenario)),
+    }
+}
+
+/// Restore to live mode: undo dev DB isolation and return to the real workspace.
+///
+/// 1. Read the stashed workspace path from `pre_dev_workspace`
+/// 2. Deactivate dev DB mode
+/// 3. Reopen DB at the live path
+/// 4. Restore workspace config
+pub fn restore_live(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if !crate::db::is_dev_db_mode() {
+        return Err("Already in live mode".into());
+    }
+
+    // 1. Read stashed workspace path
+    let original_workspace = state
+        .pre_dev_workspace
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .take();
+
+    // 2. Deactivate dev DB mode
+    crate::db::set_dev_db_mode(false);
+
+    // 3. Reopen DB at live path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 4. Restore workspace config (reload from disk — it was never overwritten)
+    match crate::state::load_config() {
+        Ok(config) => {
+            if let Ok(mut guard) = state.config.write() {
+                *guard = Some(config.clone());
+            }
+            Ok(format!(
+                "Restored to live mode — workspace: {}",
+                config.workspace_path
+            ))
+        }
+        Err(_) => {
+            // If no live config exists, try using the stashed path
+            if let Some(ws) = original_workspace {
+                crate::state::create_or_update_config(state, |config| {
+                    config.workspace_path = ws;
+                })?;
+            }
+            Ok("Restored to live mode (config recreated)".into())
+        }
+    }
+}
+
+/// Purge all known mock/dev data from the current database (I298).
+///
+/// Targets the exact IDs seeded by `seed_database()` and `seed_intelligence_data()`.
+/// Safe to run against the live DB — only removes rows with known mock IDs.
+/// Returns a summary of how many rows were deleted per table.
+pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db = db_guard
+        .as_ref()
+        .ok_or_else(|| "Database unavailable".to_string())?;
+    let conn = db.conn_ref();
+
+    let mut summary = Vec::new();
+
+    // Known mock account IDs
+    let mock_account_ids = [
+        "acme-corp",
+        "globex-industries",
+        "initech",
+        "contoso",
+        "contoso--enterprise",
+        "contoso--smb",
+    ];
+
+    // Known mock project IDs
+    let mock_project_ids = [
+        "acme-phase-2",
+        "globex-team-b-recovery",
+        "platform-migration",
+    ];
+
+    // Known mock entity IDs (accounts + projects)
+    let mock_entity_ids: Vec<&str> = mock_account_ids
+        .iter()
+        .chain(mock_project_ids.iter())
+        .copied()
+        .collect();
+
+    // Known mock action ID prefixes and exact IDs
+    let mock_action_ids = [
+        "act-sow-acme",
+        "act-qbr-deck-globex",
+        "act-kickoff-initech",
+        "act-nps-acme",
+        "act-quarterly-summary",
+        "act-phase2-scope",
+        "act-phase2-stakeholders",
+        "act-teamb-usage-audit",
+        "act-teamb-interview",
+        "act-migration-arch",
+        "act-transcript-kt-plan",
+        "act-transcript-phase2-scope",
+        "act-legal-review-acme",
+        "act-finance-approval-initech",
+    ];
+
+    // Known mock capture IDs
+    let mock_capture_ids = [
+        "cap-acme-win-1",
+        "cap-acme-risk-1",
+        "cap-globex-win-1",
+        "cap-globex-risk-1",
+        "cap-today-acme-win-1",
+        "cap-today-acme-win-2",
+        "cap-today-acme-risk-1",
+        "cap-today-acme-decision-1",
+        "cap-today-acme-decision-2",
+    ];
+
+    // Known mock people IDs
+    let mock_people_ids = [
+        "sarah-chen-acme-com",
+        "alex-torres-acme-com",
+        "pat-kim-acme-com",
+        "pat-reynolds-globex-com",
+        "jamie-morrison-globex-com",
+        "casey-lee-globex-com",
+        "dana-patel-initech-com",
+        "priya-sharma-initech-com",
+        "mike-chen-dailyos-test",
+        "lisa-park-dailyos-test",
+        "jordan-wells-example-com",
+        "taylor-nguyen-contractor-io",
+    ];
+
+    // Helper: delete by exact IDs from a table
+    let delete_by_ids = |table: &str, column: &str, ids: &[&str]| -> Result<usize, String> {
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!(
+            "DELETE FROM {} WHERE {} IN ({})",
+            table,
+            column,
+            placeholders.join(", ")
+        );
+        let params: Vec<&dyn rusqlite::types::ToSql> = ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        conn.execute(&sql, params.as_slice())
+            .map_err(|e| format!("{} delete: {}", table, e))
+    };
+
+    // --- Junction tables first (FK dependencies) ---
+
+    // meeting_entities: delete by entity_id (accounts + projects)
+    let n = delete_by_ids("meeting_entities", "entity_id", &mock_entity_ids)?;
+    // Also delete by meeting_id pattern (mh-* and mtg-*)
+    let n2 = conn
+        .execute(
+            "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
+            [],
+        )
+        .map_err(|e| format!("meeting_entities pattern delete: {}", e))?;
+    summary.push(format!("meeting_entities: {}", n + n2));
+
+    // meeting_attendees: delete by person_id
+    let n = delete_by_ids("meeting_attendees", "person_id", &mock_people_ids)?;
+    summary.push(format!("meeting_attendees: {}", n));
+
+    // entity_people: delete by entity_id
+    let n = delete_by_ids("entity_people", "entity_id", &mock_entity_ids)?;
+    summary.push(format!("entity_people: {}", n));
+
+    // --- Primary tables ---
+
+    let n = delete_by_ids("accounts", "id", &mock_account_ids)?;
+    summary.push(format!("accounts: {}", n));
+
+    let n = delete_by_ids("entities", "id", &mock_entity_ids)?;
+    summary.push(format!("entities: {}", n));
+
+    let n = delete_by_ids("projects", "id", &mock_project_ids)?;
+    summary.push(format!("projects: {}", n));
+
+    let n = delete_by_ids("actions", "id", &mock_action_ids)?;
+    summary.push(format!("actions: {}", n));
+
+    // meetings_history: delete by exact IDs + patterns
+    let n = conn
+        .execute(
+            "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
+            [],
+        )
+        .map_err(|e| format!("meetings_history delete: {}", e))?;
+    summary.push(format!("meetings_history: {}", n));
+
+    let n = delete_by_ids("captures", "id", &mock_capture_ids)?;
+    summary.push(format!("captures: {}", n));
+
+    let n = delete_by_ids("people", "id", &mock_people_ids)?;
+    summary.push(format!("people: {}", n));
+
+    // entity_intelligence: delete by entity_id
+    let n = conn
+        .execute(
+            "DELETE FROM entity_intelligence WHERE entity_id IN ('acme-corp', 'globex-industries', 'initech', 'contoso', 'contoso--enterprise', 'contoso--smb', 'acme-phase-2', 'globex-team-b-recovery', 'platform-migration')",
+            [],
+        )
+        .unwrap_or(0);
+    if n > 0 {
+        summary.push(format!("entity_intelligence: {}", n));
+    }
+
+    // meeting_prep_state: delete mock prep entries
+    let n = conn
+        .execute(
+            "DELETE FROM meeting_prep_state WHERE prep_file LIKE 'preps/acme-%' OR prep_file LIKE 'preps/globex-%' OR prep_file LIKE 'preps/initech-%' OR calendar_event_id LIKE 'cal-acme-%' OR calendar_event_id LIKE 'cal-globex-%' OR calendar_event_id LIKE 'cal-initech-%'",
+            [],
+        )
+        .unwrap_or(0);
+    if n > 0 {
+        summary.push(format!("meeting_prep_state: {}", n));
+    }
+
+    let total: usize = summary
+        .iter()
+        .filter_map(|s| s.split(": ").nth(1)?.parse::<usize>().ok())
+        .sum();
+
+    Ok(format!(
+        "Purged {} mock rows — {}",
+        total,
+        summary.join(", ")
+    ))
+}
+
+/// Check whether stale dev artifacts exist on disk (I298).
+///
+/// Returns indicators for: dev DB file exists, dev workspace dir exists.
+pub fn check_dev_artifacts() -> (bool, bool) {
+    let home = dirs::home_dir().unwrap_or_default();
+    let dev_db_exists = home.join(".dailyos").join("dailyos-dev.db").exists();
+    let dev_workspace_exists = home.join("Documents").join("DailyOS-dev").exists();
+    (dev_db_exists, dev_workspace_exists)
+}
+
+/// Delete stale dev artifacts from disk (I298).
+///
+/// Removes `~/.dailyos/dailyos-dev.db` (+ WAL/SHM) and optionally
+/// the `~/Documents/DailyOS-dev/` workspace directory.
+pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let mut cleaned = Vec::new();
+
+    // Dev DB files
+    for filename in &["dailyos-dev.db", "dailyos-dev.db-wal", "dailyos-dev.db-shm"] {
+        let path = home.join(".dailyos").join(filename);
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
+            cleaned.push(filename.to_string());
+        }
+    }
+
+    // Dev workspace
+    if include_workspace {
+        let dev_ws = home.join("Documents").join("DailyOS-dev");
+        if dev_ws.exists() {
+            std::fs::remove_dir_all(&dev_ws)
+                .map_err(|e| format!("Failed to delete DailyOS-dev: {}", e))?;
+            cleaned.push("DailyOS-dev/".to_string());
+        }
+    }
+
+    if cleaned.is_empty() {
+        Ok("No dev artifacts found".into())
+    } else {
+        Ok(format!("Cleaned: {}", cleaned.join(", ")))
     }
 }
 
@@ -196,6 +510,8 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         })
         .unwrap_or_else(|_| "unknown".to_string());
 
+    let (has_dev_db_file, has_dev_workspace) = check_dev_artifacts();
+
     Ok(DevState {
         is_debug_build: cfg!(debug_assertions),
         has_config,
@@ -208,6 +524,9 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         people_count,
         has_today_data,
         google_auth_status,
+        is_dev_db_mode: crate::db::is_dev_db_mode(),
+        has_dev_db_file,
+        has_dev_workspace,
     })
 }
 
@@ -227,20 +546,33 @@ fn reset_all(state: &AppState) -> Result<(), String> {
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
 
-    // 2. Delete config and state files
-    let files_to_delete = [
+    // 2. Delete config and state files.
+    // I298: When dev DB mode is active, only delete the dev DB — not the live one.
+    let db_files: Vec<std::path::PathBuf> = if crate::db::is_dev_db_mode() {
+        vec![
+            dailyos_dir.join("dailyos-dev.db"),
+            dailyos_dir.join("dailyos-dev.db-wal"),
+            dailyos_dir.join("dailyos-dev.db-shm"),
+        ]
+    } else {
+        vec![
+            dailyos_dir.join("dailyos.db"),
+            dailyos_dir.join("dailyos.db-wal"),
+            dailyos_dir.join("dailyos.db-shm"),
+            // Legacy DB name (pre-0.7.6)
+            dailyos_dir.join("actions.db"),
+            dailyos_dir.join("actions.db-wal"),
+            dailyos_dir.join("actions.db-shm"),
+        ]
+    };
+
+    let mut files_to_delete = vec![
         dailyos_dir.join("config.json"),
-        dailyos_dir.join("dailyos.db"),
-        dailyos_dir.join("dailyos.db-wal"),
-        dailyos_dir.join("dailyos.db-shm"),
-        // Legacy DB name (pre-0.7.6)
-        dailyos_dir.join("actions.db"),
-        dailyos_dir.join("actions.db-wal"),
-        dailyos_dir.join("actions.db-shm"),
         dailyos_dir.join("execution_history.json"),
         dailyos_dir.join("transcript_records.json"),
         dailyos_dir.join("google").join("token.json"),
     ];
+    files_to_delete.extend(db_files);
 
     for path in &files_to_delete {
         if path.exists() {
@@ -966,6 +1298,52 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Project meeting link: {}", e))?;
     }
 
+    // I298: Today's meetings → account junction (date-aligned IDs matching schedule.json.tmpl)
+    let today_str = date_only(0);
+    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
+        (format!("mtg-acme-weekly-{}", today_str), "acme-corp", "account"),
+        (format!("mtg-initech-kickoff-{}", today_str), "initech", "account"),
+        (format!("mtg-globex-qbr-{}", today_str), "globex-industries", "account"),
+    ];
+    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
+    }
+
+    // I298: Also seed today's customer meetings into meetings_history with ISO timestamps
+    // so DailyFocus/compute_focus_capacity() picks them up.
+    let today_local = Local::now();
+    let make_iso = |hour: u32, min: u32| -> String {
+        today_local
+            .date_naive()
+            .and_hms_opt(hour, min, 0)
+            .map(|naive| {
+                Local
+                    .from_local_datetime(&naive)
+                    .single()
+                    .map(|dt| dt.to_rfc3339())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    };
+    let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>)> = vec![
+        (format!("mtg-acme-weekly-{}", today_str), "Acme Corp Weekly Sync", "customer", make_iso(8, 0), Some("acme-corp")),
+        (format!("mtg-eng-standup-{}", today_str), "Engineering Standup", "team_sync", make_iso(9, 30), None),
+        (format!("mtg-initech-kickoff-{}", today_str), "Initech Phase 2 Kickoff", "customer", make_iso(10, 0), Some("initech")),
+        (format!("mtg-1on1-sarah-{}", today_str), "1:1 with Sarah (Manager)", "one_on_one", make_iso(11, 0), None),
+        (format!("mtg-globex-qbr-{}", today_str), "Globex Industries QBR", "qbr", make_iso(13, 0), Some("globex-industries")),
+        (format!("mtg-sprint-review-{}", today_str), "Product Team Sprint Review", "internal", make_iso(14, 30), None),
+        (format!("mtg-all-hands-{}", today_str), "Company All Hands", "all_hands", make_iso(16, 30), None),
+    ];
+    for (id, title, mtype, start_time, account_id) in &today_meetings_history {
+        conn.execute(
+            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, account_id, &today],
+        ).map_err(|e| format!("Today meeting history: {}", e))?;
+    }
+
     // Project-linked people (via entity_people)
     let project_people: Vec<(&str, &str, &str)> = vec![
         ("acme-phase-2", "sarah-chen-acme-com", "stakeholder"),
@@ -1071,6 +1449,14 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![id, title, mtype, start_time, account_id, summary, &today],
         ).map_err(|e| e.to_string())?;
+
+        // I298: Also link historical customer meetings to their account entity
+        if let Some(acct) = account_id {
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, 'account')",
+                rusqlite::params![id, acct],
+            ).map_err(|e| format!("Historical meeting-entity link: {}", e))?;
+        }
     }
 
     // --- Captures ---
