@@ -197,7 +197,7 @@ function RootLayout() {
 // Dashboard page content
 function DashboardPage() {
   const { state, refresh } = useDashboardData();
-  const { runNow } = useWorkflow();
+  const { runNow, isRunning, status } = useWorkflow();
 
   switch (state.status) {
     case "loading":
@@ -207,7 +207,7 @@ function DashboardPage() {
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
-      return <DailyBriefing data={state.data} freshness={state.freshness} onRunBriefing={runNow} />;
+      return <DailyBriefing data={state.data} freshness={state.freshness} onRunBriefing={runNow} isRunning={isRunning} workflowStatus={status} />;
   }
 }
 
