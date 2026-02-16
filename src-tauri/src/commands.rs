@@ -8110,7 +8110,7 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     };
 
     // Ensure mcpServers object exists
-    if !config.get("mcpServers").is_some() {
+    if config.get("mcpServers").is_none() {
         config["mcpServers"] = serde_json::json!({});
     }
 
