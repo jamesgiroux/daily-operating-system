@@ -14,36 +14,31 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[
-    Migration {
-        version: 1,
-        sql: include_str!("migrations/001_baseline.sql"),
-    },
-    Migration {
-        version: 2,
-        sql: include_str!("migrations/002_internal_teams.sql"),
-    },
-    Migration {
-        version: 3,
-        sql: include_str!("migrations/003_account_team.sql"),
-    },
-    Migration {
-        version: 4,
-        sql: include_str!("migrations/004_account_team_role_index.sql"),
-    },
-    Migration {
-        version: 5,
-        sql: include_str!("migrations/005_email_signals.sql"),
-    },
-    Migration {
-        version: 6,
-        sql: include_str!("migrations/006_content_embeddings.sql"),
-    },
-    Migration {
-        version: 7,
-        sql: include_str!("migrations/007_chat_sessions.sql"),
-    },
-];
+const MIGRATIONS: &[Migration] = &[Migration {
+    version: 1,
+    sql: include_str!("migrations/001_baseline.sql"),
+}, Migration {
+    version: 2,
+    sql: include_str!("migrations/002_internal_teams.sql"),
+}, Migration {
+    version: 3,
+    sql: include_str!("migrations/003_account_team.sql"),
+}, Migration {
+    version: 4,
+    sql: include_str!("migrations/004_account_team_role_index.sql"),
+}, Migration {
+    version: 5,
+    sql: include_str!("migrations/005_email_signals.sql"),
+}, Migration {
+    version: 6,
+    sql: include_str!("migrations/006_content_embeddings.sql"),
+}, Migration {
+    version: 7,
+    sql: include_str!("migrations/007_chat_interface.sql"),
+}, Migration {
+    version: 8,
+    sql: include_str!("migrations/008_missing_indexes.sql"),
+}];
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -192,13 +187,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 7,
-            "should apply baseline through chat sessions migrations"
+            applied, 8,
+            "should apply baseline + internal teams + account team + role index + email signals + content embeddings + chat interface + missing indexes migrations"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -290,32 +285,29 @@ mod tests {
         )
         .expect("email_signals table should exist");
 
+        // Verify content_embeddings exists and accepts inserts
         conn.execute(
             "INSERT INTO content_embeddings (
                 id, content_file_id, chunk_index, chunk_text, embedding, created_at
-             ) VALUES (
-                'emb-1', 'ci1', 0, 'chunk text', X'00000000', '2026-02-15T00:00:00Z'
-             )",
+             ) VALUES ('emb-1', 'ci1', 0, 'test chunk', X'', '2025-01-01')",
             [],
         )
         .expect("content_embeddings table should exist");
 
+        // Verify chat_sessions exists and accepts inserts
         conn.execute(
             "INSERT INTO chat_sessions (
-                id, entity_id, entity_type, session_start, created_at
-             ) VALUES (
-                'sess-1', 'a1', 'account', '2026-02-15T00:00:00Z', '2026-02-15T00:00:00Z'
-             )",
+                id, entity_id, entity_type, session_start, turn_count, created_at
+             ) VALUES ('cs-1', 'a1', 'account', '2025-01-01', 0, '2025-01-01')",
             [],
         )
         .expect("chat_sessions table should exist");
 
+        // Verify chat_turns exists and accepts inserts
         conn.execute(
             "INSERT INTO chat_turns (
                 id, session_id, turn_index, role, content, timestamp
-             ) VALUES (
-                'turn-1', 'sess-1', 0, 'user', 'hello', '2026-02-15T00:00:00Z'
-             )",
+             ) VALUES ('ct-1', 'cs-1', 0, 'user', 'Hello', '2025-01-01')",
             [],
         )
         .expect("chat_turns table should exist");
@@ -330,6 +322,8 @@ mod tests {
             "CREATE TABLE actions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                due_date TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
@@ -361,7 +355,8 @@ mod tests {
                 title TEXT NOT NULL,
                 meeting_type TEXT NOT NULL,
                 start_time TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                calendar_event_id TEXT
              );
              CREATE TABLE people (
                 id TEXT PRIMARY KEY,
@@ -375,32 +370,22 @@ mod tests {
                 relationship_type TEXT DEFAULT 'associated',
                 PRIMARY KEY (entity_id, person_id)
              );
-             CREATE TABLE content_index (
-                id TEXT PRIMARY KEY,
+             CREATE TABLE meeting_entities (
+                meeting_id TEXT NOT NULL,
                 entity_id TEXT NOT NULL,
-                entity_type TEXT NOT NULL DEFAULT 'account',
-                filename TEXT NOT NULL,
-                relative_path TEXT NOT NULL,
-                absolute_path TEXT NOT NULL,
-                format TEXT NOT NULL,
-                file_size INTEGER NOT NULL DEFAULT 0,
-                modified_at TEXT NOT NULL,
-                indexed_at TEXT NOT NULL,
-                extracted_at TEXT,
-                summary TEXT,
-                content_type TEXT NOT NULL DEFAULT 'general',
-                priority INTEGER NOT NULL DEFAULT 5
+                entity_type TEXT NOT NULL,
+                PRIMARY KEY (meeting_id, entity_id)
              );",
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2-v7
+        // Run migrations — should bootstrap v1 and apply v2/v3/v4/v5/v6/v7/v8
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 6, "bootstrap should mark v1, then apply v2-v7");
+        assert_eq!(applied, 7, "bootstrap should mark v1, then apply v2/v3/v4/v5/v6/v7/v8");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 7);
+        assert_eq!(version, 8);
 
         // Verify existing data is untouched
         let title: String = conn
