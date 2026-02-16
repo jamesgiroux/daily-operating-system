@@ -19,9 +19,9 @@ use crate::parser::{count_inbox, list_inbox_files};
 use crate::scheduler::get_next_run_time as scheduler_get_next_run_time;
 use crate::state::{reload_config, AppState, DbTryRead};
 use crate::types::{
-    Action, CalendarEvent, CapturedOutcome, Config, DashboardData, DayStats, EmailSyncStatus,
-    ExecutionRecord, FocusAvailability, FocusData, FocusMeeting, FullMeetingPrep, GoogleAuthStatus,
-    InboxFile, LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
+    Action, CalendarEvent, CapturedOutcome, Config, DailyFocus, DashboardData, DayStats,
+    EmailSyncStatus, ExecutionRecord, FullMeetingPrep, GoogleAuthStatus, InboxFile,
+    LiveProactiveSuggestion, MeetingIntelligence, MeetingType, OverlayStatus,
     PostMeetingCaptureConfig, Priority, SourceReference, WeekOverview, WorkflowId, WorkflowStatus,
 };
 use crate::SchedulerSender;
@@ -367,6 +367,44 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 ),
             };
 
+        // Compute capacity-aware focus priorities (live, not a briefing artifact)
+        let focus: Option<DailyFocus> = (|| {
+            let today_date = chrono::Local::now().date_naive();
+            let capacity = crate::focus_capacity::compute_focus_capacity(
+                crate::focus_capacity::FocusCapacityInput {
+                    meetings: meetings.clone(),
+                    source: if live_events.is_empty() {
+                        crate::focus_capacity::FocusCapacitySource::BriefingFallback
+                    } else {
+                        crate::focus_capacity::FocusCapacitySource::Live
+                    },
+                    timezone: tz,
+                    work_hours_start: config.google.work_hours_start,
+                    work_hours_end: config.google.work_hours_end,
+                    day_date: today_date,
+                },
+            );
+            let candidates = match state.with_db_try_read(|db| db.get_focus_candidate_actions(7)) {
+                DbTryRead::Ok(Ok(c)) => c,
+                _ => return None,
+            };
+            let (prioritized, top_three, implications) =
+                crate::focus_prioritization::prioritize_actions(
+                    candidates,
+                    capacity.available_minutes,
+                );
+            Some(DailyFocus {
+                available_minutes: capacity.available_minutes,
+                deep_work_minutes: capacity.deep_work_minutes,
+                meeting_minutes: capacity.meeting_minutes,
+                meeting_count: capacity.meeting_count,
+                prioritized_actions: prioritized,
+                top_three,
+                implications,
+                available_blocks: capacity.available_blocks,
+            })
+        })();
+
         // Calculate stats (exclude cancelled meetings)
         let inbox_count = count_inbox(workspace);
         let active_meetings: Vec<_> = meetings
@@ -393,6 +431,7 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                 actions,
                 emails,
                 email_sync,
+                focus,
             },
             freshness,
             google_auth,
@@ -1278,198 +1317,6 @@ pub async fn retry_week_enrichment(state: State<'_, Arc<AppState>>) -> Result<St
 // Focus Data Command
 // =============================================================================
 
-/// Result type for focus data
-#[derive(Debug, serde::Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase")]
-pub enum FocusResult {
-    Success { data: FocusData },
-    NotFound { message: String },
-    Error { message: String },
-}
-
-fn focus_capacity_source_for_live_events(
-    live_events: &[CalendarEvent],
-) -> crate::focus_capacity::FocusCapacitySource {
-    if live_events.is_empty() {
-        crate::focus_capacity::FocusCapacitySource::BriefingFallback
-    } else {
-        crate::focus_capacity::FocusCapacitySource::Live
-    }
-}
-
-fn is_focus_key_meeting_type(meeting_type: &MeetingType) -> bool {
-    matches!(
-        meeting_type,
-        MeetingType::Customer
-            | MeetingType::Qbr
-            | MeetingType::Partnership
-            | MeetingType::External
-            | MeetingType::OneOnOne
-    )
-}
-
-/// Get focus/priority data — assembled from schedule + live calendar + SQLite actions.
-#[tauri::command]
-pub fn get_focus_data(state: State<Arc<AppState>>) -> FocusResult {
-    let started = std::time::Instant::now();
-    let mut db_busy = false;
-
-    let result = (|| {
-        // Get config
-        let config = match state.config.read() {
-            Ok(guard) => match guard.clone() {
-                Some(c) => c,
-                None => {
-                    return FocusResult::Error {
-                        message: "No configuration loaded".to_string(),
-                    }
-                }
-            },
-            Err(_) => {
-                return FocusResult::Error {
-                    message: "Internal error: config lock poisoned".to_string(),
-                }
-            }
-        };
-
-        let workspace = Path::new(&config.workspace_path);
-        let today_dir = workspace.join("_today");
-
-        // 1. Load schedule.json — if missing, nothing to show
-        let (overview, briefing_meetings) = match load_schedule_json(&today_dir) {
-            Ok(data) => data,
-            Err(_) => {
-                return FocusResult::NotFound {
-                    message: "No briefing data available. Run a briefing first.".to_string(),
-                }
-            }
-        };
-
-        // 2. Focus statement from schedule
-        let focus_statement = overview.focus;
-
-        // 3. Merge briefing meetings with live calendar (ADR-0032 pattern)
-        let live_events = state
-            .calendar_events
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        let tz: chrono_tz::Tz = config
-            .schedules
-            .today
-            .timezone
-            .parse()
-            .unwrap_or(chrono_tz::America::New_York);
-        let meetings = crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
-
-        // 4. Compute capacity from merged meetings (live-first with fallback warning)
-        let source = focus_capacity_source_for_live_events(&live_events);
-        let day_date = chrono::Utc::now().with_timezone(&tz).date_naive();
-        let mut capacity = crate::focus_capacity::compute_focus_capacity(
-            crate::focus_capacity::FocusCapacityInput {
-                meetings: meetings.clone(),
-                source,
-                timezone: tz,
-                work_hours_start: config.google.work_hours_start,
-                work_hours_end: config.google.work_hours_end,
-                day_date,
-            },
-        );
-
-        // Suppress stale-data warning when the briefing schedule is from today —
-        // it was generated from today's Google Calendar and is fresh enough.
-        if overview.date == day_date.format("%Y-%m-%d").to_string() {
-            capacity.warnings.clear();
-        }
-
-        // 5. Filter meetings to "key" types (where prep matters)
-        let key_meetings: Vec<FocusMeeting> = meetings
-            .iter()
-            .filter(|m| m.overlay_status != Some(OverlayStatus::Cancelled))
-            .filter(|m| is_focus_key_meeting_type(&m.meeting_type))
-            .map(|m| {
-                let type_str = match m.meeting_type {
-                    MeetingType::Customer => "customer",
-                    MeetingType::Qbr => "qbr",
-                    MeetingType::Partnership => "partnership",
-                    MeetingType::External => "external",
-                    MeetingType::OneOnOne => "one_on_one",
-                    MeetingType::Training => "training",
-                    MeetingType::Internal => "internal",
-                    MeetingType::TeamSync => "team_sync",
-                    MeetingType::AllHands => "all_hands",
-                    MeetingType::Personal => "personal",
-                };
-                FocusMeeting {
-                    id: m.id.clone(),
-                    title: m.title.clone(),
-                    time: m.time.clone(),
-                    end_time: m.end_time.clone(),
-                    meeting_type: type_str.to_string(),
-                    has_prep: m.has_prep,
-                    account: m.account.clone(),
-                    prep_file: m.prep_file.clone(),
-                }
-            })
-            .collect();
-
-        // 6. Legacy priorities list (backward compatible) + candidate actions for ranker.
-        let priorities = match state.with_db_try_read(|db| db.get_due_actions(1)) {
-            DbTryRead::Ok(Ok(actions)) => actions,
-            DbTryRead::Busy => {
-                db_busy = true;
-                Vec::new()
-            }
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => Vec::new(),
-        };
-        let candidate_actions = match state.with_db_try_read(|db| db.get_focus_candidate_actions(7))
-        {
-            DbTryRead::Ok(Ok(actions)) => actions,
-            DbTryRead::Busy => {
-                db_busy = true;
-                Vec::new()
-            }
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => Vec::new(),
-        };
-
-        // 7. Deterministic action prioritization informed by capacity (I179)
-        let (prioritized_actions, top_three, implications) =
-            crate::focus_prioritization::prioritize_actions(
-                candidate_actions,
-                capacity.available_minutes,
-            );
-
-        FocusResult::Success {
-            data: FocusData {
-                focus_statement,
-                priorities,
-                key_meetings,
-                available_blocks: capacity.available_blocks.clone(),
-                total_focus_minutes: capacity.available_minutes,
-                availability: FocusAvailability {
-                    source: capacity.source.as_str().to_string(),
-                    warnings: capacity.warnings,
-                    meeting_count: capacity.meeting_count,
-                    meeting_minutes: capacity.meeting_minutes,
-                    available_minutes: capacity.available_minutes,
-                    deep_work_minutes: capacity.deep_work_minutes,
-                    deep_work_blocks: capacity.deep_work_blocks,
-                },
-                prioritized_actions,
-                top_three,
-                implications,
-            },
-        }
-    })();
-
-    log_command_latency("get_focus_data", started, READ_CMD_LATENCY_BUDGET_MS);
-    if db_busy {
-        crate::latency::increment_degraded("get_focus_data");
-    }
-    result
-}
-
 // =============================================================================
 // Actions Command
 // =============================================================================
@@ -1976,32 +1823,6 @@ pub async fn refresh_emails(
     .await
     .map_err(|e| format!("Email refresh task failed: {}", e))?
     .map(|_| "Email refresh complete".to_string())
-}
-
-/// Refresh focus/briefing narrative without running full /today pipeline.
-#[tauri::command]
-pub async fn refresh_focus(
-    state: State<'_, Arc<AppState>>,
-    app_handle: tauri::AppHandle,
-) -> Result<String, String> {
-    let config = state
-        .config
-        .read()
-        .map_err(|_| "Lock poisoned")?
-        .clone()
-        .ok_or("No configuration loaded")?;
-
-    let state_clone = state.inner().clone();
-    let workspace_path = config.workspace_path.clone();
-
-    tauri::async_runtime::spawn(async move {
-        let workspace = std::path::Path::new(&workspace_path);
-        let executor = crate::executor::Executor::new(state_clone, app_handle);
-        executor.execute_focus_refresh(workspace).await
-    })
-    .await
-    .map_err(|e| format!("Focus refresh task panicked: {}", e))?
-    .map(|_| "Focus refreshed".to_string())
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data (I144).
@@ -7172,39 +6993,6 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
     use tempfile::tempdir;
-
-    #[test]
-    fn focus_capacity_source_prefers_live_when_events_exist() {
-        let live = vec![CalendarEvent {
-            id: "evt-1".to_string(),
-            title: "Sync".to_string(),
-            start: Utc::now(),
-            end: Utc::now() + chrono::Duration::minutes(30),
-            meeting_type: MeetingType::Customer,
-            account: None,
-            attendees: Vec::new(),
-            is_all_day: false,
-        }];
-        let source = focus_capacity_source_for_live_events(&live);
-        assert_eq!(source.as_str(), "live");
-    }
-
-    #[test]
-    fn focus_capacity_source_falls_back_without_live_events() {
-        let source = focus_capacity_source_for_live_events(&[]);
-        assert_eq!(source.as_str(), "briefing_fallback");
-    }
-
-    #[test]
-    fn key_meeting_filter_matches_expected_types() {
-        assert!(is_focus_key_meeting_type(&MeetingType::Customer));
-        assert!(is_focus_key_meeting_type(&MeetingType::Qbr));
-        assert!(is_focus_key_meeting_type(&MeetingType::Partnership));
-        assert!(is_focus_key_meeting_type(&MeetingType::External));
-        assert!(is_focus_key_meeting_type(&MeetingType::OneOnOne));
-        assert!(!is_focus_key_meeting_type(&MeetingType::Internal));
-        assert!(!is_focus_key_meeting_type(&MeetingType::AllHands));
-    }
 
     #[test]
     fn test_backfill_prep_semantics_value_derives_recent_wins_and_sources() {
