@@ -195,7 +195,7 @@ export function useProjectDetail(projectId: string | undefined) {
     setIndexing(true);
     setIndexFeedback(null);
     try {
-      const result = await invoke<string>("index_entity_content", {
+      const result = await invoke<string>("index_entity_files", {
         entityType: "project",
         entityId: detail.id,
       });
