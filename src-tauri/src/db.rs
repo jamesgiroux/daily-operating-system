@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::Utc;
 use rusqlite::{params, Connection, OpenFlags};
@@ -16,6 +17,27 @@ use thiserror::Error;
 
 use crate::entity::{DbEntity, EntityType};
 use crate::types::LinkedEntity;
+
+// ---------------------------------------------------------------------------
+// Dev DB isolation (I298)
+// ---------------------------------------------------------------------------
+
+/// Process-wide flag steering `ActionDb::db_path()` between live and dev files.
+/// Background threads (executor, intel_queue, watcher, hygiene) all call
+/// `ActionDb::open()` independently — the static flag means they automatically
+/// pick up the right path without plumbing config through every thread.
+static DEV_DB_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Activate dev-mode DB isolation. All subsequent `ActionDb::open()` calls
+/// will target `~/.dailyos/dailyos-dev.db` instead of `dailyos.db`.
+pub fn set_dev_db_mode(enabled: bool) {
+    DEV_DB_MODE.store(enabled, Ordering::Relaxed);
+}
+
+/// Check whether dev-mode DB isolation is active.
+pub fn is_dev_db_mode() -> bool {
+    DEV_DB_MODE.load(Ordering::Relaxed)
+}
 
 /// Errors specific to database operations.
 #[derive(Debug, Error)]
@@ -472,10 +494,18 @@ impl ActionDb {
 
     /// Resolve the default database path: `~/.dailyos/dailyos.db`.
     ///
-    /// Migrates from legacy `actions.db` name on first call if needed.
+    /// When dev-mode DB isolation is active (`set_dev_db_mode(true)`), returns
+    /// `~/.dailyos/dailyos-dev.db` instead. Migration logic only applies to the
+    /// live path — the dev DB is always created fresh.
     fn db_path() -> Result<PathBuf, DbError> {
         let home = dirs::home_dir().ok_or(DbError::HomeDirNotFound)?;
         let dailyos_dir = home.join(".dailyos");
+
+        // Dev-mode: isolated DB, no migration needed
+        if is_dev_db_mode() {
+            return Ok(dailyos_dir.join("dailyos-dev.db"));
+        }
+
         let new_path = dailyos_dir.join("dailyos.db");
         let legacy_path = dailyos_dir.join("actions.db");
 

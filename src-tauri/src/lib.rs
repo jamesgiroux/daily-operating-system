@@ -288,6 +288,9 @@ pub fn run() {
             commands::dev_run_today_full,
             commands::dev_run_week_mechanical,
             commands::dev_run_week_full,
+            commands::dev_restore_live,
+            commands::dev_purge_mock_data,
+            commands::dev_clean_artifacts,
             // I52: Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
