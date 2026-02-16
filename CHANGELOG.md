@@ -43,6 +43,7 @@ The editorial release. Every page redesigned as a magazine-style document you re
 ### MCP Server
 
 - Chat tools for querying entities, searching content, and retrieving briefings via external AI assistants (Claude Desktop via MCP)
+- Semantic search tool (`search_content`) exposes hybrid vector+keyword search to Claude Desktop — ask about specific details in workspace files
 - Chat session persistence — conversations are remembered across sessions
 - Managed CLAUDE.md and settings written to workspace for Claude Desktop discovery
 
@@ -55,6 +56,8 @@ The editorial release. Every page redesigned as a magazine-style document you re
 ### Reliability
 
 - Database renamed from `actions.db` to `dailyos.db` with automatic migration and WAL checkpoint
+- Embedding model initializes asynchronously in the background — app window appears immediately instead of blocking during the 137MB model download
+- Database migration framework tolerates duplicate-column errors for safe re-application
 - Database indexes added for meeting-entity lookups, calendar event deduplication, and action filtering — faster page loads as data grows
 - Removed unused frontend dependencies (lighter install, smaller attack surface)
 - Dev database isolation: pattern-based purge, config backup, no Keychain writes in dev mode
