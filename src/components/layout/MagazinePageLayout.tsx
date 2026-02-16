@@ -52,7 +52,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
   // Chapter tracking — runs internally so pages don't need to manage it
   const chapterIds = chapters?.map((c) => c.id) ?? [];
-  const activeChapterId = useChapterObserver(chapterIds, chapterIds.length > 0);
+  const [activeChapterId, setActiveChapterId] = useChapterObserver(chapterIds, chapterIds.length > 0);
 
   return (
     <div className={styles.magazinePage}>
@@ -79,6 +79,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
         onHome={onNavHome}
         chapters={chapters}
         activeChapterId={activeChapterId}
+        onChapterClick={setActiveChapterId}
       />
 
       {/* Main page container — content above atmosphere layer */}
