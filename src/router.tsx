@@ -66,7 +66,7 @@ const peopleHygieneFilters = new Set(["unnamed", "duplicates"]);
 
 // Route IDs that use the magazine shell instead of the sidebar shell.
 // Add new editorial routes here as they're built.
-const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/meeting/$meetingId"]);
+const MAGAZINE_ROUTE_IDS = new Set(["/", "/week", "/actions", "/actions/$actionId", "/accounts", "/projects", "/people", "/accounts/$accountId", "/accounts/$accountId/risk-briefing", "/projects/$projectId", "/people/$personId", "/emails", "/inbox", "/history", "/settings", "/meeting/$meetingId", "/meeting/history/$meetingId"]);
 
 // Root layout that wraps all pages
 function RootLayout() {

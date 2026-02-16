@@ -17,6 +17,7 @@ import {
   CheckSquare2,
   Users,
   Building2,
+  FolderKanban,
   Settings,
 } from 'lucide-react';
 import { capitalize } from '@/lib/utils';
@@ -76,7 +77,7 @@ export interface FloatingNavIslandProps {
 }
 
 interface NavItem {
-  id: 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
+  id: 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'projects' | 'settings';
   label: string;
   icon: React.ReactNode;
   group: 'main' | 'entity' | 'admin';
@@ -139,6 +140,7 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'people', label: 'People', icon: <Users size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'accounts', label: 'Accounts', icon: <Building2 size={18} strokeWidth={1.8} />, group: 'entity' },
+    { id: 'projects', label: 'Projects', icon: <FolderKanban size={18} strokeWidth={1.8} />, group: 'entity' },
     { id: 'settings', label: 'Settings', icon: <Settings size={18} strokeWidth={1.8} />, group: 'admin' },
   ];
 
