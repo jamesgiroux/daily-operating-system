@@ -1687,6 +1687,14 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<
             .map_err(|e| format!("Failed to create _inbox: {}", e))?;
     }
 
+    // Build allowlist of source directories
+    let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let allowed_source_dirs: Vec<std::path::PathBuf> = vec![
+        home.join("Documents"),
+        home.join("Desktop"),
+        home.join("Downloads"),
+    ];
+
     let mut copied = 0;
 
     for path_str in &paths {
@@ -1694,6 +1702,23 @@ pub fn copy_to_inbox(paths: Vec<String>, state: State<Arc<AppState>>) -> Result<
 
         // Skip directories
         if !source.is_file() {
+            continue;
+        }
+
+        // Validate source path is within allowed directories
+        let canonical_source = std::fs::canonicalize(source)
+            .map_err(|e| format!("Invalid source path '{}': {}", path_str, e))?;
+        let source_str = canonical_source.to_string_lossy();
+        let source_allowed = allowed_source_dirs.iter().any(|dir| {
+            std::fs::canonicalize(dir)
+                .map(|cd| source_str.starts_with(&*cd.to_string_lossy()))
+                .unwrap_or(false)
+        });
+        if !source_allowed {
+            log::warn!(
+                "Rejected copy_to_inbox source outside allowed directories: {}",
+                path_str
+            );
             continue;
         }
 
@@ -1890,11 +1915,11 @@ pub fn get_emails_enriched(state: State<Arc<AppState>>) -> Result<EmailBriefingD
             let entity_name: String = {
                 let eid = entity_id.clone();
                 let etype = entity_type.clone();
-                match state.with_db_try_read(move |db| -> Result<String, crate::db::DbError> {
-                    if etype == "account" {
-                        Ok(db.get_account(&eid)?.map(|a| a.name).unwrap_or(eid))
+                match state.with_db_try_read(|db| -> Result<String, crate::db::DbError> {
+                    if &etype == "account" {
+                        Ok(db.get_account(&eid)?.map(|a| a.name).unwrap_or_else(|| eid.clone()))
                     } else {
-                        Ok(db.get_project(&eid)?.map(|p| p.name).unwrap_or(eid))
+                        Ok(db.get_project(&eid)?.map(|p| p.name).unwrap_or_else(|| eid.clone()))
                     }
                 }) {
                     crate::state::DbTryRead::Ok(Ok(name)) => name,
@@ -5903,8 +5928,44 @@ pub fn index_entity_files(
 }
 
 /// Reveal a file in macOS Finder.
+///
+/// Path must resolve to within the workspace directory or ~/.dailyos/ (I293).
 #[tauri::command]
-pub fn reveal_in_finder(path: String) -> Result<(), String> {
+pub fn reveal_in_finder(
+    path: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|e| format!("Invalid path: {}", e))?;
+    let canonical_str = canonical.to_string_lossy();
+
+    // Allow workspace directory
+    let workspace_ok = state
+        .config
+        .read()
+        .ok()
+        .and_then(|c| c.as_ref().map(|cfg| cfg.workspace_path.clone()))
+        .map(|wp| {
+            std::fs::canonicalize(&wp)
+                .map(|cwp| canonical_str.starts_with(&*cwp.to_string_lossy()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    // Allow ~/.dailyos/
+    let config_ok = dirs::home_dir()
+        .map(|h| {
+            let config_dir = h.join(".dailyos");
+            std::fs::canonicalize(&config_dir)
+                .map(|cd| canonical_str.starts_with(&*cd.to_string_lossy()))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+
+    if !workspace_ok && !config_ok {
+        return Err("Path is outside the workspace directory".to_string());
+    }
+
     std::process::Command::new("open")
         .arg("-R")
         .arg(&path)
