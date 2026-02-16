@@ -243,24 +243,38 @@ enum CallbackTone {
 }
 
 fn render_callback_html(title: &str, message: &str, tone: CallbackTone) -> String {
-    let (accent, badge_bg, badge_text) = match tone {
-        CallbackTone::Success => ("#0f766e", "#d1fae5", "#065f46"),
-        CallbackTone::Error => ("#b91c1c", "#fee2e2", "#7f1d1d"),
-        CallbackTone::Info => ("#1d4ed8", "#dbeafe", "#1e3a8a"),
+    // Editorial design system colors (ADR-0076)
+    let (accent, rule_color) = match tone {
+        CallbackTone::Success => ("#7eaa7b", "#7eaa7b"), // Sage
+        CallbackTone::Error => ("#c4654a", "#c4654a"),   // Terracotta
+        CallbackTone::Info => ("#c9a227", "#c9a227"),    // Turmeric
     };
 
     format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\" /><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\
-         <title>DailyOS Authorization</title></head>\
-         <body style=\"margin:0;background:linear-gradient(135deg,#f8fafc,#eff6ff);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#0f172a;\">\
-         <main style=\"min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;\">\
-         <section style=\"max-width:560px;width:100%;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;box-shadow:0 12px 32px rgba(15,23,42,0.08);\">\
-         <div style=\"display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:{badge_bg};color:{badge_text};font-size:12px;font-weight:600;\">DailyOS</div>\
-         <h1 style=\"margin:14px 0 8px;font-size:22px;line-height:1.3;color:{accent};\">{title}</h1>\
-         <p style=\"margin:0 0 18px;font-size:14px;line-height:1.6;color:#334155;\">{message}</p>\
-         <div style=\"border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;padding:12px 14px;font-size:13px;line-height:1.5;color:#475569;\">\
-         Next: return to DailyOS Settings. This window can now be closed.</div>\
-         </section></main></body></html>"
+        r#"<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DailyOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+</head>
+<body style="margin:0;background:#f5f2ef;color:#1e2530;font-family:'DM Sans',sans-serif;">
+<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 24px;">
+<section style="max-width:480px;width:100%;text-align:center;">
+<div style="font-family:'Montserrat','DM Sans',sans-serif;font-size:28px;font-weight:800;color:#c9a227;margin-bottom:48px;">*</div>
+<div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.1em;color:{accent};margin-bottom:16px;">DailyOS</div>
+<h1 style="margin:0 0 16px;font-family:'DM Sans',sans-serif;font-size:24px;font-weight:500;line-height:1.35;color:#1e2530;">{title}</h1>
+<p style="margin:0 0 40px;font-family:'DM Sans',sans-serif;font-size:15px;line-height:1.65;color:#6b7280;max-width:360px;margin-left:auto;margin-right:auto;">{message}</p>
+<div style="border-top:1px solid {rule_color};padding-top:20px;max-width:320px;margin:0 auto;">
+<p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.04em;color:#6b7280;">Return to DailyOS. This window can be closed.</p>
+</div>
+</section>
+</main>
+</body>
+</html>"#
     )
 }
 
