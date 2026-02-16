@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { Target, ChevronRight, Loader2, ArrowRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { MeetingTimeline } from "@/components/dashboard/MeetingTimeline";
 import { EmailList } from "@/components/dashboard/EmailList";
 import { ActionList } from "@/components/dashboard/ActionList";
 import { TourHighlight } from "@/components/onboarding/TourHighlight";
@@ -154,7 +153,17 @@ export function DashboardTour({ onNext, onSkipTour }: DashboardTourProps) {
           )}
 
           <TourHighlight ref={setStopRef(1)} active={stop.key === "schedule"}>
-            <MeetingTimeline meetings={data.meetings} />
+            <div className="space-y-3">
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span>{data.meetings.filter(m => m.overlayStatus !== "cancelled").length} meeting{data.meetings.filter(m => m.overlayStatus !== "cancelled").length !== 1 ? "s" : ""} today</span>
+              </div>
+              {data.meetings.map((m) => (
+                <div key={m.id} className="rounded-lg border p-3 space-y-1">
+                  <p className="text-sm font-medium">{m.title}</p>
+                  <p className="text-xs text-muted-foreground">{m.time}</p>
+                </div>
+              ))}
+            </div>
           </TourHighlight>
 
           <TourHighlight ref={setStopRef(2)} active={stop.key === "actions"}>
