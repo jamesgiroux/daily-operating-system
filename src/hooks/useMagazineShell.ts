@@ -9,6 +9,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
+import type { ReadinessStat } from "@/components/layout/FolioBar";
 
 export interface MagazineShellConfig {
   /** Publication label for FolioBar, e.g., "Account" */
@@ -23,6 +24,12 @@ export interface MagazineShellConfig {
   chapters?: ChapterItem[];
   /** Actions slot for FolioBar */
   folioActions?: React.ReactNode;
+  /** Date text for FolioBar center, e.g., "SUNDAY, FEBRUARY 15, 2026" */
+  folioDateText?: string;
+  /** Readiness stats for FolioBar right section */
+  folioReadinessStats?: ReadinessStat[];
+  /** Status text for FolioBar right section, e.g., ">_ ready" */
+  folioStatusText?: string;
 }
 
 interface MagazineShellContextValue {
