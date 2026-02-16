@@ -2290,7 +2290,7 @@ pub fn set_schedule(
     })
 }
 
-/// Save user profile fields (name, company, title, focus, domain)
+/// Save user profile fields (name, company, title, focus, domains)
 #[tauri::command]
 pub fn set_user_profile(
     name: Option<String>,
@@ -2298,6 +2298,7 @@ pub fn set_user_profile(
     title: Option<String>,
     focus: Option<String>,
     domain: Option<String>,
+    domains: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<String, String> {
     crate::state::create_or_update_config(&state, |config| {
@@ -2317,7 +2318,24 @@ pub fn set_user_profile(
         config.user_company = clean(company);
         config.user_title = clean(title);
         config.user_focus = clean(focus);
-        if let Some(d) = domain {
+
+        // Prefer multi-domain list; fall back to legacy single domain
+        if let Some(d) = domains {
+            let cleaned: Vec<String> = d
+                .into_iter()
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if cleaned.is_empty() {
+                config.user_domains = None;
+                // Also clear legacy field
+                config.user_domain = None;
+            } else {
+                // Set first as legacy field for backwards compat
+                config.user_domain = Some(cleaned[0].clone());
+                config.user_domains = Some(cleaned);
+            }
+        } else if let Some(d) = domain {
             let trimmed = d.trim().to_lowercase();
             config.user_domain = if trimmed.is_empty() {
                 None
