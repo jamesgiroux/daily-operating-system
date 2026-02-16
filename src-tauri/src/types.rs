@@ -764,6 +764,8 @@ pub struct DashboardData {
     pub emails: Option<Vec<Email>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub email_sync: Option<EmailSyncStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focus: Option<DailyFocus>,
 }
 
 // =============================================================================
@@ -1033,6 +1035,21 @@ pub struct FocusImplications {
     pub total_count: u32,
     pub at_risk_count: u32,
     pub summary: String,
+}
+
+/// Capacity-aware daily focus: ranked actions against today's available time.
+/// Folded into the daily briefing (replaces Loose Threads when present).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyFocus {
+    pub available_minutes: u32,
+    pub deep_work_minutes: u32,
+    pub meeting_minutes: u32,
+    pub meeting_count: u32,
+    pub prioritized_actions: Vec<PrioritizedFocusAction>,
+    pub top_three: Vec<String>,
+    pub implications: FocusImplications,
+    pub available_blocks: Vec<TimeBlock>,
 }
 
 // =============================================================================

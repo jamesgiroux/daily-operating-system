@@ -32,7 +32,6 @@ import InboxPage from "@/pages/InboxPage";
 import MeetingDetailPage from "@/pages/MeetingDetailPage";
 import MeetingHistoryDetailPage from "@/pages/MeetingHistoryDetailPage";
 import EmailsPage from "@/pages/EmailsPage";
-import FocusPage from "@/pages/FocusPage";
 import HistoryPage from "@/pages/HistoryPage";
 import PeoplePage from "@/pages/PeoplePage";
 import PersonDetailEditorial from "@/pages/PersonDetailEditorial";
@@ -272,12 +271,6 @@ const emailsRoute = createRoute({
   component: EmailsPage,
 });
 
-const focusRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/focus",
-  component: FocusPage,
-});
-
 const meetingDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/$meetingId",
@@ -364,7 +357,6 @@ const routeTree = rootRoute.addChildren([
   actionDetailRoute,
   actionsRoute,
   emailsRoute,
-  focusRoute,
   historyRoute,
   inboxRoute,
 
