@@ -10,7 +10,6 @@ use chrono::{Datelike, Local, TimeZone, Utc};
 use serde::Serialize;
 
 use crate::db::ActionDb;
-use crate::google_api::GoogleToken;
 use crate::state::AppState;
 use crate::types::{CalendarEvent, GoogleAuthStatus, MeetingType, TranscriptRecord};
 
@@ -34,6 +33,29 @@ fn dev_workspace() -> std::path::PathBuf {
         .join("DailyOS-dev")
 }
 
+/// Backup config.json before dev mode so restore_live can recover it.
+fn backup_config() -> Result<(), String> {
+    let config = crate::state::config_path()?;
+    if config.exists() {
+        let backup = config.with_extension("json.dev-backup");
+        std::fs::copy(&config, &backup)
+            .map_err(|e| format!("Config backup failed: {}", e))?;
+    }
+    Ok(())
+}
+
+/// Restore config.json from the dev-backup file.
+fn restore_config_backup() -> Result<(), String> {
+    let config = crate::state::config_path()?;
+    let backup = config.with_extension("json.dev-backup");
+    if backup.exists() {
+        std::fs::copy(&backup, &config)
+            .map_err(|e| format!("Config restore failed: {}", e))?;
+        let _ = std::fs::remove_file(&backup);
+    }
+    Ok(())
+}
+
 /// State snapshot for the dev tools panel.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,10 +71,16 @@ pub struct DevState {
     pub people_count: usize,
     pub has_today_data: bool,
     pub google_auth_status: String,
+    /// Whether the app is currently using the isolated dev DB (I298).
+    pub is_dev_db_mode: bool,
+    /// Stale `dailyos-dev.db` file exists on disk (I298).
+    pub has_dev_db_file: bool,
+    /// `~/Documents/DailyOS-dev/` workspace directory exists (I298).
+    pub has_dev_workspace: bool,
 }
 
 /// Check if the current workspace is the dev sandbox (not a real user workspace).
-fn is_dev_workspace(state: &AppState) -> bool {
+pub(crate) fn is_dev_workspace(state: &AppState) -> bool {
     let current = state
         .config
         .read()
@@ -82,12 +110,31 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             | "simulate_briefing"
             | "mock_enriched"
     );
-    if destructive && !is_dev_workspace(state) {
-        return Err(
-            "Refused: workspace points to real data, not the dev sandbox \
-             (~/Documents/DailyOS-dev). Switch workspace back to DailyOS-dev first."
-                .into(),
-        );
+
+    // I298: On destructive scenario entry, activate dev DB isolation and stash
+    // the current workspace path so restore_live() can return to it.
+    if destructive {
+        // Stash current workspace path (only if not already in dev mode)
+        if !crate::db::is_dev_db_mode() {
+            // Backup config.json BEFORE any mutations
+            backup_config()?;
+
+            let current_ws = state
+                .config
+                .read()
+                .ok()
+                .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
+            if let Ok(mut guard) = state.pre_dev_workspace.lock() {
+                *guard = current_ws;
+            }
+        }
+
+        // Switch to dev DB
+        crate::db::set_dev_db_mode(true);
+        // Reopen DB at the dev path
+        if let Ok(mut guard) = state.db.lock() {
+            *guard = ActionDb::open().ok();
+        }
     }
 
     match scenario {
@@ -121,6 +168,282 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
             Ok("Enriched mock installed — intelligence signals populated".into())
         }
         _ => Err(format!("Unknown scenario: {}", scenario)),
+    }
+}
+
+/// Restore to live mode: undo dev DB isolation and return to the real workspace.
+///
+/// 1. Read the stashed workspace path from `pre_dev_workspace`
+/// 2. Deactivate dev DB mode
+/// 3. Reopen DB at the live path
+/// 4. Restore workspace config
+pub fn restore_live(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    if !crate::db::is_dev_db_mode() {
+        return Err("Already in live mode".into());
+    }
+
+    // 1. Read stashed workspace path (fallback only)
+    let original_workspace = state
+        .pre_dev_workspace
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .take();
+
+    // 2. Deactivate dev DB mode
+    crate::db::set_dev_db_mode(false);
+
+    // 3. Reopen DB at live path
+    if let Ok(mut guard) = state.db.lock() {
+        *guard = ActionDb::open().ok();
+    }
+
+    // 4. Restore config from backup (written before dev entry)
+    restore_config_backup()?;
+
+    // 5. Reload config from (now-restored) disk file
+    match crate::state::load_config() {
+        Ok(config) => {
+            if let Ok(mut guard) = state.config.write() {
+                *guard = Some(config.clone());
+            }
+        }
+        Err(_) => {
+            // Fallback: use stashed workspace path
+            if let Some(ws) = original_workspace {
+                crate::state::create_or_update_config(state, |config| {
+                    config.workspace_path = ws;
+                })?;
+            }
+        }
+    }
+
+    // 6. Re-probe Google auth state from Keychain (restore real auth, not mock)
+    match crate::google_api::token_store::load_token() {
+        Ok(token) => {
+            let email = token.account.unwrap_or_else(|| "unknown".to_string());
+            if let Ok(mut guard) = state.google_auth.lock() {
+                *guard = GoogleAuthStatus::Authenticated { email: email.clone() };
+            }
+        }
+        Err(_) => {
+            if let Ok(mut guard) = state.google_auth.lock() {
+                *guard = GoogleAuthStatus::NotConfigured;
+            }
+        }
+    }
+
+    let ws = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()))
+        .unwrap_or_else(|| "unknown".to_string());
+    Ok(format!("Restored to live mode — workspace: {}", ws))
+}
+
+/// Purge all known mock/dev data from the current database (I298).
+///
+/// Uses LIKE patterns to catch workspace-scanner variants (e.g., slugified
+/// folder names that differ from seed IDs). Also cleans content_index,
+/// content_embeddings, account_domains, account_events, account_team.
+///
+/// Safe to run against the live DB — patterns are specific to mock entity names.
+pub fn purge_mock_data(state: &AppState) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    let db_guard = state.db.lock().map_err(|_| "DB lock poisoned")?;
+    let db = db_guard
+        .as_ref()
+        .ok_or_else(|| "Database unavailable".to_string())?;
+    let conn = db.conn_ref();
+
+    let mut summary = Vec::new();
+
+    // LIKE patterns that match mock entity IDs + workspace-scanner variants.
+    // These cover: exact seed IDs, slugified folder names, child accounts (--suffix).
+    let entity_like_sql = "\
+        id LIKE 'acme-corp%' OR id LIKE 'acme-phase-2%' \
+        OR id LIKE 'globex-industries%' OR id LIKE 'globex-team-b%' \
+        OR id LIKE 'initech%' OR id LIKE 'contoso%' \
+        OR id LIKE 'platform-migration%'";
+
+    // Same patterns for columns named entity_id
+    let entity_id_like_sql = "\
+        entity_id LIKE 'acme-corp%' OR entity_id LIKE 'acme-phase-2%' \
+        OR entity_id LIKE 'globex-industries%' OR entity_id LIKE 'globex-team-b%' \
+        OR entity_id LIKE 'initech%' OR entity_id LIKE 'contoso%' \
+        OR entity_id LIKE 'platform-migration%'";
+
+    // Same for account_id columns
+    let account_id_like_sql = "\
+        account_id LIKE 'acme-corp%' OR account_id LIKE 'acme-phase-2%' \
+        OR account_id LIKE 'globex-industries%' OR account_id LIKE 'globex-team-b%' \
+        OR account_id LIKE 'initech%' OR account_id LIKE 'contoso%' \
+        OR account_id LIKE 'platform-migration%'";
+
+    // Helper: delete by LIKE patterns
+    let delete_like = |table: &str, where_clause: &str| -> usize {
+        let sql = format!("DELETE FROM {} WHERE {}", table, where_clause);
+        conn.execute(&sql, []).unwrap_or(0)
+    };
+
+    // --- Content tables first (FK dependencies) ---
+
+    // content_embeddings → content_index (FK cascade, but be explicit)
+    let n = conn.execute(
+        &format!(
+            "DELETE FROM content_embeddings WHERE content_file_id IN (SELECT id FROM content_index WHERE {})",
+            entity_id_like_sql
+        ),
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("content_embeddings: {}", n));
+
+    let n = delete_like("content_index", entity_id_like_sql);
+    summary.push(format!("content_index: {}", n));
+
+    // --- Junction tables ---
+
+    let n = delete_like("meeting_entities", entity_id_like_sql);
+    let n2 = conn.execute(
+        "DELETE FROM meeting_entities WHERE meeting_id LIKE 'mh-%' OR meeting_id LIKE 'mtg-%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("meeting_entities: {}", n + n2));
+
+    let n = conn.execute(
+        "DELETE FROM meeting_attendees WHERE person_id LIKE '%-acme-com' OR person_id LIKE '%-globex-com' OR person_id LIKE '%-initech-com' OR person_id LIKE '%-dailyos-test' OR person_id LIKE '%-example-com' OR person_id LIKE '%-contractor-io'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("meeting_attendees: {}", n));
+
+    let n = delete_like("entity_people", entity_id_like_sql);
+    summary.push(format!("entity_people: {}", n));
+
+    let n = delete_like("entity_intelligence", entity_id_like_sql);
+    summary.push(format!("entity_intelligence: {}", n));
+
+    // --- Account-specific tables ---
+
+    let n = delete_like("account_domains", account_id_like_sql);
+    summary.push(format!("account_domains: {}", n));
+
+    let n = delete_like("account_events", account_id_like_sql);
+    summary.push(format!("account_events: {}", n));
+
+    let n = delete_like("account_team", account_id_like_sql);
+    summary.push(format!("account_team: {}", n));
+
+    // --- Primary tables ---
+
+    let n = delete_like("accounts", entity_like_sql);
+    summary.push(format!("accounts: {}", n));
+
+    let n = delete_like("entities", entity_like_sql);
+    summary.push(format!("entities: {}", n));
+
+    let n = delete_like("projects", entity_like_sql);
+    summary.push(format!("projects: {}", n));
+
+    // Actions: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM actions WHERE id LIKE 'act-sow-%' OR id LIKE 'act-qbr-%' OR id LIKE 'act-kickoff-%' OR id LIKE 'act-nps-%' OR id LIKE 'act-quarterly-%' OR id LIKE 'act-phase2-%' OR id LIKE 'act-teamb-%' OR id LIKE 'act-migration-%' OR id LIKE 'act-transcript-%' OR id LIKE 'act-legal-%' OR id LIKE 'act-finance-%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("actions: {}", n));
+
+    // Meetings: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM meetings_history WHERE id LIKE 'mh-%' OR id LIKE 'mtg-%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("meetings_history: {}", n));
+
+    // Captures: by known prefixes
+    let n = conn.execute(
+        "DELETE FROM captures WHERE id LIKE 'cap-acme-%' OR id LIKE 'cap-globex-%' OR id LIKE 'cap-today-%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("captures: {}", n));
+
+    // People: by known mock domains
+    let n = conn.execute(
+        "DELETE FROM people WHERE id LIKE '%-acme-com' OR id LIKE '%-globex-com' OR id LIKE '%-initech-com' OR id LIKE '%-dailyos-test' OR id LIKE '%-example-com' OR id LIKE '%-contractor-io'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("people: {}", n));
+
+    // Meeting prep state
+    let n = conn.execute(
+        "DELETE FROM meeting_prep_state WHERE prep_file LIKE '%acme%' OR prep_file LIKE '%globex%' OR prep_file LIKE '%initech%' OR calendar_event_id LIKE 'cal-acme%' OR calendar_event_id LIKE 'cal-globex%' OR calendar_event_id LIKE 'cal-initech%'",
+        [],
+    ).unwrap_or(0);
+    summary.push(format!("meeting_prep_state: {}", n));
+
+    let total: usize = summary
+        .iter()
+        .filter_map(|s| s.split(": ").nth(1)?.parse::<usize>().ok())
+        .sum();
+
+    Ok(format!(
+        "Purged {} mock rows — {}",
+        total,
+        summary.join(", ")
+    ))
+}
+
+/// Check whether stale dev artifacts exist on disk (I298).
+///
+/// Returns indicators for: dev DB file exists, dev workspace dir exists.
+pub fn check_dev_artifacts() -> (bool, bool) {
+    let home = dirs::home_dir().unwrap_or_default();
+    let dev_db_exists = home.join(".dailyos").join("dailyos-dev.db").exists();
+    let dev_workspace_exists = home.join("Documents").join("DailyOS-dev").exists();
+    (dev_db_exists, dev_workspace_exists)
+}
+
+/// Delete stale dev artifacts from disk (I298).
+///
+/// Removes `~/.dailyos/dailyos-dev.db` (+ WAL/SHM) and optionally
+/// the `~/Documents/DailyOS-dev/` workspace directory.
+pub fn clean_dev_artifacts(include_workspace: bool) -> Result<String, String> {
+    if !cfg!(debug_assertions) {
+        return Err("Dev tools not available in release builds".into());
+    }
+
+    let home = dirs::home_dir().ok_or("Could not find home directory")?;
+    let mut cleaned = Vec::new();
+
+    // Dev DB files
+    for filename in &["dailyos-dev.db", "dailyos-dev.db-wal", "dailyos-dev.db-shm"] {
+        let path = home.join(".dailyos").join(filename);
+        if path.exists() {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {}", filename, e))?;
+            cleaned.push(filename.to_string());
+        }
+    }
+
+    // Dev workspace
+    if include_workspace {
+        let dev_ws = home.join("Documents").join("DailyOS-dev");
+        if dev_ws.exists() {
+            std::fs::remove_dir_all(&dev_ws)
+                .map_err(|e| format!("Failed to delete DailyOS-dev: {}", e))?;
+            cleaned.push("DailyOS-dev/".to_string());
+        }
+    }
+
+    if cleaned.is_empty() {
+        Ok("No dev artifacts found".into())
+    } else {
+        Ok(format!("Cleaned: {}", cleaned.join(", ")))
     }
 }
 
@@ -196,6 +519,8 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         })
         .unwrap_or_else(|_| "unknown".to_string());
 
+    let (has_dev_db_file, has_dev_workspace) = check_dev_artifacts();
+
     Ok(DevState {
         is_debug_build: cfg!(debug_assertions),
         has_config,
@@ -208,6 +533,9 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         people_count,
         has_today_data,
         google_auth_status,
+        is_dev_db_mode: crate::db::is_dev_db_mode(),
+        has_dev_db_file,
+        has_dev_workspace,
     })
 }
 
@@ -227,16 +555,33 @@ fn reset_all(state: &AppState) -> Result<(), String> {
         .ok()
         .and_then(|g| g.as_ref().map(|c| c.workspace_path.clone()));
 
-    // 2. Delete config and state files
-    let files_to_delete = [
+    // 2. Delete config and state files.
+    // I298: When dev DB mode is active, only delete the dev DB — not the live one.
+    let db_files: Vec<std::path::PathBuf> = if crate::db::is_dev_db_mode() {
+        vec![
+            dailyos_dir.join("dailyos-dev.db"),
+            dailyos_dir.join("dailyos-dev.db-wal"),
+            dailyos_dir.join("dailyos-dev.db-shm"),
+        ]
+    } else {
+        vec![
+            dailyos_dir.join("dailyos.db"),
+            dailyos_dir.join("dailyos.db-wal"),
+            dailyos_dir.join("dailyos.db-shm"),
+            // Legacy DB name (pre-0.7.6)
+            dailyos_dir.join("actions.db"),
+            dailyos_dir.join("actions.db-wal"),
+            dailyos_dir.join("actions.db-shm"),
+        ]
+    };
+
+    let mut files_to_delete = vec![
         dailyos_dir.join("config.json"),
-        dailyos_dir.join("actions.db"),
-        dailyos_dir.join("actions.db-wal"),
-        dailyos_dir.join("actions.db-shm"),
         dailyos_dir.join("execution_history.json"),
         dailyos_dir.join("transcript_records.json"),
         dailyos_dir.join("google").join("token.json"),
     ];
+    files_to_delete.extend(db_files);
 
     for path in &files_to_delete {
         if path.exists() {
@@ -349,9 +694,8 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     // Plus Initech Onboarding (not in briefing) → it becomes "new".
     seed_calendar_events(state)?;
 
-    // Google auth
+    // Google auth — set in-memory only, NEVER write to Keychain (I298 fix)
     if with_auth {
-        write_mock_google_token()?;
         if let Ok(mut guard) = state.google_auth.lock() {
             *guard = GoogleAuthStatus::Authenticated {
                 email: "dev@dailyos.test".to_string(),
@@ -376,8 +720,7 @@ fn install_mock_empty(state: &AppState) -> Result<(), String> {
 
     crate::state::initialize_workspace(&workspace, "both")?;
 
-    // Write mock Google token so we pass the auth check
-    write_mock_google_token()?;
+    // Set in-memory Google auth only — NEVER write to Keychain (I298 fix)
     if let Ok(mut guard) = state.google_auth.lock() {
         *guard = GoogleAuthStatus::Authenticated {
             email: "dev@dailyos.test".to_string(),
@@ -962,6 +1305,52 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ).map_err(|e| format!("Project meeting link: {}", e))?;
     }
 
+    // I298: Today's meetings → account junction (date-aligned IDs matching schedule.json.tmpl)
+    let today_str = date_only(0);
+    let today_meeting_entities: Vec<(String, &str, &str)> = vec![
+        (format!("mtg-acme-weekly-{}", today_str), "acme-corp", "account"),
+        (format!("mtg-initech-kickoff-{}", today_str), "initech", "account"),
+        (format!("mtg-globex-qbr-{}", today_str), "globex-industries", "account"),
+    ];
+    for (meeting_id, entity_id, entity_type) in &today_meeting_entities {
+        conn.execute(
+            "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, ?3)",
+            rusqlite::params![meeting_id, entity_id, entity_type],
+        ).map_err(|e| format!("Today meeting-entity link: {}", e))?;
+    }
+
+    // I298: Also seed today's customer meetings into meetings_history with ISO timestamps
+    // so DailyFocus/compute_focus_capacity() picks them up.
+    let today_local = Local::now();
+    let make_iso = |hour: u32, min: u32| -> String {
+        today_local
+            .date_naive()
+            .and_hms_opt(hour, min, 0)
+            .map(|naive| {
+                Local
+                    .from_local_datetime(&naive)
+                    .single()
+                    .map(|dt| dt.to_rfc3339())
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    };
+    let today_meetings_history: Vec<(String, &str, &str, String, Option<&str>)> = vec![
+        (format!("mtg-acme-weekly-{}", today_str), "Acme Corp Weekly Sync", "customer", make_iso(8, 0), Some("acme-corp")),
+        (format!("mtg-eng-standup-{}", today_str), "Engineering Standup", "team_sync", make_iso(9, 30), None),
+        (format!("mtg-initech-kickoff-{}", today_str), "Initech Phase 2 Kickoff", "customer", make_iso(10, 0), Some("initech")),
+        (format!("mtg-1on1-sarah-{}", today_str), "1:1 with Sarah (Manager)", "one_on_one", make_iso(11, 0), None),
+        (format!("mtg-globex-qbr-{}", today_str), "Globex Industries QBR", "qbr", make_iso(13, 0), Some("globex-industries")),
+        (format!("mtg-sprint-review-{}", today_str), "Product Team Sprint Review", "internal", make_iso(14, 30), None),
+        (format!("mtg-all-hands-{}", today_str), "Company All Hands", "all_hands", make_iso(16, 30), None),
+    ];
+    for (id, title, mtype, start_time, account_id) in &today_meetings_history {
+        conn.execute(
+            "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![id, title, mtype, start_time, account_id, &today],
+        ).map_err(|e| format!("Today meeting history: {}", e))?;
+    }
+
     // Project-linked people (via entity_people)
     let project_people: Vec<(&str, &str, &str)> = vec![
         ("acme-phase-2", "sarah-chen-acme-com", "stakeholder"),
@@ -1067,6 +1456,14 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
             "INSERT OR REPLACE INTO meetings_history (id, title, meeting_type, start_time, account_id, summary, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![id, title, mtype, start_time, account_id, summary, &today],
         ).map_err(|e| e.to_string())?;
+
+        // I298: Also link historical customer meetings to their account entity
+        if let Some(acct) = account_id {
+            conn.execute(
+                "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type) VALUES (?1, ?2, 'account')",
+                rusqlite::params![id, acct],
+            ).map_err(|e| format!("Historical meeting-entity link: {}", e))?;
+        }
     }
 
     // --- Captures ---
@@ -2425,26 +2822,8 @@ On hold until Q2. Architecture proposal draft needed first.
     Ok(())
 }
 
-/// Write a mock Google token file.
-fn write_mock_google_token() -> Result<(), String> {
-    let token = GoogleToken {
-        token: "mock-dev-token".to_string(),
-        refresh_token: Some("mock-refresh".to_string()),
-        token_uri: "https://oauth2.googleapis.com/token".to_string(),
-        client_id: "mock-client-id".to_string(),
-        client_secret: "mock-client-secret".to_string().into(),
-        scopes: vec![
-            "https://www.googleapis.com/auth/calendar".to_string(),
-            "https://www.googleapis.com/auth/gmail.modify".to_string(),
-        ],
-        expiry: Some((Utc::now() + chrono::Duration::hours(1)).to_rfc3339()),
-        account: Some("dev@dailyos.test".to_string()),
-        universe_domain: Some("googleapis.com".to_string()),
-    };
-
-    crate::google_api::token_store::save_token(&token)
-        .map_err(|e| format!("Failed to write mock token: {}", e))
-}
+// write_mock_google_token removed (I298 fix) — mock scenarios must NEVER
+// persist tokens to Keychain. Use in-memory GoogleAuthStatus::Authenticated instead.
 
 #[cfg(test)]
 mod tests {
