@@ -58,13 +58,12 @@ function SectionTitle({ label, color }: { label: string; color: string }) {
 interface WatchItemRowProps {
   type: "risk" | "win" | "unknown";
   text: string;
-  source?: string;
   isCallout?: boolean;
   isLast: boolean;
   onTextChange?: (value: string) => void;
 }
 
-function WatchItemRow({ type, text, source, isCallout, isLast, onTextChange }: WatchItemRowProps) {
+function WatchItemRow({ type, text, isCallout, isLast, onTextChange }: WatchItemRowProps) {
   const dot = (
     <span
       style={{
@@ -86,21 +85,6 @@ function WatchItemRow({ type, text, source, isCallout, isLast, onTextChange }: W
 
   const content = (
     <div style={{ flex: 1, minWidth: 0 }}>
-      {source && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: "var(--color-text-tertiary)",
-            marginBottom: 4,
-          }}
-        >
-          {source}
-        </div>
-      )}
       {onTextChange ? (
         <EditableText
           value={text}
@@ -225,7 +209,6 @@ export function WatchList({
                   key={`risk-${i}`}
                   type="risk"
                   text={r.text}
-                  source={r.source}
                   isCallout={i === 0}
                   isLast={i === visibleRisks.length - 1 && !hasMoreRisks}
                   onTextChange={
@@ -264,7 +247,6 @@ export function WatchList({
                   key={`win-${i}`}
                   type="win"
                   text={w.text}
-                  source={w.source}
                   isCallout={i === 0}
                   isLast={i === visibleWins.length - 1 && !hasMoreWins}
                   onTextChange={
