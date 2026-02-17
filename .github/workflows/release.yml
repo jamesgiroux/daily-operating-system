@@ -47,9 +47,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: macos-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          key: macos-cargo-v2-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: |
-            macos-cargo-
+            macos-cargo-v2-
 
       - name: Import Apple certificate
         env:
