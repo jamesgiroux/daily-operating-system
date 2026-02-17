@@ -2903,9 +2903,8 @@ mod tests {
         assert!(prompt.contains("JSON"));
         // I139: prompt refinements
         assert!(prompt.contains("Lead with conclusions"));
-        assert!(prompt.contains("footnote ref"));
+        assert!(prompt.contains("Do NOT include footnotes"));
         assert!(prompt.contains("Max 250 words"));
-        assert!(prompt.contains("\"sources\""));
     }
 
     #[test]
