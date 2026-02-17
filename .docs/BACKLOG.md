@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 688 Rust tests. v0.8.0 shipped (editorial redesign, semantic search, MCP, security hardening). v0.8.1 shipped (website rebrand, app icon, FK constraints, proposed actions, security hardening). 0.8.2 active (polish, tech debt). 0.9.0 planned (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
+**Current state:** 688 Rust tests. v0.8.2 shipped. 0.8.3 active (cleanup). 0.9.0 planned (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
 
 ---
 
@@ -13,12 +13,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
 | **I54** | MCP client integration framework | P0 | Integrations |
-| ~~I256~~ | ~~Proposed actions workflow + hygiene-based auto-archive~~ | — | Closed (0.8.1) |
 | **I220** | Meeting forecast (4-5 business days ahead) | P1 | Meetings |
 | **I92** | User-configurable metadata fields | P1 | Entity |
 | **I143** | Renewal lifecycle tracking | P1 | Entity |
-| ~~I222~~ | ~~Weekly briefing page redesign~~ | — | Closed (0.8.0) |
-| ~~I223~~ | ~~Entity list pages redesign (accounts, projects, people)~~ | — | Closed (0.8.0) |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
 | **I243** | Quill Meetings integration (local-first transcripts + MCP) | P1 | Integrations |
 | **I225** | Gong integration (sales call intelligence + transcripts) | P1 | Integrations |
@@ -26,10 +23,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I276** | Phase 3: App-managed plugin distribution (Settings UI + auto-write) | P1 | Integrations |
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit (beta gate) | P1 | Code Quality |
-| ~~I285~~ | ~~DB: FK enforcement via table recreation~~ | — | Closed (0.8.1) |
-| ~~I286~~ | ~~Token: Vector search filtering for entity intelligence prompts~~ | — | Closed (0.8.1) |
-| ~~I295~~ | ~~Security: Prompt injection hardening — structured data blocks in PTY prompts~~ | — | Closed (0.8.1) |
-| ~~I296~~ | ~~Security: Output size limits on parsed AI results~~ | — | Closed (0.8.1) |
 | **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
 | **I90** | Product telemetry & analytics infrastructure | P2 | Infra |
 | **I142** | Account Plan artifact | P2 | Entity |
@@ -41,194 +34,35 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I227** | Gainsight integration (CS platform data sync) | P2 | Integrations |
 | **I228** | Clay integration (contact/company enrichment) | P2 | Integrations |
 | **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
-| ~~I240~~ | ~~Secondary pages rebrand (meeting detail, actions, emails, inbox, history, settings)~~ | — | Closed (0.8.0) |
-| ~~I241~~ | ~~Public website rebrand (daily-os.com — editorial design language + brand identity)~~ | — | Closed (0.8.2) |
 | **I245** | "Open in Cowork" UX pattern — deferred, blocked by no URL scheme | P2 | UX |
 | **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
 | **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
-| **I261** | Account detail refinements — stakeholder-people linkage, information density | P2 | UX / Entity |
 | **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
-| **I272** | Hygiene Level B — relationship drift, prep completeness, portfolio balance signals | P2 | Intelligence |
-| ~~I273~~ | ~~Hygiene UX redesign — unified health narrative in editorial design language~~ | — | Closed (0.8.2) |
-| ~~I279~~ | ~~Per-day action priorities in weekly forecast~~ | — | Closed (0.8.2) |
-| ~~I231~~ | ~~Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps~~ | — | Closed (0.8.1) |
-| ~~I287~~ | ~~Token: Entity intelligence caching (2-4 hour TTL)~~ | — | Closed (0.8.2) |
-| ~~I288~~ | ~~Token: Entity intelligence JSON output (replace pipe-delimited parsing)~~ | — | Closed (0.8.1) |
-| ~~I289~~ | ~~Token: Batch entity intelligence calls (3-5 per invocation)~~ | — | Closed (0.8.2) |
-| ~~I290~~ | ~~DRY: Rust entity pattern extraction (accounts.rs ↔ projects.rs shared traits)~~ | — | Closed (0.8.2) |
-| ~~I291~~ | ~~DRY: Frontend list/detail page pattern extraction~~ | — | Closed (0.8.2) |
-| **I297** | Security: Audit trail for AI-generated data (raw output logging) | P2 | I280 |
-| **I298** | Mock data audit — update fixtures for editorial redesign | P2 | DevTools |
-| ~~I299~~ | ~~App icon update — asterisk brand mark (replaces lightning bolt)~~ | — | Closed (0.8.2) |
-| ~~I300~~ | ~~Website visuals update — screenshots, og-image, favicons for new brand~~ | — | Closed (0.8.2) |
 | **I229** | Gravatar integration (profile pictures) | P3 | Integrations |
-| ~~I232~~ | ~~Deduplicate `normalize_key` (folded into I290)~~ | — | Closed (0.8.2) |
-| ~~I234~~ | ~~Prune IntelligenceQueue `last_enqueued` HashMap periodically~~ | — | Closed (0.8.1) |
-| ~~I235~~ | ~~Consolidate dashboard DB reads into single lock acquisition~~ | — | Closed (0.8.1) |
-| ~~I236~~ | ~~Adaptive polling interval on WeekPage during enrichment phase~~ | — | Closed (0.8.2) |
-| ~~I263~~ | ~~Replace native date inputs with styled shadcn DatePicker~~ | — | Closed (0.8.2) |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
+| **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
+| **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
+| **I303** | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx | P3 | Code Quality |
+| **I304** | Prompt audit — review all AI prompts for specificity and output-tailored guidance | P2 | Intelligence |
 
 ---
 
 ## Version Planning
 
-### 0.8.0 — Editorial (active)
+### 0.8.2 — Polish & Technical Debt — CLOSED
 
-*Complete visual overhaul, semantic search, MCP server, security hardening. The app is unrecognizable from 0.7.0.*
-
-#### Editorial Design Language (complete)
-
-*Establish the editorial design language (ADR-0073). Extract entity templates. Rebuild all detail pages. Build the visual foundation before new features.*
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| P0 | I237 | Entity template extraction (shared entity components) | Done (partial) |
-| P0 | I238 | ADR-0073 foundation — Newsreader font, CSS tokens, shared component rebrand | Done (partial) |
-| P1 | I224 | Entity detail pages redesign (accounts, projects, people) | Done |
-| P1 | I233 | Extract AccountDetailPage.tsx sub-components (2,929 lines) | Done |
-| P1 | I239 | App shell rebrand (FolioBar, NavIsland, AtmosphereLayer, MagazinePageLayout) | Done |
-| P1 | I221 | Focus/Priorities page redesign | Superseded |
-| P1 | I222 | Weekly briefing page redesign | Done |
-| P1 | I223 | Entity list pages redesign | Done |
-| P2 | I240 | Secondary pages rebrand (meeting detail, actions, emails, inbox, history, settings) | Done |
-| P2 | I241 | Public website rebrand | Moved to 0.8.1 |
-
-**Delivered:** Magazine-layout editorial shell (FolioBar, FloatingNavIsland, AtmosphereLayer, MagazinePageLayout), design tokens, 6 entity-generic shared components, editorial primitives (ChapterHeading, PullQuote, StateBlock, WatchItem, TimelineEntry, FinisMarker), account/project/person/action detail editorial redesign. See internal changelog for full details.
-
-#### Semantic Search & Conversational Interface (complete)
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| P1 | I246 | ADR-0074 — Vector Search for Entity Content | Done |
-| P1 | I248 | ONNX Runtime → fastembed (nomic-embed-text-v1.5) | Done |
-| P1 | I249 | Schema migration — content_embeddings table | Done |
-| P1 | I250 | Background embedding processor | Done |
-| P1 | I251 | Semantic search query function | Done |
-| P1 | I252 | Integrate semantic search into enrichment | Done |
-| P2 | I247 | ADR-0075 — Conversational Interface Architecture | Done |
-| P2 | I253 | Schema migration — chat_sessions table | Done |
-| P2 | I254 | MCP chat tools (Tauri commands) | Done |
-| P3 | I255 | Documentation — OpenClaw learnings research | Done |
-| P1 | I264 | Real ONNX inference via fastembed (ADR-0078) | Done |
-| P1 | I265 | Asymmetric query/document prefixes | Done |
-| P1 | I266 | Restore 0.7/0.3 hybrid weights | Done |
-| P1 | I267 | Fix silent lock poisoning | Done |
-| P2 | I268 | DRY chat command extraction | Done |
-| P2 | I269 | Closed — ActionDb::open() is correct | Done |
-| P2 | I270 | BM25 avgdl from actual corpus | Done |
-
-#### Reliability & Intelligence Polish (complete)
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| P0 | I257 | PTY enrichment hardening — ANSI stripping, wide cols, debug logging | Done |
-| P1 | I271 | Hygiene system polish — configurability, narrative fixes, scan timing | Done |
-| P2 | I242 | Re-enable Apple notarization in CI release pipeline | Done |
-| — | — | Person intelligence prompts (relationship-aware enrichment) | Done |
-| — | — | Shared FileListSection extraction | Done |
-| — | — | Schema migrations 006-007 (embeddings + chat) | Done |
-| — | — | Claude CLI resolution for Finder-launched apps | Done |
-| — | — | CI hardening (codesign, heredoc, clippy, audit caching) | Done |
-
-**Planned issues deferred:** I220 (meeting forecast), I88 (monthly report), I90 (telemetry), I142 (account plans), I115 (multi-line actions), I141 (content tagging) — moved to future versions.
-
-#### Cowork Integration (complete)
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| P1 | I274 | Phase 1: Restructure plugin to Cowork format + ZIP package | Done |
-| P1 | I275 | Phase 2: Workspace CLAUDE.md generation from initialize_workspace() | Done |
-| P1 | I276 | Phase 3: App-managed plugin distribution (Settings UI + auto-write) | Deferred |
-| P3 | I277 | Phase 4: Marketplace repo for discoverability (optional) | Deferred |
-
-**I245 deferred** — "Open in Cowork" UX blocked by missing URL scheme. **I276 deferred** — manual ZIP install works; Settings UI not yet needed.
-
-#### Risk Briefing, MCP Server & Security (complete)
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| ~~P1~~ | ~~I278~~ | ~~Risk briefing v3 — 6-slide narrative + inline editing~~ | Done |
-| — | — | MCP server binary (`dailyos-mcp`) — Claude Desktop integration (ADR-0075) | Done |
-| — | — | Database rename (actions.db → dailyos.db) with auto-migration | Done |
-| — | — | BrandMark SVG component (replace TTF asterisk) | Done |
-| — | — | WeekPage editorial polish + GeneratingProgress | Done |
-| — | — | List pages editorial restyle (accounts, projects, people, actions) | Done |
-| — | — | DailyBriefing + BriefingMeetingCard editorial redesign | Done |
-| ~~P1~~ | ~~I281~~ | ~~Remove unused npm packages (date-fns, react-markdown, remark-gfm)~~ | Done |
-| ~~P1~~ | ~~I283~~ | ~~DB: Add missing indexes (meeting_entities, calendar_event_id, actions composite)~~ | Done |
-| P0 | ~~I292~~ | ~~Security: Add CSP header to tauri.conf.json~~ | Done |
-| P0 | ~~I293~~ | ~~Security: Validate reveal_in_finder path within workspace~~ | Done |
-| P0 | ~~I294~~ | ~~Security: Restrict copy_to_inbox source paths~~ | Done |
-
-#### Remaining 0.8.0 work
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| ~~P1~~ | ~~I222~~ | ~~Weekly briefing page editorial completion~~ | Done |
-| ~~P1~~ | ~~I223~~ | ~~Entity list pages editorial completion~~ | Done |
-| ~~P2~~ | ~~I240~~ | ~~Secondary pages rebrand (remaining pages)~~ | Done |
-| — | — | ~~DailyBriefing editorial completion (dashboard redesign)~~ | Done |
-| ~~P2~~ | ~~I298~~ | ~~Mock data audit — update fixtures for editorial redesign~~ | Deferred to 0.8.1 |
-
-**0.8.0 shipped.** Editorial redesign visually complete across all primary surfaces. The app is unrecognizable from 0.7.x. Tagged v0.8.0.
+All issues (I298, I261, I272, I297, I287, I289, I290, I291, I232, I236, I263) closed in v0.8.2. Editorial polish, account detail refinements, audit trail, hygiene signals, and code quality pass complete. See CHANGELOG for details.
 
 ---
 
-### 0.8.1 — Website, Brand & Hardening (shipped)
+### 0.8.3 — Cleanup
 
-*Maintenance release. Editorial design language and brand identity applied to public website. Asterisk brand mark on app icon, website, and favicons. Security hardening, FK constraints, proposed actions workflow.*
-
-#### Website & Brand
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| ~~P1~~ | ~~I299~~ | ~~App icon update — asterisk brand mark + glass tint~~ | ✅ `d523ee8` |
-| ~~P1~~ | ~~I241~~ | ~~Public website rebrand — editorial magazine experience~~ | ✅ `c3c6488` |
-| ~~P1~~ | ~~I300~~ | ~~Website visuals — og-image, favicon PNGs, apple-touch-icon~~ | ✅ `20b4dd7` |
-
-#### Hardening
-
-| Priority | Issue | Scope | Status |
-|----------|-------|-------|--------|
-| ~~P1~~ | ~~I256~~ | ~~Proposed actions workflow + hygiene-based auto-archive~~ | ✅ `4ca74dd` |
-| ~~P1~~ | ~~I285~~ | ~~DB: Add foreign key constraints (table recreation)~~ | ✅ `4ca74dd` |
-| ~~P1~~ | ~~I286~~ | ~~Tokens: Vector search filtering for entity intelligence prompts~~ | ✅ `4ca74dd` |
-| ~~P1~~ | ~~I288~~ | ~~Tokens: Structured output parsing with length limits~~ | ✅ `4ca74dd` |
-| ~~P1~~ | ~~I295~~ | ~~Security: Prompt injection hardening — structured data blocks~~ | ✅ `4ca74dd` |
-| ~~P1~~ | ~~I296~~ | ~~Security: Output size limits on parsed AI results~~ | ✅ `4ca74dd` |
-| ~~P2~~ | ~~I273~~ | ~~Hygiene UX redesign — unified health narrative~~ | ✅ `e260410` |
-| ~~P2~~ | ~~I279~~ | ~~Per-day action priorities in weekly forecast~~ | ✅ `e260410` |
-
----
-
-### 0.8.2 — Polish & Technical Debt (active)
-
-*Carry-forward P2/P3 items from 0.8.1. Code quality, performance, and remaining editorial polish.*
-
-#### Polish
+*Carry-forward code quality and type-safety fixes from 0.8.2.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P2 | I298 | Mock data audit — update fixtures for editorial redesign |
-| P2 | I261 | Account detail refinements — stakeholder-people linkage, information density |
-| P2 | I272 | Hygiene Level B — relationship drift, prep completeness, portfolio balance |
-| P2 | I297 | Security: Audit trail for AI-generated data (raw output logging) |
-| P2 | I231 | Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps |
-
-#### Code Quality & Performance
-
-| Priority | Issue | Scope |
-|----------|-------|-------|
-| ~~P3~~ | ~~I287~~ | ~~Tokens: Caching for entity intelligence (TTL-based)~~ — Closed |
-| ~~P3~~ | ~~I289~~ | ~~Tokens: Batch prep enrichment (multi-meeting single call)~~ — Closed |
-| ~~P3~~ | ~~I290~~ | ~~Code: DRY extraction pass (accounts↔projects, shared patterns)~~ — Closed |
-| ~~P3~~ | ~~I291~~ | ~~Code: Frontend component audit (parallel implementations)~~ — Closed |
-| ~~P3~~ | ~~I232~~ | ~~Deduplicate `normalize_key` — folded into I290~~ — Closed |
-| ~~P3~~ | ~~I236~~ | ~~Adaptive polling interval on WeekPage during enrichment phase~~ — Closed |
-| ~~P3~~ | ~~I263~~ | ~~Replace native date inputs with styled shadcn DatePicker~~ — Closed |
-
-**0.8.2 gate:** All P2 items closed or explicitly deferred. P3 items addressed opportunistically. Clean foundation for 0.9.0 integrations work.
+| P3 | I303 | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx |
+| P2 | I304 | Prompt audit — review all AI prompts for specificity and output-tailored guidance |
 
 ---
 
@@ -285,473 +119,15 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 *Issues above are organized by version. Detailed descriptions below provide implementation context.*
 
-### Editorial Design Language & Structural Cleanup (0.8.0)
+### Editorial Design Language & Structural Cleanup (0.8.0) — CLOSED
 
-**I221: Focus/Priorities page redesign (name, purpose, visual refresh)**
-Resolve naming ambiguity (Focus vs. Priorities), clarify page purpose, and upgrade visual design with improved hierarchy, typography, and aesthetic refinement.
+All issues (I221-I224, I237-I240) resolved or superseded. I221 (Focus page) moved to future work. See CHANGELOG for details.
 
-**The Problem:**
-The Focus/Priorities page has identity issues:
+**I222: Weekly briefing page redesign** — Closed (0.8.0). Refreshed visual hierarchy, typography scale, and briefing-document aesthetic for the weekly page.
 
-1. **Name confusion:** URL is `/focus`, header says "Focus", but conceptually it's "Priorities" or "Actions"
-2. **Purpose ambiguity:** Is this page about focus (capacity planning, time blocking) or priorities (action management)?
-3. **Visual inconsistency:** Design language doesn't match the rest of DailyOS (dashboard, week page have been refined, Focus hasn't)
-4. **Information hierarchy:** Current layout buries key information, lacks visual emphasis on what matters most
+**I223: Entity list pages redesign** — Closed (0.8.0). Unified design language across account/project/people lists with intelligent prioritization, inline intelligence summaries, and visual grouping.
 
-**Decision: Settle on single name and purpose**
-
-Option A: **"Focus"** — Time/capacity-centric page
-
-- Purpose: Help users allocate time to what matters
-- Content: Available capacity, prioritized actions that FIT in available time, time blocking suggestions
-- Emphasis: "You have 2 hours today. Here's what you should focus on."
-
-Option B: **"Priorities"** — Action-centric page
-
-- Purpose: Show prioritized action list with intelligent ordering
-- Content: All actions, prioritized by intelligence, with context (why this action matters now)
-- Emphasis: "Here's what you should work on, in order of importance."
-
-Option C: **"Actions"** — Simple action management
-
-- Purpose: Action list and management
-- Content: All actions, filterable/sortable, with quick actions (complete, edit, defer)
-- Emphasis: "Here's everything you need to do."
-
-**Recommendation: Option A ("Focus")**
-
-- Aligns with existing P6 (AI-Native) and UX research patterns (consumption over production, conclusions before evidence)
-- Differentiates from simple todo list (Principle: "Why now?" on every item)
-- Integrates with I179 (capacity engine already shipped)
-- Natural fit for future time blocking features
-
-**Visual Refresh (once name/purpose settled):**
-
-**Current issues:**
-
-- Flat visual hierarchy (everything looks equally important)
-- Weak typography (no clear hierarchy between focused actions vs. other priorities)
-- Insufficient whitespace (cramped, hard to scan)
-- Inconsistent with dashboard/week page visual language
-
-**Design improvements:**
-
-1. **Focused Actions section (hero):**
-   - Large, visually prominent cards (cream background, gold accent)
-   - Clear "why now" context for each action (temporal relevance)
-   - Capacity indicator: "You have 2 hours available today"
-   - Visual emphasis: These are THE things to do
-
-2. **Other Priorities section (supporting):**
-   - Smaller, less prominent (already has 5-item limit from I214)
-   - Clear visual separation from Focused Actions
-   - "View All Actions" link to full action management view
-
-3. **Typography:**
-   - Action title: DM Sans 18px semibold (not 14px regular)
-   - Context/why now: DM Sans 14px regular, charcoal/70 opacity
-   - Time estimates: JetBrains Mono 12px (monospace for time data)
-
-4. **Visual hierarchy:**
-   - Focused Actions: cream cards with gold left border
-   - Other Priorities: white background, subtle border
-   - Completed actions: strikethrough, charcoal/40 opacity, collapsed
-
-5. **Empty states:**
-   - Witty personality: "Nothing urgent, nothing important. This is the dream." —Ron Swanson
-   - Capacity indicator still shows: "You have 6 hours available. Enjoy the space."
-
-**Implementation:**
-
-- Rename route: `/focus` stays (URL doesn't change)
-- Update page title/header based on decision (Focus/Priorities/Actions)
-- Redesign FocusPage.tsx with new visual hierarchy
-- Update shadcn/ui card variants for hero vs. supporting content
-- Add capacity indicator component (integrate with I179 capacity engine)
-
-**Acceptance criteria:**
-
-- Single consistent name used everywhere (route, header, sidebar, documentation)
-- Clear page purpose documented in PHILOSOPHY.md or component comments
-- Visual hierarchy emphasizes focused actions over other priorities
-- Typography follows established DailyOS design language (DM Sans + JetBrains Mono)
-- Capacity indicator shows available time with "why now" context
-- Empty state respects personality setting (Witty/Professional)
-- Design feels cohesive with dashboard and week page
-
----
-
-**I222: Weekly briefing page redesign**
-Refresh weekly briefing page visual design with improved hierarchy, readability, and design language consistency.
-
-**Current State:**
-The week page was redesigned in I93-I96 (Sprint 14) to be consumption-first with 6-section hierarchy (narrative → priority → readiness → shape → actions → health). Mechanical delivery works well, but visual design needs polish.
-
-**Issues to address:**
-
-1. **Visual hierarchy:**
-   - All sections look equally important (no emphasis on high-value sections)
-   - Narrative/priority sections should be more prominent than day shapes
-   - Week health should be subtle/supporting, not competing for attention
-
-2. **Typography:**
-   - Inconsistent heading sizes across sections
-   - Body text lacks hierarchy (key insights vs. supporting details)
-   - No visual distinction between AI-synthesized narrative vs. mechanical data
-
-3. **Whitespace:**
-   - Sections run together (insufficient breathing room)
-   - Dense day shapes feel cramped
-   - Actions list lacks visual grouping
-
-4. **Design language:**
-   - Doesn't feel like a "briefing document" — feels like a dashboard
-   - Should feel more like receiving a report, less like querying data
-   - Needs finite briefing feel (clear beginning, middle, end)
-
-**Design improvements:**
-
-1. **Section hierarchy (visual emphasis):**
-   - **Hero sections** (Narrative, Priority Meetings): Large headings, cream background, gold accents
-   - **Primary sections** (Readiness, Week Shape): Medium headings, white background
-   - **Supporting sections** (Actions, Week Health): Smaller headings, subtle styling
-
-2. **Typography scale:**
-   - Page title: DM Sans 32px bold "Your Week: Feb 10-14"
-   - Section headings (hero): DM Sans 24px semibold
-   - Section headings (primary): DM Sans 20px semibold
-   - Section headings (supporting): DM Sans 16px semibold
-   - Body text: DM Sans 14px regular
-   - Metadata/timestamps: JetBrains Mono 12px
-
-3. **Briefing document feel:**
-   - Add subtle document texture (cream background, not pure white)
-   - Section dividers (horizontal rule, not just whitespace)
-   - "End of briefing" marker at bottom (clear finite boundary)
-   - Print-friendly layout (could be exported as PDF)
-
-4. **Day shapes refinement:**
-   - Card-based layout (one card per day)
-   - Visual capacity indicators (bar chart showing available/scheduled/blocked time)
-   - Color-coded by load (green = light, yellow = moderate, red = overbooked)
-
-5. **Actions grouping:**
-   - Group by priority (P0/P1/P2)
-   - Visual separators between groups
-   - Count badges: "P0 (3) | P1 (7) | P2 (12)"
-
-**Implementation:**
-
-- Redesign WeekPage.tsx with new visual hierarchy
-- Update section components with typography scale
-- Add document texture/styling for briefing feel
-- Refine day shape cards with capacity visualization
-- Add "End of briefing" marker component
-
-**Acceptance criteria:**
-
-- Visual hierarchy emphasizes narrative/priority over supporting sections
-- Typography scale creates clear information hierarchy
-- Page feels like receiving a document (briefing), not querying a dashboard
-- Day shapes use card layout with visual capacity indicators
-- Actions grouped by priority with count badges
-- "End of briefing" marker signals completion
-- Design language consistent with dashboard (cream, charcoal, gold)
-
----
-
-**I223: Entity list pages redesign (accounts, projects, people)**
-Redesign entity list pages inspired by the website's clean, document-style aesthetic (`/docs/index.html`) and meeting intelligence report structure. Create consistent visual hierarchy, improved scannability, and cohesive design language across all three entity types.
-
-**Design Inspiration:**
-
-- **Website artifact panels** (briefing document feel, clean cards, clear hierarchy)
-- **Meeting intelligence reports** (executive panel structure with kicker/title/meta, signal cards)
-- **App mockup on website** (timeline-style meetings, badge system, entity references)
-
-**Current State:**
-Entity list pages were redesigned in I102-I106 (Sprint 15) with signal-first flat rows using shared ListRow/ListColumn components. Functional implementation works, but visual design needs refinement to match the polished website aesthetic.
-
-**Issues to address:**
-
-1. **Visual consistency across entity types:**
-   - Accounts list, Projects list, People list have different feels
-   - Column layouts aren't consistent (accounts has different signals than people)
-   - No unified design language across entity types
-
-2. **Lack of intelligent prioritization:**
-   - Lists are alphabetical or manually sorted (no contextual intelligence)
-   - Entities with meetings TODAY aren't visually prioritized
-   - No temporal relevance ("why should I look at this entity now?")
-   - High-value entities (at-risk, expansion opportunity) buried in alphabetical list
-
-3. **Scannability:**
-   - Rows are dense (hard to distinguish between entities at a glance)
-   - No visual grouping or categorization
-   - Key signals (health, engagement, risk) don't stand out
-   - No inline intelligence summary (have to click into detail to see what matters)
-
-4. **Typography:**
-   - Entity names don't have sufficient visual weight
-   - Metadata fields (dates, counts, status) lack hierarchy
-   - No distinction between primary info (name, health) vs. secondary (last updated)
-
-5. **Empty states:**
-   - Generic "No items" text
-   - Doesn't guide user to create first entity
-   - Personality system (I217) not integrated
-
-**Design improvements (inspired by website):**
-
-1. **Document-style list aesthetic:**
-   - Clean white cards with subtle borders (not dense table rows)
-   - Generous whitespace between entities (breathing room like website artifact panels)
-   - Finite list feel (not infinite scroll — show count, pagination if needed)
-   - Card hover: subtle cream background (website pattern)
-
-2. **Row structure (website meeting card pattern):**
-
-   ```
-   [Entity Name]                    [Health Dot]
-   Entity Type Badge · Key Signal
-   Metadata · Last Engagement       [Actions ⋮]
-   ```
-
-   - **Primary:** Entity name (DM Sans 18px semibold, not 16px) + colored health dot
-   - **Badges:** Entity type chips (Customer, Partner, Internal) — website badge style
-   - **Signals:** 1-2 key signals inline with icons (website signal-card pattern)
-   - **Metadata:** JetBrains Mono 12px, charcoal/60 (timestamp + counts)
-   - **Actions:** Three-dot menu, hover-reveal quick actions
-
-3. **Entity-specific signals:**
-   - **Accounts:** Health · Last engagement · Next renewal · ARR
-   - **Projects:** Health · Last activity · Team size · Status
-   - **People:** Relationship strength · Last interaction · Entity links count
-
-4. **Visual grouping/categorization:**
-   - Accounts: Group by lifecycle ring (Foundation, Influence, Evolution, Summit) — collapsible sections
-   - Projects: Group by status (Active, On Hold, Completed)
-   - People: Group by relationship strength (Champion, Active, Occasional, Stale)
-
-5. **Health indicators:**
-   - Colored dot (green/yellow/red) next to entity name
-   - Subtle health score on hover (85/100)
-   - Visual prominence for at-risk entities (red dot + subtle red background tint)
-
-6. **Intelligent prioritization:**
-   - **Smart sorting algorithm:**
-     - Meetings TODAY at top (sorted by meeting time)
-     - Meetings this WEEK (sorted chronologically)
-     - Upcoming renewals (next 30 days, sorted by renewal date)
-     - At-risk entities (churn risk, low health score, engagement gaps)
-     - Expansion opportunities (positive momentum, upsell signals)
-     - Alphabetical fallback for entities with no temporal signals
-   - **Visual prioritization:**
-     - Entities with meetings TODAY get prominent card treatment (subtle gold left border + cream background)
-     - Time-sensitive entities (renewals, at-risk) get visual badges ("Renews in 5 days", "30d since contact")
-     - Top 3 priority entities get visual prominence (stronger border, slight elevation)
-   - **Inline intelligence summary:**
-     - 1-line AI-synthesized insight below entity name (charcoal/60, 14px)
-     - Examples:
-       - "Meeting at 2pm today — renewal negotiation underway"
-       - "30 days since last contact — follow-up needed"
-       - "Q4 renewal approaching — champion engagement strong"
-       - "Expansion opportunity — usage up 45% this quarter"
-     - Intelligence comes from entity intelligence.json (executive_assessment, risks, current_state)
-   - **Temporal context indicators:**
-     - Badge chips with temporal urgency (website badge style):
-       - "Meeting in 2h" (gold badge, high urgency)
-       - "Renewal in 5d" (peach badge, medium urgency)
-       - "30d gap" (sage badge, low urgency)
-     - Hover detail shows full context from intelligence.json
-
-7. **Empty states with personality:**
-   - Witty: "No accounts yet? That's either very zen or very concerning." —Leslie Knope style
-   - Professional: "No accounts found. Create your first account to get started."
-   - CTA button: "Create First Account" (prominent, cream background, gold accent)
-
-**Implementation:**
-
-- Refactor shared ListRow component with new visual hierarchy
-- Add entity-specific signal components (AccountSignals, ProjectSignals, PersonSignals)
-- Implement intelligent prioritization engine:
-  - `prioritize_entities()` query function in `src-tauri/src/queries/`
-  - Reads entity intelligence.json + meetings + calendar data from SQLite
-  - Returns sorted entity list with temporal context + inline summaries
-- Implement visual grouping/categorization (collapsible sections)
-- Add temporal badge components (TimeUrgencyBadge with gold/peach/sage variants)
-- Redesign empty states with personality integration
-- Update health indicator component (colored dots + hover score)
-
-**Acceptance criteria:**
-
-- All three entity list pages share unified visual design language
-- Card-based rows with consistent hover/selection states
-- Entity-specific signals clearly displayed (2-3 per row)
-- Intelligent prioritization: entities with meetings today appear first, sorted by meeting time
-- Inline intelligence summaries from entity intelligence.json (1-line insights)
-- Temporal context badges ("Meeting in 2h", "Renewal in 5d", "30d gap")
-- Visual prioritization: entities needing attention get prominent treatment (gold border, cream bg)
-- Visual grouping by category (lifecycle, status, relationship strength)
-- Health indicators use colored dots with hover detail
-- Empty states integrate personality system (I217)
-- Design feels cohesive with dashboard and week page
-
----
-
-**I224: Entity detail pages redesign (accounts, projects, people)**
-Redesign entity detail pages inspired by the **meeting intelligence report** structure from the website (`/docs/index.html`) — executive panel with kicker/title/meta header, blockquote summary, risk grids, metrics grids, and side cards. Create polished, briefing-document aesthetic across all three entity types.
-
-**Design Inspiration:**
-
-- **Meeting Intelligence Report** (lines 304-389 in website):
-  - Executive header: kicker ("Meeting Intelligence Report") + title + metadata
-  - Blockquote summary: AI-synthesized narrative (1-2 sentences)
-  - Risk grid: 3 risk cards with mini-labels
-  - Metrics grid: Stage, Champion, Decision Owner, Momentum (4 metrics)
-  - Main grid: Signal cards (left) + Side stack (right, "Before this meeting", "Recent wins")
-- **Clean document aesthetic:** Generous whitespace, clear section dividers, finite boundaries
-
-**Current State:**
-Entity detail pages were enhanced in Sprints 20-21 with people lists, child accounts, entity links. Functional, but visual design and information architecture need refinement to match the polished meeting prep report aesthetic.
-
-**Issues to address:**
-
-1. **Information overload:**
-   - Too much information competing for attention (metadata, intelligence, meetings, actions, documents)
-   - No clear visual hierarchy (what should user look at first?)
-   - Key insights buried in walls of text
-
-2. **Inconsistent layouts:**
-   - Account detail, Project detail, Person detail have different structures
-   - No unified information architecture across entity types
-   - Tabs, accordions, cards used inconsistently
-
-3. **Intelligence presentation:**
-   - Executive assessment is dense paragraph (hard to scan)
-   - Risks, wins, insights lack visual emphasis
-   - No distinction between AI-synthesized content vs. mechanical data
-
-4. **Metadata display:**
-   - I92 will add 27+ metadata fields — current layout can't handle that volume
-   - No visual grouping (financial, renewal, relationship fields run together)
-   - Read-only fields look same as editable fields
-
-**Design improvements (meeting intelligence report structure):**
-
-1. **Executive header (like meeting prep report):**
-
-   ```
-   [Kicker: "Account Intelligence" | "Project Overview" | "Person Profile"]
-   [Entity Name — large, DM Sans 28px semibold]
-   [Metadata line: Last engagement · Renewal date · Meeting cadence]
-   [Status chip: "Renewal cycle" | "Active" | "Champion"]
-   ```
-
-   - Clean header block (cream background, subtle border like website artifact panels)
-   - Kicker text (eyebrow style, charcoal/60, DM Sans 12px uppercase)
-   - Entity name emphasis (bold, large)
-   - Inline metadata (JetBrains Mono 12px, separator dots like website)
-   - Status chip (colored badge — gold for customer, sage for healthy, peach for risk)
-
-2. **Hero insight (blockquote pattern from website):**
-
-   ```
-   "Adoption is up 34% since rollout. Champion is still active.
-   Expansion remains open, but CFO budget alignment is the decision gate this week."
-   ```
-
-   - AI-synthesized 1-2 sentence summary (most important thing to know)
-   - Blockquote styling (cream background, gold left border, larger text)
-   - Positioned immediately after header (prime real estate)
-
-3. **Risk grid (3-column layout from website):**
-
-   ```
-   [Risk 1]                [Risk 2]                [Risk 3]
-   CFO budget sign-off     ROI baseline needs      Deck alignment
-   has not landed.         confirmation.           still pending.
-   ```
-
-   - 3 risk cards in horizontal grid
-   - Mini-label "Risk 1", "Risk 2", "Risk 3" (charcoal/60, 12px)
-   - Risk text (DM Sans 14px regular, 2-3 lines max)
-   - Cream background cards with subtle peach accent (risk color)
-
-4. **Metrics grid (4-column from website):**
-
-   ```
-   [Stage]              [Champion]         [Decision Owner]    [Momentum]
-   Renewal negotiation  Sarah Chen         David Marsh (CFO)   Support backlog zero
-   ```
-
-   - 4 metric cards in horizontal grid
-   - Mini-label for each metric type
-   - Metric value (DM Sans 14px, can be text or positive/negative indicator)
-   - Momentum uses color coding (sage for positive, peach for negative)
-   - Entity-specific metrics:
-     - **Accounts:** Stage, Champion, Next Renewal, Health Score
-     - **Projects:** Status, Team Size, Last Activity, Progress
-     - **People:** Relationship Strength, Last Interaction, Entity Links, Engagement
-
-5. **Main grid (two-column: content + sidebar):**
-
-   **Left column (primary content):**
-   - Recent activity timeline (meetings, actions, emails mixed)
-   - Open items list (actions due, follow-ups needed)
-   - Content index (recent documents)
-
-   **Right column (side stack from website):**
-   - "Before next meeting" card (recommended actions, sage background)
-   - "Recent wins" card (positive signals, sage background)
-   - "Attention needed" card (risks, gaps, peach background)
-
-   Side cards use website pattern:
-   - Mini-label header
-   - Bulleted stack-list (tight vertical spacing)
-   - Color-coded background for context
-
-6. **Activity timeline (Activity tab):**
-   - Chronological timeline (newest first)
-   - Mixed activity types (meetings, actions, emails) with type icons
-   - Visual grouping by date (Today, This Week, Last Week, Earlier)
-   - Expandable items (click to see full meeting notes, action details)
-
-7. **Typography hierarchy:**
-   - Entity name: DM Sans 28px semibold
-   - Section headings: DM Sans 20px semibold
-   - Hero insight: DM Sans 18px medium
-   - Body text: DM Sans 14px regular
-   - Metadata labels: DM Sans 12px medium, charcoal/60
-   - Metadata values: DM Sans 14px regular
-
-8. **Entity-specific customization:**
-   - **Accounts:** Renewal section prominent (renewal health, ARR, renewal date)
-   - **Projects:** Status/progress section prominent (milestones, timeline, team)
-   - **People:** Relationship section prominent (strength, last interaction, entity links)
-
-**Implementation:**
-
-- Create unified EntityDetailLayout component (shared structure)
-- Implement tabbed navigation (Overview, Details, Activity, Documents, Relationships)
-- Redesign intelligence summary (hero insight + quick insights + collapsible full assessment)
-- Implement grouped metadata cards (Financial, Renewal, Lifecycle, etc.)
-- Build activity timeline component (mixed activity types, chronological)
-- Add entity-specific customizations (accounts emphasize renewal, etc.)
-
-**Acceptance criteria:**
-
-- All three entity detail pages follow meeting intelligence report structure
-- Executive header with kicker/title/metadata/status chip (website pattern)
-- Hero insight (blockquote) shows AI-synthesized 1-2 sentence summary
-- Risk grid (3 cards) shows top 3 risks/concerns with mini-labels
-- Metrics grid (4 cards) shows entity-specific key metrics
-- Main grid uses two-column layout (primary content left, side stack right)
-- Side cards use website pattern (mini-labels, stack-lists, color-coded backgrounds)
-- Typography matches website (DM Sans headings, JetBrains Mono metadata)
-- Color coding consistent (gold for customer, sage for positive, peach for risk)
-- Design feels like receiving a briefing document, not querying a database
-- Visual hierarchy emphasizes hero insight and risk grid over supporting details
+**I224: Entity detail pages redesign** — Closed (0.8.0). Rebuilt all entity detail pages in meeting-intelligence-report structure with executive header, hero insight, risk grid, metrics grid, and two-column layout.
 
 ---
 
@@ -987,8 +363,12 @@ Not all orgs use Gong (sales-focused). Fathom and Granola are popular meeting no
 
 **Granola:**
 
-- API: TBD (check Granola API docs for endpoints)
-- Likely similar: meetings list + transcript fetch
+- **Official MCP server** launched Feb 2026: `https://mcp.granola.ai/mcp`
+- Transport: Streamable HTTP (SSE)
+- Auth: OAuth flow (no API key setup — same pattern as Claude/ChatGPT connectors)
+- Data: meeting notes, transcripts, workspace data
+- Cloud-based (not local-first like Quill — Granola stores notes server-side)
+- Enterprise tier offers advanced access controls, usage monitoring, higher rate limits
 
 **Mapping:**
 
@@ -997,11 +377,14 @@ Not all orgs use Gong (sales-focused). Fathom and Granola are popular meeting no
 
 **Sync Workflow:**
 
-1. Connect via OAuth (Settings → Integrations)
-2. Fetch meetings from last 90 days
-3. Match to DailyOS meetings (time window + participant overlap)
-4. Store transcripts in `integration_cache`
-5. Index content for entity intelligence
+1. **Granola:** Connect DailyOS MCP client to `https://mcp.granola.ai/mcp` (Streamable HTTP + OAuth)
+2. **Fathom:** Connect via OAuth REST API (Settings → Integrations)
+3. Fetch meetings from last 90 days
+4. Match to DailyOS meetings (time window + participant overlap)
+5. Store transcripts in `integration_cache`
+6. Index content for entity intelligence
+
+**Implementation note:** Granola's official MCP server means no custom wrapper needed — DailyOS's I54 MCP client connects directly. Fathom still requires a REST-to-MCP adapter or direct API integration.
 
 **UI:**
 
@@ -1011,8 +394,8 @@ Not all orgs use Gong (sales-focused). Fathom and Granola are popular meeting no
 
 **Acceptance criteria:**
 
-- OAuth connection to Fathom works
-- OAuth connection to Granola works
+- Granola: MCP client connects to `https://mcp.granola.ai/mcp` via Streamable HTTP + OAuth
+- Fathom: OAuth connection works
 - Transcripts sync and associate with DailyOS meetings
 - Transcripts indexed for entity intelligence enrichment
 - Meeting detail page shows transcript when available
@@ -1212,27 +595,9 @@ Partial: agenda/wins are now semantically split (`recentWins`/`proposedAgenda`) 
 
 ### Delivery & Error Handling
 
-**I204: Weekly briefing partial delivery on timeout**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved with explicit week "enrichment incomplete" UI state, mechanical-data-first rendering, and retry command for enrichment-only recovery.
-Midweek weekly briefing timed out. Actions rendered on the week page but nothing else (no narrative, no readiness, no day shapes). The pipeline produces partial results when the AI enrichment phase times out, but the page doesn't communicate what happened or offer recovery. Need: (a) graceful degradation that shows mechanical data even when AI fails, (b) clear in-app indication that enrichment was incomplete, (c) option to retry the failed phase without re-running the full pipeline.
+**I204: Weekly briefing partial delivery on timeout** — Closed (Sprint 17). Resolved with enrichment-incomplete UI state and retry command.
 
-Acceptance criteria:
-
-- Mechanical sections (schedule, actions, day shapes) always render regardless of AI phase outcome.
-- AI-dependent sections show explicit "enrichment incomplete" state, not empty/broken layout.
-- User can trigger retry of the failed AI phase from the week page or dashboard.
-- Timeout threshold is configurable or at least documented.
-
-**I205: No error/log visibility in settings after workflow failure**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved with a bounded Delivery History section in Settings including status, duration, trigger, error summary, failure phase, retryability, and retry actions.
-When a workflow fails, the error toast tells the user to "check settings" but there is no error log, delivery history, or diagnostic information visible anywhere in the settings UI. The user has no way to understand what went wrong or whether to retry. Need a delivery log or workflow history surface.
-
-Acceptance criteria:
-
-- Settings page includes a "Delivery History" or "Activity Log" section.
-- Each workflow run (daily briefing, weekly briefing, inbox processing) shows: timestamp, status (success/partial/failed), duration, and error summary if applicable.
-- Failed runs show actionable context (which phase failed, whether it's retryable).
-- Log is bounded (last 14 days or last 50 runs) to avoid unbounded growth.
+**I205: No error/log visibility in settings after workflow failure** — Closed (Sprint 17). Resolved with Delivery History section in Settings.
 
 ### Meetings & Prep
 
@@ -1432,25 +797,7 @@ Frontend (`src/components/ForecastSection.tsx`):
 
 ---
 
-**I206: View Prep button disappears from dashboard MeetingCard**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved by durable `prep_context_json` fallback in dashboard meeting hydration and meeting-id based prep routing so historical prep survives ephemeral file cleanup.
-Dashboard MeetingCard "View Prep" button depends on `meeting.hasPrep` which checks for a prep JSON file at `_today/data/preps/{meetingId}.json`. These files are ephemeral — cleaned up on the next briefing delivery by `deliver_preps()` and `reconcile_prep_flags()`. After cleanup, `hasPrep` flips to `false` and the button disappears. Switching between dev and DMG builds also triggers this because they use separate Tauri app data directories (separate SQLite databases) while sharing the same filesystem workspace.
-
-Meanwhile, account detail pages correctly show prep context via the `prep_context_json` snapshot persisted in SQLite during archive reconciliation — a separate, durable code path.
-
-Root cause: dashboard button uses ephemeral file check; account detail uses durable DB snapshot. Dashboard should use the durable path too.
-
-Fix approach:
-
-- (a) `computeMeetingDisplayState()` should check `prep_context_json` from SQLite (via the meeting record) as a fallback when the prep file is gone.
-- (b) "View Prep" link should route to a prep view that can render from either the JSON file (today) or the SQLite snapshot (historical).
-- (c) Prep files should not be cleaned until the next day's briefing runs (not same-day re-delivery).
-
-Acceptance criteria:
-
-- "View Prep" button visible on MeetingCard for any meeting that has prep context in SQLite, regardless of whether the JSON file still exists on disk.
-- Clicking "View Prep" on a historical meeting renders from `prep_context_json` snapshot.
-- Prep files survive same-day re-deliveries; only cleaned when the meeting date has passed and a new briefing runs.
+**I206: View Prep button disappears from dashboard MeetingCard** — Closed (Sprint 17). Resolved by durable `prep_context_json` fallback and meeting-id based prep routing.
 
 **I122: Sunday briefing fetches Monday calendar labeled as "today"**
 Running briefing on Sunday produces Monday's meetings labeled "today." Either intentional (UI should say "Tomorrow") or needs calendar day fix.
@@ -2102,19 +1449,9 @@ Audit all `src/components/ui/` for remaining standalone `@radix-ui/*` imports, s
 **I110: Portfolio alerts on accounts sidebar/list**
 IntelligenceCard removed (ADR-0055). Renewal + stale contact alerts need a new home. `intelligence.rs` computation exists — purely frontend wiring.
 
-**I164: Inbox file processing status**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved by surfacing persistent processing state from `processing_log` at load and showing explicit status indicators (including unprocessed) with Process button always visible.
-Processing state lives only in React memory. Cross-reference inbox files with `processing_log` on load. Show status indicators (unprocessed vs processed). Make Process button visible by default.
+**I164: Inbox file processing status** — Closed (Sprint 17). Resolved with persistent processing state from `processing_log`.
 
-**I203: Inbox dropzone duplicate file bug**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved via frontend duplicate drop-event suppression and backend source-path deduplication in `copy_to_inbox`.
-When dragging and dropping a new document into the Inbox dropzone, the file appears twice in the inbox list. Likely due to double-handling in the drop event handler or sync conflict between UI state and file watcher. Root cause and fix needed.
-
-Acceptance criteria:
-
-- Single drag-drop of a new file adds exactly one entry to the inbox list.
-- No duplicate entries appear on subsequent file syncs.
-- Drop handler and file watcher don't trigger conflicting updates.
+**I203: Inbox dropzone duplicate file bug** — Closed (Sprint 17). Resolved via frontend duplicate drop-event suppression and backend source-path deduplication.
 
 **I140: Branded Google OAuth experience**
 Two surfaces, one flow:
@@ -2122,71 +1459,7 @@ Two surfaces, one flow:
 - **Browser callback page:** On-brand success/failure HTML with DailyOS design tokens + "what happens next" guidance. Replaces the plain `<h2>` response from auth.rs.
 - **Settings page auth UX:** Loading state on the connect button while browser flow is active ("Waiting for authorization..."), error banner if exchange fails (surface the actual error from I208 logging), brief success confirmation before flipping to "Connected" state. No step-by-step progress — the exchange is 1-3 seconds.
 
-**I208: Google OAuth architecture — build-time secrets + reliable auth flow**
-**Status:** Closed in Sprint 17 (February 13, 2026). Resolved by replacing hardcoded secret usage with compile-time `DAILYOS_GOOGLE_SECRET`, CI secret validation/injection in release builds, and frontend/backend auth-failure handling (`google-auth-failed`, timeout, and settings error states).
-
-The PKCE migration (ADR-0068, Sprint 16) broke production OAuth by stripping `client_secret` from embedded credentials. Google Desktop App clients require `client_secret` in both token exchange and refresh, even with PKCE. The secret is "not truly secret" per Google's docs (it ships in every binary), but it must not appear in source code — GitHub flags Google OAuth secrets and may trigger revocation.
-
-**Current state (broken):**
-
-- Embedded credentials have `client_secret` read from `option_env!("DAILYOS_GOOGLE_SECRET")` — `None` when env var is absent
-- Without the secret, token exchange returns 400 Bad Request
-- Dev workaround: `~/.dailyos/google/credentials.json` with client_secret (file overrides embedded)
-- DMG builds have no working OAuth until CI injects the secret
-
-**What's already fixed (v0.7.2):**
-
-- Browser callback deferred until after token exchange (no more false "success" messages)
-- Diagnostic logging at every step of the OAuth flow
-- Token refresh no longer strips `client_secret` from saved tokens
-
-**What needs to happen:**
-
-Phase 1 — CI secret injection (unblocks DMG builds):
-
-- Add `DAILYOS_GOOGLE_SECRET` to GitHub repo secrets (value from Google Cloud Console)
-- Update `.github/workflows/release.yml` to pass env var during `pnpm tauri build`
-- `option_env!("DAILYOS_GOOGLE_SECRET")` in `embedded_credentials()` reads it at compile time
-- Verify: build DMG, test OAuth flow end-to-end, confirm Keychain storage
-- Rotate the old client_secret in Google Cloud Console (the old value is in git history)
-
-Phase 2 — Secret hygiene:
-
-- Scrub the old `GOCSPX-XRZzG4-...` secret from git history (BFG or `git filter-repo`)
-- OR: create a fresh OAuth client in Google Cloud, retire the old one entirely
-- Confirm GitHub secret scanning alert is resolved
-- Document the secret management approach in an ADR
-
-Phase 3 — Frontend auth UX (merge with I140):
-
-- Settings page: loading state during OAuth flow, error display on failure
-- `google-auth-failed` event so frontend doesn't hang silently
-- `useGoogleAuth` timeout (30s) with error state
-- Branded browser callback pages (I140 scope)
-
-**Files involved:**
-
-- `src-tauri/src/google_api/mod.rs` — `embedded_credentials()`, `refresh_access_token()`
-- `src-tauri/src/google_api/auth.rs` — `run_consent_flow()`, callback handling
-- `src-tauri/src/google_api/token_store.rs` — Keychain storage
-- `src-tauri/src/commands.rs` — `start_google_auth` IPC command
-- `src/hooks/useGoogleAuth.ts` — frontend state management
-- `.github/workflows/release.yml` — CI build pipeline
-
-**Dev workflow (until Phase 1 ships):**
-
-- `~/.dailyos/google/credentials.json` with client_id + client_secret from Google Cloud Console
-- `pnpm tauri dev` uses the file override, no embedded secret needed
-- DMG builds require `DAILYOS_GOOGLE_SECRET` env var
-
-Acceptance criteria:
-
-- DMG builds authenticate with Google without secrets in source code
-- `client_secret` injected at compile time via CI environment variable
-- Old exposed secret rotated or client retired
-- No GitHub secret scanning alerts
-- Browser shows accurate success/failure (already done)
-- Token refresh works beyond the initial hour (client_secret preserved in saved token)
+**I208: Google OAuth architecture — build-time secrets + reliable auth flow** — Closed (Sprint 17). Resolved with compile-time `DAILYOS_GOOGLE_SECRET`, CI secret injection, and frontend/backend auth-failure handling.
 
 **I211: Onboarding to first briefing — calendar-aware context priming**
 Current onboarding ends with "Wait until tomorrow to see your first briefing." This creates a dead end: users have added accounts/projects/teams, connected Google, but have no immediate action. They'll likely try to generate a briefing anyway (even if empty), feel underwhelmed, and not understand how to make it better.
@@ -3788,279 +3061,13 @@ The devtools mock data fixtures (`src-tauri/src/devtools/fixtures/`) predate the
 
 ---
 
-### Website & Brand (0.8.1)
+### Website & Brand (0.8.1) — CLOSED
 
-**I299: App icon update — asterisk brand mark (replaces lightning bolt)**
-Replace the current gold lightning bolt app icon with the asterisk brand mark established in ADR-0076. The asterisk (`*`) carries three layers of meaning: DOS wildcard (`*.*` = everything), editorial footnote (more context here), and sunrise (daily, dawn, your day is ready).
-
-**Current state:**
-- App icon: gold lightning bolt on charcoal circle (SVG in `docs/favicon.svg`, PNG variants, Tauri app icon)
-- Website nav logo: same lightning bolt SVG inline in `docs/index.html`
-- BrandMark component already exists in the Tauri app (shipped in 0.8.0)
-
-**Scope:**
-1. Generate app icon from Montserrat ExtraBold asterisk (6-pointed, diamond-shaped rays, per ADR-0076 spec)
-2. Produce all required sizes: 512px, 256px, 128px, 64px, 32px, 16px (Tauri + web)
-3. Replace `src-tauri/icons/` — all `.ico`, `.png`, `.icns` files
-4. Replace `docs/favicon.svg`, `docs/favicon-16x16.png`, `docs/favicon-32x32.png`, `docs/apple-touch-icon.png`
-5. Update inline SVG logo in website nav (all 4 HTML pages)
-6. Color: turmeric asterisk on charcoal background (primary lockup), or charcoal asterisk on cream (light variant)
-
-**Acceptance criteria:**
-- App icon shows asterisk mark at all sizes, legible down to 32px
-- Website favicons match app icon
-- Nav logo across all website pages uses asterisk mark
-- BrandMark SVG in Tauri app and website icon are visually consistent
+All issues (I241, I299, I300) shipped in v0.8.1. Website rebrand, asterisk app icon, and updated visuals complete. See CHANGELOG for details.
 
 ---
 
-**I241: Public website rebrand — editorial design language + brand identity**
-Apply the editorial design language (ADR-0073), brand identity (ADR-0076), and magazine-layout patterns (ADR-0077) to the public website at daily-os.com. Align website copy with POSITIONING.md narrative framework.
-
-**Current state:**
-The website (`docs/`) predates the editorial redesign. It uses:
-- Old color tokens (`--gold: #b8922b`, `--sage: #497f5b`, `--rose: #a7524d`) — don't match ADR-0076 material palette
-- No Newsreader serif font — headings are DM Sans only
-- Old lightning bolt logo — not the asterisk mark
-- Copy partially aligned with positioning but doesn't use the three-act narrative structure
-- No atmospheric wash, no asterisk watermark, no editorial section patterns
-
-**What changes:**
-
-1. **Typography:** Add Newsreader for headings (editorial warmth). Apply ADR-0073 type scale — 40-44px page headlines, 22-26px section titles, serif hierarchy.
-2. **Color system:** Update CSS tokens to ADR-0076 material palette — cream (#f5f2ef), charcoal (#1e2530), turmeric (#c9a227), terracotta (#c4654a), sage (#7eaa7b), larkspur (#8fa3c4). Four families: Paper, Desk, Spice, Garden.
-3. **Layout patterns:** Apply magazine-layout section patterns from ADR-0077 — margin grid, section rules (thin dividers, not cards), generous whitespace (56-64px between sections, 80px hero padding).
-4. **Atmosphere:** Add subtle atmospheric wash (radial gradients at low opacity, breathing animation) per ADR-0077 shared chrome spec.
-5. **Asterisk watermark:** Large asterisk behind hero content (420px, rotated 12°, ~7% opacity turmeric).
-6. **Brand mark:** Replace lightning bolt logo with asterisk in nav (handled by I299, coordinate).
-7. **Finite page pattern:** Add `* * *` end markers on content-heavy pages (tour, philosophy).
-
-**Copy alignment with POSITIONING.md:**
-
-- **Home hero:** Keep "It should just know." as primary tagline. Add brand line "The computer is personal again." as secondary hero option.
-- **Three-act structure:** The homepage should follow the narrative architecture — Act 1 (guilt loop / prep trap), Act 2 (reframe / "what if it just knew?"), Act 3 (the morning / proof).
-- **Five pillars:** Philosophy page should map to the five pillars (Ownership, AI-Native, Zero-Guilt, Consumption Over Production, Opinionated But Escapable).
-- **Brand voice:** Warm, confident, editorial — "Dyson product copy, Leica marketing, a New Yorker feature."
-- **Key phrases to feature:** "Your brain shouldn't have a landlord," "The system catches up. You don't have to," "AI produces. You curate."
-
-**Files to update:**
-- `docs/site.css` — Full token update + Newsreader font + editorial layout patterns
-- `docs/index.html` — Hero, narrative structure, copy alignment
-- `docs/tour.html` — Editorial typography, section patterns, atmospheric wash
-- `docs/philosophy.html` — Five pillars alignment, editorial layout
-- `docs/setup.html` — Consistent chrome, typography update
-- `docs/site.js` — Breathing animation for atmospheric wash (if needed)
-
-**Acceptance criteria:**
-- All 4 pages use Newsreader headings, ADR-0076 color palette, editorial spacing
-- Homepage narrative follows three-act structure from POSITIONING.md
-- Philosophy page reflects the five pillars
-- Atmospheric wash and asterisk watermark present
-- Key positioning phrases ("It should just know," "The computer is personal again," "Open the app. Your day is ready.") appear in appropriate contexts
-- Website feels like the same publication as the app — consistent brand across app and marketing
-- Mobile responsive (existing responsiveness preserved with new design)
-
----
-
-**I300: Website visuals update — screenshots, og-image, favicons for new brand**
-Update all visual assets on the website to reflect the 0.8.0 editorial redesign and brand identity. Current screenshots show the old pre-redesign app. OG image and social cards need the asterisk mark.
-
-**Scope:**
-1. **App screenshots:** Capture new screenshots of the redesigned app (daily briefing, weekly forecast, account detail, meeting intelligence) for homepage and tour page artifact panels
-2. **OG image:** Redesign `docs/og-image.png` with asterisk mark, editorial typography (Newsreader), and material color palette. Should communicate the brand at a glance in social shares.
-3. **Favicons:** New favicon set based on asterisk mark (coordinated with I299)
-4. **Tour page artifacts:** Update the interactive mockup panels to reflect the magazine-layout editorial design
-
-**Acceptance criteria:**
-- Homepage artifact panels show current app design (not pre-redesign screenshots)
-- Tour page mockups reflect the editorial design language
-- OG image uses asterisk mark and editorial typography
-- Social shares (Twitter, LinkedIn, Slack) show compelling preview with new brand
-
----
-
-**I256: Proposed actions workflow + hygiene-based auto-archive**
-Transcript processing extracts action items automatically, but AI extraction isn't perfect. Currently extracted actions are committed immediately to the actions list, creating noise and management burden. After 5 meetings, actions ballooned from 10 → 60+ items, violating P1 (Zero-Guilt by Default). Need proposed/draft state with accept/trash workflow and 7-day auto-archive.
-
-**The Problem:**
-
-1. **AI extraction errors:** Actions extracted for other people, misinterpreted commitments, non-actions ("Thanks for joining")
-2. **No human review:** Extracted actions go straight to actions list (no confirmation step)
-3. **Noise accumulation:** 5 meetings = 50+ fake actions, user must "manage the tool" instead of getting value
-4. **Violates P1 (Zero-Guilt):** System creates work (reviewing/trashing fake actions) instead of reducing it
-5. **Violates P8 (Forgiveness):** No graceful decay — fake actions stay forever
-
-**Real Example:**
-
-- Meeting with 5 people
-- AI extracts: "Send deck to Sarah" (assigned to user, should be assigned to Sarah)
-- AI extracts: "Thanks for joining" (not an action)
-- AI extracts: "Follow up on pricing" (vague, user doesn't remember context)
-- User wakes up to 12 new actions, 8 are noise
-
-**The Solution:**
-
-**Phase 1: Proposed Actions State**
-
-- Extracted actions start in `status: proposed` (not `status: open`)
-- Proposed actions don't appear in main actions list by default
-- Meeting summary card shows: "3 proposed actions — review to accept or discard"
-- Actions page has "Proposed" filter/section (separate from main list)
-
-**Phase 2: Accept/Trash Workflow**
-
-- **Quick actions on meeting card:**
-  - ✓ Accept (status: proposed → open, moves to main actions list)
-  - ✗ Trash (status: proposed → discarded, removed from view)
-  - ⋮ Edit (modify text/owner before accepting)
-- **Bulk review:**
-  - "Review 12 proposed actions from this week" button
-  - Shows all proposed actions with quick accept/trash/edit
-  - Keyboard shortcuts (j/k to navigate, a to accept, x to trash)
-- **Passive option:**
-  - Do nothing = action stays proposed for 7 days, then auto-archived
-
-**Phase 3: 7-Day Auto-Archive (Zero-Guilt)**
-
-- Proposed actions older than 7 days → `status: auto_archived`
-- Auto-archived actions removed from all views (no notification, no guilt)
-- Rationale: If user didn't review in 7 days, it wasn't important
-- User can view auto-archived actions in Settings → Diagnostics (transparency, not visibility)
-
-**Phase 4: Hygiene System Integration**
-
-- **Re-evaluation after 2-3 days:**
-  - Hygiene scans proposed actions
-  - AI prompt: "Is this a real action for {user}? Or should it be trashed/reassigned?"
-  - Auto-trash obvious non-actions ("Thanks for joining", "Great meeting")
-  - Auto-reassign mis-assigned actions ("Send deck to Sarah" → assign to Sarah, not user)
-- **Confidence scoring:**
-  - High confidence (90%+) → auto-accept after 24 hours (opt-in setting)
-  - Medium confidence (60-90%) → stays proposed, user reviews
-  - Low confidence (<60%) → flagged for auto-archive after 3 days
-- **Silent fixes:**
-  - Extract owner from action text ("Send deck to Sarah" → `assignee: Sarah`)
-  - Extract entity from context ("Follow up on Acme pricing" → `linkedEntity: Acme`)
-  - Extract due date from text ("by Friday" → `dueDate: 2026-02-21`)
-
-**Data Model:**
-
-```sql
--- Add to actions table
-ALTER TABLE actions ADD COLUMN status TEXT DEFAULT 'open';
--- Values: 'proposed', 'open', 'completed', 'discarded', 'auto_archived'
-
-ALTER TABLE actions ADD COLUMN confidence_score REAL;
--- AI confidence 0.0-1.0 (used for auto-accept/auto-archive thresholds)
-
-ALTER TABLE actions ADD COLUMN extracted_at TEXT;
--- Timestamp when action was extracted (for 7-day auto-archive)
-```
-
-**UI/UX:**
-
-**Meeting Summary Card:**
-
-```
-┌─────────────────────────────────────────┐
-│ Acme QBR — 2:00 PM                      │
-│                                          │
-│ 3 proposed actions — review             │
-│ ✓ Send pricing proposal to CFO          │
-│ ✓ Follow up on ROI baseline by Friday   │
-│ ✗ Thanks for joining the call           │
-│                                          │
-│ [Review All (3)]                         │
-└─────────────────────────────────────────┘
-```
-
-**Actions Page (Proposed Section):**
-
-```
-┌─────────────────────────────────────────┐
-│ Actions                                  │
-│ [Open (12)] [Proposed (8)] [Completed]  │
-│                                          │
-│ Proposed Actions (8)                     │
-│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │
-│                                          │
-│ ✓ Send pricing proposal to CFO          │
-│   From: Acme QBR · 2 days ago · 92%     │
-│   [✓ Accept] [✗ Trash] [⋮ Edit]        │
-│                                          │
-│ ✓ Follow up on ROI baseline by Friday   │
-│   From: Acme QBR · 2 days ago · 85%     │
-│   [✓ Accept] [✗ Trash] [⋮ Edit]        │
-│                                          │
-│ ✗ Thanks for joining the call           │
-│   From: Acme QBR · 2 days ago · 15%     │
-│   [✓ Accept] [✗ Trash] [⋮ Edit]        │
-│   Auto-archives in 5 days               │
-└─────────────────────────────────────────┘
-```
-
-**Settings (Auto-Archive Config):**
-
-```
-┌─────────────────────────────────────────┐
-│ Proposed Actions                         │
-│                                          │
-│ [✓] Auto-archive after 7 days            │
-│ [✓] Hygiene system can auto-trash       │
-│     low-confidence actions (<30%)        │
-│ [ ] Auto-accept high-confidence actions  │
-│     (90%+) after 24 hours                │
-└─────────────────────────────────────────┘
-```
-
-**Implementation:**
-
-**Phase 1:**
-
-- Schema migration: add `status`, `confidence_score`, `extracted_at` columns
-- Update `extract_and_sync_actions()` to set `status: proposed`
-- UI: Proposed section in Actions page
-- UI: Quick accept/trash buttons on meeting cards
-
-**Phase 2:**
-
-- 7-day auto-archive cron job
-- Settings: auto-archive toggle
-- Diagnostics: view auto-archived actions
-
-**Phase 3:**
-
-- Hygiene system integration
-- AI re-evaluation of proposed actions
-- Auto-trash low-confidence (<30%)
-- Auto-reassign mis-assigned actions
-- Confidence scoring on extraction
-
-**Philosophy Alignment:**
-
-- **P1 (Zero-Guilt):** Proposed actions age out silently, no guilt for not reviewing
-- **P8 (Forgiveness):** System self-heals (hygiene auto-fixes, auto-archives noise)
-- **P7 (Consumption):** Review is consumption (accept/trash), not production (editing fake actions)
-- **P6 (AI-Native):** AI is the curator, not just the extractor
-
-**Acceptance Criteria:**
-
-- Actions extracted from transcripts start in `status: proposed`
-- Proposed actions don't appear in main actions list
-- Meeting cards show proposed action count with quick accept/trash
-- Actions page has "Proposed" section with bulk review UI
-- Proposed actions auto-archive after 7 days (no notification)
-- Hygiene system re-evaluates proposed actions after 2-3 days
-- Low-confidence actions (<30%) auto-trash after 3 days
-- Mis-assigned actions auto-reassign based on action text ("Send to Sarah" → Sarah)
-- User can view auto-archived actions in Settings → Diagnostics
-- Settings allows disabling auto-archive (opt-out)
-
-**Success Metric:**
-
-- After 5 meetings, user has 10-15 real actions (accepted), not 60+ noise actions
-- 90%+ of proposed actions are either accepted or auto-archived (not manually trashed)
-- User spends <2 minutes/day reviewing proposed actions, not 20 minutes managing fake actions
+**I256: Proposed actions workflow + hygiene-based auto-archive** — Closed (0.8.1). Implemented proposed action state, accept/trash workflow, 7-day auto-archive, and hygiene system integration for AI-extracted actions.
 
 ---
 
@@ -4105,8 +3112,6 @@ Store in `content_index.tags` column (JSON array).
 
 ---
 
----
-
 ## Superseded Issues
 
 *Closed as superseded by other work. Tracking for historical context.*
@@ -4124,14 +3129,14 @@ Store in `content_index.tags` column (JSON array).
 
 ### Reliability & Code Quality
 
-- **I231**: Guard `unwrap()` in `focus_capacity.rs` (lines 72, 95) against DST spring-forward gaps. `earliest()` returns `None` for non-existent local times. Replace with UTC fallback. (P2)
+- ~~**I231**~~: Guard `unwrap()` in `focus_capacity.rs` — Closed (0.8.1).
 - **I232**: Deduplicate `normalize_key` — local copy in `commands.rs:5383` duplicates `helpers.rs:6`. Replace with import. (P3)
 - **I233**: Extract `AccountDetailPage.tsx` sub-components — 2,929 lines is 3x the 1,000-line threshold. Split team management, intelligence panel, email signals, programs into child components. (P2)
 
 ### Performance
 
-- **I234**: Prune `IntelligenceQueue.last_enqueued` HashMap — entries inserted but never removed. Prune entries older than `CONTENT_DEBOUNCE_SECS` on dequeue. (P3)
-- **I235**: Consolidate `get_dashboard_data` DB reads — currently 4 separate `try_read` calls. Combine into single lock acquisition to reduce contention windows. (P3)
+- ~~**I234**~~: Prune `IntelligenceQueue.last_enqueued` HashMap — Closed (0.8.1).
+- ~~**I235**~~: Consolidate `get_dashboard_data` DB reads — Closed (0.8.1).
 - **I236**: Adaptive polling on WeekPage — increase interval to 2-3s during "enriching" phase (30-120s). 1s polls are excessive when user watches progress stepper. (P3)
 
 ### Intelligence Architecture
@@ -4216,75 +3221,17 @@ Depends on: ADR-0077 editorial redesign implementation, I259 intelligence field 
 ### Claude Cowork Integration (0.8.0)
 
 **I244: Claude Cowork plugin — operational intelligence bridge (umbrella)**
+Filesystem-based integration: DailyOS writes structured intelligence, Cowork plugin teaches Claude to navigate it, Cowork writes deliverables back, DailyOS file watcher picks up changes. Plugin is baked into the app (not marketplace), version-locked with app releases.
 
-DailyOS produces structured intelligence (JSON + markdown) in a filesystem workspace. Claude Cowork consumes file-based workspaces via plugins. The architecture alignment is direct — no API, no server, the filesystem IS the integration layer. DailyOS writes, Cowork reads. Cowork writes back, DailyOS's file watcher picks up changes.
+**I274: Phase 1 — Restructure plugin to Cowork format + ZIP package** — Closed (0.8.0). Plugin restructured to `.claude-plugin/` format with YAML frontmatter, validated in Cowork UI.
 
-**Distribution: baked into the app, not a separate marketplace install.** The plugin is tightly coupled to the app's data format — when intelligence.json gains a field, the plugin skills must update in lockstep. Shipping separately creates version drift. The user already has DailyOS installed; requiring a separate marketplace install violates P3 (Buttons, Not Commands).
+**I275: Phase 2 — Workspace CLAUDE.md generation from initialize_workspace()** — Closed (0.8.0). Zero-config activation via workspace `CLAUDE.md` and `.claude/settings.json` auto-generation.
 
-**Plugin format (validated against Cowork docs, Feb 2026):** Cowork plugins are entirely file-based — markdown for skills/commands/agents, JSON for configuration. Manifest lives at `.claude-plugin/plugin.json` (not root). Plugins install via ZIP upload in Cowork UI or `claude plugin install` CLI. Plugins run in an isolated VM with only explicitly authorized folders mounted. `${CLAUDE_PLUGIN_ROOT}` provides the plugin's cached install path.
+**I276: Phase 3 — App-managed plugin distribution (Settings UI + auto-write)** — Deferred. Manual ZIP install works; Settings UI not yet needed. Planned for 0.9.0.
 
-**Draft plugin content** (pre-built at `daybreak/docs/sprint-29-claude/`):
+**I277: Phase 4 — Marketplace repo for discoverability (optional, P3)** — Deferred. Lightweight GitHub catalog for plugin directory discoverability.
 
-- 6 commands: `/dailyos:prep`, `/dailyos:agenda`, `/dailyos:complete`, `/dailyos:review`, `/dailyos:report`, `/dailyos:brief`
-- 4 skills: operational-intelligence, meeting-prep, account-context, action-execution
-- 1 agent: researcher (cross-entity synthesis)
-- Workspace CLAUDE.md template
-
-**Bidirectional file-based flow:**
-
-1. DailyOS writes `_today/data/*.json`, `Accounts/*/intelligence.json`, `People/*.md`
-2. Cowork plugin skills teach Claude to navigate this structure
-3. Cowork writes deliverables to entity `Documents/`, `Meeting-Notes/` directories
-4. DailyOS file watcher detects changes → triggers intelligence queue → enrichment cycle incorporates new content
-
-Validates the "archive is the product" philosophy — the structured workspace becomes more valuable because Cowork can consume and act on it.
-
-**I274: Phase 1 — Restructure plugin to Cowork format + ZIP package**
-
-The draft content at `daybreak/docs/sprint-29-claude/` has the right domain knowledge but the wrong directory structure. Restructure to match the actual Cowork plugin format:
-
-1. Move `plugin.json` → `.claude-plugin/plugin.json` with correct schema (add `author`, `homepage`, `repository`, `license`, component path fields)
-2. Add YAML frontmatter to all SKILL.md files (`name`, `description`, `disable-model-invocation`)
-3. Validate command files support `$ARGUMENTS` placeholder
-4. Add proper frontmatter to agent file (`name`, `description`)
-5. Build ZIP, test install in Cowork UI
-6. Validate skills auto-activate, commands appear as `/dailyos:*`, agent is invocable
-
-Output: working ZIP plugin installable in Cowork. Plugin source lives in repo at `cowork-plugin/`.
-
-**I275: Phase 2 — Workspace CLAUDE.md generation from initialize_workspace()**
-
-Zero-config activation layer. When a user opens their DailyOS workspace in Cowork/Claude Code, Claude automatically loads workspace context.
-
-1. `initialize_workspace()` writes a `CLAUDE.md` to workspace root that teaches Claude the workspace structure, file formats, entity conventions, and how to navigate intelligence data
-2. Content derived from the plugin's operational-intelligence skill but tailored for workspace-root context (not plugin context)
-3. Also writes `.claude/settings.json` with file permission patterns and placeholder MCP server config
-4. App manages these files — overwrites on version change to stay in lockstep
-
-**I276: Phase 3 — App-managed plugin distribution (Settings UI + auto-write)**
-
-1. App writes the complete plugin to `~/.dailyos/cowork-plugin/` on startup, version-locked with app version
-2. Settings → Integrations gets a "Claude Cowork" card with: Install (copies ZIP to Downloads or opens file picker), Copy Path (for manual install), version indicator
-3. `.claude/settings.json` in workspace updated with `extraKnownMarketplaces` pointing to local plugin path
-4. Plugin auto-updates when app version changes (overwrite on startup if version mismatch)
-
-**I277: Phase 4 — Marketplace repo for discoverability (optional, P3)**
-
-Lightweight `dailyos/cowork-marketplace` GitHub repo with `.claude-plugin/marketplace.json` catalog pointing to the main repo's plugin. Not the primary distribution path — for users who discover DailyOS through Cowork's plugin directory. Contains just the manifest + README.
-
-**I245: "Open in Cowork" UX pattern — DEFERRED**
-
-**Status: Deferred.** Blocked by missing URL scheme — no `claude://` deep linking protocol exists as of Feb 2026 (GitHub issue anthropics/claude-code#10366 open but unimplemented). The original design depended on programmatically opening Cowork with task context from DailyOS.
-
-Without deep linking, the only handoff is clipboard + toast ("Context copied — paste in Cowork"). Implementing this across 8 surfaces (IntelligenceCard, MeetingCard, ActionItem, meeting detail, entity detail, email cards, focus page, weekly briefing) for a clipboard-only experience isn't worth the cost.
-
-**Revisit when:** Anthropic ships URL scheme / deep linking for Cowork. The `_cowork/` handoff directory concept and context assembly logic remain valid — the gap is only in the launch mechanism.
-
-Original design preserved below for future reference:
-
-- Every intelligence surface gets Copy + "Open in Cowork" buttons side by side
-- Claude logo icon, muted by default, warm gold on hover — first-class interaction, not integration badge
-- File-based handoff: write context to `_cowork/<timestamp>-<type>.md`, Cowork plugin picks it up
+**I245: "Open in Cowork" UX pattern — DEFERRED** — Blocked by missing `claude://` URL scheme (anthropics/claude-code#10366). Revisit when Anthropic ships deep linking.
 
 ### Quality of Life (0.8.0 / 0.8.x)
 
@@ -4639,7 +3586,7 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 **Sequencing:**
 1. **0.8.0:** ~~I281~~, ~~I282~~, ~~I283~~, ~~I284~~, ~~I292~~, ~~I293~~, ~~I294~~ — done.
 2. **0.8.x:** I285, I286, I288, I295, I296 — DB integrity + biggest token win + parsing robustness + prompt injection hardening
-3. **1.0.0 gate:** ~~I287~~, ~~I289~~, ~~I290~~, ~~I291~~, I297 — caching, batching, DRY extraction done (0.8.2); audit trail remaining
+3. **1.0.0 gate:** I287, I289, I290, I291, I297 — caching, batching, DRY extraction, audit trail
 
 **Beta release criteria for I280:** All P0 and P1 sub-issues closed. P2 sub-issues either closed or explicitly deferred with documented rationale.
 
@@ -4734,3 +3681,141 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 | D3 | Google Calendar API | Runtime | Optional |
 | D4 | Claude Cowork plugin format | Runtime | Available (Jan 2026) |
 | D5 | Claude Cowork URL scheme / deep linking | Runtime | **Not available** (GitHub #10366 open). Blocks I245. |
+
+---
+
+### I304: Prompt Audit — Review All AI Prompts for Specificity
+
+**Priority:** P2 (0.8.3)
+**Area:** Intelligence / Code Quality
+
+**The Problem:**
+
+Many of our AI prompts were written early and are generic — they describe *what* to produce but not *how* to produce it well. As we've scaled to more enrichment surfaces (meeting prep, entity intelligence, transcript processing, email classification, weekly briefing, hygiene fixes), prompt quality has become the single biggest lever for output quality. The transcript enrichment prompt recently needed specificity improvements, and the same pattern likely applies across the board.
+
+**What "generic" looks like:**
+- "Summarize this meeting" (no guidance on length, audience, what to emphasize)
+- "Extract action items" (no examples of good vs. bad extractions, no format spec)
+- "Assess this account" (no rubric for what constitutes a useful executive assessment)
+
+**What "tailored" looks like:**
+- Explicit output format with field-level guidance
+- Examples of good output (few-shot where it helps)
+- Audience context ("this will be read by a TAM preparing for a customer call")
+- Negative examples or constraints ("do not include internal jargon", "keep under 2 sentences")
+- Domain-specific vocabulary and framing
+
+**Scope — prompts to audit:**
+
+1. **Meeting prep** (`meeting_context.rs`) — agenda, talking points, entity context synthesis
+2. **Entity intelligence** (`entity_intel.rs`, `intelligence.rs`) — executive assessment, risks, wins, current state
+3. **Transcript enrichment** (`processor/`) — summary, action extraction, signal detection
+4. **Email classification** (`workflow/email.rs`) — priority/FYI categorization, signal extraction
+5. **Weekly briefing** (`workflow/`) — narrative synthesis, readiness assessment, day shapes
+6. **Daily briefing** (`prepare/`) — schedule narrative, action priorities
+7. **Hygiene fixes** (`scheduler.rs`, hygiene prompts) — name extraction, file summarization
+8. **Google Calendar classification** (`google_api/classify.rs`) — meeting type inference
+
+**Audit criteria per prompt:**
+
+- Is the output format explicitly specified (JSON schema, markdown structure)?
+- Does it describe the *audience* consuming the output?
+- Does it include positive examples of good output?
+- Does it include constraints or negative examples?
+- Is domain vocabulary defined (e.g., what "at risk" means in context)?
+- Is the prompt length proportional to output complexity?
+- Are we wasting tokens on boilerplate the model already knows?
+
+**Acceptance criteria:**
+
+- Every AI prompt in the codebase reviewed and cataloged
+- Each prompt rated on specificity (generic / adequate / tailored)
+- Generic prompts rewritten with output-specific guidance
+- Before/after output quality compared for rewritten prompts
+- No regression in existing enrichment quality
+
+---
+
+### I301: Calendar Attendee RSVP Status + Schema Enrichment for Meeting Intelligence
+
+**Priority:** P1 (0.8.3)
+**Area:** Meetings / Calendar Pipeline / Intelligence
+
+**The Problem:**
+
+The meeting intelligence report's "The Room" section shows all people linked to a meeting via the `meeting_attendees` junction table or matched by email from the `meetings.attendees` field. There is no filtering by RSVP/acceptance status. This means declined attendees and people who haven't responded appear alongside confirmed attendees, diluting the usefulness of the room briefing.
+
+Additionally, the Google Calendar API provides rich per-attendee metadata that we currently discard:
+- `responseStatus` (accepted / tentative / declined / needsAction)
+- `optional` (boolean — required vs optional attendee)
+- `organizer` (boolean — who called the meeting)
+- `comment` (free-text RSVP comment)
+
+**Current Data Flow (as of 0.8.2):**
+
+```
+Google Calendar API → Attendee struct (email, response_status, resource, is_self)
+                    ↓
+              GoogleCalendarEvent.attendees: Vec<String>  ← emails only, status discarded
+                    ↓
+              meetings.attendees (comma-separated emails in DB)
+                    ↓
+              hydrate_attendee_context() → AttendeeContext[]  ← no RSVP filtering
+```
+
+The `response_status` field exists in the internal `Attendee` deserialization struct (`google_api/calendar.rs:57`) but is only used for self-declined detection (skip events the user declined). It is never carried through to storage.
+
+**Proposed Solution:**
+
+**Phase 1: Carry RSVP through the pipeline**
+
+1. Add `attendee_rsvp: HashMap<String, String>` to `GoogleCalendarEvent` — maps lowercase email → response status
+2. Populate it alongside `attendees` in `fetch_events()` (calendar.rs:170-177)
+3. Store RSVP data in the DB — either:
+   - Option A: Add `rsvp_status TEXT` column to `meeting_attendees` junction table (cleanest, requires migration)
+   - Option B: Add `attendee_rsvp_json TEXT` column to `meetings` table (simpler, less normalized)
+4. Update calendar sync (`google.rs` / `scheduler.rs`) to persist RSVP on each sync
+
+**Phase 2: Filter in hydrate_attendee_context**
+
+5. In `hydrate_attendee_context()` (commands.rs), filter attendees:
+   - **Show:** accepted, tentative
+   - **Hide:** declined
+   - **Show with indicator:** needsAction (no response yet — useful signal)
+6. Add RSVP badge to the frontend `UnifiedAttendeeList` component:
+   - Accepted: no badge (default)
+   - Tentative: "Tentative" mono badge
+   - No response: "Awaiting" mono badge in tertiary
+
+**Phase 3: Additional calendar metadata enrichment**
+
+7. Carry `optional` boolean — distinguish required vs optional attendees
+8. Carry `organizer` boolean — show who called the meeting
+9. Surface these in the attendee row: "Organizer" badge, visual de-emphasis for optional attendees
+
+**Files Involved:**
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/google_api/calendar.rs` | Add `attendee_rsvp` to `GoogleCalendarEvent`, populate in `fetch_events` |
+| `src-tauri/src/google_api/classify.rs` | Update test helper `make_event` |
+| `src-tauri/src/db.rs` | Migration: add `rsvp_status` to `meeting_attendees` or JSON column to `meetings` |
+| `src-tauri/src/migrations.rs` | New migration for schema change |
+| `src-tauri/src/google.rs` or `scheduler.rs` | Persist RSVP on calendar sync |
+| `src-tauri/src/commands.rs` | Filter by RSVP in `hydrate_attendee_context()` |
+| `src/pages/MeetingDetailPage.tsx` | RSVP badges in `UnifiedAttendeeList` |
+| `src/types/index.ts` | Add `rsvpStatus` to `AttendeeContext` |
+
+**Migration Considerations:**
+
+- Existing meetings won't have RSVP data until the next calendar sync runs
+- The sync should backfill RSVP for upcoming meetings on first run after migration
+- Past (frozen) meetings retain their existing attendee data — no backfill needed
+
+**Acceptance Criteria:**
+
+1. "The Room" only shows accepted + tentative attendees (declined filtered out)
+2. "Awaiting response" attendees shown with subtle indicator
+3. RSVP status persists across app restarts (stored in DB, not just memory)
+4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
+5. No regression on existing meeting prep for meetings without RSVP data

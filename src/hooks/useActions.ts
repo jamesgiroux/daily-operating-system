@@ -106,14 +106,16 @@ export function useActions(initialSearch?: string): UseActionsReturn {
   const createAction = useCallback(
     async (params: CreateActionParams): Promise<string> => {
       const id = await invoke<string>("create_action", {
-        title: params.title,
-        priority: params.priority,
-        dueDate: params.dueDate,
-        accountId: params.accountId,
-        projectId: params.projectId,
-        personId: params.personId,
-        context: params.context,
-        sourceLabel: params.sourceLabel,
+        request: {
+          title: params.title,
+          priority: params.priority,
+          dueDate: params.dueDate,
+          accountId: params.accountId,
+          projectId: params.projectId,
+          personId: params.personId,
+          context: params.context,
+          sourceLabel: params.sourceLabel,
+        },
       });
       await loadActions();
       return id;

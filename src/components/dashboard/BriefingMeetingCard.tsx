@@ -174,12 +174,11 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
   const prep = meeting.prep;
   if (!prep) return null;
 
-  const atAGlance = prep.metrics?.slice(0, 4) ?? [];
   const discuss = prep.actions ?? prep.questions ?? [];
   const watch = prep.risks ?? [];
   const wins = prep.wins ?? [];
 
-  const hasSections = atAGlance.length > 0 || discuss.length > 0 || watch.length > 0 || wins.length > 0;
+  const hasSections = discuss.length > 0 || watch.length > 0 || wins.length > 0;
   if (!hasSections) return null;
 
   return (
@@ -187,7 +186,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
       {discuss.length > 0 && (
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelDiscuss)}>Discuss</div>
-          {discuss.slice(0, 4).map((item, i) => (
+          {discuss.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotTurmeric)} />
               <span>{stripMarkdown(item)}</span>
@@ -199,7 +198,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
       {watch.length > 0 && (
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelWatch)}>Watch</div>
-          {watch.slice(0, 3).map((item, i) => (
+          {watch.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotTerracotta)} />
               <span>{stripMarkdown(item)}</span>
@@ -211,7 +210,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
       {wins.length > 0 && (
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelWins)}>Wins</div>
-          {wins.slice(0, 3).map((item, i) => (
+          {wins.slice(0, 1).map((item, i) => (
             <div key={i} className={s.prepItem}>
               <span className={clsx(s.prepDot, s.prepDotSage)} />
               <span>{stripMarkdown(item)}</span>
@@ -220,16 +219,6 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
         </div>
       )}
 
-      {atAGlance.length > 0 && (
-        <div className={s.prepSection}>
-          <div className={clsx(s.prepLabel, s.prepLabelGlance)}>At a Glance</div>
-          {atAGlance.map((item, i) => (
-            <div key={i} className={s.prepKv}>
-              <span>{stripMarkdown(item)}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -288,6 +277,44 @@ export function MeetingActionChecklist({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Single-line signal per prep category — used in schedule expansion panels. */
+function QuickContext({ meeting }: { meeting: Meeting }) {
+  const prep = meeting.prep;
+  if (!prep) return null;
+
+  const discuss = (prep.actions ?? prep.questions ?? [])[0];
+  const watch = (prep.risks ?? [])[0];
+  const win = (prep.wins ?? [])[0];
+
+  if (!discuss && !watch && !win) return null;
+
+  return (
+    <div className={s.quickContext}>
+      {discuss && (
+        <div className={s.quickContextLine}>
+          <span className={clsx(s.quickContextDot, s.prepDotTurmeric)} />
+          <span className={s.quickContextLabel}>Discuss</span>
+          <span className={s.quickContextText}>{stripMarkdown(discuss)}</span>
+        </div>
+      )}
+      {watch && (
+        <div className={s.quickContextLine}>
+          <span className={clsx(s.quickContextDot, s.prepDotTerracotta)} />
+          <span className={s.quickContextLabel}>Watch</span>
+          <span className={s.quickContextText}>{stripMarkdown(watch)}</span>
+        </div>
+      )}
+      {win && (
+        <div className={s.quickContextLine}>
+          <span className={clsx(s.quickContextDot, s.prepDotSage)} />
+          <span className={s.quickContextLabel}>Win</span>
+          <span className={s.quickContextText}>{stripMarkdown(win)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -414,8 +441,8 @@ export function BriefingMeetingCard({
               <KeyPeopleFlow stakeholders={meeting.prep.stakeholders} />
             )}
 
-            {/* Prep grid */}
-            <PrepGrid meeting={meeting} />
+            {/* Quick context (1 signal per category) */}
+            <QuickContext meeting={meeting} />
 
             {/* Before-this-meeting actions */}
             <MeetingActionChecklist
