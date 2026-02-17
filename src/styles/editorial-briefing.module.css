@@ -316,6 +316,61 @@
 }
 
 /* =============================================================================
+   QUICK CONTEXT — Single-line signals for schedule expansion panels
+   ============================================================================= */
+
+.quickContext {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 16px;
+}
+
+.quickContextLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.quickContextDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.quickContextLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  min-width: 52px;
+}
+
+.quickContextText {
+  flex: 1;
+}
+
+.quickContextGlance {
+  display: flex;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.quickContextGlanceItem {
+  /* individual kv metric */
+}
+
+/* =============================================================================
    MEETING ACTIONS — "Before this meeting" checklist
    ============================================================================= */
 
@@ -458,7 +513,7 @@
   grid-template-columns: 72px 1fr;
   gap: 0 20px;
   align-items: first baseline;
-  padding: 14px 0;
+  padding: 14px 16px 14px 0;
   border-bottom: 1px solid var(--color-rule-light);
   position: relative;
 }

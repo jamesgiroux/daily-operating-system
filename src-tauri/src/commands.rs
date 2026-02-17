@@ -579,8 +579,34 @@ fn parse_meeting_datetime(value: &str) -> Option<chrono::DateTime<chrono::Utc>> 
     None
 }
 
+/// Parsed user agenda layer — supports both legacy `["item"]` and rich `{ items, dismissedTopics, hiddenAttendees }`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserAgendaLayer {
+    #[serde(default)]
+    items: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dismissed_topics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hidden_attendees: Vec<String>,
+}
+
+fn parse_user_agenda_layer(value: Option<&str>) -> UserAgendaLayer {
+    let Some(json) = value else { return UserAgendaLayer::default() };
+    // Try rich format first
+    if let Ok(layer) = serde_json::from_str::<UserAgendaLayer>(json) {
+        return layer;
+    }
+    // Fall back to legacy Vec<String>
+    if let Ok(items) = serde_json::from_str::<Vec<String>>(json) {
+        return UserAgendaLayer { items, ..Default::default() };
+    }
+    UserAgendaLayer::default()
+}
+
 fn parse_user_agenda_json(value: Option<&str>) -> Option<Vec<String>> {
-    value.and_then(|json| serde_json::from_str::<Vec<String>>(json).ok())
+    let layer = parse_user_agenda_layer(value);
+    if layer.items.is_empty() { None } else { Some(layer.items) }
 }
 
 fn load_meeting_prep_from_sources(
@@ -682,7 +708,10 @@ pub fn get_meeting_intelligence(
             .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
     };
 
-    let user_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref());
+    let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
+    let dismissed_topics = agenda_layer.dismissed_topics.clone();
+    let hidden_attendees = agenda_layer.hidden_attendees.clone();
     let user_notes = meeting.user_notes.clone();
     let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
 
@@ -694,6 +723,14 @@ pub fn get_meeting_intelligence(
             prep_data.calendar_event_id.as_deref(),
             &prep_data.title,
         );
+
+        // Hydrate attendee_context from people DB (I51)
+        if prep_data.attendee_context.is_none() {
+            let attendee_context = hydrate_attendee_context(db, &meeting);
+            if !attendee_context.is_empty() {
+                prep_data.attendee_context = Some(attendee_context);
+            }
+        }
     }
 
     let now = chrono::Utc::now();
@@ -742,6 +779,8 @@ pub fn get_meeting_intelligence(
         can_edit_user_layer,
         user_agenda,
         user_notes,
+        dismissed_topics,
+        hidden_attendees,
         outcomes,
         captures,
         actions,
@@ -751,6 +790,87 @@ pub fn get_meeting_intelligence(
         transcript_path,
         transcript_processed_at,
     })
+}
+
+/// Build AttendeeContext by matching calendar attendee emails to person entities.
+/// Scoped to external (non-internal) attendees who are in the people database.
+fn hydrate_attendee_context(
+    db: &crate::db::ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Vec<crate::types::AttendeeContext> {
+    use std::collections::HashSet;
+
+    let mut seen_emails = HashSet::new();
+    let mut contexts = Vec::new();
+
+    // Strategy 1: Get people already linked via meeting_attendees junction table
+    if let Ok(linked_people) = db.get_meeting_attendees(&meeting.id) {
+        for person in &linked_people {
+            let email_lower = person.email.to_lowercase();
+            if seen_emails.contains(&email_lower) {
+                continue;
+            }
+            seen_emails.insert(email_lower);
+            contexts.push(person_to_attendee_context(person));
+        }
+    }
+
+    // Strategy 2: Parse emails from meeting.attendees field and look up each
+    if let Some(ref attendees_str) = meeting.attendees {
+        let emails: Vec<String> = attendees_str
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| s.contains('@'))
+            .collect();
+
+        for email in &emails {
+            if seen_emails.contains(email) {
+                continue;
+            }
+            if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
+                seen_emails.insert(email.clone());
+                contexts.push(person_to_attendee_context(&person));
+            }
+        }
+    }
+
+    // Filter to non-internal, non-archived people
+    contexts
+        .into_iter()
+        .filter(|ctx| {
+            // Keep external and unknown relationships; exclude internal
+            ctx.relationship.as_deref() != Some("internal")
+        })
+        .collect()
+}
+
+/// Convert a DbPerson into an AttendeeContext with computed temperature.
+fn person_to_attendee_context(person: &crate::db::DbPerson) -> crate::types::AttendeeContext {
+    let temperature = person
+        .last_seen
+        .as_deref()
+        .map(|ls| {
+            let days = crate::db::days_since_iso(ls);
+            match days {
+                Some(d) if d < 7 => "hot".to_string(),
+                Some(d) if d < 30 => "warm".to_string(),
+                Some(d) if d < 60 => "cool".to_string(),
+                _ => "cold".to_string(),
+            }
+        });
+
+    crate::types::AttendeeContext {
+        name: person.name.clone(),
+        email: Some(person.email.clone()),
+        role: person.role.clone(),
+        organization: person.organization.clone(),
+        relationship: Some(person.relationship.clone()),
+        meeting_count: Some(person.meeting_count),
+        last_seen: person.last_seen.clone(),
+        temperature,
+        notes: person.notes.clone(),
+        person_id: Some(person.id.clone()),
+    }
 }
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
@@ -6113,6 +6233,126 @@ pub fn reveal_in_finder(
     Ok(())
 }
 
+/// Export a meeting briefing as a styled HTML file and open in the default browser.
+/// The user can then Print > Save as PDF from the browser.
+#[tauri::command]
+pub fn export_briefing_html(
+    meeting_id: String,
+    markdown: String,
+) -> Result<(), String> {
+    let tmp_dir = std::env::temp_dir().join("dailyos-export");
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let safe_id = meeting_id
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+        .collect::<String>();
+    let filename = format!("briefing-{}.html", if safe_id.is_empty() { "export" } else { &safe_id });
+    let path = tmp_dir.join(&filename);
+
+    // Convert markdown to simple HTML
+    let body_html = markdown_to_simple_html(&markdown);
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Intelligence Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+  body {{ font-family: 'DM Sans', sans-serif; max-width: 700px; margin: 48px auto; padding: 0 24px; color: #2a2a2a; line-height: 1.65; font-size: 15px; }}
+  h1 {{ font-family: 'Newsreader', serif; font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 8px; }}
+  h2 {{ font-family: 'Newsreader', serif; font-size: 22px; font-weight: 400; margin: 48px 0 12px; border-top: 1px solid #e0ddd8; padding-top: 16px; }}
+  p {{ margin: 0 0 12px; }}
+  ul, ol {{ padding-left: 20px; margin: 0 0 12px; }}
+  li {{ margin-bottom: 8px; }}
+  code {{ font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #f5f3ef; padding: 1px 4px; border-radius: 2px; }}
+  blockquote {{ border-left: 3px solid #c9a227; padding-left: 20px; margin: 16px 0; font-style: italic; color: #555; }}
+  hr {{ border: none; border-top: 1px solid #e0ddd8; margin: 32px 0; }}
+  .meta {{ font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #888; letter-spacing: 0.04em; margin-bottom: 32px; }}
+  @media print {{ body {{ margin: 24px; }} }}
+</style>
+</head>
+<body>
+<p class="meta">DAILYOS INTELLIGENCE REPORT</p>
+{}
+</body>
+</html>"#,
+        body_html
+    );
+
+    std::fs::write(&path, &html)
+        .map_err(|e| format!("Failed to write HTML: {}", e))?;
+
+    std::process::Command::new("open")
+        .arg(path.to_str().unwrap_or(""))
+        .spawn()
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+/// Simple markdown to HTML converter for briefing export.
+fn markdown_to_simple_html(md: &str) -> String {
+    let mut html = String::new();
+    let mut in_list = false;
+    let mut list_type = "ul";
+
+    for line in md.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
+            continue;
+        }
+
+        // Headings
+        if let Some(rest) = trimmed.strip_prefix("# ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h1>{}</h1>\n", rest));
+        } else if let Some(rest) = trimmed.strip_prefix("## ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h2>{}</h2>\n", rest));
+        } else if let Some(rest) = trimmed.strip_prefix("### ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h3>{}</h3>\n", rest));
+        }
+        // Unordered list
+        else if let Some(rest) = trimmed.strip_prefix("- ") {
+            if !in_list { html.push_str("<ul>\n"); in_list = true; list_type = "ul"; }
+            html.push_str(&format!("<li>{}</li>\n", rest));
+        }
+        // Ordered list
+        else if trimmed.len() > 2 && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
+            if let Some(pos) = trimmed.find(". ") {
+                if !in_list { html.push_str("<ol>\n"); in_list = true; list_type = "ol"; }
+                html.push_str(&format!("<li>{}</li>\n", &trimmed[pos + 2..]));
+            }
+        }
+        // Horizontal rule
+        else if trimmed == "---" || trimmed == "***" {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str("<hr>\n");
+        }
+        // Paragraph
+        else {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<p>{}</p>\n", trimmed));
+        }
+    }
+
+    if in_list {
+        html.push_str(&format!("</{}>\n", list_type));
+    }
+
+    html
+}
+
 // =============================================================================
 // Sprint 26: Chat Tool Commands
 // =============================================================================
@@ -6895,6 +7135,12 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             false,
         );
 
+        // Prune old audit trail files (I297)
+        let pruned = crate::audit::prune_audit_files(workspace);
+        if pruned > 0 {
+            log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
+        }
+
         if let Ok(mut guard) = state.last_hygiene_report.lock() {
             *guard = Some(report.clone());
         }
@@ -7525,7 +7771,9 @@ pub fn generate_meeting_agenda_message_draft(
 #[tauri::command]
 pub fn update_meeting_user_agenda(
     meeting_id: String,
-    agenda: Vec<String>,
+    agenda: Option<Vec<String>>,
+    dismissed_topics: Option<Vec<String>>,
+    hidden_attendees: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
@@ -7539,10 +7787,18 @@ pub fn update_meeting_user_agenda(
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
-    let agenda_json = if agenda.is_empty() {
+    // Merge with existing layer to preserve fields not being updated
+    let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let layer = UserAgendaLayer {
+        items: agenda.unwrap_or(existing.items),
+        dismissed_topics: dismissed_topics.unwrap_or(existing.dismissed_topics),
+        hidden_attendees: hidden_attendees.unwrap_or(existing.hidden_attendees),
+    };
+
+    let agenda_json = if layer.items.is_empty() && layer.dismissed_topics.is_empty() && layer.hidden_attendees.is_empty() {
         None
     } else {
-        Some(serde_json::to_string(&agenda).map_err(|e| format!("Serialize error: {}", e))?)
+        Some(serde_json::to_string(&layer).map_err(|e| format!("Serialize error: {}", e))?)
     };
     db.update_meeting_user_layer(
         &meeting_id,
@@ -7555,10 +7811,10 @@ pub fn update_meeting_user_agenda(
     if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
         if let Ok(content) = std::fs::read_to_string(&prep_path) {
             if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if agenda.is_empty() {
+                if layer.items.is_empty() {
                     json.as_object_mut().map(|o| o.remove("userAgenda"));
                 } else {
-                    json["userAgenda"] = serde_json::json!(agenda);
+                    json["userAgenda"] = serde_json::json!(layer.items);
                 }
                 if let Ok(updated) = serde_json::to_string_pretty(&json) {
                     let _ = std::fs::write(&prep_path, updated);
@@ -7628,6 +7884,11 @@ fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::Pa
     let preps_dir = workspace.join("_today").join("data").join("preps");
     let clean_id = meeting_id.trim_end_matches(".json").trim_end_matches(".md");
     let path = preps_dir.join(format!("{}.json", clean_id));
+
+    // Path containment check: prevent traversal outside preps directory
+    if !path.starts_with(&preps_dir) {
+        return Err("Invalid meeting ID".to_string());
+    }
 
     if path.exists() {
         Ok(path)
@@ -8148,7 +8409,22 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     let binary_path = resolve_mcp_binary_path(&home, binary_name);
 
     let binary_path_str = match &binary_path {
-        Some(p) => p.to_string_lossy().to_string(),
+        Some(p) => {
+            // Ensure binary is executable (build may not set +x)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(p) {
+                    let mut perms = meta.permissions();
+                    let mode = perms.mode();
+                    if mode & 0o111 == 0 {
+                        perms.set_mode(mode | 0o755);
+                        let _ = std::fs::set_permissions(p, perms);
+                    }
+                }
+            }
+            p.to_string_lossy().to_string()
+        }
         None => {
             return ClaudeDesktopConfigResult {
                 success: false,

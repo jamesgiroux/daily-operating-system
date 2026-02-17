@@ -4,11 +4,11 @@
  */
 import type { RiskCover as RiskCoverData } from "@/types";
 import { formatArr } from "@/lib/utils";
+import { EditableText } from "@/components/ui/EditableText";
 
 interface RiskCoverProps {
   data: RiskCoverData;
-  onRegenerate?: () => void;
-  regenerating?: boolean;
+  onUpdate?: (data: RiskCoverData) => void;
 }
 
 const riskColors: Record<string, string> = {
@@ -17,7 +17,7 @@ const riskColors: Record<string, string> = {
   low: "var(--color-garden-sage)",
 };
 
-export function RiskCover({ data, onRegenerate, regenerating }: RiskCoverProps) {
+export function RiskCover({ data, onUpdate }: RiskCoverProps) {
   const riskKey = data.riskLevel?.toLowerCase() ?? "";
 
   return (
@@ -128,37 +128,28 @@ export function RiskCover({ data, onRegenerate, regenerating }: RiskCoverProps) 
         >
           {data.date}
         </span>
-        {data.tamName && (
-          <span
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 14,
+            color: "var(--color-text-secondary)",
+            display: "inline-flex",
+            alignItems: "baseline",
+            gap: 4,
+          }}
+        >
+          Prepared by{" "}
+          <EditableText
+            value={data.tamName || ""}
+            onChange={(v) => onUpdate?.({ ...data, tamName: v })}
+            placeholder="Add name"
             style={{
               fontFamily: "var(--font-sans)",
               fontSize: 14,
               color: "var(--color-text-secondary)",
             }}
-          >
-            Prepared by {data.tamName}
-          </span>
-        )}
-        {onRegenerate && (
-          <button
-            onClick={onRegenerate}
-            disabled={regenerating}
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              fontWeight: 500,
-              color: "var(--color-text-tertiary)",
-              background: "none",
-              border: "1px solid var(--color-rule-light)",
-              borderRadius: 4,
-              padding: "4px 12px",
-              cursor: regenerating ? "not-allowed" : "pointer",
-              opacity: regenerating ? 0.5 : 1,
-            }}
-          >
-            Regenerate
-          </button>
-        )}
+          />
+        </span>
       </div>
     </div>
   );

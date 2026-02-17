@@ -5,11 +5,14 @@
  * Supports multiple entities per meeting (M2M junction table).
  * Calls add_meeting_entity / remove_meeting_entity Tauri commands.
  *
+ * Uses optimistic local state so chips appear/disappear instantly without
+ * triggering a full dashboard reload.
+ *
  * Styled to match the editorial design system — mono labels, spice/garden
  * color coding, no shadcn card chrome.
  */
 
-import { useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { X, Building2, FolderKanban } from "lucide-react";
@@ -47,36 +50,64 @@ export function MeetingEntityChips({
   onEntitiesChanged,
   compact = false,
 }: MeetingEntityChipsProps) {
+  // Optimistic local state — syncs from props but updates instantly on add/remove
+  const [localEntities, setLocalEntities] = useState(linkedEntities);
+
+  // Keep local state in sync when parent props change (e.g. after a full refresh)
+  useEffect(() => {
+    setLocalEntities(linkedEntities);
+  }, [linkedEntities]);
+
   const handleAdd = useCallback(
-    async (entityId: string | null, _entityName?: string) => {
+    async (entityId: string | null, entityName?: string) => {
       if (!entityId) return;
       try {
+        // Optimistic: add chip immediately
+        const entityType = "account";
+        setLocalEntities((prev) => {
+          if (prev.some((e) => e.id === entityId)) return prev;
+          return [...prev, { id: entityId, name: entityName ?? entityId, entityType }];
+        });
+
         await invoke("add_meeting_entity", {
           meetingId,
           entityId,
-          entityType: "account",
+          entityType,
           meetingTitle,
           startTime: meetingStartTime,
           meetingTypeStr: meetingType,
         });
+        // Background sync — don't await, no visible reload
         onEntitiesChanged?.();
       } catch (err) {
         console.error("Failed to add meeting entity:", err);
+        // Rollback on failure
+        setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
       }
     },
     [meetingId, meetingTitle, meetingStartTime, meetingType, onEntitiesChanged],
   );
 
   const handleRemove = useCallback(
-    async (entityId: string) => {
+    async (entityId: string, entityType: string) => {
+      // Optimistic: remove chip immediately
+      setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
+
       try {
         await invoke("remove_meeting_entity", {
           meetingId,
           entityId,
+          entityType,
         });
+        // Background sync — don't await, no visible reload
         onEntitiesChanged?.();
       } catch (err) {
         console.error("Failed to remove meeting entity:", err);
+        // Rollback: re-add the entity on failure
+        setLocalEntities((prev) => {
+          if (prev.some((e) => e.id === entityId)) return prev;
+          return [...prev, { id: entityId, name: entityId, entityType: entityType as "account" | "project" }];
+        });
       }
     },
     [meetingId, onEntitiesChanged],
@@ -96,7 +127,7 @@ export function MeetingEntityChips({
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      {linkedEntities.map((entity) => {
+      {localEntities.map((entity) => {
         const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
         const bg = entityBg[entity.entityType] ?? "rgba(30, 37, 48, 0.04)";
         const Icon = entity.entityType === "project" ? FolderKanban : Building2;
@@ -140,7 +171,7 @@ export function MeetingEntityChips({
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                handleRemove(entity.id);
+                handleRemove(entity.id, entity.entityType);
               }}
               style={{
                 display: "inline-flex",
@@ -171,7 +202,7 @@ export function MeetingEntityChips({
       <EntityPicker
         value={null}
         onChange={handleAdd}
-        placeholder={linkedEntities.length === 0 ? "Link entity..." : "+"}
+        placeholder={localEntities.length === 0 ? "Link entity..." : "+"}
         className={compact ? "h-6 text-[10px] px-1.5" : undefined}
       />
     </div>

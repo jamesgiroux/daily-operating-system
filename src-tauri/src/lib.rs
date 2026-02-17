@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+mod audit;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
@@ -352,6 +353,7 @@ pub fn run() {
             commands::get_entity_files,
             commands::index_entity_files,
             commands::reveal_in_finder,
+            commands::export_briefing_html,
             commands::chat_query_entity,
             commands::chat_search_content,
             commands::chat_get_briefing,

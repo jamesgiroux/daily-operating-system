@@ -125,32 +125,54 @@ export default function AccountDetailEditorial() {
       backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
       folioActions: (
-        <button
-          onClick={() =>
-            navigate({
-              to: "/accounts/$accountId/risk-briefing",
-              params: { accountId: accountId! },
-            })
-          }
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase" as const,
-            color: "var(--color-spice-turmeric)",
-            background: "none",
-            border: "1px solid var(--color-spice-turmeric)",
-            borderRadius: 4,
-            padding: "2px 10px",
-            cursor: "pointer",
-          }}
-        >
-          Reports
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {!acct.detail?.isInternal && (!acct.detail?.parentId || acct.detail?.isParent) && (
+            <button
+              onClick={() => acct.setCreateChildOpen(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase" as const,
+                color: "var(--color-garden-eucalyptus)",
+                background: "none",
+                border: "1px solid var(--color-garden-eucalyptus)",
+                borderRadius: 4,
+                padding: "2px 10px",
+                cursor: "pointer",
+              }}
+            >
+              + Business Unit
+            </button>
+          )}
+          <button
+            onClick={() =>
+              navigate({
+                to: "/accounts/$accountId/risk-briefing",
+                params: { accountId: accountId! },
+              })
+            }
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase" as const,
+              color: "var(--color-spice-turmeric)",
+              background: "none",
+              border: "1px solid var(--color-spice-turmeric)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              cursor: "pointer",
+            }}
+          >
+            Reports
+          </button>
+        </div>
       ),
     }),
-    [navigate, accountId],
+    [navigate, accountId, acct.detail, acct.setCreateChildOpen],
   );
   useRegisterMagazineShell(shellConfig);
 

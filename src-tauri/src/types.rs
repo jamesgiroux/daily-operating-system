@@ -1329,6 +1329,10 @@ pub struct MeetingIntelligence {
     pub user_agenda: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_notes: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed_topics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_attendees: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub outcomes: Option<MeetingOutcomeData>,
     #[serde(default)]
@@ -1572,6 +1576,10 @@ pub struct TranscriptResult {
     pub decisions: Vec<String>,
     #[serde(default)]
     pub actions: Vec<CapturedAction>,
+    #[serde(default)]
+    pub discussion: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }

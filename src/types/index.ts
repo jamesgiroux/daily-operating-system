@@ -43,6 +43,7 @@ export interface Stakeholder {
   name: string;
   role?: string;
   focus?: string;
+  relationship?: PersonRelationship;
 }
 
 export interface SourceReference {
@@ -602,6 +603,8 @@ export interface TranscriptResult {
   risks: string[];
   decisions: string[];
   actions: CapturedAction[];
+  discussion: string[];
+  analysis?: string;
   message?: string;
 }
 
@@ -650,6 +653,8 @@ export interface MeetingIntelligence {
   canEditUserLayer: boolean;
   userAgenda?: string[];
   userNotes?: string;
+  dismissedTopics?: string[];
+  hiddenAttendees?: string[];
   outcomes?: MeetingOutcomeData;
   captures: DbCapture[];
   actions: DbAction[];
