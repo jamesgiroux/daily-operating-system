@@ -342,6 +342,14 @@ export default function MeetingDetailPage() {
           Draft Agenda
         </button>
         <button
+          onClick={handleAttachTranscript}
+          disabled={attaching}
+          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1 }}
+        >
+          <Paperclip style={{ width: 10, height: 10 }} />
+          {attaching ? "Processing\u2026" : "Transcript"}
+        </button>
+        <button
           onClick={() => loadMeetingIntelligence()}
           style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
         >
@@ -350,7 +358,7 @@ export default function MeetingDetailPage() {
         </button>
       </div>
     ) : undefined,
-  }), [navigate, saveStatus, data, isEditable, prefilling, handlePrefillFromContext, handleDraftAgendaMessage, loadMeetingIntelligence]);
+  }), [navigate, saveStatus, data, isEditable, prefilling, attaching, handlePrefillFromContext, handleDraftAgendaMessage, handleAttachTranscript, loadMeetingIntelligence]);
   useRegisterMagazineShell(shellConfig);
 
   // ── Loading state ──
@@ -510,8 +518,8 @@ export default function MeetingDetailPage() {
           </>
         )}
 
-        {/* Past meeting without outcomes: prompt to attach transcript */}
-        {isPastMeeting && !outcomes && (
+        {/* Past meeting: prompt to attach transcript */}
+        {isPastMeeting && (
           <div
             style={{
               border: "1px dashed var(--color-rule-light)",
@@ -532,7 +540,7 @@ export default function MeetingDetailPage() {
                   margin: "0 0 4px",
                 }}
               >
-                No outcomes captured yet
+                {outcomes ? "Update outcomes" : "No outcomes captured yet"}
               </p>
               <p
                 style={{
@@ -541,7 +549,9 @@ export default function MeetingDetailPage() {
                   margin: 0,
                 }}
               >
-                Attach a transcript or manually capture meeting outcomes.
+                {outcomes
+                  ? "Attach a new transcript to re-process meeting outcomes."
+                  : "Attach a transcript or manually capture meeting outcomes."}
               </p>
             </div>
             <button
