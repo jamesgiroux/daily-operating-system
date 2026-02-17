@@ -26,7 +26,7 @@ interface EntityOption {
 
 interface EntityPickerProps {
   value: string | null;
-  onChange: (id: string | null, name?: string) => void;
+  onChange: (id: string | null, name?: string, entityType?: "account" | "project") => void;
   entityType?: "account" | "project" | "all";
   placeholder?: string;
   /** When set, shows a non-removable chip (for pre-filled entity) */
@@ -161,7 +161,7 @@ export function EntityPicker({
                     key={a.id}
                     value={`internal ${a.name}`}
                     onSelect={() => {
-                      onChange(a.id, a.name);
+                      onChange(a.id, a.name, a.type);
                       setSelectedName(a.name);
                       setOpen(false);
                     }}
@@ -183,7 +183,7 @@ export function EntityPicker({
                       <CommandItem
                         value={a.name}
                         onSelect={() => {
-                          onChange(a.id, a.name);
+                          onChange(a.id, a.name, a.type);
                           setSelectedName(a.name);
                           setOpen(false);
                         }}
@@ -196,7 +196,7 @@ export function EntityPicker({
                           key={c.id}
                           value={`${a.name} ${c.name}`}
                           onSelect={() => {
-                            onChange(c.id, c.name);
+                            onChange(c.id, c.name, c.type);
                             setSelectedName(c.name);
                             setOpen(false);
                           }}
@@ -217,7 +217,7 @@ export function EntityPicker({
                     key={p.id}
                     value={p.name}
                     onSelect={() => {
-                      onChange(p.id, p.name);
+                      onChange(p.id, p.name, p.type);
                       setSelectedName(p.name);
                       setOpen(false);
                     }}
