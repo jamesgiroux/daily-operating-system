@@ -12,6 +12,7 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{CalendarEvent, CapturedAction, TranscriptResult};
+use crate::util::wrap_user_data;
 
 use super::enrich::parse_enrichment_response;
 use super::hooks;
@@ -418,11 +419,11 @@ Rules for decisions:
 Transcript:
 {content}
 "#,
-        title = meeting.title,
-        account = account,
+        title = wrap_user_data(&meeting.title),
+        account = wrap_user_data(account),
         meeting_type = meeting_type,
         date = date,
-        content = truncated,
+        content = wrap_user_data(truncated),
     )
 }
 
