@@ -359,6 +359,14 @@ pub fn run_risk_enrichment(input: &GatheredRiskInput) -> Result<RiskBriefing, St
         .spawn_claude(&input.workspace_path, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(
+        &input.workspace_path,
+        "risk_briefing",
+        &input.account_id,
+        &output.stdout,
+    );
+
     // Parse response
     let briefing = parse_risk_briefing_response(
         &output.stdout,
