@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Squircle clip path (iOS-style continuous corner) -->
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+
+    <!-- Base cream fill -->
+    <linearGradient id="bg-base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#faf8f6"/>
+      <stop offset="100%" stop-color="#ede8e2"/>
+    </linearGradient>
+
+    <!-- Glass highlight: bright arc across the top third -->
+    <radialGradient id="glass-highlight" cx="0.5" cy="-0.1" r="0.9" fx="0.5" fy="0.05">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.65"/>
+      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="65%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Subtle inner shadow at the bottom for depth -->
+    <linearGradient id="inner-shadow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="75%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.06"/>
+    </linearGradient>
+
+    <!-- Edge highlight: thin bright line at top -->
+    <linearGradient id="edge-top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="3%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="8%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <!-- Base cream gradient -->
+    <rect width="1024" height="1024" fill="url(#bg-base)"/>
+
+    <!-- Glass highlight wash -->
+    <rect width="1024" height="1024" fill="url(#glass-highlight)"/>
+
+    <!-- Top edge highlight -->
+    <rect width="1024" height="1024" fill="url(#edge-top)"/>
+
+    <!-- Bottom inner shadow -->
+    <rect width="1024" height="1024" fill="url(#inner-shadow)"/>
+
+    <!-- Asterisk brand mark (flat turmeric) — centered and scaled -->
+    <g transform="translate(222, 228) scale(1.34)">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="#c9a227"/>
+    </g>
+  </g>
+</svg>
