@@ -77,6 +77,7 @@ pub struct MechanicalFixes {
     pub meeting_counts_updated: usize,
     pub names_resolved: usize,
     pub people_linked_by_domain: usize,
+    pub people_deduped_by_alias: usize,
     pub renewals_rolled_over: usize,
     pub ai_enrichments_enqueued: usize,
 }
@@ -154,6 +155,10 @@ pub fn run_hygiene_scan(
 
     let (count, details) = auto_link_people_by_domain(db);
     report.fixes.people_linked_by_domain = count;
+    all_details.extend(details);
+
+    let (count, details) = dedup_people_by_domain_alias(db, &user_domains);
+    report.fixes.people_deduped_by_alias = count;
     all_details.extend(details);
 
     // --- Phase 3: AI-budgeted gap filling ---
@@ -566,7 +571,111 @@ pub fn auto_link_people_by_domain(db: &ActionDb) -> (usize, Vec<HygieneFixDetail
 // Duplicate People Detection (I172)
 // =============================================================================
 
-/// A potential duplicate person pair with confidence scoring.
+/// Merge duplicate people who share the same local part across aliased domains.
+///
+/// For each account with 2+ domains, groups people by `(local_part, domain_group)`
+/// and merges duplicates. Uses existing `merge_people()` to transfer references.
+fn dedup_people_by_domain_alias(
+    db: &ActionDb,
+    user_domains: &[String],
+) -> (usize, Vec<HygieneFixDetail>) {
+    let people = match db.get_people(None) {
+        Ok(p) => p,
+        Err(_) => return (0, Vec::new()),
+    };
+    let active: Vec<_> = people.into_iter().filter(|p| !p.archived).collect();
+    if active.is_empty() {
+        return (0, Vec::new());
+    }
+
+    // Build a map: domain → set of sibling domains (via account_domains + user_domains)
+    let mut domain_siblings: HashMap<String, Vec<String>> = HashMap::new();
+
+    for person in &active {
+        let domain = crate::prepare::email_classify::extract_domain(&person.email);
+        if domain.is_empty() {
+            continue;
+        }
+        if domain_siblings.contains_key(&domain) {
+            continue;
+        }
+        match db.get_sibling_domains_for_email(&person.email, user_domains) {
+            Ok(siblings) if !siblings.is_empty() => {
+                domain_siblings.insert(domain, siblings);
+            }
+            _ => {
+                domain_siblings.insert(domain, Vec::new());
+            }
+        }
+    }
+
+    // Group people by (local_part, canonical_domain_group).
+    // The canonical key is the sorted domain set so that `renan@wpvip.com` and `renan@a8c.com`
+    // fall into the same group when those domains are siblings.
+    let mut groups: HashMap<(String, String), Vec<&crate::db::DbPerson>> = HashMap::new();
+
+    for person in &active {
+        let domain = crate::prepare::email_classify::extract_domain(&person.email);
+        let local_part = match person.email.rfind('@') {
+            Some(pos) => person.email[..pos].to_lowercase(),
+            None => continue,
+        };
+
+        // Build canonical domain set: this domain + its siblings, sorted
+        let mut domain_set = vec![domain.clone()];
+        if let Some(siblings) = domain_siblings.get(&domain) {
+            domain_set.extend(siblings.iter().cloned());
+        }
+        domain_set.sort();
+        domain_set.dedup();
+
+        // Only consider domains that have siblings (otherwise no aliasing possible)
+        if domain_set.len() < 2 {
+            continue;
+        }
+
+        let key = (local_part, domain_set.join(","));
+        groups.entry(key).or_default().push(person);
+    }
+
+    let mut merged = 0;
+    let mut details = Vec::new();
+
+    for ((_local_part, _domains), group) in &groups {
+        if group.len() < 2 {
+            continue;
+        }
+
+        // Keep the person with the highest meeting_count; tie-break by earliest first_seen
+        let mut sorted: Vec<&&crate::db::DbPerson> = group.iter().collect();
+        sorted.sort_by(|a, b| {
+            b.meeting_count
+                .cmp(&a.meeting_count)
+                .then_with(|| a.first_seen.cmp(&b.first_seen))
+        });
+
+        let keep = sorted[0];
+        for &remove in &sorted[1..] {
+            if db.merge_people(&keep.id, &remove.id).is_ok() {
+                if details.len() < 5 {
+                    details.push(HygieneFixDetail {
+                        fix_type: "people_deduped_by_alias".to_string(),
+                        entity_name: Some(keep.name.clone()),
+                        description: format!(
+                            "Merged {} ({}) into {} ({})",
+                            remove.name, remove.email, keep.name, keep.email
+                        ),
+                    });
+                }
+                merged += 1;
+            }
+        }
+    }
+
+    (merged, details)
+}
+
+/// A candidate pair of potentially duplicate people.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateCandidate {
