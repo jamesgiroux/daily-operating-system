@@ -6202,6 +6202,126 @@ pub fn reveal_in_finder(
     Ok(())
 }
 
+/// Export a meeting briefing as a styled HTML file and open in the default browser.
+/// The user can then Print > Save as PDF from the browser.
+#[tauri::command]
+pub fn export_briefing_html(
+    meeting_id: String,
+    markdown: String,
+) -> Result<(), String> {
+    let tmp_dir = std::env::temp_dir().join("dailyos-export");
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+
+    let safe_id = meeting_id
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+        .collect::<String>();
+    let filename = format!("briefing-{}.html", if safe_id.is_empty() { "export" } else { &safe_id });
+    let path = tmp_dir.join(&filename);
+
+    // Convert markdown to simple HTML
+    let body_html = markdown_to_simple_html(&markdown);
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Intelligence Report</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+  body {{ font-family: 'DM Sans', sans-serif; max-width: 700px; margin: 48px auto; padding: 0 24px; color: #2a2a2a; line-height: 1.65; font-size: 15px; }}
+  h1 {{ font-family: 'Newsreader', serif; font-size: 36px; font-weight: 400; letter-spacing: -0.01em; margin: 0 0 8px; }}
+  h2 {{ font-family: 'Newsreader', serif; font-size: 22px; font-weight: 400; margin: 48px 0 12px; border-top: 1px solid #e0ddd8; padding-top: 16px; }}
+  p {{ margin: 0 0 12px; }}
+  ul, ol {{ padding-left: 20px; margin: 0 0 12px; }}
+  li {{ margin-bottom: 8px; }}
+  code {{ font-family: 'JetBrains Mono', monospace; font-size: 13px; background: #f5f3ef; padding: 1px 4px; border-radius: 2px; }}
+  blockquote {{ border-left: 3px solid #c9a227; padding-left: 20px; margin: 16px 0; font-style: italic; color: #555; }}
+  hr {{ border: none; border-top: 1px solid #e0ddd8; margin: 32px 0; }}
+  .meta {{ font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #888; letter-spacing: 0.04em; margin-bottom: 32px; }}
+  @media print {{ body {{ margin: 24px; }} }}
+</style>
+</head>
+<body>
+<p class="meta">DAILYOS INTELLIGENCE REPORT</p>
+{}
+</body>
+</html>"#,
+        body_html
+    );
+
+    std::fs::write(&path, &html)
+        .map_err(|e| format!("Failed to write HTML: {}", e))?;
+
+    std::process::Command::new("open")
+        .arg(path.to_str().unwrap_or(""))
+        .spawn()
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+/// Simple markdown to HTML converter for briefing export.
+fn markdown_to_simple_html(md: &str) -> String {
+    let mut html = String::new();
+    let mut in_list = false;
+    let mut list_type = "ul";
+
+    for line in md.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            if in_list {
+                html.push_str(&format!("</{}>\n", list_type));
+                in_list = false;
+            }
+            continue;
+        }
+
+        // Headings
+        if trimmed.starts_with("# ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h1>{}</h1>\n", &trimmed[2..]));
+        } else if trimmed.starts_with("## ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h2>{}</h2>\n", &trimmed[3..]));
+        } else if trimmed.starts_with("### ") {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<h3>{}</h3>\n", &trimmed[4..]));
+        }
+        // Unordered list
+        else if trimmed.starts_with("- ") {
+            if !in_list { html.push_str("<ul>\n"); in_list = true; list_type = "ul"; }
+            html.push_str(&format!("<li>{}</li>\n", &trimmed[2..]));
+        }
+        // Ordered list
+        else if trimmed.len() > 2 && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
+            if let Some(pos) = trimmed.find(". ") {
+                if !in_list { html.push_str("<ol>\n"); in_list = true; list_type = "ol"; }
+                html.push_str(&format!("<li>{}</li>\n", &trimmed[pos + 2..]));
+            }
+        }
+        // Horizontal rule
+        else if trimmed == "---" || trimmed == "***" {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str("<hr>\n");
+        }
+        // Paragraph
+        else {
+            if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
+            html.push_str(&format!("<p>{}</p>\n", trimmed));
+        }
+    }
+
+    if in_list {
+        html.push_str(&format!("</{}>\n", list_type));
+    }
+
+    html
+}
+
 // =============================================================================
 // Sprint 26: Chat Tool Commands
 // =============================================================================
