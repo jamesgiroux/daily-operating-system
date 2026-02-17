@@ -298,6 +298,132 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
     }))
 }
 
+/// Fallback: build a prep summary by reading the per-meeting prep file directly.
+/// Used when directive meetingContexts is empty but prep files exist.
+fn build_prep_summary_from_file(data_dir: &Path, meeting_id: &str) -> Option<Value> {
+    let prep_path = data_dir.join("preps").join(format!("{}.json", meeting_id));
+    let content = fs::read_to_string(&prep_path).ok()?;
+    let prep: Value = serde_json::from_str(&content).ok()?;
+
+    // Map accountSnapshot → atAGlance
+    let mut at_a_glance: Vec<String> = Vec::new();
+    if let Some(snapshots) = prep.get("accountSnapshot").and_then(|v| v.as_array()) {
+        for snap in snapshots.iter().take(4) {
+            let label = snap.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let value = snap.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            if !label.is_empty() && !value.is_empty() {
+                at_a_glance.push(format!("{}: {}", label, value));
+            }
+        }
+    }
+
+    // Map talkingPoints → discuss
+    let discuss: Vec<&str> = prep
+        .get("talkingPoints")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(4).filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    // Map entityRisks → watch (extract .text from objects, or use as string)
+    let watch: Vec<String> = prep
+        .get("entityRisks")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(3)
+                .filter_map(|v| {
+                    v.get("text")
+                        .and_then(|t| t.as_str())
+                        .or_else(|| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Map recentWins → wins
+    let wins: Vec<&str> = prep
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(3).filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    // Map intelligenceSummary → context
+    let context = prep
+        .get("intelligenceSummary")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Map stakeholderInsights → stakeholders
+    let stakeholders: Vec<Value> = prep
+        .get("stakeholderInsights")
+        .or_else(|| prep.get("attendees"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(6)
+                .filter_map(|v| {
+                    let name = v.get("name").and_then(|n| n.as_str())?;
+                    Some(json!({
+                        "name": name,
+                        "role": v.get("role").and_then(|r| r.as_str()),
+                        "focus": v.get("focus").and_then(|f| f.as_str()),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Map openItems
+    let open_items: Vec<String> = prep
+        .get("openItems")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(4)
+                .filter_map(|v| {
+                    v.get("title")
+                        .and_then(|t| t.as_str())
+                        .or_else(|| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if at_a_glance.is_empty()
+        && discuss.is_empty()
+        && watch.is_empty()
+        && wins.is_empty()
+        && context.is_none()
+        && stakeholders.is_empty()
+        && open_items.is_empty()
+    {
+        return None;
+    }
+
+    let mut summary = json!({
+        "atAGlance": &at_a_glance[..at_a_glance.len().min(4)],
+        "discuss": discuss,
+        "watch": watch,
+        "wins": wins,
+    });
+
+    if let Some(obj) = summary.as_object_mut() {
+        if let Some(ctx) = context {
+            obj.insert("context".to_string(), json!(ctx));
+        }
+        if !stakeholders.is_empty() {
+            obj.insert("stakeholders".to_string(), json!(stakeholders));
+        }
+        if !open_items.is_empty() {
+            obj.insert("openItems".to_string(), json!(open_items));
+        }
+    }
+
+    Some(summary)
+}
+
 /// Return a time-appropriate greeting.
 fn greeting_for_hour(hour: u32) -> &'static str {
     if hour < 12 {
@@ -383,8 +509,14 @@ pub fn deliver_schedule(
 
         let mc = find_meeting_context(account.as_deref(), Some(event_id), meeting_contexts);
         let resolved_account = mc.and_then(|c| c.account.clone()).or(account.clone());
-        let prep_summary = mc.and_then(build_prep_summary);
-        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && mc.is_some();
+        let prep_summary = mc
+            .and_then(build_prep_summary)
+            .or_else(|| build_prep_summary_from_file(data_dir, &meeting_id));
+        let has_prep_file = data_dir
+            .join("preps")
+            .join(format!("{}.json", meeting_id))
+            .exists();
+        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && (mc.is_some() || has_prep_file);
         let has_person_prep = PERSON_PREP_TYPES.contains(&meeting_type);
         let has_prep = has_account_prep || has_person_prep;
         let prep_file = if has_prep {
