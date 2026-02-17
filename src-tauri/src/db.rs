@@ -435,7 +435,7 @@ fn compute_trend(count_30d: i32, count_90d: i32) -> String {
 }
 
 /// Parse an ISO datetime string and return days since that date.
-fn days_since_iso(iso: &str) -> Option<i64> {
+pub fn days_since_iso(iso: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(iso)
         .or_else(|_| {
             chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", iso.trim_end_matches('Z')))
@@ -3913,6 +3913,8 @@ impl ActionDb {
         )?;
         // Mirror to entities table (bridge pattern, like ensure_entity_for_account)
         self.ensure_entity_for_person(person)?;
+        // Seed person_emails with the primary email
+        self.add_person_email(&person.id, &person.email, true)?;
         Ok(())
     }
 
@@ -3940,6 +3942,121 @@ impl ActionDb {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    /// Look up a person by email, falling back to the `person_emails` alias table.
+    ///
+    /// 1. Exact match on `people.email`
+    /// 2. Exact match on `person_emails.email` → join back to `people`
+    pub fn get_person_by_email_or_alias(&self, email: &str) -> Result<Option<DbPerson>, DbError> {
+        // Fast path: exact match on primary email
+        if let Some(person) = self.get_person_by_email(email)? {
+            return Ok(Some(person));
+        }
+        // Fallback: check person_emails alias table
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, p.email, p.name, p.organization, p.role, p.relationship, p.notes,
+                    p.tracker_path, p.last_seen, p.first_seen, p.meeting_count, p.updated_at, p.archived
+             FROM person_emails pe
+             JOIN people p ON p.id = pe.person_id
+             WHERE pe.email = LOWER(?1)
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![email], Self::map_person_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Search for a person by constructing `local_part@sibling` for each sibling domain.
+    ///
+    /// Returns the first match found (checks both `people.email` and `person_emails`).
+    pub fn find_person_by_domain_alias(
+        &self,
+        email: &str,
+        sibling_domains: &[String],
+    ) -> Result<Option<DbPerson>, DbError> {
+        let local_part = match email.rfind('@') {
+            Some(pos) => &email[..pos],
+            None => return Ok(None),
+        };
+        for domain in sibling_domains {
+            let candidate = format!("{}@{}", local_part, domain);
+            if let Some(person) = self.get_person_by_email_or_alias(&candidate)? {
+                return Ok(Some(person));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Collect sibling domains for an email address.
+    ///
+    /// Uses `account_domains` to find accounts that own this email's domain,
+    /// then collects all domains from those accounts. Also includes `user_domains`
+    /// if this email's domain is among them. Skips personal email domains.
+    pub fn get_sibling_domains_for_email(
+        &self,
+        email: &str,
+        user_domains: &[String],
+    ) -> Result<Vec<String>, DbError> {
+        let domain = crate::prepare::email_classify::extract_domain(email);
+        if domain.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Never alias personal email domains
+        if crate::google_api::classify::PERSONAL_EMAIL_DOMAINS.contains(&domain.as_str()) {
+            return Ok(Vec::new());
+        }
+
+        let mut siblings = std::collections::HashSet::new();
+
+        // Path A: account_domains — find accounts owning this domain, collect all their domains
+        let accounts = self.lookup_account_candidates_by_domain(&domain)?;
+        for account in &accounts {
+            let domains = self.get_account_domains(&account.id)?;
+            for d in domains {
+                if d != domain {
+                    siblings.insert(d);
+                }
+            }
+        }
+
+        // Path B: user_domains — if this domain is among user's configured domains
+        let user_domains_lower: Vec<String> = user_domains.iter().map(|d| d.to_lowercase()).collect();
+        if user_domains_lower.contains(&domain) {
+            for d in &user_domains_lower {
+                if *d != domain {
+                    siblings.insert(d.clone());
+                }
+            }
+        }
+
+        Ok(siblings.into_iter().collect())
+    }
+
+    /// Record an email alias for a person (INSERT OR IGNORE).
+    pub fn add_person_email(
+        &self,
+        person_id: &str,
+        email: &str,
+        is_primary: bool,
+    ) -> Result<(), DbError> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO person_emails (person_id, email, is_primary, added_at)
+             VALUES (?1, LOWER(?2), ?3, ?4)",
+            params![person_id, email, is_primary as i32, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    /// List all known email addresses for a person.
+    pub fn get_person_emails(&self, person_id: &str) -> Result<Vec<String>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT email FROM person_emails WHERE person_id = ?1 ORDER BY is_primary DESC, email",
+        )?;
+        let rows = stmt.query_map(params![person_id], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Get a person by ID.
@@ -4614,6 +4731,19 @@ impl ActionDb {
             params![remove_id],
         )?;
 
+        // 6b. Transfer email aliases from removed person to kept person
+        self.conn.execute(
+            "UPDATE OR IGNORE person_emails SET person_id = ?1 WHERE person_id = ?2",
+            params![keep_id, remove_id],
+        )?;
+        // Clean up any that couldn't be transferred (duplicate email for same person)
+        self.conn.execute(
+            "DELETE FROM person_emails WHERE person_id = ?1",
+            params![remove_id],
+        )?;
+        // Ensure the removed person's primary email is recorded as an alias of the kept person
+        self.add_person_email(keep_id, &_remove.email, false)?;
+
         // 7. Delete removed person
         self.conn
             .execute("DELETE FROM people WHERE id = ?1", params![remove_id])?;
@@ -4674,6 +4804,10 @@ impl ActionDb {
         )?;
         self.conn.execute(
             "DELETE FROM content_index WHERE entity_id = ?1",
+            params![person_id],
+        )?;
+        self.conn.execute(
+            "DELETE FROM person_emails WHERE person_id = ?1",
             params![person_id],
         )?;
         self.conn
@@ -6255,6 +6389,182 @@ mod tests {
             .expect("get by email");
         assert!(result.is_some());
         assert_eq!(result.unwrap().id, person.id);
+    }
+
+    #[test]
+    fn test_get_person_by_email_or_alias() {
+        let db = test_db();
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert");
+
+        // Exact match still works
+        let result = db
+            .get_person_by_email_or_alias("alice@acme.com")
+            .expect("exact match");
+        assert!(result.is_some());
+        assert_eq!(result.as_ref().unwrap().id, person.id);
+
+        // Add an alias
+        db.add_person_email(&person.id, "alice@acmecorp.com", false)
+            .expect("add alias");
+
+        // Alias lookup works
+        let result = db
+            .get_person_by_email_or_alias("alice@acmecorp.com")
+            .expect("alias match");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, person.id);
+
+        // Unknown email returns None
+        let result = db
+            .get_person_by_email_or_alias("unknown@nowhere.com")
+            .expect("no match");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_person_by_domain_alias() {
+        let db = test_db();
+        let person = sample_person("renan@a8c.com");
+        db.upsert_person(&person).expect("upsert");
+
+        // Search for the same local part at a sibling domain
+        let result = db
+            .find_person_by_domain_alias("renan@wpvip.com", &["a8c.com".to_string()])
+            .expect("domain alias search");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().id, person.id);
+
+        // No match when sibling domains don't contain the person
+        let result = db
+            .find_person_by_domain_alias("renan@wpvip.com", &["unknown.com".to_string()])
+            .expect("no match");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_sibling_domains_for_email() {
+        let db = test_db();
+
+        // Set up an account with multiple domains
+        setup_account(&db, "acc1", "Automattic");
+        db.set_account_domains("acc1", &["a8c.com".to_string(), "wpvip.com".to_string()])
+            .expect("set domains");
+
+        // Email at a8c.com should return wpvip.com as sibling
+        let siblings = db
+            .get_sibling_domains_for_email("renan@a8c.com", &[])
+            .expect("siblings");
+        assert!(siblings.contains(&"wpvip.com".to_string()));
+        assert!(!siblings.contains(&"a8c.com".to_string())); // self excluded
+
+        // Personal email domains should return no siblings
+        let siblings = db
+            .get_sibling_domains_for_email("alice@gmail.com", &[])
+            .expect("personal");
+        assert!(siblings.is_empty());
+
+        // user_domains path
+        let user_domains = vec!["myco.com".to_string(), "myco.io".to_string()];
+        let siblings = db
+            .get_sibling_domains_for_email("alice@myco.com", &user_domains)
+            .expect("user domains");
+        assert!(siblings.contains(&"myco.io".to_string()));
+    }
+
+    #[test]
+    fn test_person_emails_crud() {
+        let db = test_db();
+        let person = sample_person("alice@acme.com");
+        db.upsert_person(&person).expect("upsert");
+
+        // upsert_person should auto-seed person_emails
+        let emails = db.get_person_emails(&person.id).expect("list emails");
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0], "alice@acme.com");
+
+        // Add an alias
+        db.add_person_email(&person.id, "alice@acmecorp.com", false)
+            .expect("add alias");
+        let emails = db.get_person_emails(&person.id).expect("list emails");
+        assert_eq!(emails.len(), 2);
+
+        // Duplicate insert is idempotent
+        db.add_person_email(&person.id, "alice@acmecorp.com", false)
+            .expect("duplicate add");
+        let emails = db.get_person_emails(&person.id).expect("list emails");
+        assert_eq!(emails.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_people_transfers_aliases() {
+        let db = test_db();
+        let p1 = sample_person("alice@acme.com");
+        let p2 = sample_person("alice@acmecorp.com");
+        db.upsert_person(&p1).expect("upsert p1");
+        db.upsert_person(&p2).expect("upsert p2");
+
+        // Both have their primary emails
+        assert_eq!(db.get_person_emails(&p1.id).unwrap().len(), 1);
+        assert_eq!(db.get_person_emails(&p2.id).unwrap().len(), 1);
+
+        // Merge p2 into p1
+        db.merge_people(&p1.id, &p2.id).expect("merge");
+
+        // p1 should now have both emails
+        let emails = db.get_person_emails(&p1.id).unwrap();
+        assert!(emails.contains(&"alice@acme.com".to_string()));
+        assert!(emails.contains(&"alice@acmecorp.com".to_string()));
+
+        // p2 should be gone
+        assert!(db.get_person(&p2.id).unwrap().is_none());
+        assert!(db.get_person_emails(&p2.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_alias_aware_person_resolution_integration() {
+        let db = test_db();
+
+        // Set up account with two domains
+        setup_account(&db, "acc1", "Automattic");
+        db.set_account_domains("acc1", &["a8c.com".to_string(), "wpvip.com".to_string()])
+            .expect("set domains");
+
+        // Create person from domain A
+        let person = sample_person("renan@a8c.com");
+        db.upsert_person(&person).expect("upsert");
+
+        // Simulate: calendar event arrives with renan@wpvip.com
+        let email = "renan@wpvip.com";
+        let found = db.get_person_by_email_or_alias(email).ok().flatten();
+        assert!(found.is_none(), "no direct match yet");
+
+        // Get siblings and try domain alias
+        let siblings = db
+            .get_sibling_domains_for_email(email, &[])
+            .expect("siblings");
+        assert!(!siblings.is_empty());
+
+        let found = db
+            .find_person_by_domain_alias(email, &siblings)
+            .expect("domain alias");
+        assert!(found.is_some());
+        assert_eq!(found.as_ref().unwrap().id, person.id);
+
+        // Record the alias
+        db.add_person_email(&person.id, email, false)
+            .expect("record alias");
+
+        // Now direct alias lookup should work
+        let found = db
+            .get_person_by_email_or_alias(email)
+            .expect("alias lookup");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id, person.id);
+
+        // person_emails should have both
+        let emails = db.get_person_emails(&person.id).unwrap();
+        assert_eq!(emails.len(), 2);
     }
 
     #[test]

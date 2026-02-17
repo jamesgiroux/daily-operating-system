@@ -241,6 +241,11 @@ fn parse_iso_dt(s: &str) -> Option<DateTime<Utc>> {
 }
 
 /// Build a condensed prep summary for embedding in schedule.json.
+///
+/// Pulls from both the lightweight directive fields (talking_points, risks, wins)
+/// AND the entity intelligence fields (executive_assessment, entity_risks,
+/// stakeholder_insights, account_data.recent_wins) so that meetings with
+/// enriched intelligence show rich content on the briefing cards.
 fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
     let account_data = ctx.account_data.as_ref().and_then(|v| v.as_object());
 
@@ -261,41 +266,281 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         }
     }
 
-    let discuss: Vec<&str> = ctx
+    // Discuss: talking_points first, fall back to account_data.recent_wins
+    let discuss: Vec<String> = ctx
         .talking_points
-        .as_deref()
-        .unwrap_or(&[])
-        .iter()
-        .take(4)
-        .map(|s| s.as_str())
-        .collect();
-    let watch: Vec<&str> = ctx
-        .risks
-        .as_deref()
-        .unwrap_or(&[])
-        .iter()
-        .take(3)
-        .map(|s| s.as_str())
-        .collect();
-    let wins: Vec<&str> = ctx
-        .wins
-        .as_deref()
-        .unwrap_or(&[])
-        .iter()
-        .take(3)
-        .map(|s| s.as_str())
-        .collect();
+        .as_ref()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.iter().take(4).map(|s| sanitize_inline_markdown(s)).collect())
+        .or_else(|| {
+            account_data
+                .and_then(|d| d.get("recent_wins"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .take(4)
+                        .filter_map(|v| v.as_str().map(sanitize_inline_markdown))
+                        .collect()
+                })
+        })
+        .unwrap_or_default();
 
-    if at_a_glance.is_empty() && discuss.is_empty() && watch.is_empty() && wins.is_empty() {
+    // Watch: risks first, fall back to entity_risks[].text
+    let watch: Vec<String> = ctx
+        .risks
+        .as_ref()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.iter().take(3).cloned().collect())
+        .or_else(|| {
+            ctx.entity_risks.as_ref().map(|arr| {
+                arr.iter()
+                    .take(3)
+                    .filter_map(|v| {
+                        v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                    })
+                    .collect()
+            })
+        })
+        .unwrap_or_default();
+
+    // Wins: ctx.wins first, fall back to account_data.recent_wins (if not already used for discuss)
+    let wins: Vec<String> = ctx
+        .wins
+        .as_ref()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.iter().take(3).map(|s| sanitize_inline_markdown(s)).collect())
+        .unwrap_or_default();
+
+    // Context: executive_assessment (truncated for card display)
+    let context = ctx
+        .executive_assessment
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| truncate_to_sentences(s, 2));
+
+    // Stakeholders from entity intelligence (exclude internal people)
+    let stakeholders: Vec<Value> = ctx
+        .stakeholder_insights
+        .as_ref()
+        .map(|arr| {
+            arr.iter()
+                .filter(|v| {
+                    v.get("relationship")
+                        .and_then(|r| r.as_str()) != Some("internal")
+                })
+                .take(6)
+                .filter_map(|v| {
+                    let name = v.get("name").and_then(|n| n.as_str())?;
+                    Some(json!({
+                        "name": name,
+                        "role": v.get("role").and_then(|r| r.as_str()),
+                        "focus": v.get("focus").and_then(|f| f.as_str()),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if at_a_glance.is_empty()
+        && discuss.is_empty()
+        && watch.is_empty()
+        && wins.is_empty()
+        && context.is_none()
+        && stakeholders.is_empty()
+    {
         return None;
     }
 
-    Some(json!({
+    let mut summary = json!({
         "atAGlance": &at_a_glance[..at_a_glance.len().min(4)],
         "discuss": discuss,
         "watch": watch,
         "wins": wins,
-    }))
+    });
+
+    if let Some(obj) = summary.as_object_mut() {
+        if let Some(ctx_text) = context {
+            obj.insert("context".to_string(), json!(ctx_text));
+        }
+        if !stakeholders.is_empty() {
+            obj.insert("stakeholders".to_string(), json!(stakeholders));
+        }
+    }
+
+    Some(summary)
+}
+
+/// Truncate text to the first N sentences (period-delimited).
+fn truncate_to_sentences(text: &str, n: usize) -> String {
+    let mut count = 0;
+    let mut end = 0;
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    while end < len && count < n {
+        if bytes[end] == b'.' {
+            // Check it's a sentence-ending period (followed by space, newline, or end)
+            let next = end + 1;
+            if next >= len || bytes[next] == b' ' || bytes[next] == b'\n' {
+                count += 1;
+                if count >= n {
+                    end += 1; // include the period
+                    break;
+                }
+            }
+        }
+        end += 1;
+    }
+    if end >= len {
+        text.to_string()
+    } else {
+        text[..end].trim().to_string()
+    }
+}
+
+/// Fallback: build a prep summary by reading the per-meeting prep file directly.
+/// Used when directive meetingContexts is empty but prep files exist.
+fn build_prep_summary_from_file(data_dir: &Path, meeting_id: &str) -> Option<Value> {
+    let prep_path = data_dir.join("preps").join(format!("{}.json", meeting_id));
+    let content = fs::read_to_string(&prep_path).ok()?;
+    let prep: Value = serde_json::from_str(&content).ok()?;
+
+    // Map accountSnapshot → atAGlance (structured label/value pairs)
+    let mut at_a_glance: Vec<String> = Vec::new();
+    if let Some(snapshots) = prep.get("accountSnapshot").and_then(|v| v.as_array()) {
+        for snap in snapshots.iter().take(4) {
+            let label = snap.get("label").and_then(|v| v.as_str()).unwrap_or("");
+            let value = snap.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            if !label.is_empty() && !value.is_empty() {
+                at_a_glance.push(format!("{}: {}", label, value));
+            }
+        }
+    }
+    // Fallback: quickContext is a flat map written by enrich_prep_from_db
+    if at_a_glance.is_empty() {
+        if let Some(qc) = prep.get("quickContext").and_then(|v| v.as_object()) {
+            for (key, val) in qc.iter().take(4) {
+                if let Some(v) = val.as_str() {
+                    at_a_glance.push(format!("{}: {}", key, v));
+                }
+            }
+        }
+    }
+
+    // Map talkingPoints → discuss
+    let discuss: Vec<&str> = prep
+        .get("talkingPoints")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(4).filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    // Map entityRisks → watch (extract .text from objects, or use as string)
+    // Fallback to plain "risks" array if entityRisks is absent
+    let watch: Vec<String> = prep
+        .get("entityRisks")
+        .or_else(|| prep.get("risks"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(3)
+                .filter_map(|v| {
+                    v.get("text")
+                        .and_then(|t| t.as_str())
+                        .or_else(|| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Map recentWins → wins
+    let wins: Vec<&str> = prep
+        .get("recentWins")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().take(3).filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+
+    // Map intelligenceSummary → context (truncate to first 2 sentences for card display)
+    // Fallback chain: intelligenceSummary > meetingContext > currentState
+    let context = prep
+        .get("intelligenceSummary")
+        .or_else(|| prep.get("meetingContext"))
+        .or_else(|| prep.get("currentState"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| truncate_to_sentences(s, 2));
+
+    // Map stakeholderInsights → stakeholders (exclude internal people)
+    let stakeholders: Vec<Value> = prep
+        .get("stakeholderInsights")
+        .or_else(|| prep.get("attendees"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter(|v| {
+                    v.get("relationship")
+                        .and_then(|r| r.as_str()) != Some("internal")
+                })
+                .take(6)
+                .filter_map(|v| {
+                    let name = v.get("name").and_then(|n| n.as_str())?;
+                    Some(json!({
+                        "name": name,
+                        "role": v.get("role").and_then(|r| r.as_str()),
+                        "focus": v.get("focus").and_then(|f| f.as_str()),
+                    }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Map openItems
+    let open_items: Vec<String> = prep
+        .get("openItems")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .take(4)
+                .filter_map(|v| {
+                    v.get("title")
+                        .and_then(|t| t.as_str())
+                        .or_else(|| v.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if at_a_glance.is_empty()
+        && discuss.is_empty()
+        && watch.is_empty()
+        && wins.is_empty()
+        && context.is_none()
+        && stakeholders.is_empty()
+        && open_items.is_empty()
+    {
+        return None;
+    }
+
+    let mut summary = json!({
+        "atAGlance": &at_a_glance[..at_a_glance.len().min(4)],
+        "discuss": discuss,
+        "watch": watch,
+        "wins": wins,
+    });
+
+    if let Some(obj) = summary.as_object_mut() {
+        if let Some(ctx) = context {
+            obj.insert("context".to_string(), json!(ctx));
+        }
+        if !stakeholders.is_empty() {
+            obj.insert("stakeholders".to_string(), json!(stakeholders));
+        }
+        if !open_items.is_empty() {
+            obj.insert("openItems".to_string(), json!(open_items));
+        }
+    }
+
+    Some(summary)
 }
 
 /// Return a time-appropriate greeting.
@@ -383,8 +628,14 @@ pub fn deliver_schedule(
 
         let mc = find_meeting_context(account.as_deref(), Some(event_id), meeting_contexts);
         let resolved_account = mc.and_then(|c| c.account.clone()).or(account.clone());
-        let prep_summary = mc.and_then(build_prep_summary);
-        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && mc.is_some();
+        let prep_summary = mc
+            .and_then(build_prep_summary)
+            .or_else(|| build_prep_summary_from_file(data_dir, &meeting_id));
+        let has_prep_file = data_dir
+            .join("preps")
+            .join(format!("{}.json", meeting_id))
+            .exists();
+        let has_account_prep = PREP_ELIGIBLE_TYPES.contains(&meeting_type) && (mc.is_some() || has_prep_file);
         let has_person_prep = PERSON_PREP_TYPES.contains(&meeting_type);
         let has_prep = has_account_prep || has_person_prep;
         let prep_file = if has_prep {
@@ -2057,6 +2308,10 @@ pub fn enrich_emails(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude enrichment failed: {}", e))?;
 
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "email_batch", date_id, &output.stdout);
+
     let enrichments = parse_email_enrichment(&output.stdout);
     if enrichments.is_empty() {
         log::warn!("enrich_emails: no enrichments parsed from Claude output");
@@ -2480,6 +2735,10 @@ pub fn enrich_briefing(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude briefing failed: {}", e))?;
 
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "daily_briefing", date_id, &output.stdout);
+
     let response = &output.stdout;
     let narrative = parse_briefing_narrative(response);
     let focus = parse_briefing_focus(response);
@@ -2851,6 +3110,10 @@ pub fn enrich_preps(
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
+
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "meeting_prep", date_id, &output.stdout);
 
     let enrichments = parse_prep_enrichment(&output.stdout);
     if enrichments.is_empty() {
@@ -3634,6 +3897,9 @@ pub fn enrich_week(
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
+
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
 
     let response = &output.stdout;
 

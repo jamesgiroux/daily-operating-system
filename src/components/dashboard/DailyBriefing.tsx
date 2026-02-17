@@ -41,6 +41,7 @@ interface DailyBriefingProps {
   onRunBriefing?: () => void;
   isRunning?: boolean;
   workflowStatus?: WorkflowStatus;
+  onRefresh?: () => void;
 }
 
 // ─── Featured Meeting Selection ──────────────────────────────────────────────
@@ -115,7 +116,7 @@ function formatMinutes(minutes: number): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus }: DailyBriefingProps) {
+export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workflowStatus, onRefresh }: DailyBriefingProps) {
   const { now, currentMeeting } = useCalendar();
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
 
@@ -131,9 +132,9 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     ? "Emails Needing Response"
     : "Emails Worth Noting";
 
-  // Featured meeting
+  // Featured meeting (still appears in schedule — lead story is a highlight, not a removal)
   const featured = selectFeaturedMeeting(meetings, now);
-  const scheduleMeetings = meetings.filter((m) => m.id !== featured?.id);
+  const scheduleMeetings = meetings;
 
   // Readiness
   const readiness = computeReadiness(meetings, actions);
@@ -333,6 +334,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                   meetingStartTime={featured.startIso ?? new Date().toISOString()}
                   meetingType={featured.type}
                   linkedEntities={featured.linkedEntities ?? []}
+                  onEntitiesChanged={onRefresh}
                 />
               </div>
 
@@ -371,6 +373,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     meetingActions={getActionsForMeeting(meeting.id)}
                     onComplete={handleComplete}
                     completedIds={completedIds}
+                    onEntitiesChanged={onRefresh}
                   />
                 ))}
               </div>
