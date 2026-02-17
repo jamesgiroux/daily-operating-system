@@ -4,7 +4,7 @@
 -- Phase 1: External via MCP (Claude Desktop). Phase 2: In-app if validated.
 -- Sessions can be entity-scoped (account/project) or general.
 
-CREATE TABLE chat_sessions (
+CREATE TABLE IF NOT EXISTS chat_sessions (
     id TEXT PRIMARY KEY,
     entity_id TEXT,              -- nullable (general chat not tied to entity)
     entity_type TEXT,            -- 'account' | 'project' | NULL
@@ -15,7 +15,7 @@ CREATE TABLE chat_sessions (
     created_at TEXT NOT NULL
 );
 
-CREATE TABLE chat_turns (
+CREATE TABLE IF NOT EXISTS chat_turns (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     turn_index INTEGER NOT NULL,
@@ -25,5 +25,5 @@ CREATE TABLE chat_turns (
     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_sessions_entity ON chat_sessions(entity_id);
-CREATE INDEX idx_turns_session ON chat_turns(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_entity ON chat_sessions(entity_id);
+CREATE INDEX IF NOT EXISTS idx_turns_session ON chat_turns(session_id);
