@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 688 Rust tests. v0.8.2 shipped. 0.8.3 active (cleanup). 0.9.0 planned (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
+**Current state:** 724 Rust tests. v0.8.4 shipped. 0.9.0 active (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
 
 ---
 
@@ -42,8 +42,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
-| **I303** | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx | P3 | Code Quality |
-| **I304** | Prompt audit — review all AI prompts for specificity and output-tailored guidance | P2 | Intelligence |
 
 ---
 
@@ -55,14 +53,15 @@ All issues (I298, I261, I272, I297, I287, I289, I290, I291, I232, I236, I263) cl
 
 ---
 
-### 0.8.3 — Cleanup
+### 0.8.3 — Cleanup — CLOSED
 
-*Carry-forward code quality and type-safety fixes from 0.8.2.*
+All issues (I303, I304) closed in v0.8.3. Type narrowing fix, prompt hardening, person email aliasing and cross-domain dedup, migration idempotency, QA fixes. See INTERNAL-CHANGELOG for details.
 
-| Priority | Issue | Scope |
-|----------|-------|-------|
-| P3 | I303 | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx |
-| P2 | I304 | Prompt audit — review all AI prompts for specificity and output-tailored guidance |
+---
+
+### 0.8.4 — Hotfix — CLOSED
+
+MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during embedding init was corrupting the JSON-RPC stream over stdio and causing Claude Desktop to lose terminal styling. Fixed with fd-level dup/dup2 redirect.
 
 ---
 
