@@ -6312,20 +6312,20 @@ fn markdown_to_simple_html(md: &str) -> String {
         }
 
         // Headings
-        if trimmed.starts_with("# ") {
+        if let Some(rest) = trimmed.strip_prefix("# ") {
             if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
-            html.push_str(&format!("<h1>{}</h1>\n", &trimmed[2..]));
-        } else if trimmed.starts_with("## ") {
+            html.push_str(&format!("<h1>{}</h1>\n", rest));
+        } else if let Some(rest) = trimmed.strip_prefix("## ") {
             if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
-            html.push_str(&format!("<h2>{}</h2>\n", &trimmed[3..]));
-        } else if trimmed.starts_with("### ") {
+            html.push_str(&format!("<h2>{}</h2>\n", rest));
+        } else if let Some(rest) = trimmed.strip_prefix("### ") {
             if in_list { html.push_str(&format!("</{}>\n", list_type)); in_list = false; }
-            html.push_str(&format!("<h3>{}</h3>\n", &trimmed[4..]));
+            html.push_str(&format!("<h3>{}</h3>\n", rest));
         }
         // Unordered list
-        else if trimmed.starts_with("- ") {
+        else if let Some(rest) = trimmed.strip_prefix("- ") {
             if !in_list { html.push_str("<ul>\n"); in_list = true; list_type = "ul"; }
-            html.push_str(&format!("<li>{}</li>\n", &trimmed[2..]));
+            html.push_str(&format!("<li>{}</li>\n", rest));
         }
         // Ordered list
         else if trimmed.len() > 2 && trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) && trimmed.contains(". ") {
