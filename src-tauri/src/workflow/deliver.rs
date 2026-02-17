@@ -318,12 +318,17 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         .filter(|s| !s.is_empty())
         .map(|s| truncate_to_sentences(s, 2));
 
-    // Stakeholders from entity intelligence
+    // Stakeholders from entity intelligence (exclude internal people)
     let stakeholders: Vec<Value> = ctx
         .stakeholder_insights
         .as_ref()
         .map(|arr| {
             arr.iter()
+                .filter(|v| {
+                    v.get("relationship")
+                        .and_then(|r| r.as_str())
+                        .map_or(true, |r| r != "internal")
+                })
                 .take(6)
                 .filter_map(|v| {
                     let name = v.get("name").and_then(|n| n.as_str())?;
@@ -465,13 +470,18 @@ fn build_prep_summary_from_file(data_dir: &Path, meeting_id: &str) -> Option<Val
         .filter(|s| !s.is_empty())
         .map(|s| truncate_to_sentences(s, 2));
 
-    // Map stakeholderInsights → stakeholders
+    // Map stakeholderInsights → stakeholders (exclude internal people)
     let stakeholders: Vec<Value> = prep
         .get("stakeholderInsights")
         .or_else(|| prep.get("attendees"))
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
+                .filter(|v| {
+                    v.get("relationship")
+                        .and_then(|r| r.as_str())
+                        .map_or(true, |r| r != "internal")
+                })
                 .take(6)
                 .filter_map(|v| {
                     let name = v.get("name").and_then(|n| n.as_str())?;
