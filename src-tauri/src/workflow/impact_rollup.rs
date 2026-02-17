@@ -238,7 +238,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("test.db");
         std::mem::forget(dir);
-        ActionDb::open_at(path).expect("open db")
+        let db = ActionDb::open_at(path).expect("open db");
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK for tests");
+        db
     }
 
     #[allow(clippy::too_many_arguments)]
