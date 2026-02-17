@@ -279,7 +279,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                 .map(|arr| {
                     arr.iter()
                         .take(4)
-                        .filter_map(|v| v.as_str().map(|s| sanitize_inline_markdown(s)))
+                        .filter_map(|v| v.as_str().map(sanitize_inline_markdown))
                         .collect()
                 })
         })
@@ -290,7 +290,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         .risks
         .as_ref()
         .filter(|v| !v.is_empty())
-        .map(|v| v.iter().take(3).map(|s| s.clone()).collect())
+        .map(|v| v.iter().take(3).cloned().collect())
         .or_else(|| {
             ctx.entity_risks.as_ref().map(|arr| {
                 arr.iter()
@@ -326,8 +326,7 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
             arr.iter()
                 .filter(|v| {
                     v.get("relationship")
-                        .and_then(|r| r.as_str())
-                        .map_or(true, |r| r != "internal")
+                        .and_then(|r| r.as_str()) != Some("internal")
                 })
                 .take(6)
                 .filter_map(|v| {
@@ -479,8 +478,7 @@ fn build_prep_summary_from_file(data_dir: &Path, meeting_id: &str) -> Option<Val
             arr.iter()
                 .filter(|v| {
                     v.get("relationship")
-                        .and_then(|r| r.as_str())
-                        .map_or(true, |r| r != "internal")
+                        .and_then(|r| r.as_str()) != Some("internal")
                 })
                 .take(6)
                 .filter_map(|v| {
