@@ -80,6 +80,10 @@ pub struct GoogleCalendarEvent {
     pub start: String,
     pub end: String,
     pub attendees: Vec<String>,
+    /// Per-attendee RSVP status from Google Calendar (accepted/tentative/declined/needsAction).
+    /// Key is lowercase email.
+    #[serde(default)]
+    pub attendee_rsvp: std::collections::HashMap<String, String>,
     pub organizer: String,
     pub description: String,
     pub location: String,

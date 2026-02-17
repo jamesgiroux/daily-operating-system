@@ -2,6 +2,7 @@
  * WhatHappenedSlide — Situation → Complication as one narrative arc.
  * Slide 3: 3-sentence narrative + health arc timeline + key losses.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import type { RiskWhatHappened } from "@/types";
 
@@ -18,6 +19,9 @@ const statusColors: Record<string, string> = {
 };
 
 export function WhatHappenedSlide({ data, onUpdate }: WhatHappenedSlideProps) {
+  const [hoveredArc, setHoveredArc] = useState<number | null>(null);
+  const [hoveredLoss, setHoveredLoss] = useState<number | null>(null);
+
   return (
     <section
       id="what-happened"
@@ -71,13 +75,45 @@ export function WhatHappenedSlide({ data, onUpdate }: WhatHappenedSlideProps) {
             return (
               <div
                 key={i}
+                onMouseEnter={() => setHoveredArc(i)}
+                onMouseLeave={() => setHoveredArc(null)}
                 style={{
                   flex: 1,
                   display: "flex",
                   flexDirection: "column",
                   gap: 8,
+                  position: "relative",
                 }}
               >
+                {/* Dismiss */}
+                {(data.healthArc?.length ?? 0) > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdate?.({
+                        ...data,
+                        healthArc: (data.healthArc ?? []).filter((_, j) => j !== i),
+                      });
+                    }}
+                    style={{
+                      position: "absolute",
+                      top: -8,
+                      right: -4,
+                      opacity: hoveredArc === i ? 0.6 : 0,
+                      transition: "opacity 0.15s",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "4px 6px",
+                      fontSize: 14,
+                      color: "var(--color-text-tertiary)",
+                      zIndex: 1,
+                    }}
+                    aria-label="Remove"
+                  >
+                    ✕
+                  </button>
+                )}
                 {/* Color bar */}
                 <div
                   style={{
@@ -143,6 +179,8 @@ export function WhatHappenedSlide({ data, onUpdate }: WhatHappenedSlideProps) {
           {data.keyLosses.slice(0, 3).map((loss, i) => (
             <div
               key={i}
+              onMouseEnter={() => setHoveredLoss(i)}
+              onMouseLeave={() => setHoveredLoss(null)}
               style={{
                 display: "flex",
                 gap: 12,
@@ -173,8 +211,34 @@ export function WhatHappenedSlide({ data, onUpdate }: WhatHappenedSlideProps) {
                   fontFamily: "var(--font-sans)",
                   fontSize: 16,
                   color: "var(--color-text-primary)",
+                  flex: 1,
                 }}
               />
+              {(data.keyLosses?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      keyLosses: (data.keyLosses ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    opacity: hoveredLoss === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>

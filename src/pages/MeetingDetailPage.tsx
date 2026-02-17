@@ -24,14 +24,19 @@ import type {
   DbAction,
   LinkedEntity,
 } from "@/types";
+import type { VitalDisplay } from "@/lib/entity-types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
+import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { ChapterHeading } from "@/components/editorial/ChapterHeading";
+import { EditorialLoading } from "@/components/editorial/EditorialLoading";
+import { EditorialError } from "@/components/editorial/EditorialError";
+import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import {
-  AlertCircle,
   Check,
   ChevronRight,
   Clock,
@@ -49,6 +54,8 @@ import {
   Loader2,
   Trophy,
   CircleDot,
+  AlignLeft,
+  RefreshCw,
 } from "lucide-react";
 
 // ── Shared style fragments ──
@@ -62,7 +69,7 @@ const monoOverline: React.CSSProperties = {
   color: "var(--color-text-tertiary)",
 };
 
-const chapterHeading: React.CSSProperties = {
+const chapterHeadingStyle: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 11,
   fontWeight: 600,
@@ -89,11 +96,6 @@ const editorialBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
-const sidebarCard: React.CSSProperties = {
-  border: "1px solid var(--color-rule-light)",
-  padding: 20,
-};
-
 const bulletDot = (color: string): React.CSSProperties => ({
   width: 6,
   height: 6,
@@ -103,10 +105,30 @@ const bulletDot = (color: string): React.CSSProperties => ({
   marginTop: 7,
 });
 
-const pulseBg: React.CSSProperties = {
-  background: "var(--color-rule-light)",
-  borderRadius: 4,
-};
+// ── Chapter Nav definitions ──
+
+const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
+  { id: "headline", label: "The Brief", icon: <AlignLeft size={18} strokeWidth={1.5} /> },
+  { id: "risks", label: "Risks", icon: <AlertTriangle size={18} strokeWidth={1.5} /> },
+  { id: "the-room", label: "The Room", icon: <Users size={18} strokeWidth={1.5} /> },
+  { id: "your-plan", label: "Your Plan", icon: <Target size={18} strokeWidth={1.5} /> },
+  { id: "deep-dive", label: "Deep Dive", icon: <BookOpen size={18} strokeWidth={1.5} /> },
+];
+
+// ── Unified attendee type ──
+
+interface UnifiedAttendee {
+  name: string;
+  personId?: string;
+  role?: string;
+  organization?: string;
+  temperature?: string;
+  engagement?: string;
+  assessment?: string;
+  meetingCount?: number;
+  lastSeen?: string;
+  notes?: string;
+}
 
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
@@ -128,12 +150,13 @@ export default function MeetingDetailPage() {
   // Save status for folio bar
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
-  // Register magazine shell
+  // Register magazine shell with chapter nav
   const shellConfig = useMemo(() => ({
     folioLabel: "Intelligence Report",
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
     backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
+    chapters: CHAPTERS,
     folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
   }), [navigate, saveStatus]);
   useRegisterMagazineShell(shellConfig);
@@ -284,70 +307,30 @@ export default function MeetingDetailPage() {
     loadMeetingIntelligence();
   }, [loadMeetingIntelligence]);
 
+  // Reveal observer for editorial-reveal animations
+  useRevealObserver(!loading && !!data);
+
+  // Time-aware banner: compute minutes until meeting
+  const minutesUntilMeeting = useMemo(() => {
+    if (!meetingMeta?.startTime) return null;
+    const start = parseDate(meetingMeta.startTime);
+    if (!start) return null;
+    const diff = Math.round((start.getTime() - Date.now()) / 60000);
+    return diff > 0 && diff <= 120 ? diff : null;
+  }, [meetingMeta?.startTime]);
+
   // Determine meeting time state for editability (I194)
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
   // ── Loading state ──
   if (loading) {
-    return (
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
-        <div style={{ ...pulseBg, height: 14, width: 120, marginBottom: 20, animation: "pulse 2s ease-in-out infinite" }} />
-        <div style={{ ...pulseBg, height: 32, width: "75%", marginBottom: 12, animation: "pulse 2s ease-in-out infinite" }} />
-        <div style={{ ...pulseBg, height: 12, width: 200, marginBottom: 40, animation: "pulse 2s ease-in-out infinite" }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-          <div style={{ ...pulseBg, height: 120, animation: "pulse 2s ease-in-out infinite" }} />
-          <div style={{ ...pulseBg, height: 180, animation: "pulse 2s ease-in-out infinite" }} />
-          <div style={{ ...pulseBg, height: 120, animation: "pulse 2s ease-in-out infinite" }} />
-        </div>
-      </div>
-    );
+    return <EditorialLoading count={5} />;
   }
 
   // ── Error state ──
   if (error) {
-    return (
-      <div style={{ maxWidth: 960, margin: "0 auto", padding: "48px 0 80px" }}>
-        <div
-          style={{
-            borderLeft: "3px solid var(--color-spice-terracotta)",
-            paddingLeft: 24,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-            <AlertCircle style={{ width: 20, height: 20, color: "var(--color-spice-terracotta)" }} />
-            <h2
-              style={{
-                fontFamily: "var(--font-serif)",
-                fontSize: 22,
-                fontWeight: 600,
-                color: "var(--color-text-primary)",
-                margin: 0,
-              }}
-            >
-              Unable to Load Intelligence
-            </h2>
-          </div>
-          <p
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 15,
-              lineHeight: 1.65,
-              color: "var(--color-text-secondary)",
-              margin: "0 0 20px",
-            }}
-          >
-            {error}
-          </p>
-          <button
-            onClick={() => loadMeetingIntelligence()}
-            style={editorialBtn}
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
+    return <EditorialError message={error} onRetry={() => loadMeetingIntelligence()} />;
   }
 
   // ── Empty / not-ready state ──
@@ -411,16 +394,7 @@ export default function MeetingDetailPage() {
     data.stakeholderSignals
   );
 
-  const attendeeNames = new Set<string>([
-    ...(data.attendeeContext ?? []).map((p) => normalizePersonKey(p.name)),
-    ...(data.attendees ?? []).map((p) => normalizePersonKey(p.name)),
-  ]);
-  const matchingStakeholderInsights = (data.stakeholderInsights ?? []).filter((person) =>
-    attendeeNames.has(normalizePersonKey(person.name))
-  );
-  const extendedStakeholderInsights = (data.stakeholderInsights ?? []).filter(
-    (person) => !attendeeNames.has(normalizePersonKey(person.name))
-  );
+  // Derived data
   const topRisks = [
     ...((data.entityRisks ?? []).map((risk) => risk.text)),
     ...(data.risks ?? []),
@@ -428,8 +402,8 @@ export default function MeetingDetailPage() {
     .map((risk) => sanitizeInlineText(risk))
     .filter((risk) => risk.length > 0)
     .slice(0, 3);
-  const lifecycle = getLifecycleForDisplay(data);
   const heroMeta = getHeroMetaItems(data);
+  const lifecycle = getLifecycleForDisplay(data);
   const agendaItems = (data.proposedAgenda ?? [])
     .map((item) => ({
       ...item,
@@ -442,17 +416,63 @@ export default function MeetingDetailPage() {
   const agendaDisplayItems = agendaNonWinItems.length > 0 ? agendaNonWinItems : agendaItems;
   const calendarNotes = normalizeCalendarNotes(data.calendarNotes);
   const agendaTopics = new Set(agendaDisplayItems.map((item) => normalizePersonKey(item.topic)));
-  const recentWinsForSidebar = recentWins.filter(
+  const recentWinsForDisplay = recentWins.filter(
     (win) => !agendaTopics.has(normalizePersonKey(win))
   );
-  const reportNav = [
-    { id: "executive-brief", label: "Executive Brief", show: Boolean(data.intelligenceSummary || data.meetingContext) },
-    { id: "agenda", label: "Agenda", show: Boolean(data.proposedAgenda?.length || data.userAgenda?.length) },
-    { id: "risks", label: "Risks", show: Boolean((data.entityRisks?.length ?? 0) > 0 || (data.risks?.length ?? 0) > 0) },
-    { id: "people", label: "People", show: Boolean(data.attendeeContext?.length || data.attendees?.length || data.stakeholderInsights?.length) },
-    { id: "actions", label: "Open Items", show: Boolean(data.openItems?.length) },
-    { id: "appendix", label: "Appendix", show: hasReferenceContent(data) || Boolean(data.sinceLast?.length || data.strategicPrograms?.length || data.currentState?.length || data.references?.length) },
-  ].filter((item) => item.show);
+
+  // Build unified attendees
+  const unifiedAttendees = buildUnifiedAttendees(
+    data.attendeeContext,
+    data.attendees,
+    data.stakeholderInsights,
+    data.stakeholderSignals,
+  );
+  const extendedStakeholderInsights = (data.stakeholderInsights ?? []).filter(
+    (person) => {
+      const attendeeNames = new Set<string>([
+        ...(data.attendeeContext ?? []).map((p) => normalizePersonKey(p.name)),
+        ...(data.attendees ?? []).map((p) => normalizePersonKey(p.name)),
+      ]);
+      return !attendeeNames.has(normalizePersonKey(person.name));
+    }
+  );
+
+  // Convert heroMeta to VitalDisplay[]
+  const vitals: VitalDisplay[] = heroMeta.map((item) => ({
+    text: `${item.label}: ${item.value}`,
+    highlight: item.tone === "text-destructive" ? undefined :
+      item.tone === "text-success" ? "olive" :
+      item.tone === "text-primary" ? "turmeric" : undefined,
+  }));
+
+  // Key insight — first sentence from intelligence summary
+  const keyInsight = extractKeyInsight(data.intelligenceSummary, data.meetingContext);
+
+  // Meeting type label
+  const meetingType = meetingMeta?.meetingType
+    ? meetingMeta.meetingType.replace(/_/g, " ")
+    : undefined;
+
+  // Track which risks are high urgency for the pulse animation
+  const topRiskUrgencies = [
+    ...((data.entityRisks ?? []).map((risk) => ({ text: sanitizeInlineText(risk.text), urgency: risk.urgency }))),
+    ...(data.risks ?? []).map((risk) => ({ text: sanitizeInlineText(risk), urgency: undefined as string | undefined })),
+  ]
+    .filter((r) => r.text.length > 0)
+    .slice(0, 3);
+
+  const hasRisks = topRisks.length > 0;
+  const hasRoom = unifiedAttendees.length > 0;
+  const hasPlan = agendaDisplayItems.length > 0 || (meetingId && isEditable);
+  const hasDeepDive = Boolean(
+    recentWinsForDisplay.length > 0 ||
+    (data.openItems && data.openItems.length > 0) ||
+    (data.recentEmailSignals && data.recentEmailSignals.length > 0) ||
+    (data.entityReadiness && data.entityReadiness.length > 0) ||
+    hasReferenceContent(data) ||
+    (data.sinceLast?.length ?? 0) > 0 ||
+    (data.strategicPrograms?.length ?? 0) > 0
+  );
 
   return (
     <>
@@ -460,9 +480,11 @@ export default function MeetingDetailPage() {
         {/* Post-meeting: outcomes first (I195) */}
         {isPastMeeting && outcomes && (
           <>
-            <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+            <div style={{ paddingTop: 80 }}>
+              <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
+            </div>
             <div style={{ ...editorialRule, margin: "48px 0" }} />
-            <p style={{ ...chapterHeading, marginBottom: 20 }}>
+            <p style={{ ...chapterHeadingStyle, marginBottom: 20 }}>
               Pre-Meeting Context
             </p>
           </>
@@ -474,6 +496,7 @@ export default function MeetingDetailPage() {
             style={{
               border: "1px dashed var(--color-rule-light)",
               padding: "20px 24px",
+              marginTop: 80,
               marginBottom: 32,
               display: "flex",
               alignItems: "center",
@@ -559,310 +582,266 @@ export default function MeetingDetailPage() {
 
         {(hasAnyContent || outcomes) && (
           <div style={isPastMeeting && outcomes ? { opacity: 0.7 } : undefined}>
-            <div
-              style={{
-                display: "grid",
-                gap: 48,
-                gridTemplateColumns: "minmax(0, 1fr) 260px",
-              }}
-            >
-              {/* ── Main column ── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
-                {/* ── Hero section ── */}
-                <section id="executive-brief">
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <p style={monoOverline}>
-                        Meeting Intelligence Report
-                      </p>
-                      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-                        <h1
-                          style={{
-                            fontFamily: "var(--font-serif)",
-                            fontSize: 34,
-                            fontWeight: 600,
-                            letterSpacing: "-0.01em",
-                            color: "var(--color-text-primary)",
-                            margin: 0,
-                            lineHeight: 1.15,
-                          }}
-                        >
-                          {data.title}
-                        </h1>
-                        {lifecycle && (
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 11,
-                                fontWeight: 500,
-                                letterSpacing: "0.06em",
-                                color: "var(--color-spice-turmeric)",
-                              }}
-                            >
-                              {lifecycle}
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                      <p
+
+            {/* ================================================================
+                ACT I: "Ground Me" — visible immediately, NO editorial-reveal
+               ================================================================ */}
+            <section id="headline" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+              {/* Time-aware urgency banner */}
+              {minutesUntilMeeting != null && (
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.06em",
+                    color: minutesUntilMeeting <= 15 ? "var(--color-spice-terracotta)" : "var(--color-spice-turmeric)",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Clock style={{ width: 13, height: 13 }} />
+                  Meeting starts in {minutesUntilMeeting} minute{minutesUntilMeeting !== 1 ? "s" : ""}
+                </div>
+              )}
+
+              {/* Kicker */}
+              <p style={monoOverline}>
+                Meeting Intelligence Report
+              </p>
+
+              {/* Title — 44px hero scale */}
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
+                <h1
+                  style={{
+                    fontFamily: "var(--font-serif)",
+                    fontSize: 44,
+                    fontWeight: 600,
+                    letterSpacing: "-0.01em",
+                    color: "var(--color-text-primary)",
+                    margin: 0,
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {data.title}
+                </h1>
+                {lifecycle && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        letterSpacing: "0.06em",
+                        color: "var(--color-spice-turmeric)",
+                      }}
+                    >
+                      {lifecycle}
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              {/* Metadata line */}
+              <p
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 12,
+                  letterSpacing: "0.04em",
+                  color: "var(--color-text-tertiary)",
+                  margin: "8px 0 0",
+                }}
+              >
+                {data.timeRange}
+                {meetingType && <> &middot; {meetingType}</>}
+              </p>
+
+              {/* Entity chips */}
+              {meetingId && meetingMeta && (
+                <div style={{ marginTop: 10 }}>
+                  <MeetingEntityChips
+                    meetingId={meetingId}
+                    meetingTitle={meetingMeta.title}
+                    meetingStartTime={meetingMeta.startTime ?? new Date().toISOString()}
+                    meetingType={meetingMeta.meetingType ?? "internal"}
+                    linkedEntities={linkedEntities}
+                    onEntitiesChanged={() => loadMeetingIntelligence()}
+                  />
+                </div>
+              )}
+
+              {/* The Key Insight — pull quote style */}
+              {keyInsight && (
+                <blockquote
+                  style={{
+                    marginTop: 28,
+                    marginBottom: 0,
+                    marginLeft: 0,
+                    marginRight: 0,
+                    borderLeft: "3px solid var(--color-spice-turmeric)",
+                    paddingLeft: 24,
+                    paddingTop: 16,
+                    paddingBottom: 16,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontFamily: "var(--font-serif)",
+                      fontSize: 21,
+                      fontStyle: "italic",
+                      fontWeight: 400,
+                      lineHeight: 1.55,
+                      color: "var(--color-text-primary)",
+                      margin: 0,
+                    }}
+                  >
+                    {keyInsight}
+                  </p>
+                </blockquote>
+              )}
+              {!keyInsight && (
+                <p
+                  style={{
+                    marginTop: 28,
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                  }}
+                >
+                  Intelligence builds as you meet with this account.
+                </p>
+              )}
+
+              {/* VitalsStrip */}
+              {vitals.length > 0 && <VitalsStrip vitals={vitals} />}
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
+                {isEditable && (
+                  <button
+                    onClick={handlePrefillFromContext}
+                    disabled={prefilling}
+                    style={{
+                      ...editorialBtn,
+                      opacity: prefilling ? 0.6 : 1,
+                    }}
+                  >
+                    {prefilling ? "Prefilling..." : "Prefill Prep"}
+                  </button>
+                )}
+                <button
+                  onClick={handleDraftAgendaMessage}
+                  style={editorialBtn}
+                >
+                  Draft Agenda
+                </button>
+                <button
+                  onClick={() => loadMeetingIntelligence()}
+                  style={{ ...editorialBtn, display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  <RefreshCw style={{ width: 12, height: 12 }} />
+                  Refresh
+                </button>
+                <CopyAllButton data={data} />
+              </div>
+            </section>
+
+            {/* ================================================================
+                ACT II: "Brief Me" — editorial-reveal for each chapter
+               ================================================================ */}
+
+            {/* Chapter: The Risks */}
+            {hasRisks && (
+              <section id="risks" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+                <ChapterHeading title="The Risks" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  {topRisks.map((risk, i) => {
+                    const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
+                    return i === 0 ? (
+                      /* Featured risk — serif italic, terracotta border, pulse if high urgency */
+                      <blockquote
+                        key={i}
+                        className={isHighUrgency ? "risk-pulse-once" : undefined}
                         style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: 12,
-                          letterSpacing: "0.04em",
-                          color: "var(--color-text-tertiary)",
+                          borderLeft: "3px solid var(--color-spice-terracotta)",
+                          paddingLeft: 24,
+                          paddingTop: 16,
+                          paddingBottom: 16,
                           margin: 0,
                         }}
                       >
-                        {data.timeRange}
-                      </p>
-                      {/* Entity assignment */}
-                      {meetingId && meetingMeta && (
-                        <div style={{ marginTop: 10 }}>
-                          <MeetingEntityChips
-                            meetingId={meetingId}
-                            meetingTitle={meetingMeta.title}
-                            meetingStartTime={meetingMeta.startTime ?? new Date().toISOString()}
-                            meetingType={meetingMeta.meetingType ?? "internal"}
-                            linkedEntities={linkedEntities}
-                            onEntitiesChanged={() => loadMeetingIntelligence()}
-                          />
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, paddingTop: 4 }}>
-                      {isEditable && (
-                        <button
-                          onClick={handlePrefillFromContext}
-                          disabled={prefilling}
+                        <p
                           style={{
-                            ...editorialBtn,
-                            opacity: prefilling ? 0.6 : 1,
+                            fontFamily: "var(--font-serif)",
+                            fontSize: 20,
+                            fontStyle: "italic",
+                            fontWeight: 400,
+                            lineHeight: 1.5,
+                            color: "var(--color-text-primary)",
+                            margin: 0,
                           }}
                         >
-                          {prefilling ? "Prefilling..." : "Prefill Prep"}
-                        </button>
-                      )}
-                      <button
-                        onClick={handleDraftAgendaMessage}
-                        style={editorialBtn}
+                          {risk}
+                        </p>
+                      </blockquote>
+                    ) : (
+                      /* Subordinate risks — body scale, light rules, generous spacing */
+                      <div
+                        key={i}
+                        className={isHighUrgency ? "risk-pulse-once" : undefined}
+                        style={{
+                          borderTop: "1px solid var(--color-rule-light)",
+                          borderLeft: isHighUrgency ? "3px solid var(--color-spice-terracotta)" : "none",
+                          paddingTop: 16,
+                          paddingLeft: isHighUrgency ? 16 : 0,
+                        }}
                       >
-                        Draft agenda message
-                      </button>
-                      <CopyAllButton data={data} />
-                    </div>
-                  </div>
-
-                  {(data.intelligenceSummary || data.meetingContext) ? (
-                    <blockquote
-                      style={{
-                        marginTop: 28,
-                        marginBottom: 0,
-                        marginLeft: 0,
-                        marginRight: 0,
-                        borderLeft: "3px solid var(--color-spice-turmeric)",
-                        paddingLeft: 24,
-                      }}
-                    >
-                      {(data.intelligenceSummary || data.meetingContext || "")
-                        .split("\n")
-                        .filter((line) => line.trim())
-                        .slice(0, 3)
-                        .map((line, i) => (
-                          <p
-                            key={i}
-                            style={{
-                              fontFamily: "var(--font-sans)",
-                              fontSize: 17,
-                              lineHeight: 1.75,
-                              color: "var(--color-text-primary)",
-                              margin: 0,
-                              marginTop: i > 0 ? 8 : 0,
-                            }}
-                          >
-                            {line}
-                          </p>
-                        ))}
-                    </blockquote>
-                  ) : (
-                    <p
-                      style={{
-                        marginTop: 28,
-                        fontSize: 14,
-                        color: "var(--color-text-tertiary)",
-                      }}
-                    >
-                      Intelligence builds as you meet with this account.
-                    </p>
-                  )}
-
-                  {topRisks.length > 0 && (
-                    <div
-                      style={{
-                        marginTop: 28,
-                        display: "grid",
-                        gap: 10,
-                        gridTemplateColumns: "repeat(3, 1fr)",
-                      }}
-                    >
-                      {topRisks.map((risk, i) => (
-                        <div
-                          key={i}
+                        <p
                           style={{
-                            borderLeft: "3px solid var(--color-spice-terracotta)",
-                            paddingLeft: 14,
-                            paddingTop: 10,
-                            paddingBottom: 10,
+                            fontSize: 14,
+                            lineHeight: 1.65,
+                            color: "var(--color-text-primary)",
+                            margin: 0,
                           }}
                         >
-                          <p
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.12em",
-                              color: "var(--color-spice-terracotta)",
-                              margin: 0,
-                            }}
-                          >
-                            Risk {i + 1}
-                          </p>
-                          <p
-                            style={{
-                              fontSize: 14,
-                              lineHeight: 1.55,
-                              color: "var(--color-text-primary)",
-                              marginTop: 4,
-                              marginBottom: 0,
-                            }}
-                          >
-                            {risk}
-                          </p>
-                        </div>
-                      ))}
+                          {risk}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* Chapter: The Room */}
+            {hasRoom && (
+              <section id="the-room" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+                <ChapterHeading title="The Room" />
+                <UnifiedAttendeeList attendees={unifiedAttendees} />
+              </section>
+            )}
+
+            {/* Chapter: Your Plan */}
+            {hasPlan && (
+              <section id="your-plan" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+                <ChapterHeading title="Your Plan" />
+                <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+                  {/* Proposed agenda */}
+                  {agendaDisplayItems.length > 0 && (
+                    <div>
+                      <SectionLabel
+                        label="Proposed Agenda"
+                        icon={<Target style={{ width: 14, height: 14 }} />}
+                        copyText={formatProposedAgenda(agendaDisplayItems)}
+                        copyLabel="agenda"
+                      />
+                      <AgendaList items={agendaDisplayItems} />
                     </div>
                   )}
 
-                  {heroMeta.length > 0 && (
-                    <div
-                      style={{
-                        marginTop: 28,
-                        display: "grid",
-                        gridTemplateColumns: "repeat(4, 1fr)",
-                        gap: 12,
-                      }}
-                    >
-                      {heroMeta.map((item) => (
-                        <div
-                          key={item.label}
-                          style={{
-                            borderLeft: "1px solid var(--color-rule-light)",
-                            paddingLeft: 12,
-                            paddingTop: 4,
-                            paddingBottom: 4,
-                          }}
-                        >
-                          <p
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.14em",
-                              color: "var(--color-text-tertiary)",
-                              margin: 0,
-                            }}
-                          >
-                            {item.label}
-                          </p>
-                          <p
-                            style={{
-                              fontSize: 14,
-                              fontWeight: 500,
-                              color: resolveMetaToneColor(item.tone),
-                              marginTop: 4,
-                              marginBottom: 0,
-                            }}
-                          >
-                            {item.value}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-
-                {/* ── Agenda section ── */}
-                <section id="agenda" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                  <SectionLabel
-                    label="Agenda"
-                    icon={<Target style={{ width: 14, height: 14 }} />}
-                    copyText={agendaDisplayItems.length > 0 ? formatProposedAgenda(agendaDisplayItems) : undefined}
-                    copyLabel="agenda"
-                  />
-                  {agendaDisplayItems.length > 0 ? (
-                    <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                      {agendaDisplayItems.map((item, i) => (
-                        <li
-                          key={i}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: 12,
-                            borderBottom: "1px solid var(--color-rule-light)",
-                            paddingBottom: 10,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: "var(--color-spice-turmeric)",
-                              width: 24,
-                              textAlign: "right",
-                              flexShrink: 0,
-                              paddingTop: 1,
-                            }}
-                          >
-                            {i + 1}
-                          </span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, margin: 0, color: "var(--color-text-primary)" }}>
-                              {item.topic}
-                            </p>
-                            {item.why && (
-                              <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", marginTop: 3, marginBottom: 0, lineHeight: 1.5 }}>
-                                {item.why}
-                              </p>
-                            )}
-                          </div>
-                          {item.source && (
-                            <span
-                              style={{
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 10,
-                                fontWeight: 500,
-                                letterSpacing: "0.04em",
-                                flexShrink: 0,
-                                color: agendaSourceColor(item.source),
-                              }}
-                            >
-                              {item.source === "calendar_note"
-                                ? "calendar"
-                                : item.source === "talking_point"
-                                ? "win"
-                                : item.source === "open_item"
-                                  ? "action"
-                                  : item.source}
-                            </span>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  ) : (
+                  {agendaDisplayItems.length === 0 && (
                     <p
                       style={{
                         fontSize: 14,
@@ -873,6 +852,7 @@ export default function MeetingDetailPage() {
                       No proposed agenda yet. Add your own agenda items below.
                     </p>
                   )}
+
                   {meetingId && prefillNotice && (
                     <div
                       style={{
@@ -888,6 +868,8 @@ export default function MeetingDetailPage() {
                       Prefill appended new agenda/notes content.
                     </div>
                   )}
+
+                  {/* User Agenda Editor */}
                   {meetingId && (
                     <UserAgendaEditor
                       meetingId={meetingId}
@@ -896,6 +878,8 @@ export default function MeetingDetailPage() {
                       onSaveStatus={setSaveStatus}
                     />
                   )}
+
+                  {/* User Notes Editor */}
                   {meetingId && (
                     <UserNotesEditor
                       meetingId={meetingId}
@@ -904,8 +888,10 @@ export default function MeetingDetailPage() {
                       onSaveStatus={setSaveStatus}
                     />
                   )}
+
+                  {/* Calendar Notes */}
                   {calendarNotes && (
-                    <section>
+                    <div>
                       <SectionLabel label="Calendar Notes" icon={<CalendarDays style={{ width: 14, height: 14 }} />} />
                       <p
                         style={{
@@ -918,198 +904,86 @@ export default function MeetingDetailPage() {
                       >
                         {calendarNotes}
                       </p>
-                    </section>
-                  )}
-                </section>
-
-                {/* ── Risks section ── */}
-                {((data.entityRisks && data.entityRisks.length > 0) || (data.risks && data.risks.length > 0)) && (
-                  <section id="risks" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <SectionLabel
-                      label="Risks"
-                      icon={<AlertTriangle style={{ width: 14, height: 14, color: "var(--color-spice-terracotta)" }} />}
-                      labelColor="var(--color-spice-terracotta)"
-                      copyText={formatBulletList([
-                        ...(data.entityRisks?.map((r) => r.text) ?? []),
-                        ...(data.risks ?? []),
-                      ])}
-                      copyLabel="risks"
-                    />
-                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                      {data.entityRisks?.map((risk, i) => (
-                        <li
-                          key={`entity-${i}`}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: 10,
-                            fontSize: 14,
-                            lineHeight: 1.65,
-                            borderBottom: "1px solid var(--color-rule-light)",
-                            paddingBottom: 8,
-                          }}
-                        >
-                          <span
-                            style={bulletDot(
-                              risk.urgency === "high"
-                                ? "var(--color-spice-terracotta)"
-                                : "rgba(196, 101, 74, 0.5)"
-                            )}
-                          />
-                          <span style={{ flex: 1, color: "var(--color-text-primary)" }}>{risk.text}</span>
-                        </li>
-                      ))}
-                      {data.risks?.map((risk, i) => (
-                        <li
-                          key={`ai-${i}`}
-                          style={{
-                            display: "flex",
-                            alignItems: "flex-start",
-                            gap: 10,
-                            fontSize: 14,
-                            lineHeight: 1.65,
-                            borderBottom: "1px solid var(--color-rule-light)",
-                            paddingBottom: 8,
-                          }}
-                        >
-                          <span style={bulletDot("rgba(196, 101, 74, 0.5)")} />
-                          <span style={{ color: "var(--color-text-primary)" }}>{risk}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
-
-                {/* ── People section ── */}
-                <section id="people" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                  <PeopleInTheRoom attendeeContext={data.attendeeContext} attendees={data.attendees} />
-
-                  {matchingStakeholderInsights.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                      <p style={chapterHeading}>
-                        Attendee Intelligence
-                      </p>
-                      <StakeholderInsightList people={matchingStakeholderInsights} />
                     </div>
                   )}
+                </div>
+              </section>
+            )}
 
-                  {extendedStakeholderInsights.length > 0 && (
-                    <ExtendedStakeholderToggle people={extendedStakeholderInsights} />
-                  )}
-                </section>
+            {/* ================================================================
+                "You're Briefed" Marker
+               ================================================================ */}
+            <div style={{ paddingTop: 80, textAlign: "center" }}>
+              <p
+                style={{
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 16,
+                  fontStyle: "italic",
+                  fontWeight: 300,
+                  color: "var(--color-text-tertiary)",
+                  margin: 0,
+                }}
+              >
+                You&rsquo;re briefed.
+              </p>
+            </div>
 
-                {/* ── Open Items section ── */}
-                {data.openItems && data.openItems.length > 0 && (
-                  <section id="actions" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <SectionLabel
-                      label="Open Items"
-                      icon={<CheckCircle style={{ width: 14, height: 14 }} />}
-                      copyText={formatOpenItems(data.openItems)}
-                      copyLabel="open items"
-                    />
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {data.openItems.map((item, i) => (
-                        <ActionItem key={i} action={item} />
-                      ))}
-                    </div>
-                  </section>
-                )}
+            {/* ================================================================
+                ACT III: "Go Deeper" — supporting intelligence
+               ================================================================ */}
+            {hasDeepDive && (
+              <section id="deep-dive" className="editorial-reveal-slow" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
+                <div style={{ ...editorialRule, marginBottom: 16 }} />
+                <p style={monoOverline}>Supporting Intelligence</p>
 
-                {/* ── Appendix section ── */}
-                {(hasReferenceContent(data) || (data.sinceLast?.length ?? 0) > 0 || (data.strategicPrograms?.length ?? 0) > 0) && (
-                  <AppendixSection data={data} />
-                )}
-
-                {/* ── End of Brief ── */}
-                <FinisMarker />
-              </div>
-
-              {/* ── Sidebar ── */}
-              <aside>
-                <div style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 24 }}>
-                  {/* Jump To nav */}
-                  <div style={sidebarCard}>
-                    <p style={{ ...chapterHeading, letterSpacing: "0.16em", marginBottom: 12 }}>Jump To</p>
-                    <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      {reportNav.map((item) => (
-                        <a
-                          key={item.id}
-                          href={`#${item.id}`}
-                          style={{
-                            display: "block",
-                            padding: "6px 8px",
-                            fontSize: 14,
-                            color: "var(--color-text-tertiary)",
-                            textDecoration: "none",
-                            borderRadius: 3,
-                          }}
-                        >
-                          {item.label}
-                        </a>
-                      ))}
-                    </nav>
-                  </div>
-
-                  {/* Relationship Signals */}
-                  {data.stakeholderSignals && (
-                    <div style={sidebarCard}>
-                      <p style={{ ...chapterHeading, letterSpacing: "0.16em", marginBottom: 12 }}>Relationship Signals</p>
-                      <RelationshipPills signals={data.stakeholderSignals} />
-                    </div>
-                  )}
-
-                  {/* Before This Meeting */}
-                  {data.entityReadiness && data.entityReadiness.length > 0 && (
-                    <div
-                      style={{
-                        ...sidebarCard,
-                        borderColor: "var(--color-spice-turmeric)",
-                        borderLeftWidth: 3,
-                      }}
-                    >
-                      <p
-                        style={{
-                          ...chapterHeading,
-                          letterSpacing: "0.16em",
-                          color: "var(--color-spice-turmeric)",
-                          marginBottom: 12,
-                        }}
-                      >
-                        Before This Meeting
-                      </p>
-                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                        {data.entityReadiness.slice(0, 4).map((item, i) => (
-                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14, color: "var(--color-text-primary)" }}>
-                            <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
-                            <span>{item}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 48, marginTop: 48 }}>
+                  {/* Recent Wins — sage accent */}
+                  {recentWinsForDisplay.length > 0 && (
+                    <div>
+                      <SectionLabel
+                        label="Recent Wins"
+                        icon={<Trophy style={{ width: 14, height: 14, color: "var(--color-garden-sage)" }} />}
+                        labelColor="var(--color-garden-sage)"
+                      />
+                      <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
+                        {recentWinsForDisplay.slice(0, 4).map((win, i) => (
+                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14 }}>
+                            <span style={bulletDot("rgba(126, 170, 123, 0.7)")} />
+                            <span style={{ lineHeight: 1.55, color: "var(--color-text-primary)" }}>{win}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
 
-                  {/* Recent Email Signals */}
+                  {/* Open Items */}
+                  {data.openItems && data.openItems.length > 0 && (
+                    <div>
+                      <SectionLabel
+                        label="Open Items"
+                        icon={<CheckCircle style={{ width: 14, height: 14 }} />}
+                        copyText={formatOpenItems(data.openItems)}
+                        copyLabel="open items"
+                      />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
+                        {data.openItems.map((item, i) => (
+                          <ActionItem key={i} action={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Email Signals — compact */}
                   {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
-                    <div
-                      style={{
-                        ...sidebarCard,
-                        borderColor: "var(--color-spice-turmeric)",
-                      }}
-                    >
-                      <p
-                        style={{
-                          ...chapterHeading,
-                          letterSpacing: "0.16em",
-                          color: "var(--color-spice-turmeric)",
-                          marginBottom: 12,
-                        }}
-                      >
-                        Recent Email Signals
-                      </p>
-                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div>
+                      <SectionLabel
+                        label="Email Signals"
+                        labelColor="var(--color-spice-turmeric)"
+                      />
+                      <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
                         {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
-                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14 }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14, borderBottom: "1px solid var(--color-rule-light)", paddingBottom: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span
                                 style={{
                                   fontFamily: "var(--font-mono)",
@@ -1143,37 +1017,47 @@ export default function MeetingDetailPage() {
                     </div>
                   )}
 
-                  {/* Recent Wins */}
-                  {recentWinsForSidebar.length > 0 && (
+                  {/* Entity Readiness — turmeric banner */}
+                  {data.entityReadiness && data.entityReadiness.length > 0 && (
                     <div
                       style={{
-                        ...sidebarCard,
-                        borderColor: "var(--color-garden-sage)",
-                        borderLeftWidth: 3,
+                        background: "rgba(201, 162, 39, 0.06)",
+                        padding: "16px 20px",
+                        borderLeft: "3px solid var(--color-spice-turmeric)",
                       }}
                     >
                       <p
                         style={{
-                          ...chapterHeading,
-                          letterSpacing: "0.16em",
-                          color: "var(--color-garden-sage)",
+                          ...chapterHeadingStyle,
+                          color: "var(--color-spice-turmeric)",
                           marginBottom: 12,
                         }}
                       >
-                        Recent Wins
+                        Before This Meeting
                       </p>
-                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-                        {recentWinsForSidebar.slice(0, 4).map((win, i) => (
-                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 14 }}>
-                            <span style={bulletDot("rgba(126, 170, 123, 0.7)")} />
-                            <span style={{ lineHeight: 1.55, color: "var(--color-text-primary)" }}>{win}</span>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                        {data.entityReadiness.slice(0, 4).map((item, i) => (
+                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "var(--color-text-primary)" }}>
+                            <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
+                            <span>{item}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
+
+                  {/* Appendix toggle */}
+                  <AppendixSection
+                    data={data}
+                    extendedStakeholderInsights={extendedStakeholderInsights}
+                  />
                 </div>
-              </aside>
+              </section>
+            )}
+
+            {/* Finis */}
+            <div style={{ paddingTop: 48 }}>
+              <FinisMarker />
             </div>
           </div>
         )}
@@ -1218,7 +1102,7 @@ function SectionLabel({
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div
         style={{
-          ...chapterHeading,
+          ...chapterHeadingStyle,
           display: "flex",
           alignItems: "center",
           gap: 6,
@@ -1237,42 +1121,327 @@ function SectionLabel({
 }
 
 // =============================================================================
-// RelationshipPills
+// AgendaList — progressive disclosure (show 5, collapse rest)
 // =============================================================================
 
-function RelationshipPills({ signals }: { signals: StakeholderSignals }) {
-  const tempColor: Record<string, string> = {
+function AgendaList({ items }: { items: Array<{ topic: string; why?: string; source?: string }> }) {
+  const [expanded, setExpanded] = useState(false);
+  const VISIBLE_COUNT = 5;
+  const visible = expanded ? items : items.slice(0, VISIBLE_COUNT);
+  const remaining = items.length - VISIBLE_COUNT;
+
+  return (
+    <>
+      <ol style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
+        {visible.map((item, i) => (
+          <li
+            key={i}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              borderBottom: "1px solid var(--color-rule-light)",
+              paddingBottom: 14,
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--color-spice-turmeric)",
+                width: 24,
+                textAlign: "right",
+                flexShrink: 0,
+                paddingTop: 1,
+              }}
+            >
+              {i + 1}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, margin: 0, color: "var(--color-text-primary)" }}>
+                {item.topic}
+              </p>
+              {item.why && (
+                <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", marginTop: 4, marginBottom: 0, lineHeight: 1.5 }}>
+                  {item.why}
+                </p>
+              )}
+            </div>
+            {item.source && (
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  letterSpacing: "0.04em",
+                  flexShrink: 0,
+                  color: agendaSourceColor(item.source),
+                }}
+              >
+                {item.source === "calendar_note"
+                  ? "calendar"
+                  : item.source === "talking_point"
+                  ? "win"
+                  : item.source === "open_item"
+                    ? "action"
+                    : item.source}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+      {!expanded && remaining > 0 && (
+        <button
+          onClick={() => setExpanded(true)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "8px 0",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            textAlign: "left",
+          }}
+        >
+          + {remaining} more agenda item{remaining !== 1 ? "s" : ""}
+        </button>
+      )}
+    </>
+  );
+}
+
+// =============================================================================
+// Unified Attendee List (merges attendees, context, insights, signals)
+// =============================================================================
+
+function UnifiedAttendeeList({ attendees }: { attendees: UnifiedAttendee[] }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? attendees : attendees.slice(0, 4);
+  const remaining = attendees.length - 4;
+
+  const tempColorMap: Record<string, string> = {
     hot: "var(--color-garden-sage)",
     warm: "var(--color-spice-turmeric)",
     cool: "var(--color-text-tertiary)",
     cold: "var(--color-spice-terracotta)",
   };
-  const color = tempColor[signals.temperature] ?? "var(--color-text-tertiary)";
 
-  const lastMeetingText = signals.lastMeeting
-    ? formatRelativeDateLong(signals.lastMeeting)
-    : "No meetings recorded";
-
-  const pillStyle: React.CSSProperties = {
-    fontFamily: "var(--font-mono)",
-    fontSize: 11,
-    letterSpacing: "0.04em",
-    padding: "3px 8px",
-    border: "1px solid var(--color-rule-light)",
-    borderRadius: 3,
+  const engagementColor: Record<string, string> = {
+    champion: "var(--color-garden-sage)",
+    detractor: "var(--color-spice-terracotta)",
+    neutral: "var(--color-text-tertiary)",
   };
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      <span style={{ ...pillStyle, color, textTransform: "capitalize" }}>
-        {signals.temperature}
-      </span>
-      <span style={{ ...pillStyle, color: "var(--color-text-secondary)" }}>
-        Last: {lastMeetingText}
-      </span>
-      <span style={{ ...pillStyle, color: "var(--color-text-secondary)" }}>
-        {signals.meetingFrequency30d} meeting{signals.meetingFrequency30d !== 1 ? "s" : ""} / 30d
-      </span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {visible.map((person, i) => {
+        const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
+        const isNew = person.meetingCount === 0;
+        const isCold = person.temperature === "cold";
+        const circleColor = isCold
+          ? { bg: "rgba(196, 101, 74, 0.1)", fg: "var(--color-spice-terracotta)" }
+          : isNew
+          ? { bg: "rgba(126, 170, 123, 0.1)", fg: "var(--color-garden-sage)" }
+          : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
+
+        const inner = (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "12px 0",
+              borderBottom: "1px solid var(--color-rule-light)",
+            }}
+          >
+            {/* Avatar */}
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: circleColor.bg,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                fontWeight: 500,
+                color: circleColor.fg,
+                flexShrink: 0,
+              }}
+            >
+              {person.name.charAt(0)}
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Name + role + temperature dot + engagement badge */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span className="attendee-tooltip-wrap">
+                  <p style={{ fontWeight: 500, color: "var(--color-text-primary)", margin: 0, fontSize: 14, cursor: "default" }}>
+                    {person.name}
+                  </p>
+                  {/* Hover tooltip — last meeting + assessment */}
+                  {(person.lastSeen || person.assessment) && (
+                    <span className="attendee-tooltip">
+                      {person.lastSeen && (
+                        <span style={{ display: "block", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginBottom: person.assessment ? 6 : 0 }}>
+                          Last met {formatRelativeDateLong(person.lastSeen)}
+                          {person.meetingCount != null && person.meetingCount > 0 && ` \u00b7 ${person.meetingCount} meeting${person.meetingCount !== 1 ? "s" : ""}`}
+                        </span>
+                      )}
+                      {person.assessment && (
+                        <span style={{ display: "block", fontFamily: "var(--font-serif)", fontSize: 13, fontStyle: "italic", lineHeight: 1.45, color: "var(--color-text-primary)" }}>
+                          {truncateText(sanitizeInlineText(person.assessment), 140)}
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </span>
+                {person.role && (
+                  <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                    {sanitizeInlineText(person.role)}
+                  </span>
+                )}
+                {person.temperature && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: tempColor, flexShrink: 0 }} />
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        textTransform: "capitalize",
+                        color: tempColor,
+                      }}
+                    >
+                      {person.temperature}
+                    </span>
+                  </span>
+                )}
+                {person.engagement && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      fontWeight: 500,
+                      textTransform: "capitalize",
+                      color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
+                      border: "1px solid var(--color-rule-light)",
+                      borderRadius: 3,
+                      padding: "1px 6px",
+                    }}
+                  >
+                    {person.engagement}
+                  </span>
+                )}
+                {isNew && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: "var(--color-garden-sage)",
+                    }}
+                  >
+                    New contact
+                  </span>
+                )}
+              </div>
+
+              {/* Assessment — the killer insight, serif italic, prominent */}
+              {person.assessment && (
+                <p
+                  style={{
+                    marginTop: 6,
+                    marginBottom: 0,
+                    fontFamily: "var(--font-serif)",
+                    fontSize: 14,
+                    fontStyle: "italic",
+                    fontWeight: 400,
+                    lineHeight: 1.55,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {truncateText(sanitizeInlineText(person.assessment), 200)}
+                </p>
+              )}
+
+              {/* Metadata line */}
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 4 }}>
+                {person.organization && (
+                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                    {person.organization}
+                  </span>
+                )}
+                {person.meetingCount != null && person.meetingCount > 0 && (
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                    {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
+                  </span>
+                )}
+                {person.lastSeen && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      color: isCold ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+                    }}
+                  >
+                    Last seen {formatRelativeDateLong(person.lastSeen)}
+                  </span>
+                )}
+              </div>
+
+              {person.notes && (
+                <p
+                  style={{
+                    marginTop: 4,
+                    marginBottom: 0,
+                    fontSize: 12,
+                    color: "var(--color-text-tertiary)",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {person.notes}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+
+        if (person.personId) {
+          return (
+            <Link
+              key={i}
+              to="/people/$personId"
+              params={{ personId: person.personId }}
+              style={{ textDecoration: "none", color: "inherit" }}
+            >
+              {inner}
+            </Link>
+          );
+        }
+        return <div key={i}>{inner}</div>;
+      })}
+
+      {!showAll && remaining > 0 && (
+        <button
+          onClick={() => setShowAll(true)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "12px 0",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--color-text-tertiary)",
+            textAlign: "left",
+          }}
+        >
+          + {remaining} more
+        </button>
+      )}
     </div>
   );
 }
@@ -1385,6 +1554,7 @@ function UserAgendaEditor({
 }) {
   const [agenda, setAgenda] = useState(initialAgenda || []);
   const [newItem, setNewItem] = useState("");
+  const countRef = useRef<HTMLSpanElement>(null);
 
   // Don't render if no agenda and not editable
   if (!isEditable && agenda.length === 0) return null;
@@ -1406,6 +1576,12 @@ function UserAgendaEditor({
     if (!newItem.trim()) return;
     saveAgenda([...agenda, newItem.trim()]);
     setNewItem("");
+    // Pulse the count to acknowledge addition
+    if (countRef.current) {
+      countRef.current.classList.remove("agenda-count-pulse");
+      void countRef.current.offsetWidth; // force reflow
+      countRef.current.classList.add("agenda-count-pulse");
+    }
   }
 
   function removeItem(index: number) {
@@ -1432,10 +1608,18 @@ function UserAgendaEditor({
           margin: "0 0 12px",
         }}
       >
-        My Agenda
+        My Agenda{" "}
+        {agenda.length > 0 && (
+          <span
+            ref={countRef}
+            style={{ fontWeight: 400, color: "rgba(201, 162, 39, 0.5)" }}
+          >
+            ({agenda.length})
+          </span>
+        )}
       </p>
       {agenda.length > 0 && (
-        <ol style={{ listStyle: "none", margin: "0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        <ol style={{ listStyle: "none", margin: "0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
           {agenda.map((item, i) => (
             <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
               <span
@@ -1775,369 +1959,20 @@ function CopyAllButton({ data }: { data: FullMeetingPrep }) {
     <button
       onClick={() => copy(formatFullPrep(data))}
       style={{
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        padding: 4,
-        color: "var(--color-text-tertiary)",
-        flexShrink: 0,
+        ...editorialBtn,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
       }}
     >
       {copied ? (
-        <Check style={{ width: 14, height: 14, color: "var(--color-garden-sage)" }} />
+        <Check style={{ width: 12, height: 12, color: "var(--color-garden-sage)" }} />
       ) : (
-        <Copy style={{ width: 14, height: 14 }} />
+        <Copy style={{ width: 12, height: 12 }} />
       )}
+      Copy All
     </button>
   );
-}
-
-function PeopleInTheRoom({
-  attendeeContext,
-  attendees,
-}: {
-  attendeeContext?: AttendeeContext[];
-  attendees?: Stakeholder[];
-}) {
-  if (attendeeContext && attendeeContext.length > 0) {
-    return (
-      <section>
-        <SectionLabel
-          label="People in the Room"
-          icon={<Users style={{ width: 14, height: 14 }} />}
-          copyText={formatAttendeeContext(attendeeContext)}
-          copyLabel="people"
-        />
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-          {attendeeContext.map((person, i) => (
-            <AttendeeRow key={i} person={person} />
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  if (attendees && attendees.length > 0) {
-    return (
-      <section>
-        <SectionLabel
-          label="Key Attendees"
-          icon={<Users style={{ width: 14, height: 14 }} />}
-          copyText={formatAttendees(attendees)}
-          copyLabel="attendees"
-        />
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
-          {attendees.map((attendee, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-              <div
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: "rgba(201, 162, 39, 0.1)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: "var(--color-spice-turmeric)",
-                  flexShrink: 0,
-                }}
-              >
-                {attendee.name.charAt(0)}
-              </div>
-              <div>
-                <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
-                  {attendee.name}
-                </p>
-                {attendee.role && (
-                  <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>
-                    {attendee.role}
-                  </p>
-                )}
-                {attendee.focus && (
-                  <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "2px 0 0" }}>
-                    {attendee.focus}
-                  </p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    );
-  }
-
-  return null;
-}
-
-function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
-  const engagementColor: Record<string, string> = {
-    champion: "var(--color-garden-sage)",
-    detractor: "var(--color-spice-terracotta)",
-    neutral: "var(--color-text-tertiary)",
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {people.map((person, i) => (
-        <div
-          key={i}
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 12,
-            borderBottom: "1px solid var(--color-rule-light)",
-            paddingBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: "50%",
-              background: "rgba(201, 162, 39, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 12,
-              fontWeight: 500,
-              color: "var(--color-spice-turmeric)",
-              flexShrink: 0,
-            }}
-          >
-            {person.name.charAt(0)}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
-                {person.name}
-              </p>
-              {person.role && (
-                <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
-                  {sanitizeInlineText(person.role)}
-                </span>
-              )}
-              {person.engagement && (
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    fontWeight: 500,
-                    textTransform: "capitalize",
-                    color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
-                  }}
-                >
-                  {person.engagement}
-                </span>
-              )}
-            </div>
-            {person.assessment && (
-              <p
-                style={{
-                  marginTop: 3,
-                  marginBottom: 0,
-                  fontSize: 13,
-                  lineHeight: 1.55,
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                {truncateText(sanitizeInlineText(person.assessment), 180)}
-              </p>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ExtendedStakeholderToggle({ people }: { people: StakeholderInsight[] }) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "4px 0",
-          width: "100%",
-          ...chapterHeading,
-        }}
-      >
-        <ChevronRight
-          style={{
-            width: 14,
-            height: 14,
-            transition: "transform 0.2s",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-          }}
-        />
-        Extended Stakeholder Map ({people.length})
-      </button>
-      {open && (
-        <div style={{ marginTop: 16 }}>
-          <StakeholderInsightList people={people} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AttendeeRow({ person }: { person: AttendeeContext }) {
-  const tempColorMap: Record<string, string> = {
-    hot: "var(--color-garden-sage)",
-    warm: "var(--color-spice-turmeric)",
-    cool: "var(--color-text-tertiary)",
-    cold: "var(--color-spice-terracotta)",
-  };
-  const tempColor = tempColorMap[person.temperature ?? ""] ?? "var(--color-text-tertiary)";
-
-  const isNew = person.meetingCount === 0;
-  const isCold = person.temperature === "cold";
-  const lastSeenText = person.lastSeen ? formatRelativeDateLong(person.lastSeen) : undefined;
-
-  const circleColor = isCold
-    ? { bg: "rgba(196, 101, 74, 0.1)", fg: "var(--color-spice-terracotta)" }
-    : isNew
-    ? { bg: "rgba(126, 170, 123, 0.1)", fg: "var(--color-garden-sage)" }
-    : { bg: "rgba(201, 162, 39, 0.1)", fg: "var(--color-spice-turmeric)" };
-
-  const inner = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "8px 0",
-        borderBottom: "1px solid var(--color-rule-light)",
-      }}
-    >
-      <div
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: "50%",
-          background: circleColor.bg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 14,
-          fontWeight: 500,
-          color: circleColor.fg,
-          flexShrink: 0,
-        }}
-      >
-        {person.name.charAt(0)}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <p style={{ fontWeight: 500, color: "var(--color-text-primary)", margin: 0, fontSize: 14 }}>
-            {person.name}
-          </p>
-          {person.temperature && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                textTransform: "capitalize",
-                color: tempColor,
-              }}
-            >
-              {person.temperature}
-            </span>
-          )}
-          {isNew && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                fontWeight: 500,
-                color: "var(--color-garden-sage)",
-              }}
-            >
-              New contact
-            </span>
-          )}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
-          {person.role && (
-            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
-              {person.role}
-            </p>
-          )}
-          {person.organization && (
-            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
-              {person.organization}
-            </p>
-          )}
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 2 }}>
-          {person.meetingCount != null && person.meetingCount > 0 && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
-              {person.meetingCount} meeting{person.meetingCount !== 1 ? "s" : ""}
-            </span>
-          )}
-          {lastSeenText && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: isCold ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-              }}
-            >
-              Last seen {lastSeenText}
-            </span>
-          )}
-        </div>
-        {isCold && (
-          <p
-            style={{
-              marginTop: 4,
-              marginBottom: 0,
-              fontSize: 12,
-              color: "var(--color-spice-terracotta)",
-            }}
-          >
-            Cold -- hasn't been seen in 60+ days
-          </p>
-        )}
-        {person.notes && (
-          <p
-            style={{
-              marginTop: 4,
-              marginBottom: 0,
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              fontStyle: "italic",
-            }}
-          >
-            {person.notes}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-
-  if (person.personId) {
-    return (
-      <Link
-        to="/people/$personId"
-        params={{ personId: person.personId }}
-        style={{ textDecoration: "none", color: "inherit" }}
-      >
-        {inner}
-      </Link>
-    );
-  }
-  return inner;
 }
 
 function ActionItem({ action }: { action: ActionWithContext }) {
@@ -2229,11 +2064,31 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
 }
 
 // =============================================================================
-// Appendix Section (useState toggle replaces Collapsible)
+// Appendix Section
 // =============================================================================
 
-function AppendixSection({ data }: { data: FullMeetingPrep }) {
+function AppendixSection({
+  data,
+  extendedStakeholderInsights,
+}: {
+  data: FullMeetingPrep;
+  extendedStakeholderInsights: StakeholderInsight[];
+}) {
   const [open, setOpen] = useState(false);
+
+  const hasContent = Boolean(
+    (data.intelligenceSummary && data.intelligenceSummary.split("\n").filter((l) => l.trim()).length > 1) ||
+    (data.sinceLast && data.sinceLast.length > 0) ||
+    (data.strategicPrograms && data.strategicPrograms.length > 0) ||
+    (data.meetingContext && data.meetingContext.split("\n").length > 3) ||
+    (data.currentState && data.currentState.length > 0) ||
+    (data.questions && data.questions.length > 0) ||
+    (data.keyPrinciples && data.keyPrinciples.length > 0) ||
+    (data.references && data.references.length > 0) ||
+    extendedStakeholderInsights.length > 0
+  );
+
+  if (!hasContent) return null;
 
   return (
     <section id="appendix" style={{ borderTop: "1px solid var(--color-rule-heavy)", paddingTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2249,7 +2104,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
           gap: 6,
           padding: "4px 0",
           width: "100%",
-          ...chapterHeading,
+          ...chapterHeadingStyle,
         }}
       >
         <ChevronRight
@@ -2263,7 +2118,38 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
         Open Supporting Context
       </button>
       {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 28, marginTop: 8 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 32, marginTop: 12 }}>
+          {/* Full intelligence summary */}
+          {data.intelligenceSummary && data.intelligenceSummary.split("\n").filter((l) => l.trim()).length > 1 && (
+            <section>
+              <SectionLabel
+                label="Full Intelligence Summary"
+                icon={<FileText style={{ width: 14, height: 14 }} />}
+                copyText={data.intelligenceSummary}
+                copyLabel="summary"
+              />
+              <div style={{ marginTop: 12 }}>
+                {data.intelligenceSummary
+                  .split("\n")
+                  .filter((line) => line.trim())
+                  .map((line, i) => (
+                    <p
+                      key={i}
+                      style={{
+                        fontSize: 14,
+                        lineHeight: 1.75,
+                        color: "var(--color-text-primary)",
+                        margin: 0,
+                        marginTop: i > 0 ? 8 : 0,
+                      }}
+                    >
+                      {line}
+                    </p>
+                  ))}
+              </div>
+            </section>
+          )}
+
           {data.sinceLast && data.sinceLast.length > 0 && (
             <section>
               <SectionLabel
@@ -2272,7 +2158,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
                 copyText={formatBulletList(data.sinceLast)}
                 copyLabel="since last meeting"
               />
-              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
                 {data.sinceLast.map((item, i) => (
                   <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
                     <span style={bulletDot("var(--color-spice-turmeric)")} />
@@ -2291,7 +2177,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
                 copyText={formatBulletList(data.strategicPrograms)}
                 copyLabel="programs"
               />
-              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
                 {data.strategicPrograms.map((item, i) => (
                   <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
                     <span
@@ -2336,7 +2222,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
           {data.currentState && data.currentState.length > 0 && (
             <section>
               <SectionLabel label="Current State" copyText={formatBulletList(data.currentState)} copyLabel="current state" />
-              <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
                 {data.currentState.map((item, i) => (
                   <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
                     <span style={bulletDot("var(--color-text-tertiary)")} />
@@ -2355,7 +2241,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
                 copyText={formatNumberedList(data.questions)}
                 copyLabel="questions"
               />
-              <ol style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              <ol style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
                 {data.questions.map((q, i) => (
                   <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.65 }}>
                     <span
@@ -2387,7 +2273,7 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
                 copyText={formatBulletList(data.keyPrinciples)}
                 copyLabel="principles"
               />
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
                 {data.keyPrinciples.map((principle, i) => (
                   <blockquote
                     key={i}
@@ -2408,6 +2294,17 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
             </section>
           )}
 
+          {/* Extended stakeholder map */}
+          {extendedStakeholderInsights.length > 0 && (
+            <section>
+              <SectionLabel
+                label={`Extended Stakeholder Map (${extendedStakeholderInsights.length})`}
+                icon={<Users style={{ width: 14, height: 14 }} />}
+              />
+              <StakeholderInsightList people={extendedStakeholderInsights} />
+            </section>
+          )}
+
           {data.references && data.references.length > 0 && (
             <section>
               <SectionLabel label="References" />
@@ -2425,8 +2322,169 @@ function AppendixSection({ data }: { data: FullMeetingPrep }) {
 }
 
 // =============================================================================
+// StakeholderInsightList (used in appendix for extended stakeholders)
+// =============================================================================
+
+function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
+  const engagementColor: Record<string, string> = {
+    champion: "var(--color-garden-sage)",
+    detractor: "var(--color-spice-terracotta)",
+    neutral: "var(--color-text-tertiary)",
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 16 }}>
+      {people.map((person, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 12,
+            borderBottom: "1px solid var(--color-rule-light)",
+            paddingBottom: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: "50%",
+              background: "rgba(201, 162, 39, 0.1)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              fontWeight: 500,
+              color: "var(--color-spice-turmeric)",
+              flexShrink: 0,
+            }}
+          >
+            {person.name.charAt(0)}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <p style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)", margin: 0 }}>
+                {person.name}
+              </p>
+              {person.role && (
+                <span style={{ fontSize: 13, color: "var(--color-text-tertiary)" }}>
+                  {sanitizeInlineText(person.role)}
+                </span>
+              )}
+              {person.engagement && (
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    fontWeight: 500,
+                    textTransform: "capitalize",
+                    color: engagementColor[person.engagement] ?? "var(--color-text-tertiary)",
+                  }}
+                >
+                  {person.engagement}
+                </span>
+              )}
+            </div>
+            {person.assessment && (
+              <p
+                style={{
+                  marginTop: 3,
+                  marginBottom: 0,
+                  fontSize: 13,
+                  lineHeight: 1.55,
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                {truncateText(sanitizeInlineText(person.assessment), 180)}
+              </p>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
+
+function extractKeyInsight(intelligenceSummary?: string, meetingContext?: string): string | null {
+  const source = intelligenceSummary || meetingContext;
+  if (!source) return null;
+
+  const firstLine = source.split("\n").find((line) => line.trim().length > 0);
+  if (!firstLine) return null;
+
+  const trimmed = firstLine.trim();
+  // Extract first sentence
+  const sentenceEnd = trimmed.match(/[.!?](\s|$)/);
+  if (sentenceEnd && sentenceEnd.index != null) {
+    return trimmed.slice(0, sentenceEnd.index + 1).trim();
+  }
+  // If no sentence-ending punctuation, use the whole first line
+  return trimmed;
+}
+
+function buildUnifiedAttendees(
+  attendeeContext?: AttendeeContext[],
+  attendees?: Stakeholder[],
+  insights?: StakeholderInsight[],
+  signals?: StakeholderSignals,
+): UnifiedAttendee[] {
+  const byKey = new Map<string, UnifiedAttendee>();
+
+  // Start with attendeeContext (richest data)
+  for (const ctx of attendeeContext ?? []) {
+    const key = normalizePersonKey(ctx.name);
+    byKey.set(key, {
+      name: ctx.name,
+      personId: ctx.personId,
+      role: ctx.role,
+      organization: ctx.organization,
+      temperature: ctx.temperature,
+      meetingCount: ctx.meetingCount,
+      lastSeen: ctx.lastSeen,
+      notes: ctx.notes,
+    });
+  }
+
+  // Merge attendees (basic stakeholder data)
+  for (const a of attendees ?? []) {
+    const key = normalizePersonKey(a.name);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.role && a.role) existing.role = a.role;
+    } else {
+      byKey.set(key, {
+        name: a.name,
+        role: a.role,
+      });
+    }
+  }
+
+  // Merge stakeholder insights (assessment, engagement)
+  for (const insight of insights ?? []) {
+    const key = normalizePersonKey(insight.name);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (insight.assessment) existing.assessment = insight.assessment;
+      if (insight.engagement) existing.engagement = insight.engagement;
+      if (!existing.role && insight.role) existing.role = insight.role;
+    }
+    // Don't add non-attendees here — they go to extended stakeholders
+  }
+
+  // Merge relationship signals into all attendees
+  if (signals) {
+    for (const entry of byKey.values()) {
+      if (!entry.temperature && signals.temperature) entry.temperature = signals.temperature;
+    }
+  }
+
+  return Array.from(byKey.values());
+}
 
 function agendaSourceColor(source: string): string {
   switch (source) {
@@ -2437,14 +2495,6 @@ function agendaSourceColor(source: string): string {
     case "talking_point": return "var(--color-garden-sage)";
     default: return "var(--color-text-tertiary)";
   }
-}
-
-function resolveMetaToneColor(tone?: string): string {
-  if (!tone) return "var(--color-text-primary)";
-  if (tone === "text-destructive") return "var(--color-spice-terracotta)";
-  if (tone === "text-success") return "var(--color-garden-sage)";
-  if (tone === "text-primary") return "var(--color-spice-turmeric)";
-  return "var(--color-text-primary)";
 }
 
 function hasReferenceContent(data: FullMeetingPrep): boolean {
