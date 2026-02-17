@@ -113,6 +113,9 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      - name: Build MCP sidecar binary
+        run: bash src-tauri/scripts/build-mcp.sh aarch64-apple-darwin
+
       - name: Verify Google OAuth build secret
         env:
           DAILYOS_GOOGLE_SECRET: ${{ secrets.DAILYOS_GOOGLE_SECRET }}
