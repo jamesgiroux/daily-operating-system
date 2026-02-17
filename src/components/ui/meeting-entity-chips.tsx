@@ -59,11 +59,11 @@ export function MeetingEntityChips({
   }, [linkedEntities]);
 
   const handleAdd = useCallback(
-    async (entityId: string | null, entityName?: string) => {
+    async (entityId: string | null, entityName?: string, pickerEntityType?: "account" | "project") => {
       if (!entityId) return;
       try {
         // Optimistic: add chip immediately
-        const entityType = "account";
+        const entityType = pickerEntityType ?? "account";
         setLocalEntities((prev) => {
           if (prev.some((e) => e.id === entityId)) return prev;
           return [...prev, { id: entityId, name: entityName ?? entityId, entityType }];
@@ -89,7 +89,7 @@ export function MeetingEntityChips({
   );
 
   const handleRemove = useCallback(
-    async (entityId: string, entityType: string) => {
+    async (entityId: string, entityName: string, entityType: "account" | "project") => {
       // Optimistic: remove chip immediately
       setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
 
@@ -103,10 +103,10 @@ export function MeetingEntityChips({
         onEntitiesChanged?.();
       } catch (err) {
         console.error("Failed to remove meeting entity:", err);
-        // Rollback: re-add the entity on failure
+        // Rollback: re-add the entity on failure with original name
         setLocalEntities((prev) => {
           if (prev.some((e) => e.id === entityId)) return prev;
-          return [...prev, { id: entityId, name: entityId, entityType: entityType as "account" | "project" }];
+          return [...prev, { id: entityId, name: entityName, entityType }];
         });
       }
     },
@@ -171,7 +171,7 @@ export function MeetingEntityChips({
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                handleRemove(entity.id, entity.entityType);
+                handleRemove(entity.id, entity.name, entity.entityType);
               }}
               style={{
                 display: "inline-flex",
