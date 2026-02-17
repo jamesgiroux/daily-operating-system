@@ -579,8 +579,34 @@ fn parse_meeting_datetime(value: &str) -> Option<chrono::DateTime<chrono::Utc>> 
     None
 }
 
+/// Parsed user agenda layer — supports both legacy `["item"]` and rich `{ items, dismissedTopics, hiddenAttendees }`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserAgendaLayer {
+    #[serde(default)]
+    items: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    dismissed_topics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hidden_attendees: Vec<String>,
+}
+
+fn parse_user_agenda_layer(value: Option<&str>) -> UserAgendaLayer {
+    let Some(json) = value else { return UserAgendaLayer::default() };
+    // Try rich format first
+    if let Ok(layer) = serde_json::from_str::<UserAgendaLayer>(json) {
+        return layer;
+    }
+    // Fall back to legacy Vec<String>
+    if let Ok(items) = serde_json::from_str::<Vec<String>>(json) {
+        return UserAgendaLayer { items, ..Default::default() };
+    }
+    UserAgendaLayer::default()
+}
+
 fn parse_user_agenda_json(value: Option<&str>) -> Option<Vec<String>> {
-    value.and_then(|json| serde_json::from_str::<Vec<String>>(json).ok())
+    let layer = parse_user_agenda_layer(value);
+    if layer.items.is_empty() { None } else { Some(layer.items) }
 }
 
 fn load_meeting_prep_from_sources(
@@ -682,7 +708,10 @@ pub fn get_meeting_intelligence(
             .ok_or_else(|| format!("Meeting not found: {}", meeting_id))?
     };
 
-    let user_agenda = parse_user_agenda_json(meeting.user_agenda_json.as_deref());
+    let agenda_layer = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let user_agenda = if agenda_layer.items.is_empty() { None } else { Some(agenda_layer.items.clone()) };
+    let dismissed_topics = agenda_layer.dismissed_topics.clone();
+    let hidden_attendees = agenda_layer.hidden_attendees.clone();
     let user_notes = meeting.user_notes.clone();
     let mut prep = load_meeting_prep_from_sources(&today_dir, &meeting);
 
@@ -750,6 +779,8 @@ pub fn get_meeting_intelligence(
         can_edit_user_layer,
         user_agenda,
         user_notes,
+        dismissed_topics,
+        hidden_attendees,
         outcomes,
         captures,
         actions,
@@ -7741,6 +7772,8 @@ pub fn generate_meeting_agenda_message_draft(
 pub fn update_meeting_user_agenda(
     meeting_id: String,
     agenda: Vec<String>,
+    dismissed_topics: Option<Vec<String>>,
+    hidden_attendees: Option<Vec<String>>,
     state: State<Arc<AppState>>,
 ) -> Result<(), String> {
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
@@ -7754,10 +7787,18 @@ pub fn update_meeting_user_agenda(
         return Err("Meeting user fields are read-only after freeze/past state".to_string());
     }
 
-    let agenda_json = if agenda.is_empty() {
+    // Merge with existing layer to preserve fields not being updated
+    let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+    let layer = UserAgendaLayer {
+        items: agenda.clone(),
+        dismissed_topics: dismissed_topics.unwrap_or(existing.dismissed_topics),
+        hidden_attendees: hidden_attendees.unwrap_or(existing.hidden_attendees),
+    };
+
+    let agenda_json = if layer.items.is_empty() && layer.dismissed_topics.is_empty() && layer.hidden_attendees.is_empty() {
         None
     } else {
-        Some(serde_json::to_string(&agenda).map_err(|e| format!("Serialize error: {}", e))?)
+        Some(serde_json::to_string(&layer).map_err(|e| format!("Serialize error: {}", e))?)
     };
     db.update_meeting_user_layer(
         &meeting_id,
