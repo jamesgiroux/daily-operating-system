@@ -318,9 +318,17 @@ fn extract_transcript_actions(
             "pending".to_string()
         };
 
+        // Resolve @Tag to a real account ID; fall back to meeting-level account.
+        // If the tag doesn't match any account, use None to avoid FK violations.
         let account_id = meta
             .account
-            .clone()
+            .as_deref()
+            .and_then(|tag| {
+                db.get_account_by_name(tag)
+                    .ok()
+                    .flatten()
+                    .map(|a| a.id)
+            })
             .or_else(|| account_fallback.map(String::from));
 
         let action = crate::db::DbAction {
