@@ -285,7 +285,11 @@ mod tests {
         let dir = tempfile::tempdir().expect("Failed to create temp dir");
         let path = dir.path().join("test_hooks.db");
         std::mem::forget(dir);
-        ActionDb::open_at(path).expect("Failed to open test database")
+        let db = ActionDb::open_at(path).expect("Failed to open test database");
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK for tests");
+        db
     }
 
     fn base_context(account: Option<String>, profile: &str) -> EnrichmentContext {

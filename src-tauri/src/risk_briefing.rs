@@ -16,7 +16,7 @@ use crate::db::ActionDb;
 use crate::entity_intel::{build_intelligence_context, read_intelligence_json, IntelligenceContext};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::{AiModelConfig, RiskBriefing, RiskBottomLine, RiskCover};
-use crate::util::atomic_write_str;
+use crate::util::{atomic_write_str, wrap_user_data};
 
 // =============================================================================
 // Gathered Input (Phase 1 output — captured under brief DB lock)
@@ -77,62 +77,62 @@ fn build_risk_briefing_prompt(
     prompt.push_str("# Task\n\n");
     prompt.push_str(&format!(
         "Generate a 6-slide risk briefing for **{}**.\n\n",
-        account_name
+        wrap_user_data(account_name)
     ));
 
     prompt.push_str("# Input Data\n\n");
 
     if !ctx.facts_block.is_empty() {
         prompt.push_str("## Account Facts\n");
-        prompt.push_str(&ctx.facts_block);
+        prompt.push_str(&wrap_user_data(&ctx.facts_block));
         prompt.push_str("\n\n");
     }
 
     if let Some(intel) = existing_intel {
         prompt.push_str("## Current Intelligence Assessment\n");
-        prompt.push_str(intel);
+        prompt.push_str(&wrap_user_data(intel));
         prompt.push_str("\n\n");
     }
 
     if !ctx.meeting_history.is_empty() {
         prompt.push_str("## Recent Meeting History (last 90 days)\n");
-        prompt.push_str(&ctx.meeting_history);
+        prompt.push_str(&wrap_user_data(&ctx.meeting_history));
         prompt.push_str("\n\n");
     }
 
     if !ctx.open_actions.is_empty() {
         prompt.push_str("## Open Actions\n");
-        prompt.push_str(&ctx.open_actions);
+        prompt.push_str(&wrap_user_data(&ctx.open_actions));
         prompt.push_str("\n\n");
     }
 
     if !ctx.recent_captures.is_empty() {
         prompt.push_str("## Recent Captures (wins/risks/decisions)\n");
-        prompt.push_str(&ctx.recent_captures);
+        prompt.push_str(&wrap_user_data(&ctx.recent_captures));
         prompt.push_str("\n\n");
     }
 
     if !ctx.recent_email_signals.is_empty() {
         prompt.push_str("## Email Signals\n");
-        prompt.push_str(&ctx.recent_email_signals);
+        prompt.push_str(&wrap_user_data(&ctx.recent_email_signals));
         prompt.push_str("\n\n");
     }
 
     if !ctx.stakeholders.is_empty() {
         prompt.push_str("## Stakeholders\n");
-        prompt.push_str(&ctx.stakeholders);
+        prompt.push_str(&wrap_user_data(&ctx.stakeholders));
         prompt.push_str("\n\n");
     }
 
     if !ctx.file_contents.is_empty() {
         prompt.push_str("## Workspace Files Content\n");
-        prompt.push_str(&ctx.file_contents);
+        prompt.push_str(&wrap_user_data(&ctx.file_contents));
         prompt.push_str("\n\n");
     }
 
     if !ctx.recent_transcripts.is_empty() {
         prompt.push_str("## Recent Call Transcripts\n");
-        prompt.push_str(&ctx.recent_transcripts);
+        prompt.push_str(&wrap_user_data(&ctx.recent_transcripts));
         prompt.push_str("\n\n");
     }
 
