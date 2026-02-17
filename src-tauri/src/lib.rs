@@ -383,6 +383,7 @@ pub fn run() {
             // I148: Hygiene
             commands::get_hygiene_report,
             commands::get_intelligence_hygiene_status,
+            commands::get_hygiene_narrative,
             commands::run_hygiene_scan_now,
             // I172: Duplicate People Detection
             commands::get_duplicate_people,
