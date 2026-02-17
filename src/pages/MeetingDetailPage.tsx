@@ -841,7 +841,6 @@ export default function MeetingDetailPage() {
                   isEditable={isEditable}
                   initialHiddenNames={hiddenAttendees}
                   meetingId={meetingId ?? undefined}
-                  userAgenda={data.userAgenda}
                   onSaveStatus={setSaveStatus}
                 />
               </section>
@@ -1045,14 +1044,12 @@ function UnifiedAttendeeList({
   isEditable,
   initialHiddenNames,
   meetingId,
-  userAgenda,
   onSaveStatus,
 }: {
   attendees: UnifiedAttendee[];
   isEditable?: boolean;
   initialHiddenNames?: string[];
   meetingId?: string;
-  userAgenda?: string[];
   onSaveStatus?: (status: "idle" | "saving" | "saved") => void;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -1278,7 +1275,6 @@ function UnifiedAttendeeList({
                     try {
                       await invoke("update_meeting_user_agenda", {
                         meetingId,
-                        agenda: userAgenda ?? [],
                         hiddenAttendees: Array.from(newHidden),
                       });
                       onSaveStatus?.("saved");
