@@ -29,7 +29,7 @@ export function useRevealObserver(ready: boolean, revision?: unknown) {
         { threshold: 0.08, rootMargin: "0px 0px -40px 0px" }
       );
 
-      const reveals = document.querySelectorAll(".editorial-reveal:not(.visible)");
+      const reveals = document.querySelectorAll(".editorial-reveal:not(.visible), .editorial-reveal-slow:not(.visible)");
       reveals.forEach((el) => observerRef.current!.observe(el));
     }, 50);
 
