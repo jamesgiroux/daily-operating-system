@@ -115,13 +115,11 @@ jobs:
 
       - name: Build MCP sidecar binary
         run: |
-          # Clear cached build.rs output so Tauri re-checks externalBin paths
-          # (stale cache from pre-sidecar builds reports binary missing)
-          find src-tauri/target -path '*/dailyos-*/output' -delete 2>/dev/null || true
-          find src-tauri/target -path '*/dailyos-*/out' -type d -exec rm -rf {} + 2>/dev/null || true
           bash src-tauri/scripts/build-mcp.sh aarch64-apple-darwin
           ls -la src-tauri/binaries/
           file src-tauri/binaries/dailyos-mcp-aarch64-apple-darwin
+          # Force Cargo to re-run build.rs so it sees the new binary
+          touch src-tauri/build.rs
 
       - name: Verify Google OAuth build secret
         env:
