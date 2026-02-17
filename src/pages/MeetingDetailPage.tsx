@@ -505,15 +505,15 @@ export default function MeetingDetailPage() {
   return (
     <>
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "0 0 80px" }}>
-        {/* Post-meeting: outcomes first (I195) */}
-        {isPastMeeting && outcomes && (
+        {/* Outcomes always at top when present */}
+        {outcomes && (
           <>
             <div style={{ paddingTop: 80 }}>
               <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
             </div>
             <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
             <p style={{ ...chapterHeadingStyle, marginBottom: 20 }}>
-              Pre-Meeting Context
+              {isPastMeeting ? "Pre-Meeting Context" : "Meeting Prep"}
             </p>
           </>
         )}
@@ -991,13 +991,6 @@ export default function MeetingDetailPage() {
           </div>
         )}
 
-        {/* Pre-meeting: outcomes below prep if they exist (I195) */}
-        {!isPastMeeting && outcomes && (
-          <>
-            <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
-            <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
-          </>
-        )}
       </div>
       <AgendaDraftDialog
         open={draft.open}
