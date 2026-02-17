@@ -29,5 +29,6 @@ cargo build \
 mkdir -p "$BINARIES_DIR"
 cp "$TAURI_DIR/target/$TARGET_TRIPLE/release/dailyos-mcp" \
    "$BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
+chmod +x "$BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
 
 echo "Sidecar ready: $BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
