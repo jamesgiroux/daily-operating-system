@@ -172,12 +172,19 @@ pub async fn fetch_events(
             }
 
             // Filter out resource rooms from attendee list
-            let attendees: Vec<String> = item
+            let non_resource: Vec<&Attendee> = item
                 .attendees
                 .iter()
-                .filter(|a| a.resource != Some(true))
-                .map(|a| a.email.clone())
-                .filter(|e| !e.is_empty())
+                .filter(|a| a.resource != Some(true) && !a.email.is_empty())
+                .collect();
+            let attendees: Vec<String> = non_resource.iter().map(|a| a.email.clone()).collect();
+            let attendee_rsvp: std::collections::HashMap<String, String> = non_resource
+                .iter()
+                .filter_map(|a| {
+                    a.response_status.as_ref().map(|status| {
+                        (a.email.to_lowercase(), status.clone())
+                    })
+                })
                 .collect();
 
             let start_str = item
@@ -205,6 +212,7 @@ pub async fn fetch_events(
                 start: start_str,
                 end: end_str,
                 attendees,
+                attendee_rsvp,
                 organizer: item.organizer.map(|o| o.email).unwrap_or_default(),
                 description: item.description.unwrap_or_default(),
                 location: item.location.unwrap_or_default(),
