@@ -3,6 +3,7 @@
  * Lifecycle events, notes, files, company context, value delivered, portfolio, BUs.
  * Styled to match the editorial appendix mockup: double rule, mono labels, grid rows.
  */
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type {
   AccountDetail,
@@ -180,6 +181,8 @@ export function AccountAppendix({
   onCreateChild,
 }: AccountAppendixProps) {
   const companyContext = intelligence?.companyContext ?? detail.companyOverview;
+  const [expandedValue, setExpandedValue] = useState(false);
+  const VALUE_LIMIT = 3;
 
   return (
     <section
@@ -397,62 +400,85 @@ export function AccountAppendix({
       )}
 
       {/* ── Value Delivered ───────────────────────────────────────── */}
-      {(intelligence?.valueDelivered?.length ?? 0) > 0 && (
-        <div style={{ marginBottom: 40 }}>
-          <div style={sectionTitleStyle}>
-            Value Delivered {"\u00B7"} {intelligence!.valueDelivered.length}
-          </div>
-          <div>
-            {intelligence!.valueDelivered.map((v, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "80px 1fr auto",
-                  gap: 12,
-                  padding: "8px 0",
-                  borderBottom:
-                    i === intelligence!.valueDelivered.length - 1
-                      ? "none"
-                      : "1px solid var(--color-rule-light)",
-                  alignItems: "baseline",
-                  fontSize: 13,
-                }}
-              >
-                <span
+      {(intelligence?.valueDelivered?.length ?? 0) > 0 && (() => {
+        const allValue = intelligence!.valueDelivered;
+        const visibleValue = expandedValue ? allValue : allValue.slice(0, VALUE_LIMIT);
+        const hasMoreValue = allValue.length > VALUE_LIMIT && !expandedValue;
+        return (
+          <div style={{ marginBottom: 40 }}>
+            <div style={sectionTitleStyle}>
+              Value Delivered {"\u00B7"} {allValue.length}
+            </div>
+            <div>
+              {visibleValue.map((v, i) => (
+                <div
+                  key={i}
                   style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
+                    display: "grid",
+                    gridTemplateColumns: "80px 1fr auto",
+                    gap: 12,
+                    padding: "8px 0",
+                    borderBottom:
+                      i === visibleValue.length - 1 && !hasMoreValue
+                        ? "none"
+                        : "1px solid var(--color-rule-light)",
+                    alignItems: "baseline",
+                    fontSize: 13,
                   }}
                 >
-                  {v.date || ""}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    color: "var(--color-text-primary)",
-                  }}
-                >
-                  {v.statement}
-                </span>
-                {v.source && (
                   <span
                     style={{
                       fontFamily: "var(--font-mono)",
-                      fontSize: 10,
+                      fontSize: 11,
                       color: "var(--color-text-tertiary)",
-                      textAlign: "right",
                     }}
                   >
-                    {v.source}
+                    {v.date || ""}
                   </span>
-                )}
-              </div>
-            ))}
+                  <span
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    {v.statement}
+                  </span>
+                  {v.source && (
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--color-text-tertiary)",
+                        textAlign: "right",
+                      }}
+                    >
+                      {v.source}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {hasMoreValue && (
+              <button
+                onClick={() => setExpandedValue(true)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "8px 0 0",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Show {allValue.length - VALUE_LIMIT} more
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Portfolio Summary (parent accounts) ───────────────────── */}
       {detail.parentAggregate && (
