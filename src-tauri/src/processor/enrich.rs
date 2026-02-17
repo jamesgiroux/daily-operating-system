@@ -285,8 +285,8 @@ fn build_enrichment_prompt(
 ) -> String {
     // Truncate very long content to fit in a reasonable prompt.
     // Must find a valid UTF-8 char boundary — slicing at an arbitrary byte panics.
-    let truncated = if content.len() > 8000 {
-        let mut end = 8000;
+    let truncated = if content.len() > 30_000 {
+        let mut end = 30_000;
         while end > 0 && !content.is_char_boundary(end) {
             end -= 1;
         }
@@ -437,6 +437,8 @@ pub struct ParsedEnrichment {
     pub summary: String,
     /// Discussion highlights from transcript summarization (I31).
     pub discussion: Vec<String>,
+    /// Strategic TAM-perspective analysis from transcript prompt.
+    pub analysis: Option<String>,
     pub actions_text: Option<String>,
     pub wins: Vec<String>,
     pub risks: Vec<String>,
@@ -450,6 +452,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     let mut meeting_name = None;
     let mut summary = String::new();
     let mut discussion = Vec::new();
+    let mut analysis = None;
     let mut actions_text = None;
     let mut in_actions = false;
     let mut actions_buf = String::new();
@@ -478,6 +481,11 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
             }
         } else if let Some(rest) = line.strip_prefix("SUMMARY:") {
             summary = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("ANALYSIS:") {
+            let val = rest.trim();
+            if !val.is_empty() {
+                analysis = Some(val.to_string());
+            }
         } else if line == "DISCUSSION:" {
             in_discussion = true;
             in_actions = false;
@@ -554,6 +562,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         meeting_name,
         summary,
         discussion,
+        analysis,
         actions_text,
         wins,
         risks,
