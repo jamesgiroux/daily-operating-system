@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Philosophy - DailyOS</title>
-  <meta name="description" content="The operating principles behind DailyOS: zero-guilt systems, local ownership, and AI-native preparation.">
+  <meta name="description" content="What should we expect from software now that AI is real? DailyOS is built on three convictions about what changes.">
   <meta property="og:title" content="Philosophy - DailyOS">
-  <meta property="og:description" content="Your brain shouldn't have a landlord.">
+  <meta property="og:description" content="What should we expect from software now that AI is real?">
+  <meta property="og:image" content="https://daily-os.com/og-image.png">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://daily-os.com/philosophy.html">
-  <meta property="og:image" content="https://daily-os.com/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Philosophy - DailyOS">
-  <meta name="twitter:description" content="Your brain shouldn't have a landlord.">
+  <meta name="twitter:description" content="What should we expect from software now that AI is real?">
   <meta name="twitter:image" content="https://daily-os.com/og-image.png">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
@@ -20,321 +20,247 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@800&amp;family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/site.css">
   <noscript><style>.fade-in { opacity: 1; transform: none; }</style></noscript>
 </head>
 <body>
+  <div class="atmosphere"></div>
   <div class="site-nav-wrap">
     <nav class="site-nav" aria-label="Primary">
       <div class="site-nav-inner">
         <a href="/" class="site-logo">
-          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+          <svg viewBox="0 0 433 407" width="16" height="16" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
           DailyOS
         </a>
-        <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
-          <span></span><span></span><span></span>
-        </button>
+        <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false"><span></span><span></span><span></span></button>
         <ul class="site-nav-links">
           <li><a href="/">Home</a></li>
           <li><a href="/tour.html">Tour</a></li>
           <li><a href="/philosophy.html" class="active">Philosophy</a></li>
-          <li><a href="/setup.html" class="cta-link">Access (A12s)</a></li>
+          <li><a href="/setup.html" class="cta-link">Get Started</a></li>
         </ul>
       </div>
     </nav>
   </div>
 
   <main>
-    <section class="hero">
-      <div class="container hero-grid">
-        <div class="hero-copy fade-in">
-          <p class="eyebrow">Philosophy</p>
-          <h1>You shouldn&rsquo;t have to do the work to make your tools work.</h1>
-          <p class="lede">Every productivity system starts with a demand: maintain me. Tag things. Set reminders. Build dashboards. Keep me fed, or I stop working. DailyOS starts from a different belief.</p>
-          <div class="hero-actions">
-            <a href="/setup.html" class="btn btn-primary">Get Early Access</a>
-            <a href="/tour.html" class="btn btn-secondary">See Product Tour</a>
-          </div>
-          <p class="proofline proofline-sage mono">The system works. You benefit.</p>
-        </div>
 
-        <div class="shame-stack fade-in delay-1">
-          <div class="shame-notif">
-            <span class="shame-dot"></span>
-            <div>
-              <p class="shame-text">You have 12 overdue tasks</p>
-              <p class="shame-age">3 weeks behind schedule</p>
-            </div>
-          </div>
-          <div class="shame-notif">
-            <span class="shame-dot"></span>
-            <div>
-              <p class="shame-text">Weekly review not completed</p>
-              <p class="shame-age">Last completed: January 14</p>
-            </div>
-          </div>
-          <div class="shame-notif">
-            <span class="shame-dot"></span>
-            <div>
-              <p class="shame-text">You haven&rsquo;t logged in in 5 days</p>
-              <p class="shame-age">47 items need attention</p>
-            </div>
-          </div>
-          <div class="shame-notif">
-            <span class="shame-dot"></span>
-            <div>
-              <p class="shame-text">Your system is out of sync</p>
-              <p class="shame-age">Inbox: 23 unprocessed</p>
-            </div>
-          </div>
-          <div class="shame-break">
-            <span class="shame-break-line"></span>
-            <span class="shame-break-label mono">vs</span>
-            <span class="shame-break-line"></span>
-          </div>
-          <div class="shame-resolve">
-            <div class="shame-resolve-head">
-              <svg viewBox="0 0 32 32" width="18" height="18" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
-              <span>DailyOS</span>
-            </div>
-            <p class="shame-resolve-text">Your day is ready.</p>
-            <p class="shame-resolve-meta">4 meetings prepped &middot; 2 actions surfaced &middot; 1 risk flagged</p>
-          </div>
-        </div>
+    <!-- ===== SPREAD 1: THE QUESTION ===== -->
+    <section class="spread--essay">
+      <svg class="watermark" style="top: 5%; left: -15%;" viewBox="0 0 433 407" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <div class="col-content fade-in">
+        <h1 class="display">What should<br>we expect from<br>software now?</h1>
       </div>
     </section>
 
-    <section class="section section-compact section-refuse" id="refuse">
-      <div class="container">
-        <div class="section-head fade-in">
-          <p class="eyebrow eyebrow-peach">What we refuse to build</p>
-          <h2>These patterns are everywhere. We don&rsquo;t use them.</h2>
-        </div>
-        <div class="refuse-list fade-in delay-1">
-          <div class="refuse-item">
-            <span class="refuse-mark">&times;</span>
-            <div>
-              <p class="refuse-pattern">Streak counters that turn breaks into failure</p>
-              <p class="refuse-why">Breaks become failure signals instead of normal work rhythm.</p>
-            </div>
-          </div>
-          <div class="refuse-item">
-            <span class="refuse-mark">&times;</span>
-            <div>
-              <p class="refuse-pattern">Unread badges that imply obligation</p>
-              <p class="refuse-why">Attention gets hijacked by volume, not priority.</p>
-            </div>
-          </div>
-          <div class="refuse-item">
-            <span class="refuse-mark">&times;</span>
-            <div>
-              <p class="refuse-pattern">&ldquo;You haven&rsquo;t logged in&rdquo; shame notifications</p>
-              <p class="refuse-why">Tools become supervisors instead of support systems.</p>
-            </div>
-          </div>
-          <div class="refuse-item">
-            <span class="refuse-mark">&times;</span>
-            <div>
-              <p class="refuse-pattern">Empty canvases that demand setup before they do anything</p>
-              <p class="refuse-why">You do the work before the tool does. Most people quit during onboarding.</p>
-            </div>
-          </div>
-          <div class="refuse-item">
-            <span class="refuse-mark">&times;</span>
-            <div>
-              <p class="refuse-pattern">Backlogs that grow while you&rsquo;re away</p>
-              <p class="refuse-why">Miss a weekly review and the debt compounds. The system punishes absence.</p>
-            </div>
-          </div>
-        </div>
-        <div class="refuse-resolve fade-in delay-2">
-          <span class="refuse-resolve-mark">&check;</span>
-          <p>Instead, we build tools that work harder when you&rsquo;re not looking.</p>
-        </div>
+
+    <!-- ===== THE OPENING ESSAY ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="narrative">AI is real now. It's available to anyone building software. What should change?</p>
+        <p class="prose mt-md">The common answer: add a chatbot. Put a copilot in the sidebar. The underlying product stays the same.</p>
+        <p class="prose">We think it should go further.</p>
       </div>
     </section>
 
-    <section class="section" id="beliefs">
-      <div class="container">
-        <div class="section-head fade-in">
-          <p class="eyebrow eyebrow-sage">What we believe</p>
-          <h2>Three ideas that shape every decision.</h2>
-        </div>
 
-        <div class="belief-row fade-in delay-1">
-          <div class="belief-text">
-            <p class="eyebrow eyebrow-peach">01</p>
-            <h3>Skip a day. Skip a week. Still ready.</h3>
-            <p>Most tools punish absence &mdash; miss a review, fall behind. Come back later, start over. DailyOS picks up wherever you are, not where you left off. The system adapts to your rhythm.</p>
-          </div>
-          <div class="belief-visual">
-            <div class="philo-panel">
-              <div class="philo-panel-head">
-                <p class="mini-label">DailyOS status</p>
-                <span class="artifact-chip">Ready</span>
-              </div>
-              <p class="philo-panel-date">Thursday, February 12</p>
-              <p class="philo-panel-away">Last opened: 6 days ago</p>
-              <div class="philo-panel-stats">
-                <span>4 meetings prepped</span>
-                <span>3 actions current</span>
-                <span>Account pages up to date</span>
-                <span>Emails triaged since Monday</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="belief-row belief-row-alt fade-in">
-          <div class="belief-text">
-            <p class="eyebrow eyebrow-sage">02</p>
-            <h3>It gets smarter, not more complicated.</h3>
-            <p>Most tools get harder to use over time. More tags, more folders, more rules to manage. DailyOS gets better. It cleans up your actions, corrects its own mistakes, and surfaces things you might have missed.</p>
-          </div>
-          <div class="belief-visual">
-            <div class="philo-panel">
-              <div class="philo-panel-head">
-                <p class="mini-label">System activity</p>
-                <p class="mini-label" style="color: var(--sage);">While you were away</p>
-              </div>
-              <div class="activity-list">
-                <div class="activity-item">
-                  <span class="activity-check">&check;</span>
-                  <p>Archived 3 completed actions</p>
-                </div>
-                <div class="activity-item">
-                  <span class="activity-check">&check;</span>
-                  <p>Updated Acme Corp health from call notes</p>
-                </div>
-                <div class="activity-item">
-                  <span class="activity-check">&check;</span>
-                  <p>Corrected: QBR moved to Thursday (calendar changed)</p>
-                </div>
-                <div class="activity-item activity-item-flag">
-                  <span class="activity-check">&starf;</span>
-                  <p>Surfaced: CFO email mentions budget freeze</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="belief-row fade-in">
-          <div class="belief-text">
-            <p class="eyebrow">03</p>
-            <h3>Everything comes together on your machine.</h3>
-            <p>Your calendar, email, CRM, and notes all live in different apps that won&rsquo;t talk to each other. Enterprise software promised to bring them together. None delivered. Your computer is the one place that has access to everything.</p>
-          </div>
-          <div class="belief-visual">
-            <div class="philo-panel">
-              <div class="philo-panel-head">
-                <p class="mini-label">Signal synthesis</p>
-              </div>
-              <div class="converge-sources">
-                <div class="converge-source">
-                  <span class="converge-tag">Calendar</span>
-                  <p>QBR with Acme Corp, Thursday 2pm</p>
-                </div>
-                <div class="converge-source">
-                  <span class="converge-tag">Email</span>
-                  <p>CFO mentioned budget concerns last week</p>
-                </div>
-                <div class="converge-source">
-                  <span class="converge-tag">CRM</span>
-                  <p>Renewal decision in 45 days</p>
-                </div>
-              </div>
-              <div class="converge-output">
-                <span class="converge-tag converge-tag-gold">Prep</span>
-                <p>Walk in knowing the CFO is cost-conscious. Lead with the ROI model. Renewal leverage: 45 days.</p>
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- ===== THE OBSERVATION ===== -->
+    <section class="section--vast">
+      <div class="col-content fade-in text-center">
+        <p class="pullquote">Every productivity tool starts with the same assumption: you do the work. The tool stores it.</p>
       </div>
     </section>
 
-    <section class="section" id="ownership">
-      <div class="container">
-        <div class="trust-layout fade-in">
+
+    <!-- ===== THE HISTORY ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="prose">Your calendar knows where you need to be, but not why. Your CRM has the contact but not the context. You're the one walking between them, holding the full picture in your head.</p>
+        <p class="prose">That made sense when software couldn't do better.</p>
+      </div>
+    </section>
+
+
+    <!-- ===== THE SHAME CONTRAST ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="prose">And when you can't keep up (the tasks pile up, the CRM goes stale, the weekly review doesn't happen) the tools don't just stop working. They make you feel guilty about it.</p>
+      </div>
+    </section>
+
+    <section class="section--tight">
+      <div class="col-content fade-in">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: start;">
           <div>
-            <h2>Your brain shouldn&rsquo;t have a landlord.</h2>
-            <p class="lede">Your data is markdown files on your machine. Not rows in someone else&rsquo;s database. Not tenancy in someone else&rsquo;s system. Walk away any time with everything you&rsquo;ve built.</p>
-            <p class="proofline">Open source &middot; GPL-3.0 &middot; Yours.</p>
+            <p class="mono-label mono-label--terracotta mb-md">The guilt tax</p>
+            <div class="shame-stack">
+              <div class="shame-notif">
+                <div class="shame-dot"></div>
+                <div>
+                  <div class="shame-text">7 tasks overdue</div>
+                  <div class="shame-age">Some since last Tuesday</div>
+                </div>
+              </div>
+              <div class="shame-notif">
+                <div class="shame-dot"></div>
+                <div>
+                  <div class="shame-text">Weekly review not completed</div>
+                  <div class="shame-age">3 weeks in a row</div>
+                </div>
+              </div>
+              <div class="shame-notif">
+                <div class="shame-dot"></div>
+                <div>
+                  <div class="shame-text">CRM contacts need updating</div>
+                  <div class="shame-age">14 records stale</div>
+                </div>
+              </div>
+              <div class="shame-notif">
+                <div class="shame-dot"></div>
+                <div>
+                  <div class="shame-text">Inbox zero failed</div>
+                  <div class="shame-age">127 unread messages</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="finder-tree">
-            <div class="finder-row finder-folder">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4.5l1.5 1.5H14v7H2z"/><path d="M2 4.5V3h4.5l1.5 1.5"/></svg>
-              DailyOS
-            </div>
-            <div class="finder-row finder-depth-1 finder-folder">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4.5l1.5 1.5H14v7H2z"/><path d="M2 4.5V3h4.5l1.5 1.5"/></svg>
-              Today
-            </div>
-            <div class="finder-row finder-depth-2">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 1.5v13M2 5.5h12"/></svg>
-              briefing.md
-            </div>
-            <div class="finder-row finder-depth-2">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 1.5v13M2 5.5h12"/></svg>
-              schedule.json
-            </div>
-            <div class="finder-row finder-depth-1 finder-folder">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4.5l1.5 1.5H14v7H2z"/><path d="M2 4.5V3h4.5l1.5 1.5"/></svg>
-              Accounts
-            </div>
-            <div class="finder-row finder-depth-2 finder-folder">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4.5l1.5 1.5H14v7H2z"/><path d="M2 4.5V3h4.5l1.5 1.5"/></svg>
-              Acme Corp
-            </div>
-            <div class="finder-row finder-depth-3">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 1.5v13M2 5.5h12"/></svg>
-              dashboard.md
-            </div>
-            <div class="finder-row finder-depth-3">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 1.5v13M2 5.5h12"/></svg>
-              intelligence.json
-            </div>
-            <div class="finder-row finder-depth-1 finder-folder">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4.5h4.5l1.5 1.5H14v7H2z"/><path d="M2 4.5V3h4.5l1.5 1.5"/></svg>
-              Archive
-            </div>
-            <div class="finder-row finder-depth-2">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 1.5v13M2 5.5h12"/></svg>
-              2026-02-11.md
+          <div>
+            <p class="mono-label mono-label--sage mb-md">A different premise</p>
+            <div class="resolve-block" style="margin-top: 0;">
+              <p class="resolve-text">The system should do this work. Guilt should never be a design pattern.</p>
             </div>
           </div>
         </div>
       </div>
     </section>
+
+
+    <div class="section-rule"></div>
+
+
+    <!-- ===== WHAT WE REFUSE ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <h2 class="title">What we refuse to build.</h2>
+        <p class="prose mt-md">Before describing what DailyOS is, it's worth being clear about what it will never become. These are design convictions.</p>
+        <div class="mt-lg">
+          <div class="refusal-row">
+            <span class="refusal-mark">&times;</span>
+            <span>Another inbox to check.</span>
+          </div>
+          <div class="refusal-row">
+            <span class="refusal-mark">&times;</span>
+            <span>A dashboard you have to maintain.</span>
+          </div>
+          <div class="refusal-row">
+            <span class="refusal-mark">&times;</span>
+            <span>A system that needs feeding to work.</span>
+          </div>
+          <div class="refusal-row">
+            <span class="refusal-mark">&times;</span>
+            <span>A tool that counts your failures.</span>
+          </div>
+          <div class="refusal-row">
+            <span class="refusal-mark">&times;</span>
+            <span>A platform that holds your thinking hostage.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <div class="section-rule"></div>
+
+
+    <!-- ===== THE THREE BELIEFS ===== -->
 
     <section class="section">
-      <div class="container">
-        <div class="panel cta-card fade-in">
-          <h2>Ready to stop doing the maintenance?</h2>
-          <p class="lede">DailyOS is an internal A8C project, available to Automatticians with context-heavy workdays.</p>
-          <a href="/setup.html" class="btn btn-primary">Get Started</a>
-          <p class="proofline">Available to Automatticians &middot; No account required</p>
-        </div>
+      <div class="col-reading fade-in">
+        <p class="mono-label mb-md">Three ideas</p>
+        <p class="narrative">DailyOS is built on three convictions about how AI should change the relationship between people and their tools.</p>
       </div>
     </section>
-  </main>
 
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-panel">
-        <ul class="footer-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/tour.html">Tour</a></li>
-          <li><a href="/philosophy.html">Philosophy</a></li>
-          <li><a href="/setup.html">Get Started</a></li>
-          <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
-        </ul>
-        <p class="footer-meta">DailyOS is open source under GPL-3.0. &copy; 2026 James Giroux.</p>
+
+    <!-- BELIEF 01 -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mb-sm">01</p>
+        <h2 class="headline">AI should produce.<br>People should benefit.</h2>
+        <p class="prose mt-lg">The traditional model: you enter data, the tool organizes it. The AI-augmented model: you enter data, and an assistant helps. Both still start with you doing work.</p>
+        <p class="prose">The AI-native model is different. The system reads your calendar, checks your email, reviews your CRM, cross-references your contacts, and prepares your entire day. You didn't ask it to. You didn't prompt it. You open the app and the work is done.</p>
+        <p class="prose">This goes beyond automation. Automation follows rules you write. Intelligence means the system understands what you need before you articulate it.</p>
       </div>
+    </section>
+
+
+    <!-- BELIEF 02 -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mb-sm">02</p>
+        <h2 class="headline">Guilt is a<br>design failure.</h2>
+        <p class="prose mt-lg">Streaks. Overdue counts. Red badges that grow. Every productivity tool uses some form of shame as a retention mechanism. The guilt creates obligation. But it also creates a relationship with your tools that feels like being managed by a disappointed boss.</p>
+        <p class="prose">DailyOS has no guilt mechanics. No streaks. No badge counts. No notifications about what you haven't done. It works whether you use it every day or disappear for a month. When you come back, your day is prepared. The system doesn't care about your engagement. It cares about your morning.</p>
+      </div>
+    </section>
+
+
+    <!-- BELIEF 03 -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mb-sm">03</p>
+        <h2 class="headline">Your mind is<br>not a product.</h2>
+        <p class="prose mt-lg">Who owns the intelligence that a system builds about you?</p>
+        <p class="prose">Your CRM vendor knows your relationships. Your calendar provider knows your schedule. Your AI assistant knows your patterns of thinking. All of that knowledge, built from your work and your decisions, lives on someone else's server.</p>
+        <p class="prose">DailyOS stores everything locally. SQLite database. Plain Markdown files. On your machine, in folders you control, in formats any tool can read. We believe the intelligence a system builds about your life belongs to you. No business model should be built on holding it hostage.</p>
+        <div class="finder-tree mt-lg">
+          <div class="finder-tree__folder">~/workspace/</div>
+          <div class="finder-tree__indent">.dailyos/</div>
+          <div class="finder-tree__indent" style="padding-left: 48px;">briefings/</div>
+          <div class="finder-tree__indent" style="padding-left: 48px;">transcripts/</div>
+          <div class="finder-tree__indent" style="padding-left: 48px;">intelligence/</div>
+          <div class="finder-tree__indent" style="padding-left: 48px;">config.json</div>
+        </div>
+        <p class="prose mt-md">If you stop using DailyOS, you take everything with you. Every briefing, every transcript, every piece of intelligence the system ever built. It was always yours.</p>
+      </div>
+    </section>
+
+
+    <div class="section-rule"></div>
+
+
+    <!-- ===== THE BIGGER PICTURE ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="prose">These ideas aren't specific to DailyOS. If AI can read and prepare, tools should stop asking humans to do that work. If value drives engagement, shame has no place in design. If intelligence can be stored locally, your thinking shouldn't live on someone else's server.</p>
+        <p class="prose">The technology is here. We're trying to use it well.</p>
+      </div>
+    </section>
+
+
+    <!-- ===== CLOSING SPREAD ===== -->
+    <section class="spread">
+      <div class="col-reading text-center fade-in">
+        <h2 class="headline">The system works.<br>You walk in ready.</h2>
+        <p class="narrative mt-lg">DailyOS is an open-source project, currently in alpha for Automatticians on macOS.</p>
+        <a href="/setup.html" class="cta-text mt-lg">Get started &rarr;</a>
+      </div>
+    </section>
+
+
+    <!-- ===== END MARK ===== -->
+    <div class="end-mark">
+      <div class="end-mark__stars">* * *</div>
+      <div class="end-mark__message">Built on three ideas. Tested every morning.</div>
     </div>
-  </footer>
+
+    <footer class="site-footer">
+      <p><a href="/">DailyOS</a> &middot; <a href="/tour.html">Tour</a> &middot; <a href="/philosophy.html">Philosophy</a> &middot; <a href="/setup.html">Get Started</a></p>
+      <p class="mt-xs">Open source under GPL-3.0.</p>
+    </footer>
+
+  </main>
 
   <script src="/site.js"></script>
 </body>
