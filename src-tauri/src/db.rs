@@ -435,7 +435,7 @@ fn compute_trend(count_30d: i32, count_90d: i32) -> String {
 }
 
 /// Parse an ISO datetime string and return days since that date.
-fn days_since_iso(iso: &str) -> Option<i64> {
+pub fn days_since_iso(iso: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(iso)
         .or_else(|_| {
             chrono::DateTime::parse_from_rfc3339(&format!("{}+00:00", iso.trim_end_matches('Z')))
