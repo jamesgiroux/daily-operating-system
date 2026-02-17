@@ -112,9 +112,7 @@ pub struct StrategicProgram {
 
 /// Resolve the directory for an account's workspace files (I70: sanitized name).
 pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
-    workspace
-        .join("Accounts")
-        .join(crate::util::sanitize_for_filesystem(name))
+    crate::entity_io::entity_dir(workspace, "Accounts", name)
 }
 
 /// Resolve the directory for an account, preferring `tracker_path` when set (I114).
@@ -155,8 +153,6 @@ pub fn write_account_json(
     _db: &ActionDb,
 ) -> Result<(), String> {
     let dir = resolve_account_dir(workspace, account);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
     let account_team = _db
         .get_account_team(&account.id)
@@ -194,12 +190,7 @@ pub fn write_account_json(
         parent_id: account.parent_id.clone(),
     };
 
-    let path = dir.join("dashboard.json");
-    let content =
-        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
-
-    Ok(())
+    crate::entity_io::write_entity_json(&dir, "dashboard.json", &json)
 }
 
 /// Write `dashboard.md` for an account (generated artifact).
@@ -489,24 +480,17 @@ pub struct ReadAccountResult {
 /// a flat account. If it's deeper, the immediate parent dir is the BU name and
 /// the grandparent is the parent account name.
 pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
-    let json: AccountJson =
-        serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
+    let account_dir = path.parent().ok_or("No parent dir")?;
+    let json: AccountJson = crate::entity_io::read_entity_json(
+        account_dir,
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("dashboard.json"),
+    )?;
 
-    // Get file mtime as updated_at
-    let updated_at = std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map(|t| {
-            let dt: chrono::DateTime<Utc> = t.into();
-            dt.to_rfc3339()
-        })
-        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let updated_at = crate::entity_io::file_updated_at(path);
 
     // Depth detection: is grandparent "Accounts"?
     // Flat:   workspace/Accounts/{name}/dashboard.json  → parent.parent.filename == "Accounts"
     // Child:  workspace/Accounts/{parent}/{child}/dashboard.json → parent.parent.filename != "Accounts"
-    let account_dir = path.parent().ok_or("No parent dir")?;
     let grandparent = account_dir.parent().ok_or("No grandparent dir")?;
     let grandparent_name = grandparent
         .file_name()
@@ -906,14 +890,8 @@ pub fn sync_content_index_for_account(
     db: &ActionDb,
     account: &crate::db::DbAccount,
 ) -> Result<(usize, usize, usize), String> {
-    let account_dir = resolve_account_dir(workspace, account);
-    crate::entity_intel::sync_content_index_for_entity(
-        &account_dir,
-        &account.id,
-        "account",
-        workspace,
-        db,
-    )
+    let dir = resolve_account_dir(workspace, account);
+    crate::entity_io::sync_content_index_for_entity(db, workspace, &account.id, "account", &dir)
 }
 
 /// Sync content indexes for all accounts and projects. Returns total files indexed.
