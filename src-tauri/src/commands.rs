@@ -7885,6 +7885,11 @@ fn resolve_prep_path(meeting_id: &str, state: &AppState) -> Result<std::path::Pa
     let clean_id = meeting_id.trim_end_matches(".json").trim_end_matches(".md");
     let path = preps_dir.join(format!("{}.json", clean_id));
 
+    // Path containment check: prevent traversal outside preps directory
+    if !path.starts_with(&preps_dir) {
+        return Err("Invalid meeting ID".to_string());
+    }
+
     if path.exists() {
         Ok(path)
     } else {
