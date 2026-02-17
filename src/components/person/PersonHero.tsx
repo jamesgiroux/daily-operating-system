@@ -3,9 +3,9 @@
  * Larkspur-tinted watermark, circular initial avatar, relationship + temperature badges.
  * Meta row: Edit Details, Build Intelligence, Merge, Archive, Delete.
  */
+import { useState } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
-import { BrandMark } from "../ui/BrandMark";
 import styles from "./PersonHero.module.css";
 
 interface PersonHeroProps {
@@ -46,7 +46,11 @@ export function PersonHero({
   onUnarchive,
   onDelete,
 }: PersonHeroProps) {
-  const lede = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const ledeFull = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const LEDE_LIMIT = 300;
+  const [showFullLede, setShowFullLede] = useState(false);
+  const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "\u2026" : ledeFull;
   const temperature = detail.signals?.temperature;
 
   // Build subtitle: email + org/role
@@ -66,8 +70,6 @@ export function PersonHero({
 
   return (
     <div className={styles.hero}>
-      <div className={styles.watermark}><BrandMark size="100%" /></div>
-
       {/* Archived banner */}
       {detail.archived && (
         <div className={styles.archivedBanner}>
@@ -92,7 +94,27 @@ export function PersonHero({
       </div>
 
       {/* Lede from intelligence */}
-      {lede && <p className={styles.lede}>{lede}</p>}
+      {lede && (
+        <p className={styles.lede}>
+          {lede}
+          {ledeTruncated && (
+            <button
+              onClick={() => setShowFullLede(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 0 0 4px",
+              }}
+            >
+              Read more
+            </button>
+          )}
+        </p>
+      )}
 
       {/* Subtitle: email, org, role */}
       {subtitleParts.length > 0 && (
