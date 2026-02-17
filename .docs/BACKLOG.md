@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 688 Rust tests. v0.8.0 shipped (editorial redesign, semantic search, MCP, security hardening). 0.8.1 active (website rebrand, app icon, hardening shipped). 0.9.0 planned (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
+**Current state:** 688 Rust tests. v0.8.0 shipped (editorial redesign, semantic search, MCP, security hardening). v0.8.1 shipped (website rebrand, app icon, FK constraints, proposed actions, security hardening). 0.8.2 active (polish, tech debt). 0.9.0 planned (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
 
 ---
 
@@ -42,15 +42,15 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I228** | Clay integration (contact/company enrichment) | P2 | Integrations |
 | **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
 | ~~I240~~ | ~~Secondary pages rebrand (meeting detail, actions, emails, inbox, history, settings)~~ | — | Closed (0.8.0) |
-| **I241** | Public website rebrand (daily-os.com — editorial design language + brand identity) | P1 | UX |
+| ~~I241~~ | ~~Public website rebrand (daily-os.com — editorial design language + brand identity)~~ | — | Closed (0.8.2) |
 | **I245** | "Open in Cowork" UX pattern — deferred, blocked by no URL scheme | P2 | UX |
 | **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
 | **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
 | **I261** | Account detail refinements — stakeholder-people linkage, information density | P2 | UX / Entity |
 | **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
 | **I272** | Hygiene Level B — relationship drift, prep completeness, portfolio balance signals | P2 | Intelligence |
-| **I273** | Hygiene UX redesign — unified health narrative in editorial design language | P2 | UX |
-| **I279** | Per-day action priorities in weekly forecast | P2 | Week |
+| ~~I273~~ | ~~Hygiene UX redesign — unified health narrative in editorial design language~~ | — | Closed (0.8.2) |
+| ~~I279~~ | ~~Per-day action priorities in weekly forecast~~ | — | Closed (0.8.2) |
 | ~~I231~~ | ~~Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps~~ | — | Closed (0.8.1) |
 | **I287** | Token: Entity intelligence caching (2-4 hour TTL) | P2 | I280 |
 | ~~I288~~ | ~~Token: Entity intelligence JSON output (replace pipe-delimited parsing)~~ | — | Closed (0.8.1) |
@@ -59,8 +59,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I291** | DRY: Frontend list/detail page pattern extraction | P2 | I280 |
 | **I297** | Security: Audit trail for AI-generated data (raw output logging) | P2 | I280 |
 | **I298** | Mock data audit — update fixtures for editorial redesign | P2 | DevTools |
-| **I299** | App icon update — asterisk brand mark (replaces lightning bolt) | P1 | Brand |
-| **I300** | Website visuals update — screenshots, og-image, favicons for new brand | P1 | UX |
+| ~~I299~~ | ~~App icon update — asterisk brand mark (replaces lightning bolt)~~ | — | Closed (0.8.2) |
+| ~~I300~~ | ~~Website visuals update — screenshots, og-image, favicons for new brand~~ | — | Closed (0.8.2) |
 | **I229** | Gravatar integration (profile pictures) | P3 | Integrations |
 | **I232** | Deduplicate `normalize_key` (folded into I290) | P3 | Code Quality |
 | ~~I234~~ | ~~Prune IntelligenceQueue `last_enqueued` HashMap periodically~~ | — | Closed (0.8.1) |
@@ -175,45 +175,60 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 ---
 
-### 0.8.1 — Website, Brand & Hardening (active)
+### 0.8.1 — Website, Brand & Hardening (shipped)
 
-*Maintenance release. Apply editorial design language and brand identity to the public website. Update app icon to asterisk mark. Bug fixes and polish within the editorial foundation. No new app capabilities.*
+*Maintenance release. Editorial design language and brand identity applied to public website. Asterisk brand mark on app icon, website, and favicons. Security hardening, FK constraints, proposed actions workflow.*
 
 #### Website & Brand
 
 | Priority | Issue | Scope | Status |
 |----------|-------|-------|--------|
-| P1 | I299 | App icon update — asterisk brand mark (replaces lightning bolt) | Open |
-| P1 | I241 | Public website rebrand — editorial design language + brand identity | Open |
-| P1 | I300 | Website visuals update — screenshots, og-image, favicons for new brand | Open |
+| ~~P1~~ | ~~I299~~ | ~~App icon update — asterisk brand mark + glass tint~~ | ✅ `d523ee8` |
+| ~~P1~~ | ~~I241~~ | ~~Public website rebrand — editorial magazine experience~~ | ✅ `c3c6488` |
+| ~~P1~~ | ~~I300~~ | ~~Website visuals — og-image, favicon PNGs, apple-touch-icon~~ | ✅ `20b4dd7` |
 
 #### Hardening
+
+| Priority | Issue | Scope | Status |
+|----------|-------|-------|--------|
+| ~~P1~~ | ~~I256~~ | ~~Proposed actions workflow + hygiene-based auto-archive~~ | ✅ `4ca74dd` |
+| ~~P1~~ | ~~I285~~ | ~~DB: Add foreign key constraints (table recreation)~~ | ✅ `4ca74dd` |
+| ~~P1~~ | ~~I286~~ | ~~Tokens: Vector search filtering for entity intelligence prompts~~ | ✅ `4ca74dd` |
+| ~~P1~~ | ~~I288~~ | ~~Tokens: Structured output parsing with length limits~~ | ✅ `4ca74dd` |
+| ~~P1~~ | ~~I295~~ | ~~Security: Prompt injection hardening — structured data blocks~~ | ✅ `4ca74dd` |
+| ~~P1~~ | ~~I296~~ | ~~Security: Output size limits on parsed AI results~~ | ✅ `4ca74dd` |
+| ~~P2~~ | ~~I273~~ | ~~Hygiene UX redesign — unified health narrative~~ | ✅ `e260410` |
+| ~~P2~~ | ~~I279~~ | ~~Per-day action priorities in weekly forecast~~ | ✅ `e260410` |
+
+---
+
+### 0.8.2 — Polish & Technical Debt (active)
+
+*Carry-forward P2/P3 items from 0.8.1. Code quality, performance, and remaining editorial polish.*
+
+#### Polish
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
 | P2 | I298 | Mock data audit — update fixtures for editorial redesign |
-| ~~P1~~ | ~~I256~~ | ~~Proposed actions workflow + hygiene-based auto-archive~~ ✅ `4ca74dd` |
-| ~~P1~~ | ~~I285~~ | ~~DB: Add foreign key constraints (table recreation)~~ ✅ `4ca74dd` |
-| ~~P1~~ | ~~I286~~ | ~~Tokens: Vector search filtering for entity intelligence prompts~~ ✅ `4ca74dd` |
-| ~~P1~~ | ~~I288~~ | ~~Tokens: Structured output parsing with length limits~~ ✅ `4ca74dd` |
-| ~~P1~~ | ~~I295~~ | ~~Security: Prompt injection hardening — structured data blocks~~ ✅ `4ca74dd` |
-| ~~P1~~ | ~~I296~~ | ~~Security: Output size limits on parsed AI results~~ ✅ `4ca74dd` |
-| P2 | I231 | Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps |
 | P2 | I261 | Account detail refinements — stakeholder-people linkage, information density |
 | P2 | I272 | Hygiene Level B — relationship drift, prep completeness, portfolio balance |
-| P2 | I273 | Hygiene UX redesign — unified health narrative in editorial design language |
 | P2 | I297 | Security: Audit trail for AI-generated data (raw output logging) |
-| P3 | I232 | Deduplicate `normalize_key` — folded into I290 |
-| P3 | I234 | Prune IntelligenceQueue `last_enqueued` HashMap periodically |
-| P3 | I235 | Consolidate dashboard DB reads into single lock acquisition |
-| P3 | I236 | Adaptive polling interval on WeekPage during enrichment phase |
-| P3 | I263 | Replace native date inputs with styled shadcn DatePicker |
+| P2 | I231 | Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps |
+
+#### Code Quality & Performance
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
 | P3 | I287 | Tokens: Caching for entity intelligence (TTL-based) |
 | P3 | I289 | Tokens: Batch prep enrichment (multi-meeting single call) |
 | P3 | I290 | Code: DRY extraction pass (accounts↔projects, shared patterns) |
 | P3 | I291 | Code: Frontend component audit (parallel implementations) |
+| P3 | I232 | Deduplicate `normalize_key` — folded into I290 |
+| P3 | I236 | Adaptive polling interval on WeekPage during enrichment phase |
+| P3 | I263 | Replace native date inputs with styled shadcn DatePicker |
 
-**0.8.1 gate:** Website tells the same story as the app. Asterisk mark on app icon, website, and favicons. Editorial design language (ADR-0073/0076/0077) applied to all 4 website pages. Positioning copy (POSITIONING.md) reflected in website narrative.
+**0.8.2 gate:** All P2 items closed or explicitly deferred. P3 items addressed opportunistically. Clean foundation for 0.9.0 integrations work.
 
 ---
 
