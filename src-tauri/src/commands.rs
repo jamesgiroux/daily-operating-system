@@ -7771,7 +7771,7 @@ pub fn generate_meeting_agenda_message_draft(
 #[tauri::command]
 pub fn update_meeting_user_agenda(
     meeting_id: String,
-    agenda: Vec<String>,
+    agenda: Option<Vec<String>>,
     dismissed_topics: Option<Vec<String>>,
     hidden_attendees: Option<Vec<String>>,
     state: State<Arc<AppState>>,
@@ -7790,7 +7790,7 @@ pub fn update_meeting_user_agenda(
     // Merge with existing layer to preserve fields not being updated
     let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
     let layer = UserAgendaLayer {
-        items: agenda.clone(),
+        items: agenda.unwrap_or(existing.items),
         dismissed_topics: dismissed_topics.unwrap_or(existing.dismissed_topics),
         hidden_attendees: hidden_attendees.unwrap_or(existing.hidden_attendees),
     };
@@ -7811,10 +7811,10 @@ pub fn update_meeting_user_agenda(
     if let Ok(prep_path) = resolve_prep_path(&meeting_id, &state) {
         if let Ok(content) = std::fs::read_to_string(&prep_path) {
             if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if agenda.is_empty() {
+                if layer.items.is_empty() {
                     json.as_object_mut().map(|o| o.remove("userAgenda"));
                 } else {
-                    json["userAgenda"] = serde_json::json!(agenda);
+                    json["userAgenda"] = serde_json::json!(layer.items);
                 }
                 if let Ok(updated) = serde_json::to_string_pretty(&json) {
                     let _ = std::fs::write(&prep_path, updated);
