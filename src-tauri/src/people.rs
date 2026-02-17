@@ -310,7 +310,7 @@ pub fn sync_people_from_workspace(
                 }
 
                 // Check if SQLite has this person and compare timestamps
-                match db.get_person_by_email(&file_person.email) {
+                match db.get_person_by_email_or_alias(&file_person.email) {
                     Ok(Some(db_person)) => {
                         // Compare: file mtime vs SQLite updated_at
                         if file_person.updated_at > db_person.updated_at {

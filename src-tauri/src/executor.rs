@@ -168,7 +168,7 @@ impl Executor {
                         .map(|s| s.to_string());
 
                     let person_id = sender_email.as_deref().and_then(|sender| {
-                        db.get_person_by_email(sender)
+                        db.get_person_by_email_or_alias(sender)
                             .ok()
                             .flatten()
                             .map(|person| person.id)
