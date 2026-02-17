@@ -3,10 +3,10 @@
  * Mockup: h1 76px serif, 2-3 sentence italic lede from intelligence,
  * hero-date line, watermark asterisk, health/lifecycle badges, and meta row.
  */
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { AccountDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
-import { BrandMark } from "../ui/BrandMark";
 import styles from "./AccountHero.module.css";
 
 interface AccountHeroProps {
@@ -39,15 +39,16 @@ export function AccountHero({
   onUnarchive,
 }: AccountHeroProps) {
   // Extract first paragraph of executive assessment as lede
-  const lede = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const ledeFull = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const LEDE_LIMIT = 300;
+  const [showFullLede, setShowFullLede] = useState(false);
+  const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "\u2026" : ledeFull;
   // Company context from intelligence
   const companyContext = intelligence?.companyContext ?? null;
 
   return (
     <div className={styles.hero}>
-      {/* Watermark asterisk */}
-      <div className={styles.watermark}><BrandMark size="100%" /></div>
-
       {/* Parent breadcrumb */}
       {detail.parentId && detail.parentName && (
         <Link
@@ -78,7 +79,27 @@ export function AccountHero({
       <h1 className={styles.name}>{detail.name}</h1>
 
       {/* Lede from intelligence — italic serif */}
-      {lede && <p className={styles.lede}>{lede}</p>}
+      {lede && (
+        <p className={styles.lede}>
+          {lede}
+          {ledeTruncated && (
+            <button
+              onClick={() => setShowFullLede(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 0 0 4px",
+              }}
+            >
+              Read more
+            </button>
+          )}
+        </p>
+      )}
 
       {/* Badges row */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>

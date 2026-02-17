@@ -505,6 +505,10 @@ impl ActionDb {
         // Run schema migrations (ADR-0071)
         crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
 
+        // Enable FK constraint enforcement (I285). Set after migrations since
+        // migration 010 uses PRAGMA foreign_keys = OFF for table recreation.
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+
         // Legacy data repairs — idempotent Rust code, safe to run every startup.
         // Will be removed once all alpha users are past v0.7.3.
         let _ = Self::normalize_reviewed_prep_keys(&conn);
@@ -1237,6 +1241,102 @@ impl ActionDb {
             titles.push(row?);
         }
         Ok(titles)
+    }
+
+    // =========================================================================
+    // Proposed Actions (I256)
+    // =========================================================================
+
+    /// Get all proposed actions.
+    pub fn get_proposed_actions(&self) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at, person_id
+             FROM actions
+             WHERE status = 'proposed'
+             ORDER BY priority, created_at DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+                person_id: row.get(15)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Accept a proposed action, moving it to pending status.
+    pub fn accept_proposed_action(&self, id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let changed = self.conn.execute(
+            "UPDATE actions SET status = 'pending', updated_at = ?1
+             WHERE id = ?2 AND status = 'proposed'",
+            params![now, id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
+        Ok(())
+    }
+
+    /// Reject a proposed action by archiving it.
+    pub fn reject_proposed_action(&self, id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let changed = self.conn.execute(
+            "UPDATE actions SET status = 'archived', updated_at = ?1
+             WHERE id = ?2 AND status = 'proposed'",
+            params![now, id],
+        )?;
+        if changed == 0 {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
+        Ok(())
+    }
+
+    /// Archive an action (any status -> archived).
+    pub fn archive_action(&self, id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE actions SET status = 'archived', updated_at = ?1
+             WHERE id = ?2",
+            params![now, id],
+        )?;
+        Ok(())
+    }
+
+    /// Auto-archive proposed actions older than N days.
+    /// Returns the number of actions archived.
+    pub fn auto_archive_old_proposed(&self, days: i64) -> Result<usize, DbError> {
+        let now = Utc::now().to_rfc3339();
+        let cutoff_param = format!("-{} days", days);
+        let changed = self.conn.execute(
+            "UPDATE actions SET status = 'archived', updated_at = ?1
+             WHERE status = 'proposed'
+               AND created_at < datetime('now', ?2)",
+            params![now, cutoff_param],
+        )?;
+        Ok(changed)
     }
 
     // =========================================================================
@@ -4940,7 +5040,13 @@ mod tests {
         let path = dir.path().join("test_actions.db");
         // Leak the TempDir so it is not deleted while the DB connection is open.
         std::mem::forget(dir);
-        ActionDb::open_at(path).expect("Failed to open test database")
+        let db = ActionDb::open_at(path).expect("Failed to open test database");
+        // Disable FK enforcement for unit tests — FK integrity is validated
+        // separately in migration tests and production open_at() enables it.
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK for tests");
+        db
     }
 
     fn sample_action(id: &str, title: &str) -> DbAction {
