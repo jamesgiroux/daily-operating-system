@@ -19,6 +19,11 @@ fi
 
 echo "Building dailyos-mcp for target: $TARGET_TRIPLE"
 
+# Create stub so Tauri's build.rs passes externalBin validation during cargo build.
+# The real binary overwrites this stub after compilation.
+mkdir -p "$BINARIES_DIR"
+touch "$BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
+
 cargo build \
   --manifest-path "$TAURI_DIR/Cargo.toml" \
   --release \
@@ -26,7 +31,6 @@ cargo build \
   --bin dailyos-mcp \
   --target "$TARGET_TRIPLE"
 
-mkdir -p "$BINARIES_DIR"
 cp "$TAURI_DIR/target/$TARGET_TRIPLE/release/dailyos-mcp" \
    "$BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
 chmod +x "$BINARIES_DIR/dailyos-mcp-$TARGET_TRIPLE"
