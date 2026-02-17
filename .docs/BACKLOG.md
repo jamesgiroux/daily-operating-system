@@ -68,6 +68,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I236** | Adaptive polling interval on WeekPage during enrichment phase | P3 | Performance |
 | **I263** | Replace native date inputs with styled shadcn DatePicker | P3 | UX |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
+| **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
+| **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
+| **I303** | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx | P3 | Code Quality |
 
 ---
 
@@ -229,6 +232,16 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | P3 | I263 | Replace native date inputs with styled shadcn DatePicker |
 
 **0.8.2 gate:** All P2 items closed or explicitly deferred. P3 items addressed opportunistically. Clean foundation for 0.9.0 integrations work.
+
+---
+
+### 0.8.3 — Cleanup
+
+*Carry-forward code quality and type-safety fixes from 0.8.2.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P3 | I303 | Fix `LinkedEntity.entityType` type narrowing in meeting-entity-chips.tsx |
 
 ---
 
@@ -4734,3 +4747,89 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 | D3 | Google Calendar API | Runtime | Optional |
 | D4 | Claude Cowork plugin format | Runtime | Available (Jan 2026) |
 | D5 | Claude Cowork URL scheme / deep linking | Runtime | **Not available** (GitHub #10366 open). Blocks I245. |
+
+---
+
+### I301: Calendar Attendee RSVP Status + Schema Enrichment for Meeting Intelligence
+
+**Priority:** P1 (0.8.3)
+**Area:** Meetings / Calendar Pipeline / Intelligence
+
+**The Problem:**
+
+The meeting intelligence report's "The Room" section shows all people linked to a meeting via the `meeting_attendees` junction table or matched by email from the `meetings.attendees` field. There is no filtering by RSVP/acceptance status. This means declined attendees and people who haven't responded appear alongside confirmed attendees, diluting the usefulness of the room briefing.
+
+Additionally, the Google Calendar API provides rich per-attendee metadata that we currently discard:
+- `responseStatus` (accepted / tentative / declined / needsAction)
+- `optional` (boolean — required vs optional attendee)
+- `organizer` (boolean — who called the meeting)
+- `comment` (free-text RSVP comment)
+
+**Current Data Flow (as of 0.8.2):**
+
+```
+Google Calendar API → Attendee struct (email, response_status, resource, is_self)
+                    ↓
+              GoogleCalendarEvent.attendees: Vec<String>  ← emails only, status discarded
+                    ↓
+              meetings.attendees (comma-separated emails in DB)
+                    ↓
+              hydrate_attendee_context() → AttendeeContext[]  ← no RSVP filtering
+```
+
+The `response_status` field exists in the internal `Attendee` deserialization struct (`google_api/calendar.rs:57`) but is only used for self-declined detection (skip events the user declined). It is never carried through to storage.
+
+**Proposed Solution:**
+
+**Phase 1: Carry RSVP through the pipeline**
+
+1. Add `attendee_rsvp: HashMap<String, String>` to `GoogleCalendarEvent` — maps lowercase email → response status
+2. Populate it alongside `attendees` in `fetch_events()` (calendar.rs:170-177)
+3. Store RSVP data in the DB — either:
+   - Option A: Add `rsvp_status TEXT` column to `meeting_attendees` junction table (cleanest, requires migration)
+   - Option B: Add `attendee_rsvp_json TEXT` column to `meetings` table (simpler, less normalized)
+4. Update calendar sync (`google.rs` / `scheduler.rs`) to persist RSVP on each sync
+
+**Phase 2: Filter in hydrate_attendee_context**
+
+5. In `hydrate_attendee_context()` (commands.rs), filter attendees:
+   - **Show:** accepted, tentative
+   - **Hide:** declined
+   - **Show with indicator:** needsAction (no response yet — useful signal)
+6. Add RSVP badge to the frontend `UnifiedAttendeeList` component:
+   - Accepted: no badge (default)
+   - Tentative: "Tentative" mono badge
+   - No response: "Awaiting" mono badge in tertiary
+
+**Phase 3: Additional calendar metadata enrichment**
+
+7. Carry `optional` boolean — distinguish required vs optional attendees
+8. Carry `organizer` boolean — show who called the meeting
+9. Surface these in the attendee row: "Organizer" badge, visual de-emphasis for optional attendees
+
+**Files Involved:**
+
+| File | Change |
+|------|--------|
+| `src-tauri/src/google_api/calendar.rs` | Add `attendee_rsvp` to `GoogleCalendarEvent`, populate in `fetch_events` |
+| `src-tauri/src/google_api/classify.rs` | Update test helper `make_event` |
+| `src-tauri/src/db.rs` | Migration: add `rsvp_status` to `meeting_attendees` or JSON column to `meetings` |
+| `src-tauri/src/migrations.rs` | New migration for schema change |
+| `src-tauri/src/google.rs` or `scheduler.rs` | Persist RSVP on calendar sync |
+| `src-tauri/src/commands.rs` | Filter by RSVP in `hydrate_attendee_context()` |
+| `src/pages/MeetingDetailPage.tsx` | RSVP badges in `UnifiedAttendeeList` |
+| `src/types/index.ts` | Add `rsvpStatus` to `AttendeeContext` |
+
+**Migration Considerations:**
+
+- Existing meetings won't have RSVP data until the next calendar sync runs
+- The sync should backfill RSVP for upcoming meetings on first run after migration
+- Past (frozen) meetings retain their existing attendee data — no backfill needed
+
+**Acceptance Criteria:**
+
+1. "The Room" only shows accepted + tentative attendees (declined filtered out)
+2. "Awaiting response" attendees shown with subtle indicator
+3. RSVP status persists across app restarts (stored in DB, not just memory)
+4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
+5. No regression on existing meeting prep for meetings without RSVP data
