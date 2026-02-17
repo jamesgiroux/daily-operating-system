@@ -6,7 +6,7 @@
 //! during the 30-120s PTY operation.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -404,7 +404,7 @@ fn check_enrichment_ttl(state: &AppState, request: &IntelRequest) -> Option<Stri
 
 /// Resolve an entity's directory from its request metadata.
 /// Lightweight helper that opens a short-lived DB connection.
-fn resolve_entity_dir(workspace: &PathBuf, request: &IntelRequest) -> Option<PathBuf> {
+fn resolve_entity_dir(workspace: &Path, request: &IntelRequest) -> Option<PathBuf> {
     let db = crate::db::ActionDb::open().ok()?;
 
     match request.entity_type.as_str() {
@@ -529,6 +529,15 @@ pub fn run_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    if let Err(e) = crate::audit::write_audit_entry(
+        &input.workspace,
+        &input.entity_type,
+        &input.entity_id,
+        &output.stdout,
+    ) {
+        log::warn!("Audit write failed: {}", e);
+    }
+
     parse_intelligence_response(
         &output.stdout,
         &input.entity_id,
@@ -577,6 +586,16 @@ fn run_batch_enrichment(
             return run_individual_fallback(inputs, ai_config);
         }
     };
+
+    let batch_id = entity_names.join("_");
+    if let Err(e) = crate::audit::write_audit_entry(
+        &workspace,
+        "batch",
+        &batch_id,
+        &output.stdout,
+    ) {
+        log::warn!("Audit write failed: {}", e);
+    }
 
     // Parse combined response into per-entity results
     let parsed = parse_batch_response(&output.stdout, &inputs);
