@@ -458,7 +458,7 @@
   grid-template-columns: 72px 1fr;
   gap: 0 20px;
   align-items: first baseline;
-  padding: 14px 0;
+  padding: 14px 16px 14px 0;
   border-bottom: 1px solid var(--color-rule-light);
   position: relative;
 }
