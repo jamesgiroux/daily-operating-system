@@ -1978,6 +1978,9 @@ pub fn enrich_entity_intelligence(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(workspace, entity_type, entity_id, &output.stdout);
+
     // Step 5: Parse response
     let mut intel = parse_intelligence_response(
         &output.stdout,
