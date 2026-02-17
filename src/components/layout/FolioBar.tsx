@@ -8,6 +8,7 @@
  */
 
 import React from 'react';
+import { Link } from '@tanstack/react-router';
 import { BrandMark } from '../ui/BrandMark';
 import { capitalize } from '@/lib/utils';
 import styles from './FolioBar.module.css';
@@ -80,7 +81,9 @@ export const FolioBar: React.FC<FolioBarProps> = ({
           </button>
         ) : (
           <>
-            <BrandMark className={styles.folioMark} size={18} />
+            <Link to="/" className={styles.folioHomeLink}>
+              <BrandMark className={styles.folioMark} size={18} />
+            </Link>
             <span className={styles.folioPub}>{publicationLabel}</span>
           </>
         )}
