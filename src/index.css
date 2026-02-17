@@ -282,3 +282,46 @@
   color: var(--color-paper-warm-white) !important;
   border-radius: var(--radius-editorial-sm);
 }
+
+/* ============================================
+   PRINT — Clean PDF output for briefings
+   ============================================ */
+@media print {
+  /* Hide app chrome: folio bar, nav island, atmosphere gradient */
+  [class*="folioBar"],
+  [class*="navIsland"],
+  [class*="atmosphere"],
+  [class*="Atmosphere"],
+  button,
+  textarea,
+  input {
+    display: none !important;
+  }
+
+  /* Restore buttons that are actually content labels */
+  [class*="attendee-tooltip"] { display: none !important; }
+
+  /* Full width, no scroll-linked effects */
+  .editorial-reveal,
+  .editorial-reveal-slow {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  /* Clean background */
+  body, html {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Respect page breaks */
+  section { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+  blockquote { break-inside: avoid; }
+
+  /* Remove max-width constraint for print */
+  body * { max-width: 100% !important; }
+}
