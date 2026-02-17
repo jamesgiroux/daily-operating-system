@@ -47,6 +47,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 11,
     sql: include_str!("migrations/011_proposed_actions.sql"),
+}, Migration {
+    version: 12,
+    sql: include_str!("migrations/012_person_emails.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -208,13 +211,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 11,
-            "should apply all migrations including proposed_actions"
+            applied, 12,
+            "should apply all migrations including person_emails"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -347,6 +350,14 @@ mod tests {
             [],
         )
         .expect("archived status should be accepted");
+
+        // Verify person_emails table exists and accepts inserts (migration 012)
+        conn.execute(
+            "INSERT INTO person_emails (person_id, email, is_primary, added_at)
+             VALUES ('p1', 'alice@acme.com', 1, '2025-01-01')",
+            [],
+        )
+        .expect("person_emails table should exist");
     }
 
     #[test]
@@ -446,11 +457,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v9
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 10, "bootstrap should mark v1, then apply v2 through v11");
+        assert_eq!(applied, 11, "bootstrap should mark v1, then apply v2 through v12");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 11);
+        assert_eq!(version, 12);
 
         // Verify existing data is untouched
         let title: String = conn
