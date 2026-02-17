@@ -3,6 +3,7 @@
  * Slide 4: financial headline + stakeholder cards + worst case.
  * Merges TheRoom + Commercial from v2 into one stakes view.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import type { RiskStakes } from "@/types";
 
@@ -19,6 +20,8 @@ const alignmentColors: Record<string, string> = {
 };
 
 export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
+  const [hoveredStakeholder, setHoveredStakeholder] = useState<number | null>(null);
+
   return (
     <section
       id="stakes"
@@ -79,12 +82,44 @@ export function StakesSlide({ data, onUpdate }: StakesSlideProps) {
           {data.stakeholders.slice(0, 4).map((s, i) => (
             <div
               key={i}
+              onMouseEnter={() => setHoveredStakeholder(i)}
+              onMouseLeave={() => setHoveredStakeholder(null)}
               style={{
                 padding: "16px 20px",
                 border: "1px solid var(--color-rule-light)",
                 borderRadius: 6,
+                position: "relative",
               }}
             >
+              {/* Dismiss */}
+              {(data.stakeholders?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      stakeholders: (data.stakeholders ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    position: "absolute",
+                    top: 8,
+                    right: 8,
+                    opacity: hoveredStakeholder === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    zIndex: 1,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
               <div
                 style={{
                   display: "flex",

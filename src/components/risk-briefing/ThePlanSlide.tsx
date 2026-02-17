@@ -2,6 +2,7 @@
  * ThePlanSlide — Strategy + actions + risk caveats.
  * Slide 5: recovery strategy with timeline and assumption caveats.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import type { RiskThePlan } from "@/types";
 
@@ -11,6 +12,9 @@ interface ThePlanSlideProps {
 }
 
 export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
+  const [hoveredAction, setHoveredAction] = useState<number | null>(null);
+  const [hoveredAssumption, setHoveredAssumption] = useState<number | null>(null);
+
   return (
     <section
       id="the-plan"
@@ -78,6 +82,8 @@ export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
           {data.actions.slice(0, 3).map((action, i) => (
             <div
               key={i}
+              onMouseEnter={() => setHoveredAction(i)}
+              onMouseLeave={() => setHoveredAction(null)}
               style={{
                 display: "flex",
                 gap: 16,
@@ -137,7 +143,16 @@ export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
                       />
                     )}
                     {action.owner && action.timeline && (
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-primary)", opacity: 0.7 }}>·</span>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 13,
+                          color: "var(--color-text-primary)",
+                          opacity: 0.7,
+                        }}
+                      >
+                        ·
+                      </span>
                     )}
                     {action.timeline && (
                       <EditableText
@@ -158,6 +173,31 @@ export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
                   </div>
                 )}
               </div>
+              {(data.actions?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      actions: (data.actions ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    opacity: hoveredAction === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -180,25 +220,62 @@ export function ThePlanSlide({ data, onUpdate }: ThePlanSlideProps) {
             Assumptions
           </div>
           {data.assumptions.slice(0, 2).map((assumption, i) => (
-            <EditableText
+            <div
               key={i}
-              as="p"
-              value={assumption}
-              onChange={(v) => {
-                const updated = [...(data.assumptions ?? [])];
-                updated[i] = v;
-                onUpdate?.({ ...data, assumptions: updated });
-              }}
+              onMouseEnter={() => setHoveredAssumption(i)}
+              onMouseLeave={() => setHoveredAssumption(null)}
               style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 15,
-                lineHeight: 1.5,
-                color: "var(--color-text-primary)",
-                margin: "0 0 8px",
-                borderLeft: "3px solid var(--color-spice-terracotta)",
-                paddingLeft: 16,
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                marginBottom: 8,
               }}
-            />
+            >
+              <EditableText
+                as="p"
+                value={assumption}
+                onChange={(v) => {
+                  const updated = [...(data.assumptions ?? [])];
+                  updated[i] = v;
+                  onUpdate?.({ ...data, assumptions: updated });
+                }}
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 15,
+                  lineHeight: 1.5,
+                  color: "var(--color-text-primary)",
+                  margin: 0,
+                  borderLeft: "3px solid var(--color-spice-terracotta)",
+                  paddingLeft: 16,
+                  flex: 1,
+                }}
+              />
+              {(data.assumptions?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      assumptions: (data.assumptions ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    opacity: hoveredAssumption === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
