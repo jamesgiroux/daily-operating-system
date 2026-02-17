@@ -653,6 +653,8 @@ export interface MeetingIntelligence {
   canEditUserLayer: boolean;
   userAgenda?: string[];
   userNotes?: string;
+  dismissedTopics?: string[];
+  hiddenAttendees?: string[];
   outcomes?: MeetingOutcomeData;
   captures: DbCapture[];
   actions: DbAction[];

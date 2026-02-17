@@ -1,0 +1,27 @@
+.heroTitle {
+  font-size: 76px;
+  font-weight: 400;
+  font-family: var(--font-serif);
+  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+  margin: 8px 0 0;
+  line-height: 1.06;
+  max-width: 780px;
+}
+
+@media (max-width: 1000px) {
+  .heroTitle {
+    font-size: 60px;
+  }
+}
+
+@media (max-width: 820px) {
+  .heroTitle {
+    font-size: 48px;
+  }
+}
+
+/* Details chevron rotation for calendar notes toggle */
+details[open] .detailsChevron {
+  transform: rotate(90deg);
+}

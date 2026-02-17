@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -14,7 +14,6 @@ import type {
   ActionWithContext,
   SourceReference,
   AttendeeContext,
-  AgendaItem,
   AccountSnapshotItem,
   MeetingOutcomeData,
   MeetingIntelligence,
@@ -24,39 +23,32 @@ import type {
   DbAction,
   LinkedEntity,
 } from "@/types";
-import type { VitalDisplay } from "@/lib/entity-types";
 import { parseDate, formatRelativeDateLong } from "@/lib/utils";
 import { CopyButton } from "@/components/ui/copy-button";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
-import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
-import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import {
+  AlignLeft,
+  AlertTriangle,
+  BookOpen,
   Check,
   ChevronRight,
-  Clock,
-  Copy,
-  Users,
-  FileText,
-  HelpCircle,
-  BookOpen,
-  AlertTriangle,
-  CheckCircle,
-  History,
-  Target,
-  CalendarDays,
-  Paperclip,
-  Loader2,
-  Trophy,
   CircleDot,
-  AlignLeft,
+  Clock,
+  Loader2,
+  Paperclip,
   RefreshCw,
+  Target,
+  Trophy,
+  Users,
 } from "lucide-react";
+import styles from "./meeting-intel.module.css";
 
 // ── Shared style fragments ──
 
@@ -78,11 +70,6 @@ const chapterHeadingStyle: React.CSSProperties = {
   color: "var(--color-text-tertiary)",
 };
 
-const editorialRule: React.CSSProperties = {
-  height: 1,
-  background: "var(--color-rule-heavy)",
-};
-
 const editorialBtn: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: 12,
@@ -93,6 +80,20 @@ const editorialBtn: React.CSSProperties = {
   borderRadius: 4,
   background: "transparent",
   color: "var(--color-text-secondary)",
+  cursor: "pointer",
+};
+
+const folioBtn: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: "var(--color-text-secondary)",
+  background: "none",
+  border: "1px solid var(--color-rule-light)",
+  borderRadius: 4,
+  padding: "2px 10px",
   cursor: "pointer",
 };
 
@@ -150,16 +151,9 @@ export default function MeetingDetailPage() {
   // Save status for folio bar
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
-  // Register magazine shell with chapter nav
-  const shellConfig = useMemo(() => ({
-    folioLabel: "Intelligence Report",
-    atmosphereColor: "turmeric" as const,
-    activePage: "today" as const,
-    backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
-    chapters: CHAPTERS,
-    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
-  }), [navigate, saveStatus]);
-  useRegisterMagazineShell(shellConfig);
+  // Persisted user overrides
+  const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
+  const [hiddenAttendees, setHiddenAttendees] = useState<string[]>([]);
 
   const loadMeetingIntelligence = useCallback(async () => {
     if (!meetingId) {
@@ -194,6 +188,8 @@ export default function MeetingDetailPage() {
         title: intel.meeting.title,
         timeRange: formatRange(intel.meeting.startTime, intel.meeting.endTime),
       };
+      setDismissedTopics(intel.dismissedTopics ?? []);
+      setHiddenAttendees(intel.hiddenAttendees ?? []);
       setData({
         ...basePrep,
         userAgenda: intel.userAgenda ?? basePrep.userAgenda,
@@ -323,6 +319,40 @@ export default function MeetingDetailPage() {
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
+  // Register magazine shell with chapter nav + folio actions
+  const shellConfig = useMemo(() => ({
+    folioLabel: "Intelligence Report",
+    atmosphereColor: "turmeric" as const,
+    activePage: "today" as const,
+    backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
+    chapters: CHAPTERS,
+    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    folioActions: data ? (
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {isEditable && (
+          <button
+            onClick={handlePrefillFromContext}
+            disabled={prefilling}
+            style={{ ...folioBtn, opacity: prefilling ? 0.5 : 1, cursor: prefilling ? "not-allowed" : "pointer" }}
+          >
+            {prefilling ? "Prefilling\u2026" : "Prefill"}
+          </button>
+        )}
+        <button onClick={handleDraftAgendaMessage} style={folioBtn}>
+          Draft Agenda
+        </button>
+        <button
+          onClick={() => loadMeetingIntelligence()}
+          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4 }}
+        >
+          <RefreshCw style={{ width: 10, height: 10 }} />
+          Refresh
+        </button>
+      </div>
+    ) : undefined,
+  }), [navigate, saveStatus, data, isEditable, prefilling, handlePrefillFromContext, handleDraftAgendaMessage, loadMeetingIntelligence]);
+  useRegisterMagazineShell(shellConfig);
+
   // ── Loading state ──
   if (loading) {
     return <EditorialLoading count={5} />;
@@ -402,7 +432,6 @@ export default function MeetingDetailPage() {
     .map((risk) => sanitizeInlineText(risk))
     .filter((risk) => risk.length > 0)
     .slice(0, 3);
-  const heroMeta = getHeroMetaItems(data);
   const lifecycle = getLifecycleForDisplay(data);
   const agendaItems = (data.proposedAgenda ?? [])
     .map((item) => ({
@@ -437,14 +466,6 @@ export default function MeetingDetailPage() {
     }
   );
 
-  // Convert heroMeta to VitalDisplay[]
-  const vitals: VitalDisplay[] = heroMeta.map((item) => ({
-    text: `${item.label}: ${item.value}`,
-    highlight: item.tone === "text-destructive" ? undefined :
-      item.tone === "text-success" ? "olive" :
-      item.tone === "text-primary" ? "turmeric" : undefined,
-  }));
-
   // Key insight — first sentence from intelligence summary
   const keyInsight = extractKeyInsight(data.intelligenceSummary, data.meetingContext);
 
@@ -468,7 +489,6 @@ export default function MeetingDetailPage() {
     recentWinsForDisplay.length > 0 ||
     (data.openItems && data.openItems.length > 0) ||
     (data.recentEmailSignals && data.recentEmailSignals.length > 0) ||
-    (data.entityReadiness && data.entityReadiness.length > 0) ||
     hasReferenceContent(data) ||
     (data.sinceLast?.length ?? 0) > 0 ||
     (data.strategicPrograms?.length ?? 0) > 0
@@ -483,7 +503,7 @@ export default function MeetingDetailPage() {
             <div style={{ paddingTop: 80 }}>
               <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
             </div>
-            <div style={{ ...editorialRule, margin: "48px 0" }} />
+            <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
             <p style={{ ...chapterHeadingStyle, marginBottom: 20 }}>
               Pre-Meeting Context
             </p>
@@ -612,38 +632,26 @@ export default function MeetingDetailPage() {
                 Meeting Intelligence Report
               </p>
 
-              {/* Title — 44px hero scale */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
-                <h1
-                  style={{
-                    fontFamily: "var(--font-serif)",
-                    fontSize: 44,
-                    fontWeight: 600,
-                    letterSpacing: "-0.01em",
-                    color: "var(--color-text-primary)",
-                    margin: 0,
-                    lineHeight: 1.1,
-                  }}
-                >
-                  {data.title}
-                </h1>
-                {lifecycle && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        letterSpacing: "0.06em",
-                        color: "var(--color-spice-turmeric)",
-                      }}
-                    >
-                      {lifecycle}
-                    </span>
+              {/* Title — 76px editorial hero scale */}
+              <h1 className={styles.heroTitle}>
+                {data.title}
+              </h1>
+              {lifecycle && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
+                  <span style={{ ...bulletDot("var(--color-spice-turmeric)"), marginTop: 0 }} />
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      letterSpacing: "0.06em",
+                      color: "var(--color-spice-turmeric)",
+                    }}
+                  >
+                    {lifecycle}
                   </span>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Metadata line */}
               <p
@@ -690,12 +698,13 @@ export default function MeetingDetailPage() {
                   <p
                     style={{
                       fontFamily: "var(--font-serif)",
-                      fontSize: 21,
+                      fontSize: 28,
                       fontStyle: "italic",
-                      fontWeight: 400,
-                      lineHeight: 1.55,
+                      fontWeight: 300,
+                      lineHeight: 1.45,
                       color: "var(--color-text-primary)",
                       margin: 0,
+                      maxWidth: 620,
                     }}
                   >
                     {keyInsight}
@@ -714,38 +723,36 @@ export default function MeetingDetailPage() {
                 </p>
               )}
 
-              {/* VitalsStrip */}
-              {vitals.length > 0 && <VitalsStrip vitals={vitals} />}
-
-              {/* Action buttons */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
-                {isEditable && (
-                  <button
-                    onClick={handlePrefillFromContext}
-                    disabled={prefilling}
+              {/* Entity Readiness — "Before This Meeting" checklist */}
+              {data.entityReadiness && data.entityReadiness.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 32,
+                    borderLeft: "3px solid var(--color-spice-turmeric)",
+                    paddingLeft: 20,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                  }}
+                >
+                  <p
                     style={{
-                      ...editorialBtn,
-                      opacity: prefilling ? 0.6 : 1,
+                      ...chapterHeadingStyle,
+                      color: "var(--color-spice-turmeric)",
+                      marginBottom: 12,
                     }}
                   >
-                    {prefilling ? "Prefilling..." : "Prefill Prep"}
-                  </button>
-                )}
-                <button
-                  onClick={handleDraftAgendaMessage}
-                  style={editorialBtn}
-                >
-                  Draft Agenda
-                </button>
-                <button
-                  onClick={() => loadMeetingIntelligence()}
-                  style={{ ...editorialBtn, display: "inline-flex", alignItems: "center", gap: 6 }}
-                >
-                  <RefreshCw style={{ width: 12, height: 12 }} />
-                  Refresh
-                </button>
-                <CopyAllButton data={data} />
-              </div>
+                    Before This Meeting
+                  </p>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+                    {data.entityReadiness.slice(0, 4).map((item, i) => (
+                      <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "var(--color-text-primary)" }}>
+                        <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
 
             {/* ================================================================
@@ -792,7 +799,7 @@ export default function MeetingDetailPage() {
                         key={i}
                         className={isHighUrgency ? "risk-pulse-once" : undefined}
                         style={{
-                          borderTop: "1px solid var(--color-rule-light)",
+                          borderTop: "1px solid rgba(30, 37, 48, 0.04)",
                           borderLeft: isHighUrgency ? "3px solid var(--color-spice-terracotta)" : "none",
                           paddingTop: 16,
                           paddingLeft: isHighUrgency ? 16 : 0,
@@ -819,7 +826,14 @@ export default function MeetingDetailPage() {
             {hasRoom && (
               <section id="the-room" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
                 <ChapterHeading title="The Room" />
-                <UnifiedAttendeeList attendees={unifiedAttendees} />
+                <UnifiedAttendeeList
+                  attendees={unifiedAttendees}
+                  isEditable={isEditable}
+                  initialHiddenNames={hiddenAttendees}
+                  meetingId={meetingId ?? undefined}
+                  userAgenda={data.userAgenda}
+                  onSaveStatus={setSaveStatus}
+                />
               </section>
             )}
 
@@ -827,105 +841,41 @@ export default function MeetingDetailPage() {
             {hasPlan && (
               <section id="your-plan" className="editorial-reveal" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
                 <ChapterHeading title="Your Plan" />
-                <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
-                  {/* Proposed agenda */}
-                  {agendaDisplayItems.length > 0 && (
-                    <div>
-                      <SectionLabel
-                        label="Proposed Agenda"
-                        icon={<Target style={{ width: 14, height: 14 }} />}
-                        copyText={formatProposedAgenda(agendaDisplayItems)}
-                        copyLabel="agenda"
-                      />
-                      <AgendaList items={agendaDisplayItems} />
-                    </div>
-                  )}
 
-                  {agendaDisplayItems.length === 0 && (
-                    <p
-                      style={{
-                        fontSize: 14,
-                        color: "var(--color-text-tertiary)",
-                        fontStyle: "italic",
-                      }}
-                    >
-                      No proposed agenda yet. Add your own agenda items below.
-                    </p>
-                  )}
+                {meetingId && prefillNotice && (
+                  <div
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 12,
+                      color: "var(--color-spice-turmeric)",
+                      borderLeft: "3px solid var(--color-spice-turmeric)",
+                      paddingLeft: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      marginBottom: 16,
+                    }}
+                  >
+                    Prefill appended new agenda/notes content.
+                  </div>
+                )}
 
-                  {meetingId && prefillNotice && (
-                    <div
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-spice-turmeric)",
-                        borderLeft: "3px solid var(--color-spice-turmeric)",
-                        paddingLeft: 12,
-                        paddingTop: 6,
-                        paddingBottom: 6,
-                      }}
-                    >
-                      Prefill appended new agenda/notes content.
-                    </div>
-                  )}
-
-                  {/* User Agenda Editor */}
-                  {meetingId && (
-                    <UserAgendaEditor
-                      meetingId={meetingId}
-                      initialAgenda={data.userAgenda}
-                      isEditable={isEditable}
-                      onSaveStatus={setSaveStatus}
-                    />
-                  )}
-
-                  {/* User Notes Editor */}
-                  {meetingId && (
-                    <UserNotesEditor
-                      meetingId={meetingId}
-                      initialNotes={data.userNotes}
-                      isEditable={isEditable}
-                      onSaveStatus={setSaveStatus}
-                    />
-                  )}
-
-                  {/* Calendar Notes */}
-                  {calendarNotes && (
-                    <div>
-                      <SectionLabel label="Calendar Notes" icon={<CalendarDays style={{ width: 14, height: 14 }} />} />
-                      <p
-                        style={{
-                          marginTop: 12,
-                          whiteSpace: "pre-wrap",
-                          fontSize: 14,
-                          color: "var(--color-text-tertiary)",
-                          lineHeight: 1.65,
-                        }}
-                      >
-                        {calendarNotes}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <UnifiedPlanEditor
+                  proposedItems={agendaDisplayItems}
+                  userAgenda={data.userAgenda}
+                  meetingId={meetingId ?? undefined}
+                  isEditable={isEditable}
+                  calendarNotes={calendarNotes}
+                  initialDismissedTopics={dismissedTopics}
+                  onSaveStatus={setSaveStatus}
+                />
               </section>
             )}
 
             {/* ================================================================
-                "You're Briefed" Marker
+                "You're Briefed" — FinisMarker
                ================================================================ */}
-            <div style={{ paddingTop: 80, textAlign: "center" }}>
-              <p
-                style={{
-                  fontFamily: "var(--font-serif)",
-                  fontSize: 16,
-                  fontStyle: "italic",
-                  fontWeight: 300,
-                  color: "var(--color-text-tertiary)",
-                  margin: 0,
-                }}
-              >
-                You&rsquo;re briefed.
-              </p>
+            <div style={{ paddingTop: 80 }}>
+              <FinisMarker />
             </div>
 
             {/* ================================================================
@@ -933,7 +883,7 @@ export default function MeetingDetailPage() {
                ================================================================ */}
             {hasDeepDive && (
               <section id="deep-dive" className="editorial-reveal-slow" style={{ paddingTop: 80, scrollMarginTop: 60 }}>
-                <div style={{ ...editorialRule, marginBottom: 16 }} />
+                <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", marginBottom: 16 }} />
                 <p style={monoOverline}>Supporting Intelligence</p>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 48, marginTop: 48 }}>
@@ -942,7 +892,6 @@ export default function MeetingDetailPage() {
                     <div>
                       <SectionLabel
                         label="Recent Wins"
-                        icon={<Trophy style={{ width: 14, height: 14, color: "var(--color-garden-sage)" }} />}
                         labelColor="var(--color-garden-sage)"
                       />
                       <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -961,7 +910,6 @@ export default function MeetingDetailPage() {
                     <div>
                       <SectionLabel
                         label="Open Items"
-                        icon={<CheckCircle style={{ width: 14, height: 14 }} />}
                         copyText={formatOpenItems(data.openItems)}
                         copyLabel="open items"
                       />
@@ -982,7 +930,7 @@ export default function MeetingDetailPage() {
                       />
                       <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
                         {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
-                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14, borderBottom: "1px solid var(--color-rule-light)", paddingBottom: 10 }}>
+                          <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14, borderBottom: "1px solid rgba(30, 37, 48, 0.04)", paddingBottom: 10 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span
                                 style={{
@@ -1017,35 +965,6 @@ export default function MeetingDetailPage() {
                     </div>
                   )}
 
-                  {/* Entity Readiness — turmeric banner */}
-                  {data.entityReadiness && data.entityReadiness.length > 0 && (
-                    <div
-                      style={{
-                        background: "rgba(201, 162, 39, 0.06)",
-                        padding: "16px 20px",
-                        borderLeft: "3px solid var(--color-spice-turmeric)",
-                      }}
-                    >
-                      <p
-                        style={{
-                          ...chapterHeadingStyle,
-                          color: "var(--color-spice-turmeric)",
-                          marginBottom: 12,
-                        }}
-                      >
-                        Before This Meeting
-                      </p>
-                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 16 }}>
-                        {data.entityReadiness.slice(0, 4).map((item, i) => (
-                          <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, color: "var(--color-text-primary)" }}>
-                            <span style={bulletDot("rgba(201, 162, 39, 0.6)")} />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
                   {/* Appendix toggle */}
                   <AppendixSection
                     data={data}
@@ -1065,7 +984,7 @@ export default function MeetingDetailPage() {
         {/* Pre-meeting: outcomes below prep if they exist (I195) */}
         {!isPastMeeting && outcomes && (
           <>
-            <div style={{ ...editorialRule, margin: "48px 0" }} />
+            <div style={{ height: 1, background: "rgba(30, 37, 48, 0.08)", margin: "48px 0" }} />
             <OutcomesSection outcomes={outcomes} onRefresh={loadMeetingIntelligence} onSaveStatus={setSaveStatus} />
           </>
         )}
@@ -1087,32 +1006,25 @@ export default function MeetingDetailPage() {
 
 function SectionLabel({
   label,
-  icon,
   labelColor,
   copyText,
   copyLabel,
 }: {
   label: string;
-  icon?: React.ReactNode;
   labelColor?: string;
   copyText?: string;
   copyLabel?: string;
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div
+      <span
         style={{
           ...chapterHeadingStyle,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
           color: labelColor || "var(--color-text-tertiary)",
         }}
       >
-        {icon}
         {label}
-      </div>
-      <div style={{ flex: 1, height: 1, background: "var(--color-rule-light)" }} />
+      </span>
       {copyText && (
         <CopyButton text={copyText} label={copyLabel} />
       )}
@@ -1120,106 +1032,33 @@ function SectionLabel({
   );
 }
 
-// =============================================================================
-// AgendaList — progressive disclosure (show 5, collapse rest)
-// =============================================================================
-
-function AgendaList({ items }: { items: Array<{ topic: string; why?: string; source?: string }> }) {
-  const [expanded, setExpanded] = useState(false);
-  const VISIBLE_COUNT = 5;
-  const visible = expanded ? items : items.slice(0, VISIBLE_COUNT);
-  const remaining = items.length - VISIBLE_COUNT;
-
-  return (
-    <>
-      <ol style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
-        {visible.map((item, i) => (
-          <li
-            key={i}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 12,
-              borderBottom: "1px solid var(--color-rule-light)",
-              paddingBottom: 14,
-            }}
-          >
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--color-spice-turmeric)",
-                width: 24,
-                textAlign: "right",
-                flexShrink: 0,
-                paddingTop: 1,
-              }}
-            >
-              {i + 1}
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, margin: 0, color: "var(--color-text-primary)" }}>
-                {item.topic}
-              </p>
-              {item.why && (
-                <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", marginTop: 4, marginBottom: 0, lineHeight: 1.5 }}>
-                  {item.why}
-                </p>
-              )}
-            </div>
-            {item.source && (
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 500,
-                  letterSpacing: "0.04em",
-                  flexShrink: 0,
-                  color: agendaSourceColor(item.source),
-                }}
-              >
-                {item.source === "calendar_note"
-                  ? "calendar"
-                  : item.source === "talking_point"
-                  ? "win"
-                  : item.source === "open_item"
-                    ? "action"
-                    : item.source}
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
-      {!expanded && remaining > 0 && (
-        <button
-          onClick={() => setExpanded(true)}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "8px 0",
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            textAlign: "left",
-          }}
-        >
-          + {remaining} more agenda item{remaining !== 1 ? "s" : ""}
-        </button>
-      )}
-    </>
-  );
-}
 
 // =============================================================================
 // Unified Attendee List (merges attendees, context, insights, signals)
 // =============================================================================
 
-function UnifiedAttendeeList({ attendees }: { attendees: UnifiedAttendee[] }) {
+function UnifiedAttendeeList({
+  attendees,
+  isEditable,
+  initialHiddenNames,
+  meetingId,
+  userAgenda,
+  onSaveStatus,
+}: {
+  attendees: UnifiedAttendee[];
+  isEditable?: boolean;
+  initialHiddenNames?: string[];
+  meetingId?: string;
+  userAgenda?: string[];
+  onSaveStatus?: (status: "idle" | "saving" | "saved") => void;
+}) {
   const [showAll, setShowAll] = useState(false);
-  const visible = showAll ? attendees : attendees.slice(0, 4);
-  const remaining = attendees.length - 4;
+  const [hiddenNames, setHiddenNames] = useState<Set<string>>(
+    new Set((initialHiddenNames ?? []).map(normalizePersonKey))
+  );
+  const filtered = attendees.filter((p) => !hiddenNames.has(normalizePersonKey(p.name)));
+  const visible = showAll ? filtered : filtered.slice(0, 4);
+  const remaining = filtered.length - 4;
 
   const tempColorMap: Record<string, string> = {
     hot: "var(--color-garden-sage)",
@@ -1253,7 +1092,7 @@ function UnifiedAttendeeList({ attendees }: { attendees: UnifiedAttendee[] }) {
               alignItems: "flex-start",
               gap: 12,
               padding: "12px 0",
-              borderBottom: "1px solid var(--color-rule-light)",
+              borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
             }}
           >
             {/* Avatar */}
@@ -1410,19 +1249,60 @@ function UnifiedAttendeeList({ attendees }: { attendees: UnifiedAttendee[] }) {
           </div>
         );
 
-        if (person.personId) {
-          return (
-            <Link
-              key={i}
-              to="/people/$personId"
-              params={{ personId: person.personId }}
-              style={{ textDecoration: "none", color: "inherit" }}
-            >
-              {inner}
-            </Link>
-          );
-        }
-        return <div key={i}>{inner}</div>;
+        const row = person.personId ? (
+          <Link
+            to="/people/$personId"
+            params={{ personId: person.personId }}
+            style={{ textDecoration: "none", color: "inherit", flex: 1, minWidth: 0 }}
+          >
+            {inner}
+          </Link>
+        ) : (
+          <div style={{ flex: 1, minWidth: 0 }}>{inner}</div>
+        );
+
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "flex-start" }}>
+            {row}
+            {isEditable && (
+              <button
+                onClick={async () => {
+                  const key = normalizePersonKey(person.name);
+                  const newHidden = new Set(hiddenNames).add(key);
+                  setHiddenNames(newHidden);
+                  if (meetingId) {
+                    onSaveStatus?.("saving");
+                    try {
+                      await invoke("update_meeting_user_agenda", {
+                        meetingId,
+                        agenda: userAgenda ?? [],
+                        hiddenAttendees: Array.from(newHidden),
+                      });
+                      onSaveStatus?.("saved");
+                      setTimeout(() => onSaveStatus?.("idle"), 2000);
+                    } catch (err) {
+                      console.error("Save failed:", err);
+                      onSaveStatus?.("idle");
+                    }
+                  }
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  lineHeight: 1,
+                  color: "var(--color-text-tertiary)",
+                  padding: "12px 4px 0",
+                  opacity: 0.35,
+                  flexShrink: 0,
+                }}
+              >
+                &times;
+              </button>
+            )}
+          </div>
+        );
       })}
 
       {!showAll && remaining > 0 && (
@@ -1450,120 +1330,76 @@ function UnifiedAttendeeList({ attendees }: { attendees: UnifiedAttendee[] }) {
 // User Editability Components (I194 / ADR-0065)
 // =============================================================================
 
-function UserNotesEditor({
+function UnifiedPlanEditor({
+  proposedItems,
+  userAgenda,
   meetingId,
-  initialNotes,
   isEditable,
+  calendarNotes,
+  initialDismissedTopics,
   onSaveStatus,
 }: {
-  meetingId: string;
-  initialNotes?: string;
+  proposedItems: Array<{ topic: string; why?: string; source?: string }>;
+  userAgenda?: string[];
+  meetingId?: string;
   isEditable: boolean;
+  calendarNotes?: string;
+  initialDismissedTopics?: string[];
   onSaveStatus: (status: "idle" | "saving" | "saved") => void;
 }) {
-  const [notes, setNotes] = useState(initialNotes || "");
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [userItems, setUserItems] = useState(userAgenda ?? []);
+  const [newItem, setNewItem] = useState("");
+  const [newItemWhy, setNewItemWhy] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [editingWhy, setEditingWhy] = useState("");
+  const [dismissedTopics, setDismissedTopics] = useState<Set<string>>(
+    new Set(initialDismissedTopics ?? [])
+  );
+  // Overrides for proposed items edited in-place (keeps position, persists as user items)
+  const [proposedOverrides, setProposedOverrides] = useState<Map<string, string>>(new Map());
 
-  // Don't render if no notes and not editable (past meeting)
-  if (!isEditable && !notes) return null;
-
-  function handleChange(value: string) {
-    setNotes(value);
-
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    onSaveStatus("saving");
-    saveTimer.current = setTimeout(async () => {
-      try {
-        await invoke("update_meeting_user_notes", { meetingId, notes: value });
-        onSaveStatus("saved");
-        setTimeout(() => onSaveStatus("idle"), 2000);
-      } catch (err) {
-        console.error("Save failed:", err);
-        onSaveStatus("idle");
-      }
-    }, 1000);
+  function parseUserItem(raw: string): { topic: string; why?: string } {
+    const sep = raw.indexOf(" — ");
+    if (sep > 0) return { topic: raw.slice(0, sep), why: raw.slice(sep + 3) };
+    const sep2 = raw.indexOf(" - ");
+    if (sep2 > 20) return { topic: raw.slice(0, sep2), why: raw.slice(sep2 + 3) };
+    return { topic: raw };
   }
 
-  return (
-    <div
-      style={{
-        borderLeft: "3px solid rgba(201, 162, 39, 0.2)",
-        paddingLeft: 20,
-        paddingTop: 16,
-        paddingBottom: 16,
-      }}
-    >
-      <p
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: "rgba(201, 162, 39, 0.7)",
-          margin: "0 0 12px",
-        }}
-      >
-        My Notes
-      </p>
-      {isEditable ? (
-        <textarea
-          value={notes}
-          onChange={(e) => handleChange(e.target.value)}
-          placeholder="Add your own notes for this meeting..."
-          style={{
-            width: "100%",
-            minHeight: 80,
-            border: "none",
-            background: "transparent",
-            padding: 0,
-            fontSize: 14,
-            lineHeight: 1.65,
-            color: "var(--color-text-primary)",
-            fontFamily: "var(--font-sans)",
-            resize: "vertical",
-            outline: "none",
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            whiteSpace: "pre-wrap",
-            fontSize: 14,
-            lineHeight: 1.65,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          {notes}
-        </div>
-      )}
-    </div>
-  );
-}
+  // Build unified list. Overridden proposed items stay in place during session;
+  // their persisted user-item copies are hidden to avoid duplicates.
+  const overriddenUserIndices = new Set<number>();
+  const overrideValues = new Set(proposedOverrides.values());
+  userItems.forEach((raw, i) => { if (overrideValues.has(raw)) overriddenUserIndices.add(i); });
 
-function UserAgendaEditor({
-  meetingId,
-  initialAgenda,
-  isEditable,
-  onSaveStatus,
-}: {
-  meetingId: string;
-  initialAgenda?: string[];
-  isEditable: boolean;
-  onSaveStatus: (status: "idle" | "saving" | "saved") => void;
-}) {
-  const [agenda, setAgenda] = useState(initialAgenda || []);
-  const [newItem, setNewItem] = useState("");
-  const countRef = useRef<HTMLSpanElement>(null);
+  const allItems: Array<{ topic: string; why?: string; source?: string; isUser: boolean; userIndex?: number; originalProposedTopic?: string }> = [
+    ...proposedItems
+      .filter((item) => !dismissedTopics.has(item.topic) || proposedOverrides.has(item.topic))
+      .map((item) => {
+        const override = proposedOverrides.get(item.topic);
+        if (override) {
+          const parsed = parseUserItem(override);
+          return { ...parsed, source: item.source, isUser: false, originalProposedTopic: item.topic };
+        }
+        return { ...item, isUser: false, originalProposedTopic: item.topic };
+      }),
+    ...userItems
+      .map((raw, i) => ({ ...parseUserItem(raw), isUser: true as const, userIndex: i }))
+      .filter((item) => !overriddenUserIndices.has(item.userIndex!)),
+  ];
 
-  // Don't render if no agenda and not editable
-  if (!isEditable && agenda.length === 0) return null;
-
-  async function saveAgenda(updatedAgenda: string[]) {
+  async function saveLayer(updatedItems: string[], updatedDismissed?: Set<string>) {
+    if (!meetingId) return;
     onSaveStatus("saving");
     try {
-      await invoke("update_meeting_user_agenda", { meetingId, agenda: updatedAgenda });
-      setAgenda(updatedAgenda);
+      const dismissed = Array.from(updatedDismissed ?? dismissedTopics);
+      await invoke("update_meeting_user_agenda", {
+        meetingId,
+        agenda: updatedItems,
+        dismissedTopics: dismissed.length > 0 ? dismissed : null,
+      });
+      setUserItems(updatedItems);
       onSaveStatus("saved");
       setTimeout(() => onSaveStatus("idle"), 2000);
     } catch (err) {
@@ -1574,121 +1410,323 @@ function UserAgendaEditor({
 
   function addItem() {
     if (!newItem.trim()) return;
-    saveAgenda([...agenda, newItem.trim()]);
+    const topic = newItem.trim();
+    const why = newItemWhy.trim();
+    const text = why ? `${topic} — ${why}` : topic;
+    saveLayer([...userItems, text]);
     setNewItem("");
-    // Pulse the count to acknowledge addition
-    if (countRef.current) {
-      countRef.current.classList.remove("agenda-count-pulse");
-      void countRef.current.offsetWidth; // force reflow
-      countRef.current.classList.add("agenda-count-pulse");
+    setNewItemWhy("");
+  }
+
+  function removeItem(userIndex: number) {
+    saveLayer(userItems.filter((_, i) => i !== userIndex));
+  }
+
+  function startEditing(listIndex: number, field: "topic" | "why" = "topic") {
+    if (!isEditable) return;
+    setEditingIndex(listIndex);
+    setEditingValue(allItems[listIndex].topic);
+    setEditingWhy(allItems[listIndex].why ?? "");
+    // Focus the why field if that's what was clicked
+    if (field === "why") {
+      requestAnimationFrame(() => {
+        document.getElementById(`plan-why-${listIndex}`)?.focus();
+      });
     }
   }
 
-  function removeItem(index: number) {
-    saveAgenda(agenda.filter((_, i) => i !== index));
+  function commitEdit() {
+    if (editingIndex == null) return;
+    const item = allItems[editingIndex];
+    const trimmed = editingValue.trim();
+    const trimmedWhy = editingWhy.trim();
+    if (!trimmed) {
+      setEditingIndex(null);
+      return;
+    }
+    const topicChanged = trimmed !== item.topic;
+    const whyChanged = trimmedWhy !== (item.why ?? "");
+    if (item.isUser && item.userIndex != null) {
+      const updated = [...userItems];
+      updated[item.userIndex] = trimmedWhy ? `${trimmed} — ${trimmedWhy}` : trimmed;
+      saveLayer(updated);
+    } else if (!item.isUser && item.originalProposedTopic && (topicChanged || whyChanged)) {
+      // Override proposed item in-place (stays in same position)
+      const newText = trimmedWhy ? `${trimmed} — ${trimmedWhy}` : trimmed;
+      setProposedOverrides((prev) => new Map(prev).set(item.originalProposedTopic!, newText));
+      // Persist: store the override as a user item + dismiss the original
+      const newDismissed = new Set(dismissedTopics).add(item.originalProposedTopic);
+      setDismissedTopics(newDismissed);
+      saveLayer([...userItems, newText], newDismissed);
+    }
+    setEditingIndex(null);
+  }
+
+  if (allItems.length === 0 && !isEditable && !calendarNotes) {
+    return (
+      <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
+        No agenda prepared yet.
+      </p>
+    );
   }
 
   return (
-    <div
-      style={{
-        borderLeft: "3px solid rgba(201, 162, 39, 0.2)",
-        paddingLeft: 20,
-        paddingTop: 16,
-        paddingBottom: 16,
-      }}
-    >
-      <p
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: "rgba(201, 162, 39, 0.7)",
-          margin: "0 0 12px",
-        }}
-      >
-        My Agenda{" "}
-        {agenda.length > 0 && (
-          <span
-            ref={countRef}
-            style={{ fontWeight: 400, color: "rgba(201, 162, 39, 0.5)" }}
-          >
-            ({agenda.length})
-          </span>
-        )}
-      </p>
-      {agenda.length > 0 && (
-        <ol style={{ listStyle: "none", margin: "0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-          {agenda.map((item, i) => (
-            <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {/* Unified numbered list */}
+      {allItems.length > 0 && (
+        <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 0 }}>
+          {allItems.map((item, i) => (
+            <li
+              key={`${item.isUser ? "u" : "p"}-${i}`}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
+                padding: "12px 0",
+              }}
+            >
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 12,
-                  fontWeight: 500,
-                  color: "rgba(201, 162, 39, 0.5)",
-                  width: 16,
+                  fontWeight: 600,
+                  color: "var(--color-spice-turmeric)",
+                  width: 24,
                   textAlign: "right",
                   flexShrink: 0,
                   paddingTop: 1,
                 }}
               >
-                {i + 1}.
+                {i + 1}
               </span>
-              <span style={{ flex: 1, fontSize: 14, lineHeight: 1.55, color: "var(--color-text-primary)" }}>{item}</span>
-              {isEditable && (
-                <button
-                  onClick={() => removeItem(i)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    fontSize: 16,
-                    lineHeight: 1,
-                    color: "var(--color-text-tertiary)",
-                    padding: "0 4px",
-                    opacity: 0.5,
-                  }}
-                >
-                  &times;
-                </button>
-              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingIndex === i && isEditable ? (
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                    onBlur={(e) => {
+                      // Only commit if focus leaves both inputs (not moving between them)
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                        commitEdit();
+                      }
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitEdit();
+                        if (e.key === "Escape") setEditingIndex(null);
+                      }}
+                      style={{
+                        width: "100%",
+                        border: "none",
+                        borderBottom: "1px solid var(--color-spice-turmeric)",
+                        background: "transparent",
+                        padding: "2px 0",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        color: "var(--color-text-primary)",
+                        fontFamily: "var(--font-sans)",
+                        outline: "none",
+                      }}
+                    />
+                    <input
+                      id={`plan-why-${i}`}
+                      value={editingWhy}
+                      onChange={(e) => setEditingWhy(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitEdit();
+                        if (e.key === "Escape") setEditingIndex(null);
+                      }}
+                      placeholder="Why this matters..."
+                      style={{
+                        width: "100%",
+                        border: "none",
+                        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
+                        background: "transparent",
+                        padding: "2px 0",
+                        fontSize: 13,
+                        color: "var(--color-text-tertiary)",
+                        fontFamily: "var(--font-sans)",
+                        outline: "none",
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <p
+                      onClick={() => startEditing(i)}
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 500,
+                        lineHeight: 1.4,
+                        margin: 0,
+                        color: "var(--color-text-primary)",
+                        cursor: isEditable ? "text" : "default",
+                      }}
+                    >
+                      {item.topic}
+                    </p>
+                    {item.why && (
+                      <p
+                        onClick={() => startEditing(i, "why")}
+                        style={{
+                          fontSize: 13,
+                          color: "var(--color-text-tertiary)",
+                          marginTop: 4,
+                          marginBottom: 0,
+                          lineHeight: 1.5,
+                          cursor: isEditable ? "text" : "default",
+                        }}
+                      >
+                        {item.why}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                {isEditable && (
+                  <button
+                    onClick={() => {
+                      if (item.isUser && item.userIndex != null) {
+                        removeItem(item.userIndex);
+                      } else if (!item.isUser && item.originalProposedTopic) {
+                        const origTopic = item.originalProposedTopic;
+                        // Remove any override for this item
+                        const newOverrides = new Map(proposedOverrides);
+                        const overrideText = newOverrides.get(origTopic);
+                        newOverrides.delete(origTopic);
+                        setProposedOverrides(newOverrides);
+                        // Dismiss the original
+                        const newDismissed = new Set(dismissedTopics).add(origTopic);
+                        setDismissedTopics(newDismissed);
+                        // Remove the persisted user-item copy if it exists
+                        const cleaned = overrideText
+                          ? userItems.filter((u) => u !== overrideText)
+                          : userItems;
+                        saveLayer(cleaned, newDismissed);
+                      }
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 16,
+                      lineHeight: 1,
+                      color: "var(--color-text-tertiary)",
+                      padding: "0 4px",
+                      opacity: 0.5,
+                    }}
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ol>
       )}
-      {isEditable && (
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            value={newItem}
-            onChange={(e) => setNewItem(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addItem()}
-            placeholder="Add agenda item..."
+
+      {/* Ghost input — topic + why */}
+      {isEditable && meetingId && (
+        <div style={{ display: "flex", gap: 12, paddingTop: 12, alignItems: "flex-start" }}>
+          <span
             style={{
-              flex: 1,
-              border: "none",
-              borderBottom: "1px solid var(--color-rule-light)",
-              background: "transparent",
-              padding: "4px 0",
-              fontSize: 14,
-              color: "var(--color-text-primary)",
-              fontFamily: "var(--font-sans)",
-              outline: "none",
-            }}
-          />
-          <button
-            onClick={addItem}
-            style={{
-              ...editorialBtn,
-              color: "var(--color-spice-turmeric)",
-              borderColor: "transparent",
-              padding: "4px 12px",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "rgba(201, 162, 39, 0.3)",
+              width: 24,
+              textAlign: "right",
+              flexShrink: 0,
+              paddingTop: 5,
             }}
           >
-            Add
-          </button>
+            {allItems.length + 1}
+          </span>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+            <input
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addItem()}
+              placeholder="Add agenda item..."
+              style={{
+                width: "100%",
+                border: "none",
+                borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
+                background: "transparent",
+                padding: "4px 0",
+                fontSize: 14,
+                fontWeight: 500,
+                color: "var(--color-text-primary)",
+                fontFamily: "var(--font-sans)",
+                outline: "none",
+              }}
+            />
+            {newItem.trim() && (
+              <input
+                value={newItemWhy}
+                onChange={(e) => setNewItemWhy(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addItem()}
+                placeholder="Why this matters..."
+                style={{
+                  width: "100%",
+                  border: "none",
+                  borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
+                  background: "transparent",
+                  padding: "4px 0",
+                  fontSize: 13,
+                  color: "var(--color-text-tertiary)",
+                  fontFamily: "var(--font-sans)",
+                  outline: "none",
+                }}
+              />
+            )}
+          </div>
         </div>
+      )}
+
+      {/* Calendar description — collapsed toggle */}
+      {calendarNotes && (
+        <details style={{ marginTop: 24 }}>
+          <summary
+            style={{
+              ...chapterHeadingStyle,
+              cursor: "pointer",
+              userSelect: "none",
+              listStyle: "none",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <ChevronRight
+              style={{
+                width: 12,
+                height: 12,
+                transition: "transform 0.2s",
+              }}
+              className={styles.detailsChevron}
+            />
+            Calendar Description
+          </summary>
+          <p
+            style={{
+              marginTop: 12,
+              marginBottom: 0,
+              whiteSpace: "pre-wrap",
+              fontSize: 14,
+              color: "var(--color-text-tertiary)",
+              lineHeight: 1.65,
+              paddingLeft: 18,
+            }}
+          >
+            {calendarNotes}
+          </p>
+        </details>
       )}
     </div>
   );
@@ -1952,29 +1990,6 @@ function OutcomeActionRow({
 // Shared Components
 // =============================================================================
 
-function CopyAllButton({ data }: { data: FullMeetingPrep }) {
-  const { copied, copy } = useCopyToClipboard();
-
-  return (
-    <button
-      onClick={() => copy(formatFullPrep(data))}
-      style={{
-        ...editorialBtn,
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-      }}
-    >
-      {copied ? (
-        <Check style={{ width: 12, height: 12, color: "var(--color-garden-sage)" }} />
-      ) : (
-        <Copy style={{ width: 12, height: 12 }} />
-      )}
-      Copy All
-    </button>
-  );
-}
-
 function ActionItem({ action }: { action: ActionWithContext }) {
   return (
     <div
@@ -1982,19 +1997,13 @@ function ActionItem({ action }: { action: ActionWithContext }) {
         display: "flex",
         alignItems: "flex-start",
         gap: 10,
-        borderBottom: action.isOverdue
-          ? "1px solid var(--color-spice-terracotta)"
-          : "1px solid var(--color-rule-light)",
+        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
         paddingBottom: 10,
         paddingLeft: action.isOverdue ? 12 : 0,
         borderLeft: action.isOverdue ? "3px solid var(--color-spice-terracotta)" : "none",
       }}
     >
-      {action.isOverdue ? (
-        <AlertTriangle style={{ width: 16, height: 16, color: "var(--color-spice-terracotta)", marginTop: 2, flexShrink: 0 }} />
-      ) : (
-        <CheckCircle style={{ width: 16, height: 16, color: "var(--color-text-tertiary)", marginTop: 2, flexShrink: 0 }} />
-      )}
+      <span style={bulletDot(action.isOverdue ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)")} />
       <div style={{ flex: 1 }}>
         <p style={{ fontWeight: 500, fontSize: 14, color: "var(--color-text-primary)", margin: 0 }}>
           {action.title}
@@ -2028,7 +2037,7 @@ function ReferenceRow({ reference }: { reference: SourceReference }) {
         alignItems: "center",
         justifyContent: "space-between",
         padding: "8px 12px",
-        borderBottom: "1px solid var(--color-rule-light)",
+        borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
       }}
     >
       <div>
@@ -2091,7 +2100,7 @@ function AppendixSection({
   if (!hasContent) return null;
 
   return (
-    <section id="appendix" style={{ borderTop: "1px solid var(--color-rule-heavy)", paddingTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+    <section id="appendix" style={{ paddingTop: 24, display: "flex", flexDirection: "column", gap: 16 }}>
       <p style={monoOverline}>Appendix</p>
       <button
         onClick={() => setOpen(!open)}
@@ -2124,7 +2133,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Full Intelligence Summary"
-                icon={<FileText style={{ width: 14, height: 14 }} />}
                 copyText={data.intelligenceSummary}
                 copyLabel="summary"
               />
@@ -2154,7 +2162,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Since Last Meeting"
-                icon={<History style={{ width: 14, height: 14 }} />}
                 copyText={formatBulletList(data.sinceLast)}
                 copyLabel="since last meeting"
               />
@@ -2173,7 +2180,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Strategic Programs"
-                icon={<Target style={{ width: 14, height: 14 }} />}
                 copyText={formatBulletList(data.strategicPrograms)}
                 copyLabel="programs"
               />
@@ -2200,7 +2206,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Full Context"
-                icon={<FileText style={{ width: 14, height: 14 }} />}
                 copyText={data.meetingContext}
                 copyLabel="context"
               />
@@ -2237,7 +2242,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Questions to Surface"
-                icon={<HelpCircle style={{ width: 14, height: 14 }} />}
                 copyText={formatNumberedList(data.questions)}
                 copyLabel="questions"
               />
@@ -2269,7 +2273,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label="Key Principles"
-                icon={<BookOpen style={{ width: 14, height: 14 }} />}
                 copyText={formatBulletList(data.keyPrinciples)}
                 copyLabel="principles"
               />
@@ -2299,7 +2302,6 @@ function AppendixSection({
             <section>
               <SectionLabel
                 label={`Extended Stakeholder Map (${extendedStakeholderInsights.length})`}
-                icon={<Users style={{ width: 14, height: 14 }} />}
               />
               <StakeholderInsightList people={extendedStakeholderInsights} />
             </section>
@@ -2341,7 +2343,7 @@ function StakeholderInsightList({ people }: { people: StakeholderInsight[] }) {
             display: "flex",
             alignItems: "flex-start",
             gap: 12,
-            borderBottom: "1px solid var(--color-rule-light)",
+            borderBottom: "1px solid rgba(30, 37, 48, 0.04)",
             paddingBottom: 10,
           }}
         >
@@ -2486,17 +2488,6 @@ function buildUnifiedAttendees(
   return Array.from(byKey.values());
 }
 
-function agendaSourceColor(source: string): string {
-  switch (source) {
-    case "calendar_note": return "var(--color-spice-turmeric)";
-    case "risk": return "var(--color-spice-terracotta)";
-    case "question": return "var(--color-text-tertiary)";
-    case "open_item": return "var(--color-spice-turmeric)";
-    case "talking_point": return "var(--color-garden-sage)";
-    default: return "var(--color-text-tertiary)";
-  }
-}
-
 function hasReferenceContent(data: FullMeetingPrep): boolean {
   return Boolean(
     (data.meetingContext && data.meetingContext.split("\n").length > 3) ||
@@ -2517,52 +2508,6 @@ function getLifecycleForDisplay(data: FullMeetingPrep): string | null {
   return clean;
 }
 
-function getHeroMetaItems(data: FullMeetingPrep): Array<{ label: string; value: string; tone?: string }> {
-  const rows: Array<{ label: string; value: string; tone?: string }> = [];
-  const add = (label: string, value: string | null | undefined) => {
-    const clean = value ? sanitizeInlineText(value) : "";
-    if (!clean) return;
-    if (rows.some((r) => r.label === label)) return;
-    rows.push({
-      label,
-      value: clean,
-      tone: resolveMetaTone(label, clean),
-    });
-  };
-
-  add(
-    "Health",
-    findSnapshotValue(data.accountSnapshot, ["health"]) ??
-      findQuickContextValue(data.quickContext, "health"),
-  );
-  add(
-    "ARR",
-    findSnapshotValue(data.accountSnapshot, ["arr"]) ??
-      findQuickContextValue(data.quickContext, "arr"),
-  );
-  add(
-    "Renewal",
-    findSnapshotValue(data.accountSnapshot, ["renewal"]) ??
-      findQuickContextValue(data.quickContext, "renewal"),
-  );
-  add(
-    "Ring",
-    findSnapshotValue(data.accountSnapshot, ["ring"]) ??
-      findQuickContextValue(data.quickContext, "ring"),
-  );
-
-  return rows.slice(0, 4);
-}
-
-function resolveMetaTone(label: string, value: string): string | undefined {
-  const v = value.toLowerCase();
-  if (label.toLowerCase() === "health") {
-    if (v.includes("red") || v.includes("risk")) return "text-destructive";
-    if (v.includes("green")) return "text-success";
-    if (v.includes("yellow")) return "text-primary";
-  }
-  return undefined;
-}
 
 function findSnapshotValue(
   items: AccountSnapshotItem[] | undefined,
@@ -2730,45 +2675,6 @@ function formatNumberedList(items: string[]): string {
   return items.map((item, i) => `${i + 1}. ${item}`).join("\n");
 }
 
-function formatQuickContext(items: [string, string][]): string {
-  return items.map(([key, value]) => `${key}: ${value}`).join("\n");
-}
-
-function formatProposedAgenda(items: AgendaItem[]): string {
-  return items
-    .map((a, i) => {
-      let line = `${i + 1}. ${cleanPrepLine(a.topic)}`;
-      if (a.why) line += ` \u2014 ${cleanPrepLine(a.why)}`;
-      return line;
-    })
-    .join("\n");
-}
-
-function formatAttendeeContext(people: AttendeeContext[]): string {
-  return people
-    .map((p) => {
-      const parts = [p.name];
-      if (p.role) parts.push(p.role);
-      if (p.organization) parts.push(p.organization);
-      const meta: string[] = [];
-      if (p.temperature) meta.push(p.temperature);
-      if (p.meetingCount != null) meta.push(`${p.meetingCount} meetings`);
-      if (meta.length > 0) parts.push(`(${meta.join(", ")})`);
-      return `- ${parts.join(" \u2014 ")}`;
-    })
-    .join("\n");
-}
-
-function formatAttendees(attendees: Stakeholder[]): string {
-  return attendees
-    .map((a) => {
-      const parts = [a.name];
-      if (a.role) parts.push(a.role);
-      return `- ${parts.join(" \u2014 ")}`;
-    })
-    .join("\n");
-}
-
 function formatOpenItems(items: ActionWithContext[]): string {
   return items
     .map((item) => {
@@ -2780,82 +2686,3 @@ function formatOpenItems(items: ActionWithContext[]): string {
     .join("\n");
 }
 
-function formatFullPrep(data: FullMeetingPrep): string {
-  const sections: string[] = [];
-
-  sections.push(`# ${data.title}`);
-  if (data.timeRange) sections.push(data.timeRange);
-
-  if (data.accountSnapshot && data.accountSnapshot.length > 0) {
-    sections.push(`\n## Account Snapshot\n${data.accountSnapshot.map(s => `${s.label}: ${s.value}`).join("\n")}`);
-  } else if (data.quickContext && data.quickContext.length > 0) {
-    sections.push(`\n## Quick Context\n${formatQuickContext(data.quickContext)}`);
-  }
-
-  if (data.meetingContext) {
-    sections.push(`\n## Context\n${data.meetingContext}`);
-  }
-
-  const calNotes = normalizeCalendarNotes(data.calendarNotes);
-  if (calNotes) {
-    sections.push(`\n## Calendar Notes\n${calNotes}`);
-  }
-
-  if (data.proposedAgenda && data.proposedAgenda.length > 0) {
-    const cleanAgenda = data.proposedAgenda
-      .map((item) => ({ ...item, topic: cleanPrepLine(item.topic), why: item.why ? cleanPrepLine(item.why) : undefined }))
-      .filter((item) => item.topic.length > 0);
-    if (cleanAgenda.length > 0) {
-      sections.push(`\n## Agenda\n${formatProposedAgenda(cleanAgenda)}`);
-    }
-  }
-
-  if (data.userAgenda && data.userAgenda.length > 0) {
-    sections.push(`\n## My Agenda\n${data.userAgenda.map((a, i) => `${i + 1}. ${a}`).join("\n")}`);
-  }
-
-  if (data.userNotes) {
-    sections.push(`\n## My Notes\n${data.userNotes}`);
-  }
-
-  if (data.attendeeContext && data.attendeeContext.length > 0) {
-    sections.push(`\n## People in the Room\n${formatAttendeeContext(data.attendeeContext)}`);
-  } else if (data.attendees && data.attendees.length > 0) {
-    sections.push(`\n## Key Attendees\n${formatAttendees(data.attendees)}`);
-  }
-
-  if (data.sinceLast && data.sinceLast.length > 0) {
-    sections.push(`\n## Since Last Meeting\n${formatBulletList(data.sinceLast)}`);
-  }
-
-  if (data.strategicPrograms && data.strategicPrograms.length > 0) {
-    sections.push(`\n## Current Strategic Programs\n${formatBulletList(data.strategicPrograms)}`);
-  }
-
-  if (data.currentState && data.currentState.length > 0) {
-    sections.push(`\n## Current State\n${formatBulletList(data.currentState)}`);
-  }
-
-  if (data.risks && data.risks.length > 0) {
-    sections.push(`\n## Risks\n${formatBulletList(data.risks)}`);
-  }
-
-  const { wins: summaryWins } = deriveRecentWins(data);
-  if (summaryWins.length > 0) {
-    sections.push(`\n## Recent Wins\n${formatNumberedList(summaryWins)}`);
-  }
-
-  if (data.openItems && data.openItems.length > 0) {
-    sections.push(`\n## Open Items\n${formatOpenItems(data.openItems)}`);
-  }
-
-  if (data.questions && data.questions.length > 0) {
-    sections.push(`\n## Questions\n${formatNumberedList(data.questions)}`);
-  }
-
-  if (data.keyPrinciples && data.keyPrinciples.length > 0) {
-    sections.push(`\n## Key Principles\n${formatBulletList(data.keyPrinciples)}`);
-  }
-
-  return sections.join("\n");
-}
