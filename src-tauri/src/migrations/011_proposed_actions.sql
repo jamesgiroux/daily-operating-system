@@ -31,10 +31,10 @@ CREATE TABLE actions (
     needs_decision INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_actions_status ON actions(status);
-CREATE INDEX idx_actions_due_date ON actions(due_date);
-CREATE INDEX idx_actions_account ON actions(account_id);
-CREATE INDEX idx_actions_status_due_date ON actions(status, due_date);
+CREATE INDEX IF NOT EXISTS idx_actions_status ON actions(status);
+CREATE INDEX IF NOT EXISTS idx_actions_due_date ON actions(due_date);
+CREATE INDEX IF NOT EXISTS idx_actions_account ON actions(account_id);
+CREATE INDEX IF NOT EXISTS idx_actions_status_due_date ON actions(status, due_date);
 
 -- 4. Reinsert data
 INSERT INTO actions SELECT * FROM actions_backup;
