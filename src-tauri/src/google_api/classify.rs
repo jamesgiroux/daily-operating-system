@@ -275,6 +275,7 @@ mod tests {
             start: "2026-02-08T09:00:00-05:00".to_string(),
             end: "2026-02-08T10:00:00-05:00".to_string(),
             attendees: attendees.iter().map(|s| s.to_string()).collect(),
+            attendee_rsvp: std::collections::HashMap::new(),
             organizer: "me@company.com".to_string(),
             description: String::new(),
             location: String::new(),
