@@ -691,6 +691,8 @@ pub enum Priority {
 pub enum ActionStatus {
     Pending,
     Completed,
+    Proposed,
+    Archived,
 }
 
 /// A single action item
