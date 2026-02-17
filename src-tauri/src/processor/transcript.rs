@@ -17,8 +17,14 @@ use crate::util::wrap_user_data;
 use super::enrich::parse_enrichment_response;
 use super::hooks;
 
-/// Timeout for transcript AI processing (2 minutes)
-const TRANSCRIPT_AI_TIMEOUT_SECS: u64 = 120;
+/// Timeout for transcript AI processing (3 minutes — larger transcripts need more time)
+const TRANSCRIPT_AI_TIMEOUT_SECS: u64 = 180;
+
+/// Maximum transcript content sent to AI (covers ~75 min calls).
+const TRANSCRIPT_MAX_CHARS: usize = 60_000;
+
+/// Head portion kept for tail-biased truncation (attendee context, meeting opening).
+const TRANSCRIPT_HEAD_KEEP: usize = 3_000;
 
 /// Process a transcript file with meeting context.
 ///
@@ -118,6 +124,9 @@ pub fn process_transcript(
         }
     };
 
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(workspace, "transcript", &meeting.id, &output);
+
     // Debug: log raw Claude output for transcript processing
     log::info!(
         "Transcript AI output for '{}' ({} bytes): {}",
@@ -136,6 +145,8 @@ pub fn process_transcript(
     let wins = parsed.wins.clone();
     let risks = parsed.risks.clone();
     let decisions = parsed.decisions.clone();
+    let discussion = parsed.discussion.clone();
+    let analysis = parsed.analysis.clone();
 
     // Extract actions to SQLite
     let mut extracted_actions = Vec::new();
@@ -268,6 +279,8 @@ pub fn process_transcript(
         risks,
         decisions,
         actions: extracted_actions,
+        discussion,
+        analysis,
         message: debug_message,
     }
 }
@@ -349,45 +362,78 @@ fn extract_transcript_actions(
     }
 }
 
+/// Truncate transcript content with a tail-biased strategy.
+///
+/// For very long transcripts (>60K chars), keeps the first 3K chars (attendee
+/// context, meeting opening) plus the last 57K chars (substantive discussion).
+/// This prevents social preamble from dominating the AI's analysis window.
+fn truncate_transcript(content: &str) -> String {
+    if content.len() <= TRANSCRIPT_MAX_CHARS {
+        return content.to_string();
+    }
+
+    // Find valid UTF-8 boundaries for the head slice
+    let mut head_end = TRANSCRIPT_HEAD_KEEP;
+    while head_end > 0 && !content.is_char_boundary(head_end) {
+        head_end -= 1;
+    }
+
+    // Find valid UTF-8 boundary for the tail slice
+    let tail_len = TRANSCRIPT_MAX_CHARS - head_end - 30; // 30 chars for the splice marker
+    let mut tail_start = content.len() - tail_len;
+    while tail_start < content.len() && !content.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+
+    format!(
+        "{}\n\n[... truncated {} chars ...]\n\n{}",
+        &content[..head_end],
+        tail_start - head_end,
+        &content[tail_start..],
+    )
+}
+
 /// Build the meeting-contextualized prompt for transcript analysis.
 pub fn build_transcript_prompt(meeting: &CalendarEvent, content: &str) -> String {
-    // Truncate very long transcripts
-    let truncated = if content.len() > 15000 {
-        let mut end = 15000;
-        while end > 0 && !content.is_char_boundary(end) {
-            end -= 1;
-        }
-        &content[..end]
-    } else {
-        content
-    };
+    let truncated = truncate_transcript(content);
 
     let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
     let account = meeting.account.as_deref().unwrap_or("N/A");
     let date = meeting.end.format("%Y-%m-%d").to_string();
 
     format!(
-        r#"You are analyzing a transcript from a specific meeting. Extract outcomes.
+        r#"You are analyzing a transcript from a {meeting_type} meeting.
 
 Meeting: "{title}"
 Account: {account}
-Type: {meeting_type}
 Date: {date}
+
+IMPORTANT: Focus on the substantive business discussion. Skip social chitchat,
+internal team banter, and small talk that typically occurs at the start of calls.
+Prioritize customer-facing content — what the customer said, asked, or committed to.
 
 Respond in exactly this format:
 
-SUMMARY: <2-3 sentence summary of the meeting discussion and outcomes>
+SUMMARY: <2-3 sentence executive summary focused on business outcomes and decisions, not a chronological recap. Who met, what was substantively discussed, key outcomes.>
+
+DISCUSSION:
+- <Topic 1>: <What was discussed, decided, or committed to. Include direct customer quotes where they reveal priorities, concerns, or sentiment.>
+- <Topic 2>: ...
+END_DISCUSSION
+
+ANALYSIS: <1-2 sentences of strategic TAM-perspective insight — connect what happened in this meeting to account health, expansion potential, or renewal risk.>
+
 ACTIONS:
 - <concise action title> P1/P2/P3 @Account due: YYYY-MM-DD #"context sentence"
 END_ACTIONS
 WINS:
-- <positive outcome, success signal, or customer win>
+- <customer win, positive outcome, expansion signal>
 END_WINS
 RISKS:
-- <risk, concern, blocker, or issue raised>
+- <churn signal, concern, blocker>
 END_RISKS
 DECISIONS:
-- <key decision made during the meeting, including who decided and the rationale if stated>
+- <explicit decision made, who decided, any conditions>
 END_DECISIONS
 
 Rules for actions:
@@ -423,7 +469,7 @@ Transcript:
         account = wrap_user_data(account),
         meeting_type = meeting_type,
         date = date,
-        content = wrap_user_data(truncated),
+        content = wrap_user_data(&truncated),
     )
 }
 
@@ -506,6 +552,8 @@ impl Default for TranscriptResult {
             risks: Vec::new(),
             decisions: Vec::new(),
             actions: Vec::new(),
+            discussion: Vec::new(),
+            analysis: None,
             message: None,
         }
     }
@@ -541,10 +589,33 @@ mod tests {
         assert!(prompt.contains("customer"));
         assert!(prompt.contains("Hello world transcript"));
         assert!(prompt.contains("DECISIONS:"));
+        assert!(prompt.contains("DISCUSSION:"));
+        assert!(prompt.contains("ANALYSIS:"));
+        // Verify focus on substance over chitchat
+        assert!(prompt.contains("Skip social chitchat"));
         // Verify concise title instructions
         assert!(prompt.contains("max 10 words"));
         // Verify quoted context format
         assert!(prompt.contains("#\""));
+    }
+
+    #[test]
+    fn test_truncate_transcript_short() {
+        let short = "Short transcript content";
+        assert_eq!(truncate_transcript(short), short);
+    }
+
+    #[test]
+    fn test_truncate_transcript_long() {
+        // Create content longer than TRANSCRIPT_MAX_CHARS
+        let long_content = "A".repeat(70_000);
+        let result = truncate_transcript(&long_content);
+        assert!(result.len() < long_content.len());
+        assert!(result.contains("[... truncated"));
+        // Head should be preserved
+        assert!(result.starts_with("AAA"));
+        // Tail should be preserved
+        assert!(result.ends_with("AAA"));
     }
 
     #[test]
