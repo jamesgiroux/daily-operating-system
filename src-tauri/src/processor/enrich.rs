@@ -10,6 +10,7 @@ use chrono::Utc;
 use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{ModelTier, PtyManager};
 use crate::types::AiModelConfig;
+use crate::util::wrap_user_data;
 
 use super::classifier::Classification;
 use super::router::{move_file, resolve_destination};
@@ -353,6 +354,8 @@ Filename: {filename}
 Content:
 {truncated}
 "#,
+        filename = wrap_user_data(filename),
+        truncated = wrap_user_data(truncated),
     )
 }
 
@@ -536,6 +539,12 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         actions_text = Some(actions_buf);
     }
 
+    // Cap array sizes to prevent oversized output (I296)
+    discussion.truncate(20);
+    wins.truncate(10);
+    risks.truncate(20);
+    decisions.truncate(20);
+
     ParsedEnrichment {
         file_type,
         account,
@@ -562,6 +571,7 @@ pub fn extract_actions_from_ai(
 
     let now = Utc::now().to_rfc3339();
     let mut count = 0;
+    let max_actions = 50; // I296: cap parsed actions
 
     for line in actions_text.lines() {
         let trimmed = line.trim();
@@ -617,6 +627,10 @@ pub fn extract_actions_from_ai(
             log::warn!("Failed to insert AI-extracted action: {}", e);
         } else {
             count += 1;
+            if count >= max_actions {
+                log::info!("extract_actions_from_ai: hit max {} actions, stopping", max_actions);
+                break;
+            }
         }
     }
 

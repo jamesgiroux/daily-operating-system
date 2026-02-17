@@ -20,16 +20,17 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Montserrat:wght@800&amp;family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&amp;display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/site.css">
   <noscript><style>.fade-in { opacity: 1; transform: none; }</style></noscript>
 </head>
 <body>
+  <div class="atmosphere"></div>
   <div class="site-nav-wrap">
     <nav class="site-nav" aria-label="Primary">
       <div class="site-nav-inner">
         <a href="/" class="site-logo">
-          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#1a1f24"/><polygon points="18 4 6 18 15 18 14 28 26 14 17 14 18 4" fill="#c9a227"/></svg>
+          <svg viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
           DailyOS
         </a>
         <button class="nav-toggle" aria-label="Toggle menu" aria-expanded="false">
@@ -39,390 +40,225 @@
           <li><a href="/">Home</a></li>
           <li><a href="/tour.html" class="active">Tour</a></li>
           <li><a href="/philosophy.html">Philosophy</a></li>
-          <li><a href="/setup.html" class="cta-link">Access (A12s)</a></li>
+          <li><a href="/setup.html" class="cta-link">Get Started</a></li>
         </ul>
       </div>
     </nav>
   </div>
 
   <main>
-    <section class="hero">
-      <div class="container hero-centered fade-in">
-        <p class="eyebrow">The daily loop</p>
-        <h1>A workday that is already prepared.</h1>
-        <p class="lede">DailyOS prepares your meetings, captures outcomes, and learns from every workday. Better, more accurate, more actionable &mdash; every day.</p>
-        <div class="hero-actions">
-          <a href="/setup.html" class="btn btn-primary">Start in Alpha</a>
-          <a href="#morning" class="btn btn-secondary">Jump to Morning</a>
-        </div>
-        <p class="proofline proofline-sage mono">No prompts. No maintenance. Just leverage.</p>
+
+    <!-- ===== SPREAD 1: OPENING ===== -->
+    <div class="spread--split">
+      <div class="fade-in">
+        <p class="mono-label mb-md">The Daily Loop</p>
+        <h1 class="headline">A workday,<br>already prepared.</h1>
+        <p class="narrative mt-lg">DailyOS prepares your meetings, captures outcomes, and feeds everything back into tomorrow's briefing. Better every day, without you lifting a finger.</p>
       </div>
-    </section>
-
-    <section class="section section-compact">
-      <div class="container">
-        <div class="tour-layout">
-          <!-- ===== 1. MORNING BRIEF ===== -->
-          <article id="morning" class="section-compact">
-            <div class="section-head fade-in">
-              <p class="eyebrow eyebrow-sage">1 &mdash; Morning brief</p>
-              <h2>One screen. The day in context.</h2>
-              <p class="lede">You start with priorities, not inbox archaeology. Meetings are prepped, risks are flagged, and actions are queued before you touch anything.</p>
-            </div>
-
-            <div class="app-window fade-in delay-1">
-              <div class="app-titlebar">
-                <span class="dot-r"></span>
-                <span class="dot-y"></span>
-                <span class="dot-g"></span>
-              </div>
-              <div class="app-body">
-                <div class="app-date">Monday, February 10</div>
-
-                <div class="app-focus">
-                  <strong>Focus:</strong> Renewal conversation with Acme has high leverage. Resolve budget blocker before the 2:00 PM call.
-                </div>
-
-                <div class="app-timeline">
-                  <div class="app-meeting">
-                    <div class="app-meeting-dot"></div>
-                    <div class="app-card">
-                      <div class="app-card-top">
-                        <span class="app-time">9:00 AM</span>
-                        <span class="app-time-sep">&mdash;</span>
-                        <span class="app-time">9:30 AM</span>
-                        <span class="app-badge app-badge-gold">Customer</span>
-                        <span class="app-badge app-badge-sage">Processed</span>
-                      </div>
-                      <h4 class="app-card-title">Globex check-in</h4>
-                      <span class="app-entity">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14V4h5v10M9 14V2h5v12M1 14h14"/></svg>
-                        Globex Corp
-                      </span>
-                      <p class="app-context">Support metrics trending positive. Champion confirmed expansion interest in Q2 planning session.</p>
-                      <div class="app-signals">
-                        <span class="app-signal app-signal-win">Champion engagement increasing</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="app-meeting">
-                    <div class="app-meeting-dot"></div>
-                    <div class="app-card">
-                      <div class="app-card-top">
-                        <span class="app-time">11:00 AM</span>
-                        <span class="app-time-sep">&mdash;</span>
-                        <span class="app-time">11:30 AM</span>
-                        <span class="app-badge app-badge-gold">External</span>
-                        <span class="app-badge app-badge-muted">No prior history</span>
-                      </div>
-                      <h4 class="app-card-title">Jordan Lee &mdash; intro call</h4>
-                      <p class="app-context">New contact from Initech. Context packet created from email thread and LinkedIn signals.</p>
-                    </div>
-                  </div>
-
-                  <div class="app-meeting">
-                    <div class="app-meeting-dot"></div>
-                    <div class="app-card">
-                      <div class="app-card-top">
-                        <span class="app-time">2:00 PM</span>
-                        <span class="app-time-sep">&mdash;</span>
-                        <span class="app-time">2:45 PM</span>
-                        <span class="app-badge app-badge-gold">QBR</span>
-                        <span class="app-badge app-badge-peach">Needs prep</span>
-                      </div>
-                      <h4 class="app-card-title">Acme Corp QBR</h4>
-                      <span class="app-entity">
-                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 14V4h5v10M9 14V2h5v12M1 14h14"/></svg>
-                        Acme Corp
-                      </span>
-                      <p class="app-context">CFO + VP Ops + CSM. Adoption up 34% since rollout, but budget sign-off is still open.</p>
-                      <div class="app-signals">
-                        <span class="app-signal app-signal-win">Support backlog now zero</span>
-                        <span class="app-signal app-signal-risk">CFO budget approval pending</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="app-actions-header">
-                  <span>Actions Due</span>
-                  <span>2 items</span>
-                </div>
-                <div class="app-action">
-                  <div class="app-action-circle"></div>
-                  <div class="app-action-body">
-                    <div class="app-action-row">
-                      <span class="app-action-title">Send revised pricing package</span>
-                      <span class="app-badge app-badge-peach">P1</span>
-                    </div>
-                    <div class="app-action-meta">
-                      <span class="app-action-account">Acme Corp</span>
-                      <span class="app-action-overdue">Overdue</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="app-action">
-                  <div class="app-action-circle"></div>
-                  <div class="app-action-body">
-                    <div class="app-action-row">
-                      <span class="app-action-title">Review QBR deck with account team</span>
-                      <span class="app-badge app-badge-gold">P2</span>
-                    </div>
-                    <div class="app-action-meta">
-                      <span class="app-action-account">Acme Corp</span>
-                      <span class="app-action-due">Due today &middot; 1:00 PM</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <!-- ===== 2. MEETING INTELLIGENCE ===== -->
-          <article id="meeting" class="section">
-            <div class="section-head fade-in">
-              <p class="eyebrow">2 &mdash; Meeting intelligence</p>
-              <h2>Click a meeting. The briefing is already assembled.</h2>
-              <p class="lede">Executive summary, risks, people in the room, open items, and recommended moves &mdash; prepared before you walk in.</p>
-            </div>
-
-            <div class="executive-panel fade-in delay-1">
-              <header class="exec-header">
-                <div>
-                  <p class="exec-kicker">Meeting Intelligence Report</p>
-                  <h3 class="exec-title">Acme Corp QBR</h3>
-                  <p class="exec-meta">2:00 PM &middot; 45 min &middot; Renewal cycle</p>
-                </div>
-                <span class="status-chip">Strategic brief</span>
-              </header>
-
-              <blockquote class="report-quote">
-                <p>Support backlog is now zero and adoption is trending up. Budget sign-off is still open, so this meeting needs a clear ROI narrative.</p>
-              </blockquote>
-
-              <div class="report-risk-grid">
-                <div class="report-risk-card">
-                  <p class="mini-label">Risk 1</p>
-                  <p>Budget owner still unconvinced on analytics add-on timing.</p>
-                </div>
-                <div class="report-risk-card">
-                  <p class="mini-label">Risk 2</p>
-                  <p>KPI baseline must be finalized before commercial ask.</p>
-                </div>
-                <div class="report-risk-card">
-                  <p class="mini-label">Risk 3</p>
-                  <p>Procurement path needs explicit owner by end of call.</p>
-                </div>
-              </div>
-
-              <div class="report-metrics-grid">
-                <div class="report-metric-card">
-                  <p class="mini-label">Primary goal</p>
-                  <p>Secure budget owner commitment</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">People in room</p>
-                  <p>CFO, VP Ops, Champion, AM</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">Account health</p>
-                  <p class="report-metric-positive">Green with expansion path</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">Meeting type</p>
-                  <p>QBR + renewal planning</p>
-                </div>
-              </div>
-
-              <div class="report-main-grid">
-                <section class="signal-card">
-                  <p class="signal-label" style="margin-bottom:0.45rem;">Open items</p>
-                  <ul class="action-list">
-                    <li>
-                      <span class="action-title">Finalize pricing artifact</span>
-                      <span class="action-meta overdue">Overdue &middot; send before meeting</span>
-                    </li>
-                    <li>
-                      <span class="action-title">Confirm pilot KPI baseline</span>
-                      <span class="action-meta">Needed for ROI narrative</span>
-                    </li>
-                    <li>
-                      <span class="action-title">Align on budget approval owner</span>
-                      <span class="action-meta">Decision gate today</span>
-                    </li>
-                  </ul>
-                </section>
-
-                <aside class="report-side-stack">
-                  <section class="report-side-card">
-                    <p class="mini-label">Before this meeting</p>
-                    <ul class="stack-list">
-                      <li>Open with outcomes from support reduction.</li>
-                      <li>Confirm budget owner before pricing discussion.</li>
-                      <li>Close with explicit next-decision date.</li>
-                    </ul>
-                  </section>
-                  <section class="report-side-card report-side-card-positive">
-                    <p class="mini-label">Recent wins</p>
-                    <ul class="stack-list">
-                      <li>Champion participation has increased weekly.</li>
-                      <li>Executive sponsor requested expansion scenario.</li>
-                    </ul>
-                  </section>
-                </aside>
-              </div>
-            </div>
-          </article>
-
-          <!-- ===== 3. POST-MEETING ===== -->
-          <article id="after" class="section section-compact">
-            <div class="section-head fade-in">
-              <p class="eyebrow eyebrow-peach">3 &mdash; After the meeting</p>
-              <h2>The meeting ends. The outcomes are already organized.</h2>
-              <p class="lede">Decisions, actions, and wins are extracted from your transcript and routed to account memory, your action queue, and tomorrow&rsquo;s briefing.</p>
-            </div>
-
-            <div class="executive-panel fade-in delay-1">
-              <header class="exec-header">
-                <div>
-                  <p class="exec-kicker">Post-meeting summary</p>
-                  <h3 class="exec-title">Acme Corp QBR</h3>
-                  <p class="exec-meta">Processed from transcript &middot; 2:48 PM</p>
-                </div>
-                <span class="artifact-chip">Processed</span>
-              </header>
-
-              <blockquote class="report-quote">
-                <p>Budget owner committed to Q2 timeline. CFO needs ROI model before final sign-off. Champion requested expansion scenario &mdash; strong signal for upsell path.</p>
-              </blockquote>
-
-              <div class="report-risk-grid">
-                <div class="signal-card">
-                  <div class="signal-top">
-                    <p class="signal-label">Decisions</p>
-                    <span class="tag tag-win">2 resolved</span>
-                  </div>
-                  <ul class="stack-list">
-                    <li>VP Ops confirmed as budget owner</li>
-                    <li>Q2 renewal timeline agreed</li>
-                  </ul>
-                </div>
-                <div class="signal-card">
-                  <div class="signal-top">
-                    <p class="signal-label">Actions created</p>
-                    <span class="tag tag-risk">3 new</span>
-                  </div>
-                  <ul class="stack-list">
-                    <li>Send ROI model to CFO by Thursday</li>
-                    <li>Draft expansion scenario for champion</li>
-                    <li>Schedule follow-up with VP Ops</li>
-                  </ul>
-                </div>
-                <div class="signal-card report-side-card-positive">
-                  <div class="signal-top">
-                    <p class="signal-label">Wins captured</p>
-                  </div>
-                  <ul class="stack-list">
-                    <li>Champion actively requesting expansion</li>
-                    <li>Support backlog confirmed at zero</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div class="report-metrics-grid">
-                <div class="report-metric-card">
-                  <p class="mini-label">Risk update</p>
-                  <p>Procurement path now has explicit owner</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">Account health</p>
-                  <p class="report-metric-positive">Improved &mdash; expansion signal</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">Next touchpoint</p>
-                  <p>Follow-up Thursday with VP Ops</p>
-                </div>
-                <div class="report-metric-card">
-                  <p class="mini-label">Memory updated</p>
-                  <p>Acme Corp intelligence refreshed</p>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <!-- ===== 4. WEEKLY INTELLIGENCE ===== -->
-          <article id="week" class="section section-compact">
-            <div class="section-head fade-in">
-              <p class="eyebrow eyebrow-sage">4 &mdash; Weekly intelligence</p>
-              <h2>The rhythm is daily. The intelligence is cumulative.</h2>
-              <p class="lede">Each morning is prepared, but the system is also looking ahead: carrying context forward, tracking what changed, and sharpening next week's starting point.</p>
-            </div>
-
-            <div class="week-grid fade-in delay-1" aria-label="Weekly planning view">
-              <div class="week-day week-day--active">
-                <div class="week-day-label">Mon (today)</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Globex check-in</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>CS standup</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Initech kickoff</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Acme QBR</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span>1:1 manager</div>
-                <div class="week-day-stat">5 meetings &middot; 3 prepped</div>
-              </div>
-              <div class="week-day">
-                <div class="week-day-label">Tue</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Globex expansion</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Product sync</div>
-                <div class="week-day-stat">2 meetings</div>
-              </div>
-              <div class="week-day">
-                <div class="week-day-label">Wed</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Initech training</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Team standup</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--sage"></span>1:1 Sarah</div>
-                <div class="week-day-stat">3 meetings &middot; 1 action due</div>
-              </div>
-              <div class="week-day">
-                <div class="week-day-label">Thu</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--gold"></span>Acme follow-up</div>
-                <div class="week-day-stat">1 meeting</div>
-              </div>
-              <div class="week-day">
-                <div class="week-day-label">Fri</div>
-                <div class="week-day-meeting"><span class="week-dot week-dot--muted"></span>Focus time</div>
-                <div class="week-day-stat">No meetings &middot; 2 actions due</div>
-              </div>
-            </div>
-          </article>
-
-          <!-- ===== CTA ===== -->
-          <section class="section">
-            <div class="panel cta-card fade-in">
-              <h2>From prep debt to decision leverage.</h2>
-              <p class="lede">If this is how you want your workweek to feel, DailyOS is available to Automatticians as an internal alpha.</p>
-              <a href="/setup.html" class="btn btn-primary">Set Up in 10 Minutes</a>
-              <p class="proofline">Open source &middot; GPL-3.0 &middot; Available to Automatticians</p>
-            </div>
-          </section>
+      <div class="spread__visual fade-in delay-1">
+        <div class="editorial-preview__date" style="font-size: 1.3rem;">Tuesday, February 11</div>
+        <div class="focus-block" style="margin-top: 20px;">
+          <div class="focus-block__label">Today's Focus</div>
+          <div class="focus-block__text" style="font-size: 17px;">Acme renewal prep. Budget decision Thursday.</div>
         </div>
-      </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container">
-      <div class="footer-panel">
-        <ul class="footer-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/tour.html">Tour</a></li>
-          <li><a href="/philosophy.html">Philosophy</a></li>
-          <li><a href="/setup.html">Get Started</a></li>
-          <li><a href="https://github.com/jamesgiroux/daily-operating-system" target="_blank" rel="noopener">GitHub</a></li>
-        </ul>
-        <p class="footer-meta">DailyOS is open source under GPL-3.0. &copy; 2026 James Giroux.</p>
+        <div class="schedule-row" style="margin-top: 16px;">
+          <div class="schedule-time">9:00</div>
+          <div class="schedule-content schedule-content--customer">
+            <div class="schedule-title" style="font-size: 16px;">Globex quarterly sync</div>
+          </div>
+        </div>
+        <div class="schedule-row">
+          <div class="schedule-time">2:00</div>
+          <div class="schedule-content schedule-content--risk">
+            <div class="schedule-title" style="font-size: 16px;">Acme Corp QBR</div>
+          </div>
+        </div>
       </div>
     </div>
-  </footer>
+
+    <!-- ===== NARRATIVE INTRO ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="narrative">Every morning, your day is already laid out. Meetings are prepped with relationship history and risk signals. After each call, the transcript gets processed and outcomes flow back into the system.</p>
+        <p class="narrative mt-md">You don't maintain it. It maintains itself.</p>
+      </div>
+    </section>
+
+    <!-- ===== STOP 1: MORNING BRIEF ===== -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mono-label--sage mb-sm">01</p>
+        <h2 class="headline">One screen.<br>The day in context.</h2>
+        <p class="prose mt-md">Before you touch your inbox, DailyOS has already read your calendar, pulled relationship history, surfaced risks, and queued your actions. You start with priorities instead of digging through four apps for context.</p>
+      </div>
+    </section>
+
+    <!-- Brief editorial preview -->
+    <div class="editorial-preview">
+      <div class="editorial-preview__inner fade-in">
+        <div class="editorial-preview__date">Tuesday, February 11</div>
+
+        <div class="focus-block">
+          <div class="focus-block__label">Today's Focus</div>
+          <div class="focus-block__text">Acme renewal prep is high-leverage. Budget decision is Thursday. Resolve the pricing artifact before the 2:00 PM call.</div>
+        </div>
+
+        <div style="margin-top: 2rem;">
+          <div class="schedule-row">
+            <div class="schedule-time">9:00 AM</div>
+            <div class="schedule-content schedule-content--customer">
+              <div class="schedule-title">Globex quarterly sync</div>
+              <div class="schedule-meta">
+                <span>Customer</span>
+                <span class="schedule-meta-sep">&middot;</span>
+                <span>Globex Corp</span>
+                <span class="schedule-meta-sep">&middot;</span>
+                <span>30 min</span>
+              </div>
+              <div class="schedule-narrative">Champion confirmed expansion interest. Support metrics trending positive since Q1.</div>
+            </div>
+          </div>
+
+          <div class="schedule-row">
+            <div class="schedule-time">2:00 PM</div>
+            <div class="schedule-content schedule-content--risk">
+              <div class="schedule-title">Acme Corp: quarterly business review</div>
+              <div class="schedule-meta">
+                <span>QBR</span>
+                <span class="schedule-meta-sep">&middot;</span>
+                <span>Acme Corp</span>
+                <span class="schedule-meta-sep">&middot;</span>
+                <span>45 min</span>
+              </div>
+              <div class="schedule-narrative">Adoption up 34%. CFO budget sign-off still open. Expansion ask needs ROI framing.</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 2rem;">
+          <div class="action-row">
+            <div class="action-check"></div>
+            <div class="action-body">
+              <div class="action-title action-title--overdue">Send revised pricing package</div>
+              <div class="action-meta action-meta--overdue">Acme Corp &middot; Overdue</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== STOP 2: MEETING INTELLIGENCE ===== -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mono-label--turmeric mb-sm">02</p>
+        <h2 class="headline">Every meeting<br>starts prepared.</h2>
+        <p class="prose mt-md">For each meeting, DailyOS builds an executive briefing: who's in the room, what happened last time, and what to walk in ready for.</p>
+      </div>
+    </section>
+
+    <!-- Meeting preview -->
+    <section class="section">
+      <div class="col-content fade-in">
+        <div class="meeting-preview__title">Acme Corp QBR</div>
+        <div class="meeting-preview__meta">
+          <span>2:00 PM</span>
+          <span class="schedule-meta-sep">&middot;</span>
+          <span>45 min</span>
+          <span class="schedule-meta-sep">&middot;</span>
+          <span>Renewal cycle</span>
+          <span class="schedule-meta-sep">&middot;</span>
+          <span>Acme Corp</span>
+        </div>
+        <div class="meeting-preview__narrative">Support backlog is now zero and adoption is trending up. Budget sign-off is still open, so this meeting needs a <strong>clear ROI narrative</strong> before the commercial ask lands.</div>
+
+        <div class="prep-grid">
+          <div>
+            <div class="prep-grid__label prep-grid__label--discuss">Discuss</div>
+            <div class="prep-grid__item">
+              <span class="prep-grid__dot prep-grid__dot--turmeric"></span>
+              <span>Lead with support-impact outcomes to frame ROI</span>
+            </div>
+            <div class="prep-grid__item">
+              <span class="prep-grid__dot prep-grid__dot--turmeric"></span>
+              <span>Confirm budget approval owner before pricing talk</span>
+            </div>
+            <div class="prep-grid__item">
+              <span class="prep-grid__dot prep-grid__dot--turmeric"></span>
+              <span>Close with explicit next-decision date</span>
+            </div>
+          </div>
+          <div>
+            <div class="prep-grid__label prep-grid__label--watch">Watch</div>
+            <div class="prep-grid__item">
+              <span class="prep-grid__dot prep-grid__dot--terracotta"></span>
+              <span>CFO has not signed off on analytics add-on timing</span>
+            </div>
+            <div class="prep-grid__item">
+              <span class="prep-grid__dot prep-grid__dot--terracotta"></span>
+              <span>KPI baseline must be finalized before commercial ask</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== PULL QUOTE ===== -->
+    <section class="section">
+      <div class="col-content fade-in text-center">
+        <p class="pullquote">The meeting ended twenty minutes ago. The follow-ups are already in your queue.</p>
+      </div>
+    </section>
+
+    <!-- ===== STOP 3: TRANSCRIPT CAPTURE ===== -->
+    <section class="section--vast">
+      <div class="col-reading fade-in">
+        <p class="mono-label mono-label--terracotta mb-sm">03</p>
+        <h2 class="headline">Capture without<br>taking notes.</h2>
+        <p class="prose mt-md">After each meeting, DailyOS processes the transcript. Action items, decisions, and follow-ups get extracted and routed to your queue. Relationship context updates for next time.</p>
+      </div>
+    </section>
+
+    <!-- ===== STOP 4: WEEKLY FORECAST ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="mono-label mono-label--sage mb-sm">04</p>
+        <h2 class="title">The week, already mapped.</h2>
+        <p class="prose mt-md">Every Monday, DailyOS builds your weekly forecast: which days are heaviest, where you have space for deep work, which accounts need attention, and what your top three priorities should be. You see the shape of the week before it starts.</p>
+      </div>
+    </section>
+
+    <!-- ===== STOP 5: CONTINUOUS LEARNING ===== -->
+    <section class="section">
+      <div class="col-reading fade-in">
+        <p class="mono-label mb-sm">05</p>
+        <h2 class="title">Every day makes the next one better.</h2>
+        <p class="prose mt-md">DailyOS learns from every interaction. Meeting prep gets sharper. Risk signals get more specific.</p>
+        <p class="prose">Two weeks in, the difference is obvious. The system knows your accounts, your patterns, the people you talk to. It doesn't forget what happened in last month's QBR.</p>
+      </div>
+    </section>
+
+    <!-- ===== CLOSING SPREAD ===== -->
+    <section class="spread">
+      <div class="col-reading text-center fade-in">
+        <h2 class="headline">See it for yourself.</h2>
+        <p class="narrative mt-md">DailyOS is currently in alpha for Automatticians on macOS.</p>
+        <a href="/setup.html" class="cta-text mt-lg">Get started &rarr;</a>
+      </div>
+    </section>
+
+    <!-- ===== END MARK ===== -->
+    <div class="end-mark">
+      <div class="end-mark__stars">* * *</div>
+      <div class="end-mark__message">You were ready before the meeting started.</div>
+    </div>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="site-footer">
+      <p><a href="/">DailyOS</a> &middot; <a href="/tour.html">Tour</a> &middot; <a href="/philosophy.html">Philosophy</a> &middot; <a href="/setup.html">Get Started</a></p>
+      <p class="mt-xs">Open source under GPL-3.0.</p>
+    </footer>
+
+  </main>
 
   <script src="/site.js"></script>
 </body>
