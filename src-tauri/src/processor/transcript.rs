@@ -406,15 +406,22 @@ pub fn build_transcript_prompt(meeting: &CalendarEvent, content: &str) -> String
     let truncated = truncate_transcript(content);
 
     let meeting_type = format!("{:?}", meeting.meeting_type).to_lowercase();
-    let account = meeting.account.as_deref().unwrap_or("N/A");
+    let title = if meeting.title.trim().is_empty() {
+        "Untitled meeting"
+    } else {
+        &meeting.title
+    };
+    let account_line = match meeting.account.as_deref() {
+        Some(a) if !a.trim().is_empty() => format!("Account: {}\n", wrap_user_data(a)),
+        _ => String::new(),
+    };
     let date = meeting.end.format("%Y-%m-%d").to_string();
 
     format!(
         r#"You are analyzing a transcript from a {meeting_type} meeting.
 
 Meeting: "{title}"
-Account: {account}
-Date: {date}
+{account_line}Date: {date}
 
 IMPORTANT: Focus on the substantive business discussion. Skip social chitchat,
 internal team banter, and small talk that typically occurs at the start of calls.
@@ -473,8 +480,8 @@ Rules for decisions:
 Transcript:
 {content}
 "#,
-        title = wrap_user_data(&meeting.title),
-        account = wrap_user_data(account),
+        title = wrap_user_data(title),
+        account_line = account_line,
         meeting_type = meeting_type,
         date = date,
         content = wrap_user_data(&truncated),
@@ -605,6 +612,19 @@ mod tests {
         assert!(prompt.contains("max 10 words"));
         // Verify quoted context format
         assert!(prompt.contains("#\""));
+    }
+
+    #[test]
+    fn test_build_transcript_prompt_null_fields() {
+        let mut meeting = test_meeting();
+        meeting.account = None;
+        meeting.title = "".to_string();
+        let prompt = build_transcript_prompt(&meeting, "Some transcript");
+
+        assert!(prompt.contains("Untitled meeting"));
+        // Account line should be omitted entirely
+        assert!(!prompt.contains("Account:"));
+        assert!(prompt.contains("Some transcript"));
     }
 
     #[test]
