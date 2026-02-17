@@ -114,7 +114,10 @@ jobs:
         run: pnpm install
 
       - name: Build MCP sidecar binary
-        run: bash src-tauri/scripts/build-mcp.sh aarch64-apple-darwin
+        run: |
+          bash src-tauri/scripts/build-mcp.sh aarch64-apple-darwin
+          ls -la src-tauri/binaries/
+          file src-tauri/binaries/dailyos-mcp-aarch64-apple-darwin
 
       - name: Verify Google OAuth build secret
         env:
