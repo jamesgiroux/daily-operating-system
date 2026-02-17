@@ -9,6 +9,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use libc;
+
 use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
 use rmcp::{tool, ServerHandler, ServiceExt};
@@ -579,6 +581,23 @@ fn build_entity_result(
 // Main
 // =============================================================================
 
+/// Temporarily redirect stdout (fd 1) to stderr for the duration of `f`.
+///
+/// The MCP server communicates over stdio. Any writes to stdout before rmcp
+/// takes over the channel corrupt the JSON-RPC stream. Native libraries
+/// (ONNX Runtime, fastembed) may write to stdout during initialisation, so
+/// we redirect stdout → stderr for that window only.
+fn with_stdout_suppressed<F: FnOnce() -> R, R>(f: F) -> R {
+    unsafe {
+        let saved = libc::dup(libc::STDOUT_FILENO);
+        libc::dup2(libc::STDERR_FILENO, libc::STDOUT_FILENO);
+        let result = f();
+        libc::dup2(saved, libc::STDOUT_FILENO);
+        libc::close(saved);
+        result
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config =
@@ -589,14 +608,18 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize embedding model synchronously — MCP server starts before any
     // tool calls so this won't block user interaction.
+    // stdout is redirected to stderr during init to prevent native library
+    // output (ONNX Runtime, fastembed) from corrupting the MCP JSON-RPC stream.
     let embedding_model = Arc::new(EmbeddingModel::new());
-    let models_dir = dirs::home_dir()
-        .unwrap_or_default()
-        .join(".dailyos")
-        .join("models");
-    if let Err(e) = embedding_model.initialize(models_dir) {
-        eprintln!("Embedding model unavailable: {e}");
-    }
+    with_stdout_suppressed(|| {
+        let models_dir = dirs::home_dir()
+            .unwrap_or_default()
+            .join(".dailyos")
+            .join("models");
+        if let Err(e) = embedding_model.initialize(models_dir) {
+            eprintln!("Embedding model unavailable: {e}");
+        }
+    });
 
     let server = DailyOsMcp::new(db, config, embedding_model);
 
