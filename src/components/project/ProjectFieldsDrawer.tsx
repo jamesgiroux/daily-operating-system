@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface ProjectFieldsDrawerProps {
   open: boolean;
@@ -152,11 +153,10 @@ export function ProjectFieldsDrawer({
           {/* Target Date */}
           <div>
             <div style={labelStyle}>Target Date</div>
-            <input
-              type="date"
+            <DatePicker
               value={editTargetDate}
-              onChange={(e) => change(setEditTargetDate)(e.target.value)}
-              style={inputStyle}
+              onChange={change(setEditTargetDate)}
+              placeholder="Set target date"
             />
           </div>
         </div>

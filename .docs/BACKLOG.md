@@ -52,21 +52,21 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | ~~I273~~ | ~~Hygiene UX redesign — unified health narrative in editorial design language~~ | — | Closed (0.8.2) |
 | ~~I279~~ | ~~Per-day action priorities in weekly forecast~~ | — | Closed (0.8.2) |
 | ~~I231~~ | ~~Guard `unwrap()` in focus_capacity.rs against DST spring-forward gaps~~ | — | Closed (0.8.1) |
-| **I287** | Token: Entity intelligence caching (2-4 hour TTL) | P2 | I280 |
+| ~~I287~~ | ~~Token: Entity intelligence caching (2-4 hour TTL)~~ | — | Closed (0.8.2) |
 | ~~I288~~ | ~~Token: Entity intelligence JSON output (replace pipe-delimited parsing)~~ | — | Closed (0.8.1) |
-| **I289** | Token: Batch entity intelligence calls (3-5 per invocation) | P2 | I280 |
-| **I290** | DRY: Rust entity pattern extraction (accounts.rs ↔ projects.rs shared traits) | P2 | I280 |
-| **I291** | DRY: Frontend list/detail page pattern extraction | P2 | I280 |
+| ~~I289~~ | ~~Token: Batch entity intelligence calls (3-5 per invocation)~~ | — | Closed (0.8.2) |
+| ~~I290~~ | ~~DRY: Rust entity pattern extraction (accounts.rs ↔ projects.rs shared traits)~~ | — | Closed (0.8.2) |
+| ~~I291~~ | ~~DRY: Frontend list/detail page pattern extraction~~ | — | Closed (0.8.2) |
 | **I297** | Security: Audit trail for AI-generated data (raw output logging) | P2 | I280 |
 | **I298** | Mock data audit — update fixtures for editorial redesign | P2 | DevTools |
 | ~~I299~~ | ~~App icon update — asterisk brand mark (replaces lightning bolt)~~ | — | Closed (0.8.2) |
 | ~~I300~~ | ~~Website visuals update — screenshots, og-image, favicons for new brand~~ | — | Closed (0.8.2) |
 | **I229** | Gravatar integration (profile pictures) | P3 | Integrations |
-| **I232** | Deduplicate `normalize_key` (folded into I290) | P3 | Code Quality |
+| ~~I232~~ | ~~Deduplicate `normalize_key` (folded into I290)~~ | — | Closed (0.8.2) |
 | ~~I234~~ | ~~Prune IntelligenceQueue `last_enqueued` HashMap periodically~~ | — | Closed (0.8.1) |
 | ~~I235~~ | ~~Consolidate dashboard DB reads into single lock acquisition~~ | — | Closed (0.8.1) |
-| **I236** | Adaptive polling interval on WeekPage during enrichment phase | P3 | Performance |
-| **I263** | Replace native date inputs with styled shadcn DatePicker | P3 | UX |
+| ~~I236~~ | ~~Adaptive polling interval on WeekPage during enrichment phase~~ | — | Closed (0.8.2) |
+| ~~I263~~ | ~~Replace native date inputs with styled shadcn DatePicker~~ | — | Closed (0.8.2) |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 
 ---
@@ -220,13 +220,13 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P3 | I287 | Tokens: Caching for entity intelligence (TTL-based) |
-| P3 | I289 | Tokens: Batch prep enrichment (multi-meeting single call) |
-| P3 | I290 | Code: DRY extraction pass (accounts↔projects, shared patterns) |
-| P3 | I291 | Code: Frontend component audit (parallel implementations) |
-| P3 | I232 | Deduplicate `normalize_key` — folded into I290 |
-| P3 | I236 | Adaptive polling interval on WeekPage during enrichment phase |
-| P3 | I263 | Replace native date inputs with styled shadcn DatePicker |
+| ~~P3~~ | ~~I287~~ | ~~Tokens: Caching for entity intelligence (TTL-based)~~ — Closed |
+| ~~P3~~ | ~~I289~~ | ~~Tokens: Batch prep enrichment (multi-meeting single call)~~ — Closed |
+| ~~P3~~ | ~~I290~~ | ~~Code: DRY extraction pass (accounts↔projects, shared patterns)~~ — Closed |
+| ~~P3~~ | ~~I291~~ | ~~Code: Frontend component audit (parallel implementations)~~ — Closed |
+| ~~P3~~ | ~~I232~~ | ~~Deduplicate `normalize_key` — folded into I290~~ — Closed |
+| ~~P3~~ | ~~I236~~ | ~~Adaptive polling interval on WeekPage during enrichment phase~~ — Closed |
+| ~~P3~~ | ~~I263~~ | ~~Replace native date inputs with styled shadcn DatePicker~~ — Closed |
 
 **0.8.2 gate:** All P2 items closed or explicitly deferred. P3 items addressed opportunistically. Clean foundation for 0.9.0 integrations work.
 
@@ -4639,7 +4639,7 @@ Umbrella issue for codebase hardening before first beta release (1.0.0). Finding
 **Sequencing:**
 1. **0.8.0:** ~~I281~~, ~~I282~~, ~~I283~~, ~~I284~~, ~~I292~~, ~~I293~~, ~~I294~~ — done.
 2. **0.8.x:** I285, I286, I288, I295, I296 — DB integrity + biggest token win + parsing robustness + prompt injection hardening
-3. **1.0.0 gate:** I287, I289, I290, I291, I297 — caching, batching, DRY extraction, audit trail
+3. **1.0.0 gate:** ~~I287~~, ~~I289~~, ~~I290~~, ~~I291~~, I297 — caching, batching, DRY extraction done (0.8.2); audit trail remaining
 
 **Beta release criteria for I280:** All P0 and P1 sub-issues closed. P2 sub-issues either closed or explicitly deferred with documented rationale.
 
