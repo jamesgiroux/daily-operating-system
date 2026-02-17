@@ -43,6 +43,7 @@ export interface Stakeholder {
   name: string;
   role?: string;
   focus?: string;
+  relationship?: PersonRelationship;
 }
 
 export interface SourceReference {
@@ -602,6 +603,8 @@ export interface TranscriptResult {
   risks: string[];
   decisions: string[];
   actions: CapturedAction[];
+  discussion: string[];
+  analysis?: string;
   message?: string;
 }
 
