@@ -33,7 +33,7 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 ## 4. Rust Backend
 
 - [ ] `cargo test --manifest-path src-tauri/Cargo.toml` — all tests pass
-- [ ] `cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings` — zero warnings
+- [ ] `cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings` — zero warnings (must match the exact CI invocation in `test.yml`)
 - [ ] `cargo audit --file src-tauri/Cargo.lock` — no known vulnerabilities (or documented exceptions)
 - [ ] No new `unwrap()` or `expect()` in IPC command handlers (use `Result` propagation)
 - [ ] Database migrations are forward-compatible and idempotent
@@ -95,21 +95,21 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 
 ## 10. CI Pipeline
 
-- [ ] All checks pass on a clean branch (not just locally)
+- [ ] **Simulate CI locally before pushing** — stash uncommitted work then run the full CI-equivalent sequence (see "CI Smoke Test" in Quick Reference below). This catches partial commits, missing modules, and clippy regressions that pass with local-only files present.
 - [ ] Release workflow dry-run: verify `release.yml` steps match current build requirements
 - [ ] Apple certificate and notarization secrets are current (not expired)
 - [ ] `DAILYOS_GOOGLE_SECRET` repo secret is set
 - [ ] `TAURI_SIGNING_PRIVATE_KEY` repo secret is set (for updater signatures)
-- [ ] **No uncommitted files referenced by committed code** — `git stash && cargo check --manifest-path src-tauri/Cargo.toml --lib && git stash pop` to verify committed code compiles independently. Partial commits (e.g., calling `crate::foo` without committing `foo.rs`) pass locally but fail in CI.
 - [ ] **Sidecar build script is intact** — `build-mcp.sh` must create a stub file BEFORE `cargo build` (Tauri's build.rs validates externalBin paths during any cargo build from that Cargo.toml, including the sidecar itself). Verify `touch src-tauri/build.rs` runs after sidecar creation in both `test.yml` and `release.yml` to force re-evaluation during the Tauri build step.
 
 ## 11. Git Hygiene
 
+- [ ] **Confirm you are on `main`** — `git branch --show-current` before any commits. Feature branch work-in-progress can silently switch your active branch.
 - [ ] All changes are on `main` (merged from `dev`)
 - [ ] No unrelated changes in the release commit
-- [ ] **No work-in-progress files from other branches leaking into the working tree** — run `git status` and verify every modified/untracked file is either staged for the release or intentionally excluded. Partial commits (staging some files but not their dependencies) cause CI compile failures that don't reproduce locally.
+- [ ] **No work-in-progress files from other branches leaking into the working tree** — `git status` should show only release-related changes. Uncommitted files from feature branches (e.g., untracked `audit.rs`, modified `Cargo.toml` with new deps) will compile locally but break CI.
 - [ ] Commit messages are descriptive — `Co-Authored-By` tags present where applicable
-- [ ] Tag matches version: `git tag v{version}` (e.g., `v0.8.0`)
+- [ ] Tag matches version: `git tag v{version}` (e.g., `v0.8.1`)
 - [ ] `.gitignore` covers all build artifacts (`src-tauri/target/`, `src-tauri/binaries/`, `dist/`)
 
 ## 12. Post-Push Verification
@@ -120,18 +120,39 @@ Pre-push checklist for DailyOS releases. Complete every section before tagging a
 - [ ] Existing install receives update notification (test with previous version installed)
 - [ ] `latest.json` signature validates against the public key in `tauri.conf.json`
 
+### If CI fails after tagging
+
+```bash
+# Fix the issue on main, then retag:
+git push origin main
+git tag -d v{version}
+git push origin :refs/tags/v{version}
+git tag v{version}
+git push origin v{version}
+```
+
+Delete the draft/failed GitHub Release before retagging if one was partially created.
+
 ---
 
 ## Quick Reference
 
 ```bash
-# Full pre-release build + test sequence
+# CI Smoke Test — run BEFORE tagging to catch what CI will catch
+# Stash any uncommitted work so you're testing committed code only
+git stash
+pnpm build:mcp
+cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
+pnpm test
+git stash pop
+```
+
+```bash
+# Full local build (after CI smoke test passes)
 pnpm install
 pnpm build:mcp
-pnpm test
 pnpm tauri build --target aarch64-apple-darwin
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
 cargo audit --file src-tauri/Cargo.lock
 pnpm audit
 ```
@@ -141,7 +162,8 @@ pnpm audit
 ls "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/DailyOS.app/Contents/MacOS/"
 # Should show: dailyos, dailyos-mcp
 
-# Tag and push
+# Confirm branch, tag, and push
+git branch --show-current  # Must be: main
 git tag v{version}
 git push origin main --tags
 ```
