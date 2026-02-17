@@ -4,7 +4,7 @@
 -- semantic search over entity content. One file produces multiple chunks (1:N).
 -- Uses nomic-embed-text-v1.5 model (768 dimensions) via fastembed.
 
-CREATE TABLE content_embeddings (
+CREATE TABLE IF NOT EXISTS content_embeddings (
     id TEXT PRIMARY KEY,
     content_file_id TEXT NOT NULL,
     chunk_index INTEGER NOT NULL,
@@ -14,6 +14,6 @@ CREATE TABLE content_embeddings (
     FOREIGN KEY (content_file_id) REFERENCES content_index(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_embeddings_file ON content_embeddings(content_file_id);
+CREATE INDEX IF NOT EXISTS idx_embeddings_file ON content_embeddings(content_file_id);
 
 ALTER TABLE content_index ADD COLUMN embeddings_generated_at TEXT;
