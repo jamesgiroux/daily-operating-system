@@ -176,9 +176,7 @@ export function useProjectDetail(projectId: string | undefined) {
     setCreatingAction(true);
     try {
       await invoke("create_action", {
-        title: newActionTitle.trim(),
-        entityType: "project",
-        entityId: detail.id,
+        request: { title: newActionTitle.trim(), projectId: detail.id },
       });
       setNewActionTitle("");
       setAddingAction(false);
