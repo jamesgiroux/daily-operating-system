@@ -192,3 +192,93 @@
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Slower variant for deep-dive sections — pace change signals "deeper content" */
+.editorial-reveal-slow {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 800ms ease, transform 800ms ease;
+}
+
+.editorial-reveal-slow.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Risk urgency pulse — single heartbeat on reveal */
+@keyframes risk-pulse {
+  0% { border-left-color: var(--color-spice-terracotta); }
+  50% { border-left-color: rgba(196, 101, 74, 0.3); }
+  100% { border-left-color: var(--color-spice-terracotta); }
+}
+.risk-pulse-once {
+  animation: risk-pulse 800ms ease-in-out 1;
+}
+
+/* Attendee hover tooltip — clean, editorial */
+.attendee-tooltip-wrap {
+  position: relative;
+}
+.attendee-tooltip-wrap .attendee-tooltip {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 10;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 10px 14px;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-heavy);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+.attendee-tooltip-wrap:hover .attendee-tooltip {
+  display: block;
+}
+
+/* Agenda count pulse — subtle acknowledgment on add */
+@keyframes agenda-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); color: var(--color-spice-turmeric); }
+  100% { transform: scale(1); }
+}
+.agenda-count-pulse {
+  animation: agenda-pulse 400ms ease-out 1;
+}
+
+/* ============================================
+   EDITORIAL CALENDAR — DatePicker overrides
+   ============================================ */
+.editorial-calendar {
+  background: var(--color-paper-cream);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+
+.editorial-calendar-caption {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.editorial-calendar-weekday {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.editorial-calendar-today {
+  background: var(--color-paper-linen);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-editorial-sm);
+}
+
+/* Selected day uses turmeric accent */
+.editorial-calendar [data-selected-single="true"] {
+  background: var(--color-spice-turmeric) !important;
+  color: var(--color-paper-warm-white) !important;
+  border-radius: var(--radius-editorial-sm);
+}
