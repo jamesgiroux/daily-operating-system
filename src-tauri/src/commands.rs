@@ -827,7 +827,7 @@ fn hydrate_attendee_context(
             if seen_emails.contains(email) {
                 continue;
             }
-            if let Ok(Some(person)) = db.get_person_by_email(email) {
+            if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
                 seen_emails.insert(email.clone());
                 contexts.push(person_to_attendee_context(&person));
             }
