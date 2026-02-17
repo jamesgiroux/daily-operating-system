@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "0.8.1"
+version = "0.8.2"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
