@@ -7104,6 +7104,12 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             false,
         );
 
+        // Prune old audit trail files (I297)
+        let pruned = crate::audit::prune_audit_files(workspace);
+        if pruned > 0 {
+            log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
+        }
+
         if let Ok(mut guard) = state.last_hygiene_report.lock() {
             *guard = Some(report.clone());
         }
