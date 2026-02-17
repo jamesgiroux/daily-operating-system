@@ -77,9 +77,7 @@ pub struct ProjectMilestone {
 
 /// Resolve the directory for a project's workspace files (I70: sanitized name).
 pub fn project_dir(workspace: &Path, name: &str) -> PathBuf {
-    workspace
-        .join("Projects")
-        .join(crate::util::sanitize_for_filesystem(name))
+    crate::entity_io::entity_dir(workspace, "Projects", name)
 }
 
 /// Write `dashboard.json` for a project.
@@ -94,8 +92,6 @@ pub fn write_project_json(
     _db: &ActionDb,
 ) -> Result<(), String> {
     let dir = project_dir(workspace, &project.name);
-    std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
 
     let json = ProjectJson {
         version: 1,
@@ -116,12 +112,7 @@ pub fn write_project_json(
             .unwrap_or_default(),
     };
 
-    let path = dir.join("dashboard.json");
-    let content =
-        serde_json::to_string_pretty(&json).map_err(|e| format!("Serialize error: {}", e))?;
-    crate::util::atomic_write_str(&path, &content).map_err(|e| format!("Write error: {}", e))?;
-
-    Ok(())
+    crate::entity_io::write_entity_json(&dir, "dashboard.json", &json)
 }
 
 /// Write `dashboard.md` for a project (generated artifact).
@@ -329,28 +320,21 @@ pub struct ReadProjectResult {
 
 /// Read a dashboard.json file and convert to DbProject + narrative fields.
 pub fn read_project_json(path: &Path) -> Result<ReadProjectResult, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
-    let json: ProjectJson =
-        serde_json::from_str(&content).map_err(|e| format!("Parse error: {}", e))?;
+    let project_dir = path.parent().ok_or("No parent dir")?;
+    let json: ProjectJson = crate::entity_io::read_entity_json(
+        project_dir,
+        path.file_name().and_then(|n| n.to_str()).unwrap_or("dashboard.json"),
+    )?;
 
-    let name = path
-        .parent()
-        .and_then(|p| p.file_name())
+    let name = project_dir
+        .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("Unknown")
         .to_string();
 
     let id = slugify(&name);
 
-    // Get file mtime as updated_at
-    let updated_at = std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map(|t| {
-            let dt: chrono::DateTime<Utc> = t.into();
-            dt.to_rfc3339()
-        })
-        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let updated_at = crate::entity_io::file_updated_at(path);
 
     let tracker_path = path.parent().and_then(|p| {
         // Build relative path like "Projects/Widget v2"
@@ -524,7 +508,7 @@ pub fn sync_content_index_for_project(
     project: &DbProject,
 ) -> Result<(usize, usize, usize), String> {
     let dir = project_dir(workspace, &project.name);
-    crate::entity_intel::sync_content_index_for_entity(&dir, &project.id, "project", workspace, db)
+    crate::entity_io::sync_content_index_for_entity(db, workspace, &project.id, "project", &dir)
 }
 
 /// Sync content indexes for all projects. Returns total files indexed.
