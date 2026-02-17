@@ -4,6 +4,23 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.3] - 2026-02-17
+
+Cleanup and hardening. Type safety, migration resilience, input validation, and AI prompt robustness.
+
+### Fixed
+- `LinkedEntity.entityType` narrowed at source — removes band-aid cast, fixes entity picker for projects (I303)
+- Transcript action extraction resolves `@Tag` to real account ID via case-insensitive lookup — fixes silent FK violations that dropped actions
+- Path traversal guard added to `resolve_prep_path`
+- Stale agenda overwrite when hiding attendees — `agenda` parameter now optional in `update_meeting_user_agenda`
+
+### Changed
+- Migrations 006, 007, 011 hardened with `IF NOT EXISTS` for crash-recovery safety
+- Orphan migration file `007_chat_sessions.sql` removed
+- Input bounds on user agenda layer: max 50 items per list, 500 chars per string, UTF-8-safe truncation
+- Transcript prompt handles null title/account gracefully instead of producing malformed prompts (I304)
+- Folio bar transcript button shows spinner and `not-allowed` cursor when processing
+
 ## [0.8.2] - 2026-02-17
 
 Polish sprint. Meeting intelligence redesigned as editorial briefing, audit trail for AI-generated data, person deduplication, and print-ready PDF export.
