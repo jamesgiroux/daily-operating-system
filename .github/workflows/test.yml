@@ -51,6 +51,12 @@ jobs:
             exit 1
           fi
 
+      - name: Create sidecar stub for Tauri externalBin validation
+        run: |
+          mkdir -p src-tauri/binaries
+          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
+          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
