@@ -54,6 +54,7 @@ impl Scheduler {
     /// It also handles sleep/wake detection.
     pub async fn run(&self) {
         let mut last_check = Utc::now();
+        let mut last_proposed_archive = Utc::now();
 
         loop {
             tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -73,7 +74,31 @@ impl Scheduler {
             // Check and run due jobs
             self.check_and_run_due_jobs(now).await;
 
+            // Auto-archive stale proposed actions daily (I256)
+            if (now - last_proposed_archive).num_hours() >= 24 {
+                self.auto_archive_proposed_actions();
+                last_proposed_archive = now;
+            }
+
             last_check = now;
+        }
+    }
+
+    /// Auto-archive proposed actions older than 7 days (I256).
+    fn auto_archive_proposed_actions(&self) {
+        match crate::db::ActionDb::open() {
+            Ok(db) => match db.auto_archive_old_proposed(7) {
+                Ok(count) if count > 0 => {
+                    log::info!("Auto-archived {} stale proposed actions", count);
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!("Failed to auto-archive proposed actions: {}", e);
+                }
+            },
+            Err(e) => {
+                log::warn!("Failed to open DB for proposed action archival: {}", e);
+            }
         }
     }
 

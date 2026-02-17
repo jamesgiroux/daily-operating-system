@@ -41,6 +41,12 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 9,
     sql: include_str!("migrations/009_fix_embeddings_column.sql"),
+}, Migration {
+    version: 10,
+    sql: include_str!("migrations/010_foreign_keys.sql"),
+}, Migration {
+    version: 11,
+    sql: include_str!("migrations/011_proposed_actions.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -202,13 +208,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 9,
-            "should apply all migrations including fix_embeddings_column"
+            applied, 11,
+            "should apply all migrations including proposed_actions"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 9);
+        assert_eq!(version, 11);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -326,21 +332,49 @@ mod tests {
             [],
         )
         .expect("chat_turns table should exist");
+
+        // Verify proposed/archived action statuses work (migration 011)
+        conn.execute(
+            "INSERT INTO actions (id, title, status, created_at, updated_at)
+             VALUES ('proposed-1', 'Proposed action', 'proposed', '2025-01-01', '2025-01-01')",
+            [],
+        )
+        .expect("proposed status should be accepted");
+
+        conn.execute(
+            "INSERT INTO actions (id, title, status, created_at, updated_at)
+             VALUES ('archived-1', 'Archived action', 'archived', '2025-01-01', '2025-01-01')",
+            [],
+        )
+        .expect("archived status should be accepted");
     }
 
     #[test]
     fn test_bootstrap_existing_db() {
         let conn = mem_db();
 
-        // Simulate a pre-framework database: create actions table manually
+        // Simulate a pre-framework database: create actions table with all baseline columns.
+        // A real pre-framework DB would have all columns from inline CREATE TABLE + ALTER TABLE
+        // statements that existed in db.rs before the migration framework.
         conn.execute_batch(
             "CREATE TABLE actions (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
-                status TEXT DEFAULT 'pending',
-                due_date TEXT,
+                priority TEXT CHECK(priority IN ('P1', 'P2', 'P3')) DEFAULT 'P2',
+                status TEXT CHECK(status IN ('pending', 'completed', 'waiting', 'cancelled')) DEFAULT 'pending',
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                due_date TEXT,
+                completed_at TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                source_label TEXT,
+                context TEXT,
+                waiting_on TEXT,
+                updated_at TEXT NOT NULL,
+                person_id TEXT,
+                needs_decision INTEGER DEFAULT 0
             );
             INSERT INTO actions (id, title, created_at, updated_at)
             VALUES ('existing', 'Existing Action', '2025-01-01', '2025-01-01');",
@@ -412,11 +446,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v9
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 8, "bootstrap should mark v1, then apply v2 through v9");
+        assert_eq!(applied, 10, "bootstrap should mark v1, then apply v2 through v11");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 9);
+        assert_eq!(version, 11);
 
         // Verify existing data is untouched
         let title: String = conn
