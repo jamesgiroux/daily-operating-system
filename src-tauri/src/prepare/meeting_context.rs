@@ -619,7 +619,7 @@ fn build_attendee_account_votes(
     let mut votes: HashMap<String, usize> = HashMap::new();
 
     for email in emails {
-        if let Ok(Some(person)) = db.get_person_by_email(email) {
+        if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
             if let Ok(entities) = db.get_entities_for_person(&person.id) {
                 for entity in entities {
                     if entity.entity_type == crate::entity::EntityType::Account {
