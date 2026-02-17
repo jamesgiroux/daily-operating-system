@@ -89,10 +89,8 @@ pub fn prune_audit_files(workspace: &Path) -> usize {
             .unwrap_or_default()
             .as_secs() as i64;
 
-        if mtime_secs < cutoff_ts {
-            if std::fs::remove_file(&path).is_ok() {
-                pruned += 1;
-            }
+        if mtime_secs < cutoff_ts && std::fs::remove_file(&path).is_ok() {
+            pruned += 1;
         }
     }
     pruned
