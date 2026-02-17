@@ -11,6 +11,7 @@ import type { DbAction } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
+import { DatePicker } from "@/components/ui/date-picker";
 
 type StatusTab = "pending" | "completed" | "waiting" | "all";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
@@ -586,20 +587,10 @@ function ActionCreateForm({
 
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginBottom: 12 }}>
             <PriorityPicker value={priority} onChange={setPriority} />
-            <input
-              type="date"
+            <DatePicker
               value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                color: "var(--color-text-secondary)",
-                background: "none",
-                border: "1px solid var(--color-rule-heavy)",
-                borderRadius: 4,
-                padding: "3px 8px",
-                outline: "none",
-              }}
+              onChange={setDueDate}
+              placeholder="Due date"
             />
             <EntityPicker
               value={accountId}

@@ -16,6 +16,7 @@ mod devtools;
 pub mod embeddings;
 pub mod entity;
 pub mod entity_intel;
+pub mod entity_io;
 mod error;
 mod executor;
 mod focus_capacity;
