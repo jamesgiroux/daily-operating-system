@@ -2300,6 +2300,10 @@ pub fn enrich_emails(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude enrichment failed: {}", e))?;
 
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "email_batch", date_id, &output.stdout);
+
     let enrichments = parse_email_enrichment(&output.stdout);
     if enrichments.is_empty() {
         log::warn!("enrich_emails: no enrichments parsed from Claude output");
@@ -2723,6 +2727,10 @@ pub fn enrich_briefing(
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude briefing failed: {}", e))?;
 
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "daily_briefing", date_id, &output.stdout);
+
     let response = &output.stdout;
     let narrative = parse_briefing_narrative(response);
     let focus = parse_briefing_focus(response);
@@ -3094,6 +3102,10 @@ pub fn enrich_preps(
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude prep enrichment failed: {}", e))?;
+
+    // Audit trail (I297)
+    let date_id = data_dir.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+    let _ = crate::audit::write_audit_entry(workspace, "meeting_prep", date_id, &output.stdout);
 
     let enrichments = parse_prep_enrichment(&output.stdout);
     if enrichments.is_empty() {
@@ -3877,6 +3889,9 @@ pub fn enrich_week(
     let output = pty
         .spawn_claude(workspace, &prompt)
         .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
+
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
 
     let response = &output.stdout;
 
