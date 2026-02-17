@@ -1204,12 +1204,40 @@ pub fn get_week_data(state: State<Arc<AppState>>) -> WeekResult {
     let workspace = Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    match crate::json_loader::load_week_json(&today_dir) {
-        Ok(week) => WeekResult::Success { data: week },
-        Err(e) => WeekResult::NotFound {
-            message: format!("No week data: {}", e),
-        },
+    let started = std::time::Instant::now();
+
+    let mut week = match crate::json_loader::load_week_json(&today_dir) {
+        Ok(w) => w,
+        Err(e) => {
+            return WeekResult::NotFound {
+                message: format!("No week data: {}", e),
+            }
+        }
+    };
+
+    // Enrich dayShapes with live per-day action priorities (I279)
+    if let Some(ref mut shapes) = week.day_shapes {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(candidates) = db.get_focus_candidate_actions(7) {
+                for shape in shapes.iter_mut() {
+                    let available_minutes: u32 =
+                        shape.available_blocks.iter().map(|b| b.duration_minutes).sum();
+
+                    let (prioritized, _top_three, implications) =
+                        crate::focus_prioritization::prioritize_actions(
+                            candidates.clone(),
+                            available_minutes,
+                        );
+
+                    shape.prioritized_actions = Some(prioritized);
+                    shape.focus_implications = Some(implications);
+                }
+            }
+        }
     }
+
+    log_command_latency("get_week_data", started, READ_CMD_LATENCY_BUDGET_MS);
+    WeekResult::Success { data: week }
 }
 
 /// TTL thresholds for week calendar cache (W6).
@@ -6803,6 +6831,20 @@ pub fn get_hygiene_report(
         .lock()
         .map_err(|_| "Lock poisoned".to_string())?;
     Ok(guard.clone())
+}
+
+/// Get a prose narrative summarizing the last hygiene scan.
+#[tauri::command]
+pub fn get_hygiene_narrative(
+    state: State<Arc<AppState>>,
+) -> Result<Option<crate::hygiene::HygieneNarrativeView>, String> {
+    let report = state
+        .last_hygiene_report
+        .lock()
+        .map_err(|_| "Lock poisoned")?;
+    Ok(report
+        .as_ref()
+        .and_then(crate::hygiene::build_hygiene_narrative))
 }
 
 /// Get the current Intelligence Hygiene status view model.
