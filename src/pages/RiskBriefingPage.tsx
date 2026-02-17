@@ -89,22 +89,6 @@ export default function RiskBriefingPage() {
     [debouncedSave],
   );
 
-  // Register magazine shell
-  const shellConfig = useMemo(
-    () => ({
-      folioLabel: "Risk Briefing",
-      atmosphereColor: "terracotta" as const,
-      activePage: "accounts" as const,
-      backLink: {
-        label: "Account",
-        onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
-      },
-      chapters: briefing ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
-    }),
-    [navigate, accountId, briefing, saveStatus],
-  );
-  useRegisterMagazineShell(shellConfig);
   useRevealObserver(!loading && !!briefing);
 
   // Load cached briefing on mount
@@ -143,6 +127,45 @@ export default function RiskBriefingPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     }
   }, [accountId, generating]);
+
+  // Register magazine shell (after handleGenerate so folioActions can reference it)
+  const shellConfig = useMemo(
+    () => ({
+      folioLabel: "Risk Briefing",
+      atmosphereColor: "terracotta" as const,
+      activePage: "accounts" as const,
+      backLink: {
+        label: "Account",
+        onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
+      },
+      chapters: briefing ? SLIDES : undefined,
+      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
+      folioActions: briefing ? (
+        <button
+          onClick={handleGenerate}
+          disabled={generating}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase" as const,
+            color: generating ? "var(--color-text-tertiary)" : "var(--color-spice-terracotta)",
+            background: "none",
+            border: `1px solid ${generating ? "var(--color-rule-light)" : "var(--color-spice-terracotta)"}`,
+            borderRadius: 4,
+            padding: "2px 10px",
+            cursor: generating ? "not-allowed" : "pointer",
+            opacity: generating ? 0.5 : 1,
+          }}
+        >
+          {generating ? "Generating..." : "Regenerate"}
+        </button>
+      ) : undefined,
+    }),
+    [navigate, accountId, briefing, saveStatus, handleGenerate, generating],
+  );
+  useRegisterMagazineShell(shellConfig);
 
   // Keyboard navigation: 1-6 jump to slides, arrows navigate
   useEffect(() => {
@@ -292,8 +315,7 @@ export default function RiskBriefingPage() {
       <section id="cover" style={{ scrollMarginTop: 60 }}>
         <RiskCover
           data={briefing!.cover}
-          onRegenerate={handleGenerate}
-          regenerating={generating}
+          onUpdate={(v) => updateSlide("cover", v)}
         />
       </section>
 

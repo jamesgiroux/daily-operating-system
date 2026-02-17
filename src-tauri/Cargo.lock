@@ -1006,7 +1006,7 @@ dependencies = [
 
 [[package]]
 name = "dailyos"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1016,6 +1016,7 @@ dependencies = [
  "cron",
  "dirs 5.0.1",
  "fastembed",
+ "filetime",
  "hex",
  "html2text",
  "log",
