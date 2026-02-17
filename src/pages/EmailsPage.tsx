@@ -396,7 +396,7 @@ function HighPriorityCard({
   showBorder: boolean;
 }) {
   // First signal entity name for context
-  const entitySignal = email.signals.length > 0 ? email.signals[0] : null;
+  const entitySignal = email.signals?.length > 0 ? email.signals[0] : null;
 
   return (
     <div
@@ -526,7 +526,7 @@ function HighPriorityCard({
       )}
 
       {/* Signal badges */}
-      {email.signals.length > 0 && (
+      {email.signals?.length > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
           {email.signals.map((sig, i) => (
             <span
