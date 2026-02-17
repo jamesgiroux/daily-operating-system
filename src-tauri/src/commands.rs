@@ -8080,8 +8080,8 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
             return ClaudeDesktopConfigResult {
                 success: false,
                 message: format!(
-                    "Could not find {binary_name} binary. Build it with: \
-                     cd src-tauri && cargo build --features mcp --bin dailyos-mcp"
+                    "The {binary_name} component is missing from this installation. \
+                     Please reinstall DailyOS from the latest release at https://daily-os.com"
                 ),
                 config_path: None,
                 binary_path: None,
