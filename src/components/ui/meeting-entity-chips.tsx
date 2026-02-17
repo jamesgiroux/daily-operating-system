@@ -106,7 +106,7 @@ export function MeetingEntityChips({
         // Rollback: re-add the entity on failure
         setLocalEntities((prev) => {
           if (prev.some((e) => e.id === entityId)) return prev;
-          return [...prev, { id: entityId, name: entityId, entityType }];
+          return [...prev, { id: entityId, name: entityId, entityType: entityType as "account" | "project" }];
         });
       }
     },
