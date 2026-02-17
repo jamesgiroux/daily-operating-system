@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface LifecycleEventDrawerProps {
   open: boolean;
@@ -99,10 +100,10 @@ export function LifecycleEventDrawer({
 
           <div>
             <label style={labelStyle}>Date</label>
-            <Input
-              type="date"
+            <DatePicker
               value={newEventDate}
-              onChange={(e) => setNewEventDate(e.target.value)}
+              onChange={setNewEventDate}
+              placeholder="Select date"
             />
           </div>
 

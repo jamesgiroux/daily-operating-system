@@ -10,6 +10,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import type { AccountHealth } from "@/types";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
@@ -173,11 +174,10 @@ export function AccountFieldsDrawer({
 
           <div>
             <label style={labelStyle}>Renewal Date</label>
-            <input
-              type="date"
+            <DatePicker
               value={editRenewal}
-              onChange={handleChange(setEditRenewal)}
-              style={inputStyle}
+              onChange={(v) => { setEditRenewal(v); setDirty(true); }}
+              placeholder="Set renewal date"
             />
           </div>
         </div>

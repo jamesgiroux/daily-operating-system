@@ -1,12 +1,20 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Link } from "@tanstack/react-router";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { InlineCreateForm } from "@/components/ui/inline-create-form";
 import {
   BulkCreateForm,
   parseBulkCreateInput,
 } from "@/components/ui/bulk-create-form";
+import {
+  EntityListSkeleton,
+  EntityListError,
+  EntityListEmpty,
+  EntityListHeader,
+  EntityListEndMark,
+  FilterTabs,
+} from "@/components/entity/EntityListShell";
+import { EntityRow } from "@/components/entity/EntityRow";
 import { formatArr } from "@/lib/utils";
 import type { AccountListItem } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
@@ -134,6 +142,8 @@ export default function AccountsPage() {
     return Array.from(values).sort();
   }, [accounts]);
 
+  const lifecycleTabs = useMemo(() => ["all", ...lifecycleValues] as const, [lifecycleValues]);
+
   // Filters
   const lifecycleFiltered =
     lifecycleFilter === "all"
@@ -194,7 +204,7 @@ export default function AccountsPage() {
             color: isArchived ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
           }}
         >
-          {isArchived ? "← Active" : "Archive"}
+          {isArchived ? "\u2190 Active" : "Archive"}
         </button>
         {!isArchived && (
           <button
@@ -236,46 +246,12 @@ export default function AccountsPage() {
 
   // Loading state
   if (loading && (isArchived ? archivedAccounts.length === 0 : accounts.length === 0)) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            style={{
-              height: 52,
-              background: "var(--color-rule-light)",
-              borderRadius: 8,
-              marginBottom: 12,
-            }}
-          />
-        ))}
-      </div>
-    );
+    return <EntityListSkeleton />;
   }
 
   // Error state
   if (error) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>{error}</p>
-        <button
-          onClick={loadAccounts}
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            color: "var(--color-text-tertiary)",
-            background: "none",
-            border: "1px solid var(--color-rule-heavy)",
-            borderRadius: 4,
-            padding: "4px 12px",
-            cursor: "pointer",
-            marginTop: 12,
-          }}
-        >
-          Retry
-        </button>
-      </div>
-    );
+    return <EntityListError error={error} onRetry={loadAccounts} />;
   }
 
   // Empty state
@@ -294,13 +270,7 @@ export default function AccountsPage() {
         >
           Your Book
         </h1>
-        <div style={{ textAlign: "center", padding: "64px 0" }}>
-          <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
-            No accounts yet
-          </p>
-          <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
-            Create your first account to get started.
-          </p>
+        <EntityListEmpty title="No accounts yet" message="Create your first account to get started.">
           {creating ? (
             <div style={{ maxWidth: 400, margin: "24px auto 0" }}>
               <InlineCreateForm
@@ -330,110 +300,32 @@ export default function AccountsPage() {
               + New Account
             </button>
           )}
-        </div>
+        </EntityListEmpty>
       </div>
     );
   }
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-      {/* ═══ PAGE HEADER ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 36,
-              fontWeight: 400,
-              letterSpacing: "-0.02em",
-              color: "var(--color-text-primary)",
-              margin: 0,
-            }}
-          >
-            Your Book
-          </h1>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: "var(--color-text-tertiary)",
-            }}
-          >
-            {isArchived ? filteredArchived.length : filtered.length} {isArchived ? "archived" : "active"}
-          </span>
-        </div>
-
-        {/* Section rule */}
-        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
-
+      <EntityListHeader
+        headline="Your Book"
+        count={isArchived ? filteredArchived.length : filtered.length}
+        countLabel={isArchived ? "archived" : "active"}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="\u2318  Search accounts..."
+      >
         {/* Lifecycle filter (active only, only when lifecycle values exist) */}
         {!isArchived && lifecycleValues.length > 0 && (
-          <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
-            <button
-              onClick={() => setLifecycleFilter("all")}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: lifecycleFilter === "all" ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                textDecoration: lifecycleFilter === "all" ? "underline" : "none",
-                textUnderlineOffset: "4px",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-              }}
-            >
-              all
-            </button>
-            {lifecycleValues.map((lc) => (
-              <button
-                key={lc}
-                onClick={() => setLifecycleFilter(lc)}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: lifecycleFilter === lc ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                  textDecoration: lifecycleFilter === lc ? "underline" : "none",
-                  textUnderlineOffset: "4px",
-                  background: "none",
-                  border: "none",
-                  padding: 0,
-                  cursor: "pointer",
-                }}
-              >
-                {lc}
-              </button>
-            ))}
-          </div>
+          <FilterTabs
+            tabs={lifecycleTabs}
+            active={lifecycleFilter}
+            onChange={setLifecycleFilter}
+          />
         )}
+      </EntityListHeader>
 
-        {/* Search */}
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="⌘  Search accounts..."
-          style={{
-            width: "100%",
-            fontFamily: "var(--font-sans)",
-            fontSize: 14,
-            color: "var(--color-text-primary)",
-            background: "none",
-            border: "none",
-            borderBottom: "1px solid var(--color-rule-light)",
-            padding: "8px 0",
-            outline: "none",
-          }}
-        />
-      </section>
-
-      {/* ═══ CREATE FORM ═══ */}
+      {/* Create form */}
       {creating && !isArchived && (
         <div style={{ marginBottom: 16 }}>
           {bulkMode ? (
@@ -472,26 +364,32 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* ═══ ACCOUNT ROWS ═══ */}
+      {/* Account rows */}
       <section>
         {displayList.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "64px 0" }}>
-            <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
-              {isArchived ? "No archived accounts" : "No matches"}
-            </p>
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
-              {isArchived ? "Archived accounts will appear here." : "Try a different search or filter."}
-            </p>
-          </div>
+          <EntityListEmpty
+            title={isArchived ? "No archived accounts" : "No matches"}
+            message={isArchived ? "Archived accounts will appear here." : "Try a different search or filter."}
+          />
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {isArchived
               ? filteredArchived.map((account, i) => (
-                  <ArchivedAccountRow
+                  <EntityRow
                     key={account.id}
-                    account={account}
+                    to="/accounts/$accountId"
+                    params={{ accountId: account.id }}
+                    dotColor={healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)"}
+                    name={account.name}
                     showBorder={i < filteredArchived.length - 1}
-                  />
+                    subtitle={account.lifecycle}
+                  >
+                    {account.arr != null && (
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                        ${formatArr(account.arr)}
+                      </span>
+                    )}
+                  </EntityRow>
                 ))
               : filtered.map((account, i) => (
                   <div key={account.id}>
@@ -516,29 +414,7 @@ export default function AccountsPage() {
         )}
       </section>
 
-      {/* ═══ END MARK ═══ */}
-      {displayList.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--color-rule-heavy)",
-            marginTop: 48,
-            paddingTop: 32,
-            paddingBottom: 120,
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 14,
-              fontStyle: "italic",
-              color: "var(--color-text-tertiary)",
-            }}
-          >
-            That's everything.
-          </div>
-        </div>
-      )}
+      {displayList.length > 0 && <EntityListEndMark />}
     </div>
   );
 }
@@ -561,184 +437,81 @@ function AccountRow({
   const daysSince = account.daysSinceLastMeeting;
   const isStale = daysSince != null && daysSince > 14;
 
-  return (
-    <Link
-      to="/accounts/$accountId"
-      params={{ accountId: account.id }}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        paddingLeft: isChild ? 28 : 0,
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        textDecoration: "none",
-        transition: "background 0.12s ease",
-      }}
-    >
-      {/* Health dot */}
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          background: healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)",
-          flexShrink: 0,
-          marginTop: 8,
-        }}
-      />
+  const subtitle = account.teamSummary ? (
+    <>
+      {account.teamSummary}
+      {account.openActionCount > 0 && (
+        <span> &middot; {account.openActionCount} action{account.openActionCount !== 1 ? "s" : ""}</span>
+      )}
+    </>
+  ) : undefined;
 
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 17,
-              fontWeight: 400,
-              color: "var(--color-text-primary)",
-            }}
-          >
-            {account.name}
-          </span>
-          {account.isInternal && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
-              Internal
-            </span>
-          )}
-          {onToggleExpand && (
-            <button
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleExpand();
-              }}
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--color-text-tertiary)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              {isExpanded ? "▾" : "▸"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
-            </button>
-          )}
-        </div>
-        {account.teamSummary && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {account.teamSummary}
-            {account.openActionCount > 0 && (
-              <span> · {account.openActionCount} action{account.openActionCount !== 1 ? "s" : ""}</span>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Right metrics */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 16, flexShrink: 0 }}>
-        {account.arr != null && (
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
-            ${formatArr(account.arr)}
-          </span>
-        )}
-        {daysSince != null && (
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 13,
-              color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
-            }}
-          >
-            {daysSince === 0 ? "Today" : `${daysSince}d`}
-          </span>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-// ─── Archived Account Row ───────────────────────────────────────────────────
-
-function ArchivedAccountRow({
-  account,
-  showBorder,
-}: {
-  account: ArchivedAccount;
-  showBorder: boolean;
-}) {
-  return (
-    <Link
-      to="/accounts/$accountId"
-      params={{ accountId: account.id }}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        textDecoration: "none",
-      }}
-    >
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          background: healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)",
-          flexShrink: 0,
-          marginTop: 8,
-        }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
+  const nameSuffix = (
+    <>
+      {account.isInternal && (
         <span
           style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 17,
-            fontWeight: 400,
-            color: "var(--color-text-primary)",
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--color-text-tertiary)",
           }}
         >
-          {account.name}
+          Internal
         </span>
-        {account.lifecycle && (
-          <div
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 13,
-              fontWeight: 300,
-              color: "var(--color-text-tertiary)",
-              marginTop: 2,
-            }}
-          >
-            {account.lifecycle}
-          </div>
-        )}
-      </div>
+      )}
+      {onToggleExpand && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleExpand();
+          }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          {isExpanded ? "\u25BE" : "\u25B8"} {account.childCount} BU{account.childCount !== 1 ? "s" : ""}
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    <EntityRow
+      to="/accounts/$accountId"
+      params={{ accountId: account.id }}
+      dotColor={healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)"}
+      name={account.name}
+      showBorder={showBorder}
+      paddingLeft={isChild ? 28 : 0}
+      nameSuffix={nameSuffix}
+      subtitle={subtitle}
+    >
       {account.arr != null && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)", flexShrink: 0 }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-secondary)" }}>
           ${formatArr(account.arr)}
         </span>
       )}
-    </Link>
+      {daysSince != null && (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            color: isStale ? "var(--color-spice-terracotta)" : "var(--color-text-tertiary)",
+          }}
+        >
+          {daysSince === 0 ? "Today" : `${daysSince}d`}
+        </span>
+      )}
+    </EntityRow>
   );
 }

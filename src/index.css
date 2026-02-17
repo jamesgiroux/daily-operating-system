@@ -192,3 +192,39 @@
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ============================================
+   EDITORIAL CALENDAR — DatePicker overrides
+   ============================================ */
+.editorial-calendar {
+  background: var(--color-paper-cream);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+}
+
+.editorial-calendar-caption {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.editorial-calendar-weekday {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.editorial-calendar-today {
+  background: var(--color-paper-linen);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-editorial-sm);
+}
+
+/* Selected day uses turmeric accent */
+.editorial-calendar [data-selected-single="true"] {
+  background: var(--color-spice-turmeric) !important;
+  color: var(--color-paper-warm-white) !important;
+  border-radius: var(--radius-editorial-sm);
+}
