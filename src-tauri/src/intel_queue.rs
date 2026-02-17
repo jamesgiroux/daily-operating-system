@@ -529,15 +529,6 @@ pub fn run_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
-    if let Err(e) = crate::audit::write_audit_entry(
-        &input.workspace,
-        &input.entity_type,
-        &input.entity_id,
-        &output.stdout,
-    ) {
-        log::warn!("Audit write failed: {}", e);
-    }
-
     parse_intelligence_response(
         &output.stdout,
         &input.entity_id,
@@ -586,16 +577,6 @@ fn run_batch_enrichment(
             return run_individual_fallback(inputs, ai_config);
         }
     };
-
-    let batch_id = entity_names.join("_");
-    if let Err(e) = crate::audit::write_audit_entry(
-        &workspace,
-        "batch",
-        &batch_id,
-        &output.stdout,
-    ) {
-        log::warn!("Audit write failed: {}", e);
-    }
 
     // Parse combined response into per-entity results
     let parsed = parse_batch_response(&output.stdout, &inputs);
