@@ -1229,7 +1229,7 @@ pub fn build_intelligence_prompt(
         "WRITING RULES:\n\
          - Lead with conclusions, not evidence. State the \"so what\" first.\n\
          - Be concise. Every sentence must earn its place.\n\
-         - Use numbered footnote references [1], [2] etc. List sources at the end.\n\
+         - Do NOT include footnotes, reference numbers, or source citations in prose.\n\
          - Do NOT embed filenames or source references inline in prose.\n\
          - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
          - Write for a busy executive who has 60 seconds to understand this account.\n\n",
@@ -1282,13 +1282,12 @@ pub fn build_intelligence_prompt(
            \"executiveAssessment\": \"2-4 paragraphs separated by \\\\n\\\\n. \
          Paragraph 1: One-sentence verdict on {p1_framing}. \
          Paragraph 2: Top risk or blocker. Paragraph 3: Biggest opportunity. \
-         Paragraph 4 (optional): Key unknowns. Use [1] [2] footnote refs. Max 250 words.\",\n\
-           \"sources\": [\"filename1\", \"filename2\"],\n\
+         Paragraph 4 (optional): Key unknowns. No footnotes or references. Max 250 words.\",\n\
            \"risks\": [\n\
-             {{\"text\": \"risk description\", \"source\": \"filename\", \"urgency\": \"critical|watch|low\"}}\n\
+             {{\"text\": \"risk description\", \"urgency\": \"critical|watch|low\"}}\n\
            ],\n\
            \"recentWins\": [\n\
-             {{\"text\": \"win description\", \"source\": \"filename\", \"impact\": \"business impact\"}}\n\
+             {{\"text\": \"win description\", \"impact\": \"business impact\"}}\n\
            ],\n\
            \"currentState\": {{\n\
              \"working\": [\"what's going well\"],\n\
@@ -1299,7 +1298,7 @@ pub fn build_intelligence_prompt(
              {{\"name\": \"...\", \"role\": \"...\", \"assessment\": \"1-2 sentences\", \"engagement\": \"high|medium|low|unknown\"}}\n\
            ],\n\
            \"valueDelivered\": [\n\
-             {{\"date\": \"YYYY-MM-DD\", \"statement\": \"...\", \"source\": \"filename\", \"impact\": \"...\"}}\n\
+             {{\"date\": \"YYYY-MM-DD\", \"statement\": \"...\", \"impact\": \"...\"}}\n\
            ],\n\
            \"nextMeetingReadiness\": {{\n\
              \"prepItems\": [\"forward-looking prep item (max 3)\"]\n\
