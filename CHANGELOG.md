@@ -4,6 +4,13 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.4] - 2026-02-17
+
+Hotfix for Claude Desktop MCP integration.
+
+### Fixed
+- MCP server stdout pollution: native library output (ONNX Runtime, fastembed) during embedding model initialisation was leaking onto stdout before rmcp took ownership of the stdio transport, corrupting the JSON-RPC stream and causing Claude Desktop to lose terminal styling. Fixed by redirecting stdout → stderr (via `dup`/`dup2`) for the duration of embedding init.
+
 ## [0.8.3] - 2026-02-17
 
 Cleanup and hardening. Type safety, migration resilience, input validation, and AI prompt robustness.
