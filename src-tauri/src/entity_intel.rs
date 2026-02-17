@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::accounts::CompanyOverview;
 use crate::db::{ActionDb, DbAccount};
-use crate::util::atomic_write_str;
+use crate::util::{atomic_write_str, wrap_user_data};
 
 // =============================================================================
 // Intelligence JSON Schema
@@ -103,6 +103,20 @@ pub struct SourceManifestEntry {
     pub format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_type: Option<String>,
+    /// Whether this file was selected for the prompt context (vs skipped by budget).
+    #[serde(default = "default_selected", skip_serializing_if = "is_true")]
+    pub selected: bool,
+    /// Reason the file was skipped (only set when selected=false).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skip_reason: Option<String>,
+}
+
+fn default_selected() -> bool {
+    true
+}
+
+fn is_true(v: &bool) -> bool {
+    *v
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +211,10 @@ pub struct CompanyContext {
 // =============================================================================
 
 const INTEL_FILENAME: &str = "intelligence.json";
+
+/// Maximum bytes of file content to include in the intelligence prompt context.
+/// Keeps prompt size manageable (~10KB) while preserving the most relevant signals.
+const MAX_CONTEXT_BYTES: usize = 10_000;
 
 /// Read intelligence.json from an entity directory.
 pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
@@ -881,29 +899,15 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- File manifest + summaries (I139: summary-based, priority-ordered) ---
+    // --- File manifest + summaries (I286: vector-filtered, budget-capped) ---
     let files = db.get_entity_files(entity_id).unwrap_or_default();
     let is_incremental = prior.is_some();
-    // Summaries are much denser than raw text — raise char caps.
-    // Initial: 25K (~50 file summaries at 500 chars each). Incremental: 15K.
-    let max_chars: usize = if is_incremental { 15_000 } else { 25_000 };
     let enriched_at = prior.map(|p| p.enriched_at.as_str()).unwrap_or("");
 
     // Only consider files modified within the last 90 days
     let cutoff_90d = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
 
-    ctx.file_manifest = files
-        .iter()
-        .filter(|f| content_date_rfc3339(&f.filename, &f.modified_at) >= cutoff_90d)
-        .take(30)
-        .map(|f| SourceManifestEntry {
-            filename: f.filename.clone(),
-            modified_at: f.modified_at.clone(),
-            format: Some(f.format.clone()),
-            content_type: Some(f.content_type.clone()),
-        })
-        .collect();
-
+    // Use semantic search to rank files by relevance to entity's current state
     let mut ranked_files: Vec<&crate::db::DbContentFile> = Vec::new();
     let mut seen_file_ids = std::collections::HashSet::new();
 
@@ -937,10 +941,13 @@ pub fn build_intelligence_context(
         }
     }
 
+    // Collect file summaries within MAX_CONTEXT_BYTES budget.
+    // Mandatory files (dashboard.json, recent meeting notes) are always included.
     let mut file_parts: Vec<String> = Vec::new();
-    let mut total_chars = 0;
+    let mut total_bytes = 0usize;
+    let mut selected_filenames = std::collections::HashSet::new();
 
-    for file in ranked_files {
+    for file in &ranked_files {
         // Skip files older than 90 days (use filename date when available)
         if content_date_rfc3339(&file.filename, &file.modified_at) < cutoff_90d {
             continue;
@@ -951,14 +958,28 @@ pub fn build_intelligence_context(
             continue;
         }
 
-        // Use pre-computed summary from SQLite — no filesystem I/O on hot path
+        let is_mandatory = file.content_type == "dashboard"
+            || (file.content_type == "notes"
+                && content_date_rfc3339(&file.filename, &file.modified_at) >= cutoff_90d);
+
         if let Some(ref summary) = file.summary {
-            file_parts.push(format!(
+            let entry = format!(
                 "--- {} [{}] ({}) ---\n{}",
                 file.filename, file.content_type, file.modified_at, summary
-            ));
-            total_chars += summary.len();
-            if total_chars >= max_chars {
+            );
+            let entry_bytes = entry.len();
+
+            // Mandatory files always included; others respect budget
+            if !is_mandatory && total_bytes + entry_bytes > MAX_CONTEXT_BYTES {
+                continue;
+            }
+
+            file_parts.push(entry);
+            total_bytes += entry_bytes;
+            selected_filenames.insert(file.filename.clone());
+
+            // Stop once we've exceeded budget (mandatory files may push us over)
+            if total_bytes >= MAX_CONTEXT_BYTES {
                 break;
             }
         }
@@ -967,6 +988,28 @@ pub fn build_intelligence_context(
     if !file_parts.is_empty() {
         ctx.file_contents = file_parts.join("\n\n");
     }
+
+    // Build manifest with selected/skipped tracking (I286)
+    ctx.file_manifest = files
+        .iter()
+        .filter(|f| content_date_rfc3339(&f.filename, &f.modified_at) >= cutoff_90d)
+        .take(30)
+        .map(|f| {
+            let is_selected = selected_filenames.contains(&f.filename);
+            SourceManifestEntry {
+                filename: f.filename.clone(),
+                modified_at: f.modified_at.clone(),
+                format: Some(f.format.clone()),
+                content_type: Some(f.content_type.clone()),
+                selected: is_selected,
+                skip_reason: if is_selected {
+                    None
+                } else {
+                    Some("budget".to_string())
+                },
+            }
+        })
+        .collect();
 
     // --- Recent call transcripts (for stakeholder engagement assessment) ---
     // Read the raw text of the 2 most recent transcripts (up to 5K chars each).
@@ -1072,7 +1115,7 @@ pub fn build_intelligence_prompt(
     prompt.push_str(&format!(
         "You are building an intelligence assessment for the {label} \"{name}\".\n\n",
         label = entity_label,
-        name = entity_name
+        name = wrap_user_data(entity_name)
     ));
 
     if is_incremental {
@@ -1091,52 +1134,52 @@ pub fn build_intelligence_prompt(
     // Facts
     if !ctx.facts_block.is_empty() {
         prompt.push_str("## Current Facts\n");
-        prompt.push_str(&ctx.facts_block);
+        prompt.push_str(&wrap_user_data(&ctx.facts_block));
         prompt.push_str("\n\n");
     }
 
     // Prior intelligence (incremental only)
     if let Some(ref prior) = ctx.prior_intelligence {
         prompt.push_str("## Prior Intelligence (update, don't replace wholesale)\n");
-        prompt.push_str(prior);
+        prompt.push_str(&wrap_user_data(prior));
         prompt.push_str("\n\n");
     }
 
     // Next meeting
     if let Some(ref meeting) = ctx.next_meeting {
         prompt.push_str("## Next Meeting\n");
-        prompt.push_str(meeting);
+        prompt.push_str(&wrap_user_data(meeting));
         prompt.push_str("\n\n");
     }
 
     // Signals from SQLite
     if !ctx.meeting_history.is_empty() {
         prompt.push_str("## Meeting History (last 90 days)\n");
-        prompt.push_str(&ctx.meeting_history);
+        prompt.push_str(&wrap_user_data(&ctx.meeting_history));
         prompt.push_str("\n\n");
     }
 
     if !ctx.open_actions.is_empty() {
         prompt.push_str("## Open Actions\n");
-        prompt.push_str(&ctx.open_actions);
+        prompt.push_str(&wrap_user_data(&ctx.open_actions));
         prompt.push_str("\n\n");
     }
 
     if !ctx.recent_captures.is_empty() {
         prompt.push_str("## Recent Captures (wins/risks/decisions)\n");
-        prompt.push_str(&ctx.recent_captures);
+        prompt.push_str(&wrap_user_data(&ctx.recent_captures));
         prompt.push_str("\n\n");
     }
 
     if !ctx.recent_email_signals.is_empty() {
         prompt.push_str("## Recent Email Signals\n");
-        prompt.push_str(&ctx.recent_email_signals);
+        prompt.push_str(&wrap_user_data(&ctx.recent_email_signals));
         prompt.push_str("\n\n");
     }
 
     if !ctx.stakeholders.is_empty() {
         prompt.push_str("## Stakeholders\n");
-        prompt.push_str(&ctx.stakeholders);
+        prompt.push_str(&wrap_user_data(&ctx.stakeholders));
         prompt.push_str("\n\n");
     }
 
@@ -1147,7 +1190,7 @@ pub fn build_intelligence_prompt(
             let ct = f.content_type.as_deref().unwrap_or("general");
             prompt.push_str(&format!(
                 "- {} [{}] ({}, {})\n",
-                f.filename,
+                wrap_user_data(&f.filename),
                 ct,
                 f.format.as_deref().unwrap_or("unknown"),
                 f.modified_at
@@ -1163,7 +1206,7 @@ pub fn build_intelligence_prompt(
         } else {
             prompt.push_str("## File Summaries (by priority)\n");
         }
-        prompt.push_str(&ctx.file_contents);
+        prompt.push_str(&wrap_user_data(&ctx.file_contents));
         prompt.push_str("\n\n");
     }
 
@@ -1177,7 +1220,7 @@ pub fn build_intelligence_prompt(
              - Who participates but follows rather than leads (medium)\n\
              - Who is mostly silent, reactive, or absent (low)\n\n",
         );
-        prompt.push_str(&ctx.recent_transcripts);
+        prompt.push_str(&wrap_user_data(&ctx.recent_transcripts));
         prompt.push_str("\n\n");
     }
 
@@ -1230,61 +1273,178 @@ pub fn build_intelligence_prompt(
         },
         _ => "overall assessment",
     };
+    // JSON output format (I288)
     prompt.push_str(&format!(
-        "Return ONLY the structured block below — no other text before or after.\n\n\
-         INTELLIGENCE\n\
-         EXECUTIVE_ASSESSMENT:\n\
-         <2-4 paragraphs separated by blank lines (\\n\\n), structured as follows:\n\
-         Paragraph 1: One-sentence verdict — {p1_framing} in plain language. Then 2-3 sentences on why.\n\
-         Paragraph 2: Top risk or blocker — what could go wrong and what depends on it.\n\
-         Paragraph 3: Biggest opportunity — where upside exists and what unlocks it.\n\
-         Paragraph 4 (optional): Key unknowns or intelligence gaps that need resolution.\n\
-         IMPORTANT: Separate each paragraph with a blank line. Do NOT run paragraphs together.\n\
-         Use [1] [2] footnote references. Max 250 words total.>\n\
-         SOURCES:\n\
-         [1] <filename>\n\
-         [2] <filename>\n\
-         END_EXECUTIVE_ASSESSMENT\n\
-         RISK: <risk text> | SOURCE: <filename> | URGENCY: <critical|watch|low>\n\
-         WIN: <win text> | SOURCE: <filename> | IMPACT: <business impact>\n\
-         WORKING: <what's going well>\n\
-         NOT_WORKING: <what needs attention>\n\
-         UNKNOWN: <knowledge gap that should be resolved>\n\
-         STAKEHOLDER: <name> | ROLE: <role> | ASSESSMENT: <1-2 sentences> | ENGAGEMENT: <high|medium|low|unknown>\n\
-         (Engagement criteria — base ONLY on call transcript evidence above:\n\
-          high = drives discussion, asks detailed questions, proposes next steps, references prior conversations\n\
-          medium = participates and responds but follows rather than leads\n\
-          low = mostly silent, reactive only, brief responses, or absent from recent calls\n\
-          unknown = person not present in available transcripts)\n\
-         VALUE: <date> | <value statement> | SOURCE: <filename> | IMPACT: <impact>\n\
-         NEXT_MEETING_PREP: <1-2 sentence forward-looking prep item>\n\
-         (Max 3 NEXT_MEETING_PREP items. Each should be a specific action or question \
-         for the next meeting — not a recap of known context. Other sections already \
-         cover risks, state, and stakeholders. These items answer ONLY: \
-         \"What do I need to do or ask before/during this meeting?\")\n",
+        "Return ONLY a JSON object — no other text before or after.\n\
+         The JSON must conform exactly to this schema:\n\n\
+         ```json\n\
+         {{\n\
+           \"executiveAssessment\": \"2-4 paragraphs separated by \\\\n\\\\n. \
+         Paragraph 1: One-sentence verdict on {p1_framing}. \
+         Paragraph 2: Top risk or blocker. Paragraph 3: Biggest opportunity. \
+         Paragraph 4 (optional): Key unknowns. Use [1] [2] footnote refs. Max 250 words.\",\n\
+           \"sources\": [\"filename1\", \"filename2\"],\n\
+           \"risks\": [\n\
+             {{\"text\": \"risk description\", \"source\": \"filename\", \"urgency\": \"critical|watch|low\"}}\n\
+           ],\n\
+           \"recentWins\": [\n\
+             {{\"text\": \"win description\", \"source\": \"filename\", \"impact\": \"business impact\"}}\n\
+           ],\n\
+           \"currentState\": {{\n\
+             \"working\": [\"what's going well\"],\n\
+             \"notWorking\": [\"what needs attention\"],\n\
+             \"unknowns\": [\"knowledge gap to resolve\"]\n\
+           }},\n\
+           \"stakeholderInsights\": [\n\
+             {{\"name\": \"...\", \"role\": \"...\", \"assessment\": \"1-2 sentences\", \"engagement\": \"high|medium|low|unknown\"}}\n\
+           ],\n\
+           \"valueDelivered\": [\n\
+             {{\"date\": \"YYYY-MM-DD\", \"statement\": \"...\", \"source\": \"filename\", \"impact\": \"...\"}}\n\
+           ],\n\
+           \"nextMeetingReadiness\": {{\n\
+             \"prepItems\": [\"forward-looking prep item (max 3)\"]\n\
+           }}"
     ));
 
-    // Company context (initial only)
+    // Company context fields (initial accounts only)
     if !is_incremental && entity_type == "account" {
         prompt.push_str(
-            "COMPANY_DESCRIPTION: <1 paragraph about what the company does>\n\
-             COMPANY_INDUSTRY: <primary industry>\n\
-             COMPANY_SIZE: <employee count or range>\n\
-             COMPANY_HQ: <headquarters city and country>\n\
-             COMPANY_CONTEXT: <any additional relevant business context>\n",
+            ",\n\
+               \"companyContext\": {\n\
+                 \"description\": \"1 paragraph about what the company does\",\n\
+                 \"industry\": \"primary industry\",\n\
+                 \"size\": \"employee count or range\",\n\
+                 \"headquarters\": \"city and country\",\n\
+                 \"additionalContext\": \"any additional relevant business context\"\n\
+               }",
         );
     }
 
-    prompt.push_str("END_INTELLIGENCE\n");
+    prompt.push_str(
+        "\n\
+         }}\n\
+         ```\n\n\
+         Engagement criteria for stakeholders — base ONLY on call transcript evidence:\n\
+         - high = drives discussion, asks detailed questions, proposes next steps\n\
+         - medium = participates and responds but follows rather than leads\n\
+         - low = mostly silent, reactive only, brief responses, or absent from recent calls\n\
+         - unknown = person not present in available transcripts\n\n\
+         Max 3 nextMeetingReadiness.prepItems. Each should answer ONLY: \
+         \"What do I need to do or ask before/during this meeting?\"\n",
+    );
 
     prompt
 }
 
 // =============================================================================
-// Response Parser (I131)
+// Response Parser (I288: JSON-first with pipe-delimited fallback)
 // =============================================================================
 
+/// Intermediate JSON schema for AI response deserialization.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiIntelResponse {
+    #[serde(default)]
+    executive_assessment: Option<String>,
+    #[serde(default)]
+    sources: Vec<String>,
+    #[serde(default)]
+    risks: Vec<AiRisk>,
+    #[serde(default)]
+    recent_wins: Vec<AiWin>,
+    #[serde(default)]
+    current_state: Option<AiCurrentState>,
+    #[serde(default)]
+    stakeholder_insights: Vec<AiStakeholder>,
+    #[serde(default)]
+    value_delivered: Vec<AiValue>,
+    #[serde(default)]
+    next_meeting_readiness: Option<AiMeetingReadiness>,
+    #[serde(default)]
+    company_context: Option<AiCompanyContext>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRisk {
+    text: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default = "default_urgency")]
+    urgency: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiWin {
+    text: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    impact: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiCurrentState {
+    #[serde(default)]
+    working: Vec<String>,
+    #[serde(default)]
+    not_working: Vec<String>,
+    #[serde(default)]
+    unknowns: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiStakeholder {
+    name: String,
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    assessment: Option<String>,
+    #[serde(default)]
+    engagement: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiValue {
+    #[serde(default)]
+    date: Option<String>,
+    statement: String,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    impact: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiMeetingReadiness {
+    #[serde(default)]
+    prep_items: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiCompanyContext {
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    industry: Option<String>,
+    #[serde(default)]
+    size: Option<String>,
+    #[serde(default)]
+    headquarters: Option<String>,
+    #[serde(default)]
+    additional_context: Option<String>,
+}
+
 /// Parse Claude's intelligence response into an IntelligenceJson.
+///
+/// Tries JSON parsing first (new format), then falls back to pipe-delimited
+/// parsing for backwards compatibility with in-flight responses.
 pub fn parse_intelligence_response(
     response: &str,
     entity_id: &str,
@@ -1292,9 +1452,198 @@ pub fn parse_intelligence_response(
     source_file_count: usize,
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
-    // Find the INTELLIGENCE ... END_INTELLIGENCE block
-    let block =
-        extract_intelligence_block(response).ok_or("No INTELLIGENCE block found in response")?;
+    // Try JSON first
+    let mut intel = if let Some(parsed) =
+        try_parse_json_response(response, entity_id, entity_type, source_file_count, &manifest)
+    {
+        parsed
+    } else {
+        // Fall back to pipe-delimited format (backwards compat)
+        parse_pipe_delimited_response(response, entity_id, entity_type, source_file_count, manifest)?
+    };
+
+    // Cap array sizes to prevent oversized output (I296)
+    intel.risks.truncate(20);
+    intel.recent_wins.truncate(10);
+    intel.stakeholder_insights.truncate(20);
+    intel.value_delivered.truncate(10);
+    if let Some(ref mut state) = intel.current_state {
+        state.working.truncate(10);
+        state.not_working.truncate(10);
+        state.unknowns.truncate(10);
+    }
+    if let Some(ref mut readiness) = intel.next_meeting_readiness {
+        readiness.prep_items.truncate(10);
+    }
+
+    Ok(intel)
+}
+
+/// Extract a JSON object from the response text.
+/// Handles responses with markdown fences or surrounding text.
+fn extract_json_from_response(response: &str) -> Option<&str> {
+    // Try to find JSON in a ```json code fence
+    if let Some(start) = response.find("```json") {
+        let json_start = start + 7;
+        if let Some(end) = response[json_start..].find("```") {
+            return Some(response[json_start..json_start + end].trim());
+        }
+    }
+    // Try generic ``` code fence
+    if let Some(start) = response.find("```") {
+        let after_fence = start + 3;
+        if let Some(nl) = response[after_fence..].find('\n') {
+            let json_start = after_fence + nl + 1;
+            if let Some(end) = response[json_start..].find("```") {
+                let candidate = response[json_start..json_start + end].trim();
+                if candidate.starts_with('{') {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    // Try raw JSON object
+    let trimmed = response.trim();
+    if trimmed.starts_with('{') {
+        return Some(trimmed);
+    }
+    // Look for JSON embedded in other text
+    if let Some(start) = response.find('{') {
+        let candidate = &response[start..];
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut escape = false;
+        for (i, ch) in candidate.char_indices() {
+            if escape {
+                escape = false;
+                continue;
+            }
+            if ch == '\\' && in_string {
+                escape = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = !in_string;
+                continue;
+            }
+            if in_string {
+                continue;
+            }
+            if ch == '{' {
+                depth += 1;
+            } else if ch == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&candidate[..=i]);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Try to parse the response as JSON format. Returns None if it fails.
+fn try_parse_json_response(
+    response: &str,
+    entity_id: &str,
+    entity_type: &str,
+    source_file_count: usize,
+    manifest: &[SourceManifestEntry],
+) -> Option<IntelligenceJson> {
+    let json_str = extract_json_from_response(response)?;
+    let ai_resp: AiIntelResponse = serde_json::from_str(json_str).ok()?;
+
+    let current_state = ai_resp.current_state.map(|cs| CurrentState {
+        working: cs.working,
+        not_working: cs.not_working,
+        unknowns: cs.unknowns,
+    });
+
+    let next_meeting_readiness = ai_resp.next_meeting_readiness.and_then(|mr| {
+        if mr.prep_items.is_empty() {
+            None
+        } else {
+            Some(MeetingReadiness {
+                meeting_title: None,
+                meeting_date: None,
+                prep_items: mr.prep_items,
+            })
+        }
+    });
+
+    let company_context = ai_resp.company_context.map(|cc| CompanyContext {
+        description: cc.description,
+        industry: cc.industry,
+        size: cc.size,
+        headquarters: cc.headquarters,
+        additional_context: cc.additional_context,
+    });
+
+    Some(IntelligenceJson {
+        version: 1,
+        entity_id: entity_id.to_string(),
+        entity_type: entity_type.to_string(),
+        enriched_at: Utc::now().to_rfc3339(),
+        source_file_count,
+        source_manifest: manifest.to_vec(),
+        executive_assessment: ai_resp.executive_assessment,
+        risks: ai_resp
+            .risks
+            .into_iter()
+            .map(|r| IntelRisk {
+                text: r.text,
+                source: r.source,
+                urgency: r.urgency,
+            })
+            .collect(),
+        recent_wins: ai_resp
+            .recent_wins
+            .into_iter()
+            .map(|w| IntelWin {
+                text: w.text,
+                source: w.source,
+                impact: w.impact,
+            })
+            .collect(),
+        current_state,
+        stakeholder_insights: ai_resp
+            .stakeholder_insights
+            .into_iter()
+            .map(|s| StakeholderInsight {
+                name: s.name,
+                role: s.role,
+                assessment: s.assessment,
+                engagement: s.engagement,
+                source: None,
+            })
+            .collect(),
+        value_delivered: ai_resp
+            .value_delivered
+            .into_iter()
+            .map(|v| ValueItem {
+                date: v.date,
+                statement: v.statement,
+                source: v.source,
+                impact: v.impact,
+            })
+            .collect(),
+        next_meeting_readiness,
+        company_context,
+        user_edits: Vec::new(),
+    })
+}
+
+/// Parse legacy pipe-delimited format (backwards compatibility).
+fn parse_pipe_delimited_response(
+    response: &str,
+    entity_id: &str,
+    entity_type: &str,
+    source_file_count: usize,
+    manifest: Vec<SourceManifestEntry>,
+) -> Result<IntelligenceJson, String> {
+    let block = extract_intelligence_block(response)
+        .ok_or("No INTELLIGENCE block or JSON found in response")?;
 
     let mut intel = IntelligenceJson {
         version: 1,
@@ -1306,10 +1655,8 @@ pub fn parse_intelligence_response(
         ..Default::default()
     };
 
-    // Parse executive assessment (multi-line between markers)
     intel.executive_assessment = extract_multiline_field(&block, "EXECUTIVE_ASSESSMENT:");
 
-    // Parse single-line fields
     for line in block.lines() {
         let trimmed = line.trim();
 
@@ -2263,6 +2610,8 @@ mod tests {
                 modified_at: "2026-01-30T10:00:00Z".to_string(),
                 format: Some("markdown".to_string()),
                 content_type: Some("qbr".to_string()),
+                selected: true,
+                skip_reason: None,
             }],
             executive_assessment: Some(
                 "Acme is in a strong position with steady renewal trajectory.".to_string(),
@@ -2534,6 +2883,8 @@ mod tests {
                 modified_at: "2026-01-30".to_string(),
                 format: Some("markdown".to_string()),
                 content_type: Some("qbr".to_string()),
+                selected: true,
+                skip_reason: None,
             }],
             file_contents: "--- qbr.md [qbr] (2026-01-30) ---\nContent here".to_string(),
             recent_transcripts: String::new(),
@@ -2548,14 +2899,14 @@ mod tests {
         assert!(prompt.contains("Health: green"));
         assert!(prompt.contains("QBR"));
         assert!(prompt.contains("renewal"));
-        assert!(prompt.contains("COMPANY_DESCRIPTION:"));
-        assert!(prompt.contains("INTELLIGENCE"));
-        assert!(prompt.contains("END_INTELLIGENCE"));
+        // I288: JSON output format
+        assert!(prompt.contains("\"companyContext\""));
+        assert!(prompt.contains("JSON"));
         // I139: prompt refinements
         assert!(prompt.contains("Lead with conclusions"));
-        assert!(prompt.contains("footnote references"));
+        assert!(prompt.contains("footnote ref"));
         assert!(prompt.contains("Max 250 words"));
-        assert!(prompt.contains("SOURCES:"));
+        assert!(prompt.contains("\"sources\""));
     }
 
     #[test]
@@ -2572,7 +2923,7 @@ mod tests {
 
         assert!(prompt.contains("INCREMENTAL update"));
         assert!(prompt.contains("Prior."));
-        assert!(!prompt.contains("COMPANY_DESCRIPTION:"));
+        assert!(!prompt.contains("\"companyContext\""));
     }
 
     #[test]
@@ -2661,6 +3012,8 @@ Some trailing text"#;
             modified_at: "2026-01-30".to_string(),
             format: Some("markdown".to_string()),
             content_type: Some("qbr".to_string()),
+            selected: true,
+            skip_reason: None,
         }];
 
         let intel = parse_intelligence_response(response, "acme-corp", "account", 1, manifest)
@@ -2738,7 +3091,90 @@ Some trailing text"#;
         let response = "Just some random text with no structured block.";
         let result = parse_intelligence_response(response, "x", "account", 0, vec![]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("No INTELLIGENCE block"));
+        assert!(result.unwrap_err().contains("No INTELLIGENCE block or JSON"));
+    }
+
+    #[test]
+    fn test_parse_json_response_full() {
+        let response = r#"```json
+{
+  "executiveAssessment": "Acme is in a strong position.\n\nChampion departure poses risk.",
+  "sources": ["qbr-notes.md", "email"],
+  "risks": [
+    {"text": "Champion leaving Q2", "source": "qbr-notes.md", "urgency": "critical"},
+    {"text": "Budget uncertainty", "source": "email", "urgency": "watch"}
+  ],
+  "recentWins": [
+    {"text": "Expanded to 3 teams", "source": "capture", "impact": "20% seat growth"}
+  ],
+  "currentState": {
+    "working": ["Onboarding flow"],
+    "notWorking": ["Reporting integration"],
+    "unknowns": ["Budget for next year"]
+  },
+  "stakeholderInsights": [
+    {"name": "Alice Chen", "role": "VP Engineering", "assessment": "Strong advocate", "engagement": "high"}
+  ],
+  "valueDelivered": [
+    {"date": "2026-01-15", "statement": "Reduced onboarding time by 40%", "source": "qbr-deck.pdf", "impact": "$50k savings"}
+  ],
+  "nextMeetingReadiness": {
+    "prepItems": ["Review reporting blockers", "Prepare champion transition plan"]
+  },
+  "companyContext": {
+    "description": "Enterprise SaaS platform",
+    "industry": "Technology",
+    "size": "500-1000",
+    "headquarters": "San Francisco, USA"
+  }
+}
+```"#;
+
+        let intel = parse_intelligence_response(response, "acme", "account", 2, vec![])
+            .expect("should parse JSON");
+
+        assert_eq!(intel.entity_id, "acme");
+        assert!(intel.executive_assessment.unwrap().contains("strong position"));
+        assert_eq!(intel.risks.len(), 2);
+        assert_eq!(intel.risks[0].urgency, "critical");
+        assert_eq!(intel.recent_wins.len(), 1);
+        assert_eq!(intel.recent_wins[0].impact.as_deref(), Some("20% seat growth"));
+        let state = intel.current_state.unwrap();
+        assert_eq!(state.working.len(), 1);
+        assert_eq!(state.not_working.len(), 1);
+        assert_eq!(state.unknowns.len(), 1);
+        assert_eq!(intel.stakeholder_insights.len(), 1);
+        assert_eq!(intel.stakeholder_insights[0].engagement.as_deref(), Some("high"));
+        assert_eq!(intel.value_delivered.len(), 1);
+        let readiness = intel.next_meeting_readiness.unwrap();
+        assert_eq!(readiness.prep_items.len(), 2);
+        let ctx = intel.company_context.unwrap();
+        assert_eq!(ctx.industry.as_deref(), Some("Technology"));
+    }
+
+    #[test]
+    fn test_parse_json_response_raw_no_fence() {
+        let response = r#"{"executiveAssessment": "Brief.", "risks": [{"text": "One risk", "urgency": "low"}]}"#;
+
+        let intel = parse_intelligence_response(response, "beta", "project", 0, vec![])
+            .expect("should parse raw JSON");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Brief."));
+        assert_eq!(intel.risks.len(), 1);
+        assert_eq!(intel.risks[0].urgency, "low");
+    }
+
+    #[test]
+    fn test_parse_json_response_with_surrounding_text() {
+        let response = r#"Here is the assessment:
+{"executiveAssessment": "Assessment text.", "risks": [], "currentState": {"working": ["Item 1"], "notWorking": [], "unknowns": []}}
+Hope this helps!"#;
+
+        let intel = parse_intelligence_response(response, "gamma", "account", 0, vec![])
+            .expect("should parse embedded JSON");
+
+        assert_eq!(intel.executive_assessment.as_deref(), Some("Assessment text."));
+        assert_eq!(intel.current_state.unwrap().working.len(), 1);
     }
 
     #[test]
