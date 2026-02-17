@@ -2,6 +2,7 @@
  * TheAskSlide — Decisions + resources + escalation.
  * Slide 6: what we need from leadership to execute the plan.
  */
+import { useState } from "react";
 import { EditableText } from "@/components/ui/EditableText";
 import type { RiskTheAsk } from "@/types";
 
@@ -17,6 +18,9 @@ const urgencyColors: Record<string, string> = {
 };
 
 export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
+  const [hoveredRequest, setHoveredRequest] = useState<number | null>(null);
+  const [hoveredDecision, setHoveredDecision] = useState<number | null>(null);
+
   return (
     <section
       id="the-ask"
@@ -51,6 +55,8 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
           {data.requests.slice(0, 3).map((req, i) => (
             <div
               key={i}
+              onMouseEnter={() => setHoveredRequest(i)}
+              onMouseLeave={() => setHoveredRequest(null)}
               style={{
                 display: "flex",
                 alignItems: "baseline",
@@ -119,6 +125,31 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
                   />
                 )}
               </div>
+              {(data.requests?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      requests: (data.requests ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    opacity: hoveredRequest === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -143,6 +174,8 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
           {data.decisions.slice(0, 2).map((d, i) => (
             <div
               key={i}
+              onMouseEnter={() => setHoveredDecision(i)}
+              onMouseLeave={() => setHoveredDecision(null)}
               style={{
                 display: "flex",
                 gap: 12,
@@ -170,8 +203,34 @@ export function TheAskSlide({ data, onUpdate }: TheAskSlideProps) {
                   fontFamily: "var(--font-sans)",
                   fontSize: 17,
                   color: "var(--color-text-primary)",
+                  flex: 1,
                 }}
               />
+              {(data.decisions?.length ?? 0) > 1 && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdate?.({
+                      ...data,
+                      decisions: (data.decisions ?? []).filter((_, j) => j !== i),
+                    });
+                  }}
+                  style={{
+                    opacity: hoveredDecision === i ? 0.6 : 0,
+                    transition: "opacity 0.15s",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    fontSize: 14,
+                    color: "var(--color-text-tertiary)",
+                    flexShrink: 0,
+                  }}
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           ))}
         </div>

@@ -506,8 +506,27 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 continue;
             }
 
-            // Check if person already exists in DB
-            let existing = db.get_person_by_email(&email_lower).ok().flatten();
+            // Check if person already exists in DB (exact email or known alias)
+            let existing = db.get_person_by_email_or_alias(&email_lower).ok().flatten();
+            // If no exact/alias match, try domain-alias resolution
+            let existing = match existing {
+                Some(p) => Some(p),
+                None => {
+                    match db.get_sibling_domains_for_email(&email_lower, &user_domains) {
+                        Ok(siblings) if !siblings.is_empty() => {
+                            match db.find_person_by_domain_alias(&email_lower, &siblings) {
+                                Ok(Some(person)) => {
+                                    // Record this new email as an alias
+                                    let _ = db.add_person_email(&person.id, &email_lower, false);
+                                    Some(person)
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+            };
             if let Some(ref person) = existing {
                 // Person already tracked — auto-link to entity if applicable
                 if let Some(ref account) = event.account {
