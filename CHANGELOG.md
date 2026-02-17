@@ -4,6 +4,38 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.2] - 2026-02-17
+
+Polish sprint. Meeting intelligence redesigned as editorial briefing, audit trail for AI-generated data, person deduplication, and print-ready PDF export.
+
+### Added
+
+- **I297**: Audit trail module for AI-generated data — tracks provenance through the enrichment pipeline
+- **I302**: Person email aliasing and cross-domain deduplication — merges duplicate contacts across domains
+- Meeting Intelligence Report redesigned as a full editorial briefing with outcomes pinned to top
+- Transcript attach button added to folio bar on all meetings (not just those with existing transcripts)
+- Print styles for clean briefing PDF output — `Cmd+P` produces a readable document
+- `export_briefing_html` command for browser-based PDF export
+- Claude Code skill templates distributed to user workspaces for slash-command workflows
+- "+ Business Unit" button on account detail folio bar
+- Attendee RSVP status carried through the full calendar pipeline
+
+### Changed
+
+- Schedule cards show QuickContext instead of PrepGrid, with internal stakeholders filtered out
+- Risk briefing Regenerate button moved to folio bar; byline is now click-to-edit
+- Featured meeting remains visible in the schedule list (no longer removed when featured)
+- Prep summaries hydrated from entity intelligence fields for richer meeting context
+- Meeting entity chips use optimistic local state for instant feedback
+- `create_action` IPC switched to request object parameter (breaking IPC change)
+
+### Fixed
+
+- MCP sidecar binary missing executable permission after build
+- Meeting card padding and prep summary hydration from prep files
+- Clippy warnings resolved for 0.8.2 release
+- TypeScript error in meeting entity chips rollback path
+
 ## [0.8.1] - 2026-02-16
 
 Hardening release. Security, database integrity, token optimization, and proposed actions workflow.
