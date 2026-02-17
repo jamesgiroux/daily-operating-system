@@ -7789,10 +7789,30 @@ pub fn update_meeting_user_agenda(
 
     // Merge with existing layer to preserve fields not being updated
     let existing = parse_user_agenda_layer(meeting.user_agenda_json.as_deref());
+
+    // Defence-in-depth: cap list lengths and item sizes to prevent abuse
+    let truncate_strings = |v: Vec<String>, max_items: usize, max_chars: usize| -> Vec<String> {
+        v.into_iter()
+            .take(max_items)
+            .map(|s| {
+                if s.len() <= max_chars {
+                    s
+                } else {
+                    // Find a valid UTF-8 boundary at or before max_chars
+                    let mut end = max_chars;
+                    while !s.is_char_boundary(end) && end > 0 {
+                        end -= 1;
+                    }
+                    s[..end].to_string()
+                }
+            })
+            .collect()
+    };
+
     let layer = UserAgendaLayer {
-        items: agenda.unwrap_or(existing.items),
-        dismissed_topics: dismissed_topics.unwrap_or(existing.dismissed_topics),
-        hidden_attendees: hidden_attendees.unwrap_or(existing.hidden_attendees),
+        items: truncate_strings(agenda.unwrap_or(existing.items), 50, 500),
+        dismissed_topics: truncate_strings(dismissed_topics.unwrap_or(existing.dismissed_topics), 50, 500),
+        hidden_attendees: truncate_strings(hidden_attendees.unwrap_or(existing.hidden_attendees), 50, 500),
     };
 
     let agenda_json = if layer.items.is_empty() && layer.dismissed_topics.is_empty() && layer.hidden_attendees.is_empty() {
