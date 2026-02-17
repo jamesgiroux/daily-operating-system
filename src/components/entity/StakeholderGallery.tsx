@@ -23,7 +23,6 @@ interface StakeholderGalleryProps {
   accountTeam?: AccountTeamMember[];
   sectionId?: string;
   chapterTitle?: string;
-  emptyMessage?: string;
   /** Entity ID for intelligence updates. */
   entityId?: string;
   /** Entity type for intelligence updates. */
@@ -59,13 +58,41 @@ function filterInternalStakeholders(
   return stakeholders.filter((s) => !internalNames.has(s.name.toLowerCase()));
 }
 
+const ASSESSMENT_CHAR_LIMIT = 150;
+
+function TruncatedAssessment({ text }: { text: string }) {
+  const [showFull, setShowFull] = useState(false);
+  const truncated = text.length > ASSESSMENT_CHAR_LIMIT && !showFull;
+  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "\u2026" : text;
+  return (
+    <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}>
+      {displayText}
+      {truncated && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowFull(true); }}
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "0 0 0 4px",
+          }}
+        >
+          Read more
+        </button>
+      )}
+    </p>
+  );
+}
+
 export function StakeholderGallery({
   intelligence,
   linkedPeople,
   accountTeam,
   sectionId = "the-room",
   chapterTitle = "The Room",
-  emptyMessage = "No people linked yet.",
   entityId,
   entityType,
   onIntelligenceUpdated,
@@ -77,10 +104,20 @@ export function StakeholderGallery({
   const teamMembers = accountTeam ?? [];
   const canEdit = !!entityId && !!entityType;
 
+  const [expandedGrid, setExpandedGrid] = useState(false);
   const [addingStakeholder, setAddingStakeholder] = useState(false);
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+
+  // Empty section collapse: return null when nothing to show (and not editing)
+  if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit) {
+    return null;
+  }
+
+  const STAKEHOLDER_LIMIT = 6;
+  const visibleStakeholders = expandedGrid ? stakeholders : stakeholders.slice(0, STAKEHOLDER_LIMIT);
+  const hasMoreStakeholders = stakeholders.length > STAKEHOLDER_LIMIT && !expandedGrid;
 
   // ── Field update helper ──
   async function updateField(fieldPath: string, value: string) {
@@ -165,8 +202,9 @@ export function StakeholderGallery({
       <ChapterHeading title={chapterTitle} epigraph={epigraph} />
 
       {hasStakeholders ? (
+        <>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
-          {stakeholders.map((s, i) => {
+          {visibleStakeholders.map((s, i) => {
             const matched = linkedPeople.find(
               (p) => p.name.toLowerCase() === s.name.toLowerCase()
             );
@@ -267,9 +305,7 @@ export function StakeholderGallery({
                       style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}
                     />
                   ) : (
-                    <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}>
-                      {s.assessment}
-                    </p>
+                    <TruncatedAssessment text={s.assessment} />
                   )
                 )}
                 {/* Create contact action for unlinked stakeholders */}
@@ -311,6 +347,25 @@ export function StakeholderGallery({
             return card;
           })}
         </div>
+        {hasMoreStakeholders && (
+          <button
+            onClick={() => setExpandedGrid(true)}
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: "12px 0 0",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
+            Show {stakeholders.length - STAKEHOLDER_LIMIT} more
+          </button>
+        )}
+        </>
       ) : linkedPeople.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "40px 48px" }}>
           {linkedPeople.map((p) => (
@@ -326,11 +381,7 @@ export function StakeholderGallery({
             </Link>
           ))}
         </div>
-      ) : (
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-          {emptyMessage}
-        </p>
-      )}
+      ) : null}
 
       {/* Add stakeholder */}
       {canEdit && (

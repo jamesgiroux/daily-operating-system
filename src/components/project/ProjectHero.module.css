@@ -10,19 +10,6 @@
   justify-content: center;
 }
 
-.watermark {
-  position: absolute;
-  top: 45%;
-  right: -60px;
-  transform: translateY(-50%) rotate(12deg);
-  width: 420px;
-  height: 420px;
-  color: rgba(107, 124, 82, 0.07); /* Olive tint */
-  pointer-events: none;
-  user-select: none;
-  z-index: -1;
-}
-
 .heroDate {
   font-family: var(--font-mono);
   font-size: 11px;

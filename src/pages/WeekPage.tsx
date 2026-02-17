@@ -842,64 +842,115 @@ export default function WeekPage() {
                 );
 
                 return (
-                  <div
-                    key={shape.dayName}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 16,
-                    }}
-                  >
-                    {/* Day label */}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-primary)",
-                        width: 36,
-                        flexShrink: 0,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {shape.dayName.slice(0, 3)}
-                    </span>
-
-                    {/* Bar */}
+                  <div key={shape.dayName}>
                     <div
                       style={{
-                        flex: 1,
-                        height: 8,
-                        borderRadius: 4,
-                        background: "var(--color-paper-linen)",
-                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 16,
                       }}
                     >
+                      {/* Day label */}
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12,
+                          color: "var(--color-text-primary)",
+                          width: 36,
+                          flexShrink: 0,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {shape.dayName.slice(0, 3)}
+                      </span>
+
+                      {/* Bar */}
                       <div
                         style={{
-                          height: "100%",
-                          width: `${barWidth}%`,
+                          flex: 1,
+                          height: 8,
                           borderRadius: 4,
-                          background: "var(--color-spice-turmeric)",
-                          transition: "width 0.3s ease",
+                          background: "var(--color-paper-linen)",
+                          overflow: "hidden",
                         }}
-                      />
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${barWidth}%`,
+                            borderRadius: 4,
+                            background: "var(--color-spice-turmeric)",
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+
+                      {/* Count + density */}
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12,
+                          color: "var(--color-text-tertiary)",
+                          flexShrink: 0,
+                          minWidth: 130,
+                          textAlign: "right",
+                        }}
+                      >
+                        {shape.meetingCount} meeting
+                        {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
+                        {densityLabel}
+                      </span>
+
+                      {/* Achievability indicator (I279) */}
+                      {shape.focusImplications && shape.focusImplications.totalCount > 0 && (
+                        <span
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 11,
+                            color: shape.focusImplications.atRiskCount > 0
+                              ? "var(--color-spice-terracotta)"
+                              : "var(--color-garden-sage)",
+                            flexShrink: 0,
+                            minWidth: 100,
+                            textAlign: "right",
+                          }}
+                        >
+                          {shape.focusImplications.achievableCount} of{" "}
+                          {shape.focusImplications.totalCount} achievable
+                        </span>
+                      )}
                     </div>
 
-                    {/* Count + density */}
-                    <span
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        color: "var(--color-text-tertiary)",
-                        flexShrink: 0,
-                        minWidth: 130,
-                        textAlign: "right",
-                      }}
-                    >
-                      {shape.meetingCount} meeting
-                      {shape.meetingCount !== 1 ? "s" : ""} &middot;{" "}
-                      {densityLabel}
-                    </span>
+                    {/* Top 3 feasible actions (I279) */}
+                    {shape.prioritizedActions && shape.prioritizedActions.filter(pa => pa.feasible).length > 0 && (
+                      <div
+                        style={{
+                          marginLeft: 52,
+                          borderLeft: "2px solid var(--color-rule-light)",
+                          paddingLeft: 12,
+                          marginTop: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        {shape.prioritizedActions
+                          .filter(pa => pa.feasible)
+                          .slice(0, 3)
+                          .map((pa, idx) => (
+                            <p
+                              key={pa.action.id || idx}
+                              style={{
+                                fontFamily: "var(--font-sans)",
+                                fontSize: 13,
+                                color: "var(--color-text-secondary)",
+                                margin: "2px 0",
+                                lineHeight: 1.4,
+                              }}
+                            >
+                              {pa.action.title}
+                            </p>
+                          ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
