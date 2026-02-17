@@ -13,7 +13,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:mcp": "bash src-tauri/scripts/build-mcp.sh"
   },
   "keywords": [],
   "author": "",

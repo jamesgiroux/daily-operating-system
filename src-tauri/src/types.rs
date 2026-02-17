@@ -691,6 +691,8 @@ pub enum Priority {
 pub enum ActionStatus {
     Pending,
     Completed,
+    Proposed,
+    Archived,
 }
 
 /// A single action item
@@ -944,6 +946,10 @@ pub struct DayShape {
     pub density: String,
     pub meetings: Vec<WeekMeeting>,
     pub available_blocks: Vec<TimeBlock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prioritized_actions: Option<Vec<PrioritizedFocusAction>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_implications: Option<FocusImplications>,
 }
 
 /// Account hygiene alert
@@ -1067,7 +1073,7 @@ pub struct FocusAvailability {
 }
 
 /// Ranked action with deterministic feasibility/risk metadata (I179).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrioritizedFocusAction {
     pub action: crate::db::DbAction,
@@ -1079,7 +1085,7 @@ pub struct PrioritizedFocusAction {
 }
 
 /// High-level implications for today's focus capacity vs action load (I179).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusImplications {
     pub achievable_count: u32,
