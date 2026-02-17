@@ -2,9 +2,9 @@
  * ProjectHero — editorial headline for a project.
  * Olive-tinted watermark, status badge, owner + target date below name.
  */
+import { useState } from "react";
 import type { ProjectDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
-import { BrandMark } from "../ui/BrandMark";
 import styles from "./ProjectHero.module.css";
 
 interface ProjectHeroProps {
@@ -38,12 +38,14 @@ export function ProjectHero({
   onArchive,
   onUnarchive,
 }: ProjectHeroProps) {
-  const lede = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const ledeFull = intelligence?.executiveAssessment?.split("\n")[0] ?? null;
+  const LEDE_LIMIT = 300;
+  const [showFullLede, setShowFullLede] = useState(false);
+  const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "\u2026" : ledeFull;
 
   return (
     <div className={styles.hero}>
-      <div className={styles.watermark}><BrandMark size="100%" /></div>
-
       {/* Archived banner */}
       {detail.archived && (
         <div className={styles.archivedBanner}>
@@ -63,7 +65,27 @@ export function ProjectHero({
       <h1 className={styles.name}>{detail.name}</h1>
 
       {/* Lede from intelligence */}
-      {lede && <p className={styles.lede}>{lede}</p>}
+      {lede && (
+        <p className={styles.lede}>
+          {lede}
+          {ledeTruncated && (
+            <button
+              onClick={() => setShowFullLede(true)}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "0 0 0 4px",
+              }}
+            >
+              Read more
+            </button>
+          )}
+        </p>
+      )}
 
       {/* Badges row */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
