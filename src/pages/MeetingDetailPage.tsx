@@ -344,9 +344,9 @@ export default function MeetingDetailPage() {
         <button
           onClick={handleAttachTranscript}
           disabled={attaching}
-          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1 }}
+          style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1, cursor: attaching ? "not-allowed" : "pointer" }}
         >
-          <Paperclip style={{ width: 10, height: 10 }} />
+          {attaching ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <Paperclip style={{ width: 10, height: 10 }} />}
           {attaching ? "Processing\u2026" : "Transcript"}
         </button>
         <button
