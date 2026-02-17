@@ -4,6 +4,32 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.1] - 2026-02-16
+
+Hardening release. Security, database integrity, token optimization, and proposed actions workflow.
+
+### Security
+- **I295**: Prompt injection hardening — all 7 PTY enrichment sites now wrap untrusted data (calendar titles, email subjects, file contents, entity names) in `<user_data>` XML blocks
+- **I296**: Output size limits — capped all parsed AI arrays (20 risks, 50 actions, 10 wins, 20 stakeholders, 10 value items) to prevent unbounded growth
+
+### Database
+- **I285**: Foreign key constraints added to `actions` (3 FKs), `account_team`, and `account_domains` via table recreation migration. FK enforcement enabled at connection level (`PRAGMA foreign_keys = ON`)
+- **I231**: Fixed `unwrap()` panic in `focus_capacity.rs` during DST spring-forward gaps — new `resolve_local_datetime` helper handles all chrono timezone edge cases
+
+### Token Optimization
+- **I286**: Entity intelligence prompts filtered by vector search relevance — context budget capped at 10KB (down from ~25KB), mandatory files always included
+- **I288**: Entity intelligence output switched from pipe-delimited to JSON format with backwards-compatible fallback parser
+
+### Actions
+- **I256**: Proposed actions workflow — AI-extracted actions now insert as `proposed` status with accept/reject UX, "AI Suggested" badge, and 7-day auto-archive via scheduler
+
+### Performance
+- **I234**: IntelligenceQueue `last_enqueued` HashMap now pruned every 60s to prevent unbounded memory growth
+- **I235**: Dashboard DB reads consolidated into single lock acquisition (`DashboardDbSnapshot`) reducing lock contention
+
+### Stats
+- 688 tests passing (up from 684), 0 clippy warnings
+
 ## [0.8.0] - 2026-02-16
 
 The editorial release. Every page redesigned as a magazine-style document you read top to bottom. New typography, new color system, new layout engine. Plus semantic search, MCP integration, and security hardening.

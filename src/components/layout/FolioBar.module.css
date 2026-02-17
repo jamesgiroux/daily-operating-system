@@ -45,6 +45,13 @@
   user-select: none;
 }
 
+.folioHomeLink {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  -webkit-app-region: no-drag;
+}
+
 .folioPub {
   font-family: var(--font-sans);
   font-size: 11px;

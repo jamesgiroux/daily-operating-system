@@ -15,7 +15,6 @@ interface WatchListProps {
   intelligence: EntityIntelligence | null;
   sectionId?: string;
   chapterTitle?: string;
-  emptyMessage?: string;
   /** Slot for entity-specific bottom content (e.g., programs, milestones). */
   bottomSection?: React.ReactNode;
   /** When provided, items become editable. Called with (fieldPath, newValue). */
@@ -59,13 +58,12 @@ function SectionTitle({ label, color }: { label: string; color: string }) {
 interface WatchItemRowProps {
   type: "risk" | "win" | "unknown";
   text: string;
-  source?: string;
   isCallout?: boolean;
   isLast: boolean;
   onTextChange?: (value: string) => void;
 }
 
-function WatchItemRow({ type, text, source, isCallout, isLast, onTextChange }: WatchItemRowProps) {
+function WatchItemRow({ type, text, isCallout, isLast, onTextChange }: WatchItemRowProps) {
   const dot = (
     <span
       style={{
@@ -87,21 +85,6 @@ function WatchItemRow({ type, text, source, isCallout, isLast, onTextChange }: W
 
   const content = (
     <div style={{ flex: 1, minWidth: 0 }}>
-      {source && (
-        <div
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            fontWeight: 500,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: "var(--color-text-tertiary)",
-            marginBottom: 4,
-          }}
-        >
-          {source}
-        </div>
-      )}
       {onTextChange ? (
         <EditableText
           value={text}
@@ -175,32 +158,34 @@ export function WatchList({
   intelligence,
   sectionId = "watch-list",
   chapterTitle = "Watch List",
-  emptyMessage = "Build intelligence to surface risks, wins, and unknowns.",
   bottomSection,
   onUpdateField,
 }: WatchListProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expandedRisks, setExpandedRisks] = useState(false);
+  const [expandedWins, setExpandedWins] = useState(false);
 
   const risks = intelligence?.risks ?? [];
   const wins = intelligence?.recentWins ?? [];
   const unknowns = intelligence?.currentState?.unknowns ?? [];
 
-  const hasContent = risks.length > 0 || wins.length > 0 || unknowns.length > 0 || !!bottomSection;
+  const hasWatchItems = risks.length > 0 || wins.length > 0 || unknowns.length > 0;
+  const hasContent = hasWatchItems || !!bottomSection;
 
-  const totalWatchItems = risks.length + wins.length + unknowns.length;
-  const collapsedLimit = 5;
-
-  function sliceForCollapsed<T>(items: T[], alreadyShown: number): T[] {
-    if (expanded) return items;
-    const remaining = collapsedLimit - alreadyShown;
-    if (remaining <= 0) return [];
-    return items.slice(0, remaining);
+  // Empty section collapse: return null when no content at all
+  if (!hasContent) {
+    return null;
   }
 
-  const visibleRisks = sliceForCollapsed(risks, 0);
-  const visibleWins = sliceForCollapsed(wins, visibleRisks.length);
-  const visibleUnknowns = sliceForCollapsed(unknowns, visibleRisks.length + visibleWins.length);
-  const hasMore = !expanded && totalWatchItems > collapsedLimit;
+  const RISK_LIMIT = 5;
+  const WIN_LIMIT = 3;
+
+  const visibleRisks = expandedRisks ? risks : risks.slice(0, RISK_LIMIT);
+  const hasMoreRisks = risks.length > RISK_LIMIT && !expandedRisks;
+
+  const visibleWins = expandedWins ? wins : wins.slice(0, WIN_LIMIT);
+  const hasMoreWins = wins.length > WIN_LIMIT && !expandedWins;
+
+  const visibleUnknowns = unknowns; // no limit on unknowns
 
   return (
     <section id={sectionId} style={{ scrollMarginTop: 60, paddingTop: 80 }}>
@@ -216,72 +201,26 @@ export function WatchList({
         <div style={{ maxWidth: 820, margin: "0 auto", padding: "80px 48px" }}>
           <ChapterHeading title={chapterTitle} />
 
-          {hasContent ? (
-            <>
-              {visibleRisks.length > 0 && (
-                <div style={{ marginBottom: 48 }}>
-                  <SectionTitle label="Risks" color={sectionColors.risk} />
-                  {visibleRisks.map((r, i) => (
-                    <WatchItemRow
-                      key={`risk-${i}`}
-                      type="risk"
-                      text={r.text}
-                      source={r.source}
-                      isCallout={i === 0}
-                      isLast={i === visibleRisks.length - 1}
-                      onTextChange={
-                        onUpdateField
-                          ? (v) => onUpdateField(`risks[${i}].text`, v)
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {visibleWins.length > 0 && (
-                <div style={{ marginBottom: 48 }}>
-                  <SectionTitle label="Wins" color={sectionColors.win} />
-                  {visibleWins.map((w, i) => (
-                    <WatchItemRow
-                      key={`win-${i}`}
-                      type="win"
-                      text={w.text}
-                      source={w.source}
-                      isCallout={i === 0}
-                      isLast={i === visibleWins.length - 1}
-                      onTextChange={
-                        onUpdateField
-                          ? (v) => onUpdateField(`recentWins[${i}].text`, v)
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {visibleUnknowns.length > 0 && (
-                <div style={{ marginBottom: 48 }}>
-                  <SectionTitle label="Unknowns" color={sectionColors.unknown} />
-                  {visibleUnknowns.map((u, i) => (
-                    <WatchItemRow
-                      key={`unknown-${i}`}
-                      type="unknown"
-                      text={u}
-                      isLast={i === visibleUnknowns.length - 1}
-                      onTextChange={
-                        onUpdateField
-                          ? (v) => onUpdateField(`currentState.unknowns[${i}]`, v)
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {hasMore && (
+          {visibleRisks.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <SectionTitle label="Risks" color={sectionColors.risk} />
+              {visibleRisks.map((r, i) => (
+                <WatchItemRow
+                  key={`risk-${i}`}
+                  type="risk"
+                  text={r.text}
+                  isCallout={i === 0}
+                  isLast={i === visibleRisks.length - 1 && !hasMoreRisks}
+                  onTextChange={
+                    onUpdateField
+                      ? (v) => onUpdateField(`risks[${i}].text`, v)
+                      : undefined
+                  }
+                />
+              ))}
+              {hasMoreRisks && (
                 <button
-                  onClick={() => setExpanded(true)}
+                  onClick={() => setExpandedRisks(true)}
                   style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: 11,
@@ -294,25 +233,71 @@ export function WatchList({
                     letterSpacing: "0.06em",
                   }}
                 >
-                  Show {totalWatchItems - collapsedLimit} more items
+                  Show {risks.length - RISK_LIMIT} more
                 </button>
               )}
-
-              {/* Entity-specific bottom section */}
-              {bottomSection}
-            </>
-          ) : (
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                color: "var(--color-text-tertiary)",
-                fontStyle: "italic",
-              }}
-            >
-              {emptyMessage}
-            </p>
+            </div>
           )}
+
+          {visibleWins.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <SectionTitle label="Wins" color={sectionColors.win} />
+              {visibleWins.map((w, i) => (
+                <WatchItemRow
+                  key={`win-${i}`}
+                  type="win"
+                  text={w.text}
+                  isCallout={i === 0}
+                  isLast={i === visibleWins.length - 1 && !hasMoreWins}
+                  onTextChange={
+                    onUpdateField
+                      ? (v) => onUpdateField(`recentWins[${i}].text`, v)
+                      : undefined
+                  }
+                />
+              ))}
+              {hasMoreWins && (
+                <button
+                  onClick={() => setExpandedWins(true)}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    color: "var(--color-text-tertiary)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "8px 0",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Show {wins.length - WIN_LIMIT} more
+                </button>
+              )}
+            </div>
+          )}
+
+          {visibleUnknowns.length > 0 && (
+            <div style={{ marginBottom: 48 }}>
+              <SectionTitle label="Unknowns" color={sectionColors.unknown} />
+              {visibleUnknowns.map((u, i) => (
+                <WatchItemRow
+                  key={`unknown-${i}`}
+                  type="unknown"
+                  text={u}
+                  isLast={i === visibleUnknowns.length - 1}
+                  onTextChange={
+                    onUpdateField
+                      ? (v) => onUpdateField(`currentState.unknowns[${i}]`, v)
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Entity-specific bottom section */}
+          {bottomSection}
         </div>
       </div>
     </section>

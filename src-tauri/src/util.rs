@@ -507,6 +507,15 @@ pub fn sanitize_for_filesystem(name: &str) -> String {
     }
 }
 
+// ─── Prompt Injection Hardening ─────────────────────────────────────────────
+
+/// Wrap untrusted user-originated data in XML tags before interpolating into
+/// PTY prompts.  This creates a clear boundary that the model can recognise,
+/// making it much harder for injected instructions to escape the data region.
+pub fn wrap_user_data(content: &str) -> String {
+    format!("<user_data>{}</user_data>", content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useSearch, useNavigate } from "@tanstack/react-router";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -36,6 +36,7 @@ import type {
   AiModelConfig,
   SettingsTabId,
   HygieneStatusView,
+  HygieneNarrativeView,
 } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1029,7 +1030,9 @@ function UserProfileCard() {
   const [title, setTitle] = useState("");
   const [focus, setFocus] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+
+  // Track initial values to detect actual changes on blur
+  const initial = useRef({ name: "", company: "", title: "", focus: "" });
 
   useEffect(() => {
     invoke<{
@@ -1039,30 +1042,40 @@ function UserProfileCard() {
       userFocus?: string;
     }>("get_config")
       .then((config) => {
-        setName(config.userName ?? "");
-        setCompany(config.userCompany ?? "");
-        setTitle(config.userTitle ?? "");
-        setFocus(config.userFocus ?? "");
+        const n = config.userName ?? "";
+        const c = config.userCompany ?? "";
+        const t = config.userTitle ?? "";
+        const f = config.userFocus ?? "";
+        setName(n);
+        setCompany(c);
+        setTitle(t);
+        setFocus(f);
+        initial.current = { name: n, company: c, title: t, focus: f };
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleSave() {
-    setSaving(true);
+  async function saveIfChanged() {
+    const current = { name: name.trim(), company: company.trim(), title: title.trim(), focus: focus.trim() };
+    if (
+      current.name === initial.current.name &&
+      current.company === initial.current.company &&
+      current.title === initial.current.title &&
+      current.focus === initial.current.focus
+    ) return;
     try {
       await invoke("set_user_profile", {
-        name: name.trim() || null,
-        company: company.trim() || null,
-        title: title.trim() || null,
-        focus: focus.trim() || null,
-        domain: null, // domain is managed by UserDomainsCard
+        name: current.name || null,
+        company: current.company || null,
+        title: current.title || null,
+        focus: current.focus || null,
+        domain: null,
       });
+      initial.current = current;
       toast.success("Profile updated");
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to update profile");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -1101,6 +1114,7 @@ function UserProfileCard() {
             id="profile-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onBlur={saveIfChanged}
             placeholder="e.g. Jamie"
             style={styles.input}
           />
@@ -1111,6 +1125,7 @@ function UserProfileCard() {
             id="profile-company"
             value={company}
             onChange={(e) => setCompany(e.target.value)}
+            onBlur={saveIfChanged}
             placeholder="e.g. Acme Inc."
             style={styles.input}
           />
@@ -1121,6 +1136,7 @@ function UserProfileCard() {
             id="profile-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onBlur={saveIfChanged}
             placeholder="e.g. Customer Success Manager"
             style={styles.input}
           />
@@ -1131,25 +1147,11 @@ function UserProfileCard() {
             id="profile-focus"
             value={focus}
             onChange={(e) => setFocus(e.target.value)}
+            onBlur={saveIfChanged}
             placeholder="e.g. Driving Q2 renewals"
             style={styles.input}
           />
         </div>
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
-        <button
-          style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Loader2 size={12} className="animate-spin" /> Saving
-            </span>
-          ) : (
-            "Save"
-          )}
-        </button>
       </div>
     </div>
   );
@@ -1853,6 +1855,7 @@ const preMeetingOptions = [2, 4, 12, 24] as const;
 function IntelligenceHygieneCard() {
   const navigate = useNavigate();
   const [status, setStatus] = useState<HygieneStatusView | null>(null);
+  const [narrative, setNarrative] = useState<HygieneNarrativeView | null>(null);
   const [loading, setLoading] = useState(true);
   const [runningNow, setRunningNow] = useState(false);
   const [hygieneConfig, setHygieneConfig] = useState<HygieneConfig>({
@@ -1860,7 +1863,6 @@ function IntelligenceHygieneCard() {
     hygieneAiBudget: 10,
     hygienePreMeetingHours: 12,
   });
-  const [showAllFixes, setShowAllFixes] = useState(false);
 
   async function loadStatus() {
     try {
@@ -1871,6 +1873,9 @@ function IntelligenceHygieneCard() {
     } finally {
       setLoading(false);
     }
+    invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
+      .then(setNarrative)
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -1891,6 +1896,9 @@ function IntelligenceHygieneCard() {
     try {
       const updated = await invoke<HygieneStatusView>("run_hygiene_scan_now");
       setStatus(updated);
+      invoke<HygieneNarrativeView | null>("get_hygiene_narrative")
+        .then(setNarrative)
+        .catch(() => {});
       toast.success("Hygiene scan complete");
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to run hygiene scan");
@@ -1917,29 +1925,6 @@ function IntelligenceHygieneCard() {
     } catch (err) {
       toast.error(typeof err === "string" ? err : "Failed to update hygiene config");
     }
-  }
-
-  function handleGapAction(route?: string) {
-    if (!route) {
-      runScanNow();
-      return;
-    }
-
-    if (route.startsWith("/people")) {
-      const parsed = new URL(route, "http://localhost");
-      const relationship = parsed.searchParams.get("relationship") ?? undefined;
-      const hygiene = parsed.searchParams.get("hygiene") ?? undefined;
-      navigate({
-        to: "/people",
-        search: {
-          relationship: relationship as "all" | "external" | "internal" | "unknown" | undefined,
-          hygiene: hygiene as "unnamed" | "duplicates" | undefined,
-        },
-      });
-      return;
-    }
-
-    runScanNow();
   }
 
   if (loading) {
@@ -1975,214 +1960,213 @@ function IntelligenceHygieneCard() {
     );
   }
 
+  const severityDotColor = (severity: string) => {
+    switch (severity) {
+      case "critical":
+        return "var(--color-spice-terracotta)";
+      case "medium":
+        return "var(--color-spice-turmeric)";
+      default:
+        return "var(--color-text-tertiary)";
+    }
+  };
+
   return (
     <div>
-      {/* Status & Budget */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          marginBottom: 32,
-        }}
-      >
-        <div>
-          <p style={styles.subsectionLabel}>Status</p>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <span
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: 14,
-                fontWeight: 500,
-                color: "var(--color-text-primary)",
-              }}
-            >
-              {status.statusLabel}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div
-                style={styles.statusDot(
-                  status.totalGaps === 0 ? "var(--color-garden-sage)" : "var(--color-spice-turmeric)"
-                )}
-              />
-              <span style={styles.monoLabel}>{status.totalGaps} gaps</span>
-            </div>
-          </div>
-          <p style={{ ...styles.description, fontSize: 12 }}>
-            Last scan: {formatTime(status.lastScanTime)}
-            {status.scanDurationMs != null && (
-              <span style={{ opacity: 0.6, marginLeft: 4 }}>
-                ({status.scanDurationMs < 1000
-                  ? `${status.scanDurationMs}ms`
-                  : `${(status.scanDurationMs / 1000).toFixed(1)}s`})
-              </span>
-            )}
-          </p>
-          <p style={{ ...styles.description, fontSize: 12 }}>
-            Next scan: {formatTime(status.nextScanTime)}
-          </p>
-        </div>
-        <div>
-          <p style={styles.subsectionLabel}>AI Budget</p>
-          <span
+      {/* Narrative prose (when available) */}
+      {narrative && (
+        <p
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 17,
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.55,
+            maxWidth: 580,
+            margin: "0 0 16px",
+          }}
+        >
+          {narrative.narrative}
+        </p>
+      )}
+
+      {/* Fixes — what the system healed */}
+      {status.totalFixes > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <p
             style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
               fontWeight: 500,
-              color: "var(--color-text-primary)",
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              color: "var(--color-garden-sage)",
+              marginBottom: 8,
             }}
           >
-            {status.budget.usedToday} / {status.budget.dailyLimit} used today
-          </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 8 }}>
-            Queued for next budget window: {status.budget.queuedForNextBudget}
+            Healed
           </p>
-        </div>
-      </div>
-
-      {/* Fixes Applied */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <p style={styles.subsectionLabel}>Fixes Applied</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div
-              style={styles.statusDot(
-                status.totalFixes > 0 ? "var(--color-garden-sage)" : "var(--color-text-tertiary)"
-              )}
-            />
-            <span style={styles.monoLabel}>{status.totalFixes}</span>
-          </div>
-        </div>
-        {status.fixDetails && status.fixDetails.length > 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {(showAllFixes ? status.fixDetails : status.fixDetails.slice(0, 5)).map((detail, i) => (
-              <p key={i} style={{ ...styles.description, fontSize: 12, margin: 0 }}>
-                &bull; {detail.description}
-              </p>
-            ))}
-            {status.fixDetails.length > 5 && !showAllFixes && (
-              <button
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  textAlign: "left",
-                  textDecoration: "underline",
-                  textUnderlineOffset: "2px",
-                }}
-                onClick={() => setShowAllFixes(true)}
-              >
-                ... and {status.fixDetails.length - 5} more
-              </button>
-            )}
-            {showAllFixes && status.fixDetails.length > 5 && (
-              <button
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  textAlign: "left",
-                  textDecoration: "underline",
-                  textUnderlineOffset: "2px",
-                }}
-                onClick={() => setShowAllFixes(false)}
-              >
-                Show less
-              </button>
-            )}
-          </div>
-        ) : status.fixes.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {status.fixes.map((fix) => (
-              <div
-                key={fix.key}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  ...styles.description,
-                  fontSize: 12,
-                }}
-              >
-                <span>{fix.label}</span>
-                <span>{fix.count}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ ...styles.description, fontSize: 12 }}>
-            No fixes were applied in the most recent scan.
-          </p>
-        )}
-      </div>
-
-      {/* Gaps Detected */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <p style={styles.subsectionLabel}>Gaps Detected</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div
-              style={styles.statusDot(
-                status.gaps.length > 0 ? "var(--color-spice-terracotta)" : "var(--color-garden-sage)"
-              )}
-            />
-            <span style={styles.monoLabel}>{status.gaps.length}</span>
-          </div>
-        </div>
-        {status.gaps.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {status.gaps.map((gap) => (
-              <div
-                key={gap.key}
-                style={{
-                  padding: "12px 0",
-                  borderBottom: "1px solid var(--color-rule-light)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
-                  <div>
+            {status.fixDetails.length > 0
+              ? status.fixDetails.map((fix, i) => (
+                  <div
+                    key={i}
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        backgroundColor: "var(--color-garden-sage)",
+                        flexShrink: 0,
+                      }}
+                    />
                     <span
                       style={{
                         fontFamily: "var(--font-sans)",
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "var(--color-text-primary)",
+                        fontSize: 13,
+                        color: "var(--color-text-secondary)",
                       }}
                     >
-                      {gap.label}{" "}
-                      <span style={{ color: "var(--color-text-tertiary)" }}>({gap.count})</span>
+                      {fix.description}
+                      {fix.entityName && (
+                        <span style={{ color: "var(--color-text-tertiary)" }}>
+                          {" \u2014 "}{fix.entityName}
+                        </span>
+                      )}
                     </span>
-                    <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
-                      {gap.description}
-                    </p>
                   </div>
-                  <span style={{ ...styles.monoLabel, fontSize: 10, textTransform: "uppercase" }}>
-                    {gap.impact}
-                  </span>
-                </div>
-                <button
-                  style={{ ...styles.btn, ...styles.btnGhost, marginTop: 8 }}
-                  onClick={() => handleGapAction(gap.action.route)}
-                >
-                  {gap.action.label}
-                </button>
-              </div>
-            ))}
+                ))
+              : status.fixes.map((fix) => (
+                  <div
+                    key={fix.key}
+                    style={{ display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    <div
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        backgroundColor: "var(--color-garden-sage)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: "var(--font-sans)",
+                        fontSize: 13,
+                        color: "var(--color-text-secondary)",
+                      }}
+                    >
+                      {fix.label}
+                    </span>
+                  </div>
+                ))}
           </div>
-        ) : (
-          <p style={{ ...styles.description, fontSize: 12 }}>
-            No open hygiene gaps. The system will continue scanning automatically.
+        </div>
+      )}
+
+      {/* Gaps — remaining issues (clickable) */}
+      {status.gaps.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              color: "var(--color-spice-terracotta)",
+              marginBottom: 8,
+            }}
+          >
+            Remaining
           </p>
-        )}
-      </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {status.gaps.map((gap) => {
+            const isClickable = gap.action.kind === "navigate" && gap.action.route;
+            return (
+              <div
+                key={gap.key}
+                role={isClickable ? "button" : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                onClick={
+                  isClickable
+                    ? () => navigate({ to: gap.action.route! })
+                    : undefined
+                }
+                onKeyDown={
+                  isClickable
+                    ? (e: React.KeyboardEvent) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate({ to: gap.action.route! });
+                        }
+                      }
+                    : undefined
+                }
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  cursor: isClickable ? "pointer" : "default",
+                  padding: "4px 0",
+                  borderRadius: 4,
+                }}
+              >
+                <div
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    backgroundColor: severityDotColor(gap.impact),
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    color: isClickable ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                    textDecoration: isClickable ? "underline" : "none",
+                    textDecorationColor: "var(--color-rule-light)",
+                    textUnderlineOffset: 2,
+                  }}
+                >
+                  {gap.label}
+                </span>
+                {isClickable && (
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      color: "var(--color-text-tertiary)",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {gap.action.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        </div>
+      )}
+
+      {/* Scan timestamp */}
+      {status.lastScanTime && (
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            color: "var(--color-text-tertiary)",
+            margin: "0 0 24px",
+          }}
+        >
+          Last scan: {formatTime(status.lastScanTime)}
+        </p>
+      )}
 
       {/* Configuration */}
       <div style={{ marginBottom: 32 }}>

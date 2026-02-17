@@ -77,7 +77,6 @@ Tauri v2 app with a Rust backend and React/TypeScript frontend. Data flows throu
 - [PHILOSOPHY.md](design/PHILOSOPHY.md) -- Why we exist
 - [PRINCIPLES.md](design/PRINCIPLES.md) -- Design principles
 - [VISION.md](design/VISION.md) -- Product vision
-- [oauth-secret-rotation.md](docs/oauth-secret-rotation.md) -- OAuth rotation + history rewrite runbook
 
 Product website: [daily-os.com](https://daily-os.com)
 

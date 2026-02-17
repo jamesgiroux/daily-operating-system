@@ -1187,6 +1187,169 @@ pub struct HygieneStatusView {
     pub scan_duration_ms: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneNarrativeView {
+    pub narrative: String,
+    pub remaining_gaps: Vec<HygieneGapSummary>,
+    pub last_scan_time: Option<String>,
+    pub total_fixes: usize,
+    pub total_remaining_gaps: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HygieneGapSummary {
+    pub label: String,
+    pub count: usize,
+    pub severity: String, // "critical" | "medium" | "low"
+}
+
+/// Join items into prose: "a, b, and c"
+fn join_prose_list(items: &[String]) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items[0].clone(),
+        2 => format!("{} and {}", items[0], items[1]),
+        _ => {
+            let (last, rest) = items.split_last().unwrap();
+            format!("{}, and {}", rest.join(", "), last)
+        }
+    }
+}
+
+pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativeView> {
+    // Build fix descriptions
+    let mut fix_parts: Vec<String> = Vec::new();
+    let fixes = &report.fixes;
+    if fixes.names_resolved > 0 {
+        fix_parts.push(format!(
+            "resolved {} unnamed {}",
+            fixes.names_resolved,
+            if fixes.names_resolved == 1 { "person" } else { "people" }
+        ));
+    }
+    if fixes.orphaned_meetings_linked > 0 {
+        fix_parts.push(format!(
+            "linked {} orphaned {}",
+            fixes.orphaned_meetings_linked,
+            if fixes.orphaned_meetings_linked == 1 { "meeting" } else { "meetings" }
+        ));
+    }
+    if fixes.relationships_reclassified > 0 {
+        fix_parts.push(format!(
+            "reclassified {} {}",
+            fixes.relationships_reclassified,
+            if fixes.relationships_reclassified == 1 { "relationship" } else { "relationships" }
+        ));
+    }
+    if fixes.summaries_extracted > 0 {
+        fix_parts.push(format!(
+            "extracted {} {}",
+            fixes.summaries_extracted,
+            if fixes.summaries_extracted == 1 { "summary" } else { "summaries" }
+        ));
+    }
+    if fixes.meeting_counts_updated > 0 {
+        fix_parts.push(format!(
+            "updated {} meeting {}",
+            fixes.meeting_counts_updated,
+            if fixes.meeting_counts_updated == 1 { "count" } else { "counts" }
+        ));
+    }
+    if fixes.people_linked_by_domain > 0 {
+        fix_parts.push(format!(
+            "linked {} {} by domain",
+            fixes.people_linked_by_domain,
+            if fixes.people_linked_by_domain == 1 { "person" } else { "people" }
+        ));
+    }
+    if fixes.renewals_rolled_over > 0 {
+        fix_parts.push(format!(
+            "rolled over {} {}",
+            fixes.renewals_rolled_over,
+            if fixes.renewals_rolled_over == 1 { "renewal" } else { "renewals" }
+        ));
+    }
+    if fixes.ai_enrichments_enqueued > 0 {
+        fix_parts.push(format!(
+            "queued {} intelligence {}",
+            fixes.ai_enrichments_enqueued,
+            if fixes.ai_enrichments_enqueued == 1 { "refresh" } else { "refreshes" }
+        ));
+    }
+
+    // Build gap summaries
+    let mut remaining_gaps: Vec<HygieneGapSummary> = Vec::new();
+    let gap_rows: Vec<(&str, usize, &str)> = vec![
+        ("unnamed people", report.unnamed_people, "critical"),
+        ("duplicate people", report.duplicate_people, "critical"),
+        ("unknown relationships", report.unknown_relationships, "medium"),
+        ("missing intelligence", report.missing_intelligence, "medium"),
+        ("stale intelligence", report.stale_intelligence, "low"),
+        ("unsummarized files", report.unsummarized_files, "medium"),
+        ("orphaned meetings", report.orphaned_meetings, "medium"),
+    ];
+    for (label, count, severity) in &gap_rows {
+        if *count > 0 {
+            remaining_gaps.push(HygieneGapSummary {
+                label: format!("{} {}", count, label),
+                count: *count,
+                severity: severity.to_string(),
+            });
+        }
+    }
+
+    let total_fix_count = fixes.names_resolved
+        + fixes.orphaned_meetings_linked
+        + fixes.relationships_reclassified
+        + fixes.summaries_extracted
+        + fixes.meeting_counts_updated
+        + fixes.people_linked_by_domain
+        + fixes.renewals_rolled_over
+        + fixes.ai_enrichments_enqueued;
+    let total_remaining_gaps: usize = remaining_gaps.iter().map(|g| g.count).sum();
+
+    // Return None when nothing happened
+    if total_fix_count == 0 && total_remaining_gaps == 0 {
+        return None;
+    }
+
+    // Build narrative prose
+    let mut narrative = String::new();
+    if !fix_parts.is_empty() {
+        let capitalized = {
+            let joined = join_prose_list(&fix_parts);
+            let mut chars = joined.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+            }
+        };
+        narrative.push_str(&format!("{}.", capitalized));
+    }
+    if total_remaining_gaps > 0 {
+        if !narrative.is_empty() {
+            narrative.push(' ');
+        }
+        narrative.push_str(&format!(
+            "{} {} remaining.",
+            total_remaining_gaps,
+            if total_remaining_gaps == 1 { "gap" } else { "gaps" }
+        ));
+    } else if !narrative.is_empty() {
+        narrative.push_str(" All clear.");
+    }
+
+    Some(HygieneNarrativeView {
+        narrative,
+        remaining_gaps,
+        last_scan_time: Some(report.scanned_at.clone()),
+        total_fixes: total_fix_count,
+        total_remaining_gaps,
+    })
+}
+
 fn hygiene_gap_action(key: &str) -> HygieneGapActionView {
     match key {
         "unnamed_people" => HygieneGapActionView {
@@ -2326,6 +2489,83 @@ mod tests {
 
         let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
         assert_eq!(report.fixes.renewals_rolled_over, 1);
+    }
+
+    // --- Hygiene Narrative tests (I273) ---
+
+    #[test]
+    fn test_join_prose_list_empty() {
+        assert_eq!(join_prose_list(&[]), "");
+    }
+
+    #[test]
+    fn test_join_prose_list_one() {
+        assert_eq!(join_prose_list(&["a".to_string()]), "a");
+    }
+
+    #[test]
+    fn test_join_prose_list_two() {
+        assert_eq!(
+            join_prose_list(&["a".to_string(), "b".to_string()]),
+            "a and b"
+        );
+    }
+
+    #[test]
+    fn test_join_prose_list_three() {
+        assert_eq!(
+            join_prose_list(&["a".to_string(), "b".to_string(), "c".to_string()]),
+            "a, b, and c"
+        );
+    }
+
+    #[test]
+    fn test_build_narrative_empty_report() {
+        let report = HygieneReport::default();
+        assert!(build_hygiene_narrative(&report).is_none());
+    }
+
+    #[test]
+    fn test_build_narrative_only_fixes() {
+        let mut report = HygieneReport::default();
+        report.fixes.names_resolved = 3;
+        report.fixes.orphaned_meetings_linked = 2;
+        report.scanned_at = "2026-01-15T10:00:00Z".to_string();
+        let view = build_hygiene_narrative(&report).unwrap();
+        assert!(view.narrative.contains("Resolved 3 unnamed people"));
+        assert!(view.narrative.contains("linked 2 orphaned meetings"));
+        assert!(view.narrative.contains("All clear."));
+        assert_eq!(view.total_fixes, 5);
+        assert_eq!(view.total_remaining_gaps, 0);
+        assert!(view.remaining_gaps.is_empty());
+    }
+
+    #[test]
+    fn test_build_narrative_only_gaps() {
+        let report = HygieneReport {
+            unnamed_people: 4,
+            orphaned_meetings: 1,
+            scanned_at: "2026-01-15T10:00:00Z".to_string(),
+            ..Default::default()
+        };
+        let view = build_hygiene_narrative(&report).unwrap();
+        assert!(view.narrative.contains("5 gaps remaining"));
+        assert_eq!(view.total_fixes, 0);
+        assert_eq!(view.total_remaining_gaps, 5);
+        assert_eq!(view.remaining_gaps.len(), 2);
+    }
+
+    #[test]
+    fn test_build_narrative_fixes_and_gaps() {
+        let mut report = HygieneReport::default();
+        report.fixes.relationships_reclassified = 2;
+        report.missing_intelligence = 3;
+        report.scanned_at = "2026-01-15T10:00:00Z".to_string();
+        let view = build_hygiene_narrative(&report).unwrap();
+        assert!(view.narrative.contains("Reclassified 2 relationships"));
+        assert!(view.narrative.contains("3 gaps remaining"));
+        assert_eq!(view.total_fixes, 2);
+        assert_eq!(view.total_remaining_gaps, 3);
     }
 
     fn default_test_config() -> Config {

@@ -28,7 +28,7 @@ export type MeetingType =
 
 export type Priority = "P1" | "P2" | "P3";
 
-export type ActionStatus = "pending" | "completed";
+export type ActionStatus = "pending" | "completed" | "proposed" | "archived";
 
 export type PrepStatus =
   | "prep_needed"
@@ -292,6 +292,14 @@ export interface DayShape {
   density: string;
   meetings: WeekMeeting[];
   availableBlocks: TimeBlock[];
+  /** Per-day prioritized actions from live DB enrichment (I279) */
+  prioritizedActions?: PrioritizedAction[];
+  focusImplications?: {
+    achievableCount: number;
+    totalCount: number;
+    atRiskCount: number;
+    summary: string;
+  };
 }
 
 export type AlertSeverity = "critical" | "warning" | "info";
@@ -528,6 +536,20 @@ export interface HygieneStatusView {
   gaps: HygieneGapView[];
   budget: HygieneBudgetView;
   scanDurationMs?: number;
+}
+
+export interface HygieneNarrativeView {
+  narrative: string;
+  remainingGaps: HygieneGapSummary[];
+  lastScanTime?: string;
+  totalFixes: number;
+  totalRemainingGaps: number;
+}
+
+export interface HygieneGapSummary {
+  label: string;
+  count: number;
+  severity: "critical" | "medium" | "low";
 }
 
 export interface CalendarEvent {
