@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 
 pub mod accounts;
+mod audit;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
