@@ -8404,7 +8404,22 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
     let binary_path = resolve_mcp_binary_path(&home, binary_name);
 
     let binary_path_str = match &binary_path {
-        Some(p) => p.to_string_lossy().to_string(),
+        Some(p) => {
+            // Ensure binary is executable (build may not set +x)
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(p) {
+                    let mut perms = meta.permissions();
+                    let mode = perms.mode();
+                    if mode & 0o111 == 0 {
+                        perms.set_mode(mode | 0o755);
+                        let _ = std::fs::set_permissions(p, perms);
+                    }
+                }
+            }
+            p.to_string_lossy().to_string()
+        }
         None => {
             return ClaudeDesktopConfigResult {
                 success: false,
