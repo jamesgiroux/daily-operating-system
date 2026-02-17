@@ -1079,6 +1079,15 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             }
         }
 
+        // Prune old audit trail files (I297)
+        if let Some(config) = state.config.read().ok().and_then(|g| g.clone()) {
+            let workspace = std::path::Path::new(&config.workspace_path);
+            let pruned = crate::audit::prune_audit_files(workspace);
+            if pruned > 0 {
+                log::info!("HygieneLoop: pruned {} old audit files", pruned);
+            }
+        }
+
         if let Ok(mut guard) = state.next_hygiene_scan_at.lock() {
             *guard = Some(
                 (Utc::now() + chrono::Duration::seconds(interval as i64)).to_rfc3339(),

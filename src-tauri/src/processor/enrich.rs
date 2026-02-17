@@ -85,6 +85,9 @@ pub fn enrich_file(
         }
     };
 
+    // Audit trail (I297)
+    let _ = crate::audit::write_audit_entry(workspace, "inbox_file", filename, &output);
+
     // Parse Claude's response
     let parsed = parse_enrichment_response(&output);
 
