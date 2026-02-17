@@ -17,6 +17,16 @@ import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { formatRelativeDate } from "@/lib/utils";
+import {
+  EntityListSkeleton,
+  EntityListError,
+  EntityListEmpty,
+  EntityListHeader,
+  EntityListEndMark,
+  ArchiveToggle,
+  FilterTabs,
+} from "@/components/entity/EntityListShell";
+import { EntityRow } from "@/components/entity/EntityRow";
 import type { PersonListItem, DuplicateCandidate } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 
@@ -24,8 +34,7 @@ type ArchiveTab = "active" | "archived";
 type RelationshipTab = "all" | "external" | "internal" | "unknown";
 type HygieneFilter = "unnamed" | "duplicates";
 
-const archiveTabs: ArchiveTab[] = ["active", "archived"];
-const relationshipTabs: RelationshipTab[] = ["all", "external", "internal", "unknown"];
+const relationshipTabs: readonly RelationshipTab[] = ["all", "external", "internal", "unknown"];
 
 const tempDotColor: Record<string, string> = {
   hot: "var(--color-garden-sage)",
@@ -250,28 +259,12 @@ export default function PeoplePage() {
 
   // Loading
   if (loading && (isArchived ? archivedPeople.length === 0 : people.length === 0)) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80 }}>
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} style={{ height: 48, background: "var(--color-rule-light)", borderRadius: 8, marginBottom: 12 }} />
-        ))}
-      </div>
-    );
+    return <EntityListSkeleton />;
   }
 
   // Error
   if (error) {
-    return (
-      <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto", paddingTop: 80, textAlign: "center" }}>
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 15, color: "var(--color-spice-terracotta)" }}>{error}</p>
-        <button
-          onClick={isArchived ? loadArchivedPeople : loadPeople}
-          style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--color-text-tertiary)", background: "none", border: "1px solid var(--color-rule-heavy)", borderRadius: 4, padding: "4px 12px", cursor: "pointer", marginTop: 12 }}
-        >
-          Retry
-        </button>
-      </div>
-    );
+    return <EntityListError error={error} onRetry={isArchived ? loadArchivedPeople : loadPeople} />;
   }
 
   // Empty
@@ -281,93 +274,44 @@ export default function PeoplePage() {
         <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: "0 0 24px 0" }}>
           The Room
         </h1>
-        <div style={{ textAlign: "center", padding: "64px 0" }}>
-          <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
-            {getPersonalityCopy("people-empty", personality).title}
-          </p>
-          {getPersonalityCopy("people-empty", personality).message && (
-            <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
-              {getPersonalityCopy("people-empty", personality).message}
-            </p>
-          )}
-        </div>
+        <EntityListEmpty
+          title={getPersonalityCopy("people-empty", personality).title}
+          message={getPersonalityCopy("people-empty", personality).message}
+        />
       </div>
     );
   }
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-      {/* ═══ PAGE HEADER ═══ */}
-      <section style={{ paddingTop: 80, paddingBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h1 style={{ fontFamily: "var(--font-serif)", fontSize: 36, fontWeight: 400, letterSpacing: "-0.02em", color: "var(--color-text-primary)", margin: 0 }}>
-            The Room
-          </h1>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
-            {isArchived ? filteredArchived.length : filtered.length} contacts
-          </span>
-        </div>
-
-        <div style={{ height: 1, background: "var(--color-rule-heavy)", marginTop: 16, marginBottom: 16 }} />
-
-        {/* Archive toggle */}
-        <div style={{ display: "flex", gap: 20, marginBottom: 12 }}>
-          {archiveTabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setArchiveTab(t)}
-              style={{
-                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase",
-                color: archiveTab === t ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                textDecoration: archiveTab === t ? "underline" : "none", textUnderlineOffset: "4px",
-                background: "none", border: "none", padding: 0, cursor: "pointer",
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {/* Relationship filter (active only) */}
+      <EntityListHeader
+        headline="The Room"
+        count={isArchived ? filteredArchived.length : filtered.length}
+        countLabel="contacts"
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="\u2318  Search people..."
+      >
+        <ArchiveToggle archiveTab={archiveTab} onTabChange={setArchiveTab} />
         {!isArchived && (
-          <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
-            {relationshipTabs.map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  setTab(t);
-                  navigate({
-                    to: "/people",
-                    search: (prev: Record<string, unknown>) => ({
-                      ...prev,
-                      relationship: t === "all" ? undefined : t,
-                    }),
-                  });
-                }}
-                style={{
-                  fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase",
-                  color: tab === t ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                  textDecoration: tab === t ? "underline" : "none", textUnderlineOffset: "4px",
-                  background: "none", border: "none", padding: 0, cursor: "pointer",
-                }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
+          <FilterTabs
+            tabs={relationshipTabs}
+            active={tab}
+            onChange={(t) => {
+              setTab(t);
+              navigate({
+                to: "/people",
+                search: (prev: Record<string, unknown>) => ({
+                  ...prev,
+                  relationship: t === "all" ? undefined : t,
+                }),
+              });
+            }}
+          />
         )}
+      </EntityListHeader>
 
-        {/* Search */}
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="⌘  Search people..."
-          style={{ width: "100%", fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)", background: "none", border: "none", borderBottom: "1px solid var(--color-rule-light)", padding: "8px 0", outline: "none" }}
-        />
-      </section>
-
-      {/* ═══ ADD PERSON FORM ═══ */}
+      {/* Add person form */}
       {!isArchived && showAddForm && (
         <div
           style={{
@@ -422,7 +366,7 @@ export default function PeoplePage() {
         </div>
       )}
 
-      {/* ═══ HYGIENE BANNER: Unnamed filter ═══ */}
+      {/* Hygiene banner: unnamed filter */}
       {!isArchived && activeHygieneFilter === "unnamed" && (
         <div
           style={{
@@ -448,7 +392,7 @@ export default function PeoplePage() {
         </div>
       )}
 
-      {/* ═══ DUPLICATE DETECTION BANNER ═══ */}
+      {/* Duplicate detection banner */}
       {duplicates.length > 0 && !isArchived && (
         <div style={{ marginBottom: 16 }}>
           <div
@@ -563,11 +507,11 @@ export default function PeoplePage() {
         </div>
       )}
 
-      {/* ═══ PEOPLE ROWS ═══ */}
+      {/* People rows */}
       <section>
         {isArchived ? (
           filteredArchived.length === 0 ? (
-            <EditorialEmpty
+            <EntityListEmpty
               title={getPersonalityCopy("people-archived-empty", personality).title}
               message={getPersonalityCopy("people-archived-empty", personality).message ?? ""}
             />
@@ -579,7 +523,7 @@ export default function PeoplePage() {
             </div>
           )
         ) : sorted.length === 0 ? (
-          <EditorialEmpty
+          <EntityListEmpty
             title={getPersonalityCopy("people-no-matches", personality).title}
             message={getPersonalityCopy("people-no-matches", personality).message ?? ""}
           />
@@ -592,13 +536,9 @@ export default function PeoplePage() {
         )}
       </section>
 
-      {/* ═══ END MARK ═══ */}
+      {/* End mark */}
       {((isArchived && filteredArchived.length > 0) || (!isArchived && sorted.length > 0)) && (
-        <div style={{ borderTop: "1px solid var(--color-rule-heavy)", marginTop: 48, paddingTop: 32, paddingBottom: 120, textAlign: "center" }}>
-          <div style={{ fontFamily: "var(--font-serif)", fontSize: 14, fontStyle: "italic", color: "var(--color-text-tertiary)" }}>
-            That's everyone.
-          </div>
-        </div>
+        <EntityListEndMark text="That's everyone." />
       )}
     </div>
   );
@@ -624,69 +564,52 @@ function PersonRow({
 
   const lastSeen = person.lastSeen ? formatRelativeDate(person.lastSeen) : null;
 
+  const nameSuffix = (
+    <>
+      {trendArrow}
+      {showRelationship && person.relationship !== "unknown" && (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: person.relationship === "external"
+              ? "var(--color-garden-larkspur)"
+              : "var(--color-text-tertiary)",
+          }}
+        >
+          {person.relationship}
+        </span>
+      )}
+    </>
+  );
+
+  const subtitle = (
+    <>
+      {person.accountNames ?? person.organization}
+      {(person.accountNames ?? person.organization) && person.role && " \u00B7 "}
+      {person.role}
+    </>
+  );
+
   return (
-    <Link
+    <EntityRow
       to="/people/$personId"
       params={{ personId: person.id }}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        textDecoration: "none",
-      }}
+      dotColor={tempDotColor[person.temperature] ?? "var(--color-paper-linen)"}
+      name={person.name}
+      showBorder={showBorder}
+      nameSuffix={nameSuffix}
+      subtitle={subtitle}
     >
-      {/* Temperature dot */}
-      <div
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          background: tempDotColor[person.temperature] ?? "var(--color-paper-linen)",
-          flexShrink: 0,
-          marginTop: 8,
-        }}
-      />
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "var(--font-serif)", fontSize: 17, fontWeight: 400, color: "var(--color-text-primary)" }}>
-            {person.name}
-          </span>
-          {trendArrow}
-          {showRelationship && person.relationship !== "unknown" && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: person.relationship === "external"
-                  ? "var(--color-garden-larkspur)"
-                  : "var(--color-text-tertiary)",
-              }}
-            >
-              {person.relationship}
-            </span>
-          )}
-        </div>
-        <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 2 }}>
-          {person.accountNames ?? person.organization}
-          {(person.accountNames ?? person.organization) && person.role && " \u00B7 "}
-          {person.role}
-        </div>
-      </div>
-
-      {/* Last seen */}
       {lastSeen && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 13, color: "var(--color-text-tertiary)" }}>
           {lastSeen}
         </span>
       )}
-    </Link>
+    </EntityRow>
   );
 }
 
@@ -699,51 +622,19 @@ function ArchivedPersonRow({ person, showBorder }: { person: PersonListItem; sho
   ].filter(Boolean).join(" \u00B7 ");
 
   return (
-    <Link
+    <EntityRow
       to="/people/$personId"
       params={{ personId: person.id }}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 12,
-        padding: "14px 0",
-        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
-        textDecoration: "none",
-      }}
+      dotColor="var(--color-paper-linen)"
+      name={person.name}
+      showBorder={showBorder}
+      subtitle={subtitle || undefined}
     >
-      <div style={{ width: 8, height: 8, borderRadius: 4, background: "var(--color-paper-linen)", flexShrink: 0, marginTop: 8 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontFamily: "var(--font-serif)", fontSize: 17, fontWeight: 400, color: "var(--color-text-primary)" }}>
-          {person.name}
-        </span>
-        {subtitle && (
-          <div style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 2 }}>
-            {subtitle}
-          </div>
-        )}
-      </div>
       {person.relationship !== "unknown" && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
           {person.relationship}
         </span>
       )}
-    </Link>
-  );
-}
-
-// ─── Editorial Empty State ──────────────────────────────────────────────────
-
-function EditorialEmpty({ title, message }: { title: string; message?: string }) {
-  return (
-    <div style={{ textAlign: "center", padding: "64px 0" }}>
-      <p style={{ fontFamily: "var(--font-serif)", fontSize: 18, fontStyle: "italic", color: "var(--color-text-tertiary)", margin: 0 }}>
-        {title}
-      </p>
-      {message && (
-        <p style={{ fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 300, color: "var(--color-text-tertiary)", marginTop: 8 }}>
-          {message}
-        </p>
-      )}
-    </div>
+    </EntityRow>
   );
 }
