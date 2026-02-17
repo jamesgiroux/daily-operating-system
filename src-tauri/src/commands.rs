@@ -694,6 +694,14 @@ pub fn get_meeting_intelligence(
             prep_data.calendar_event_id.as_deref(),
             &prep_data.title,
         );
+
+        // Hydrate attendee_context from people DB (I51)
+        if prep_data.attendee_context.is_none() {
+            let attendee_context = hydrate_attendee_context(db, &meeting);
+            if !attendee_context.is_empty() {
+                prep_data.attendee_context = Some(attendee_context);
+            }
+        }
     }
 
     let now = chrono::Utc::now();
@@ -751,6 +759,87 @@ pub fn get_meeting_intelligence(
         transcript_path,
         transcript_processed_at,
     })
+}
+
+/// Build AttendeeContext by matching calendar attendee emails to person entities.
+/// Scoped to external (non-internal) attendees who are in the people database.
+fn hydrate_attendee_context(
+    db: &crate::db::ActionDb,
+    meeting: &crate::db::DbMeeting,
+) -> Vec<crate::types::AttendeeContext> {
+    use std::collections::HashSet;
+
+    let mut seen_emails = HashSet::new();
+    let mut contexts = Vec::new();
+
+    // Strategy 1: Get people already linked via meeting_attendees junction table
+    if let Ok(linked_people) = db.get_meeting_attendees(&meeting.id) {
+        for person in &linked_people {
+            let email_lower = person.email.to_lowercase();
+            if seen_emails.contains(&email_lower) {
+                continue;
+            }
+            seen_emails.insert(email_lower);
+            contexts.push(person_to_attendee_context(person));
+        }
+    }
+
+    // Strategy 2: Parse emails from meeting.attendees field and look up each
+    if let Some(ref attendees_str) = meeting.attendees {
+        let emails: Vec<String> = attendees_str
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| s.contains('@'))
+            .collect();
+
+        for email in &emails {
+            if seen_emails.contains(email) {
+                continue;
+            }
+            if let Ok(Some(person)) = db.get_person_by_email(email) {
+                seen_emails.insert(email.clone());
+                contexts.push(person_to_attendee_context(&person));
+            }
+        }
+    }
+
+    // Filter to non-internal, non-archived people
+    contexts
+        .into_iter()
+        .filter(|ctx| {
+            // Keep external and unknown relationships; exclude internal
+            ctx.relationship.as_deref() != Some("internal")
+        })
+        .collect()
+}
+
+/// Convert a DbPerson into an AttendeeContext with computed temperature.
+fn person_to_attendee_context(person: &crate::db::DbPerson) -> crate::types::AttendeeContext {
+    let temperature = person
+        .last_seen
+        .as_deref()
+        .map(|ls| {
+            let days = crate::db::days_since_iso(ls);
+            match days {
+                Some(d) if d < 7 => "hot".to_string(),
+                Some(d) if d < 30 => "warm".to_string(),
+                Some(d) if d < 60 => "cool".to_string(),
+                _ => "cold".to_string(),
+            }
+        });
+
+    crate::types::AttendeeContext {
+        name: person.name.clone(),
+        email: Some(person.email.clone()),
+        role: person.role.clone(),
+        organization: person.organization.clone(),
+        relationship: Some(person.relationship.clone()),
+        meeting_count: Some(person.meeting_count),
+        last_seen: person.last_seen.clone(),
+        temperature,
+        notes: person.notes.clone(),
+        person_id: Some(person.id.clone()),
+    }
 }
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
