@@ -56,9 +56,8 @@ jobs:
           mkdir -p src-tauri/binaries
           TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
           touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-          # Clear cached build.rs output so Tauri re-checks externalBin paths
-          find src-tauri/target -path '*/dailyos-*/output' -delete 2>/dev/null || true
-          find src-tauri/target -path '*/dailyos-*/out' -type d -exec rm -rf {} + 2>/dev/null || true
+          # Force Cargo to re-run build.rs so it sees the stub binary
+          touch src-tauri/build.rs
 
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
