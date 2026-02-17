@@ -15,7 +15,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::db::{ActionDb, DbAccount};
-use crate::util::slugify;
+use crate::util::{slugify, wrap_user_data};
 
 // =============================================================================
 // JSON Schema
@@ -993,7 +993,9 @@ pub fn build_file_context(_workspace: &Path, db: &ActionDb, account_id: &str) ->
 
         context_parts.push(format!(
             "--- {} [{}] ---\n{}",
-            file.filename, file.content_type, truncated
+            wrap_user_data(&file.filename),
+            file.content_type,
+            wrap_user_data(truncated),
         ));
         total_chars += truncated.len();
     }
@@ -1019,7 +1021,7 @@ pub fn enrichment_prompt(account_name: &str) -> String {
          SIZE: <approximate employee count or range, e.g. \"500-1000\">\n\
          HQ: <headquarters city and country>\n\
          END_ENRICHMENT",
-        name = account_name
+        name = wrap_user_data(account_name)
     )
 }
 

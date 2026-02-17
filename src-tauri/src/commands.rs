@@ -185,29 +185,51 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
         let mut meetings =
             crate::calendar_merge::merge_meetings(briefing_meetings, &live_events, &tz);
 
-        // Annotate meetings with prep-reviewed state from SQLite (ADR-0033)
-        match state.with_db_try_read(|db| db.get_reviewed_preps()) {
-            DbTryRead::Ok(Ok(reviewed)) => {
+        // Consolidate all dashboard DB reads into a single lock acquisition (I235).
+        // This reduces lock contention and improves dashboard load latency.
+        let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
+        struct DashboardDbSnapshot {
+            reviewed: Option<HashMap<String, String>>,
+            entity_map: Option<HashMap<String, Vec<crate::types::LinkedEntity>>>,
+            accounts_with_domains: Option<Vec<(crate::db::DbAccount, Vec<String>)>>,
+            non_briefing_actions: Option<Vec<crate::db::DbAction>>,
+            focus_candidates: Option<Vec<crate::db::DbAction>>,
+        }
+
+        let db_snapshot = match state.with_db_try_read(|db| {
+            DashboardDbSnapshot {
+                reviewed: db.get_reviewed_preps().ok(),
+                entity_map: db.get_meeting_entity_map(&meeting_ids).ok(),
+                accounts_with_domains: db.get_all_accounts_with_domains(true).ok(),
+                non_briefing_actions: db.get_non_briefing_pending_actions().ok(),
+                focus_candidates: db.get_focus_candidate_actions(7).ok(),
+            }
+        }) {
+            DbTryRead::Ok(snap) => Some(snap),
+            DbTryRead::Busy => {
+                db_busy = true;
+                None
+            }
+            DbTryRead::Unavailable | DbTryRead::Poisoned => None,
+        };
+
+        // Apply DB data to meetings (outside the lock)
+        if let Some(ref snap) = db_snapshot {
+            // Annotate meetings with prep-reviewed state (ADR-0033)
+            if let Some(ref reviewed) = snap.reviewed {
                 for m in &mut meetings {
                     if reviewed.contains_key(&m.id) {
                         m.prep_reviewed = Some(true);
                     }
                 }
             }
-            DbTryRead::Busy => db_busy = true,
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
-        }
 
-        // Annotate meetings with linked entities from junction table (I52)
-        match state.with_db_try_read(|db| {
-            let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            db.get_meeting_entity_map(&meeting_ids)
-        }) {
-            DbTryRead::Ok(Ok(entity_map)) => {
+            // Annotate meetings with linked entities (I52)
+            if let Some(ref entity_map) = snap.entity_map {
                 for m in &mut meetings {
                     if let Some(entities) = entity_map.get(&m.id) {
-                        m.linked_entities = Some(entities.clone());
-                        // First account entity also populates account_id + account name
+                        let entities_vec: Vec<crate::types::LinkedEntity> = entities.clone();
+                        m.linked_entities = Some(entities_vec);
                         if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
                             m.account_id = Some(acct.id.clone());
                             m.account = Some(acct.name.clone());
@@ -215,18 +237,9 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
-            DbTryRead::Busy => db_busy = true,
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
-        }
 
-        // Flag meetings that matched an archived account for unarchive suggestion (I161)
-        match state.with_db_try_read(
-            |db| -> Result<
-                (Vec<crate::db::DbAccount>, HashMap<String, HashSet<String>>),
-                crate::db::DbError,
-            > {
-                // Single JOIN query instead of N+1 per-account domain lookups (W3)
-                let accounts_with_domains = db.get_all_accounts_with_domains(true)?;
+            // Flag meetings matching archived accounts for unarchive suggestion (I161)
+            if let Some(ref accounts_with_domains) = snap.accounts_with_domains {
                 let mut archived = Vec::new();
                 let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
                 for (account, domains) in accounts_with_domains {
@@ -237,15 +250,11 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                         archived.push(account);
                     }
                 }
-                Ok((archived, domains_by_account))
-            },
-        ) {
-            DbTryRead::Ok(Ok((archived, domains_by_account))) => {
+
                 let archived_ids: HashSet<String> =
                     archived.iter().map(|a| a.id.to_lowercase()).collect();
                 let live_domains = build_live_event_domain_map(&live_events);
                 for m in &mut meetings {
-                    // Already linked to an active account; skip suggestion.
                     if let Some(ref account_id) = m.account_id {
                         if !archived_ids.contains(&account_id.to_lowercase()) {
                             continue;
@@ -316,15 +325,13 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     }
                 }
             }
-            DbTryRead::Busy => db_busy = true,
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         let mut actions = load_actions_json(&today_dir).unwrap_or_default();
 
         // Merge non-briefing actions from SQLite (post-meeting capture, inbox) — I17
-        match state.with_db_try_read(|db| db.get_non_briefing_pending_actions()) {
-            DbTryRead::Ok(Ok(db_actions)) => {
+        if let Some(ref snap) = db_snapshot {
+            if let Some(ref db_actions) = snap.non_briefing_actions {
                 let json_titles: HashSet<String> = actions
                     .iter()
                     .map(|a| a.title.to_lowercase().trim().to_string())
@@ -337,22 +344,20 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                             _ => Priority::P2,
                         };
                         actions.push(Action {
-                            id: dba.id,
-                            title: dba.title,
-                            account: dba.account_id,
-                            due_date: dba.due_date,
+                            id: dba.id.clone(),
+                            title: dba.title.clone(),
+                            account: dba.account_id.clone(),
+                            due_date: dba.due_date.clone(),
                             priority,
                             status: crate::types::ActionStatus::Pending,
                             is_overdue: None,
-                            context: dba.context,
-                            source: dba.source_label,
+                            context: dba.context.clone(),
+                            source: dba.source_label.clone(),
                             days_overdue: None,
                         });
                     }
                 }
             }
-            DbTryRead::Busy => db_busy = true,
-            DbTryRead::Unavailable | DbTryRead::Poisoned | DbTryRead::Ok(Err(_)) => {}
         }
 
         let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) =
@@ -388,9 +393,9 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     day_date: today_date,
                 },
             );
-            let candidates = match state.with_db_try_read(|db| db.get_focus_candidate_actions(7)) {
-                DbTryRead::Ok(Ok(c)) => c,
-                _ => return None,
+            let candidates = match db_snapshot.as_ref().and_then(|s| s.focus_candidates.clone()) {
+                Some(c) => c,
+                None => return None,
             };
             let (prioritized, top_three, implications) =
                 crate::focus_prioritization::prioritize_actions(
@@ -2457,6 +2462,32 @@ pub fn reopen_action(id: String, state: State<Arc<AppState>>) -> Result<(), Stri
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.reopen_action(&id).map_err(|e| e.to_string())
+}
+
+/// Accept a proposed action, moving it to pending (I256).
+#[tauri::command]
+pub fn accept_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.accept_proposed_action(&id).map_err(|e| e.to_string())
+}
+
+/// Reject a proposed action by archiving it (I256).
+#[tauri::command]
+pub fn reject_proposed_action(id: String, state: State<Arc<AppState>>) -> Result<(), String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.reject_proposed_action(&id).map_err(|e| e.to_string())
+}
+
+/// Get all proposed (AI-suggested) actions (I256).
+#[tauri::command]
+pub fn get_proposed_actions(
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAction>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_proposed_actions().map_err(|e| e.to_string())
 }
 
 /// Get recent meeting history for an account from the SQLite database.

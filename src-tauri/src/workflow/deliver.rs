@@ -26,6 +26,7 @@ use crate::json_loader::{
     Directive, DirectiveEmail, DirectiveEvent, DirectiveMeeting, DirectiveMeetingContext,
 };
 use crate::types::{EmailSyncStage, EmailSyncState, EmailSyncStatus};
+use crate::util::wrap_user_data;
 
 // ============================================================================
 // Constants
@@ -2022,7 +2023,10 @@ pub fn enrich_emails(
         let snippet = email.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
         email_context.push_str(&format!(
             "ID: {}\nFrom: {}\nSubject: {}\nSnippet: {}\n\n",
-            id, sender, subject, snippet
+            id,
+            wrap_user_data(sender),
+            wrap_user_data(subject),
+            wrap_user_data(snippet),
         ));
     }
 
@@ -2413,7 +2417,7 @@ pub fn enrich_briefing(
         customer_count,
         density,
         first_meeting_time,
-        top_meetings.join(", "),
+        wrap_user_data(&top_meetings.join(", ")),
         overdue_count,
         due_today,
         high_count,
@@ -2426,7 +2430,7 @@ pub fn enrich_briefing(
              Use this context to make the narrative account-aware. \
              Reference specific risks, readiness, or stakeholder dynamics when relevant.\n\n\
              {}\n",
-            intel_context
+            wrap_user_data(&intel_context)
         ));
     }
 

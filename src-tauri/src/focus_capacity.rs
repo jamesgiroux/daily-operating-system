@@ -47,53 +47,64 @@ pub struct FocusCapacityResult {
     pub warnings: Vec<String>,
 }
 
+/// Resolve a local date + hour to a timezone-aware DateTime, handling DST gaps.
+///
+/// During a spring-forward gap, `earliest()` returns `None`. We fall back to
+/// `latest()` (the post-transition instant), and as a last resort use UTC.
+fn resolve_local_datetime(tz: &Tz, date: NaiveDate, hour: u32) -> DateTime<Tz> {
+    // Fast path: unambiguous local time.
+    if let Some(dt) = tz
+        .with_ymd_and_hms(date.year(), date.month(), date.day(), hour, 0, 0)
+        .single()
+    {
+        return dt;
+    }
+
+    let naive = NaiveDateTime::new(
+        date,
+        NaiveTime::from_hms_opt(hour, 0, 0).unwrap_or(NaiveTime::MIN),
+    );
+
+    if let Some(dt) = tz.from_local_datetime(&naive).earliest() {
+        return dt;
+    }
+
+    // DST spring-forward gap: local time doesn't exist. Use latest (post-transition).
+    if let Some(dt) = tz.from_local_datetime(&naive).latest() {
+        log::warn!(
+            "DST gap detected for {} {:02}:00 in {}; using post-transition time",
+            date,
+            hour,
+            tz
+        );
+        return dt;
+    }
+
+    // Absolute fallback: interpret as UTC and convert.
+    log::warn!(
+        "Could not resolve local datetime {} {:02}:00 in {}; falling back to UTC",
+        date,
+        hour,
+        tz
+    );
+    chrono::Utc
+        .with_ymd_and_hms(date.year(), date.month(), date.day(), hour, 0, 0)
+        .single()
+        .expect("UTC datetime is always unambiguous")
+        .with_timezone(tz)
+}
+
 pub fn compute_focus_capacity(input: FocusCapacityInput) -> FocusCapacityResult {
-    let workday_start = input
-        .timezone
-        .with_ymd_and_hms(
-            input.day_date.year(),
-            input.day_date.month(),
-            input.day_date.day(),
-            input.work_hours_start as u32,
-            0,
-            0,
-        )
-        .single()
-        .unwrap_or_else(|| {
-            let naive = NaiveDateTime::new(
-                input.day_date,
-                NaiveTime::from_hms_opt(input.work_hours_start as u32, 0, 0)
-                    .unwrap_or(NaiveTime::MIN),
-            );
-            input
-                .timezone
-                .from_local_datetime(&naive)
-                .earliest()
-                .unwrap()
-        });
-    let workday_end = input
-        .timezone
-        .with_ymd_and_hms(
-            input.day_date.year(),
-            input.day_date.month(),
-            input.day_date.day(),
-            input.work_hours_end as u32,
-            0,
-            0,
-        )
-        .single()
-        .unwrap_or_else(|| {
-            let naive = NaiveDateTime::new(
-                input.day_date,
-                NaiveTime::from_hms_opt(input.work_hours_end as u32, 0, 0)
-                    .unwrap_or(NaiveTime::MIN),
-            );
-            input
-                .timezone
-                .from_local_datetime(&naive)
-                .earliest()
-                .unwrap()
-        });
+    let workday_start = resolve_local_datetime(
+        &input.timezone,
+        input.day_date,
+        input.work_hours_start as u32,
+    );
+    let workday_end = resolve_local_datetime(
+        &input.timezone,
+        input.day_date,
+        input.work_hours_end as u32,
+    );
 
     let mut raw_intervals: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
     let mut buffered_intervals: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
