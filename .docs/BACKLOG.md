@@ -106,7 +106,7 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 | P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
 | P1 | I308 | Event-driven signal processing and cross-entity propagation |
 
-**Rationale:** Delivers the core TAM/CSM workflow. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (renewal calendar, pipeline stages, health scores, ARR projections, risk alerts). Renewal dashboard and pipeline views are built on 0.8.0's entity detail template and editorial design language. I305 addresses the foundational intelligence gap: meetings should arrive pre-tagged with the right entities before the user sees them.
+**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature, not a future promise. Renewal workflow (I92, I143) and entity management (I198, I199) round out the operational core.
 
 ---
 
