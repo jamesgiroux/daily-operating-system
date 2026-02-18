@@ -1385,7 +1385,7 @@ pub async fn get_live_proactive_suggestions(
     // Use a dedicated DB connection so this async command never holds AppState DB lock
     // across Google API awaits.
     let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
-    let (account_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
+    let (entity_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
 
     // Check cache unless force refresh requested
     if !force_refresh.unwrap_or(false) {
@@ -1405,7 +1405,7 @@ pub async fn get_live_proactive_suggestions(
                     );
                     let bg_state = state.inner().clone();
                     let bg_config = config.clone();
-                    let bg_hints = account_hints.clone();
+                    let bg_hints = entity_hints.clone();
                     tokio::spawn(async move {
                         let _ = refresh_week_calendar_cache(&bg_state, &bg_config, bg_hints).await;
                     });
@@ -1416,7 +1416,7 @@ pub async fn get_live_proactive_suggestions(
     }
 
     // Cache miss or expired: fetch, cache, and compute
-    let events = refresh_week_calendar_cache(&state, &config, account_hints).await?;
+    let events = refresh_week_calendar_cache(&state, &config, entity_hints).await?;
     crate::queries::proactive::compute_suggestions_from_events(&config, &events, &actions)
 }
 
@@ -1424,9 +1424,9 @@ pub async fn get_live_proactive_suggestions(
 async fn refresh_week_calendar_cache(
     state: &AppState,
     config: &crate::types::Config,
-    account_hints: std::collections::HashSet<String>,
+    entity_hints: Vec<crate::google_api::classify::EntityHint>,
 ) -> Result<Vec<CalendarEvent>, String> {
-    let events = crate::queries::proactive::fetch_week_events(config, &account_hints).await?;
+    let events = crate::queries::proactive::fetch_week_events(config, &entity_hints).await?;
 
     if let Ok(mut guard) = state.week_calendar_cache.write() {
         *guard = Some((events.clone(), std::time::Instant::now()));
@@ -3961,7 +3961,7 @@ pub async fn get_onboarding_priming_context(
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
         (
-            crate::helpers::build_external_account_hints(db),
+            crate::helpers::build_entity_hints(db),
             db.get_internal_root_account().ok().flatten(),
         )
     };
@@ -3983,7 +3983,7 @@ pub async fn get_onboarding_priming_context(
         let mut suggested_entity_name = None;
         if let Ok(db_guard) = state.db.lock() {
             if let Some(db) = db_guard.as_ref() {
-                if let Some(ref account_hint) = cm.account {
+                if let Some(account_hint) = cm.account() {
                     if let Ok(Some(account)) = db.get_account_by_name(account_hint) {
                         suggested_entity_id = Some(account.id.clone());
                         suggested_entity_name = Some(account.name.clone());
