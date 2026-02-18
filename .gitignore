@@ -2,12 +2,8 @@
 .claude/
 CLAUDE.md
 
-# Internal working documents (backlog, decisions, architecture)
+# Internal working documents
 daybreak/
-
-# Local working documents (PRDs, drafts, notes — except BACKLOG.md which is tracked)
-.docs/*
-!.docs/BACKLOG.md
 
 # Credentials and secrets
 .config/
