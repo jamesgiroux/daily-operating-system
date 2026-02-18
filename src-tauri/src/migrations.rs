@@ -62,6 +62,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 16,
     sql: include_str!("migrations/016_clay_enrichment.sql"),
+}, Migration {
+    version: 17,
+    sql: include_str!("migrations/017_entity_keywords.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -223,13 +226,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 16,
-            "should apply all migrations including clay_enrichment"
+            applied, 17,
+            "should apply all migrations including entity_keywords"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -418,6 +421,23 @@ mod tests {
             [],
         )
         .expect("people should have Clay enrichment columns");
+
+        // Verify entity keywords columns (migration 017)
+        conn.execute(
+            "UPDATE accounts SET keywords = '[\"acme\",\"widget\"]',
+             keywords_extracted_at = '2026-01-01T00:00:00Z'
+             WHERE id = 'a1'",
+            [],
+        )
+        .expect("accounts should have keywords columns");
+
+        conn.execute(
+            "INSERT INTO projects (id, name, status, updated_at, keywords, keywords_extracted_at)
+             VALUES ('p1', 'Agentforce', 'active', '2026-01-01',
+             '[\"agentforce\",\"agent force\"]', '2026-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("projects should have keywords columns");
     }
 
     #[test]
@@ -496,6 +516,17 @@ mod tests {
                 entity_type TEXT NOT NULL,
                 PRIMARY KEY (meeting_id, entity_id)
              );
+             CREATE TABLE projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                milestone TEXT,
+                owner TEXT,
+                target_date TEXT,
+                tracker_path TEXT,
+                updated_at TEXT NOT NULL,
+                archived INTEGER DEFAULT 0
+             );
              CREATE TABLE content_index (
                 id TEXT PRIMARY KEY,
                 entity_id TEXT NOT NULL,
@@ -517,11 +548,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 15, "bootstrap should mark v1, then apply v2 through v16");
+        assert_eq!(applied, 16, "bootstrap should mark v1, then apply v2 through v17");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 16);
+        assert_eq!(version, 17);
 
         // Verify existing data is untouched
         let title: String = conn

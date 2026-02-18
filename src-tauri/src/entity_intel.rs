@@ -1319,6 +1319,14 @@ pub fn build_intelligence_prompt(
         );
     }
 
+    // I305: Keyword extraction for entity resolution
+    prompt.push_str(
+        ",\n\
+           \"keywords\": [\"5-15 distinctive keywords/phrases that identify this entity \
+         in meeting titles or calendar descriptions. Include product names, project codenames, \
+         abbreviations, and commonly used references.\"]",
+    );
+
     prompt.push_str(
         "\n\
          }}\n\
@@ -1361,6 +1369,9 @@ struct AiIntelResponse {
     next_meeting_readiness: Option<AiMeetingReadiness>,
     #[serde(default)]
     company_context: Option<AiCompanyContext>,
+    /// Auto-extracted keywords for entity resolution (I305).
+    #[serde(default)]
+    keywords: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2009,6 +2020,22 @@ pub fn enrich_entity_intelligence(
     // Step 7: Update DB cache
     let _ = db.upsert_entity_intelligence(&intel);
 
+    // Step 8: Extract and persist keywords for entity resolution (I305)
+    // The keywords are parsed from the AI response during parse_intelligence_response
+    // and need to be persisted separately to the entity tables.
+    // We re-parse the raw output to get keywords since IntelligenceJson doesn't carry them.
+    if let Some(keywords_json) = extract_keywords_from_response(&output.stdout) {
+        match entity_type {
+            "account" => {
+                let _ = db.update_account_keywords(entity_id, &keywords_json);
+            }
+            "project" => {
+                let _ = db.update_project_keywords(entity_id, &keywords_json);
+            }
+            _ => {} // No keyword storage for person entities
+        }
+    }
+
     log::info!(
         "Enriched intelligence for {} '{}' ({} risks, {} wins, {} stakeholders)",
         entity_type,
@@ -2586,6 +2613,49 @@ pub(crate) fn sync_content_index_for_entity(
 }
 
 // =============================================================================
+// Keyword extraction from enrichment response (I305)
+// =============================================================================
+
+/// Extract keywords from an AI intelligence response.
+/// Parses the JSON to find the `keywords` array and returns it as a JSON string.
+pub fn extract_keywords_from_response(response: &str) -> Option<String> {
+    // Try to find JSON block in the response
+    let json_str = if let Some(start) = response.find('{') {
+        let depth_track = response[start..].chars().fold((0i32, 0usize), |(depth, end), ch| {
+            let new_depth = match ch {
+                '{' => depth + 1,
+                '}' => depth - 1,
+                _ => depth,
+            };
+            if new_depth == 0 && depth > 0 {
+                (0, end + 1)
+            } else {
+                (new_depth, end + ch.len_utf8())
+            }
+        });
+        &response[start..start + depth_track.1]
+    } else {
+        return None;
+    };
+
+    let parsed: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    let keywords = parsed.get("keywords")?.as_array()?;
+
+    let kw_strings: Vec<String> = keywords
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty() && s.len() < 100) // Sanity: skip empty or absurdly long entries
+        .take(20) // Cap at 20 keywords
+        .collect();
+
+    if kw_strings.is_empty() {
+        return None;
+    }
+
+    serde_json::to_string(&kw_strings).ok()
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -2736,6 +2806,8 @@ mod tests {
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         let overview = CompanyOverview {
@@ -2786,6 +2858,8 @@ mod tests {
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         let overview = CompanyOverview {
@@ -3240,6 +3314,8 @@ Hope this helps!"#;
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&account).expect("upsert");
 

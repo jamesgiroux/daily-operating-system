@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 /// The kind of entity being tracked, driven by active profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
     Account, // CS profile

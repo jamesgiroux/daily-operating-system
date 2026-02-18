@@ -212,6 +212,36 @@ export default function AccountDetailEditorial() {
   // Notes dirty tracking (compare editNotes to saved detail.notes)
   const notesDirty = acct.editNotes !== (detail.notes ?? "");
 
+  // Parse keywords JSON and track removals (I305)
+  const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
+  const parsedKeywords = useMemo(() => {
+    if (!detail.keywords) return [];
+    try {
+      const arr = JSON.parse(detail.keywords);
+      return Array.isArray(arr) ? (arr as string[]).filter((k) => !removedKeywords.has(k)) : [];
+    } catch {
+      return [];
+    }
+  }, [detail.keywords, removedKeywords]);
+
+  const handleRemoveKeyword = useCallback(
+    async (keyword: string) => {
+      if (!accountId) return;
+      setRemovedKeywords((prev) => new Set(prev).add(keyword));
+      try {
+        await invoke("remove_account_keyword", { accountId, keyword });
+      } catch (e) {
+        console.error("Failed to remove keyword:", e);
+        setRemovedKeywords((prev) => {
+          const next = new Set(prev);
+          next.delete(keyword);
+          return next;
+        });
+      }
+    },
+    [accountId],
+  );
+
   return (
     <>
       {/* Chapter 1: The Headline (Hero) — no reveal, visible immediately */}
@@ -230,6 +260,71 @@ export default function AccountDetailEditorial() {
         <div className="editorial-reveal">
           <VitalsStrip vitals={buildAccountVitals(detail)} />
         </div>
+        {parsedKeywords.length > 0 && (
+          <div className="editorial-reveal" style={{ padding: "12px 0 0" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                Resolution Keywords
+              </span>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 11,
+                  color: "var(--color-text-tertiary)",
+                  fontStyle: "italic",
+                }}
+              >
+                (auto-extracted)
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {parsedKeywords.map((kw) => (
+                <span
+                  key={kw}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "2px 10px",
+                    borderRadius: 12,
+                    background: "var(--color-paper-linen)",
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 12,
+                    color: "var(--color-text-secondary)",
+                    lineHeight: "20px",
+                  }}
+                >
+                  {kw}
+                  <button
+                    onClick={() => handleRemoveKeyword(kw)}
+                    aria-label={`Remove keyword ${kw}`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      lineHeight: 1,
+                      fontSize: 14,
+                      color: "var(--color-text-tertiary)",
+                      marginLeft: 2,
+                    }}
+                  >
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Chapter 2: State of Play */}

@@ -3828,6 +3828,8 @@ pub fn populate_workspace(
             is_internal: false,
             updated_at: now.clone(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         if let Ok(db_guard) = state.db.lock() {
@@ -3863,6 +3865,8 @@ pub fn populate_workspace(
             tracker_path: Some(format!("Projects/{}", name)),
             updated_at: now.clone(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         // Create folder + directory template (ADR-0059, idempotent)
@@ -4706,8 +4710,18 @@ pub fn update_meeting_entity(
         // Cascade to people: link external attendees to the entity (I184)
         db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
             .map_err(|e| e.to_string())?;
+
+        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
+        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+            let _ = std::fs::remove_file(&old_path);
+        }
     }
     // DB lock released
+
+    // I305: Queue prep regeneration
+    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+        queue.push(meeting_id.clone());
+    }
 
     // Queue intelligence refresh for old and new entities
     let mut entities_to_refresh: Vec<(String, String)> = old_entity_ids;
@@ -4779,8 +4793,18 @@ pub fn add_meeting_entity(
         };
         db.cascade_meeting_entity_to_people(&meeting_id, cascade_account, cascade_project)
             .map_err(|e| e.to_string())?;
+
+        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
+        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+            let _ = std::fs::remove_file(&old_path);
+        }
     }
     // DB lock released
+
+    // I305: Queue prep regeneration
+    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+        queue.push(meeting_id.clone());
+    }
 
     // Queue intelligence refresh
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
@@ -4817,8 +4841,18 @@ pub fn remove_meeting_entity(
             db.update_meeting_account(&meeting_id, next_account.map(|a| a.id.as_str()))
                 .map_err(|e| e.to_string())?;
         }
+
+        // I305: Invalidate meeting prep so it regenerates with new entity intelligence
+        if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+            let _ = std::fs::remove_file(&old_path);
+        }
     }
     // DB lock released
+
+    // I305: Queue prep regeneration
+    if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
+        queue.push(meeting_id.clone());
+    }
 
     // Queue intelligence refresh for removed entity
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
@@ -4829,6 +4863,36 @@ pub fn remove_meeting_entity(
     });
 
     Ok(())
+}
+
+// =========================================================================
+// Entity Keyword Management (I305)
+// =========================================================================
+
+/// Remove a keyword from a project's auto-extracted keyword list.
+#[tauri::command]
+pub fn remove_project_keyword(
+    project_id: String,
+    keyword: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    state.with_db_write(|db| {
+        db.remove_project_keyword(&project_id, &keyword)
+            .map_err(|e| e.to_string())
+    })
+}
+
+/// Remove a keyword from an account's auto-extracted keyword list.
+#[tauri::command]
+pub fn remove_account_keyword(
+    account_id: String,
+    keyword: String,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    state.with_db_write(|db| {
+        db.remove_account_keyword(&account_id, &keyword)
+            .map_err(|e| e.to_string())
+    })
 }
 
 // =========================================================================
@@ -5596,6 +5660,8 @@ pub fn create_account(
         is_internal,
         updated_at: now,
         archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -5715,6 +5781,8 @@ fn create_child_account_record(
         is_internal: parent.is_internal,
         updated_at: now,
         archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -5925,6 +5993,8 @@ pub fn create_internal_organization(
                 is_internal: true,
                 updated_at: now,
                 archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
             };
             db.upsert_account(&root_account)
                 .map_err(|e| e.to_string())?;
@@ -6890,6 +6960,8 @@ pub fn create_project(name: String, state: State<Arc<AppState>>) -> Result<Strin
         tracker_path: Some(format!("Projects/{}", validated_name)),
         updated_at: now,
         archived: false,
+        keywords: None,
+        keywords_extracted_at: None,
     };
 
     db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -7155,6 +7227,7 @@ pub fn run_hygiene_scan_now(state: State<Arc<AppState>>) -> Result<HygieneStatus
             Some(&state.hygiene_budget),
             Some(&state.intel_queue),
             false,
+            Some(state.embedding_model.as_ref()),
         );
 
         // Prune old audit trail files (I297)
@@ -7387,6 +7460,8 @@ pub fn bulk_create_accounts(
             is_internal: false,
             updated_at: now,
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -7443,6 +7518,8 @@ pub fn bulk_create_projects(
             tracker_path: Some(format!("Projects/{}", name)),
             updated_at: now,
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         db.upsert_project(&project).map_err(|e| e.to_string())?;
