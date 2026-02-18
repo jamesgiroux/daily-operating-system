@@ -172,6 +172,7 @@ export function useAccountDetail(accountId: string | undefined) {
     setIndexFeedback(null);
     try {
       const updated = await invoke<ContentFile[]>("index_entity_files", {
+        entityType: "account",
         entityId: detail.id,
       });
       const diff = updated.length - files.length;
