@@ -74,7 +74,7 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 | P0 | I54 | MCP client integration framework (foundation) |
 | P1 | I243 | Quill Meetings integration (local-first transcripts + MCP) |
 | P1 | I276 | Cowork plugin distribution (Settings UI + auto-write) |
-| P2 | I225 | Gong integration (sales call intelligence + transcripts) |
+| P2 | I225 | Gong integration (sales call intelligence + transcripts) | Deferred
 | P2 | I226 | Fathom/Granola integration (meeting transcripts) |
 | P2 | I227 | Gainsight integration (CS platform data sync) |
 | P2 | I228 | Clay integration (contact/company enrichment) |

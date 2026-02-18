@@ -833,6 +833,23 @@ export interface Person {
   meetingCount: number;
   updatedAt: string;
   archived: boolean;
+  // Clay enrichment fields (I228)
+  linkedinUrl?: string;
+  twitterHandle?: string;
+  phone?: string;
+  photoUrl?: string;
+  bio?: string;
+  titleHistory?: Array<{
+    title: string;
+    company: string;
+    startDate?: string;
+    endDate?: string;
+  }>;
+  companyIndustry?: string;
+  companySize?: string;
+  companyHq?: string;
+  lastEnrichedAt?: string;
+  enrichmentSources?: Record<string, { source: string; at: string }>;
 }
 
 /** Person with pre-computed signals for list pages (I106). */
@@ -1442,4 +1459,29 @@ export interface GravatarStatus {
   enabled: boolean;
   cachedCount: number;
   apiKeySet: boolean;
+}
+
+// =============================================================================
+// Clay Integration (I228)
+// =============================================================================
+
+export interface ClayStatusData {
+  enabled: boolean;
+  apiKeySet: boolean;
+  autoEnrichOnCreate: boolean;
+  sweepIntervalHours: number;
+  enrichedCount: number;
+  pendingCount: number;
+  lastEnrichmentAt: string | null;
+}
+
+export interface EnrichmentLogEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  source: string;
+  eventType: string;
+  signalType?: string;
+  fieldsUpdated?: string;
+  createdAt: string;
 }
