@@ -4718,6 +4718,22 @@ pub fn update_meeting_entity(
     }
     // DB lock released
 
+    // I307: Record correction for learning when user changes entity assignment
+    if !old_entity_ids.is_empty() {
+        if let Some(ref new_id) = entity_id {
+            let differs = old_entity_ids.iter().all(|(id, _)| id != new_id);
+            if differs {
+                if let Ok(db_guard) = state.db.lock() {
+                    if let Some(db) = db_guard.as_ref() {
+                        let _ = crate::signals::feedback::record_correction(
+                            db, &meeting_id, &old_entity_ids, new_id, &entity_type,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     // I305: Queue prep regeneration
     if let Ok(mut queue) = state.prep_invalidation_queue.lock() {
         queue.push(meeting_id.clone());
@@ -4828,6 +4844,11 @@ pub fn remove_meeting_entity(
     {
         let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
         let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+        // I307: Record removal as correction for learning
+        let _ = crate::signals::feedback::record_removal(
+            db, &meeting_id, &entity_id, &entity_type,
+        );
 
         db.unlink_meeting_entity(&meeting_id, &entity_id)
             .map_err(|e| e.to_string())?;
@@ -6236,8 +6257,12 @@ pub fn get_entity_files(
 }
 
 /// Re-scan an entity's directory and return the updated file list.
+///
+/// Supports accounts, projects, and people. The `entity_type` parameter
+/// determines which lookup and sync path to use.
 #[tauri::command]
 pub fn index_entity_files(
+    entity_type: String,
     entity_id: String,
     state: State<Arc<AppState>>,
 ) -> Result<Vec<crate::db::DbContentFile>, String> {
@@ -6252,12 +6277,38 @@ pub fn index_entity_files(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
 
-    let account = db
-        .get_account(&entity_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Account not found: {}", entity_id))?;
+    match entity_type.as_str() {
+        "account" => {
+            let account = db
+                .get_account(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Account not found: {}", entity_id))?;
+            crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
+        }
+        "project" => {
+            let project = db
+                .get_project(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Project not found: {}", entity_id))?;
+            crate::projects::sync_content_index_for_project(workspace, db, &project)?;
+        }
+        "person" => {
+            let person = db
+                .get_person(&entity_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("Person not found: {}", entity_id))?;
+            let dir = if let Some(ref tp) = person.tracker_path {
+                workspace.join(tp)
+            } else {
+                crate::people::person_dir(workspace, &person.name)
+            };
+            crate::entity_io::sync_content_index_for_entity(
+                db, workspace, &person.id, "person", &dir,
+            )?;
+        }
+        _ => return Err(format!("Unknown entity type: {}", entity_type)),
+    }
 
-    crate::accounts::sync_content_index_for_account(workspace, db, &account)?;
     let files = db.get_entity_files(&entity_id).map_err(|e| e.to_string())?;
     drop(db_guard);
 
@@ -6265,12 +6316,12 @@ pub fn index_entity_files(
         .embedding_queue
         .enqueue(crate::processor::embeddings::EmbeddingRequest {
             entity_id: entity_id.clone(),
-            entity_type: "account".to_string(),
+            entity_type: entity_type.clone(),
             requested_at: std::time::Instant::now(),
         });
     state.intel_queue.enqueue(crate::intel_queue::IntelRequest {
         entity_id,
-        entity_type: "account".to_string(),
+        entity_type,
         priority: crate::intel_queue::IntelPriority::ContentChange,
         requested_at: std::time::Instant::now(),
     });

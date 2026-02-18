@@ -83,6 +83,14 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
+### 0.9.2 — Bug Fixes
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P0 | I325 | `index_entity_files` hardcoded to accounts — re-index fails for projects and people |
+
+---
+
 ### 0.10.0 — Intelligence
 
 *The system that learns from you. Signals compound, corrections teach, events drive action.*
