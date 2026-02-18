@@ -433,6 +433,8 @@ impl Executor {
                 reconcile::persist_meetings(db, &recon, workspace);
             }
         }
+        // I308: Wake entity resolution trigger for newly-persisted meetings
+        self.state.entity_resolution_wake.notify_one();
 
         // Step 3: Archive (move files, clean data/)
         let result = run_archive(workspace)
