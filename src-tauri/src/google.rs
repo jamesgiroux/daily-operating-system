@@ -561,6 +561,17 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 meeting_count: 0,
                 updated_at: Utc::now().to_rfc3339(),
                 archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
             };
 
             if db.upsert_person(&person).is_ok() {

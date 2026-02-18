@@ -1764,6 +1764,17 @@ mod tests {
             meeting_count: 0,
             updated_at: now,
             archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         };
         db.upsert_person(&person).expect("upsert person");
     }
@@ -2732,6 +2743,7 @@ mod tests {
             quill: crate::quill::QuillConfig::default(),
             granola: crate::granola::GranolaConfig::default(),
             gravatar: crate::gravatar::GravatarConfig::default(),
+            clay: crate::clay::ClayConfig::default(),
             features: std::collections::HashMap::new(),
             user_domain: None,
             user_domains: None,
