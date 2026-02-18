@@ -55,8 +55,10 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
         };
 
+        let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
+
         if pending.is_empty() {
-            tokio::time::sleep(Duration::from_secs(300)).await;
+            tokio::time::sleep(poll_interval).await;
             continue;
         }
 
@@ -68,8 +70,8 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
 
-        // Sleep 5 minutes between poll cycles
-        tokio::time::sleep(Duration::from_secs(300)).await;
+        // Sleep between poll cycles (configurable)
+        tokio::time::sleep(poll_interval).await;
     }
 }
 
@@ -121,7 +123,12 @@ async fn process_sync_row(
         (meeting, emails)
     };
 
-    // Step 2: Connect to Quill and search for matching meeting
+    // Parse meeting start time for search window calculation
+    let start_time = chrono::DateTime::parse_from_rfc3339(&meeting.start_time)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+
+    // Step 2: Connect to Quill and search for matching meeting (±12h window)
     let client = match QuillClient::connect(bridge_path).await {
         Ok(c) => c,
         Err(e) => {
@@ -138,10 +145,12 @@ async fn process_sync_row(
         }
     };
 
-    let quill_meetings = match client.list_meetings().await {
+    let search_after = (start_time - chrono::Duration::hours(12)).to_rfc3339();
+    let search_before = (start_time + chrono::Duration::hours(12)).to_rfc3339();
+    let quill_meetings = match client.search_meetings("", &search_after, &search_before).await {
         Ok(meetings) => meetings,
         Err(e) => {
-            log::warn!("Quill sync: list_meetings failed: {}", e);
+            log::warn!("Quill sync: search_meetings failed: {}", e);
             client.disconnect().await;
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
@@ -153,9 +162,6 @@ async fn process_sync_row(
     };
 
     // Step 3: Match meeting using correlation algorithm
-    let start_time = chrono::DateTime::parse_from_rfc3339(&meeting.start_time)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now());
 
     let match_result = matcher::match_meeting(
         &meeting.title,

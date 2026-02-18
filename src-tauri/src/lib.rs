@@ -434,6 +434,8 @@ pub fn run() {
             commands::set_quill_enabled,
             commands::test_quill_connection,
             commands::get_quill_sync_states,
+            commands::set_quill_poll_interval,
+            commands::start_quill_backfill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

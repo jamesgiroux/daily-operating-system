@@ -70,6 +70,7 @@ interface QuillStatusData {
   lastError: string | null;
   lastErrorAt: string | null;
   abandonedSyncs: number;
+  pollIntervalMinutes: number;
 }
 
 function parseSettingsTab(value: unknown): SettingsTabId {
@@ -353,6 +354,8 @@ export default function SettingsPage() {
         <GoogleAccountCard />
         <div style={{ height: 32 }} />
         <ClaudeDesktopCard />
+        <div style={{ height: 32 }} />
+        <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-light)", margin: 0 }} />
         <div style={{ height: 32 }} />
         <QuillSettingsCard />
       </section>
@@ -1425,11 +1428,13 @@ interface QuillStatusData {
   lastError: string | null;
   lastErrorAt: string | null;
   abandonedSyncs: number;
+  pollIntervalMinutes: number;
 }
 
 function QuillSettingsCard() {
   const [status, setStatus] = useState<QuillStatusData | null>(null);
   const [testing, setTesting] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   useEffect(() => {
     invoke<QuillStatusData>("get_quill_status")
@@ -1565,6 +1570,74 @@ function QuillSettingsCard() {
               )}
             </div>
           )}
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Poll interval
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                How often to check for new transcripts
+              </p>
+            </div>
+            <select
+              value={status.pollIntervalMinutes}
+              onChange={async (e) => {
+                const minutes = Number(e.target.value);
+                try {
+                  await invoke("set_quill_poll_interval", { minutes });
+                  setStatus({ ...status, pollIntervalMinutes: minutes });
+                } catch (err) {
+                  console.error("Failed to set poll interval:", err);
+                }
+              }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                padding: "4px 8px",
+                border: "1px solid var(--color-border)",
+                borderRadius: 4,
+                background: "var(--color-surface)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {[1, 2, 5, 10, 15, 30].map((m) => (
+                <option key={m} value={m}>
+                  {m} min
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Historical backfill
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Create sync rows for past meetings (last 90 days)
+              </p>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: backfilling ? 0.5 : 1 }}
+              onClick={async () => {
+                setBackfilling(true);
+                try {
+                  const result = await invoke<{ created: number; eligible: number }>("start_quill_backfill");
+                  toast(`Backfill: ${result.created} of ${result.eligible} eligible meetings queued`);
+                  const refreshed = await invoke<QuillStatusData>("get_quill_status");
+                  setStatus(refreshed);
+                } catch (err) {
+                  toast.error("Backfill failed");
+                } finally {
+                  setBackfilling(false);
+                }
+              }}
+              disabled={backfilling}
+            >
+              {backfilling ? "Running..." : "Start Backfill"}
+            </button>
+          </div>
         </>
       )}
     </div>
