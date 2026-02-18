@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { PersonDetail, EntityIntelligence } from "@/types";
 import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
+import { Avatar } from "@/components/ui/Avatar";
 import styles from "./PersonHero.module.css";
 
 interface PersonHeroProps {
@@ -87,9 +88,7 @@ export function PersonHero({
 
       {/* Name with avatar */}
       <div className={styles.nameRow}>
-        <div className={styles.avatar}>
-          {detail.name.charAt(0).toUpperCase()}
-        </div>
+        <Avatar name={detail.name} personId={detail.id} size={48} />
         <h1 className={styles.name}>{detail.name}</h1>
       </div>
 
