@@ -239,6 +239,37 @@ This is **eventual consistency for meeting intelligence**: signals arrive contin
 
 ---
 
+## Design Principle: Mechanical-First, AI-Sparse
+
+Expanding intelligence to every meeting and refreshing on signals increases the surface area for Claude Code invocations. Usage policy for Pro/Max plans assumes "ordinary, individual usage." The architecture must minimize AI calls by maximizing mechanical computation.
+
+**What never needs AI (SQLite + Rust):**
+- Meeting detection, classification, entity resolution (signal fusion, embedding similarity, Bayesian math)
+- Attendee context assembly (query people table, past meetings, open items, relationship history)
+- Intelligence quality assessment (`assess_intelligence_quality()` is pure math over signal counts and timestamps)
+- Signal recording, accumulation, and "new signals since last view" tracking
+- Historical context retrieval and ranking (embedding cosine similarity)
+
+**What needs AI (Claude Code invocation):**
+- Narrative synthesis ("here's what matters about this meeting and why")
+- Agenda generation from unstructured context
+- Risk/opportunity framing from entity intelligence
+- Weekly and daily overview narratives
+
+**Optimization strategies:**
+
+| Strategy | Where | Effect |
+|----------|-------|--------|
+| **Entity-clustered batching** | I327 weekly run | Instead of N calls for N meetings, batch meetings by entity. "Generate intelligence for 4 Acme meetings" in one call with shared entity context. |
+| **Tiered AI depth** | I328 classification | Minimal intelligence (training, personal) → no AI call, mechanical only. Person intelligence (1:1) → lightweight prompt. Entity intelligence (customer, QBR) → full narrative synthesis. |
+| **Signal accumulation** | I332 signal refresh | Don't re-enrich on every signal. Record signals, show blue dot, defer full re-enrichment to natural checkpoints (pre-meeting, daily run, user-triggered). |
+| **Incremental prompts** | I326 lifecycle | On refresh, pass only the delta (new signals since last enrichment) rather than regenerating the full intelligence narrative from scratch. |
+| **Mechanical-to-Developing** | I326 lifecycle | A meeting intelligence record should reach `Developing` quality on pure database queries alone — attendee history, entity intelligence, action context, past meeting references. The AI call upgrades from Developing to Ready. |
+
+**Target ratio:** For a typical week of 50 meetings, the weekly run should produce ~10-15 AI calls (entity-clustered), not 50. Daily runs should produce 1 AI call (overview narrative) plus 0-3 signal refreshes for today's meetings. The system should be able to function (at Developing quality) with zero AI calls if Claude Code is unavailable — graceful degradation per ADR-0042.
+
+---
+
 ## Consequences
 
 ### Positive
