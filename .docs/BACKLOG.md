@@ -48,6 +48,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
 | **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
 | **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
+| **I334** | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing | P1 | UX / Actions |
 | **I200** | ~~Week page proactive suggestions~~ → Partially superseded by I330 (ADR-0081) | — | UX |
 | **I202** | ~~Prep prefill + draft agenda actions~~ → Superseded by I333 (ADR-0081) | — | UX |
 | **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
@@ -111,10 +112,11 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
 | P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
 | P1 | I308 | Event-driven signal processing and cross-entity propagation |
+| P1 | I334 | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing |
 | P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
 
-**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine.
+**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
 
 ---
 
@@ -3418,6 +3420,74 @@ A pipeline that detects *new situations* worth surfacing and delivers them throu
 - `daybreak/docs/research/2026-02-14-openclaw-learnings.md` — OpenClaw's proactive agent model as inspiration
 - ADR-0075 — conversational interface (complementary: surfacing is proactive push, chat is reactive pull)
 - UX research patterns: "Why now?" on every item, conclusions before evidence, one synthesized frame
+
+**I334: Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing**
+
+**Priority:** P1 (0.10.0)
+**Area:** UX / Actions
+**Depends on:** I256 (proposed action backend — shipped 0.8.1)
+
+I256 shipped the backend plumbing for proposed actions: a `proposed` status on actions, `get_proposed_actions` / `accept_proposed_action` / `reject_proposed_action` Tauri commands, and 7-day auto-archive for unreviewed proposed actions in the scheduler. An `ActionItem` component renders the dashed-border accept/reject UI, and an `ActionList` widget loads proposed actions and shows them under a "Suggested" sparkle header.
+
+**The problem:** None of this reaches the user.
+
+1. **Actions page** (`ActionsPage.tsx`) — status tabs are `pending | completed | waiting | all`. No `proposed` tab. Doesn't call `get_proposed_actions`. Actions extracted from transcripts appear as `pending` — indistinguishable from user-created actions. The user has no way to review what the AI extracted vs what they committed to.
+
+2. **Meeting outcomes** (`MeetingDetailPage.tsx`) — after a transcript is processed, the meeting detail page shows extracted actions as a flat list. The only interaction is a completion checkbox. No proposed badge, no accept/reject, no way to say "this isn't a real action" or "this belongs to a different account."
+
+3. **Daily briefing** (`DailyBriefing.tsx`) — the schedule section shows meetings with actions, but renders them inline with its own markup — not the `ActionList` component that has proposed support. The `ActionList` component with proposed flow is only imported in the onboarding tour (`DashboardTour.tsx`), not the actual briefing. Meeting outcomes don't appear on the briefing at all — they were dropped during the editorial redesign.
+
+4. **Silent auto-archive** — proposed actions that go unreviewed auto-archive after 7 days. Since there's no visible triage surface, this means AI-extracted actions silently disappear. The user never knows they existed.
+
+**Target:**
+
+*Actions page:*
+- Add `proposed` as a status tab (or a separate section above the tab bar, like a triage inbox)
+- Proposed actions show with `ActionItem`'s existing dashed-border + accept/reject UI
+- Accepting moves to `pending`; rejecting moves to `archived` with reason tracking (signal for I307 correction learning)
+- Count badge on the proposed tab/section so the user sees "3 actions need review"
+
+*Meeting outcomes on meeting detail page:*
+- Actions extracted from transcript show as `proposed` with accept/reject inline
+- Accepting confirms the action into the queue with meeting context preserved
+- Rejecting records the dismissal as a correction signal (feeds I307)
+- Bulk accept/reject for transcript batches ("Accept all" / "Review individually")
+
+*Daily briefing schedule section:*
+- Rebuild meeting card expansion to use the editorial design system (section rules, editorial typography, not the old accordion)
+- Meeting cards that have outcomes show a compressed outcomes summary (wins/risks/decisions counts + top actions)
+- Proposed actions from recent transcripts surface in a "Needs Review" section — either per-meeting or as a briefing-level triage block
+- This is effectively rebuilding what was lost in the editorial redesign, but for the new design language
+
+*Briefing-level proposed actions:*
+- A dedicated "Review" section in the briefing (after schedule, before or alongside priorities) that surfaces all pending proposed actions across meetings
+- Compact triage UI: action title + source meeting + accept/reject
+- "3 actions from yesterday's meetings need your review" framing
+
+**Design constraints:**
+- Must use editorial design system (ADR-0073/0076/0077): section rules, Newsreader headings, DM Sans body, material palette. No card-heavy UI.
+- Proposed actions are visually distinct from accepted actions everywhere — never ambiguous
+- The auto-archive timer (7 days) should be visible: "Auto-archives in 3 days" on unreviewed items
+- Rejection is a signal, not just deletion — feeds the correction learning loop (I307) so the system improves extraction quality
+
+**Files involved:**
+- `src/pages/ActionsPage.tsx` — add proposed tab/section, wire `get_proposed_actions`
+- `src/pages/MeetingDetailPage.tsx` — proposed state on outcome actions, accept/reject UI
+- `src/components/dashboard/DailyBriefing.tsx` — rebuild meeting outcomes in editorial design, add proposed triage section
+- `src/components/dashboard/ActionList.tsx` — already has proposed flow; ensure it's used in briefing
+- `src/components/dashboard/ActionItem.tsx` — already has proposed UI; may need editorial styling pass
+
+**Acceptance criteria:**
+1. Actions page has a visible proposed/triage section with count badge
+2. Proposed actions are visually distinct from pending actions on every surface
+3. Meeting detail page shows transcript-extracted actions as proposed with accept/reject
+4. Daily briefing shows meeting outcomes (rebuilt for editorial design system)
+5. Daily briefing surfaces proposed actions that need review
+6. Rejecting an action records a correction signal (preparation for I307)
+7. Auto-archive countdown visible on unreviewed proposed actions
+8. No AI-extracted action silently becomes pending — all pass through proposed → accept
+
+---
 
 **I271: Hygiene system polish — configurability, narrative fixes, duplicate merge, timezone (0.8.0)**
 
