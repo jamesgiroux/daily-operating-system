@@ -269,6 +269,29 @@ pub struct DbPerson {
     pub meeting_count: i32,
     pub updated_at: String,
     pub archived: bool,
+    // Clay enrichment fields (I228)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linkedin_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitter_handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_history: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_industry: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_hq: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_enriched_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enrichment_sources: Option<String>,
 }
 
 /// Person-level relationship signals (parallel to StakeholderSignals).
@@ -403,6 +426,53 @@ pub struct DbAccountEvent {
     pub arr_impact: Option<f64>,
     pub notes: Option<String>,
     pub created_at: String,
+}
+
+/// A row from the `quill_sync_state` table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbQuillSyncState {
+    pub id: String,
+    pub meeting_id: String,
+    pub quill_meeting_id: Option<String>,
+    pub state: String,
+    pub attempts: i32,
+    pub max_attempts: i32,
+    pub next_attempt_at: Option<String>,
+    pub last_attempt_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub error_message: Option<String>,
+    pub match_confidence: Option<f64>,
+    pub transcript_path: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default = "default_quill_source")]
+    pub source: String,
+}
+
+fn default_quill_source() -> String {
+    "quill".to_string()
+}
+
+/// Row mapper for quill_sync_state SELECT queries (15 columns including source).
+fn map_sync_row(row: &rusqlite::Row) -> rusqlite::Result<DbQuillSyncState> {
+    Ok(DbQuillSyncState {
+        id: row.get(0)?,
+        meeting_id: row.get(1)?,
+        quill_meeting_id: row.get(2)?,
+        state: row.get(3)?,
+        attempts: row.get(4)?,
+        max_attempts: row.get(5)?,
+        next_attempt_at: row.get(6)?,
+        last_attempt_at: row.get(7)?,
+        completed_at: row.get(8)?,
+        error_message: row.get(9)?,
+        match_confidence: row.get(10)?,
+        transcript_path: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
+        source: row.get::<_, String>(14).unwrap_or_else(|_| "quill".to_string()),
+    })
 }
 
 /// Compute relationship temperature from last meeting date.
@@ -3049,6 +3119,263 @@ impl ActionDb {
     }
 
     // =========================================================================
+    // Quill Sync State
+    // =========================================================================
+
+    /// Insert a new sync state row for a meeting with a specific source.
+    pub fn insert_quill_sync_state_with_source(
+        &self,
+        meeting_id: &str,
+        source: &str,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, source, next_attempt_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, meeting_id, source, next_attempt, now, now],
+        )?;
+        Ok(id)
+    }
+
+    /// Insert a new Quill sync state row for a meeting (state=pending).
+    pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, next_attempt_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, meeting_id, next_attempt, now, now],
+        )?;
+        Ok(id)
+    }
+
+    /// Get Quill sync state for a specific meeting.
+    pub fn get_quill_sync_state(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at, source
+             FROM quill_sync_state WHERE meeting_id = ?1",
+        )?;
+        let mut rows = stmt.query_map(params![meeting_id], map_sync_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get sync state for a specific meeting and source.
+    pub fn get_quill_sync_state_by_source(
+        &self,
+        meeting_id: &str,
+        source: &str,
+    ) -> Result<Option<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at, source
+             FROM quill_sync_state WHERE meeting_id = ?1 AND source = ?2",
+        )?;
+        let mut rows = stmt.query_map(params![meeting_id, source], map_sync_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all pending Quill syncs ready for processing (source='quill' only).
+    pub fn get_pending_quill_syncs(&self) -> Result<Vec<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at, source
+             FROM quill_sync_state
+             WHERE state IN ('pending', 'polling') AND next_attempt_at <= datetime('now')
+               AND source = 'quill'",
+        )?;
+        let rows = stmt.query_map([], map_sync_row)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Update Quill sync state fields.
+    pub fn update_quill_sync_state(
+        &self,
+        id: &str,
+        state: &str,
+        quill_meeting_id: Option<&str>,
+        match_confidence: Option<f64>,
+        error_message: Option<&str>,
+        transcript_path: Option<&str>,
+    ) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        let completed_at: Option<String> = if state == "completed" {
+            Some(now.clone())
+        } else {
+            None
+        };
+        self.conn.execute(
+            "UPDATE quill_sync_state
+             SET state = ?1,
+                 quill_meeting_id = COALESCE(?2, quill_meeting_id),
+                 match_confidence = COALESCE(?3, match_confidence),
+                 error_message = ?4,
+                 transcript_path = COALESCE(?5, transcript_path),
+                 completed_at = COALESCE(?6, completed_at),
+                 updated_at = ?7
+             WHERE id = ?8",
+            params![
+                state,
+                quill_meeting_id,
+                match_confidence,
+                error_message,
+                transcript_path,
+                completed_at,
+                now,
+                id
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Advance attempt counter with exponential backoff (10, 20, 40, 80, 160 min).
+    /// Returns true if still has attempts remaining, false if abandoned.
+    pub fn advance_quill_sync_attempt(&self, id: &str) -> Result<bool, DbError> {
+        let (attempts, max_attempts): (i32, i32) = self.conn.query_row(
+            "SELECT attempts, max_attempts FROM quill_sync_state WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+
+        let new_attempts = attempts + 1;
+        let now = Utc::now().to_rfc3339();
+
+        if new_attempts >= max_attempts {
+            self.conn.execute(
+                "UPDATE quill_sync_state
+                 SET attempts = ?1, state = 'abandoned', last_attempt_at = ?2, updated_at = ?2
+                 WHERE id = ?3",
+                params![new_attempts, now, id],
+            )?;
+            return Ok(false);
+        }
+
+        // Exponential backoff: 10 * 2^attempts minutes
+        let delay_minutes = 10i64 * (1i64 << new_attempts);
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes)).to_rfc3339();
+
+        self.conn.execute(
+            "UPDATE quill_sync_state
+             SET attempts = ?1, last_attempt_at = ?2, next_attempt_at = ?3, updated_at = ?2
+             WHERE id = ?4",
+            params![new_attempts, now, next_attempt, id],
+        )?;
+        Ok(true)
+    }
+
+    /// Count sync rows in a given state (all sources).
+    pub fn count_quill_syncs_by_state(&self, state: &str) -> Result<usize, DbError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM quill_sync_state WHERE state = ?1",
+            params![state],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Count sync rows in a given state for a specific source.
+    pub fn count_syncs_by_state_and_source(
+        &self,
+        state: &str,
+        source: &str,
+    ) -> Result<usize, DbError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM quill_sync_state WHERE state = ?1 AND source = ?2",
+            params![state, source],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Get abandoned Quill syncs eligible for retry (between min_days and max_days old).
+    pub fn get_retryable_abandoned_quill_syncs(
+        &self,
+        min_days: i32,
+        max_days: i32,
+    ) -> Result<Vec<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at, source
+             FROM quill_sync_state
+             WHERE state = 'abandoned'
+               AND created_at >= datetime('now', ?1)
+               AND created_at <= datetime('now', ?2)",
+        )?;
+        let min_offset = format!("-{} days", max_days);
+        let max_offset = format!("-{} days", min_days);
+        let rows = stmt.query_map(params![min_offset, max_offset], map_sync_row)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Reset an abandoned Quill sync for retry: set state to pending, clear attempts.
+    pub fn reset_quill_sync_for_retry(&self, sync_id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE quill_sync_state
+             SET state = 'pending', attempts = 0, error_message = NULL,
+                 next_attempt_at = ?1, updated_at = ?1
+             WHERE id = ?2",
+            params![now, sync_id],
+        )?;
+        Ok(())
+    }
+
+    /// Get recent meetings as (id, title, start_time) tuples for transcript matching.
+    pub fn get_meetings_for_transcript_matching(
+        &self,
+        days_back: i32,
+    ) -> Result<Vec<(String, String, String)>, DbError> {
+        let offset = format!("-{} days", days_back);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, start_time FROM meetings_history
+             WHERE start_time >= datetime('now', ?1)
+             ORDER BY start_time DESC",
+        )?;
+        let rows = stmt.query_map(params![offset], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Get meeting IDs eligible for Quill backfill: past meetings within `days_back`
+    /// that have no transcript and no existing quill_sync_state row.
+    ///
+    /// Only includes account-linked meetings with relationship-relevant types
+    /// (customer, qbr, partnership). Excludes internal, one_on_one, and external
+    /// meetings which are too broad and would pull in personal or tangential calls.
+    pub fn get_backfill_eligible_meeting_ids(&self, days_back: i32) -> Result<Vec<String>, DbError> {
+        let offset = format!("-{} days", days_back);
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM meetings_history
+             WHERE transcript_path IS NULL AND transcript_processed_at IS NULL
+               AND start_time >= datetime('now', ?1)
+               AND end_time < datetime('now')
+               AND account_id IS NOT NULL
+               AND meeting_type IN ('customer','qbr','partnership')
+               AND id NOT IN (SELECT meeting_id FROM quill_sync_state)
+             ORDER BY start_time DESC",
+        )?;
+        let rows = stmt.query_map(params![offset], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    // =========================================================================
     // Stakeholder Signals (I43)
     // =========================================================================
 
@@ -4440,6 +4767,17 @@ impl ActionDb {
             meeting_count: row.get(10)?,
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         })
     }
 
@@ -6361,6 +6699,17 @@ mod tests {
             meeting_count: 0,
             updated_at: now,
             archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         }
     }
 

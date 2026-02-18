@@ -1,0 +1,118 @@
+# Customer Communication Voice Profile
+# For: QBR narratives, renewal cases, expansion proposals, executive briefings
+
+name: "Customer"
+content_types:
+  - qbr-narrative
+  - renewal-case
+  - expansion-proposal
+  - executive-briefing
+  - customer-facing
+
+audience:
+  primary: "Customer executives, decision-makers"
+  secondary: "Customer technical leads, procurement"
+  context: "Stakeholders evaluating partnership value and future investment"
+
+voice:
+  tone: "Professional, partnership-oriented"
+  style: "Value-focused, evidence-based, forward-looking"
+  authority: "Grounded in their outcomes, not our capabilities"
+
+  principles:
+    - "Their success is the story, not our platform"
+    - "Value delivered, not features used"
+    - "Forward-looking partnership, not vendor relationship"
+    - "Specific outcomes with their metrics"
+
+  do:
+    - Lead with their business outcomes
+    - Use their terminology and KPIs
+    - Reference their stated goals and priorities
+    - Propose next steps aligned with their roadmap
+    - Acknowledge challenges honestly
+    - Position expansion in terms of their value
+
+  avoid:
+    - Feature-focused language
+    - WordPress VIP-centric framing
+    - Overselling or hype
+    - Ignoring known challenges
+    - Generic value propositions
+    - "Vendor" positioning
+
+structure:
+  default_template: "qbr-narrative"
+
+  principles:
+    - "Start with their goals, not our platform"
+    - "Value delivered in their terms"
+    - "Forward-looking recommendations"
+    - "Clear asks with rationale"
+
+  formats:
+    qbr-narrative:
+      sections:
+        - "Executive Summary (their outcomes)"
+        - "Goals Alignment (their priorities → our support)"
+        - "Value Delivered (metrics in their terms)"
+        - "Platform Health (relevant metrics)"
+        - "Recommendations (tied to their roadmap)"
+        - "Next Quarter Focus"
+
+    renewal-case:
+      sections:
+        - "Partnership Summary"
+        - "Value Delivered (quantified)"
+        - "Forward-Looking Value"
+        - "Investment Recommendation"
+
+    expansion-proposal:
+      sections:
+        - "Opportunity Framing (their challenge)"
+        - "Proposed Solution"
+        - "Expected Outcomes"
+        - "Investment and Timeline"
+        - "Risk Mitigation"
+
+    executive-briefing:
+      sections:
+        - "Context (why this meeting)"
+        - "Key Points (3 max)"
+        - "Asks/Decisions Needed"
+        - "Background (appendix)"
+
+quality_checks:
+  - "Is this framed in their terms, not ours?"
+  - "Are outcomes quantified with their metrics?"
+  - "Do recommendations align with their stated priorities?"
+  - "Would their exec recognize their goals in this?"
+  - "Are we being honest about challenges?"
+  - "Is the ask clear and reasonable?"
+
+customer_centricity:
+  # Reframe from platform to customer
+  platform_focused: "WordPress VIP enabled faster deployments"
+  customer_focused: "Your team reduced deployment time by 40%, accelerating your product launches"
+
+  platform_focused: "Our support team resolved 50 tickets"
+  customer_focused: "Your critical issues were resolved with 99% SLA compliance, ensuring zero revenue-impacting outages"
+
+value_framing:
+  # Connect platform capabilities to business outcomes
+  technical_metric: "99.99% uptime"
+  business_outcome: "Zero revenue-impacting outages during your peak traffic periods"
+
+  technical_metric: "CDN performance"
+  business_outcome: "23% improvement in page load time, supporting your Core Web Vitals goals"
+
+example_phrases:
+  good:
+    - "Your Q4 goal was to reduce time-to-publish. You achieved a 40% reduction."
+    - "Based on your 2026 priorities around personalization, we recommend..."
+    - "The expansion investment would support your stated goal of..."
+
+  avoid:
+    - "WordPress VIP delivered exceptional value..."
+    - "Our platform's advanced features enabled..."
+    - "We're excited to propose an expansion..."
