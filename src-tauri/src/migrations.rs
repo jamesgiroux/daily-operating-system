@@ -68,6 +68,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 18,
     sql: include_str!("migrations/018_signal_bus.sql"),
+}, Migration {
+    version: 19,
+    sql: include_str!("migrations/019_correction_learning.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -229,13 +232,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 18,
-            "should apply all migrations including signal_bus"
+            applied, 19,
+            "should apply all migrations including correction_learning"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 18);
+        assert_eq!(version, 19);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -457,6 +460,30 @@ mod tests {
             [],
         )
         .expect("signal_weights table should exist and accept inserts");
+
+        // Verify entity_resolution_feedback table (migration 019)
+        conn.execute(
+            "INSERT INTO entity_resolution_feedback (id, meeting_id, old_entity_id, old_entity_type, new_entity_id, new_entity_type, signal_source)
+             VALUES ('fb-1', 'm1', 'a1', 'account', 'a2', 'account', 'keyword')",
+            [],
+        )
+        .expect("entity_resolution_feedback table should exist and accept inserts");
+
+        // Verify attendee_group_patterns table (migration 019)
+        conn.execute(
+            "INSERT INTO attendee_group_patterns (group_hash, attendee_emails, entity_id, entity_type, occurrence_count, confidence)
+             VALUES ('hash1', '[\"a@b.com\",\"c@d.com\"]', 'a1', 'account', 3, 0.65)",
+            [],
+        )
+        .expect("attendee_group_patterns table should exist and accept inserts");
+
+        // Verify source_context column on signal_events (migration 019)
+        conn.execute(
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, source_context)
+             VALUES ('sig-2', 'account', 'a1', 'entity_resolution', 'keyword', 0.8, 30, 'inbound_email')",
+            [],
+        )
+        .expect("signal_events should accept source_context column");
     }
 
     #[test]
@@ -567,11 +594,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 17, "bootstrap should mark v1, then apply v2 through v18");
+        assert_eq!(applied, 18, "bootstrap should mark v1, then apply v2 through v19");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 18);
+        assert_eq!(version, 19);
 
         // Verify existing data is untouched
         let title: String = conn
