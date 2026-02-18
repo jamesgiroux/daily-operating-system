@@ -3,6 +3,10 @@
 //! Uses rmcp's child process transport to spawn a Node.js bridge that
 //! proxies JSON-RPC to Quill's local socket.
 
+use rmcp::model::CallToolRequestParam;
+use rmcp::service::RunningService;
+use rmcp::transport::child_process::TokioChildProcess;
+use rmcp::{RoleClient, ServiceExt};
 use serde::{Deserialize, Serialize};
 
 /// A meeting as returned by Quill's MCP tools.
@@ -51,21 +55,129 @@ pub enum QuillError {
 
 /// MCP client wrapper for Quill's local server.
 ///
-/// Manages the lifecycle of a child process running the Quill MCP bridge,
-/// and provides typed methods for calling Quill's MCP tools.
+/// Manages a connected rmcp session via child process transport.
+/// Each `QuillClient` holds a running MCP service that communicates
+/// with the Quill bridge process over stdio.
 pub struct QuillClient {
-    bridge_path: String,
+    service: RunningService<RoleClient, ()>,
 }
 
 impl QuillClient {
-    /// Create a new client pointing at the given bridge script path.
-    pub fn new(bridge_path: String) -> Self {
-        Self { bridge_path }
+    /// Connect to the Quill MCP bridge by spawning the Node.js process.
+    pub async fn connect(bridge_path: &str) -> Result<Self, QuillError> {
+        if !std::path::Path::new(bridge_path).exists() {
+            return Err(QuillError::BridgeNotFound(bridge_path.to_string()));
+        }
+        if !Self::node_available() {
+            return Err(QuillError::NodeNotFound);
+        }
+
+        let transport = TokioChildProcess::new(
+            tokio::process::Command::new("node").arg(bridge_path),
+        )
+        .map_err(|e| QuillError::SpawnFailed(e.to_string()))?;
+
+        let service = ().serve(transport)
+            .await
+            .map_err(|e| QuillError::ConnectionFailed(e.to_string()))?;
+
+        Ok(Self { service })
     }
 
-    /// Check whether the bridge script exists on disk.
-    pub fn bridge_exists(&self) -> bool {
-        std::path::Path::new(&self.bridge_path).exists()
+    /// Search for meetings matching a time range.
+    pub async fn search_meetings(
+        &self,
+        query: &str,
+        after: &str,
+        before: &str,
+    ) -> Result<Vec<QuillMeeting>, QuillError> {
+        let result = self
+            .service
+            .call_tool(CallToolRequestParam {
+                name: "search_meetings".into(),
+                arguments: serde_json::json!({
+                    "query": query,
+                    "after": after,
+                    "before": before,
+                })
+                .as_object()
+                .cloned(),
+            })
+            .await
+            .map_err(|e| QuillError::ToolCallFailed(e.to_string()))?;
+
+        if result.is_error == Some(true) {
+            let msg = result
+                .content
+                .first()
+                .and_then(|c| c.as_text())
+                .map(|t| t.text.clone())
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(QuillError::ToolCallFailed(msg));
+        }
+
+        let text: String = result
+            .content
+            .iter()
+            .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
+            .collect();
+
+        serde_json::from_str(&text)
+            .map_err(|e| QuillError::ParseError(e.to_string()))
+    }
+
+    /// List recent meetings from Quill by searching a wide time window.
+    pub async fn list_meetings(&self) -> Result<Vec<QuillMeeting>, QuillError> {
+        let now = chrono::Utc::now();
+        let after = (now - chrono::Duration::days(7)).to_rfc3339();
+        let before = now.to_rfc3339();
+        self.search_meetings("", &after, &before).await
+    }
+
+    /// Fetch the transcript for a specific meeting.
+    pub async fn get_transcript(&self, meeting_id: &str) -> Result<String, QuillError> {
+        let result = self
+            .service
+            .call_tool(CallToolRequestParam {
+                name: "get_transcript".into(),
+                arguments: serde_json::json!({ "id": meeting_id })
+                    .as_object()
+                    .cloned(),
+            })
+            .await
+            .map_err(|e| QuillError::ToolCallFailed(e.to_string()))?;
+
+        if result.is_error == Some(true) {
+            let msg = result
+                .content
+                .first()
+                .and_then(|c| c.as_text())
+                .map(|t| t.text.clone())
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(QuillError::ToolCallFailed(msg));
+        }
+
+        let text: String = result
+            .content
+            .iter()
+            .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
+            .collect();
+
+        if text.is_empty() {
+            return Err(QuillError::TranscriptNotAvailable);
+        }
+
+        Ok(text)
+    }
+
+    /// Disconnect from the Quill bridge, terminating the child process.
+    pub async fn disconnect(self) {
+        let _ = self.service.cancel().await;
+    }
+
+    /// Check whether a bridge script exists on disk.
+    pub fn bridge_exists(path: &str) -> bool {
+        std::path::Path::new(path).exists()
     }
 
     /// Verify that Node.js is available on PATH.
@@ -75,35 +187,5 @@ impl QuillClient {
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
-    }
-
-    /// List recent meetings from Quill.
-    ///
-    /// Spawns the bridge process, calls the `list_meetings` tool, and
-    /// parses the response into `QuillMeeting` structs.
-    pub async fn list_meetings(&self) -> Result<Vec<QuillMeeting>, QuillError> {
-        if !self.bridge_exists() {
-            return Err(QuillError::BridgeNotFound(self.bridge_path.clone()));
-        }
-        if !Self::node_available() {
-            return Err(QuillError::NodeNotFound);
-        }
-        // TODO: spawn bridge via rmcp TokioChildProcess transport,
-        // call list_meetings tool, parse response
-        Ok(Vec::new())
-    }
-
-    /// Fetch the transcript for a specific meeting.
-    pub async fn get_transcript(&self, meeting_id: &str) -> Result<String, QuillError> {
-        if !self.bridge_exists() {
-            return Err(QuillError::BridgeNotFound(self.bridge_path.clone()));
-        }
-        if !Self::node_available() {
-            return Err(QuillError::NodeNotFound);
-        }
-        // TODO: spawn bridge via rmcp TokioChildProcess transport,
-        // call get_transcript tool with meeting_id, return text
-        let _ = meeting_id;
-        Err(QuillError::TranscriptNotAvailable)
     }
 }

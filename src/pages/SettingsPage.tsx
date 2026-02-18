@@ -67,6 +67,9 @@ interface QuillStatusData {
   failedSyncs: number;
   completedSyncs: number;
   lastSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  abandonedSyncs: number;
 }
 
 function parseSettingsTab(value: unknown): SettingsTabId {
@@ -1419,6 +1422,9 @@ interface QuillStatusData {
   failedSyncs: number;
   completedSyncs: number;
   lastSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  abandonedSyncs: number;
 }
 
 function QuillSettingsCard() {
@@ -1537,6 +1543,24 @@ function QuillSettingsCard() {
               {status.failedSyncs > 0 && (
                 <span style={{ ...styles.monoLabel, color: "var(--color-spice-terracotta)" }}>
                   {status.failedSyncs} failed
+                </span>
+              )}
+              {status.abandonedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-text-tertiary)" }}>
+                  {status.abandonedSyncs} abandoned
+                </span>
+              )}
+            </div>
+          )}
+
+          {status.lastError && (
+            <div style={{ paddingTop: 8 }}>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-spice-terracotta)" }}>
+                {status.lastError}
+              </span>
+              {status.lastErrorAt && (
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 8 }}>
+                  {new Date(status.lastErrorAt).toLocaleString()}
                 </span>
               )}
             </div>
