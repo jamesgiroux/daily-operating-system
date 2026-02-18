@@ -77,11 +77,11 @@ export default function ActionDetailPage() {
   // Register magazine shell
   const shellConfig = useMemo(
     () => ({
-      folioLabel: detail?.title ? (detail.title.length > 30 ? detail.title.slice(0, 30) + "\u2026" : detail.title) : "Action",
+      folioLabel: detail?.title ? (detail.title.length > 30 ? detail.title.slice(0, 30) + "…" : detail.title) : "Action",
       atmosphereColor: "terracotta" as const,
       activePage: "actions" as const,
       backLink: { label: "Actions", onClick: () => navigate({ to: "/actions", search: { search: undefined } }) },
-      folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+      folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     }),
     [detail?.title, navigate, saveStatus],
   );
@@ -510,7 +510,7 @@ export default function ActionDetailPage() {
               opacity: saveStatus === "saved" ? 1 : 0.6,
               transition: "opacity 0.3s",
             }}>
-              {saveStatus === "saving" ? "Saving\u2026" : "Saved"}
+              {saveStatus === "saving" ? "Saving…" : "Saved"}
             </span>
           )}
           <button
