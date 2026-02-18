@@ -64,7 +64,7 @@ const ASSESSMENT_CHAR_LIMIT = 150;
 function TruncatedAssessment({ text }: { text: string }) {
   const [showFull, setShowFull] = useState(false);
   const truncated = text.length > ASSESSMENT_CHAR_LIMIT && !showFull;
-  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "\u2026" : text;
+  const displayText = truncated ? text.slice(0, ASSESSMENT_CHAR_LIMIT) + "…" : text;
   return (
     <p style={{ fontFamily: "var(--font-sans)", fontSize: 14, lineHeight: 1.6, color: "var(--color-text-secondary)", margin: 0 }}>
       {displayText}
