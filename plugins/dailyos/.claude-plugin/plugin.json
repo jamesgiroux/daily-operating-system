@@ -1,0 +1,6 @@
+{
+  "name": "dailyos",
+  "description": "Workspace intelligence for Claude Code. The bridge between what DailyOS knows and what you need to do.",
+  "version": "0.9.0",
+  "author": "DailyOS"
+}
