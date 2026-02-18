@@ -38,6 +38,7 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
+pub mod granola;
 pub mod quill;
 pub mod queries;
 mod risk_briefing;
@@ -168,6 +169,13 @@ pub fn run() {
             let quill_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 quill::poller::run_quill_poller(quill_state, quill_handle).await;
+            });
+
+            // Spawn Granola transcript poller (I226)
+            let granola_state = state.clone();
+            let granola_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                granola::poller::run_granola_poller(granola_state, granola_handle).await;
             });
 
             // Create tray menu
@@ -437,6 +445,12 @@ pub fn run() {
             commands::get_quill_sync_states,
             commands::set_quill_poll_interval,
             commands::start_quill_backfill,
+            // Granola Integration (I226)
+            commands::get_granola_status,
+            commands::set_granola_enabled,
+            commands::set_granola_poll_interval,
+            commands::start_granola_backfill,
+            commands::test_granola_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9051,3 +9051,151 @@ pub fn get_quill_sync_states(
             .map_err(|e| e.to_string()),
     }
 }
+
+// =============================================================================
+// Granola Integration (I226)
+// =============================================================================
+
+/// Granola integration status for the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaStatus {
+    pub enabled: bool,
+    pub cache_exists: bool,
+    pub cache_path: String,
+    pub document_count: usize,
+    pub pending_syncs: usize,
+    pub failed_syncs: usize,
+    pub completed_syncs: usize,
+    pub last_sync_at: Option<String>,
+    pub poll_interval_minutes: u32,
+}
+
+/// Get the current status of the Granola integration.
+#[tauri::command]
+pub fn get_granola_status(state: State<Arc<AppState>>) -> GranolaStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.granola.clone()));
+
+    let granola_config = config.unwrap_or_default();
+    let cache_path = std::path::Path::new(&granola_config.cache_path);
+    let cache_exists = cache_path.exists();
+
+    let document_count = if cache_exists {
+        crate::granola::cache::count_documents(cache_path).unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Count sync states from DB (source='granola')
+    let (pending, failed, completed, last_sync) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let (failed_count, completed_count, last, pending_count) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT
+                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                            MAX(completed_at),
+                            SUM(CASE WHEN state IN ('pending', 'polling', 'processing') THEN 1 ELSE 0 END)
+                         FROM quill_sync_state WHERE source = 'granola'",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, i64>(0).unwrap_or(0) as usize,
+                                row.get::<_, i64>(1).unwrap_or(0) as usize,
+                                row.get::<_, Option<String>>(2)?,
+                                row.get::<_, i64>(3).unwrap_or(0) as usize,
+                            ))
+                        })
+                    })
+                    .unwrap_or((0, 0, None, 0));
+
+                (pending_count, failed_count, completed_count, last)
+            })
+        })
+        .unwrap_or((0, 0, 0, None));
+
+    GranolaStatus {
+        enabled: granola_config.enabled,
+        cache_exists,
+        cache_path: granola_config.cache_path,
+        document_count,
+        pending_syncs: pending,
+        failed_syncs: failed,
+        completed_syncs: completed,
+        last_sync_at: last_sync,
+        poll_interval_minutes: granola_config.poll_interval_minutes,
+    }
+}
+
+/// Enable or disable Granola integration.
+#[tauri::command]
+pub fn set_granola_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.granola.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set the Granola poll interval (1–60 minutes).
+#[tauri::command]
+pub fn set_granola_poll_interval(
+    minutes: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if !(1..=60).contains(&minutes) {
+        return Err("Poll interval must be between 1 and 60 minutes".to_string());
+    }
+    crate::state::create_or_update_config(&state, |config| {
+        config.granola.poll_interval_minutes = minutes;
+    })?;
+    Ok(())
+}
+
+/// Result of a Granola backfill operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaBackfillResult {
+    pub created: usize,
+    pub eligible: usize,
+}
+
+/// Create Granola sync rows for past meetings found in the cache.
+#[tauri::command]
+pub fn start_granola_backfill(
+    state: State<Arc<AppState>>,
+) -> Result<GranolaBackfillResult, String> {
+    let (created, eligible) = crate::granola::poller::run_granola_backfill(&state)?;
+    Ok(GranolaBackfillResult { created, eligible })
+}
+
+/// Test whether the Granola cache file exists and is valid.
+#[tauri::command]
+pub fn test_granola_cache(state: State<Arc<AppState>>) -> Result<usize, String> {
+    let cache_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .as_ref()
+        .map(|c| c.granola.cache_path.clone())
+        .unwrap_or_default();
+
+    let path = std::path::Path::new(&cache_path);
+    if !path.exists() {
+        return Err("Granola cache file not found".to_string());
+    }
+
+    crate::granola::cache::count_documents(path)
+}

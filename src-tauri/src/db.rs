@@ -423,6 +423,33 @@ pub struct DbQuillSyncState {
     pub transcript_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default = "default_quill_source")]
+    pub source: String,
+}
+
+fn default_quill_source() -> String {
+    "quill".to_string()
+}
+
+/// Row mapper for quill_sync_state SELECT queries (15 columns including source).
+fn map_sync_row(row: &rusqlite::Row) -> rusqlite::Result<DbQuillSyncState> {
+    Ok(DbQuillSyncState {
+        id: row.get(0)?,
+        meeting_id: row.get(1)?,
+        quill_meeting_id: row.get(2)?,
+        state: row.get(3)?,
+        attempts: row.get(4)?,
+        max_attempts: row.get(5)?,
+        next_attempt_at: row.get(6)?,
+        last_attempt_at: row.get(7)?,
+        completed_at: row.get(8)?,
+        error_message: row.get(9)?,
+        match_confidence: row.get(10)?,
+        transcript_path: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
+        source: row.get::<_, String>(14).unwrap_or_else(|_| "quill".to_string()),
+    })
 }
 
 /// Compute relationship temperature from last meeting date.
@@ -3072,6 +3099,23 @@ impl ActionDb {
     // Quill Sync State
     // =========================================================================
 
+    /// Insert a new sync state row for a meeting with a specific source.
+    pub fn insert_quill_sync_state_with_source(
+        &self,
+        meeting_id: &str,
+        source: &str,
+    ) -> Result<String, DbError> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, source, next_attempt_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, meeting_id, source, next_attempt, now, now],
+        )?;
+        Ok(id)
+    }
+
     /// Insert a new Quill sync state row for a meeting (state=pending).
     pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
@@ -3093,60 +3137,46 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
                     next_attempt_at, last_attempt_at, completed_at, error_message,
-                    match_confidence, transcript_path, created_at, updated_at
+                    match_confidence, transcript_path, created_at, updated_at, source
              FROM quill_sync_state WHERE meeting_id = ?1",
         )?;
-        let mut rows = stmt.query_map(params![meeting_id], |row| {
-            Ok(DbQuillSyncState {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                quill_meeting_id: row.get(2)?,
-                state: row.get(3)?,
-                attempts: row.get(4)?,
-                max_attempts: row.get(5)?,
-                next_attempt_at: row.get(6)?,
-                last_attempt_at: row.get(7)?,
-                completed_at: row.get(8)?,
-                error_message: row.get(9)?,
-                match_confidence: row.get(10)?,
-                transcript_path: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
-            })
-        })?;
+        let mut rows = stmt.query_map(params![meeting_id], map_sync_row)?;
         match rows.next() {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
     }
 
-    /// Get all pending Quill syncs ready for processing.
+    /// Get sync state for a specific meeting and source.
+    pub fn get_quill_sync_state_by_source(
+        &self,
+        meeting_id: &str,
+        source: &str,
+    ) -> Result<Option<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at, source
+             FROM quill_sync_state WHERE meeting_id = ?1 AND source = ?2",
+        )?;
+        let mut rows = stmt.query_map(params![meeting_id, source], map_sync_row)?;
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Get all pending Quill syncs ready for processing (source='quill' only).
     pub fn get_pending_quill_syncs(&self) -> Result<Vec<DbQuillSyncState>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
                     next_attempt_at, last_attempt_at, completed_at, error_message,
-                    match_confidence, transcript_path, created_at, updated_at
+                    match_confidence, transcript_path, created_at, updated_at, source
              FROM quill_sync_state
-             WHERE state IN ('pending', 'polling') AND next_attempt_at <= datetime('now')",
+             WHERE state IN ('pending', 'polling') AND next_attempt_at <= datetime('now')
+               AND source = 'quill'",
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(DbQuillSyncState {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                quill_meeting_id: row.get(2)?,
-                state: row.get(3)?,
-                attempts: row.get(4)?,
-                max_attempts: row.get(5)?,
-                next_attempt_at: row.get(6)?,
-                last_attempt_at: row.get(7)?,
-                completed_at: row.get(8)?,
-                error_message: row.get(9)?,
-                match_confidence: row.get(10)?,
-                transcript_path: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
-            })
-        })?;
+        let rows = stmt.query_map([], map_sync_row)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
@@ -3225,11 +3255,25 @@ impl ActionDb {
         Ok(true)
     }
 
-    /// Count Quill sync rows in a given state.
+    /// Count sync rows in a given state (all sources).
     pub fn count_quill_syncs_by_state(&self, state: &str) -> Result<usize, DbError> {
         let count: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM quill_sync_state WHERE state = ?1",
             params![state],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Count sync rows in a given state for a specific source.
+    pub fn count_syncs_by_state_and_source(
+        &self,
+        state: &str,
+        source: &str,
+    ) -> Result<usize, DbError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM quill_sync_state WHERE state = ?1 AND source = ?2",
+            params![state, source],
             |row| row.get(0),
         )?;
         Ok(count as usize)
@@ -3244,7 +3288,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
                     next_attempt_at, last_attempt_at, completed_at, error_message,
-                    match_confidence, transcript_path, created_at, updated_at
+                    match_confidence, transcript_path, created_at, updated_at, source
              FROM quill_sync_state
              WHERE state = 'abandoned'
                AND created_at >= datetime('now', ?1)
@@ -3252,24 +3296,7 @@ impl ActionDb {
         )?;
         let min_offset = format!("-{} days", max_days);
         let max_offset = format!("-{} days", min_days);
-        let rows = stmt.query_map(params![min_offset, max_offset], |row| {
-            Ok(DbQuillSyncState {
-                id: row.get(0)?,
-                meeting_id: row.get(1)?,
-                quill_meeting_id: row.get(2)?,
-                state: row.get(3)?,
-                attempts: row.get(4)?,
-                max_attempts: row.get(5)?,
-                next_attempt_at: row.get(6)?,
-                last_attempt_at: row.get(7)?,
-                completed_at: row.get(8)?,
-                error_message: row.get(9)?,
-                match_confidence: row.get(10)?,
-                transcript_path: row.get(11)?,
-                created_at: row.get(12)?,
-                updated_at: row.get(13)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![min_offset, max_offset], map_sync_row)?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
@@ -3284,6 +3311,23 @@ impl ActionDb {
             params![now, sync_id],
         )?;
         Ok(())
+    }
+
+    /// Get recent meetings as (id, title, start_time) tuples for transcript matching.
+    pub fn get_meetings_for_transcript_matching(
+        &self,
+        days_back: i32,
+    ) -> Result<Vec<(String, String, String)>, DbError> {
+        let offset = format!("-{} days", days_back);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, start_time FROM meetings_history
+             WHERE start_time >= datetime('now', ?1)
+             ORDER BY start_time DESC",
+        )?;
+        let rows = stmt.query_map(params![offset], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
     /// Get meeting IDs eligible for Quill backfill: past meetings within `days_back`
