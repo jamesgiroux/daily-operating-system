@@ -1405,3 +1405,34 @@ export interface ConcreteRequest {
   urgency?: string;
   from?: string;
 }
+
+// =============================================================================
+// Quill Integration
+// =============================================================================
+
+export interface QuillStatus {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+}
+
+export interface QuillSyncState {
+  id: string;
+  meetingId: string;
+  quillMeetingId: string | null;
+  state: "pending" | "polling" | "fetching" | "processing" | "completed" | "failed" | "abandoned";
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  matchConfidence: number | null;
+  transcriptPath: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -38,6 +38,7 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
+pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
@@ -160,6 +161,13 @@ pub fn run() {
             let hygiene_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 hygiene::run_hygiene_loop(hygiene_state, hygiene_handle).await;
+            });
+
+            // Spawn Quill transcript poller
+            let quill_state = state.clone();
+            let quill_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                quill::poller::run_quill_poller(quill_state, quill_handle).await;
             });
 
             // Create tray menu
@@ -421,6 +429,11 @@ pub fn run() {
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
+            // Quill MCP Integration
+            commands::get_quill_status,
+            commands::set_quill_enabled,
+            commands::test_quill_connection,
+            commands::get_quill_sync_states,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
