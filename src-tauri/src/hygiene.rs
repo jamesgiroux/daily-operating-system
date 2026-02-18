@@ -1792,6 +1792,23 @@ fn detect_low_confidence_matches(
                         entity.source,
                     ),
                 });
+
+                // I306: Emit low_confidence_match signal to bus
+                let value = serde_json::json!({
+                    "meeting_title": title,
+                    "source": entity.source,
+                })
+                .to_string();
+                let _ = crate::signals::bus::emit_signal(
+                    db,
+                    entity.entity_type.as_str(),
+                    &entity.entity_id,
+                    "low_confidence_match",
+                    "heuristic",
+                    Some(&value),
+                    entity.confidence,
+                );
+
                 if suggestions.len() >= max_suggestions {
                     break;
                 }
