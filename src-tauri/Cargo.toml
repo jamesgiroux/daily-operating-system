@@ -61,6 +61,11 @@ fastembed = "5"
 # libc: fd-level stdout suppression during embedding model init (avoids MCP stream corruption)
 libc = "0.2"
 
+# I307: Correction Learning — Thompson Sampling + fuzzy matching
+rand = "0.10"
+rand_distr = "0.6"
+strsim = "0.11"
+
 # MCP Server (ADR-0075) + Quill MCP client
 rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
 schemars = { version = "0.8", optional = true }
