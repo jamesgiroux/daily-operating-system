@@ -797,6 +797,9 @@ pub struct DirectiveMeeting {
     pub end_display: Option<String>,
     #[serde(rename = "type", default)]
     pub meeting_type: Option<String>,
+    /// Resolved entities from I336 entity-generic classification.
+    #[serde(default)]
+    pub entities: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, serde::Deserialize)]
