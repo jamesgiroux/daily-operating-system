@@ -453,6 +453,9 @@ pub fn run() {
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
             commands::get_claude_desktop_status,
+            // Cowork Plugins
+            commands::export_cowork_plugin,
+            commands::get_cowork_plugins_status,
             // Quill MCP Integration
             commands::get_quill_status,
             commands::set_quill_enabled,
