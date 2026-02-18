@@ -2729,7 +2729,8 @@ function QuillSyncBadge({ meetingId }: { meetingId: string }) {
 
   if (!syncState) return null;
 
-  const { state, matchConfidence } = syncState;
+  const { state, matchConfidence, source } = syncState;
+  const sourceLabel = source === "granola" ? "via Granola" : "via Quill";
 
   // Define badge content based on state
   let icon: React.ReactNode;
@@ -2752,8 +2753,8 @@ function QuillSyncBadge({ meetingId }: { meetingId: string }) {
     case "completed":
       icon = <Check style={{ width: 14, height: 14 }} />;
       label = matchConfidence
-        ? `Transcript synced (${Math.round(matchConfidence * 100)}% match)`
-        : "Transcript synced";
+        ? `Transcript synced ${sourceLabel} (${Math.round(matchConfidence * 100)}% match)`
+        : `Transcript synced ${sourceLabel}`;
       color = "var(--color-garden-olive)";
       break;
     case "failed":
