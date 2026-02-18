@@ -42,7 +42,7 @@ export function ProjectHero({
   const LEDE_LIMIT = 300;
   const [showFullLede, setShowFullLede] = useState(false);
   const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
-  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "\u2026" : ledeFull;
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "…" : ledeFull;
 
   return (
     <div className={styles.hero}>

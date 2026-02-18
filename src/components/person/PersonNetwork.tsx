@@ -120,7 +120,7 @@ export function PersonNetwork({
             onChange={(entityId) => {
               if (entityId) onLink(entityId);
             }}
-            placeholder="Link account or project\u2026"
+            placeholder="Link account or project…"
           />
         </div>
       )}
