@@ -9,4 +9,7 @@ pub mod bus;
 pub mod decay;
 pub mod email_bridge;
 pub mod email_context;
+pub mod feedback;
 pub mod fusion;
+pub mod patterns;
+pub mod sampling;
