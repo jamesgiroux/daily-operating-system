@@ -20,6 +20,7 @@ pub fn gather_all_meeting_contexts(
     classified: &[Value],
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
@@ -27,7 +28,7 @@ pub fn gather_all_meeting_contexts(
         if meeting_type == "personal" || meeting_type == "all_hands" {
             continue;
         }
-        contexts.push(gather_meeting_context(meeting, workspace, db));
+        contexts.push(gather_meeting_context(meeting, workspace, db, embedding_model));
     }
     contexts
 }
@@ -37,6 +38,7 @@ fn gather_meeting_context(
     meeting: &Value,
     workspace: &Path,
     db: Option<&crate::db::ActionDb>,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> Value {
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
     let event_id = meeting.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -74,9 +76,26 @@ fn gather_meeting_context(
     match meeting_type {
         "customer" | "qbr" | "training" => {
             if accounts_dir.is_dir() {
-                // Prefer DB-linked/account-attendee evidence, then heuristic fallback.
-                let matched = db
-                    .and_then(|db| resolve_account_from_db(db, event_id, meeting, &accounts_dir))
+                // I305: Use confidence-scored entity resolver, then heuristic fallback.
+                let resolver_result = db.and_then(|db| {
+                    super::entity_resolver::resolve_account_compat(
+                        db,
+                        event_id,
+                        meeting,
+                        &accounts_dir,
+                        embedding_model,
+                    )
+                });
+                // Inject resolution metadata for downstream use
+                if let Some(ref r) = resolver_result {
+                    ctx["resolution_confidence"] = json!(r.confidence);
+                    ctx["resolution_source"] = json!(&r.source);
+                }
+                let matched = resolver_result
+                    .map(|r| AccountMatch {
+                        name: r.name,
+                        relative_path: r.relative_path,
+                    })
                     .or_else(|| guess_account_name(meeting, &accounts_dir));
                 if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
@@ -241,9 +260,25 @@ fn gather_meeting_context(
 
         "partnership" => {
             if accounts_dir.is_dir() {
-                // Prefer DB-linked/account-attendee evidence, then heuristic fallback.
-                let matched = db
-                    .and_then(|db| resolve_account_from_db(db, event_id, meeting, &accounts_dir))
+                // I305: Use confidence-scored entity resolver, then heuristic fallback.
+                let resolver_result = db.and_then(|db| {
+                    super::entity_resolver::resolve_account_compat(
+                        db,
+                        event_id,
+                        meeting,
+                        &accounts_dir,
+                        embedding_model,
+                    )
+                });
+                if let Some(ref r) = resolver_result {
+                    ctx["resolution_confidence"] = json!(r.confidence);
+                    ctx["resolution_source"] = json!(&r.source);
+                }
+                let matched = resolver_result
+                    .map(|r| AccountMatch {
+                        name: r.name,
+                        relative_path: r.relative_path,
+                    })
                     .or_else(|| guess_account_name(meeting, &accounts_dir));
                 if let Some(matched) = matched {
                     ctx["account"] = json!(&matched.name);
@@ -833,11 +868,11 @@ fn find_account_dir_by_name(name: &str, accounts_dir: &Path) -> Option<AccountMa
 }
 
 /// Result of matching a meeting to an account directory.
-struct AccountMatch {
+pub(crate) struct AccountMatch {
     /// Display name (e.g., "Consumer-Brands" for a child, "Cox" for a parent).
-    name: String,
+    pub(crate) name: String,
     /// Relative path from Accounts/ dir (e.g., "Cox/Consumer-Brands" for a child, "Cox" for flat).
-    relative_path: String,
+    pub(crate) relative_path: String,
 }
 
 /// Try to match a meeting to a known account directory.
@@ -1674,7 +1709,7 @@ mod tests {
             json!({"id": "1", "type": "personal", "title": "Lunch"}),
             json!({"id": "2", "type": "customer", "title": "Acme Call", "start": "2026-02-08T10:00:00"}),
         ];
-        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None);
+        let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None);
         assert_eq!(contexts.len(), 1);
         assert_eq!(contexts[0]["event_id"], "2");
     }

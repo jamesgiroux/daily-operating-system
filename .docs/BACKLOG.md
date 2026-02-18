@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 724 Rust tests. v0.8.4 shipped. 0.9.0 active (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.0 shipped (integrations). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 1.0.0 = beta gate.
 
 ---
 
@@ -14,7 +14,15 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 |----|-------|----------|------|
 | **I54** | MCP client integration framework | P0 | Integrations |
 | **I220** | Meeting forecast (4-5 business days ahead) | P1 | Meetings |
-| **I92** | User-configurable metadata fields | P1 | Entity |
+| **I92** | ~~User-configurable metadata fields~~ → Superseded by I309-I312 (ADR-0079 Role Presets) | — | Entity |
+| **I309** | Role preset schema + JSON loader infrastructure | P1 | Entity |
+| **I310** | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) | P1 | Entity |
+| **I311** | Metadata storage migration (JSON column on accounts + projects) | P1 | Entity |
+| **I312** | Preset-driven vitals strip + entity detail fields | P1 | UX |
+| **I313** | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) | P1 | Intelligence |
+| **I314** | Role selection in Settings + community preset import | P1 | UX |
+| **I315** | Onboarding: role selection replaces entity mode selection | P1 | UX |
+| **I316** | Lift parent-child depth constraint (n-level entity nesting) | P1 | Entity |
 | **I143** | Renewal lifecycle tracking | P1 | Entity |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
 | **I243** | Quill Meetings integration (local-first transcripts + MCP) | P1 | Integrations |
@@ -42,6 +50,10 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
+| **I305** | ~~Intelligent meeting-entity resolution — "it should just know"~~ ✅ | P1 | Intelligence |
+| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
+| **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
+| **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
 
 ---
 
@@ -85,20 +97,42 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ---
 
-### 0.10.0 — Renewal
+### 0.10.0 — Intelligence
 
-*TAM/CSM operational core: account metadata and renewal pipeline. Built on 0.8.0 editorial design language.*
+*The system that learns from you. Signals compound, corrections teach, events drive action.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P1 | I92 | User-configurable metadata fields (CS Kit defaults + CSV import) |
-| P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
-| P2 | I198 | Account merge + transcript reassignment |
-| P2 | I199 | Archived account recovery UX (restore + relink) |
+| P1 | ~~I305~~ ✅ | ~~Intelligent meeting-entity resolution — "it should just know"~~ |
+| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
+| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
+| P1 | I308 | Event-driven signal processing and cross-entity propagation |
 | P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
 
-**Rationale:** Delivers the core TAM/CSM workflow. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (renewal calendar, pipeline stages, health scores, ARR projections, risk alerts). Renewal dashboard and pipeline views are built on 0.8.0's entity detail template and editorial design language.
+**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine.
+
+---
+
+### 0.11.0 — Role Presets & Entity Architecture
+
+*Multi-role support via ADR-0079. Role presets replace Kits — lightweight JSON configs that shape vocabulary, metadata, prioritization, and AI enrichment per role. Entity hierarchy unlocked to n-level depth.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I309 | Role preset schema + JSON loader infrastructure |
+| P1 | I310 | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) |
+| P1 | I311 | Metadata storage migration (JSON column on accounts + projects) |
+| P1 | I312 | Preset-driven vitals strip + entity detail fields |
+| P1 | I313 | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) |
+| P1 | I314 | Role selection in Settings + community preset import |
+| P1 | I315 | Onboarding: role selection replaces entity mode selection |
+| P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
+| P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
+| P2 | I198 | Account merge + transcript reassignment |
+| P2 | I199 | Archived account recovery UX (restore + relink) |
+
+**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence.
 
 ---
 
@@ -1232,6 +1266,199 @@ Frontend:
 - I92 (Metadata provides renewal data: dates, stages, outcomes, risk)
 - I88 (Portfolio report includes renewal pipeline section)
 - I220 (Forecast surfaces upcoming renewal meetings)
+
+---
+
+### Meeting-Entity Intelligence (0.10.0)
+
+**I305: Intelligent meeting-entity resolution — "it should just know"**
+Meetings should arrive in the daily briefing pre-tagged with the correct accounts and projects. Today the system has four signals (explicit links, attendee voting, title normalization, domain matching) but misses obvious connections. The goal is to use every available signal so users rarely need to manually correct entity assignments.
+
+**The Problem:**
+
+A user demos "Agentforce" (a project) to Jefferies (a customer). The system can't connect the meeting to the Agentforce project because project matching is entirely manual. It resolves to "Salesforce" (the parent company) via domain matching and pulls Salesforce Security intelligence instead of Agentforce context. The user corrects it, but the next briefing re-run doesn't re-trigger enrichment with the correct entity's intelligence. This pattern — wrong entity, stale intelligence, manual correction that doesn't cascade — erodes trust in the "your day is ready" promise.
+
+**First Principle:** "AI produces, users consume." If a user has to correct entity assignments every morning, the system is making the user produce.
+
+**Current Signal Usage:**
+
+| Signal | Status | Confidence |
+|--------|--------|------------|
+| Explicit junction links (user chips, hygiene backfill) | Active | Highest |
+| Attendee → entity voting (person linked to account) | Active | High |
+| Meeting title vs account name normalization | Active | Medium |
+| External email domain vs account domain | Active | Medium |
+| Meeting title vs **project** name/keywords | **Not implemented** | High potential |
+| Calendar description text mining | **Not implemented** | Medium potential |
+| Email thread correlation (pre-meeting invite chain) | **Not implemented** | Medium potential |
+| Historical group patterns (same N people = same entity) | **Not implemented** | High potential |
+| User correction learning (re-tag → training signal) | **Not implemented** | High potential |
+| Post-meeting transcript entity mentions | **Not implemented** | High potential |
+
+**Proposed Architecture — Signal Cascade:**
+
+Resolution runs in priority order, stopping at the first high-confidence match:
+
+1. **Explicit links** — User-set or previously system-confirmed entities in `meeting_entities` junction. Immutable unless user removes.
+2. **Project keyword matching** — Compare meeting title + description against project names, aliases, and configured keywords. "Agentforce Demo with Jefferies" matches project "Agentforce" on keyword.
+3. **Attendee group patterns** — Track co-occurrence: "when person A + person B + person C meet, it's always about entity X." Build from historical `meeting_entities` + `meeting_attendees` correlation.
+4. **Attendee entity voting** — Existing majority-vote from `entity_people` links. Works well for account resolution.
+5. **Calendar description mining** — Parse description/body for company names, project references, account mentions. Rich signal currently ignored.
+6. **Email thread correlation** — Check email intelligence for threads mentioning meeting participants + entity names in the 48 hours before the meeting.
+7. **Title/domain heuristics** — Current fallback. Normalized string matching.
+
+Each signal produces a `(entity_id, confidence_score, signal_source)` tuple. Final resolution picks the highest-confidence entity per type (one account, one project). When confidence is below threshold, the meeting is flagged as a **hygiene item** rather than silently guessing wrong.
+
+**Confidence & Hygiene Integration:**
+
+- **High confidence (>0.8):** Auto-link, no user action needed.
+- **Medium confidence (0.5–0.8):** Auto-link but surface in hygiene report as "verify: Agentforce Demo → Agentforce project (matched on title keyword, 0.7 confidence)."
+- **Low confidence (<0.5):** Don't auto-link. Surface as proactive hygiene suggestion: "Untagged meeting: Agentforce Demo with Jefferies — did you mean Agentforce project?"
+- **Conflicting signals:** Surface as hygiene item with the competing options: "Salesforce vs Agentforce for this meeting — attendees suggest Salesforce, title suggests Agentforce."
+
+**User Correction Learning:**
+
+When a user corrects an entity assignment (removes wrong entity, adds correct one):
+1. Record the correction in an `entity_resolution_feedback` table: `(meeting_id, old_entity, new_entity, signal_that_was_wrong, corrected_at)`
+2. Use corrections to weight future signal confidence: if title-matching keeps producing wrong results for this attendee group, demote title signal for that group.
+3. After N corrections for the same pattern, auto-learn: "meetings with these attendees about X = project Y."
+
+**Re-enrichment on Entity Correction:**
+
+When a user changes a meeting's entity:
+1. Update `meeting_entities` junction (existing behavior)
+2. **New:** Invalidate the prep file for that meeting
+3. **New:** Re-queue prep enrichment with the new entity's intelligence context
+4. **New:** If the briefing is currently displayed, emit a frontend event to refresh the meeting card
+
+**Project Matching — Minimum Viable:**
+
+Projects are currently manual-only. Minimum viable project matching:
+1. Add `keywords` field to projects table (comma-separated terms, e.g., "agentforce, agent force, af demo")
+2. On meeting resolution, compare title + description against all active project keywords
+3. Exact substring match = high confidence, fuzzy match = medium confidence
+4. Surface keyword matches in prep context alongside account intelligence
+
+**Implementation Phases:**
+
+| Phase | Scope | Complexity |
+|-------|-------|------------|
+| **Phase 1** | Project keyword matching + re-enrichment on entity correction | Medium |
+| **Phase 2** | Calendar description mining + confidence scoring + hygiene integration | Medium |
+| **Phase 3** | Attendee group pattern learning + user correction feedback loop | High |
+| **Phase 4** | Email thread correlation + transcript entity extraction | High |
+
+**Files Affected:**
+
+- `prepare/meeting_context.rs` — signal cascade, confidence scoring
+- `hygiene.rs` — low-confidence meeting flagging, proactive suggestions
+- `db.rs` — `entity_resolution_feedback` table, project keywords, confidence scores on junction
+- `commands.rs` — re-enrichment trigger on entity correction
+- `workflow/deliver.rs` — prep invalidation + re-queue on entity change
+- New: `prepare/entity_resolver.rs` — dedicated resolution module with pluggable signal sources
+
+**Acceptance Criteria:**
+
+- Meetings with project-name keywords in title are auto-linked to the correct project
+- Changing a meeting's entity triggers prep re-enrichment with the new entity's intelligence
+- Low-confidence entity matches appear as hygiene suggestions, not silent guesses
+- Calendar description text is parsed for entity mentions during resolution
+- User corrections are recorded and used to improve future resolution confidence
+
+**Dependencies:**
+
+- I260 (Proactive surfacing — shares the hygiene → insight → briefing pipeline)
+- I262 (The Record — transcript content as entity resolution signal in Phase 4)
+- I306 (Signal bus — provides the event log I305 writes to)
+- I307 (Correction learning — learns from entity corrections I305 records)
+
+---
+
+**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge**
+Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
+
+**Core deliverables:**
+
+1. **`signal_events` table** — `(entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at)`. Every integration writes here instead of directly to entity fields.
+2. **`signal_weights` table** — `(source, entity_type, signal_type, alpha, beta)`. Beta distribution parameters for per-source reliability, updated by I307.
+3. **Bayesian signal fusion** — `fuse_confidence()` function combining multiple signals via log-odds. Three weak signals (0.4, 0.4, 0.3) compound to 0.65. Contradicting signals yield uncertainty.
+4. **Temporal decay** — Exponential decay with configurable half-life per source type. User corrections: 365 days. Transcripts: 60 days. Calendar patterns: 30 days. Clay/Gravatar: 90 days. Heuristics: 7 days.
+5. **Email-calendar bridge for entity resolution** — Correlate email threads with meeting attendees in the 48 hours before a meeting. Email thread participants + subject line → entity resolution signal for the meeting. Join on email addresses (both sources use them).
+6. **Email pre-meeting context** — Surface relevant email thread excerpts in meeting prep context, weighted by recency and embedding similarity to meeting title.
+7. **Integration retrofit** — Clay, Gravatar, and hygiene enrichment pipelines emit signals to the bus instead of writing directly to entity fields. Signal consumers read from the bus.
+
+**New dependencies:** None (pure SQLite + existing Rust math).
+
+**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`.
+
+**Acceptance criteria:**
+- All enrichment sources write to `signal_events` table
+- `fuse_confidence()` produces correct Bayesian combination for 2+ signals
+- Temporal decay reduces signal weight as age increases
+- Email threads from 48 hours before a meeting are surfaced in prep context
+- Email participant overlap with meeting attendees produces entity resolution signal
+
+**Dependencies:** ADR-0080 (architecture). Consumed by I305 (entity resolution) and I307 (learning).
+
+---
+
+**I307: Correction learning — Thompson Sampling weights, context tagging, pattern detection**
+The system learns from every user correction. Signal source reliability is tracked via Beta distributions and updated incrementally. Source content is tagged as internal or external to prevent context leakage.
+
+**Core deliverables:**
+
+1. **Thompson Sampling weight learning** — When a signal leads to a correct outcome (user doesn't correct), increment `alpha`. When the user corrects, increment `beta`. Sample from `Beta(alpha, beta)` when scoring signals. Over time, reliable sources get higher weights. Uses `rand_distr::Beta`, no ML framework.
+2. **`entity_resolution_feedback` table** — Records every user correction: `(meeting_id, old_entity_id, new_entity_id, signal_source_that_was_wrong, corrected_at)`. Feeds back into `signal_weights`.
+3. **Internal vs external context tagging** — Every content chunk (transcript excerpt, email snippet, document quote) carries a `source_context` tag: `internal_meeting`, `customer_meeting`, `inbound_email`, `outbound_email`, `document`, `user_authored`. When building customer-facing prep, weight external sources higher. When users remove internal-sourced items from customer prep, that's a learning signal.
+4. **Calendar description mining** — Parse meeting body/description for entity name mentions. Uses `strsim` (Jaro-Winkler) for fuzzy company name matching against known entities.
+5. **Attendee group pattern detection** — Track co-occurrence: when persons A + B + C appear together in meetings, what entity is it about? Build from historical `meeting_entities` + `meeting_attendees`. After N occurrences with the same entity, auto-apply to future meetings with that group.
+6. **Email relationship cadence tracking** — Track per-person email response times as rolling averages. Flag deviations (champion who usually responds in 2 hours now takes 3 days) as relationship temperature signals.
+
+**New dependencies:** `rand_distr` (Beta distribution sampling, likely already transitive). `strsim` (Jaro-Winkler / Levenshtein for fuzzy matching).
+
+**The Bring a Trailer example:** User removes internal discussion items from customer agenda → system records `source_context=internal_meeting` items were rejected for `prep_type=customer_meeting` → next time, internal-sourced items have lower weight in customer-facing prep for this account → over time, generalizes to all accounts.
+
+**Acceptance criteria:**
+- Signal weights update on every user correction (entity re-tag, prep edit, action dismissal)
+- Thompson Sampling produces measurably different weights after 20+ corrections
+- Internal meeting content does not leak into customer-facing prep when context tagging is active
+- Attendee group patterns auto-link meetings after N consistent occurrences (configurable, default 3)
+- Calendar descriptions are parsed for entity mentions during resolution
+
+**Dependencies:** I306 (signal bus, signal_weights table). I305 (entity resolution writes corrections).
+
+---
+
+**I308: Event-driven signal processing and cross-entity propagation**
+Replace timer-driven enrichment with event-driven processing. When something changes, the system reasons about it immediately. Signals propagate across entity boundaries.
+
+**Core deliverables:**
+
+1. **Event-driven entity resolution** — When a calendar event is added or modified, run entity resolution immediately (not at next scheduled sweep). Uses `tokio::sync::Notify` pattern (same as Clay poller wake signal from v0.9.0).
+2. **Cross-entity signal propagation rules** — Declarative rules that derive new signals from existing ones:
+   - Clay says person changed jobs → flag all linked accounts for review
+   - Meeting frequency with account drops 50% month-over-month → account engagement warning
+   - Three overdue actions on one project → project health signal
+   - Email sentiment turns negative for account champion → account risk signal
+   - Person unlinked from account (left company) → check if they were champion → escalate if renewal within 90 days
+3. **Embedding-based relevance scoring** — Use local embedding model to score signal relevance to current context. When building daily briefing, rank signals by embedding similarity to today's meetings. fastembed reranker (already bundled via ONNX Runtime) scores "how relevant is this signal to today's briefing?"
+4. **Email post-meeting correlation** — After a meeting ends, find email threads that start within 24 hours involving the same participants. Extract actions and link to meeting entity context.
+5. **Signal-driven prep invalidation** — When a new high-confidence signal arrives for an entity (e.g., Clay enrichment, user correction), invalidate stale prep files that reference that entity and re-queue enrichment.
+6. **Proactive briefing callouts** — Cross-entity signals that cross severity thresholds surface as callout blocks in the daily briefing: "Sarah promoted to CRO at Acme — renewal in 45 days."
+
+**New dependencies:** None beyond I306/I307. Uses existing embedding model and fastembed reranker.
+
+**Architecture:** Propagation rules are Rust functions, not a rules engine. Each rule: `fn(signal_event, &AppState) -> Vec<DerivedSignal>`. Rules are registered at startup and evaluated on every new signal. Cheap to execute (SQLite queries + math), no AI calls in the propagation path.
+
+**Acceptance criteria:**
+- New calendar events trigger entity resolution within 60 seconds (not next scheduled sweep)
+- Clay job change signal propagates to linked account within one poller cycle
+- fastembed reranker scores signal relevance for briefing assembly
+- Post-meeting email threads are correlated and actions extracted with entity context
+- Stale prep files are invalidated and re-queued when entity intelligence changes
+- Cross-entity signals surface in daily briefing as callout blocks
+
+**Dependencies:** I306 (signal bus), I307 (learned weights for propagation confidence). Enables I260 (proactive surfacing).
 
 ---
 
@@ -3818,3 +4045,138 @@ The `response_status` field exists in the internal `Attendee` deserialization st
 3. RSVP status persists across app restarts (stored in DB, not just memory)
 4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
 5. No regression on existing meeting prep for meetings without RSVP data
+
+---
+
+### Role Presets & Entity Architecture (0.11.0)
+
+*ADR-0079 implementation. Role presets replace Kits — JSON configs that shape vocabulary, metadata, AI enrichment, and prioritization per role. Entity hierarchy deepened to support real organizational complexity.*
+
+**I309: Role preset schema + JSON loader infrastructure**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Config
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Define the role preset JSON schema (id, name, description, entityModeDefault, metadata fields, vocabulary, vitals, lifecycleEvents, prioritization, briefingEmphasis). Build a preset loader that reads from bundled presets (`resources/presets/`) and optional user-provided path (`customPresetPath` in config). Add `role` field to config, replacing `profile`. Active preset is loaded at startup and cached in AppState. Backwards compatibility: `profile` field derived from role + entity mode for existing backend code.
+
+**Acceptance criteria:**
+1. Preset JSON schema documented and validated on load
+2. Bundled presets load from resources directory
+3. Custom preset path loads and overrides bundled preset
+4. `role` config field persists across restarts
+5. `profile` backwards compat works for existing code
+
+---
+
+**I310: Ship 9 role presets**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Config
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Write the 9 shipped role preset JSON files: Customer Success, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk. Each preset defines metadata fields, vocabulary (risk/win/urgency terms), vitals strip fields, lifecycle event types, prioritization signals, and briefing emphasis. CS preset maps to existing hardcoded fields (ARR, health, NPS). Other presets use the JSON metadata column (I311).
+
+**Presets:**
+- **Customer Success** — account mode, renewal/churn vocabulary, ARR/health/NPS fields
+- **Sales** — account mode, pipeline/close vocabulary, deal stage/value fields
+- **Marketing** — project mode, campaign/launch vocabulary. Projects are campaigns, launches, initiatives. Teams (via internal accounts) are the cross-functional groups: product marketing, brand, demand gen, agency partners, contractor teams. Metadata: campaign status, launch date, target audience, channel mix, budget, KPIs. Vocabulary frames risk as missed deadlines, off-brand, audience mismatch; wins as launch success, engagement lift, pipeline contribution.
+- **Partnerships** — both mode, partner/channel vocabulary, partner tier/revenue share fields
+- **Agency** — both mode, client/scope vocabulary, retainer/utilization fields
+- **Consulting** — both mode, engagement/deliverable vocabulary, SOW/billing fields
+- **Product** — project mode, feature/launch vocabulary, confidence/sprint fields
+- **Leadership** — both mode, cross-functional vocabulary, team health/headcount fields
+- **The Desk** — both mode, minimal neutral vocabulary, clean slate for customization
+
+---
+
+**I311: Metadata storage migration**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / DB
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Add `metadata TEXT DEFAULT '{}'` JSON column to `accounts` and `projects` tables. Existing hardcoded columns (ARR, health, NPS) remain for CS backwards compatibility and query efficiency. CS preset maps field keys to existing columns. Other presets store fields in the JSON metadata column. Vitals strip and detail page read from both: hardcoded columns (if present) + metadata JSON (for everything else).
+
+**Migration:** New migration adds columns. No data loss. Existing accounts unaffected.
+
+---
+
+**I312: Preset-driven vitals strip + entity detail fields**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX / Entity
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Wire the active role preset's `vitals` and `metadata` config into the entity detail page. Vitals strip shows fields defined in the preset's `vitals` array. Entity detail fields section renders the preset's `metadata` fields with appropriate input types (text, number, currency, date, select). Fields read from both hardcoded columns and JSON metadata column. Field edits persist to the appropriate storage (hardcoded column or JSON metadata).
+
+**Acceptance criteria:**
+1. Vitals strip shows preset-defined fields (not hardcoded CS fields)
+2. Entity detail renders preset metadata fields with correct input types
+3. CS preset renders identically to current hardcoded layout (no regression)
+4. Non-CS presets render their own field sets correctly
+5. Field edits persist and survive app restart
+
+---
+
+**I313: Vocabulary-driven AI prompts**
+
+**Priority:** P1 (0.11.0)
+**Area:** Intelligence / AI
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Integrate the active role preset's vocabulary into all AI enrichment prompts. `riskVocabulary` shapes Watch List framing. `winVocabulary` shapes Recent Wins framing. `urgencySignals` shapes briefing prioritization. `healthFrame` shapes State of Play assessment. `briefingEmphasis` shapes the daily briefing's attention narrative. `entityNoun` controls language throughout ("account" vs "project" vs "client" vs "engagement").
+
+**Key integration points:**
+- Intelligence enrichment prompts (`entity_intel.rs`, `intelligence.rs`)
+- Daily briefing generation (`prepare/`)
+- Weekly briefing generation (`workflow/`)
+- Meeting prep prompts
+- Hygiene scanner narratives
+
+---
+
+**I314: Role selection in Settings + community preset import**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX / Settings
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Add role selection UI to Settings page. Grid of 8 shipped presets (name + one-line description). Active preset highlighted. Changing role updates config, reloads preset, and re-renders entity pages with new vocabulary/fields. "Import custom preset" button loads a JSON file from disk, validates against schema, and sets `customPresetPath` in config.
+
+---
+
+**I315: Onboarding: role selection replaces entity mode selection**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX / Onboarding
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Replace the current entity mode selection step in onboarding with a role preset picker. Role selection implies entity mode default (user can override later). One choice instead of three (entity mode + Kit + Intelligence). The Desk preset serves as "I'm not sure yet" — minimal, neutral, always available.
+
+---
+
+**I316: Lift parent-child depth constraint (n-level entity nesting)**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Architecture
+**Builds on:** [ADR-0056](decisions/0056-hierarchical-accounts.md), [ADR-0070](decisions/0070-internal-team-entities.md)
+
+Remove the one-level depth restriction on parent-child account hierarchy. Allow n-level nesting to support real organizational complexity: Company → Division → Org → Group → Team → Sub-team. The `parent_id` column is already self-referential — the constraint is a business rule, not a schema limitation.
+
+**Motivation:** Internal organizations (ADR-0070) require depth. A user at Automattic might need: Automattic → VIP Division → Sales Org → CS Group → Key Accounts → Corporate Key Accounts. External enterprise accounts also benefit: Cox → Diversification → Regional → Local. The current one-level limit forces flat representations of inherently hierarchical structures.
+
+**Implementation:**
+- Remove one-level validation in account creation/import
+- Update `get_child_accounts_list` to support recursive tree queries
+- Breadcrumb navigation: `Accounts > Automattic > VIP > Sales > CS > Key Accounts`
+- AccountsPage: expandable tree with indent per level (lazy-loaded children)
+- AccountDetailPage: full breadcrumb, children section shows immediate children only
+- `tracker_path` resolution already handles nested directories — no file I/O changes
+
+**Acceptance criteria:**
+1. Accounts can nest 3+ levels deep (create grandchild, great-grandchild)
+2. Breadcrumb renders full path at any depth
+3. AccountsPage tree expands/collapses at each level
+4. Existing one-level accounts continue working (no regression)
+5. Internal org teams can nest to reflect real org structure
