@@ -45,6 +45,7 @@ pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
+pub mod signals;
 pub mod state;
 pub mod types;
 pub mod util;
