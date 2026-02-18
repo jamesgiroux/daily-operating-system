@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
 
 ---
 
@@ -12,7 +12,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| **I220** | Meeting forecast (4-5 business days ahead) | P1 | Meetings |
+| **I220** | ~~Meeting forecast (4-5 business days ahead)~~ → Superseded by I327 (ADR-0081 Event-Driven Meeting Intelligence) | — | Meetings |
 | **I92** | ~~User-configurable metadata fields~~ → Superseded by I309-I312 (ADR-0079 Role Presets) | — | Entity |
 | **I309** | Role preset schema + JSON loader infrastructure | P1 | Entity |
 | **I310** | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) | P1 | Entity |
@@ -40,6 +40,16 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I322** | Email briefing narrative (daily briefing integration) | P1 | UX |
 | **I323** | Zero-touch email disposition pipeline | P2 | Email |
 | **I324** | Email signals in entity intelligence enrichment | P2 | Intelligence |
+| **I326** | Per-meeting intelligence lifecycle — detect, enrich, update, archive | P1 | Architecture |
+| **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
+| **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
+| **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
+| **I330** | Weekly forecast as live intelligence surface | P1 | Surfaces |
+| **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
+| **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
+| **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
+| **I200** | ~~Week page proactive suggestions~~ → Partially superseded by I330 (ADR-0081) | — | UX |
+| **I202** | ~~Prep prefill + draft agenda actions~~ → Superseded by I333 (ADR-0081) | — | UX |
 | **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
 | **I90** | Product telemetry & analytics infrastructure | P2 | Infra |
 | **I115** | Multi-line action extraction | P2 | Data |
@@ -146,6 +156,27 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P2 | I324 | Email signals in entity intelligence enrichment |
 
 **Rationale:** DailyOS already fetches, classifies, and enriches email (ADR-0024/0029). The 0.10.0 signal bus (I306) builds the email-calendar bridge infrastructure — correlating email threads with meeting attendees and surfacing raw excerpts in prep context. 0.12.0 builds the intelligence layer on top: structured meeting-aware digests that tell you what matters for each meeting (I317), thread position awareness so you know what you owe people (I318), entity-level cadence anomalies that flag when accounts go quiet or spike (I319), semantic classification for the ambiguous "medium" priority bucket (I320), and a narrative email section in the daily briefing that reads like a chief of staff's morning summary (I322). The design philosophy is "chief of staff who reads your email and tells you what matters" — not an email client, not an inbox UI, not unread counts. Email becomes the signal bus's richest data source and the briefing's most actionable section.
+
+---
+
+### 0.13.0 — Meeting Intelligence
+
+*Every meeting gets intelligence. Days ahead, not day-of. Signals drive updates. The system prepares your week before you think to ask.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I326 | Per-meeting intelligence lifecycle — detect, enrich, update, archive |
+| P1 | I327 | Advance intelligence generation (weekly + polling, not day-of) |
+| P1 | I328 | Classification expansion — all meetings get intelligence |
+| P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
+| P1 | I330 | Weekly forecast as live intelligence surface |
+| P1 | I331 | Daily briefing intelligence assembly (diff model, fast refresh) |
+| P1 | I332 | Signal-triggered meeting intelligence refresh |
+| P2 | I333 | Meeting intelligence collaboration — share, request input, draft agenda |
+
+**Rationale:** DailyOS meeting intelligence is schedule-based: preps generate at 6am on the day of the meeting. The weekly forecast shows "needs prep" badges that mean nothing (no prep exists until day-of). Internal meetings get thin context. Intelligence is static from morning to meeting time. ADR-0081 shifts the model from schedule-based to event-based: meeting intelligence records are born when meetings are detected on the calendar, enriched incrementally as signals arrive, and refreshed continuously throughout the week. The weekly forecast becomes a live intelligence surface — each meeting shows accumulated intelligence, quality indicators, and new-signal alerts. The daily briefing shifts from generating preps to assembling pre-computed intelligence with overnight signal updates (faster, cheaper). Classification expands: every non-all-hands meeting gets intelligence, including internal meetings against team entities (ADR-0070). This implements ADR-0030's `meeting:prep` as a truly independent operation, builds on ADR-0066's unified `MeetingIntelligence` lifecycle, and connects ADR-0080's signal bus to meeting enrichment.
+
+**Supersedes:** I220 (meeting forecast — advance generation is now the default, not an add-on). I202 (prep prefill/draft agenda — collaboration actions on existing intelligence). Partially supersedes I200 (proactive suggestions — intelligence quality indicators subsume prep-gap readiness checks; time-block suggestions remain).
 
 ---
 
@@ -378,7 +409,7 @@ Partial: agenda/wins are now semantically split (`recentWins`/`proposedAgenda`) 
 
 ### Meetings & Prep
 
-**I220: Meeting forecast (4-5 business days ahead)**
+**I220: ~~Meeting forecast (4-5 business days ahead)~~ → Superseded by I327 (ADR-0081)**
 Add a "Customer Meeting Forecast" section to the daily briefing that shows meetings 4-5 business days ahead with full prep (agenda, talking points, entity context). This enables proactive agenda-setting, pre-read creation, and customer buy-in BEFORE the meeting, not day-of.
 
 **The Problem:**
@@ -582,7 +613,7 @@ Running briefing on Sunday produces Monday's meetings labeled "today." Either in
 **I26: Web search for unknown external meetings**
 When meeting involves unrecognized people/companies, prep is thin. Extend I74 websearch pattern to unknown attendee domains. Not blocked by I27.
 
-**I200: Week page renders proactive suggestions from week-overview**
+**I200: ~~Week page renders proactive suggestions from week-overview~~ → Partially superseded by I330 (ADR-0081). Time-block suggestions remain valid; prep-gap readiness checks subsumed by intelligence quality indicators.**
 The week pipeline already computes `dayShapes.availableBlocks` and AI can write `suggestedUse`, but WeekPage does not display these blocks today. Ship a Week section that surfaces available blocks + suggestions and links suggestions to actionable destinations where possible.
 
 Acceptance criteria:
@@ -602,7 +633,7 @@ Acceptance criteria:
 - Suggestion output includes deterministic scoring fields (capacity fit, urgency/impact, confidence) for UI ordering.
 - Tests cover stale-artifact vs live-data divergence (meeting added/removed after morning run).
 
-**I202: Prep prefill + draft agenda actions (ADR-0065-aware)**
+**I202: ~~Prep prefill + draft agenda actions~~ → Superseded by I333 (ADR-0081). Collaboration actions on existing intelligence, not prefill into empty system.**
 Implement Phase 3 prep-side suggestions as explicit actions: draft agenda message and prefill prep content. Must respect ADR-0065 editability model (`userAgenda`/`userNotes`) and avoid overwriting generated prep fields.
 
 Acceptance criteria:
@@ -1116,6 +1147,8 @@ Projects are currently manual-only. Minimum viable project matching:
 - I306 (Signal bus — provides the event log I305 writes to)
 - I307 (Correction learning — learns from entity corrections I305 records)
 
+**0.13.0 note (ADR-0081):** Re-enrichment on entity correction (steps 2-4 in "Re-enrichment on Entity Correction") is handled by the meeting intelligence lifecycle (I326). When entity resolution changes — whether from user correction or from a higher-confidence signal arriving — I326's `meeting:prep` operation handles the re-enrichment. Entity resolution is also the first step in the intelligence lifecycle: when a meeting is detected, entity resolution runs immediately to link it to the right entity before enrichment begins.
+
 ---
 
 **I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge**
@@ -1203,6 +1236,8 @@ Replace timer-driven enrichment with event-driven processing. When something cha
 - Cross-entity signals surface in daily briefing as callout blocks
 
 **Dependencies:** I306 (signal bus), I307 (learned weights for propagation confidence). Enables I260 (proactive surfacing).
+
+**0.13.0 note (ADR-0081):** Meeting intelligence is a primary consumer of event-driven signal processing. I332 (signal-triggered meeting intelligence refresh) is a direct implementation of this issue's architecture applied to meetings: when signals arrive (email, transcript, calendar change, entity update), affected meeting intelligence records are marked "has new signals" and queued for refresh at the next natural checkpoint. The signal → meeting mapping in I332 should be implemented as propagation rules registered alongside the cross-entity rules described here. Calendar event changes (deliverable #1 above) should trigger `meeting:prep` (I326) in addition to entity resolution.
 
 ---
 
@@ -3790,6 +3825,8 @@ The `response_status` field exists in the internal `Attendee` deserialization st
 4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
 5. No regression on existing meeting prep for meetings without RSVP data
 
+**0.13.0 note (ADR-0081):** RSVP status changes become a calendar signal that feeds into meeting intelligence. When an attendee's RSVP status changes (e.g., accepted → declined, needsAction → accepted), this should be treated as a calendar change signal (I332) that marks the meeting's intelligence record for refresh — "The Room" section updates, and if a key attendee declines, the intelligence quality may shift. Implement RSVP as signal-bus-aware from the start rather than as a separate pipeline.
+
 ---
 
 ### Role Presets & Entity Architecture (0.11.0)
@@ -4218,3 +4255,317 @@ Feed email-derived signals into entity intelligence enrichment. Account health i
 3. Account wins section highlights email positives (engagement increase)
 4. Person intelligence includes communication patterns from email
 5. No separate "email" section — signals integrate into existing chapters
+
+---
+
+## 0.13.0 — Meeting Intelligence (Detailed Descriptions)
+
+**I326: Per-meeting intelligence lifecycle — detect, enrich, update, archive**
+
+**Priority:** P1 (0.13.0)
+**Area:** Architecture
+**Depends on:** ADR-0066 (MeetingIntelligence struct), ADR-0030 (meeting:prep atomic operation)
+
+Extract `meeting:prep` from the daily orchestrator into a truly independent operation (as proposed in ADR-0030 but never built end-to-end). Every meeting on the calendar gets a `MeetingIntelligence` lifecycle: detection → initial enrichment → incremental update → pre-meeting refresh → post-meeting capture → archive.
+
+**Current state:** Meeting prep generation is locked inside `prepare_today()` in `orchestrate.rs`. The per-meeting enrichment logic exists (`build_prep_context` + `enrich_prep`) but is only callable from the daily orchestrator. `prepare_week()` generates `week-overview.json` but no individual preps.
+
+**Target:**
+- `meeting:prep` is an independent Tauri command / internal function callable from any context
+- Takes a `meeting_id`, fetches meeting details from `meetings_history`, resolves entity, gathers context, runs enrichment
+- Writes intelligence to `meetings_history.prep_context_json` (SQLite, permanent) and optionally to disk file (ephemeral, for today's meetings)
+- Idempotent: calling twice on the same meeting updates rather than duplicates
+- State machine: `detected → enriching → enriched → refreshing → captured → archived`
+- Intelligence record is the `MeetingIntelligence` struct from ADR-0066
+
+**Files involved:**
+- `src-tauri/src/prepare/orchestrate.rs` — extract `meeting:prep` into reusable function
+- `src-tauri/src/meeting_context.rs` — adapt to work independently (not just from daily pipeline)
+- `src-tauri/src/workflow/deliver.rs` — `resolve_prep_status()` replaced by `assess_intelligence_quality()`
+- `src-tauri/src/db.rs` — meeting intelligence state tracking columns
+- `src-tauri/src/commands.rs` — new `generate_meeting_intelligence` command
+
+**Acceptance criteria:**
+1. `meeting:prep` callable independently (not just from daily orchestrator)
+2. Intelligence writes to SQLite permanently (not just ephemeral disk files)
+3. Calling on an already-enriched meeting does incremental update (not full regen)
+4. State tracked per-meeting: detected/enriching/enriched/captured/archived
+5. Pre-meeting refresh (I147) works on any meeting, not just today's
+6. No regression on existing daily briefing pipeline
+
+---
+
+**I327: Advance intelligence generation (weekly + polling, not day-of)**
+
+**Priority:** P1 (0.13.0)
+**Area:** Pipeline
+**Depends on:** I326 (independent meeting:prep)
+
+Wire the independent `meeting:prep` operation into the weekly orchestrator and calendar polling. Intelligence generates days ahead of meetings, not on the morning of.
+
+**Current state:** `prepare_week()` generates only `week-overview.json` (summary). `prepare_today()` generates all individual preps at 6am. Calendar polling detects changes but doesn't trigger enrichment.
+
+**Target:**
+- **Weekly orchestrator:** After `calendar:fetch`, call `meeting:prep` for every classified meeting in the forecast window (current week + next week, ~10 business days). Queue enrichment via IntelligenceQueue for background processing (avoid timeout on 20+ meetings).
+- **Daily orchestrator:** Check today's meetings for existing intelligence. Only call `meeting:prep` for meetings missing intelligence (edge case: added after last weekly run). Run signal-aware freshness refresh for today's meetings with intelligence older than 12 hours. Then proceed to email/action/narrative synthesis.
+- **Calendar polling:** New meeting detected → trigger `meeting:prep` asynchronously. Meeting changed → trigger incremental re-enrichment. Meeting cancelled → mark intelligence record cancelled.
+- **Forecast window:** Default 10 business days (2 weeks). Configurable in settings.
+
+**Timeout mitigation:**
+- Weekly run queues enrichment to background IntelligenceQueue (already exists)
+- External meetings enriched first (higher value), then internal
+- Daily run is lightweight: signal refresh + narrative, not full generation
+- Calendar polling handles one meeting at a time (no batch timeout)
+
+**Acceptance criteria:**
+1. Weekly run generates individual intelligence for all meetings in forecast window
+2. Daily run does NOT generate preps from scratch (freshness check + refresh only)
+3. Calendar polling triggers meeting:prep for new meetings within minutes
+4. Meetings added mid-week get intelligence via polling (not waiting for next weekly run)
+5. Daily briefing generation time reduced (assembly vs generation)
+6. Week page shows intelligence for meetings 10 business days out
+
+**Supersedes:** I220 (meeting forecast 4-5 business days ahead). I220 proposed a forecast section as a daily briefing add-on. I327 makes advance generation the default model for all meetings.
+
+---
+
+**I328: Classification expansion — all meetings get intelligence**
+
+**Priority:** P1 (0.13.0)
+**Area:** Classification
+**Depends on:** I326 (meeting intelligence lifecycle), ADR-0070 (internal team entities)
+
+Expand meeting classification so every non-all-hands meeting gets an intelligence report. Internal meetings against team entities get full entity intelligence. Even personal and training meetings get minimal records for learning.
+
+**Current classification (classify.rs):**
+- Account-prep: customer, qbr, partnership, demo → full entity intelligence
+- Person-prep: internal, team_sync, one_on_one → thin person context
+- No-prep: personal, all_hands, training → nothing
+
+**New classification:**
+- Entity intelligence: customer, qbr, partnership, demo, team_sync (with internal team entity) → full entity intelligence from associated account/project/team
+- Person intelligence: one_on_one, internal (small group, no entity association) → attendee context, relationship history, open items, recent interactions
+- Minimal intelligence: training, personal → attendees, calendar description, any signals; generates for learning/transcript capture
+- Skip: all_hands (50+ attendees) → no intelligence
+
+**Key changes:**
+- `team_sync` with internal team entity gets `entity_intelligence` tier (same as customer meetings)
+- `training` and `personal` no longer skip — minimal records serve as learning nodes
+- Only `all_hands` truly skips (badge count too high, entity resolution meaningless)
+- `classify.rs` returns classification + recommended intelligence tier
+
+**Acceptance criteria:**
+1. Internal team syncs associated with team entities get entity-quality intelligence
+2. 1:1s get person-level intelligence (relationship history, open items)
+3. Training and personal meetings get minimal records (attendees + calendar description)
+4. Only all-hands (50+ attendees) generates no intelligence
+5. Intelligence tier drives enrichment depth (full AI enrichment for entity tier, mechanical-only for minimal tier)
+6. No regression on external meeting classification or intelligence quality
+
+---
+
+**I329: Intelligence quality indicators (replace "needs prep" badge)**
+
+**Priority:** P1 (0.13.0)
+**Area:** UX
+**Depends on:** I326 (intelligence lifecycle with state tracking)
+
+Replace the binary "needs prep" badge with intelligence quality indicators that communicate what the system knows and doesn't know about each meeting.
+
+**Current:** `resolve_prep_status()` returns `prep_needed | prep_ready | context_needed | done`. Badge is binary: file exists or doesn't.
+
+**New:** `assess_intelligence_quality()` returns structured assessment:
+- **Quality level:** Sparse → Developing → Ready → Fresh
+- **Signal count:** How many signals contributed to the intelligence
+- **Staleness:** Current (< 12h) → Aging (12-48h) → Stale (48h+)
+- **New signals:** Boolean — have new signals arrived since last user view?
+- **Coverage flags:** has entity context, has attendee history, has recent signals
+
+**Badge vocabulary:**
+- Sparse (grey) — little context, will learn from this meeting
+- Building (amber) — intelligence accumulating
+- Ready (sage) — good intelligence, confident prep
+- Fresh (sage + checkmark) — just refreshed with latest signals
+- New signals (blue dot) — something new since you last looked
+- Stale + Ready (sage + refresh icon) — good intelligence but aging
+
+**UI locations:**
+- Daily briefing schedule section (per-meeting badge)
+- Week page meeting list (per-meeting badge)
+- Meeting detail page header (full quality breakdown)
+- Meeting cards on account detail pages
+
+**Acceptance criteria:**
+1. "Needs prep" badge replaced everywhere with intelligence quality indicator
+2. Quality assessment is mechanical (signal count + staleness + coverage), not AI-generated
+3. "New signals" dot clears when user views the meeting intelligence report
+4. Stale meetings show refresh affordance
+5. Sparse meetings don't feel broken — "Sparse" communicates intent (system will learn)
+6. Badge renders correctly across all surfaces (briefing, week, account detail, meeting detail)
+
+---
+
+**I330: Weekly forecast as live intelligence surface**
+
+**Priority:** P1 (0.13.0)
+**Area:** Surfaces
+**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators)
+
+Transform the weekly forecast from a static overview into a live meeting intelligence browser. Each meeting shows accumulated intelligence state. The forecast updates throughout the week as intelligence evolves.
+
+**Current week page (ADR-0052):**
+- Week narrative (AI, point-in-time)
+- Top priority (AI, point-in-time)
+- Readiness checks (mechanical, point-in-time — "no_agenda", "no_prep", "stale_contact")
+- Day shapes (mechanical, point-in-time)
+- Actions (mechanical, live from SQLite)
+- Account health (mechanical, point-in-time)
+
+**New week page:**
+- Week narrative → evolves to reference intelligence quality ("3 meetings ready, 2 developing, 1 sparse")
+- Top priority → unchanged
+- Readiness checks → replaced by intelligence quality summary ("3 meetings with sparse context", "2 with stale intelligence — tap to refresh")
+- Day shapes → each meeting shows intelligence quality badge + "new signals" dot
+- Meeting detail → click any meeting to open full intelligence report (same `MeetingDetailPage`)
+- Actions → unchanged
+- Account health → unchanged
+
+**Live vs. static:** The overview (`week-overview.json`) regenerates on weekly run and on-demand. But individual meeting intelligence is always live — fetched from SQLite via `get_meeting_intelligence()`. The overview provides the narrative frame; meetings provide the detail. This means meetings always show current intelligence state even if the overview narrative is stale.
+
+**Readiness checks evolution:**
+- Old: "no_prep" / "no_agenda" / "stale_contact" — binary, from ADR-0052
+- New: Intelligence-quality-driven: "2 meetings still sparse — these are new relationships, intelligence will develop" / "Thursday QBR intelligence stale (48h) — refresh available"
+- The readiness check becomes a quality assessment, not a checklist
+
+**Acceptance criteria:**
+1. Each meeting in week view shows intelligence quality badge
+2. "New signals" dot appears on meetings that received new signals since last view
+3. Clicking a meeting opens MeetingDetailPage with full intelligence
+4. Readiness checks reflect intelligence quality (not binary prep/no-prep)
+5. Week page works even if week overview hasn't regenerated (meetings are live from SQLite)
+6. Refresh action available at week level (re-run weekly orchestrator) and per-meeting level
+
+---
+
+**I331: Daily briefing intelligence assembly (diff model, fast refresh)**
+
+**Priority:** P1 (0.13.0)
+**Area:** Surfaces
+**Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators)
+
+Redesign the daily briefing's relationship with meeting intelligence. The briefing assembles from pre-computed intelligence rather than generating it. The "Run Briefing" action becomes a lightweight morning refresh.
+
+**Current daily briefing pipeline:**
+1. Fetch calendar events for today
+2. Classify meetings
+3. For each meeting: gather context, run AI enrichment, write prep file
+4. Fetch emails, sync actions
+5. Generate overview narrative
+6. Write all JSON files
+7. Total: 3-5 minutes, heavy AI usage
+
+**New daily briefing pipeline:**
+1. Check today's meetings — intelligence already exists from weekly/polling
+2. For any meeting missing intelligence: call `meeting:prep` (edge case only)
+3. For meetings with intelligence > 12 hours old: signal-aware refresh
+4. Fetch emails, sync actions
+5. Generate overview narrative (over pre-computed intelligence, not raw calendar data)
+6. Write schedule.json, overview.json etc.
+7. Total: 30-60 seconds, light AI usage
+
+**"Run Briefing" evolution:**
+- The landing page with "Run Briefing" button still needed for first-of-day cold start (email/actions/narrative haven't been generated)
+- But scope shrinks: it's a "morning refresh" not a "full generation"
+- Intelligence for meetings is already available on app open (from weekly/polling)
+- Future consideration: auto-run on app launch (no button needed) — the app is never truly empty
+- Per-meeting "Refresh Intelligence" action on detail page for on-demand signal incorporation
+
+**Meeting section in briefing:**
+- Current: Schedule list with "needs prep" badges
+- New: Schedule list with intelligence quality badges + "new signals" dots
+- Today's meetings show intelligence brief inline (2-line summary from Tier 1)
+- "View Intelligence" replaces "View Prep" as action link text
+
+**Implications for the briefing landing page:**
+- Phase 1 (0.13.0): Keep "Run Briefing" button, reduce scope to morning refresh. Meeting intelligence pre-exists.
+- Phase 2 (future): Auto-run on app launch. Landing page shows loading state, not empty state. Briefing assembles in seconds.
+- Phase 3 (future): No landing page — briefing is always current. Opening DailyOS shows today's briefing with latest intelligence.
+
+**Acceptance criteria:**
+1. Daily briefing no longer generates meeting preps from scratch
+2. Meeting section shows intelligence quality badges (not "needs prep")
+3. "New signals since morning" indicators on meetings that received updates after briefing run
+4. "Run Briefing" completes in under 60 seconds (vs current 3-5 minutes)
+5. Per-meeting "Refresh Intelligence" available from meeting detail page
+6. No regression on email fetch, action sync, or overview narrative quality
+7. Graceful degradation: if weekly hasn't run and no intelligence exists, daily falls back to generating from scratch
+
+---
+
+**I332: Signal-triggered meeting intelligence refresh**
+
+**Priority:** P1 (0.13.0)
+**Area:** Pipeline
+**Depends on:** I326 (intelligence lifecycle), I308 (event-driven signal processing), ADR-0080 (signal bus)
+
+Connect the signal bus (ADR-0080) to meeting intelligence. When relevant signals arrive, mark affected meetings for refresh and optionally trigger incremental enrichment.
+
+**Signal → meeting mapping:**
+
+| Signal | Source | Effect on Meeting Intelligence |
+|--------|--------|-------------------------------|
+| Email mentioning meeting attendees/entity | Gmail sync | Meeting marked "has new signals"; email context queued for next refresh |
+| Earlier meeting transcript mentions later meeting's entity | Transcript processing | Cross-meeting intelligence propagation; affected meeting flagged |
+| Calendar change (new attendee, time, description) | Calendar polling | Meeting re-classified, entity re-resolved, intelligence refresh triggered |
+| Entity intelligence updated (risk, health, win) | Entity enrichment | All meetings associated with entity get "new signals" flag |
+| User edits agenda/notes on meeting | User action | Intelligence incorporates user input on next refresh |
+| RSVP status changes | Calendar sync | "The Room" updated with latest attendance |
+
+**Eventual consistency model:**
+1. Signal recorded in `signal_events` table (ADR-0080)
+2. Affected meetings marked "has new signals" (flag in meetings_history)
+3. UI shows blue dot on affected meetings ("new since last view")
+4. Full re-enrichment happens at next natural checkpoint: pre-meeting refresh (2h before), daily run, or user-triggered "Refresh Intelligence"
+5. NOT real-time re-enrichment on every signal (expensive, noisy)
+
+**Why eventual consistency:** Real-time re-enrichment on every email would be expensive (AI calls per signal) and noisy (meeting intelligence changing while you read it). The signal is recorded immediately; the intelligence update batches at natural checkpoints. The blue dot tells the user "there's something new" and gives them control over when to refresh.
+
+**Acceptance criteria:**
+1. New email related to a meeting's attendees/entity flags that meeting
+2. Calendar changes (attendee/time/description) trigger automatic intelligence refresh
+3. Entity intelligence updates propagate "new signals" flag to associated meetings
+4. Blue dot appears on meeting cards with new signals since last view
+5. "Refresh Intelligence" on meeting detail incorporates all pending signals
+6. Signal → meeting association uses entity resolution (not just attendee matching)
+
+---
+
+**I333: Meeting intelligence collaboration — share, request input, draft agenda**
+
+**Priority:** P2 (0.13.0)
+**Area:** Actions
+**Depends on:** I326 (intelligence lifecycle), I327 (advance generation)
+
+Because intelligence exists days ahead, enable collaborative meeting preparation: share intelligence with colleagues, request agenda input from attendees, draft agenda communications.
+
+**Actions:**
+- **"Share Intelligence"** — Generate a shareable summary of the meeting intelligence (sans internal-only context). Copy to clipboard or export as formatted text. For sending to colleagues who need context.
+- **"Draft Agenda Email"** — Generate an email draft with proposed agenda items, addressed to meeting attendees. Uses Gmail draft API or copy-to-clipboard. Respects ADR-0065 user agenda/notes.
+- **"Request Input"** — Generate a message requesting attendees add their topics/questions before the meeting. Template-based with meeting context.
+
+**UX:**
+- Actions appear on MeetingDetailPage for future meetings (not past)
+- Actions appear on meeting cards in week view (quick access)
+- Actions are contextual: "Share" available when intelligence is Ready or Fresh; "Draft Agenda" when user has agenda items; "Request Input" when meeting is 3+ days out
+
+**This is the proactive collaboration layer.** The user articulated: "I cannot get ahead, I cannot prep colleagues, I cannot ask for input from customers." With intelligence existing days ahead, these actions become natural.
+
+**Acceptance criteria:**
+1. "Share Intelligence" generates clean, shareable meeting summary
+2. "Draft Agenda Email" creates draft addressing meeting attendees
+3. Actions visible on meeting detail page and week view for future meetings
+4. Actions contextual to intelligence state (not available for sparse meetings)
+5. Respects ADR-0065 editability model (user agenda included in shared output)
+6. No auto-send — all actions produce drafts for user review
+
+**Supersedes:** I202 (prep prefill + draft agenda actions). I202 framed these as "prefill" into an empty system. I333 reframes as collaboration actions on existing intelligence.
