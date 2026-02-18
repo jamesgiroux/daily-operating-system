@@ -242,6 +242,47 @@ The embedding model turns every text artifact in the system into a queryable vec
 
 ---
 
+## Email: The Unrealized Signal Layer
+
+Email is the most underutilized data source in DailyOS. The system fetches Gmail, runs AI priority classification (high/medium/low), and surfaces email signals on entity pages. But email intelligence today is a display feature — it doesn't feed back into the intelligence loop.
+
+### What email knows that nothing else does
+
+| Signal | What email reveals | Current status |
+|--------|-------------------|----------------|
+| **Pre-meeting context** | The invite thread, agenda attachments, pre-reads shared by the customer | Not connected to meeting prep |
+| **Relationship temperature** | Response times, tone shifts, escalation language | Extracted as `email_signals` but not fused with entity intelligence |
+| **Account health** | Support tickets mentioned, feature requests, frustration patterns | Classified for display, not for risk scoring |
+| **Action provenance** | "Can you send me the proposal by Friday?" → action with deadline and owner | Extracted but not linked to the right entity with confidence |
+| **Entity resolution** | Email thread participants + subject line → which account/project this is about | Not used for meeting-entity resolution |
+| **Internal vs external** | Whether a thread is between colleagues or with a customer | Not tagged, so internal email discussions about a customer can leak into customer-facing context |
+
+### How email should feed the signal engine
+
+**Tier 1 — Entity resolution signal (I305 Phase 2):**
+When resolving a meeting's entity, check email threads from the past 48 hours involving the same participants. If an email thread between you and the meeting attendees mentions "Acme renewal" or "Agentforce demo," that's a high-confidence entity signal. This requires correlating email participants with meeting attendees — both are email addresses, so the join is straightforward.
+
+**Tier 2 — Relationship and sentiment signals:**
+Email response patterns are leading indicators of account health. When a champion who usually responds in 2 hours starts taking 3 days, that's a signal — not individually actionable, but it compounds with other signals (meeting frequency drop, negative transcript sentiment) into a risk pattern. The signal engine should track email response cadence per person and flag deviations.
+
+**Tier 3 — Action extraction with entity context:**
+Today email-extracted actions often lack entity context ("send the proposal" — for which account?). The email thread's participants and subject line carry entity context that should propagate to extracted actions. When an email to sarah@acme.com says "send the proposal by Friday," the action should auto-link to Acme.
+
+**Tier 4 — Pre-meeting intelligence:**
+The 24-48 hours of email before a meeting are some of the richest context available. Pre-reads shared by the customer, agenda suggestions, "I'd like to discuss X" signals. Today this context is invisible to meeting prep. The signal engine should surface recent email threads involving meeting attendees as prep context, weighted by recency and relevance (embedding similarity to the meeting title).
+
+### The email-calendar bridge
+
+The most powerful email signal is the one that connects email threads to calendar events. Today these are siloed: calendar knows when you meet, email knows what you discussed before and after. Bridging them:
+
+1. **Pre-meeting:** 48 hours before a meeting, find email threads with overlapping participants. Surface relevant excerpts in prep context.
+2. **Post-meeting:** After a meeting ends, find email threads that start within 24 hours involving the same participants. These are likely follow-ups — extract actions, link to meeting.
+3. **Entity confirmation:** If email intelligence has classified threads to Account X, and a meeting has the same participants, that's a strong entity resolution signal even if the meeting title is ambiguous.
+
+Email is the connective tissue between meetings, actions, and entities. The system has the data — it just doesn't use it as a signal source yet.
+
+---
+
 ## What We Can Learn from OpenClaw (Beyond the Feb 14 Research)
 
 ### What OpenClaw got right:
@@ -272,34 +313,22 @@ The embedding model turns every text artifact in the system into a queryable vec
 More data sources (Clay, Gravatar, Granola). More signals flowing in. But no intelligence about those signals — they write to entity fields and that's it.
 
 ### v0.10 (next): Signal foundation
-- Signal event table and bus (ADR-0080)
-- Entity resolution with confidence scoring (I305)
-- User correction feedback loop
-- Project keyword matching
-- Re-enrichment on entity correction
-- Hygiene integration (low-confidence matches surfaced as suggestions)
+- **I305** — Intelligent meeting-entity resolution (project keywords, re-enrichment on correction, confidence thresholds in hygiene)
+- **I306** — Signal bus foundation (signal_events table, Bayesian fusion, confidence scoring, email-calendar bridge for entity resolution)
+- **I307** — Correction learning and context tagging (Thompson Sampling weights, internal vs external source tagging, calendar description mining, attendee group patterns)
 
-### v0.11: Learning and context
-- Thompson Sampling weight learning from corrections
-- Internal vs external context tagging on source content
-- Calendar description mining for entity resolution
-- Attendee group pattern detection
-- Embedding-based semantic entity matching
-- Temporal decay on signals and intelligence
-
-### v1.0: Event-driven intelligence
-- Event-driven signal processing (calendar change → immediate resolution, not next scheduled sweep)
-- Cross-entity signal propagation (Clay job change → account risk flag → briefing callout)
-- Embedding-based relevance scoring for prep context assembly
-- fastembed reranker for signal prioritization
-- The system responds to what happens, not what time it is
+### v0.11: Event-driven intelligence
+- **I308** — Event-driven signal processing and cross-entity propagation (calendar change → immediate resolution, Clay job change → account risk, email sentiment → relationship signal, embedding-based relevance scoring, fastembed reranker)
 - Scheduled pipelines remain as safety net, not primary driver
+- Email pre-meeting intelligence (48-hour thread surfacing in prep context)
+- Email post-meeting correlation (follow-up thread → action extraction with entity context)
 
-### Beyond v1.0: Compound intelligence
+### v1.0: Compound intelligence
 - Pattern detection across entities and time (frequency analysis, sentiment trends)
 - Proactive surfacing of novel insights (things no single signal contains)
 - Personalized signal weights that reflect how this specific user works
 - The system gets measurably better each week as it learns from corrections
+- Email relationship cadence tracking and deviation detection
 
 ---
 
