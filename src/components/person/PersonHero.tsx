@@ -16,6 +16,8 @@ interface PersonHeroProps {
   onEnrich?: () => void;
   enriching?: boolean;
   enrichSeconds?: number;
+  onClayEnrich?: () => void;
+  clayEnriching?: boolean;
   onMerge?: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
@@ -42,6 +44,8 @@ export function PersonHero({
   onEnrich,
   enriching,
   enrichSeconds,
+  onClayEnrich,
+  clayEnriching,
   onMerge,
   onArchive,
   onUnarchive,
@@ -51,7 +55,7 @@ export function PersonHero({
   const LEDE_LIMIT = 300;
   const [showFullLede, setShowFullLede] = useState(false);
   const ledeTruncated = !!ledeFull && ledeFull.length > LEDE_LIMIT && !showFullLede;
-  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "\u2026" : ledeFull;
+  const lede = ledeFull && ledeTruncated ? ledeFull.slice(0, LEDE_LIMIT) + "…" : ledeFull;
   const temperature = detail.signals?.temperature;
 
   // Build subtitle: email + org/role
@@ -84,6 +88,7 @@ export function PersonHero({
       <div className={styles.heroDate}>
         Person Intelligence
         {intelligence && ` \u00B7 Last enriched ${formatRelativeDateShort(intelligence.enrichedAt)}`}
+        {detail.lastEnrichedAt && ` \u00B7 Clay ${formatRelativeDateShort(detail.lastEnrichedAt)}`}
       </div>
 
       {/* Name with avatar */}
@@ -120,6 +125,42 @@ export function PersonHero({
         <p className={styles.subtitle}>{subtitleParts.join(" \u2014 ")}</p>
       )}
 
+      {/* Social links (Clay enrichment I228) */}
+      {(detail.linkedinUrl || detail.twitterHandle) && (
+        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+          {detail.linkedinUrl && (
+            <a
+              href={detail.linkedinUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-larkspur)",
+                textDecoration: "none",
+              }}
+            >
+              LinkedIn ↗
+            </a>
+          )}
+          {detail.twitterHandle && (
+            <a
+              href={`https://x.com/${detail.twitterHandle.replace(/^@/, "")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                color: "var(--color-larkspur)",
+                textDecoration: "none",
+              }}
+            >
+              @{detail.twitterHandle.replace(/^@/, "")} ↗
+            </a>
+          )}
+        </div>
+      )}
+
       {/* Badges row */}
       <div className={styles.badges} style={{ marginTop: lede ? 24 : 0 }}>
         <span className={`${styles.badge} ${relationshipClass[detail.relationship] ?? styles.relationshipUnknown}`}>
@@ -145,12 +186,21 @@ export function PersonHero({
             onClick={onEnrich}
             disabled={enriching}
           >
-            {enriching ? `Building intelligence\u2026 ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+            {enriching ? `Building intelligence… ${enrichSeconds ?? 0}s` : "Build Intelligence"}
+          </button>
+        )}
+        {onClayEnrich && (
+          <button
+            className={clayEnriching ? styles.metaButtonEnriching : styles.metaButton}
+            onClick={onClayEnrich}
+            disabled={clayEnriching}
+          >
+            {clayEnriching ? "Enriching from Clay…" : "Enrich from Clay"}
           </button>
         )}
         {onMerge && !detail.archived && (
           <button className={styles.metaButton} onClick={onMerge}>
-            Merge Into\u2026
+            Merge Into…
           </button>
         )}
         {detail.archived && onUnarchive && (
