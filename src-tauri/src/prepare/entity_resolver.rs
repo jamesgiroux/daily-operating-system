@@ -95,6 +95,7 @@ pub fn resolve_meeting_entities(
     all_signals.extend(signal_explicit_assignment(db, event_id, meeting));
     all_signals.extend(signal_junction_lookup(db, event_id, meeting));
     all_signals.extend(signal_attendee_inference(db, meeting));
+    all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
     all_signals.extend(signal_keyword_match(db, meeting));
     if let Some(model) = embedding_model {
         all_signals.extend(signal_embedding_similarity(db, meeting, model));
@@ -329,6 +330,7 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
 
 /// Signal 4: Keyword matching against entity names and extracted keywords.
 /// Entity name exact match in title: 0.80. Keyword match: 0.65.
+/// Fuzzy match (jaro_winkler >= 0.85): 0.55 via separate "keyword_fuzzy" source.
 fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal> {
     let title = meeting
         .get("title")
@@ -347,7 +349,11 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
     let search_text = format!("{} {}", title, description).to_lowercase();
     let search_normalized = normalize_key(&search_text);
 
+    // Build multi-word tokens for fuzzy matching (individual words + adjacent pairs)
+    let tokens = build_fuzzy_tokens(&search_text);
+
     let mut signals = Vec::new();
+    let mut exact_matched_ids = std::collections::HashSet::new();
 
     // Check accounts
     if let Ok(accounts) = db.get_all_accounts() {
@@ -355,7 +361,7 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
             if account.archived {
                 continue;
             }
-            // Check entity name in title
+            // Check entity name in title (exact)
             let name_normalized = normalize_key(&account.name);
             if !name_normalized.is_empty() && search_normalized.contains(&name_normalized) {
                 signals.push(ResolutionSignal {
@@ -364,6 +370,7 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
                     confidence: 0.80,
                     source: "keyword".to_string(),
                 });
+                exact_matched_ids.insert(account.id.clone());
                 continue; // Don't double-count keywords for same entity
             }
 
@@ -377,8 +384,28 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
                             confidence: 0.65,
                             source: "keyword".to_string(),
                         });
+                        exact_matched_ids.insert(account.id.clone());
                     }
                 }
+            }
+        }
+
+        // Fuzzy pass for accounts not already matched
+        for account in &accounts {
+            if account.archived || exact_matched_ids.contains(&account.id) {
+                continue;
+            }
+            let name_lower = account.name.to_lowercase();
+            if name_lower.len() < 3 {
+                continue;
+            }
+            if fuzzy_matches_tokens(&name_lower, &tokens) {
+                signals.push(ResolutionSignal {
+                    entity_id: account.id.clone(),
+                    entity_type: EntityType::Account,
+                    confidence: 0.55,
+                    source: "keyword_fuzzy".to_string(),
+                });
             }
         }
     }
@@ -397,6 +424,7 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
                     confidence: 0.80,
                     source: "keyword".to_string(),
                 });
+                exact_matched_ids.insert(project.id.clone());
                 continue;
             }
 
@@ -409,8 +437,28 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
                             confidence: 0.65,
                             source: "keyword".to_string(),
                         });
+                        exact_matched_ids.insert(project.id.clone());
                     }
                 }
+            }
+        }
+
+        // Fuzzy pass for projects not already matched
+        for project in &projects {
+            if project.archived || exact_matched_ids.contains(&project.id) {
+                continue;
+            }
+            let name_lower = project.name.to_lowercase();
+            if name_lower.len() < 3 {
+                continue;
+            }
+            if fuzzy_matches_tokens(&name_lower, &tokens) {
+                signals.push(ResolutionSignal {
+                    entity_id: project.id.clone(),
+                    entity_type: EntityType::Project,
+                    confidence: 0.55,
+                    source: "keyword_fuzzy".to_string(),
+                });
             }
         }
     }
@@ -541,6 +589,7 @@ fn fuse_signals(
                             decay_half_life_days: crate::signals::bus::default_half_life(&signal.source),
                             created_at: chrono::Utc::now().to_rfc3339(),
                             superseded_by: None,
+                            source_context: None,
                         };
                         crate::signals::fusion::compute_signal_weight(db_ref, &synthetic)
                     }
@@ -586,6 +635,28 @@ fn normalize_key(value: &str) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .collect()
+}
+
+/// Build multi-word tokens from text for fuzzy matching.
+/// Includes individual words (>= 3 chars) and adjacent word pairs.
+fn build_fuzzy_tokens(text: &str) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().filter(|w| w.len() >= 3).collect();
+    let mut tokens: Vec<String> = words.iter().map(|w| w.to_string()).collect();
+    // Adjacent pairs (e.g. "sales force" for matching "Salesforce")
+    for pair in words.windows(2) {
+        tokens.push(format!("{} {}", pair[0], pair[1]));
+    }
+    tokens
+}
+
+/// Check if an entity name fuzzy-matches any token (jaro_winkler >= 0.85).
+fn fuzzy_matches_tokens(name: &str, tokens: &[String]) -> bool {
+    for token in tokens {
+        if strsim::jaro_winkler(name, token) >= 0.85 {
+            return true;
+        }
+    }
+    false
 }
 
 /// Check if any of the keywords appear in the search text (case-insensitive).
@@ -837,5 +908,36 @@ mod tests {
     fn test_extract_attendee_emails_empty() {
         let meeting = serde_json::json!({ "title": "test" });
         assert!(extract_attendee_emails(&meeting).is_empty());
+    }
+
+    #[test]
+    fn test_fuzzy_matching_jaro_winkler() {
+        // "Salesforce" vs "salesforc" (typo) should match
+        assert!(strsim::jaro_winkler("salesforce", "salesforc") >= 0.85);
+        // Completely different strings should not match
+        assert!(strsim::jaro_winkler("salesforce", "microsoft") < 0.85);
+        // Very similar strings should match
+        assert!(strsim::jaro_winkler("agentforce", "agentforc") >= 0.85);
+    }
+
+    #[test]
+    fn test_build_fuzzy_tokens() {
+        let tokens = build_fuzzy_tokens("review sales force demo");
+        assert!(tokens.contains(&"review".to_string()));
+        assert!(tokens.contains(&"sales".to_string()));
+        assert!(tokens.contains(&"force".to_string()));
+        assert!(tokens.contains(&"demo".to_string()));
+        assert!(tokens.contains(&"review sales".to_string()));
+        assert!(tokens.contains(&"sales force".to_string()));
+        assert!(tokens.contains(&"force demo".to_string()));
+    }
+
+    #[test]
+    fn test_fuzzy_matches_tokens() {
+        let tokens = build_fuzzy_tokens("review salesforc demo");
+        // "salesforce" should fuzzy-match "salesforc" token
+        assert!(fuzzy_matches_tokens("salesforce", &tokens));
+        // "microsoft" should not match anything
+        assert!(!fuzzy_matches_tokens("microsoft", &tokens));
     }
 }

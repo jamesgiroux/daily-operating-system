@@ -24,6 +24,9 @@ pub struct SignalEvent {
     pub decay_half_life_days: i32,
     pub created_at: String,
     pub superseded_by: Option<String>,
+    /// Context tag for the signal source (e.g. "inbound_email", "outbound_email").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_context: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -41,8 +44,9 @@ pub fn source_base_weight(source: &str) -> f64 {
         "user_correction" | "explicit" => 1.0,
         "transcript" | "notes" => 0.9,
         "attendee" | "attendee_vote" | "email_thread" | "junction" => 0.8,
+        "group_pattern" => 0.75,
         "clay" | "gravatar" => 0.6,
-        "keyword" | "heuristic" | "embedding" => 0.4,
+        "keyword" | "keyword_fuzzy" | "heuristic" | "embedding" => 0.4,
         _ => 0.5,
     }
 }
@@ -53,8 +57,9 @@ pub fn default_half_life(source: &str) -> i32 {
         "user_correction" | "explicit" => 365,
         "transcript" | "notes" => 60,
         "attendee" | "attendee_vote" | "junction" => 30,
+        "group_pattern" => 60,
         "clay" | "gravatar" => 90,
-        "keyword" | "heuristic" | "embedding" => 7,
+        "keyword" | "keyword_fuzzy" | "heuristic" | "embedding" => 7,
         _ => 30,
     }
 }
@@ -76,6 +81,27 @@ pub fn emit_signal(
     let id = format!("sig-{}", Uuid::new_v4());
     let half_life = default_half_life(source);
     db.insert_signal_event(&id, entity_type, entity_id, signal_type, source, value, confidence, half_life)?;
+    Ok(id)
+}
+
+/// Emit a new signal event with context tagging. Returns the generated signal ID.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_with_context(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+    source_context: Option<&str>,
+) -> Result<String, DbError> {
+    let id = format!("sig-{}", Uuid::new_v4());
+    let half_life = default_half_life(source);
+    db.insert_signal_event_with_context(
+        &id, entity_type, entity_id, signal_type, source, value,
+        confidence, half_life, source_context,
+    )?;
     Ok(id)
 }
 
@@ -105,9 +131,8 @@ pub fn get_active_signals_by_type(
 
 /// Read the learned reliability for a source from the signal_weights table.
 ///
-/// Returns the Beta distribution mean: alpha / (alpha + beta).
-/// Returns 0.5 (uninformative prior) if no row exists — learned reliability
-/// is a no-op until I307 populates via Thompson Sampling.
+/// When the system has enough data (>= 5 updates), uses Thompson Sampling
+/// to explore/exploit weight learning. Otherwise returns 0.5 (uninformative prior).
 pub fn get_learned_reliability(
     db: &ActionDb,
     source: &str,
@@ -115,7 +140,13 @@ pub fn get_learned_reliability(
     signal_type: &str,
 ) -> f64 {
     match db.get_signal_weight(source, entity_type, signal_type) {
-        Ok(Some((alpha, beta))) => alpha / (alpha + beta),
+        Ok(Some((alpha, beta, update_count))) => {
+            if update_count >= 5 {
+                super::sampling::sample_reliability(alpha, beta)
+            } else {
+                0.5
+            }
+        }
         _ => 0.5,
     }
 }
@@ -143,6 +174,29 @@ impl ActionDb {
                 (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days],
+        )?;
+        Ok(())
+    }
+
+    /// Insert a signal event row with source_context.
+    #[allow(clippy::too_many_arguments)]
+    pub fn insert_signal_event_with_context(
+        &self,
+        id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        signal_type: &str,
+        source: &str,
+        value: Option<&str>,
+        confidence: f64,
+        decay_half_life_days: i32,
+        source_context: Option<&str>,
+    ) -> Result<(), DbError> {
+        self.conn_ref().execute(
+            "INSERT INTO signal_events
+                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context],
         )?;
         Ok(())
     }
@@ -196,6 +250,7 @@ impl ActionDb {
                 decay_half_life_days: row.get(7)?,
                 created_at: row.get(8)?,
                 superseded_by: row.get(9)?,
+                source_context: None,
             })
         })?;
 
@@ -215,20 +270,20 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Read a signal_weight row. Returns (alpha, beta) or None if no row.
+    /// Read a signal_weight row. Returns (alpha, beta, update_count) or None if no row.
     pub fn get_signal_weight(
         &self,
         source: &str,
         entity_type: &str,
         signal_type: &str,
-    ) -> Result<Option<(f64, f64)>, DbError> {
+    ) -> Result<Option<(f64, f64, i32)>, DbError> {
         match self.conn_ref().query_row(
-            "SELECT alpha, beta FROM signal_weights
+            "SELECT alpha, beta, update_count FROM signal_weights
              WHERE source = ?1 AND entity_type = ?2 AND signal_type = ?3",
             params![source, entity_type, signal_type],
-            |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?)),
+            |row| Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?, row.get::<_, i32>(2)?)),
         ) {
-            Ok(pair) => Ok(Some(pair)),
+            Ok(triple) => Ok(Some(triple)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(DbError::Sqlite(e)),
         }
