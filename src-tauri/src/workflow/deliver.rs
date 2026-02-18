@@ -2247,6 +2247,7 @@ pub fn enrich_emails(
     pty: &crate::pty::PtyManager,
     workspace: &Path,
     user_ctx: &crate::types::UserContext,
+    known_domains: &std::collections::HashSet<String>,
 ) -> Result<(), String> {
     let emails_path = data_dir.join("emails.json");
     let raw = fs::read_to_string(&emails_path)
@@ -2254,20 +2255,40 @@ pub fn enrich_emails(
     let mut emails_data: Value =
         serde_json::from_str(&raw).map_err(|e| format!("Failed to parse emails.json: {}", e))?;
 
-    let high_priority = emails_data
-        .get("highPriority")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+    // All high-priority emails get enriched unconditionally.
+    // Medium-priority emails only if sender domain matches a known account/person.
+    let mut emails_to_enrich: Vec<Value> = Vec::new();
+    if let Some(arr) = emails_data.get("highPriority").and_then(|v| v.as_array()) {
+        emails_to_enrich.extend(arr.iter().cloned());
+    }
+    if let Some(arr) = emails_data.get("mediumPriority").and_then(|v| v.as_array()) {
+        let before = emails_to_enrich.len();
+        for email in arr {
+            let domain = email
+                .get("senderEmail")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.split('@').nth(1))
+                .unwrap_or("")
+                .to_lowercase();
+            if !domain.is_empty() && known_domains.contains(&domain) {
+                emails_to_enrich.push(email.clone());
+            }
+        }
+        log::info!(
+            "enrich_emails: filtered medium-priority to {}/{} with known domains",
+            emails_to_enrich.len() - before,
+            arr.len()
+        );
+    }
 
-    if high_priority.is_empty() {
-        log::info!("enrich_emails: no high-priority emails to enrich");
+    if emails_to_enrich.is_empty() {
+        log::info!("enrich_emails: no high/medium-priority emails to enrich");
         return Ok(());
     }
 
     // Build context for Claude
     let mut email_context = String::new();
-    for email in &high_priority {
+    for email in &emails_to_enrich {
         let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("?");
         let sender = email.get("sender").and_then(|v| v.as_str()).unwrap_or("?");
         let subject = email.get("subject").and_then(|v| v.as_str()).unwrap_or("?");
@@ -2283,7 +2304,7 @@ pub fn enrich_emails(
 
     // Write context file
     let context_path = data_dir.join(".email-context.json");
-    let context_json = json!({ "emails": high_priority });
+    let context_json = json!({ "emails": emails_to_enrich });
     write_json(&context_path, &context_json)?;
 
     let user_fragment = user_ctx.prompt_fragment();
@@ -2320,26 +2341,28 @@ pub fn enrich_emails(
         return Err("No enrichments parsed from Claude output".to_string());
     }
 
-    // Merge enrichments into emails.json
-    if let Some(hp) = emails_data
-        .get_mut("highPriority")
-        .and_then(|v| v.as_array_mut())
-    {
-        for email in hp.iter_mut() {
-            let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
-            if let Some(enrichment) = enrichments.get(id) {
-                if let Some(obj) = email.as_object_mut() {
-                    if let Some(ref s) = enrichment.summary {
-                        obj.insert("summary".to_string(), json!(s));
-                    }
-                    if let Some(ref a) = enrichment.action {
-                        obj.insert("recommendedAction".to_string(), json!(a));
-                    }
-                    if let Some(ref arc) = enrichment.arc {
-                        obj.insert("conversationArc".to_string(), json!(arc));
-                    }
-                    if !enrichment.signals.is_empty() {
-                        obj.insert("emailSignals".to_string(), json!(enrichment.signals));
+    // Merge enrichments into emails.json (high + medium priority)
+    for key in &["highPriority", "mediumPriority"] {
+        if let Some(arr) = emails_data
+            .get_mut(*key)
+            .and_then(|v| v.as_array_mut())
+        {
+            for email in arr.iter_mut() {
+                let id = email.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(enrichment) = enrichments.get(id) {
+                    if let Some(obj) = email.as_object_mut() {
+                        if let Some(ref s) = enrichment.summary {
+                            obj.insert("summary".to_string(), json!(s));
+                        }
+                        if let Some(ref a) = enrichment.action {
+                            obj.insert("recommendedAction".to_string(), json!(a));
+                        }
+                        if let Some(ref arc) = enrichment.arc {
+                            obj.insert("conversationArc".to_string(), json!(arc));
+                        }
+                        if !enrichment.signals.is_empty() {
+                            obj.insert("emailSignals".to_string(), json!(enrichment.signals));
+                        }
                     }
                 }
             }
@@ -2351,7 +2374,7 @@ pub fn enrich_emails(
     log::info!(
         "enrich_emails: enriched {}/{} emails",
         enrichments.len(),
-        high_priority.len()
+        emails_to_enrich.len()
     );
     Ok(())
 }
