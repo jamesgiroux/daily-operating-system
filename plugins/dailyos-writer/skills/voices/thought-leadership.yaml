@@ -1,0 +1,133 @@
+# Thought Leadership Voice Profile
+# For: Leadership P2s, internal articles, framework introductions, HBR-style content
+
+name: "Thought Leadership"
+content_types:
+  - leadership-p2
+  - internal-article
+  - framework-introduction
+  - thought-piece
+
+audience:
+  primary: "TAMs, CSMs, peers learning leadership thinking"
+  secondary: "Broader WordPress VIP team, leadership"
+  context: "Practitioners who want actionable insights, not lectures"
+
+voice:
+  tone: "Conversational with strategic depth"
+  style: "HBR for account management - authoritative but accessible"
+  authority: "Confident but not preachy"
+
+  principles:
+    - "Sit in the problem longer than feels comfortable"
+    - "Share observations, don't lecture"
+    - "Personal stories as evidence, not sermons"
+    - "Reframes must be genuinely counterintuitive"
+
+  asides:
+    # Natural conversational interjections
+    - "I know, I know"
+    - "right?"
+    - "if I'm being honest"
+    - "stay with me here"
+
+  do:
+    - Create recognition or curiosity in the hook
+    - Name the problem clearly and sit in it
+    - Provide genuinely counterintuitive insights
+    - Give concrete, actionable practices
+    - Land with a memorable close
+    - Use personal stories as proof points
+
+  avoid:
+    - Rushing to the solution
+    - Preaching or lecturing tone
+    - Obvious reframes that aren't actually counterintuitive
+    - Abstract practice sections without concrete actions
+    - Formulaic structure that feels paint-by-numbers
+
+structure:
+  default_template: "hook-problem-reframe"
+
+  sections:
+    hook:
+      purpose: "Draw them in. Create recognition or curiosity."
+      length: "2-3 paragraphs"
+      guidance: "Start with a scenario they recognize, or a question they've asked themselves"
+
+    problem:
+      purpose: "Name the thing clearly. Sit in it."
+      length: "3-4 paragraphs"
+      guidance: "Don't rush to solve. Let the discomfort build."
+
+    diagnosis:
+      purpose: "Why does this happen? What's underneath?"
+      length: "3-4 paragraphs"
+      guidance: "This is where your insight lives. What do most people miss?"
+
+    reframe:
+      purpose: "The turn. The new way of seeing."
+      length: "2-3 paragraphs"
+      guidance: "This should feel like a relief. 'Oh, that's what's really going on.'"
+
+    practice:
+      purpose: "What do you actually do?"
+      length: "3-4 paragraphs"
+      guidance: "Concrete actions, questions to ask, frameworks to apply"
+
+    payoff:
+      purpose: "What changes when you get this right?"
+      length: "2-3 paragraphs"
+      guidance: "Paint the picture of success. Make it feel achievable."
+
+    close:
+      purpose: "Land it."
+      length: "1 paragraph"
+      guidance: "Memorable line. Callback to hook or new provocation."
+
+  formats:
+    - hook-problem-reframe: "Standard thought leadership arc"
+    - counterintuitive-claim: "Lead with provocative thesis, then support"
+    - framework-introduction: "Introducing a borrowed framework to new audience"
+    - story-driven: "Personal story as spine, lessons woven in"
+    - comparison: "Two approaches contrasted, one advocated"
+
+quality_checks:
+  - "Did we sit in the problem long enough before solving?"
+  - "Is the reframe genuinely counterintuitive?"
+  - "Are there natural conversational asides?"
+  - "Does the practice section give concrete actions?"
+  - "Would this feel at home in HBR?"
+  - "Would a TAM share this with their manager?"
+  - "Can the reader do something different tomorrow?"
+
+framework_guidance:
+  # From research: Borrowed vs. Invented
+  prefer_existing:
+    - "Pyramid Principle (Barbara Minto)"
+    - "SCQA (McKinsey)"
+    - "JTBD (Christensen)"
+    - "MECE (McKinsey)"
+    - "Cynefin (Snowden)"
+
+  when_to_create_new:
+    - "You've genuinely discovered a pattern no one has named"
+    - "Existing frameworks don't capture the specific nuance"
+    - "You have evidence across multiple instances"
+    - "You're willing to refine it over time"
+
+  challenger_questions:
+    - "Is there an established framework that already covers this?"
+    - "What's genuinely novel vs. repackaging existing wisdom?"
+    - "Would a senior consultant roll their eyes at this?"
+
+example_phrases:
+  good:
+    - "You know that feeling when you're in a meeting and you can sense the energy shifting?"
+    - "I used to think influence was about being persuasive. I was wrong."
+    - "Here's what nobody tells you about stakeholder management..."
+
+  avoid:
+    - "In this article, I will explain..."
+    - "As leaders, we must always remember..."
+    - "The key to success is simply..."
