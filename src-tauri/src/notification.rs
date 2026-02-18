@@ -33,6 +33,19 @@ pub fn notify_workflow_complete(app: &AppHandle, workflow_name: &str) -> Result<
     send_notification(app, title, body)
 }
 
+/// Send a notification when a Quill transcript has been processed.
+pub fn notify_transcript_ready(
+    app: &AppHandle,
+    meeting_title: &str,
+    account: Option<&str>,
+) -> Result<(), String> {
+    let body = match account {
+        Some(a) if !a.is_empty() => format!("{} — {}", meeting_title, a),
+        _ => meeting_title.to_string(),
+    };
+    send_notification(app, "Transcript Ready", &body)
+}
+
 /// Send an error notification
 pub fn notify_workflow_error(
     app: &AppHandle,
