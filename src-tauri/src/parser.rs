@@ -380,7 +380,6 @@ impl MeetingBuilder {
             start_iso: None,
             title: self.title,
             meeting_type: self.meeting_type.unwrap_or(MeetingType::Internal),
-            account: self.account,
             prep: if has_inline_prep {
                 Some(self.prep)
             } else {
@@ -391,7 +390,6 @@ impl MeetingBuilder {
             has_prep: self.has_prep || has_inline_prep,
             overlay_status: None,
             prep_reviewed: None,
-            account_id: None,
             linked_entities: None,
             suggested_unarchive_account_id: None,
         })
@@ -2230,14 +2228,12 @@ pub fn parse_meetings_from_overview(
                     start_iso: None,
                     title: event,
                     meeting_type,
-                    account: None, // Would need to parse from event title
                     prep: prep_summary,
                     is_current: None,
                     prep_file,
                     has_prep,
                     overlay_status: None,
                     prep_reviewed: None,
-                    account_id: None,
                     linked_entities: None,
                     suggested_unarchive_account_id: None,
                 });

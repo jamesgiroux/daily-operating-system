@@ -80,6 +80,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 22,
     sql: include_str!("migrations/022_rejection_signals.sql"),
+}, Migration {
+    version: 23,
+    sql: include_str!("migrations/023_drop_meeting_account_id.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -241,13 +244,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 22,
-            "should apply all migrations including rejection_signals"
+            applied, 23,
+            "should apply all migrations including drop_meeting_account_id"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 22);
+        assert_eq!(version, 23);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -599,8 +602,23 @@ mod tests {
                 title TEXT NOT NULL,
                 meeting_type TEXT NOT NULL,
                 start_time TEXT NOT NULL,
+                end_time TEXT,
+                account_id TEXT,
+                attendees TEXT,
+                notes_path TEXT,
+                summary TEXT,
                 created_at TEXT NOT NULL,
-                calendar_event_id TEXT
+                calendar_event_id TEXT,
+                prep_context_json TEXT,
+                description TEXT,
+                user_agenda_json TEXT,
+                user_notes TEXT,
+                prep_frozen_json TEXT,
+                prep_frozen_at TEXT,
+                prep_snapshot_path TEXT,
+                prep_snapshot_hash TEXT,
+                transcript_path TEXT,
+                transcript_processed_at TEXT
              );
              CREATE TABLE people (
                 id TEXT PRIMARY KEY,
@@ -650,13 +668,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v22
+        // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 21, "bootstrap should mark v1, then apply v2 through v22");
+        assert_eq!(applied, 22, "bootstrap should mark v1, then apply v2 through v23");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 22);
+        assert_eq!(version, 23);
 
         // Verify existing data is untouched
         let title: String = conn
