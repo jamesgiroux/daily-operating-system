@@ -10,6 +10,7 @@ mod audit;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
+pub mod clay;
 mod commands;
 pub mod db;
 mod db_backup;
@@ -24,6 +25,7 @@ mod focus_capacity;
 mod focus_prioritization;
 mod google;
 pub mod google_api;
+pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
@@ -38,6 +40,8 @@ pub mod prepare;
 mod processor;
 pub mod projects;
 mod pty;
+pub mod granola;
+pub mod quill;
 pub mod queries;
 mod risk_briefing;
 mod scheduler;
@@ -160,6 +164,33 @@ pub fn run() {
             let hygiene_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 hygiene::run_hygiene_loop(hygiene_state, hygiene_handle).await;
+            });
+
+            // Spawn Quill transcript poller
+            let quill_state = state.clone();
+            let quill_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                quill::poller::run_quill_poller(quill_state, quill_handle).await;
+            });
+
+            // Spawn Granola transcript poller (I226)
+            let granola_state = state.clone();
+            let granola_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                granola::poller::run_granola_poller(granola_state, granola_handle).await;
+            });
+
+            // Spawn Gravatar avatar fetcher (I229)
+            let gravatar_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                gravatar::client::run_gravatar_fetcher(gravatar_state).await;
+            });
+
+            // Spawn Clay enrichment poller (I228)
+            let clay_state = state.clone();
+            let clay_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                clay::poller::run_clay_poller(clay_state, clay_handle).await;
             });
 
             // Create tray menu
@@ -421,6 +452,40 @@ pub fn run() {
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
+            commands::get_claude_desktop_status,
+            // Cowork Plugins
+            commands::export_cowork_plugin,
+            commands::get_cowork_plugins_status,
+            // Quill MCP Integration
+            commands::get_quill_status,
+            commands::set_quill_enabled,
+            commands::test_quill_connection,
+            commands::get_quill_sync_states,
+            commands::set_quill_poll_interval,
+            commands::start_quill_backfill,
+            // Granola Integration (I226)
+            commands::get_granola_status,
+            commands::set_granola_enabled,
+            commands::set_granola_poll_interval,
+            commands::start_granola_backfill,
+            commands::test_granola_cache,
+            // Gravatar MCP Integration (I229)
+            commands::get_gravatar_status,
+            commands::set_gravatar_enabled,
+            commands::set_gravatar_api_key,
+            commands::fetch_gravatar,
+            commands::bulk_fetch_gravatars,
+            commands::get_person_avatar,
+            // Clay Integration (I228)
+            commands::get_clay_status,
+            commands::set_clay_enabled,
+            commands::set_clay_api_key,
+            commands::set_clay_auto_enrich,
+            commands::test_clay_connection,
+            commands::enrich_person_from_clay,
+            commands::enrich_account_from_clay,
+            commands::start_clay_bulk_enrich,
+            commands::get_enrichment_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
