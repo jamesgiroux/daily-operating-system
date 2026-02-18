@@ -37,6 +37,7 @@ mod notification;
 mod parser;
 pub mod people;
 pub mod prepare;
+pub mod proactive;
 mod processor;
 pub mod projects;
 mod pty;
