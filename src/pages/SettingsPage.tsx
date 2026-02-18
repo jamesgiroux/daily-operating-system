@@ -59,6 +59,16 @@ interface ScheduleEntry {
   timezone: string;
 }
 
+interface QuillStatusData {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+}
+
 function parseSettingsTab(value: unknown): SettingsTabId {
   if (
     value === "profile" ||
@@ -340,6 +350,8 @@ export default function SettingsPage() {
         <GoogleAccountCard />
         <div style={{ height: 32 }} />
         <ClaudeDesktopCard />
+        <div style={{ height: 32 }} />
+        <QuillSettingsCard />
       </section>
 
       {/* ═══ CHAPTER 3: WORKFLOWS ═══ */}
@@ -1390,6 +1402,146 @@ function CaptureSettingsCard() {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QuillSettingsCard
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface QuillStatusData {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+}
+
+function QuillSettingsCard() {
+  const [status, setStatus] = useState<QuillStatusData | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    invoke<QuillStatusData>("get_quill_status")
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  async function toggleEnabled() {
+    if (!status) return;
+    const newEnabled = !status.enabled;
+    try {
+      await invoke("set_quill_enabled", { enabled: newEnabled });
+      setStatus({ ...status, enabled: newEnabled });
+    } catch (err) {
+      console.error("Failed to toggle Quill:", err);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    try {
+      const ok = await invoke<boolean>("test_quill_connection");
+      toast(ok ? "Quill connection successful" : "Quill bridge not available");
+    } catch (err) {
+      toast.error("Connection test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const statusLabel = !status
+    ? "Loading..."
+    : !status.bridgeExists
+      ? "Bridge not found"
+      : status.lastSyncAt
+        ? `Last sync: ${new Date(status.lastSyncAt).toLocaleString()}`
+        : "Connected, no syncs yet";
+
+  const statusColor = !status
+    ? "var(--color-text-tertiary)"
+    : !status.bridgeExists
+      ? "var(--color-spice-terracotta)"
+      : "var(--color-garden-olive)";
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Quill Transcripts</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Automatically sync meeting transcripts from Quill
+      </p>
+
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {status?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {status?.enabled
+              ? "Transcripts will sync after meetings end"
+              : "Quill transcript sync is turned off"}
+          </p>
+        </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+          onClick={toggleEnabled}
+          disabled={!status}
+        >
+          {status?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+
+      {status?.enabled && (
+        <>
+          <div style={styles.settingRow}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot(statusColor)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {statusLabel}
+              </span>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+              onClick={testConnection}
+              disabled={testing}
+            >
+              {testing ? "Testing..." : "Test Connection"}
+            </button>
+          </div>
+
+          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div>
+              <span style={styles.monoLabel}>Bridge path</span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2, fontFamily: "var(--font-mono)" }}>
+                {status.bridgePath}
+              </p>
+            </div>
+          </div>
+
+          {(status.pendingSyncs > 0 || status.failedSyncs > 0 || status.completedSyncs > 0) && (
+            <div style={{ display: "flex", gap: 16, paddingTop: 8 }}>
+              {status.completedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-garden-olive)" }}>
+                  {status.completedSyncs} synced
+                </span>
+              )}
+              {status.pendingSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-golden-turmeric)" }}>
+                  {status.pendingSyncs} pending
+                </span>
+              )}
+              {status.failedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-spice-terracotta)" }}>
+                  {status.failedSyncs} failed
+                </span>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
