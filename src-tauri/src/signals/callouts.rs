@@ -40,6 +40,14 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "engagement_warning",
     "project_health_warning",
     "post_meeting_followup",
+    "proactive_renewal_gap",
+    "proactive_relationship_drift",
+    "proactive_email_spike",
+    "proactive_meeting_load",
+    "proactive_stale_champion",
+    "proactive_action_cluster",
+    "proactive_prep_gap",
+    "proactive_no_contact",
 ];
 
 // ---------------------------------------------------------------------------
@@ -208,6 +216,75 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             (
                 "Post-meeting follow-up received".to_string(),
                 format!("Email from {} after recent meeting", sender),
+            )
+        }
+        "proactive_renewal_gap" => {
+            let name = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
+            let days = parsed.get("days_until_renewal").and_then(|v| v.as_i64()).unwrap_or(0);
+            let gap = parsed.get("last_contact_days").and_then(|v| v.as_i64()).unwrap_or(0);
+            (
+                "Renewal approaching with no QBR".to_string(),
+                format!("{} renews in {}d — no executive contact in {}d", name, days, gap),
+            )
+        }
+        "proactive_relationship_drift" => {
+            let name = parsed.get("person_name").and_then(|v| v.as_str()).unwrap_or("Contact");
+            let drop = parsed.get("drop_pct").and_then(|v| v.as_i64()).unwrap_or(0);
+            (
+                "Meeting frequency declining".to_string(),
+                format!("Down {}% with {} over last 30 days", drop, name),
+            )
+        }
+        "proactive_email_spike" => {
+            let name = parsed.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Entity");
+            let count = parsed.get("count_7d").and_then(|v| v.as_i64()).unwrap_or(0);
+            let avg = parsed.get("avg_weekly").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            (
+                "Email activity spike".to_string(),
+                format!("{} emails from {} contacts this week (vs {:.1}/week)", count, name, avg),
+            )
+        }
+        "proactive_meeting_load" => {
+            let next = parsed.get("next_week_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            let this = parsed.get("this_week_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            (
+                "Heavy week ahead".to_string(),
+                format!("{} meetings next week vs {} this week", next, this),
+            )
+        }
+        "proactive_stale_champion" => {
+            let person = parsed.get("person_name").and_then(|v| v.as_str()).unwrap_or("Champion");
+            let days = parsed.get("days_since_contact").and_then(|v| v.as_i64()).unwrap_or(0);
+            let account = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
+            let renewal = parsed.get("renewal_days").and_then(|v| v.as_i64()).unwrap_or(0);
+            (
+                "Champion going cold".to_string(),
+                format!("No contact with {} in {}d — {} renewal in {}d", person, days, account, renewal),
+            )
+        }
+        "proactive_prep_gap" => {
+            let total = parsed.get("total_external").and_then(|v| v.as_i64()).unwrap_or(0);
+            let with_intel = parsed.get("with_intel").and_then(|v| v.as_i64()).unwrap_or(0);
+            let unprepped = total - with_intel;
+            (
+                "Prep coverage gap".to_string(),
+                format!("{}/{} external meetings tomorrow without intelligence", unprepped, total),
+            )
+        }
+        "proactive_action_cluster" => {
+            let name = parsed.get("entity_name").and_then(|v| v.as_str()).unwrap_or("Entity");
+            let pending = parsed.get("pending_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            let overdue = parsed.get("overdue_count").and_then(|v| v.as_i64()).unwrap_or(0);
+            (
+                "Action overload".to_string(),
+                format!("{} pending actions on {} ({} overdue)", pending, name, overdue),
+            )
+        }
+        "proactive_no_contact" => {
+            let name = parsed.get("account_name").and_then(|v| v.as_str()).unwrap_or("Account");
+            (
+                "Account going dark".to_string(),
+                format!("No meeting or email with {} in 30+ days", name),
             )
         }
         _ => (
