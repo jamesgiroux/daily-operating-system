@@ -3225,6 +3225,67 @@ impl ActionDb {
         Ok(true)
     }
 
+    /// Count Quill sync rows in a given state.
+    pub fn count_quill_syncs_by_state(&self, state: &str) -> Result<usize, DbError> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM quill_sync_state WHERE state = ?1",
+            params![state],
+            |row| row.get(0),
+        )?;
+        Ok(count as usize)
+    }
+
+    /// Get abandoned Quill syncs eligible for retry (between min_days and max_days old).
+    pub fn get_retryable_abandoned_quill_syncs(
+        &self,
+        min_days: i32,
+        max_days: i32,
+    ) -> Result<Vec<DbQuillSyncState>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, meeting_id, quill_meeting_id, state, attempts, max_attempts,
+                    next_attempt_at, last_attempt_at, completed_at, error_message,
+                    match_confidence, transcript_path, created_at, updated_at
+             FROM quill_sync_state
+             WHERE state = 'abandoned'
+               AND created_at >= datetime('now', ?1)
+               AND created_at <= datetime('now', ?2)",
+        )?;
+        let min_offset = format!("-{} days", max_days);
+        let max_offset = format!("-{} days", min_days);
+        let rows = stmt.query_map(params![min_offset, max_offset], |row| {
+            Ok(DbQuillSyncState {
+                id: row.get(0)?,
+                meeting_id: row.get(1)?,
+                quill_meeting_id: row.get(2)?,
+                state: row.get(3)?,
+                attempts: row.get(4)?,
+                max_attempts: row.get(5)?,
+                next_attempt_at: row.get(6)?,
+                last_attempt_at: row.get(7)?,
+                completed_at: row.get(8)?,
+                error_message: row.get(9)?,
+                match_confidence: row.get(10)?,
+                transcript_path: row.get(11)?,
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    /// Reset an abandoned Quill sync for retry: set state to pending, clear attempts.
+    pub fn reset_quill_sync_for_retry(&self, sync_id: &str) -> Result<(), DbError> {
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE quill_sync_state
+             SET state = 'pending', attempts = 0, error_message = NULL,
+                 next_attempt_at = ?1, updated_at = ?1
+             WHERE id = ?2",
+            params![now, sync_id],
+        )?;
+        Ok(())
+    }
+
     // =========================================================================
     // Stakeholder Signals (I43)
     // =========================================================================
