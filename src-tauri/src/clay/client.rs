@@ -178,11 +178,10 @@ impl ClayClient {
 
     /// Stdio fallback: spawn `npx -y @clayhq/clay-mcp`.
     async fn connect_stdio(api_key: &str) -> Result<Self, ClayError> {
-        if !Self::npx_available() {
-            return Err(ClayError::NpxNotFound);
-        }
+        let npx_path = crate::util::resolve_npx_binary()
+            .ok_or(ClayError::NpxNotFound)?;
 
-        let mut cmd = tokio::process::Command::new("npx");
+        let mut cmd = tokio::process::Command::new(npx_path);
         cmd.arg("-y").arg("@clayhq/clay-mcp");
         cmd.env("CLAY_API_KEY", api_key);
 
@@ -311,13 +310,9 @@ impl ClayClient {
     // Helpers
     // -----------------------------------------------------------------------
 
-    /// Verify that npx is available on PATH.
+    /// Verify that npx is available (checks PATH and common install locations).
     pub fn npx_available() -> bool {
-        std::process::Command::new("npx")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        crate::util::resolve_npx_binary().is_some()
     }
 
     /// Concatenate all text content from a tool call result.
