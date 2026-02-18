@@ -4,7 +4,6 @@
 //! - Calendar polling loop: every N minutes during work hours
 //! - Events stored in AppState, frontend notified via Tauri events
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -69,14 +68,14 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
         .and_then(|g| g.as_ref().map(|c| c.resolved_user_domains()))
         .unwrap_or_default();
 
-    let account_hints = build_account_hints(state);
+    let entity_hints = build_entity_hints_from_state(state);
 
-    // Classify and convert (I171: multi-domain)
+    // Classify and convert (I171 + I336: multi-domain, entity-generic)
     let events: Vec<CalendarEvent> = raw_events
         .iter()
         .map(|raw| {
             let classified =
-                google_api::classify::classify_meeting_multi(raw, &user_domains, &account_hints);
+                google_api::classify::classify_meeting_multi(raw, &user_domains, &entity_hints);
             classified.to_calendar_event()
         })
         .collect();
@@ -84,52 +83,14 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
     Ok(events)
 }
 
-/// Build account domain hints from DB for meeting classification.
-///
-/// Uses a single JOIN query instead of N+1 per-account domain lookups.
-fn build_account_hints(state: &AppState) -> HashSet<String> {
-    let mut hints = HashSet::new();
+/// Build entity hints from DB for meeting classification (I336).
+fn build_entity_hints_from_state(state: &AppState) -> Vec<google_api::classify::EntityHint> {
     if let Ok(db_guard) = state.db.lock() {
         if let Some(db) = db_guard.as_ref() {
-            if let Ok(accounts_with_domains) = db.get_all_accounts_with_domains(false) {
-                for (account, domains) in accounts_with_domains {
-                    if account.is_internal {
-                        continue;
-                    }
-
-                    let id_key: String = account
-                        .id
-                        .to_lowercase()
-                        .chars()
-                        .filter(|c| c.is_ascii_alphanumeric())
-                        .collect();
-                    if id_key.len() >= 3 {
-                        hints.insert(id_key);
-                    }
-
-                    let name_key: String = account
-                        .name
-                        .to_lowercase()
-                        .chars()
-                        .filter(|c| c.is_ascii_alphanumeric())
-                        .collect();
-                    if name_key.len() >= 3 {
-                        hints.insert(name_key);
-                    }
-
-                    for domain in domains {
-                        let base = domain.split('.').next().unwrap_or("").to_lowercase();
-                        let key: String =
-                            base.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
-                        if key.len() >= 3 {
-                            hints.insert(key);
-                        }
-                    }
-                }
-            }
+            return crate::helpers::build_entity_hints(db);
         }
     }
-    hints
+    Vec::new()
 }
 
 /// Calendar polling errors
