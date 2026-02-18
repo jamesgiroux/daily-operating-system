@@ -4867,6 +4867,17 @@ pub fn create_person(
         meeting_count: 0,
         updated_at: now,
         archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
@@ -5947,6 +5958,17 @@ pub fn create_internal_organization(
                     meeting_count: 0,
                     updated_at: now,
                     archived: false,
+                    linkedin_url: None,
+                    twitter_handle: None,
+                    phone: None,
+                    photo_url: None,
+                    bio: None,
+                    title_history: None,
+                    company_industry: None,
+                    company_size: None,
+                    company_hq: None,
+                    last_enriched_at: None,
+                    enrichment_sources: None,
                 };
                 db.upsert_person(&person).map_err(|e| e.to_string())?;
                 db.link_person_to_entity(&person_id, &root_account.id, "member")
@@ -8818,6 +8840,17 @@ pub fn create_person_from_stakeholder(
         meeting_count: 0,
         updated_at: now,
         archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
@@ -9450,4 +9483,333 @@ pub fn get_person_avatar(
     let db_guard = state.db.lock().ok()?;
     let db = db_guard.as_ref()?;
     crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I228: Clay Contact & Company Enrichment
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Clay integration status for the settings UI.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClayStatusData {
+    pub enabled: bool,
+    pub api_key_set: bool,
+    pub auto_enrich_on_create: bool,
+    pub sweep_interval_hours: u32,
+    pub enriched_count: i64,
+    pub pending_count: i64,
+    pub last_enrichment_at: Option<String>,
+}
+
+/// Get Clay integration status.
+#[tauri::command]
+pub fn get_clay_status(state: State<Arc<AppState>>) -> ClayStatusData {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+
+    let clay_config = config.unwrap_or_default();
+
+    let (enriched_count, pending_count, last_enrichment) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let enriched: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let pending: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let last: Option<String> = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT MAX(last_enriched_at) FROM people",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(None);
+                (enriched, pending, last)
+            })
+        })
+        .unwrap_or((0, 0, None));
+
+    ClayStatusData {
+        enabled: clay_config.enabled,
+        api_key_set: clay_config.api_key.is_some(),
+        auto_enrich_on_create: clay_config.auto_enrich_on_create,
+        sweep_interval_hours: clay_config.sweep_interval_hours,
+        enriched_count,
+        pending_count,
+        last_enrichment_at: last_enrichment,
+    }
+}
+
+/// Enable or disable Clay integration.
+#[tauri::command]
+pub fn set_clay_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set or clear the Clay API key.
+#[tauri::command]
+pub fn set_clay_api_key(
+    key: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.api_key = key.filter(|k| !k.is_empty());
+    })?;
+    Ok(())
+}
+
+/// Toggle auto-enrich on person creation.
+#[tauri::command]
+pub fn set_clay_auto_enrich(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.auto_enrich_on_create = enabled;
+    })?;
+    Ok(())
+}
+
+/// Test Clay connection by attempting to connect and list tools.
+#[tauri::command]
+pub async fn test_clay_connection(
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    client.disconnect().await;
+    Ok(true)
+}
+
+/// Enrichment result for the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentResultData {
+    pub person_id: String,
+    pub fields_updated: Vec<String>,
+    pub signals: Vec<String>,
+}
+
+/// Enrich a single person from Clay on demand.
+#[tauri::command]
+pub async fn enrich_person_from_clay(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<EnrichmentResultData, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
+        &state, &person_id, &client,
+    )
+    .await?;
+
+    client.disconnect().await;
+
+    Ok(EnrichmentResultData {
+        person_id: result.person_id,
+        fields_updated: result.fields_updated,
+        signals: result.signals,
+    })
+}
+
+/// Enrich an account's company data from Clay (via linked people).
+#[tauri::command]
+pub async fn enrich_account_from_clay(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<EnrichmentResultData, String> {
+    // Find a linked person for this account, enrich them, company data follows
+    let person_id: Option<String> = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().and_then(|db| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT person_id FROM entity_people WHERE entity_id = ?1 LIMIT 1",
+                        [&account_id],
+                        |row| row.get(0),
+                    )
+                    .ok()
+            })
+        });
+
+    let person_id = person_id.ok_or("No linked people found for this account")?;
+
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
+        &state, &person_id, &client,
+    )
+    .await?;
+
+    client.disconnect().await;
+
+    Ok(EnrichmentResultData {
+        person_id: result.person_id,
+        fields_updated: result.fields_updated,
+        signals: result.signals,
+    })
+}
+
+/// Bulk enrichment result.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkEnrichResult {
+    pub queued: usize,
+    pub total_unenriched: usize,
+}
+
+/// Start bulk Clay enrichment for all unenriched people.
+#[tauri::command]
+pub fn start_clay_bulk_enrich(
+    state: State<Arc<AppState>>,
+) -> Result<BulkEnrichResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let unenriched: Vec<String> = {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id FROM people WHERE last_enriched_at IS NULL AND archived = 0",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+
+    let total = unenriched.len();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    for person_id in &unenriched {
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = db.conn_ref().execute(
+            "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
+             VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
+            rusqlite::params![id, person_id, now],
+        );
+    }
+
+    // Drop the DB lock before signaling
+    drop(db_guard);
+
+    // Wake the Clay poller immediately to process queued items
+    state.clay_poller_wake.notify_one();
+
+    Ok(BulkEnrichResult {
+        queued: total,
+        total_unenriched: total,
+    })
+}
+
+/// Enrichment log entry for the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentLogEntry {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub source: String,
+    pub event_type: String,
+    pub signal_type: Option<String>,
+    pub fields_updated: Option<String>,
+    pub created_at: String,
+}
+
+/// Get enrichment log entries for an entity.
+#[tauri::command]
+pub fn get_enrichment_log(
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<EnrichmentLogEntry>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, entity_type, entity_id, source, event_type, signal_type, fields_updated, created_at
+             FROM enrichment_log
+             WHERE entity_id = ?1
+             ORDER BY created_at DESC
+             LIMIT 50",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let entries = stmt
+        .query_map([&entity_id], |row| {
+            Ok(EnrichmentLogEntry {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                entity_id: row.get(2)?,
+                source: row.get(3)?,
+                event_type: row.get(4)?,
+                signal_type: row.get(5)?,
+                fields_updated: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(entries)
 }
