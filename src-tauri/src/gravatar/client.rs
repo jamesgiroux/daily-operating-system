@@ -47,11 +47,10 @@ pub struct GravatarClient {
 impl GravatarClient {
     /// Connect to the Gravatar MCP server by spawning npx.
     pub async fn connect(api_key: Option<&str>) -> Result<Self, GravatarError> {
-        if !Self::npx_available() {
-            return Err(GravatarError::NpxNotFound);
-        }
+        let npx_path = crate::util::resolve_npx_binary()
+            .ok_or(GravatarError::NpxNotFound)?;
 
-        let mut cmd = tokio::process::Command::new("npx");
+        let mut cmd = tokio::process::Command::new(npx_path);
         cmd.arg("@automattic/mcp-server-gravatar");
 
         if let Some(key) = api_key {
@@ -198,13 +197,9 @@ impl GravatarClient {
         let _ = self.service.cancel().await;
     }
 
-    /// Verify that npx is available on PATH.
+    /// Verify that npx is available (checks PATH and common install locations).
     pub fn npx_available() -> bool {
-        std::process::Command::new("npx")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        crate::util::resolve_npx_binary().is_some()
     }
 }
 
