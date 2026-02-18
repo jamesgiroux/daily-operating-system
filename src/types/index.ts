@@ -989,6 +989,10 @@ export interface AccountTeamImportNote {
 /** Full detail for the account detail page. */
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
+  /** JSON-serialized string[] of resolution keywords (I305) */
+  keywords?: string;
+  /** ISO timestamp when keywords were last extracted (I305) */
+  keywordsExtractedAt?: string;
   companyOverview?: CompanyOverview;
   strategicPrograms: StrategicProgram[];
   notes?: string;
@@ -1182,6 +1186,10 @@ export interface ProjectDetail extends ProjectListItem {
   openActions: Action[];
   recentMeetings: MeetingSummary[];
   linkedPeople: Person[];
+  /** JSON-serialized string[] of resolution keywords (I305) */
+  keywords?: string;
+  /** ISO timestamp when keywords were last extracted (I305) */
+  keywordsExtractedAt?: string;
   signals?: {
     meetingFrequency30d: number;
     meetingFrequency90d: number;
