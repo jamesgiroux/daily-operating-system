@@ -113,10 +113,15 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
 | P1 | I308 | Event-driven signal processing and cross-entity propagation |
 | P1 | I334 | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing |
+| P1 | I335 | Entity-generic data model — replace `account` fields with `entities` arrays (ADR-0082 Phase 1+4) |
+| P1 | I336 | Entity-generic classification — entity hints from DB, 1:1 person detection (ADR-0082 Phase 2) |
+| P1 | I337 | Entity-generic context building — type-dispatched intelligence injection (ADR-0082 Phase 3) |
+| P1 | I338 | 1:1 relationship intelligence — three-file pattern for people, relationship prep (ADR-0082 Section 4) |
+| P1 | I339 | Entity-generic dashboard and frontend — entities array on all surfaces (ADR-0082 Phase 1+4) |
 | P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
 
-**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
+**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. I335–I339 implement ADR-0082 (Entity-Generic Prep Pipeline): rebuild the account-privileged prep pipeline so accounts, projects, and people are first-class entities throughout classification, context building, prep generation, and dashboard display. This includes 1:1 relationship intelligence — recurring 1:1 meetings resolve to the counterpart person as primary entity with the three-file pattern (ADR-0057). The legacy `account_id` column on `meetings_history` is dropped; the `meeting_entities` junction table becomes the sole source of truth. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
 
 ---
 
@@ -4652,3 +4657,182 @@ Because intelligence exists days ahead, enable collaborative meeting preparation
 6. No auto-send — all actions produce drafts for user review
 
 **Supersedes:** I202 (prep prefill + draft agenda actions). I202 framed these as "prefill" into an empty system. I333 reframes as collaboration actions on existing intelligence.
+
+---
+
+**I335: Entity-generic data model — replace `account` fields with `entities` arrays**
+
+**Priority:** P1 (0.10.0)
+**Area:** Backend / Data model
+**Depends on:** None (foundation for I336-I339)
+**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phases 1 + 4
+
+The prep pipeline uses a singular `account` field at every stage: `ClassifiedMeeting.account`, prep JSON `account`, schedule JSON `account`, `Meeting.account` on the frontend. This ADR-0082 Phase 1+4 issue replaces all of them with `entities` arrays and drops the legacy `account_id` column.
+
+**Backend changes:**
+- `ClassifiedMeeting`: Remove `account: Option<String>`, add `resolved_entities: Vec<ResolvedMeetingEntity>`
+- `DirectiveMeeting`: Remove `account`, add `resolved_entities`
+- `Meeting` (types.rs): Remove `account: Option<String>`, `account_id: Option<String>`. Add `entities: Option<Vec<LinkedEntity>>`
+- `build_prep_json` (deliver.rs): Write `entities` array instead of `account` field
+- `deliver_schedule` (deliver.rs): Write `entities` in schedule.json instead of `account`
+- DB migration: Drop `account_id` column from `meetings_history`
+- Remove `signal_explicit_assignment` from entity resolver (reads dropped column)
+- Remove `fix_orphaned_meetings` from hygiene.rs (depends on `account_id`)
+- Remove `update_meeting_account` from db.rs
+- Remove `resolve_account_compat` from entity_resolver.rs
+
+**Acceptance criteria:**
+1. No code references `meetings_history.account_id` — column dropped
+2. No code references `ClassifiedMeeting.account` or `Meeting.account`
+3. Prep JSON files use `entities` array with `primary` flag
+4. Schedule JSON uses `entities` array
+5. `cargo test` passes, `cargo clippy -- -D warnings` clean
+6. `pnpm build` compiles
+
+---
+
+**I336: Entity-generic classification — entity hints from DB, 1:1 person detection**
+
+**Priority:** P1 (0.10.0)
+**Area:** Backend / Classification
+**Depends on:** I335 (data model)
+**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phase 2
+
+Replace `build_account_domain_hints` (filesystem-only, account-only) with `build_entity_hints` that queries the DB for all entity types.
+
+**Changes:**
+- New `EntityHint` struct: `{ id, entity_type, name, slugs, domains, keywords }`
+- `build_entity_hints` queries: accounts (with domains + keywords), projects (with keywords), people (with email domains for 1:1 detection)
+- `classify_meeting_multi` accepts `entity_hints: &[EntityHint]` instead of `account_hints: &HashSet<String>`
+- Classification produces `resolved_entities` by matching title against entity slugs/keywords, attendee domains against account domains
+- **1:1 detection**: When a meeting has exactly 2 attendees (one is the user), is recurring, or matches title patterns ("{Name} / {Name}", "{Name} 1:1"), classify the counterpart person as a resolved entity with confidence 0.85-0.95
+- Entity hints are cached per pipeline run (built once, used for all meetings in the run)
+
+**Acceptance criteria:**
+1. Meeting titled "Agentforce Demo" resolves to Agentforce project via keyword match
+2. Meeting with 2 attendees (user + colleague) with recurring flag resolves to person entity
+3. Meeting with external domain still resolves to account via domain match
+4. Classification produces `resolved_entities` with confidence scores and source tags
+5. Unit tests for each resolution path (project keyword, 1:1 person, account domain, title heuristic)
+
+---
+
+**I337: Entity-generic context building — type-dispatched intelligence injection**
+
+**Priority:** P1 (0.10.0)
+**Area:** Backend / Prep pipeline
+**Depends on:** I335 (data model), I336 (classification)
+**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phase 3
+
+Replace `resolve_account_compat` callers in `meeting_context.rs` with a generic `resolve_primary_entity` that dispatches to type-specific context assembly.
+
+**Changes:**
+- New `resolve_primary_entity(db, event_id, meeting, workspace, embedding_model) -> Option<EntityMatch>` that returns the top resolved entity regardless of type
+- `EntityMatch` struct: `{ entity_id, entity_type, name, confidence, source, workspace_path }`
+- Type-dispatched context assembly:
+  - **Account**: Existing account context path (dashboard.json, intelligence.json, stakeholders, actions, captures, email signals). Refactored from inline code into `gather_account_context()`.
+  - **Project**: New path. Load project intelligence.json + dashboard.json from `Projects/{name}/`. Query SQLite: project metadata, linked meetings, open actions, captures. Inject project status, blockers, milestones, team context.
+  - **Person (1:1)**: New path. Load person intelligence.json from `People/{name}/` (if exists). Query SQLite: interaction history (last N meetings via meeting_attendees), open actions between user and person, cross-entity connections (shared accounts/projects), relationship signals.
+- Context JSON uses `entity_id` + `entity_type` instead of `account` string
+
+**Acceptance criteria:**
+1. Customer meeting resolves to account and injects account intelligence (existing behavior preserved)
+2. Meeting linked to project injects project intelligence context
+3. 1:1 meeting injects person relationship context
+4. Meeting with both project and account entities uses primary entity for context, secondary for supplementary data
+5. Missing intelligence files degrade gracefully (no crash, thin context)
+
+---
+
+**I338: 1:1 relationship intelligence — three-file pattern for people**
+
+**Priority:** P1 (0.10.0)
+**Area:** Backend / Intelligence
+**Depends on:** I337 (context building)
+**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Section 4
+
+Extend the ADR-0057 three-file pattern to people who have 1:1 relationships with the user. Create `People/{name}/` directories with `dashboard.json`, `intelligence.json`, and `dashboard.md` for relationship intelligence.
+
+**When files are created:**
+- Person is counterpart in a detected recurring 1:1
+- Person is manually marked as a key relationship (future: UI action)
+- Person has 5+ meetings with the user (auto-promotion)
+
+**`dashboard.json` schema (relationship facts):**
+```json
+{
+  "version": 1,
+  "entityType": "person",
+  "structured": {
+    "role": "Engineering Manager",
+    "organization": "Platform Team",
+    "relationship": "colleague",
+    "cadence": "weekly",
+    "firstMeeting": "2025-09-15",
+    "meetingCount": 34
+  },
+  "notes": "User freeform notes"
+}
+```
+
+**`intelligence.json` schema (relationship intelligence):**
+```json
+{
+  "version": 1,
+  "entityId": "sarah-chen",
+  "enrichedAt": "2026-02-18T14:00:00Z",
+  "executiveAssessment": "Weekly 1:1 cadence, strong working relationship. Sarah is focused on platform reliability and team hiring. Recent concern about Q2 headcount freeze.",
+  "recentTopics": ["Q2 planning", "hiring freeze", "platform migration timeline"],
+  "openItems": [
+    { "text": "Share migration risk assessment", "source": "2026-02-11 1:1" }
+  ],
+  "currentState": {
+    "working": ["Consistent weekly cadence", "Open communication on blockers"],
+    "notWorking": ["Action items sometimes fall through between 1:1s"],
+    "unknowns": ["How the headcount freeze affects her team's deliverables"]
+  },
+  "crossEntityConnections": [
+    { "entityId": "platform-migration", "entityType": "project", "relationship": "owner" },
+    { "entityId": "acme-corp", "entityType": "account", "relationship": "technical lead" }
+  ]
+}
+```
+
+**Enrichment trigger:** Same as ADR-0057 — new meeting transcript with this person, manual refresh, content file change.
+
+**Acceptance criteria:**
+1. Recurring 1:1 meeting creates `People/{name}/` directory with three files
+2. 1:1 meeting prep injects relationship intelligence (recent topics, open items, cross-entity connections)
+3. Person detail page ("The Record") shows intelligence from the three files
+4. Enrichment runs on new transcript from 1:1 meeting (incremental, not full rebuild)
+5. Person with <5 meetings and no recurring 1:1 does NOT get three-file treatment (stays SQLite-only)
+
+---
+
+**I339: Entity-generic dashboard and frontend — entities array on all surfaces**
+
+**Priority:** P1 (0.10.0)
+**Area:** Frontend
+**Depends on:** I335 (data model)
+**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phases 1 + 4
+
+Update all frontend surfaces to read `meeting.entities` instead of `meeting.account`.
+
+**Changes:**
+- `Meeting` TypeScript type: Remove `account?: string`, `accountId?: string`. Add `entities?: LinkedEntity[]`
+- `BriefingMeetingCard.tsx`: Subtitle reads primary entity name from `entities` array. Entity type icon (building for account, folder for project, user for person). Falls back to `formatMeetingType` when no entities.
+- `DailyBriefing.tsx`: Lead story entity display uses `entities` array
+- `MeetingDetailPage.tsx`: Header/byline shows primary entity. Entity chips already work (no change needed).
+- `BriefingMeetingCard.tsx` cancelled state: Shows primary entity name instead of `meeting.account`
+
+**Byline display by entity type:**
+- Account: "{Account Name} · Customer" (building icon)
+- Project: "{Project Name} · Project" (folder icon)
+- Person (1:1): "{Person Name} · 1:1" (user icon)
+
+**Acceptance criteria:**
+1. No TypeScript code references `meeting.account` or `meeting.accountId`
+2. Meeting card subtitle shows correct entity name for accounts, projects, and people
+3. Meeting card shows appropriate icon for entity type
+4. Meetings with no entities show meeting type as fallback
+5. `pnpm build` compiles clean
