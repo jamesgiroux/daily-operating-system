@@ -4,6 +4,35 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] - 2026-02-18
+
+The integrations release. Four new data integrations, a plugin marketplace, and UI polish.
+
+### Added
+
+- **I226: Granola integration** — background poller syncs meeting transcripts from Granola's local cache, matches to calendar events by time window and attendee overlap, writes to entity Meeting-Notes directories
+- **I229: Gravatar integration** — MCP-based avatar and profile enrichment with local image caching, background poller for stale email refresh, Avatar component with `convertFileSrc` asset loading
+- **I228: Clay integration** — MCP client (SSE primary / stdio fallback) for contact and company enrichment: title, company, LinkedIn, Twitter, phone, bio, industry, HQ, company size. Signal detection for job changes, funding rounds, and leadership transitions. Background poller with bulk enrich wake signal via `tokio::sync::Notify`
+- **I276: Plugin Marketplace** — two Claude Code plugins (`dailyos` with 9 commands + 9 skills, `dailyos-writer` with 4 commands + 11 skills) bundled as installable zips with Settings UI for export
+- Enrichment log table for tracking all enrichment events across sources with signal classification
+- Clay Settings UI section: enable/disable, API key, connection test, bulk enrich, enrichment status
+- Gravatar Settings UI section: enable/disable, API key, cache stats
+- Granola Settings UI section: enable/disable, sync status
+- Person schema extended with enrichment fields: LinkedIn URL, Twitter handle, phone, photo URL, bio, title history, company industry/size/HQ, last enrichment timestamp, enrichment sources
+- Avatar component for person images with Gravatar cache lookup and initials fallback
+
+### Fixed
+
+- Literal `\u2026`, `\u2318`, `\u2713`, `\u2197` escape sequences rendering as text in JSX attribute strings and text content — replaced with actual Unicode characters across 16 frontend files
+- Gravatar images showing as broken blue boxes — CSP `img-src` now includes `https://asset.localhost` for Tauri's asset protocol
+- Avatar component falls back to initials on image load error instead of showing broken image icon
+- Clay "Enrich All" button queued work but poller didn't process until next 24-hour cycle — poller now wakes immediately via `tokio::select!` against `Notify` signal
+
+### Changed
+
+- Person detail pages show LinkedIn and Twitter external links with arrow indicators
+- Onboarding copy uses actual Unicode characters (em dash, en dash, curly quotes) instead of escape sequences
+
 ## [0.8.4] - 2026-02-17
 
 Hotfix for Claude Desktop MCP integration.
