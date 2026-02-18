@@ -1436,3 +1436,9 @@ export interface QuillSyncState {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface GravatarStatus {
+  enabled: boolean;
+  cachedCount: number;
+  apiKeySet: boolean;
+}
