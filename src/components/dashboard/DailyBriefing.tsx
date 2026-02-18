@@ -162,7 +162,7 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
   const folioActions = useMemo(() => {
     if (!onRunBriefing) return undefined;
     const phaseLabel = isRunning && workflowStatus?.status === "running"
-      ? { preparing: "Preparing\u2026", enriching: "AI Processing\u2026", delivering: "Delivering\u2026" }[workflowStatus.phase]
+      ? { preparing: "Preparing…", enriching: "AI Processing…", delivering: "Delivering…" }[workflowStatus.phase]
       : null;
     return (
       <button

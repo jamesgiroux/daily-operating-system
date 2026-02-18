@@ -30,6 +30,7 @@ export function Avatar({ name, personId, size = 32, className }: AvatarProps) {
         src={convertFileSrc(avatarPath)}
         alt={name}
         className={className}
+        onError={() => setAvatarPath(null)}
         style={{
           width: size,
           height: size,
