@@ -447,6 +447,7 @@ pub fn create_or_update_config(
                 entity_mode: "account".to_string(),
                 google: crate::types::GoogleConfig::default(),
                 post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
+                quill: crate::quill::QuillConfig::default(),
                 features: std::collections::HashMap::new(),
                 user_domain: None,
                 user_domains: None,
