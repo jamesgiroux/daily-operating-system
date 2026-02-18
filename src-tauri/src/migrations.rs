@@ -77,6 +77,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 21,
     sql: include_str!("migrations/021_proactive_surfacing.sql"),
+}, Migration {
+    version: 22,
+    sql: include_str!("migrations/022_rejection_signals.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -238,13 +241,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 21,
-            "should apply all migrations including proactive_surfacing"
+            applied, 22,
+            "should apply all migrations including rejection_signals"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 21);
+        assert_eq!(version, 22);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -530,6 +533,15 @@ mod tests {
             [],
         )
         .expect("proactive_insights table should exist and accept inserts");
+
+        // Verify rejection signal columns on actions (migration 022)
+        conn.execute(
+            "UPDATE actions SET rejected_at = '2026-01-15T10:00:00Z',
+             rejection_source = 'actions_page'
+             WHERE id = 'proposed-1'",
+            [],
+        )
+        .expect("actions should have rejected_at and rejection_source columns");
     }
 
     #[test]
@@ -638,13 +650,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v14
+        // Run migrations — should bootstrap v1 and apply v2 through v22
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 20, "bootstrap should mark v1, then apply v2 through v21");
+        assert_eq!(applied, 21, "bootstrap should mark v1, then apply v2 through v22");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 21);
+        assert_eq!(version, 22);
 
         // Verify existing data is untouched
         let title: String = conn
