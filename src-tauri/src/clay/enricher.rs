@@ -406,6 +406,25 @@ pub async fn enrich_person_from_clay_with_client(
         insert_enrichment_log(db, "person", person_id, "clay", "signal", Some(signal), &fields_updated, None)?;
     }
 
+    // I306: Emit change signals to the signal bus
+    for signal in &signals {
+        let value = serde_json::json!({
+            "description": signal.description,
+            "old_value": signal.old_value,
+            "new_value": signal.new_value,
+        })
+        .to_string();
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "person",
+            person_id,
+            &signal.signal_type,
+            "clay",
+            Some(&value),
+            0.85,
+        );
+    }
+
     Ok(EnrichmentResult {
         person_id: person_id.to_string(),
         fields_updated,
@@ -616,6 +635,25 @@ pub async fn enrich_person_from_clay(
             &fields_updated,
             None,
         )?;
+    }
+
+    // I306: Emit change signals to the signal bus
+    for signal in &signals {
+        let value = serde_json::json!({
+            "description": signal.description,
+            "old_value": signal.old_value,
+            "new_value": signal.new_value,
+        })
+        .to_string();
+        let _ = crate::signals::bus::emit_signal(
+            db,
+            "person",
+            person_id,
+            &signal.signal_type,
+            "clay",
+            Some(&value),
+            0.85,
+        );
     }
 
     Ok(EnrichmentResult {

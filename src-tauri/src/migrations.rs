@@ -65,6 +65,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 17,
     sql: include_str!("migrations/017_entity_keywords.sql"),
+}, Migration {
+    version: 18,
+    sql: include_str!("migrations/018_signal_bus.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -226,13 +229,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 17,
-            "should apply all migrations including entity_keywords"
+            applied, 18,
+            "should apply all migrations including signal_bus"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -438,6 +441,22 @@ mod tests {
             [],
         )
         .expect("projects should have keywords columns");
+
+        // Verify signal_events table (migration 018)
+        conn.execute(
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days)
+             VALUES ('sig-1', 'account', 'a1', 'entity_resolution', 'keyword', 'matched by name', 0.8, 30)",
+            [],
+        )
+        .expect("signal_events table should exist and accept inserts");
+
+        // Verify signal_weights table (migration 018)
+        conn.execute(
+            "INSERT INTO signal_weights (source, entity_type, signal_type, alpha, beta, update_count)
+             VALUES ('clay', 'person', 'profile_update', 1.0, 1.0, 0)",
+            [],
+        )
+        .expect("signal_weights table should exist and accept inserts");
     }
 
     #[test]
@@ -548,11 +567,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 16, "bootstrap should mark v1, then apply v2 through v17");
+        assert_eq!(applied, 17, "bootstrap should mark v1, then apply v2 through v18");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 17);
+        assert_eq!(version, 18);
 
         // Verify existing data is untouched
         let title: String = conn
