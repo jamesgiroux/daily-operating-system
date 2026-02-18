@@ -8772,6 +8772,9 @@ pub struct QuillStatus {
     pub failed_syncs: usize,
     pub completed_syncs: usize,
     pub last_sync_at: Option<String>,
+    pub last_error: Option<String>,
+    pub last_error_at: Option<String>,
+    pub abandoned_syncs: usize,
 }
 
 /// Get the current status of the Quill integration.
@@ -8788,7 +8791,7 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
         std::path::Path::new(&quill_config.bridge_path).exists();
 
     // Count sync states from DB
-    let (pending, failed, completed, last_sync) = state
+    let (pending, failed, completed, last_sync, last_error, last_error_at, abandoned) = state
         .db
         .lock()
         .ok()
@@ -8799,14 +8802,15 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
                     .map(|v| v.len())
                     .unwrap_or(0);
 
-                // Count failed and completed from all rows
-                let (failed_count, completed_count, last) = db
+                // Count failed, completed, abandoned from all rows
+                let (failed_count, completed_count, last, abandoned_count) = db
                     .conn_ref()
                     .prepare(
                         "SELECT
                             SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
                             SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
-                            MAX(completed_at)
+                            MAX(completed_at),
+                            SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
                          FROM quill_sync_state",
                     )
                     .and_then(|mut stmt| {
@@ -8815,15 +8819,34 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
                                 row.get::<_, i64>(0).unwrap_or(0) as usize,
                                 row.get::<_, i64>(1).unwrap_or(0) as usize,
                                 row.get::<_, Option<String>>(2)?,
+                                row.get::<_, i64>(3).unwrap_or(0) as usize,
                             ))
                         })
                     })
-                    .unwrap_or((0, 0, None));
+                    .unwrap_or((0, 0, None, 0));
 
-                (pending, failed_count, completed_count, last)
+                // Get last error from failed/abandoned syncs
+                let (err_msg, err_at) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT error_message, updated_at FROM quill_sync_state
+                         WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
+                         ORDER BY updated_at DESC LIMIT 1",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, Option<String>>(0)?,
+                                row.get::<_, Option<String>>(1)?,
+                            ))
+                        })
+                    })
+                    .unwrap_or((None, None));
+
+                (pending, failed_count, completed_count, last, err_msg, err_at, abandoned_count)
             })
         })
-        .unwrap_or((0, 0, 0, None));
+        .unwrap_or((0, 0, 0, None, None, None, 0));
 
     QuillStatus {
         enabled: quill_config.enabled,
@@ -8833,6 +8856,9 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
         failed_syncs: failed,
         completed_syncs: completed,
         last_sync_at: last_sync,
+        last_error,
+        last_error_at,
+        abandoned_syncs: abandoned,
     }
 }
 
@@ -8848,9 +8874,9 @@ pub fn set_quill_enabled(
     Ok(())
 }
 
-/// Test the Quill MCP connection by checking if the bridge exists and Node.js is available.
+/// Test the Quill MCP connection by spawning the bridge and verifying connectivity.
 #[tauri::command]
-pub fn test_quill_connection(state: State<Arc<AppState>>) -> Result<bool, String> {
+pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let bridge_path = state
         .config
         .read()
@@ -8863,10 +8889,12 @@ pub fn test_quill_connection(state: State<Arc<AppState>>) -> Result<bool, String
         return Ok(false);
     }
 
-    let bridge_exists = std::path::Path::new(&bridge_path).exists();
-    let node_available = crate::quill::client::QuillClient::node_available();
+    let client = crate::quill::client::QuillClient::connect(&bridge_path)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
 
-    Ok(bridge_exists && node_available)
+    client.disconnect().await;
+    Ok(true)
 }
 
 /// Get Quill sync states, optionally filtered by meeting ID.
