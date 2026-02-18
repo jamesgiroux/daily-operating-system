@@ -43,6 +43,9 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 | **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
+| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
+| **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
+| **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
 
 ---
 
@@ -99,6 +102,9 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 | P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
 | P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
+| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
+| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
+| P1 | I308 | Event-driven signal processing and cross-entity propagation |
 
 **Rationale:** Delivers the core TAM/CSM workflow. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (renewal calendar, pipeline stages, health scores, ARR projections, risk alerts). Renewal dashboard and pipeline views are built on 0.8.0's entity detail template and editorial design language. I305 addresses the foundational intelligence gap: meetings should arrive pre-tagged with the right entities before the user sees them.
 
@@ -1337,6 +1343,96 @@ Projects are currently manual-only. Minimum viable project matching:
 
 - I260 (Proactive surfacing — shares the hygiene → insight → briefing pipeline)
 - I262 (The Record — transcript content as entity resolution signal in Phase 4)
+- I306 (Signal bus — provides the event log I305 writes to)
+- I307 (Correction learning — learns from entity corrections I305 records)
+
+---
+
+**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge**
+Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
+
+**Core deliverables:**
+
+1. **`signal_events` table** — `(entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at)`. Every integration writes here instead of directly to entity fields.
+2. **`signal_weights` table** — `(source, entity_type, signal_type, alpha, beta)`. Beta distribution parameters for per-source reliability, updated by I307.
+3. **Bayesian signal fusion** — `fuse_confidence()` function combining multiple signals via log-odds. Three weak signals (0.4, 0.4, 0.3) compound to 0.65. Contradicting signals yield uncertainty.
+4. **Temporal decay** — Exponential decay with configurable half-life per source type. User corrections: 365 days. Transcripts: 60 days. Calendar patterns: 30 days. Clay/Gravatar: 90 days. Heuristics: 7 days.
+5. **Email-calendar bridge for entity resolution** — Correlate email threads with meeting attendees in the 48 hours before a meeting. Email thread participants + subject line → entity resolution signal for the meeting. Join on email addresses (both sources use them).
+6. **Email pre-meeting context** — Surface relevant email thread excerpts in meeting prep context, weighted by recency and embedding similarity to meeting title.
+7. **Integration retrofit** — Clay, Gravatar, and hygiene enrichment pipelines emit signals to the bus instead of writing directly to entity fields. Signal consumers read from the bus.
+
+**New dependencies:** None (pure SQLite + existing Rust math).
+
+**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`.
+
+**Acceptance criteria:**
+- All enrichment sources write to `signal_events` table
+- `fuse_confidence()` produces correct Bayesian combination for 2+ signals
+- Temporal decay reduces signal weight as age increases
+- Email threads from 48 hours before a meeting are surfaced in prep context
+- Email participant overlap with meeting attendees produces entity resolution signal
+
+**Dependencies:** ADR-0080 (architecture). Consumed by I305 (entity resolution) and I307 (learning).
+
+---
+
+**I307: Correction learning — Thompson Sampling weights, context tagging, pattern detection**
+The system learns from every user correction. Signal source reliability is tracked via Beta distributions and updated incrementally. Source content is tagged as internal or external to prevent context leakage.
+
+**Core deliverables:**
+
+1. **Thompson Sampling weight learning** — When a signal leads to a correct outcome (user doesn't correct), increment `alpha`. When the user corrects, increment `beta`. Sample from `Beta(alpha, beta)` when scoring signals. Over time, reliable sources get higher weights. Uses `rand_distr::Beta`, no ML framework.
+2. **`entity_resolution_feedback` table** — Records every user correction: `(meeting_id, old_entity_id, new_entity_id, signal_source_that_was_wrong, corrected_at)`. Feeds back into `signal_weights`.
+3. **Internal vs external context tagging** — Every content chunk (transcript excerpt, email snippet, document quote) carries a `source_context` tag: `internal_meeting`, `customer_meeting`, `inbound_email`, `outbound_email`, `document`, `user_authored`. When building customer-facing prep, weight external sources higher. When users remove internal-sourced items from customer prep, that's a learning signal.
+4. **Calendar description mining** — Parse meeting body/description for entity name mentions. Uses `strsim` (Jaro-Winkler) for fuzzy company name matching against known entities.
+5. **Attendee group pattern detection** — Track co-occurrence: when persons A + B + C appear together in meetings, what entity is it about? Build from historical `meeting_entities` + `meeting_attendees`. After N occurrences with the same entity, auto-apply to future meetings with that group.
+6. **Email relationship cadence tracking** — Track per-person email response times as rolling averages. Flag deviations (champion who usually responds in 2 hours now takes 3 days) as relationship temperature signals.
+
+**New dependencies:** `rand_distr` (Beta distribution sampling, likely already transitive). `strsim` (Jaro-Winkler / Levenshtein for fuzzy matching).
+
+**The Bring a Trailer example:** User removes internal discussion items from customer agenda → system records `source_context=internal_meeting` items were rejected for `prep_type=customer_meeting` → next time, internal-sourced items have lower weight in customer-facing prep for this account → over time, generalizes to all accounts.
+
+**Acceptance criteria:**
+- Signal weights update on every user correction (entity re-tag, prep edit, action dismissal)
+- Thompson Sampling produces measurably different weights after 20+ corrections
+- Internal meeting content does not leak into customer-facing prep when context tagging is active
+- Attendee group patterns auto-link meetings after N consistent occurrences (configurable, default 3)
+- Calendar descriptions are parsed for entity mentions during resolution
+
+**Dependencies:** I306 (signal bus, signal_weights table). I305 (entity resolution writes corrections).
+
+---
+
+**I308: Event-driven signal processing and cross-entity propagation**
+Replace timer-driven enrichment with event-driven processing. When something changes, the system reasons about it immediately. Signals propagate across entity boundaries.
+
+**Core deliverables:**
+
+1. **Event-driven entity resolution** — When a calendar event is added or modified, run entity resolution immediately (not at next scheduled sweep). Uses `tokio::sync::Notify` pattern (same as Clay poller wake signal from v0.9.0).
+2. **Cross-entity signal propagation rules** — Declarative rules that derive new signals from existing ones:
+   - Clay says person changed jobs → flag all linked accounts for review
+   - Meeting frequency with account drops 50% month-over-month → account engagement warning
+   - Three overdue actions on one project → project health signal
+   - Email sentiment turns negative for account champion → account risk signal
+   - Person unlinked from account (left company) → check if they were champion → escalate if renewal within 90 days
+3. **Embedding-based relevance scoring** — Use local embedding model to score signal relevance to current context. When building daily briefing, rank signals by embedding similarity to today's meetings. fastembed reranker (already bundled via ONNX Runtime) scores "how relevant is this signal to today's briefing?"
+4. **Email post-meeting correlation** — After a meeting ends, find email threads that start within 24 hours involving the same participants. Extract actions and link to meeting entity context.
+5. **Signal-driven prep invalidation** — When a new high-confidence signal arrives for an entity (e.g., Clay enrichment, user correction), invalidate stale prep files that reference that entity and re-queue enrichment.
+6. **Proactive briefing callouts** — Cross-entity signals that cross severity thresholds surface as callout blocks in the daily briefing: "Sarah promoted to CRO at Acme — renewal in 45 days."
+
+**New dependencies:** None beyond I306/I307. Uses existing embedding model and fastembed reranker.
+
+**Architecture:** Propagation rules are Rust functions, not a rules engine. Each rule: `fn(signal_event, &AppState) -> Vec<DerivedSignal>`. Rules are registered at startup and evaluated on every new signal. Cheap to execute (SQLite queries + math), no AI calls in the propagation path.
+
+**Acceptance criteria:**
+- New calendar events trigger entity resolution within 60 seconds (not next scheduled sweep)
+- Clay job change signal propagates to linked account within one poller cycle
+- fastembed reranker scores signal relevance for briefing assembly
+- Post-meeting email threads are correlated and actions extracted with entity context
+- Stale prep files are invalidated and re-queued when entity intelligence changes
+- Cross-entity signals surface in daily briefing as callout blocks
+
+**Dependencies:** I306 (signal bus), I307 (learned weights for propagation confidence). Enables I260 (proactive surfacing).
 
 ---
 
