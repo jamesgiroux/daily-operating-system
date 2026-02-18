@@ -885,7 +885,8 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
 
     let mut enriched = Vec::new();
 
-    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx)
+    let known_domains = std::collections::HashSet::new(); // devtools: no domain filter
+    match crate::workflow::deliver::enrich_emails(&data_dir, &extraction_pty, &workspace, &user_ctx, &known_domains)
     {
         Ok(()) => enriched.push("emails"),
         Err(e) => log::warn!("Email enrichment failed (non-fatal): {}", e),
