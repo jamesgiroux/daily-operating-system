@@ -2,22 +2,63 @@
  * DashboardEmpty — Editorial empty state for the daily briefing.
  * Renders inside MagazinePageLayout's page container.
  * Warm language, serif typography, prominent generate action.
+ *
+ * When a briefing workflow is running, transitions to the shared
+ * GeneratingProgress screen with phase steps and rotating quotes.
  */
 
 import { Mail } from "lucide-react";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import { GeneratingProgress } from "@/components/editorial/GeneratingProgress";
 import type { GoogleAuthStatus } from "@/types";
+import type { WorkflowStatus } from "@/hooks/useWorkflow";
+
+const BRIEFING_PHASES = [
+  { key: "preparing", label: "Gathering your day", detail: "Pulling calendar, emails, and entity context" },
+  { key: "enriching", label: "AI processing", detail: "Building meeting prep, priorities, and action items" },
+  { key: "delivering", label: "Assembling the briefing", detail: "Composing your morning document" },
+];
+
+const BRIEFING_QUOTES = [
+  "Grab a coffee — your day will be ready soon.",
+  "Combobulating your priorities…",
+  `"The secret of getting ahead is getting started." — Mark Twain`,
+  "Teaching the AI about your calendar…",
+  `"By failing to prepare, you are preparing to fail." — Benjamin Franklin`,
+  "Cross-referencing all the things…",
+  "Turning chaos into calendar clarity…",
+  `"Plans are nothing; planning is everything." — Dwight D. Eisenhower`,
+  "Consulting the schedule oracle…",
+  "Almost done thinking about thinking…",
+  `"Preparation is the key to success." — Alexander Graham Bell`,
+  "Crunching context like it owes us money…",
+];
 
 interface DashboardEmptyProps {
   message: string;
   onGenerate?: () => void;
+  isRunning?: boolean;
+  workflowStatus?: WorkflowStatus;
   googleAuth?: GoogleAuthStatus;
 }
 
-export function DashboardEmpty({ message, onGenerate, googleAuth }: DashboardEmptyProps) {
+export function DashboardEmpty({ message, onGenerate, isRunning, workflowStatus, googleAuth }: DashboardEmptyProps) {
   const { connect, loading: authLoading } = useGoogleAuth();
   const isUnauthed = googleAuth?.status === "notconfigured";
+
+  // Show the full generating progress screen when workflow is running
+  if (isRunning && workflowStatus?.status === "running") {
+    return (
+      <GeneratingProgress
+        title="Preparing Daily Briefing"
+        accentColor="var(--color-spice-turmeric)"
+        phases={BRIEFING_PHASES}
+        currentPhaseKey={workflowStatus.phase}
+        quotes={BRIEFING_QUOTES}
+      />
+    );
+  }
 
   return (
     <div style={{ maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
