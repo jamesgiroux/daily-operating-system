@@ -349,6 +349,31 @@ fn gather_meeting_context(
             .map(|s| s.to_string())
         {
             inject_recent_email_signals(db, &entity_id, &mut ctx);
+
+            // I306: Inject pre-meeting email context from signal bus
+            let attendees: Vec<String> = meeting
+                .get("attendees")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let email_ctx = crate::signals::email_context::gather_email_context(
+                db,
+                event_id,
+                &attendees,
+                title,
+                &entity_id,
+                8,
+            );
+            if let Some(arr) = email_ctx.as_array() {
+                if !arr.is_empty() {
+                    ctx["pre_meeting_email_context"] = email_ctx;
+                }
+            }
         }
     }
 
