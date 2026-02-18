@@ -429,6 +429,7 @@ pub fn run() {
             commands::create_person_from_stakeholder,
             // MCP: Claude Desktop (ADR-0075)
             commands::configure_claude_desktop,
+            commands::get_claude_desktop_status,
             // Quill MCP Integration
             commands::get_quill_status,
             commands::set_quill_enabled,

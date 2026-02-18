@@ -8406,6 +8406,94 @@ pub struct ClaudeDesktopConfigResult {
     pub binary_path: Option<String>,
 }
 
+/// Check whether DailyOS is already registered in Claude Desktop's MCP config.
+#[tauri::command]
+pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not find home directory".to_string(),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    let config_path = home
+        .join("Library")
+        .join("Application Support")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    if !config_path.exists() {
+        return ClaudeDesktopConfigResult {
+            success: false,
+            message: "Not configured".to_string(),
+            config_path: None,
+            binary_path: None,
+        };
+    }
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not read config".to_string(),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: None,
+            }
+        }
+    };
+
+    let config: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Config file is not valid JSON".to_string(),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: None,
+            }
+        }
+    };
+
+    let entry = config
+        .get("mcpServers")
+        .and_then(|s| s.get("dailyos"));
+
+    match entry {
+        Some(server) => {
+            let binary = server
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let binary_exists = binary
+                .as_ref()
+                .map(|p| std::path::Path::new(p).exists())
+                .unwrap_or(false);
+            ClaudeDesktopConfigResult {
+                success: binary_exists,
+                message: if binary_exists {
+                    "Connected".to_string()
+                } else {
+                    "Configured but binary not found — reconfigure or reinstall".to_string()
+                },
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: binary,
+            }
+        }
+        None => ClaudeDesktopConfigResult {
+            success: false,
+            message: "Not configured".to_string(),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: None,
+        },
+    }
+}
+
 /// Configure Claude Desktop to use the DailyOS MCP server.
 ///
 /// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
