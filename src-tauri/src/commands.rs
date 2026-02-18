@@ -230,15 +230,6 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     if let Some(entities) = entity_map.get(&m.id) {
                         let entities_vec: Vec<crate::types::LinkedEntity> = entities.clone();
                         m.linked_entities = Some(entities_vec);
-                        if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
-                            m.account_id = Some(acct.id.clone());
-                            m.account = Some(acct.name.clone());
-                        } else {
-                            // Linked to a project (not account) — clear stale account
-                            // from schedule.json so byline shows the correct entity.
-                            m.account_id = None;
-                            m.account = None;
-                        }
                     }
                 }
             }
@@ -260,19 +251,24 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                     archived.iter().map(|a| a.id.to_lowercase()).collect();
                 let live_domains = build_live_event_domain_map(&live_events);
                 for m in &mut meetings {
-                    if let Some(ref account_id) = m.account_id {
+                    let linked_account_id = m.linked_entities.as_ref()
+                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
+                        .map(|e| e.id.clone());
+                    let linked_account_name = m.linked_entities.as_ref()
+                        .and_then(|ents| ents.iter().find(|e| e.entity_type == "account"))
+                        .map(|e| e.name.clone());
+
+                    if let Some(ref account_id) = linked_account_id {
                         if !archived_ids.contains(&account_id.to_lowercase()) {
                             continue;
                         }
                     }
 
-                    let account_hint_key = m
-                        .account
+                    let account_hint_key = linked_account_name
                         .as_deref()
                         .map(normalize_match_key)
                         .unwrap_or_default();
-                    let account_id_key = m
-                        .account_id
+                    let account_id_key = linked_account_id
                         .as_deref()
                         .map(normalize_match_key)
                         .unwrap_or_default();
@@ -2719,12 +2715,13 @@ pub fn get_meeting_history_detail(
         .get_actions_for_meeting(&meeting_id)
         .map_err(|e| e.to_string())?;
 
-    // Resolve account name from account_id
-    let account_name = if let Some(ref aid) = meeting.account_id {
-        db.get_account(aid).ok().flatten().map(|a| a.name)
-    } else {
-        None
-    };
+    // Resolve account name from junction table
+    let (linked_account_id, account_name) = db
+        .get_meeting_entities(&meeting_id)
+        .ok()
+        .and_then(|ents| ents.into_iter().find(|e| e.entity_type == crate::entity::EntityType::Account))
+        .map(|e| (Some(e.id), Some(e.name)))
+        .unwrap_or((None, None));
 
     // Parse attendees from comma-separated string
     let attendees: Vec<String> = meeting
@@ -2748,7 +2745,7 @@ pub fn get_meeting_history_detail(
         meeting_type: meeting.meeting_type,
         start_time: meeting.start_time,
         end_time: meeting.end_time,
-        account_id: meeting.account_id,
+        account_id: linked_account_id,
         account_name,
         summary: meeting.summary,
         attendees,
@@ -4691,7 +4688,6 @@ pub fn update_meeting_entity(
             meeting_type: &meeting_type_str,
             start_time: &start_time,
             end_time: None,
-            account_id: None,
             calendar_event_id: None,
         })
         .map_err(|e| e.to_string())?;
@@ -4712,10 +4708,6 @@ pub fn update_meeting_entity(
             db.link_meeting_entity(&meeting_id, eid, &entity_type)
                 .map_err(|e| e.to_string())?;
         }
-
-        // Update legacy account_id on meetings_history
-        db.update_meeting_account(&meeting_id, cascade_account)
-            .map_err(|e| e.to_string())?;
 
         // Cascade to actions and captures
         db.cascade_meeting_entity_to_actions(&meeting_id, cascade_account, cascade_project)
@@ -4802,7 +4794,6 @@ pub fn add_meeting_entity(
             meeting_type: &meeting_type_str,
             start_time: &start_time,
             end_time: None,
-            account_id: None,
             calendar_event_id: None,
         })
         .map_err(|e| e.to_string())?;
@@ -4810,12 +4801,6 @@ pub fn add_meeting_entity(
         // Add entity link (idempotent)
         db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
             .map_err(|e| e.to_string())?;
-
-        // Update legacy account_id if linking an account
-        if entity_type == "account" {
-            db.update_meeting_account(&meeting_id, Some(&entity_id))
-                .map_err(|e| e.to_string())?;
-        }
 
         // Cascade people to this entity
         let (cascade_account, cascade_project) = match entity_type.as_str() {
@@ -4868,16 +4853,6 @@ pub fn remove_meeting_entity(
 
         db.unlink_meeting_entity(&meeting_id, &entity_id)
             .map_err(|e| e.to_string())?;
-
-        // If we removed an account, update legacy account_id to next linked account (or null)
-        if entity_type == "account" {
-            let remaining = db.get_meeting_entities(&meeting_id).unwrap_or_default();
-            let next_account = remaining
-                .iter()
-                .find(|e| e.entity_type == crate::entity::EntityType::Account);
-            db.update_meeting_account(&meeting_id, next_account.map(|a| a.id.as_str()))
-                .map_err(|e| e.to_string())?;
-        }
 
         // I305: Invalidate meeting prep so it regenerates with new entity intelligence
         if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
@@ -6249,7 +6224,6 @@ pub fn backfill_internal_meeting_associations(
             continue;
         };
         let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
-        let _ = db.update_meeting_account(&meeting_id, Some(&account.id));
         let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
         updated += 1;
     }
@@ -8180,7 +8154,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: Utc::now().to_rfc3339(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -8242,7 +8215,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
             end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: Some("Context summary".to_string()),
@@ -8306,7 +8278,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: (Utc::now() - chrono::Duration::hours(4)).to_rfc3339(),
             end_time: Some((Utc::now() - chrono::Duration::hours(3)).to_rfc3339()),
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -8335,7 +8306,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: (Utc::now() + chrono::Duration::hours(2)).to_rfc3339(),
             end_time: Some((Utc::now() + chrono::Duration::hours(3)).to_rfc3339()),
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -8368,7 +8338,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: Utc::now().to_rfc3339(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: Some("Renewal risk still elevated.".to_string()),
