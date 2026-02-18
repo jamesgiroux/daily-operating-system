@@ -315,7 +315,7 @@ fn extract_transcript_actions(
         let status = if meta.is_waiting {
             "waiting".to_string()
         } else {
-            "pending".to_string()
+            "proposed".to_string()
         };
 
         // Resolve @Tag to a real account ID; fall back to meeting-level account.
