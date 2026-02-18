@@ -313,7 +313,7 @@ export default function AccountsPage() {
         countLabel={isArchived ? "archived" : "active"}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="\u2318  Search accounts..."
+        searchPlaceholder="⌘  Search accounts..."
       >
         {/* Lifecycle filter (active only, only when lifecycle values exist) */}
         {!isArchived && lifecycleValues.length > 0 && (

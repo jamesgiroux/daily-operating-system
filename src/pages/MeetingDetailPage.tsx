@@ -326,7 +326,7 @@ export default function MeetingDetailPage() {
     activePage: "today" as const,
     backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
     chapters: CHAPTERS,
-    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {isEditable && (
@@ -335,7 +335,7 @@ export default function MeetingDetailPage() {
             disabled={prefilling}
             style={{ ...folioBtn, opacity: prefilling ? 0.5 : 1, cursor: prefilling ? "not-allowed" : "pointer" }}
           >
-            {prefilling ? "Prefilling\u2026" : "Prefill"}
+            {prefilling ? "Prefilling…" : "Prefill"}
           </button>
         )}
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
@@ -347,7 +347,7 @@ export default function MeetingDetailPage() {
           style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1, cursor: attaching ? "not-allowed" : "pointer" }}
         >
           {attaching ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <Paperclip style={{ width: 10, height: 10 }} />}
-          {attaching ? "Processing\u2026" : "Transcript"}
+          {attaching ? "Processing…" : "Transcript"}
         </button>
         <button
           onClick={() => loadMeetingIntelligence()}
@@ -2194,12 +2194,12 @@ function AppendixSection({
                       style={{
                         marginTop: 3,
                         fontSize: 14,
-                        color: item.startsWith("\u2713") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
+                        color: item.startsWith("✓") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
                       }}
                     >
-                      {item.startsWith("\u2713") ? "\u2713" : "\u25CB"}
+                      {item.startsWith("✓") ? "✓" : "○"}
                     </span>
-                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[\u2713\u25CB]\s*/, "")}</span>
+                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[✓○]\s*/, "")}</span>
                   </li>
                 ))}
               </ul>
@@ -2664,7 +2664,7 @@ function deriveRecentWins(data: FullMeetingPrep): { wins: string[]; sources: Sou
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars - 1).trim()}\u2026`;
+  return `${value.slice(0, maxChars - 1).trim()}…`;
 }
 
 // =============================================================================
