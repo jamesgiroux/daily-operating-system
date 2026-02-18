@@ -9199,3 +9199,255 @@ pub fn test_granola_cache(state: State<Arc<AppState>>) -> Result<usize, String> 
 
     crate::granola::cache::count_documents(path)
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I229: Gravatar MCP Integration
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Gravatar integration status for the settings UI.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GravatarStatus {
+    pub enabled: bool,
+    pub cached_count: i64,
+    pub api_key_set: bool,
+}
+
+/// Get Gravatar integration status.
+#[tauri::command]
+pub fn get_gravatar_status(state: State<Arc<AppState>>) -> GravatarStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.gravatar.clone()));
+
+    let gravatar_config = config.unwrap_or_default();
+
+    let cached_count = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref()
+                .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
+        })
+        .unwrap_or(0);
+
+    GravatarStatus {
+        enabled: gravatar_config.enabled,
+        cached_count,
+        api_key_set: gravatar_config.api_key.is_some(),
+    }
+}
+
+/// Enable or disable Gravatar integration.
+#[tauri::command]
+pub fn set_gravatar_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.gravatar.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set or clear the Gravatar API key.
+#[tauri::command]
+pub fn set_gravatar_api_key(
+    key: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.gravatar.api_key = key.filter(|k| !k.is_empty());
+    })?;
+    Ok(())
+}
+
+/// Fetch Gravatar data for a single person on demand.
+#[tauri::command]
+pub async fn fetch_gravatar(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    // Look up person's email
+    let (email, api_key) = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let email: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT email FROM person_emails WHERE person_id = ?1 AND is_primary = 1 LIMIT 1",
+                [&person_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("No email found for person {}", person_id))?;
+
+        let api_key = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+
+        (email, api_key)
+    };
+
+    // Connect and fetch
+    let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let profile = client
+        .get_profile(&email)
+        .await
+        .unwrap_or_default();
+
+    let data_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".dailyos")
+        .join("avatars");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let avatar_path = match client.get_avatar(&email, 200).await {
+        Ok(Some(bytes)) => {
+            use sha2::{Digest, Sha256};
+            let hash = Sha256::digest(email.as_bytes());
+            let hash_hex = hex::encode(&hash[..8]);
+            let path = data_dir.join(format!("{}.png", hash_hex));
+            if std::fs::write(&path, &bytes).is_ok() {
+                Some(path.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let interests = client.get_interests(&email).await.unwrap_or_default();
+
+    client.disconnect().await;
+
+    // Cache result
+    let has_gravatar = profile.display_name.is_some() || avatar_path.is_some();
+    let cache_entry = crate::gravatar::cache::CachedGravatar {
+        email: email.clone(),
+        avatar_url: avatar_path,
+        display_name: profile.display_name,
+        bio: profile.bio,
+        location: profile.location,
+        company: profile.company,
+        job_title: profile.job_title,
+        interests_json: if interests.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&interests).ok()
+        },
+        has_gravatar,
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        person_id: Some(person_id),
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)?;
+
+    Ok(())
+}
+
+/// Batch fetch Gravatar data for all people with stale or missing cache.
+#[tauri::command]
+pub async fn bulk_fetch_gravatars(
+    state: State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+
+    let emails_to_fetch: Vec<(String, Option<String>)> = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100)?
+    };
+
+    if emails_to_fetch.is_empty() {
+        return Ok(0);
+    }
+
+    let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let data_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".dailyos")
+        .join("avatars");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let mut fetched = 0;
+    for (email, person_id) in &emails_to_fetch {
+        let profile = client.get_profile(email).await.unwrap_or_default();
+
+        let avatar_path = match client.get_avatar(email, 200).await {
+            Ok(Some(bytes)) => {
+                use sha2::{Digest, Sha256};
+                let hash = Sha256::digest(email.as_bytes());
+                let hash_hex = hex::encode(&hash[..8]);
+                let path = data_dir.join(format!("{}.png", hash_hex));
+                if std::fs::write(&path, &bytes).is_ok() {
+                    Some(path.to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        let interests = client.get_interests(email).await.unwrap_or_default();
+
+        let has_gravatar = profile.display_name.is_some() || avatar_path.is_some();
+        let cache_entry = crate::gravatar::cache::CachedGravatar {
+            email: email.clone(),
+            avatar_url: avatar_path,
+            display_name: profile.display_name,
+            bio: profile.bio,
+            location: profile.location,
+            company: profile.company,
+            job_title: profile.job_title,
+            interests_json: if interests.is_empty() {
+                None
+            } else {
+                serde_json::to_string(&interests).ok()
+            },
+            has_gravatar,
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+            person_id: person_id.clone(),
+        };
+
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let _ = crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry);
+            }
+        }
+
+        fetched += 1;
+        // Rate limit: 1 req/sec
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    client.disconnect().await;
+    Ok(fetched)
+}
+
+/// Get local avatar file path for a person (fast cache lookup).
+#[tauri::command]
+pub fn get_person_avatar(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Option<String> {
+    let db_guard = state.db.lock().ok()?;
+    let db = db_guard.as_ref()?;
+    crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)
+}
