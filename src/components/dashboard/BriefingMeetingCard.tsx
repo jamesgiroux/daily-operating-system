@@ -19,6 +19,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
 import { stripMarkdown, formatMeetingType } from "@/lib/utils";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
+import { Avatar } from "@/components/ui/Avatar";
 import type { Meeting, CalendarEvent, Action, Stakeholder } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -158,6 +159,7 @@ export function KeyPeopleFlow({ stakeholders }: { stakeholders: Stakeholder[] })
           <span key={person.name}>
             {i > 0 && <span className={s.keyPeopleSep}>&middot;</span>}
             <span className={s.keyPeoplePerson}>
+              <Avatar name={person.name} size={20} />
               <span className={s.keyPeopleName}>{person.name}</span>
               {person.role && <span className={s.keyPeopleRole}>{person.role}</span>}
               <span className={clsx(s.keyPeopleTemp, s.keyPeopleTempHot)} />

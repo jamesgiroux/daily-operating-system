@@ -24,6 +24,7 @@ mod focus_capacity;
 mod focus_prioritization;
 mod google;
 pub mod google_api;
+pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
@@ -176,6 +177,12 @@ pub fn run() {
             let granola_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 granola::poller::run_granola_poller(granola_state, granola_handle).await;
+            });
+
+            // Spawn Gravatar avatar fetcher (I229)
+            let gravatar_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                gravatar::client::run_gravatar_fetcher(gravatar_state).await;
             });
 
             // Create tray menu
@@ -451,6 +458,13 @@ pub fn run() {
             commands::set_granola_poll_interval,
             commands::start_granola_backfill,
             commands::test_granola_cache,
+            // Gravatar MCP Integration (I229)
+            commands::get_gravatar_status,
+            commands::set_gravatar_enabled,
+            commands::set_gravatar_api_key,
+            commands::fetch_gravatar,
+            commands::bulk_fetch_gravatars,
+            commands::get_person_avatar,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
