@@ -107,6 +107,8 @@ pub struct AppState {
     /// Stashed live workspace path before switching to dev mode (I298).
     /// `restore_live()` reads this back to return to the user's real workspace.
     pub pre_dev_workspace: Mutex<Option<String>>,
+    /// Wake signal for the Clay enrichment poller (bulk enrich → immediate processing).
+    pub clay_poller_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -168,6 +170,7 @@ impl AppState {
             week_calendar_cache: RwLock::new(None),
             hygiene_full_orphan_scan_done: AtomicBool::new(false),
             pre_dev_workspace: Mutex::new(None),
+            clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -450,6 +453,7 @@ pub fn create_or_update_config(
                 quill: crate::quill::QuillConfig::default(),
                 granola: crate::granola::GranolaConfig::default(),
                 gravatar: crate::gravatar::GravatarConfig::default(),
+                clay: crate::clay::ClayConfig::default(),
                 features: std::collections::HashMap::new(),
                 user_domain: None,
                 user_domains: None,
