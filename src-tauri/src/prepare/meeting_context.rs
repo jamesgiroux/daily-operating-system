@@ -488,18 +488,20 @@ fn resolve_account_from_db(
         db.get_meeting_by_calendar_event_id(event_id).ok().flatten()
     };
 
-    // Step 0: Explicit account assignment on meetings_history is highest-confidence.
+    // Step 0: Explicit junction-table account assignment is highest-confidence.
     if let Some(ref row) = meeting_row {
-        if let Some(ref account_id) = row.account_id {
-            if !internal_meeting {
-                if let Ok(Some(account)) = db.get_account(account_id) {
-                    if account.is_internal {
-                        return None;
+        if let Ok(entities) = db.get_meeting_entities(&row.id) {
+            if let Some(acct_entity) = entities.iter().find(|e| e.entity_type == crate::entity::EntityType::Account) {
+                if !internal_meeting {
+                    if let Ok(Some(account)) = db.get_account(&acct_entity.id) {
+                        if account.is_internal {
+                            return None;
+                        }
                     }
                 }
-            }
-            if let Some(matched) = resolve_account_identifier(db, account_id, accounts_dir) {
-                return Some(matched);
+                if let Some(matched) = resolve_account_identifier(db, &acct_entity.id, accounts_dir) {
+                    return Some(matched);
+                }
             }
         }
     }
@@ -730,13 +732,6 @@ fn resolve_internal_account_for_meeting(
 ) -> Option<crate::db::DbAccount> {
     if !event_id.is_empty() {
         if let Ok(Some(row)) = db.get_meeting_by_calendar_event_id(event_id) {
-            if let Some(ref account_id) = row.account_id {
-                if let Ok(Some(account)) = db.get_account(account_id) {
-                    if account.is_internal && !account.archived {
-                        return Some(account);
-                    }
-                }
-            }
             if let Ok(entities) = db.get_meeting_entities(&row.id) {
                 for entity in entities {
                     if entity.entity_type != crate::entity::EntityType::Account {
@@ -1661,7 +1656,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: "2026-02-12T10:00:00Z".to_string(),
             end_time: None,
-            account_id: Some("dmt-entity".to_string()),
             attendees: None,
             notes_path: None,
             summary: None,
@@ -1680,9 +1674,9 @@ mod tests {
         })
         .expect("upsert meeting");
 
-        // Stale direct link that should not win over explicit meeting.account_id.
-        db.link_meeting_entity("evt-1", "slack-entity", "account")
-            .expect("link stale account");
+        // Junction table link to the preferred account.
+        db.link_meeting_entity("evt-1", "dmt-entity", "account")
+            .expect("link dmt account");
 
         let meeting = json!({
             "id": "evt-1",
