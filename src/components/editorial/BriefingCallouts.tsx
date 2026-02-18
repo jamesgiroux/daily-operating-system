@@ -8,6 +8,22 @@
  */
 import type { BriefingCallout } from "../../types/callout";
 
+const MAX_CALLOUTS = 5;
+
+const categoryMap: [RegExp, string][] = [
+  [/meeting frequency|champion.*cold|no contact|account.*dark|stakeholder|champion risk|engagement/i, "RELATIONSHIP"],
+  [/renewal|project health|action overload/i, "PORTFOLIO"],
+  [/prep coverage|heavy week|follow-up/i, "READINESS"],
+  [/email|spike/i, "ACTIVITY"],
+];
+
+function categorize(headline: string): string {
+  for (const [pattern, category] of categoryMap) {
+    if (pattern.test(headline)) return category;
+  }
+  return "SIGNAL";
+}
+
 interface BriefingCalloutsProps {
   callouts: BriefingCallout[];
 }
@@ -43,9 +59,23 @@ export function BriefingCallouts({ callouts }: BriefingCalloutsProps) {
         Intelligence Signals
       </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {callouts.map((callout) => (
+        {callouts.slice(0, MAX_CALLOUTS).map((callout) => (
           <CalloutItem key={callout.id} callout={callout} />
         ))}
+        {callouts.length > MAX_CALLOUTS && (
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              margin: "8px 0 0",
+              paddingLeft: 12,
+            }}
+          >
+            +{callouts.length - MAX_CALLOUTS} more signal
+            {callouts.length - MAX_CALLOUTS > 1 ? "s" : ""}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -82,6 +112,19 @@ function CalloutItem({ callout }: { callout: BriefingCallout }) {
             }}
           >
             {label}
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 9,
+              fontWeight: 500,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              color: "var(--color-text-tertiary)",
+              opacity: 0.7,
+            }}
+          >
+            {categorize(callout.headline)}
           </span>
           {callout.entityName && (
             <span

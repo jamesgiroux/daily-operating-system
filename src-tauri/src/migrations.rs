@@ -74,6 +74,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 20,
     sql: include_str!("migrations/020_signal_propagation.sql"),
+}, Migration {
+    version: 21,
+    sql: include_str!("migrations/021_proactive_surfacing.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -235,13 +238,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 20,
-            "should apply all migrations including signal_propagation"
+            applied, 21,
+            "should apply all migrations including proactive_surfacing"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 20);
+        assert_eq!(version, 21);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -511,6 +514,22 @@ mod tests {
             [],
         )
         .expect("briefing_callouts table should exist and accept inserts");
+
+        // Verify proactive_scan_state table (migration 021)
+        conn.execute(
+            "INSERT INTO proactive_scan_state (detector_name, last_insight_count)
+             VALUES ('detect_renewal_gap', 3)",
+            [],
+        )
+        .expect("proactive_scan_state table should exist and accept inserts");
+
+        // Verify proactive_insights table (migration 021)
+        conn.execute(
+            "INSERT INTO proactive_insights (id, detector_name, fingerprint, signal_id, entity_type, entity_id, headline, detail)
+             VALUES ('pi-1', 'detect_renewal_gap', 'fp-abc123', 'sig-1', 'account', 'a1', 'Renewal approaching', 'Acme renews in 45d')",
+            [],
+        )
+        .expect("proactive_insights table should exist and accept inserts");
     }
 
     #[test]
@@ -621,11 +640,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 19, "bootstrap should mark v1, then apply v2 through v20");
+        assert_eq!(applied, 20, "bootstrap should mark v1, then apply v2 through v21");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 20);
+        assert_eq!(version, 21);
 
         // Verify existing data is untouched
         let title: String = conn
