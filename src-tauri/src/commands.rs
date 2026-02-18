@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use chrono::TimeZone;
 use regex::Regex;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
@@ -8640,6 +8640,141 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
             binary_path: Some(binary_path_str),
         },
     }
+}
+
+// =============================================================================
+// Cowork Plugin Export
+// =============================================================================
+
+/// Result of a Cowork plugin export operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoworkPluginResult {
+    pub success: bool,
+    pub message: String,
+    pub path: Option<String>,
+}
+
+/// Info about a bundled Cowork plugin.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoworkPluginInfo {
+    pub name: String,
+    pub description: String,
+    pub filename: String,
+    pub available: bool,
+    pub exported: bool,
+}
+
+/// Export a bundled Cowork plugin zip to ~/Desktop.
+#[tauri::command]
+pub fn export_cowork_plugin(
+    app_handle: tauri::AppHandle,
+    plugin_name: String,
+) -> CoworkPluginResult {
+    let filename = match plugin_name.as_str() {
+        "dailyos" => "dailyos-plugin.zip",
+        "dailyos-writer" => "dailyos-writer-plugin.zip",
+        _ => {
+            return CoworkPluginResult {
+                success: false,
+                message: format!("Unknown plugin: {plugin_name}"),
+                path: None,
+            }
+        }
+    };
+
+    let resource_path = app_handle
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("resources/plugins").join(filename));
+
+    // In dev mode, fall back to the source tree
+    let source_path = resource_path
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let dev_path = std::env::current_dir()
+                .ok()?
+                .join("resources/plugins")
+                .join(filename);
+            dev_path.exists().then_some(dev_path)
+        });
+
+    let source = match source_path {
+        Some(p) => p,
+        None => {
+            return CoworkPluginResult {
+                success: false,
+                message: format!("Bundled plugin not found: {filename}"),
+                path: None,
+            }
+        }
+    };
+
+    let desktop = match dirs::home_dir() {
+        Some(h) => h.join("Desktop").join(filename),
+        None => {
+            return CoworkPluginResult {
+                success: false,
+                message: "Could not determine home directory".to_string(),
+                path: None,
+            }
+        }
+    };
+
+    match std::fs::copy(&source, &desktop) {
+        Ok(_) => CoworkPluginResult {
+            success: true,
+            message: format!("Saved to Desktop/{filename}"),
+            path: Some(desktop.to_string_lossy().to_string()),
+        },
+        Err(e) => CoworkPluginResult {
+            success: false,
+            message: format!("Failed to copy: {e}"),
+            path: None,
+        },
+    }
+}
+
+/// List available bundled Cowork plugins and their export status.
+#[tauri::command]
+pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPluginInfo> {
+    let plugins = vec![
+        ("dailyos", "dailyos-plugin.zip", "DailyOS workspace tools — briefings, accounts, meetings, actions"),
+        ("dailyos-writer", "dailyos-writer-plugin.zip", "DailyOS Writer — drafts emails, agendas, and follow-ups from your data"),
+    ];
+
+    let desktop = dirs::home_dir().map(|h| h.join("Desktop"));
+
+    let resource_dir = app_handle.path().resource_dir().ok();
+
+    plugins
+        .into_iter()
+        .map(|(name, filename, description)| {
+            let available = resource_dir
+                .as_ref()
+                .map(|d: &std::path::PathBuf| d.join("resources/plugins").join(filename).exists())
+                .unwrap_or(false)
+                || std::env::current_dir()
+                    .ok()
+                    .map(|d: std::path::PathBuf| d.join("resources/plugins").join(filename).exists())
+                    .unwrap_or(false);
+
+            let exported = desktop
+                .as_ref()
+                .map(|d| d.join(filename).exists())
+                .unwrap_or(false);
+
+            CoworkPluginInfo {
+                name: name.to_string(),
+                description: description.to_string(),
+                filename: filename.to_string(),
+                available,
+                exported,
+            }
+        })
+        .collect()
 }
 
 /// Resolve the MCP binary path by checking common locations.
