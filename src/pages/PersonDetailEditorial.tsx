@@ -329,7 +329,7 @@ export default function PersonDetailEditorial() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={person.merging}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={person.handleMerge} disabled={person.merging}>
-              {person.merging ? "Merging\u2026" : "Merge"}
+              {person.merging ? "Merging…" : "Merge"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -352,7 +352,7 @@ export default function PersonDetailEditorial() {
               disabled={person.merging}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {person.merging ? "Deleting\u2026" : "Delete"}
+              {person.merging ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

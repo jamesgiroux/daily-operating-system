@@ -1,0 +1,18 @@
+{
+  "name": "dailyos-plugins",
+  "owner": {
+    "name": "DailyOS"
+  },
+  "plugins": [
+    {
+      "name": "dailyos",
+      "source": "./dailyos",
+      "description": "Workspace intelligence for Claude Code. Gives Claude full fluency in your DailyOS workspace — entities, people, meetings, actions, and intelligence. Ten commands: assess risks, produce deliverables, compose communications, plan strategies, synthesize patterns, capture inputs, enrich intelligence, make structured decisions, and navigate relationships. No startup tax — your workspace is the context."
+    },
+    {
+      "name": "dailyos-writer",
+      "source": "./dailyos-writer",
+      "description": "Editorial production with writer's room quality control. Seven-phase workflow with specialized voices, internal review cycles, and challenger gates. Creates thought leadership, strategic documents, status reports, and customer communications from your DailyOS workspace intelligence."
+    }
+  ]
+}

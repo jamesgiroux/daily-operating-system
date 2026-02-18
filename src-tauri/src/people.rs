@@ -52,6 +52,23 @@ pub struct PersonStructured {
     pub role: Option<String>,
     #[serde(default = "default_relationship")]
     pub relationship: String,
+    // Clay enrichment fields (I228)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linkedin_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twitter_handle: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company_industry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company_size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub company_hq: Option<String>,
 }
 
 fn default_relationship() -> String {
@@ -87,6 +104,14 @@ pub fn write_person_json(workspace: &Path, person: &DbPerson, db: &ActionDb) -> 
             organization: person.organization.clone(),
             role: person.role.clone(),
             relationship: person.relationship.clone(),
+            linkedin_url: person.linkedin_url.clone(),
+            twitter_handle: person.twitter_handle.clone(),
+            phone: person.phone.clone(),
+            photo_url: person.photo_url.clone(),
+            bio: person.bio.clone(),
+            company_industry: person.company_industry.clone(),
+            company_size: person.company_size.clone(),
+            company_hq: person.company_hq.clone(),
         },
         notes: person.notes.clone(),
         linked_entities,
@@ -260,6 +285,17 @@ pub fn read_person_json(path: &Path) -> Result<ReadPersonResult, String> {
             meeting_count: 0,
             updated_at,
             archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         },
         linked_entities: json.linked_entities,
     })

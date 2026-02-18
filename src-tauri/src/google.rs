@@ -198,6 +198,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 let _ = app_handle.emit("calendar-updated", ());
 
+                // Check for recently-ended meetings needing Quill transcript sync
+                crate::quill::poller::check_ended_meetings_for_sync(&state);
+
                 // Notify frontend about new preps
                 for _ in 0..new_preps {
                     let _ = app_handle.emit("prep-ready", ());
@@ -558,6 +561,17 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
                 meeting_count: 0,
                 updated_at: Utc::now().to_rfc3339(),
                 archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
             };
 
             if db.upsert_person(&person).is_ok() {

@@ -433,7 +433,7 @@ function StateRow({
 }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="mt-0.5 text-xs">{ok ? "\u2713" : "\u2717"}</span>
+      <span className="mt-0.5 text-xs">{ok ? "✓" : "✗"}</span>
       <div className="min-w-0 flex-1">
         <span className="font-medium">{label}</span>
         {detail && (
