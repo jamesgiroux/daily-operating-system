@@ -1435,4 +1435,5 @@ export interface QuillSyncState {
   transcriptPath: string | null;
   createdAt: string;
   updatedAt: string;
+  source: "quill" | "granola";
 }
