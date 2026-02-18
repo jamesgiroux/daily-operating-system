@@ -529,6 +529,23 @@ pub fn run_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // I305: Extract and persist keywords from the raw AI response
+    if let Some(keywords_json) =
+        crate::entity_intel::extract_keywords_from_response(&output.stdout)
+    {
+        if let Ok(db) = crate::db::ActionDb::open() {
+            match input.entity_type.as_str() {
+                "account" => {
+                    let _ = db.update_account_keywords(&input.entity_id, &keywords_json);
+                }
+                "project" => {
+                    let _ = db.update_project_keywords(&input.entity_id, &keywords_json);
+                }
+                _ => {}
+            }
+        }
+    }
+
     parse_intelligence_response(
         &output.stdout,
         &input.entity_id,
