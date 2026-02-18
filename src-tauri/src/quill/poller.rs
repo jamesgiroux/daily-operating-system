@@ -122,24 +122,27 @@ async fn process_sync_row(
     };
 
     // Step 2: Connect to Quill and search for matching meeting
-    let client = QuillClient::new(bridge_path.to_string());
-    if !client.bridge_exists() {
-        log::warn!("Quill sync: bridge not found at {}", bridge_path);
-        if let Ok(g) = state.db.lock() {
-            if let Some(db) = g.as_ref() {
-                let _ = sync::transition_state(
-                    db, &row.id, "failed", None, None, None,
-                    Some("Bridge not found"),
-                );
+    let client = match QuillClient::connect(bridge_path).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Quill sync: failed to connect: {}", e);
+            if let Ok(g) = state.db.lock() {
+                if let Some(db) = g.as_ref() {
+                    let _ = sync::transition_state(
+                        db, &row.id, "failed", None, None, None,
+                        Some(&format!("Connection failed: {}", e)),
+                    );
+                }
             }
+            return;
         }
-        return;
-    }
+    };
 
     let quill_meetings = match client.list_meetings().await {
         Ok(meetings) => meetings,
         Err(e) => {
             log::warn!("Quill sync: list_meetings failed: {}", e);
+            client.disconnect().await;
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
                     let _ = sync::advance_attempt(db, &row.id);
@@ -168,6 +171,7 @@ async fn process_sync_row(
                 "Quill sync: no match for meeting '{}', will retry",
                 meeting.title
             );
+            client.disconnect().await;
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
                     let _ = sync::advance_attempt(db, &row.id);
@@ -207,6 +211,7 @@ async fn process_sync_row(
         Ok(t) => t,
         Err(e) => {
             log::warn!("Quill sync: get_transcript failed: {}", e);
+            client.disconnect().await;
             if let Ok(g) = state.db.lock() {
                 if let Some(db) = g.as_ref() {
                     let _ = sync::transition_state(
@@ -223,52 +228,86 @@ async fn process_sync_row(
         }
     };
 
-    // Step 5: Store transcript and mark completed
-    {
+    // Disconnect from Quill now that we have the transcript
+    client.disconnect().await;
+
+    // Step 5: Process transcript through AI pipeline
+    let calendar_event = sync::db_meeting_to_calendar_event(&meeting);
+
+    let (workspace, profile, ai_config) = {
+        let config_guard = state.config.read().ok();
+        match config_guard.as_ref().and_then(|g| g.as_ref()) {
+            Some(cfg) => (
+                std::path::PathBuf::from(&cfg.workspace_path),
+                cfg.profile.clone(),
+                Some(cfg.ai_models.clone()),
+            ),
+            None => {
+                log::warn!("Quill sync: config not available for transcript processing");
+                if let Ok(g) = state.db.lock() {
+                    if let Some(db) = g.as_ref() {
+                        let _ = sync::transition_state(
+                            db, &row.id, "failed",
+                            Some(&matched.quill_meeting_id),
+                            Some(matched.confidence),
+                            None,
+                            Some("Config not available"),
+                        );
+                    }
+                }
+                return;
+            }
+        }
+    };
+
+    let result = {
         let db_guard = match state.db.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        if let Some(db) = db_guard.as_ref() {
-            let _ = sync::transition_state(
-                db, &row.id, "processing",
-                Some(&matched.quill_meeting_id),
-                Some(matched.confidence),
-                None,
-                None,
-            );
-
-            // Store transcript metadata on the meeting row
-            let now = Utc::now().to_rfc3339();
-            if let Err(e) = db.update_meeting_transcript_metadata(
-                &row.meeting_id,
-                &format!("quill://{}", matched.quill_meeting_id),
-                &now,
-                None,
-            ) {
-                log::warn!("Quill sync: failed to store transcript metadata: {}", e);
-            }
-
-            let _ = sync::transition_state(
+        match db_guard.as_ref() {
+            Some(db) => sync::process_fetched_transcript(
                 db,
                 &row.id,
-                "completed",
-                Some(&matched.quill_meeting_id),
-                Some(matched.confidence),
-                Some(&format!("quill://{}", matched.quill_meeting_id)),
-                None,
-            );
+                &calendar_event,
+                &transcript,
+                &workspace,
+                &profile,
+                ai_config.as_ref(),
+            ),
+            None => Err("Database not available".to_string()),
+        }
+    };
 
+    match &result {
+        Ok(dest) => {
             log::info!(
-                "Quill sync: completed for meeting '{}' ({} chars)",
+                "Quill sync: transcript processed for '{}' → {} ({} chars)",
                 meeting.title,
+                dest,
                 transcript.len()
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "Quill sync: transcript processing failed for '{}': {}",
+                meeting.title,
+                e
             );
         }
     }
 
     // Notify frontend
     let _ = app_handle.emit("transcript-processed", &row.meeting_id);
+
+    // Send native notification on success
+    if result.is_ok() {
+        let _ = crate::notification::notify_transcript_ready(
+            app_handle,
+            &meeting.title,
+            meeting.account_id.as_deref(),
+        );
+    }
 }
 
 /// Check work hours using the same logic as google.rs.
