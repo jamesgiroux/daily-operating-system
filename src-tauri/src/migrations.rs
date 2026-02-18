@@ -53,6 +53,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 13,
     sql: include_str!("migrations/013_quill_sync.sql"),
+}, Migration {
+    version: 14,
+    sql: include_str!("migrations/014_granola_sync.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -214,13 +217,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 13,
-            "should apply all migrations including quill_sync"
+            applied, 14,
+            "should apply all migrations including granola_sync"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 13);
+        assert_eq!(version, 14);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -369,6 +372,14 @@ mod tests {
             [],
         )
         .expect("quill_sync_state table should exist and accept inserts");
+
+        // Verify source column exists and allows granola source (migration 014)
+        conn.execute(
+            "INSERT INTO quill_sync_state (id, meeting_id, state, source)
+             VALUES ('qs-2', 'm1', 'pending', 'granola')",
+            [],
+        )
+        .expect("quill_sync_state should accept granola source for same meeting_id");
     }
 
     #[test]
@@ -466,13 +477,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v9
+        // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 12, "bootstrap should mark v1, then apply v2 through v13");
+        assert_eq!(applied, 13, "bootstrap should mark v1, then apply v2 through v14");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 13);
+        assert_eq!(version, 14);
 
         // Verify existing data is untouched
         let title: String = conn
