@@ -8756,3 +8756,139 @@ pub fn create_person_from_stakeholder(
 
     Ok(id)
 }
+
+// =============================================================================
+// Quill MCP Integration
+// =============================================================================
+
+/// Quill integration status for the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuillStatus {
+    pub enabled: bool,
+    pub bridge_exists: bool,
+    pub bridge_path: String,
+    pub pending_syncs: usize,
+    pub failed_syncs: usize,
+    pub completed_syncs: usize,
+    pub last_sync_at: Option<String>,
+}
+
+/// Get the current status of the Quill integration.
+#[tauri::command]
+pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.quill.clone()));
+
+    let quill_config = config.unwrap_or_default();
+    let bridge_exists =
+        std::path::Path::new(&quill_config.bridge_path).exists();
+
+    // Count sync states from DB
+    let (pending, failed, completed, last_sync) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let pending = db
+                    .get_pending_quill_syncs()
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+
+                // Count failed and completed from all rows
+                let (failed_count, completed_count, last) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT
+                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                            MAX(completed_at)
+                         FROM quill_sync_state",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, i64>(0).unwrap_or(0) as usize,
+                                row.get::<_, i64>(1).unwrap_or(0) as usize,
+                                row.get::<_, Option<String>>(2)?,
+                            ))
+                        })
+                    })
+                    .unwrap_or((0, 0, None));
+
+                (pending, failed_count, completed_count, last)
+            })
+        })
+        .unwrap_or((0, 0, 0, None));
+
+    QuillStatus {
+        enabled: quill_config.enabled,
+        bridge_exists,
+        bridge_path: quill_config.bridge_path,
+        pending_syncs: pending,
+        failed_syncs: failed,
+        completed_syncs: completed,
+        last_sync_at: last_sync,
+    }
+}
+
+/// Enable or disable Quill integration.
+#[tauri::command]
+pub fn set_quill_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.quill.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Test the Quill MCP connection by checking if the bridge exists and Node.js is available.
+#[tauri::command]
+pub fn test_quill_connection(state: State<Arc<AppState>>) -> Result<bool, String> {
+    let bridge_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .as_ref()
+        .map(|c| c.quill.bridge_path.clone())
+        .unwrap_or_default();
+
+    if bridge_path.is_empty() {
+        return Ok(false);
+    }
+
+    let bridge_exists = std::path::Path::new(&bridge_path).exists();
+    let node_available = crate::quill::client::QuillClient::node_available();
+
+    Ok(bridge_exists && node_available)
+}
+
+/// Get Quill sync states, optionally filtered by meeting ID.
+#[tauri::command]
+pub fn get_quill_sync_states(
+    meeting_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbQuillSyncState>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned".to_string())?;
+    let db = db_guard
+        .as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+
+    match meeting_id {
+        Some(mid) => {
+            let row = db
+                .get_quill_sync_state(&mid)
+                .map_err(|e| e.to_string())?;
+            Ok(row.into_iter().collect())
+        }
+        None => db
+            .get_pending_quill_syncs()
+            .map_err(|e| e.to_string()),
+    }
+}
