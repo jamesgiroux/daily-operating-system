@@ -29,6 +29,8 @@ pub struct Config {
     #[serde(default)]
     pub quill: crate::quill::QuillConfig,
     #[serde(default)]
+    pub granola: crate::granola::GranolaConfig,
+    #[serde(default)]
     pub features: HashMap<String, bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_domain: Option<String>,
@@ -1870,6 +1872,7 @@ mod tests {
             google: GoogleConfig::default(),
             post_meeting_capture: PostMeetingCaptureConfig::default(),
             quill: crate::quill::QuillConfig::default(),
+            granola: crate::granola::GranolaConfig::default(),
             features: HashMap::new(),
             user_domain: None,
             user_domains: None,
