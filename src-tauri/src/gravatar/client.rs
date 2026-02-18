@@ -301,6 +301,27 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                     if let Ok(db_guard) = state.db.lock() {
                         if let Some(db) = db_guard.as_ref() {
                             let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
+
+                            // I306: Emit profile_discovered signal to bus
+                            if has_gravatar {
+                                if let Some(ref pid) = person_id {
+                                    let value = serde_json::json!({
+                                        "display_name": cache_entry.display_name,
+                                        "company": cache_entry.company,
+                                        "job_title": cache_entry.job_title,
+                                    })
+                                    .to_string();
+                                    let _ = crate::signals::bus::emit_signal(
+                                        db,
+                                        "person",
+                                        pid,
+                                        "profile_discovered",
+                                        "gravatar",
+                                        Some(&value),
+                                        0.7,
+                                    );
+                                }
+                            }
                         }
                     }
 

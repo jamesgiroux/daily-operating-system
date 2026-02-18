@@ -22,6 +22,7 @@ use serde_json::Value;
 use crate::db::ActionDb;
 use crate::embeddings::EmbeddingModel;
 use crate::entity::EntityType;
+use crate::signals;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,8 +104,8 @@ pub fn resolve_meeting_entities(
         return vec![ResolutionOutcome::NoMatch];
     }
 
-    // Fuse signals by (entity_id, entity_type)
-    let fused = fuse_signals(&all_signals);
+    // Fuse signals by (entity_id, entity_type) with weighted fusion
+    let fused = fuse_signals(&all_signals, Some(db));
 
     // Convert to outcomes
     let mut outcomes: Vec<ResolutionOutcome> = Vec::new();
@@ -133,6 +134,36 @@ pub fn resolve_meeting_entities(
         let cb = outcome_confidence(b);
         cb.partial_cmp(&ca).unwrap_or(std::cmp::Ordering::Equal)
     });
+
+    // Emit entity_resolution signals to the signal bus for resolved outcomes
+    for outcome in &outcomes {
+        let entity = match outcome {
+            ResolutionOutcome::Resolved(e)
+            | ResolutionOutcome::ResolvedWithFlag(e)
+            | ResolutionOutcome::Suggestion(e) => e,
+            ResolutionOutcome::NoMatch => continue,
+        };
+        let value = serde_json::json!({
+            "event_id": event_id,
+            "source": entity.source,
+            "outcome": match outcome {
+                ResolutionOutcome::Resolved(_) => "resolved",
+                ResolutionOutcome::ResolvedWithFlag(_) => "resolved_with_flag",
+                ResolutionOutcome::Suggestion(_) => "suggestion",
+                ResolutionOutcome::NoMatch => "no_match",
+            },
+        })
+        .to_string();
+        let _ = signals::bus::emit_signal(
+            db,
+            entity.entity_type.as_str(),
+            &entity.entity_id,
+            "entity_resolution",
+            &entity.source,
+            Some(&value),
+            entity.confidence,
+        );
+    }
 
     if outcomes.is_empty() {
         vec![ResolutionOutcome::NoMatch]
@@ -464,10 +495,16 @@ fn signal_embedding_similarity(
 // Signal fusion (log-odds Bayesian combination)
 // ---------------------------------------------------------------------------
 
-/// Fuse signals by (entity_id, entity_type) using log-odds combination.
-/// Returns map of (entity_id, entity_type) → (combined_confidence, dominant_source).
+/// Fuse signals by (entity_id, entity_type) using weighted log-odds combination.
+///
+/// When `db` is Some, computes per-signal weights via the signal bus
+/// (source tier weight * temporal decay * learned reliability). Live signals
+/// (current timestamp) get full weight since decay is negligible.
+///
+/// When `db` is None, all signals receive weight 1.0 (backward-compat for tests).
 fn fuse_signals(
     signals: &[ResolutionSignal],
+    db: Option<&ActionDb>,
 ) -> HashMap<(String, EntityType), (f64, String)> {
     // Group signals by (entity_id, entity_type)
     let mut groups: HashMap<(String, EntityType), Vec<&ResolutionSignal>> = HashMap::new();
@@ -486,24 +523,42 @@ fn fuse_signals(
             continue;
         }
 
-        // Log-odds Bayesian combination:
-        // For each signal with confidence p, compute log_odds = ln(p / (1-p))
-        // Sum all log-odds, convert back: combined_p = 1 / (1 + exp(-sum))
-        let mut log_odds_sum: f64 = 0.0;
-        let mut best_source = String::new();
-        let mut best_conf = 0.0_f64;
+        // Build (confidence, weight) pairs for weighted log-odds fusion
+        let pairs: Vec<(f64, f64)> = group
+            .iter()
+            .map(|signal| {
+                let weight = match db {
+                    Some(db_ref) => {
+                        // Create a synthetic SignalEvent with current time for live signals
+                        let synthetic = crate::signals::bus::SignalEvent {
+                            id: String::new(),
+                            entity_type: signal.entity_type.as_str().to_string(),
+                            entity_id: signal.entity_id.clone(),
+                            signal_type: "entity_resolution".to_string(),
+                            source: signal.source.clone(),
+                            value: None,
+                            confidence: signal.confidence,
+                            decay_half_life_days: crate::signals::bus::default_half_life(&signal.source),
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                            superseded_by: None,
+                        };
+                        crate::signals::fusion::compute_signal_weight(db_ref, &synthetic)
+                    }
+                    None => 1.0,
+                };
+                (signal.confidence, weight)
+            })
+            .collect();
 
-        for signal in &group {
-            let p = signal.confidence.clamp(0.01, 0.99);
-            log_odds_sum += (p / (1.0 - p)).ln();
-            if signal.confidence > best_conf {
-                best_conf = signal.confidence;
-                best_source = signal.source.clone();
-            }
-        }
+        let combined = crate::signals::fusion::fuse_confidence(&pairs);
 
-        let combined = 1.0 / (1.0 + (-log_odds_sum).exp());
-        let combined = combined.clamp(0.0, 0.999);
+        // Track dominant source (highest raw confidence)
+        let best_source = group
+            .iter()
+            .max_by(|a, b| a.confidence.partial_cmp(&b.confidence).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|s| s.source.clone())
+            .unwrap_or_default();
+
         results.insert(key, (combined, best_source));
     }
 
@@ -699,7 +754,7 @@ mod tests {
             confidence: 0.80,
             source: "keyword".to_string(),
         }];
-        let result = fuse_signals(&signals);
+        let result = fuse_signals(&signals, None);
         let (conf, source) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
         assert!((conf - 0.80).abs() < 0.01);
         assert_eq!(source, "keyword");
@@ -728,7 +783,7 @@ mod tests {
                 source: "embedding".to_string(),
             },
         ];
-        let result = fuse_signals(&signals);
+        let result = fuse_signals(&signals, None);
         let (conf, _) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
         // Three signals at 0.4: log_odds each = ln(0.4/0.6) ≈ -0.405
         // Sum ≈ -1.216, combined = 1/(1+exp(1.216)) ≈ 0.229
@@ -759,7 +814,7 @@ mod tests {
                 source: "attendee_vote".to_string(),
             },
         ];
-        let result = fuse_signals(&signals);
+        let result = fuse_signals(&signals, None);
         let (conf, _) = result.get(&("acme".to_string(), EntityType::Account)).unwrap();
         // p=0.7, log_odds = ln(0.7/0.3) = ln(2.333) ≈ 0.847
         // Sum of 2 = 1.694
