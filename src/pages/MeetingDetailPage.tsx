@@ -2714,6 +2714,15 @@ function QuillSyncBadge({ meetingId }: { meetingId: string }) {
     loadSync();
   }, [loadSync]);
 
+  // Poll for state transitions while sync is in progress
+  useEffect(() => {
+    if (!syncState || syncState.state === "completed" || syncState.state === "failed" || syncState.state === "abandoned") {
+      return;
+    }
+    const interval = setInterval(loadSync, 10_000);
+    return () => clearInterval(interval);
+  }, [syncState?.state, loadSync]);
+
   // Listen for transcript-processed event to refresh
   useEffect(() => {
     let cancelled = false;
@@ -2739,15 +2748,23 @@ function QuillSyncBadge({ meetingId }: { meetingId: string }) {
 
   switch (state) {
     case "pending":
+      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
+      label = `Waiting to sync transcript ${sourceLabel}`;
+      color = "var(--color-golden-turmeric)";
+      break;
     case "polling":
+      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
+      label = `Searching for transcript ${sourceLabel}`;
+      color = "var(--color-golden-turmeric)";
+      break;
     case "fetching":
       icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = "Syncing transcript...";
+      label = `Downloading transcript ${sourceLabel}`;
       color = "var(--color-golden-turmeric)";
       break;
     case "processing":
       icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
-      label = "Processing transcript...";
+      label = `Processing transcript ${sourceLabel}`;
       color = "var(--color-sky-larkspur)";
       break;
     case "completed":
