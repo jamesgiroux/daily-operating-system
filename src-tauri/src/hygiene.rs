@@ -1245,6 +1245,13 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             }
         }
 
+        // Run proactive detection scan after hygiene fixes (I260)
+        match crate::proactive::scanner::run_proactive_scan(&state) {
+            Ok(n) if n > 0 => log::info!("HygieneLoop: {} proactive insights detected", n),
+            Err(e) => log::warn!("HygieneLoop: proactive scan failed: {}", e),
+            _ => {}
+        }
+
         // Prune old audit trail files (I297)
         if let Some(config) = state.config.read().ok().and_then(|g| g.clone()) {
             let workspace = std::path::Path::new(&config.workspace_path);
