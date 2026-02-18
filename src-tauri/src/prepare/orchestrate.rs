@@ -130,6 +130,25 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Drop DB guard before any further awaits
     drop(db_guard);
 
+    // Step 6a: Run proactive detection scan (I260)
+    {
+        let scan_guard = state.db.lock().ok();
+        if let Some(db) = scan_guard.as_ref().and_then(|g| g.as_ref()) {
+            let (profile, user_domains, _) = get_config(state);
+            let scan_ctx = crate::proactive::engine::DetectorContext {
+                today,
+                user_domains,
+                profile,
+            };
+            let engine = crate::proactive::engine::default_engine();
+            match engine.run_scan(db, &scan_ctx) {
+                Ok(n) if n > 0 => log::info!("prepare_today: {} proactive insights detected", n),
+                Err(e) => log::warn!("prepare_today: proactive scan failed: {}", e),
+                _ => {}
+            }
+        }
+    }
+
     // Step 6b: Signal-driven briefing callouts (I308)
     let callouts = {
         let callout_guard = state.db.lock().ok();
@@ -295,6 +314,29 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         }
     }
 
+    // Proactive scan + callouts for week view (I260)
+    let week_callouts = {
+        let callout_guard = state.db.lock().ok();
+        let callout_db = callout_guard.as_ref().and_then(|g| g.as_ref());
+        match callout_db {
+            Some(db) => {
+                // Run proactive scan first
+                let scan_ctx = crate::proactive::engine::DetectorContext {
+                    today,
+                    user_domains: user_domains.clone(),
+                    profile: profile.clone(),
+                };
+                let engine = crate::proactive::engine::default_engine();
+                let _ = engine.run_scan(db, &scan_ctx);
+
+                // Generate callouts
+                let model_ref = state.embedding_model.as_ref();
+                crate::signals::callouts::generate_callouts(db, Some(model_ref), &classified)
+            }
+            None => Vec::new(),
+        }
+    };
+
     let directive = json!({
         "command": "week",
         "generatedAt": now.to_rfc3339(),
@@ -302,6 +344,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         "meetingsByDay": Value::Object(serializable_by_day),
         "meetingContexts": meeting_contexts,
         "actions": actions_data,
+        "callouts": week_callouts,
         "timeBlocks": {
             "gapsByDay": gaps_by_day,
             "suggestions": suggestions,
