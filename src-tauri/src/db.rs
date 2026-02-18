@@ -269,6 +269,29 @@ pub struct DbPerson {
     pub meeting_count: i32,
     pub updated_at: String,
     pub archived: bool,
+    // Clay enrichment fields (I228)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linkedin_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub twitter_handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub photo_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_history: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_industry: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_size: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company_hq: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_enriched_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enrichment_sources: Option<String>,
 }
 
 /// Person-level relationship signals (parallel to StakeholderSignals).
@@ -4744,6 +4767,17 @@ impl ActionDb {
             meeting_count: row.get(10)?,
             updated_at: row.get(11)?,
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         })
     }
 
@@ -6665,6 +6699,17 @@ mod tests {
             meeting_count: 0,
             updated_at: now,
             archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
         }
     }
 
