@@ -109,6 +109,8 @@ pub struct AppState {
     pub pre_dev_workspace: Mutex<Option<String>>,
     /// Wake signal for the Clay enrichment poller (bulk enrich → immediate processing).
     pub clay_poller_wake: Arc<tokio::sync::Notify>,
+    /// Queue of meeting IDs whose prep needs regeneration after entity correction (I305).
+    pub prep_invalidation_queue: Mutex<Vec<String>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -171,6 +173,7 @@ impl AppState {
             hygiene_full_orphan_scan_done: AtomicBool::new(false),
             pre_dev_workspace: Mutex::new(None),
             clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            prep_invalidation_queue: Mutex::new(Vec::new()),
         }
     }
 
