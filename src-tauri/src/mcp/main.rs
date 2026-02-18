@@ -9,8 +9,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use libc;
-
 use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
 use rmcp::{tool, ServerHandler, ServiceExt};
