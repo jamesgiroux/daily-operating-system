@@ -1,0 +1,236 @@
+# Personal Blog Voice Profile
+# For: jamesgiroux.ca posts - personal reflections on WordPress, leadership, culture, work
+# Based on: Analysis of "Assuming Positive Intent", "Why We Need More Recognition",
+#           "Peak WordPress", "Emotional Tremors", "Quiet Quitting"
+
+name: "Personal Blog"
+content_types:
+  - personal-blog
+  - wordpress-community
+  - leadership-reflection
+  - culture-commentary
+  - work-life-observation
+
+audience:
+  primary: "WordPress community members, product/agency folks, fellow people-leaders"
+  secondary: "General tech workers interested in culture, leadership, remote work"
+  context: "People who appreciate authentic takes grounded in real experience"
+
+voice:
+  tone: "Conversational authenticity - like talking with a thoughtful friend"
+  style: "Canadian-millennial - direct but diplomatic, vulnerable but not self-pitying"
+  authority: "Experience-earned, not position-claimed"
+
+  principles:
+    - "Personal story as entry point, not sermon"
+    - "WordPress lens on broader trends"
+    - "Vulnerability without victim energy"
+    - "Questions over prescriptions"
+    - "Experience as evidence, not credential"
+
+  signature_moves:
+    - "Open with a personal story or moment of recognition"
+    - "Connect the personal to a broader pattern"
+    - "Apply it to WordPress specifically"
+    - "End with a question to the reader"
+
+  conversational_asides:
+    # Natural interjections that feel like James
+    - "(I thought)"                    # Retrospective self-doubt
+    - "I digress..."                   # Self-aware tangent
+    - "right?"                         # Checking in with reader
+    - "I mean,"                        # Casual transition
+    - "(if I'm being honest)"          # Candid admission
+    - "(we're skipping X for everyone's mental health)"  # Self-aware humor
+    - "(or is it just quitting?)"      # Playful aside
+    - "You're welcome world."          # Dry humor
+    - "Like, truly serious."           # Emphasis through repetition
+
+  speculation_phrases:
+    - "I wonder..."
+    - "Perhaps..."
+    - "I hypothesize that..."
+    - "What might it look like if..."
+    - "I suspect..."
+
+  do:
+    - Open with a specific moment, story, or current event
+    - Use parenthetical asides to add personality
+    - Share failures and learning moments openly
+    - Reference specific people, events, dates in WordPress
+    - Connect broader trends back to WordPress ecosystem
+    - End sections/posts with questions inviting reader reflection
+    - Use numbered lists for actionable takeaways
+    - Embed social media references when relevant
+    - Acknowledge both sides of tensions (takes two to tango)
+
+  avoid:
+    - Academic or lecture-y tone ("In this article, I will explain...")
+    - Preaching ("As leaders, we must always...")
+    - Hiding behind abstractions - get specific
+    - Claiming expertise without experience-backed evidence
+    - Rushing to solutions - sit in the problem
+    - Being defensive about past mistakes
+    - Over-explaining or hand-holding
+
+inclusive_language:
+  # Use inclusive language where appropriate, not as a hard rule
+  approach: "Measured and natural - don't force it"
+  options:
+    - "folx" # Sometimes used, not every time
+    - "folks" # Standard alternative
+  guidance: "Match the tone of the piece. More casual/community posts may use 'folx', others may not."
+
+structure:
+  default_template: "story-to-question"
+
+  sections:
+    hook:
+      purpose: "Draw them in with recognition or curiosity"
+      approach: "Personal story, parenting moment, current event, or WordPress news"
+      length: "2-4 paragraphs"
+      example: "When I was younger... I had a summer job..."
+
+    context:
+      purpose: "Zoom out - what's the broader pattern?"
+      approach: "Connect personal moment to something others experience"
+      length: "2-3 paragraphs"
+      example: "The virtual water cooler is lit up right now over..."
+
+    problem:
+      purpose: "Name the thing clearly, sit in the discomfort"
+      approach: "Don't rush to solve. Let tension build."
+      length: "3-5 paragraphs"
+      example: "We've been sitting in our comfy chairs and processing..."
+
+    diagnosis:
+      purpose: "Why does this happen? What's underneath?"
+      approach: "Draw from experience - Envato, camps, past roles"
+      length: "3-4 paragraphs"
+      example: "Let me paint a picture for you..."
+
+    wordpress_application:
+      purpose: "What does this mean for our community specifically?"
+      approach: "Apply the broader insight to WordPress ecosystem"
+      length: "2-4 paragraphs"
+      example: "I wonder how much of the conversation going on right now..."
+
+    reflection:
+      purpose: "Personal take, what you're still figuring out"
+      approach: "Vulnerable, honest about not having all answers"
+      length: "2-3 paragraphs"
+      example: "I won't pretend to be an expert in this..."
+
+    close:
+      purpose: "Invite reader into the conversation"
+      approach: "End with a question, invitation to connect"
+      length: "1-2 paragraphs"
+      example: "What do you think?"
+
+  formats:
+    - story-to-question: "Personal story -> Broader pattern -> WordPress application -> Question"
+    - current-event-reaction: "News/tweet -> Analysis -> Implications -> Question"
+    - experience-as-evidence: "Past role story -> Lessons -> Current application"
+    - two-sides-synthesis: "Tension A vs B -> Both have merit -> Synthesis -> Invitation"
+
+experience_references:
+  # James draws from specific experiences as evidence
+  valid_sources:
+    - "Envato (5 years) - marketplace dynamics, author relations, community building"
+    - "Summer camps - recognition, SDSD awards, encouragement cards"
+    - "StellarWP - current people leadership context"
+    - "Gravity Forms / Rocketgenius - team norms, ways of working"
+    - "Parenting - psychological safety, feedback, recognition parallels"
+    - "WordCamps - community dynamics, hallway track, networking"
+
+  how_to_use:
+    - "Specific details (years, events, outcomes) add credibility"
+    - "Name companies and roles directly"
+    - "Share failures as openly as wins"
+    - "Let the story carry the lesson without over-explaining"
+
+wordpress_specifics:
+  terms:
+    - "WordPresserati" # The influential folks
+    - "Make Slack"
+    - ".org vs .com"
+    - "The Hallway Track"
+    - "Contributor Day"
+
+  events:
+    - "WCEU, WCUS, WC Asia (the 'majors')"
+    - "Pressnomics"
+    - "State of the Word"
+
+  people:
+    # James names people directly, adds credibility
+    approach: "Reference by first name when known, acknowledge their contribution"
+
+emotional_register:
+  vulnerable_moments:
+    - "That review gutted me."
+    - "I felt like a failure."
+    - "It took me by surprise..."
+    - "I'm still working through..."
+
+  self_awareness:
+    - "I'm probably projecting here..."
+    - "I could go on about this particular point but we'd be here for a while."
+    - "I might be projecting my own anxieties a little here."
+
+  humor:
+    - Dry, self-deprecating
+    - Parenthetical jokes
+    - "You're welcome world."
+    - References to "sourdough bread" and pandemic cliches with awareness
+
+quality_checks:
+  - "Does it open with a specific moment or story?"
+  - "Are there natural conversational asides?"
+  - "Did I share a failure or learning moment?"
+  - "Is there a WordPress-specific application?"
+  - "Does it end with a genuine question?"
+  - "Would this feel authentic read aloud?"
+  - "Is there enough vulnerability without victimhood?"
+  - "Did I sit in the problem before offering solutions?"
+  - "Are experiences cited with specific details?"
+
+example_phrases:
+  good:
+    - "When I was younger (like a lot younger) I had a summer job..."
+    - "I wonder how much of the conversation going on right now..."
+    - "What do you think happened?"
+    - "I digress..."
+    - "Perhaps it's worth considering..."
+    - "I won't pretend to be an expert in this or claim that this approach is the perfect solution, I'm still figuring it all out."
+    - "I've been writing about work, life and culture for a little while now..."
+    - "What do you think?"
+
+  avoid:
+    - "In this post, I will argue that..."
+    - "As a thought leader in the space..."
+    - "The five keys to success are..."
+    - "You need to understand that..."
+    - "It's simple, really..."
+
+sample_posts:
+  # Reference posts for voice calibration
+  - title: "When 'Assuming Positive Intent' Gets Lost In Translation"
+    url: "https://jamesgiroux.ca/when-assuming-positive-intent-gets-lost-in-translation/"
+    demonstrates: "WordPress lens, naming both sides, community observation"
+
+  - title: "Why We Need More Recognition In WordPress"
+    url: "https://jamesgiroux.ca/why-we-need-more-recognition-in-wordpress/"
+    demonstrates: "Parenting as entry point, vulnerability, numbered actions"
+
+  - title: "Have We Reached 'Peak' WordPress?"
+    url: "https://jamesgiroux.ca/have-we-reached-peak-wordpress/"
+    demonstrates: "Experience-as-evidence (Envato), ecosystem analysis, question-ending"
+
+  - title: "Leading Through Emotional Tremors"
+    url: "https://jamesgiroux.ca/leading-through-emotional-tremors/"
+    demonstrates: "Deep vulnerability, personal struggle, actionable guidance"
+
+  - title: "Quiet Quitting, WordPress And The Great Reset"
+    url: "https://jamesgiroux.ca/quiet-quitting-wordpress-and-the-great-reset/"
+    demonstrates: "Current event hook, millennial perspective, WordPress application"
