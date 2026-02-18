@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 724 Rust tests. v0.8.4 shipped. 0.9.0 active (integrations). 0.10.0 planned (renewal workflow). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.0 shipped (integrations). 0.10.0 planned (renewal workflow + meeting intelligence). 1.0.0 = beta gate.
 
 ---
 
@@ -42,6 +42,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
+| **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
 
 ---
 
@@ -85,9 +86,9 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ---
 
-### 0.10.0 — Renewal
+### 0.10.0 — Intelligence
 
-*TAM/CSM operational core: account metadata and renewal pipeline. Built on 0.8.0 editorial design language.*
+*Regardless of role, intelligence should compound and signals should be weighted.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
@@ -97,8 +98,9 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 | P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
+| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
 
-**Rationale:** Delivers the core TAM/CSM workflow. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (renewal calendar, pipeline stages, health scores, ARR projections, risk alerts). Renewal dashboard and pipeline views are built on 0.8.0's entity detail template and editorial design language.
+**Rationale:** Delivers the core TAM/CSM workflow. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (renewal calendar, pipeline stages, health scores, ARR projections, risk alerts). Renewal dashboard and pipeline views are built on 0.8.0's entity detail template and editorial design language. I305 addresses the foundational intelligence gap: meetings should arrive pre-tagged with the right entities before the user sees them.
 
 ---
 
@@ -1232,6 +1234,109 @@ Frontend:
 - I92 (Metadata provides renewal data: dates, stages, outcomes, risk)
 - I88 (Portfolio report includes renewal pipeline section)
 - I220 (Forecast surfaces upcoming renewal meetings)
+
+---
+
+### Meeting-Entity Intelligence (0.10.0)
+
+**I305: Intelligent meeting-entity resolution — "it should just know"**
+Meetings should arrive in the daily briefing pre-tagged with the correct accounts and projects. Today the system has four signals (explicit links, attendee voting, title normalization, domain matching) but misses obvious connections. The goal is to use every available signal so users rarely need to manually correct entity assignments.
+
+**The Problem:**
+
+A user demos "Agentforce" (a project) to Jefferies (a customer). The system can't connect the meeting to the Agentforce project because project matching is entirely manual. It resolves to "Salesforce" (the parent company) via domain matching and pulls Salesforce Security intelligence instead of Agentforce context. The user corrects it, but the next briefing re-run doesn't re-trigger enrichment with the correct entity's intelligence. This pattern — wrong entity, stale intelligence, manual correction that doesn't cascade — erodes trust in the "your day is ready" promise.
+
+**First Principle:** "AI produces, users consume." If a user has to correct entity assignments every morning, the system is making the user produce.
+
+**Current Signal Usage:**
+
+| Signal | Status | Confidence |
+|--------|--------|------------|
+| Explicit junction links (user chips, hygiene backfill) | Active | Highest |
+| Attendee → entity voting (person linked to account) | Active | High |
+| Meeting title vs account name normalization | Active | Medium |
+| External email domain vs account domain | Active | Medium |
+| Meeting title vs **project** name/keywords | **Not implemented** | High potential |
+| Calendar description text mining | **Not implemented** | Medium potential |
+| Email thread correlation (pre-meeting invite chain) | **Not implemented** | Medium potential |
+| Historical group patterns (same N people = same entity) | **Not implemented** | High potential |
+| User correction learning (re-tag → training signal) | **Not implemented** | High potential |
+| Post-meeting transcript entity mentions | **Not implemented** | High potential |
+
+**Proposed Architecture — Signal Cascade:**
+
+Resolution runs in priority order, stopping at the first high-confidence match:
+
+1. **Explicit links** — User-set or previously system-confirmed entities in `meeting_entities` junction. Immutable unless user removes.
+2. **Project keyword matching** — Compare meeting title + description against project names, aliases, and configured keywords. "Agentforce Demo with Jefferies" matches project "Agentforce" on keyword.
+3. **Attendee group patterns** — Track co-occurrence: "when person A + person B + person C meet, it's always about entity X." Build from historical `meeting_entities` + `meeting_attendees` correlation.
+4. **Attendee entity voting** — Existing majority-vote from `entity_people` links. Works well for account resolution.
+5. **Calendar description mining** — Parse description/body for company names, project references, account mentions. Rich signal currently ignored.
+6. **Email thread correlation** — Check email intelligence for threads mentioning meeting participants + entity names in the 48 hours before the meeting.
+7. **Title/domain heuristics** — Current fallback. Normalized string matching.
+
+Each signal produces a `(entity_id, confidence_score, signal_source)` tuple. Final resolution picks the highest-confidence entity per type (one account, one project). When confidence is below threshold, the meeting is flagged as a **hygiene item** rather than silently guessing wrong.
+
+**Confidence & Hygiene Integration:**
+
+- **High confidence (>0.8):** Auto-link, no user action needed.
+- **Medium confidence (0.5–0.8):** Auto-link but surface in hygiene report as "verify: Agentforce Demo → Agentforce project (matched on title keyword, 0.7 confidence)."
+- **Low confidence (<0.5):** Don't auto-link. Surface as proactive hygiene suggestion: "Untagged meeting: Agentforce Demo with Jefferies — did you mean Agentforce project?"
+- **Conflicting signals:** Surface as hygiene item with the competing options: "Salesforce vs Agentforce for this meeting — attendees suggest Salesforce, title suggests Agentforce."
+
+**User Correction Learning:**
+
+When a user corrects an entity assignment (removes wrong entity, adds correct one):
+1. Record the correction in an `entity_resolution_feedback` table: `(meeting_id, old_entity, new_entity, signal_that_was_wrong, corrected_at)`
+2. Use corrections to weight future signal confidence: if title-matching keeps producing wrong results for this attendee group, demote title signal for that group.
+3. After N corrections for the same pattern, auto-learn: "meetings with these attendees about X = project Y."
+
+**Re-enrichment on Entity Correction:**
+
+When a user changes a meeting's entity:
+1. Update `meeting_entities` junction (existing behavior)
+2. **New:** Invalidate the prep file for that meeting
+3. **New:** Re-queue prep enrichment with the new entity's intelligence context
+4. **New:** If the briefing is currently displayed, emit a frontend event to refresh the meeting card
+
+**Project Matching — Minimum Viable:**
+
+Projects are currently manual-only. Minimum viable project matching:
+1. Add `keywords` field to projects table (comma-separated terms, e.g., "agentforce, agent force, af demo")
+2. On meeting resolution, compare title + description against all active project keywords
+3. Exact substring match = high confidence, fuzzy match = medium confidence
+4. Surface keyword matches in prep context alongside account intelligence
+
+**Implementation Phases:**
+
+| Phase | Scope | Complexity |
+|-------|-------|------------|
+| **Phase 1** | Project keyword matching + re-enrichment on entity correction | Medium |
+| **Phase 2** | Calendar description mining + confidence scoring + hygiene integration | Medium |
+| **Phase 3** | Attendee group pattern learning + user correction feedback loop | High |
+| **Phase 4** | Email thread correlation + transcript entity extraction | High |
+
+**Files Affected:**
+
+- `prepare/meeting_context.rs` — signal cascade, confidence scoring
+- `hygiene.rs` — low-confidence meeting flagging, proactive suggestions
+- `db.rs` — `entity_resolution_feedback` table, project keywords, confidence scores on junction
+- `commands.rs` — re-enrichment trigger on entity correction
+- `workflow/deliver.rs` — prep invalidation + re-queue on entity change
+- New: `prepare/entity_resolver.rs` — dedicated resolution module with pluggable signal sources
+
+**Acceptance Criteria:**
+
+- Meetings with project-name keywords in title are auto-linked to the correct project
+- Changing a meeting's entity triggers prep re-enrichment with the new entity's intelligence
+- Low-confidence entity matches appear as hygiene suggestions, not silent guesses
+- Calendar description text is parsed for entity mentions during resolution
+- User corrections are recorded and used to improve future resolution confidence
+
+**Dependencies:**
+
+- I260 (Proactive surfacing — shares the hygiene → insight → briefing pipeline)
+- I262 (The Record — transcript content as entity resolution signal in Phase 4)
 
 ---
 
