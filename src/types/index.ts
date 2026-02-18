@@ -833,6 +833,23 @@ export interface Person {
   meetingCount: number;
   updatedAt: string;
   archived: boolean;
+  // Clay enrichment fields (I228)
+  linkedinUrl?: string;
+  twitterHandle?: string;
+  phone?: string;
+  photoUrl?: string;
+  bio?: string;
+  titleHistory?: Array<{
+    title: string;
+    company: string;
+    startDate?: string;
+    endDate?: string;
+  }>;
+  companyIndustry?: string;
+  companySize?: string;
+  companyHq?: string;
+  lastEnrichedAt?: string;
+  enrichmentSources?: Record<string, { source: string; at: string }>;
 }
 
 /** Person with pre-computed signals for list pages (I106). */
@@ -1404,4 +1421,67 @@ export interface ConcreteRequest {
   request: string;
   urgency?: string;
   from?: string;
+}
+
+// =============================================================================
+// Quill Integration
+// =============================================================================
+
+export interface QuillStatus {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+}
+
+export interface QuillSyncState {
+  id: string;
+  meetingId: string;
+  quillMeetingId: string | null;
+  state: "pending" | "polling" | "fetching" | "processing" | "completed" | "failed" | "abandoned";
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  matchConfidence: number | null;
+  transcriptPath: string | null;
+  createdAt: string;
+  updatedAt: string;
+  source: "quill" | "granola";
+}
+
+export interface GravatarStatus {
+  enabled: boolean;
+  cachedCount: number;
+  apiKeySet: boolean;
+}
+
+// =============================================================================
+// Clay Integration (I228)
+// =============================================================================
+
+export interface ClayStatusData {
+  enabled: boolean;
+  apiKeySet: boolean;
+  autoEnrichOnCreate: boolean;
+  sweepIntervalHours: number;
+  enrichedCount: number;
+  pendingCount: number;
+  lastEnrichmentAt: string | null;
+}
+
+export interface EnrichmentLogEntry {
+  id: string;
+  entityType: string;
+  entityId: string;
+  source: string;
+  eventType: string;
+  signalType?: string;
+  fieldsUpdated?: string;
+  createdAt: string;
 }
