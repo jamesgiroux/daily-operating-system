@@ -1,6 +1,6 @@
 [package]
 name = "dailyos"
-version = "0.8.4"
+version = "0.9.0"
 default-run = "dailyos"
 description = "Operational intelligence for your workday. Open the app, your day is ready."
 authors = ["DailyOS"]
@@ -61,8 +61,8 @@ fastembed = "5"
 # libc: fd-level stdout suppression during embedding model init (avoids MCP stream corruption)
 libc = "0.2"
 
-# MCP Server (ADR-0075)
-rmcp = { version = "0.1", features = ["server", "transport-io", "macros"], optional = true }
+# MCP Server (ADR-0075) + Quill MCP client
+rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
 schemars = { version = "0.8", optional = true }
 anyhow = { version = "1", optional = true }
 
@@ -71,7 +71,7 @@ filetime = "0.2.27"
 tempfile = "3"
 
 [features]
-mcp = ["rmcp", "schemars", "anyhow"]
+mcp = ["dep:schemars", "dep:anyhow"]
 
 [[bin]]
 name = "dailyos"

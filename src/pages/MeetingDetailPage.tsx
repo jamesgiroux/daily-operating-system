@@ -326,7 +326,7 @@ export default function MeetingDetailPage() {
     activePage: "today" as const,
     backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
     chapters: CHAPTERS,
-    folioStatusText: saveStatus === "saving" ? "Saving\u2026" : saveStatus === "saved" ? "\u2713 Saved" : undefined,
+    folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {isEditable && (
@@ -335,7 +335,7 @@ export default function MeetingDetailPage() {
             disabled={prefilling}
             style={{ ...folioBtn, opacity: prefilling ? 0.5 : 1, cursor: prefilling ? "not-allowed" : "pointer" }}
           >
-            {prefilling ? "Prefilling\u2026" : "Prefill"}
+            {prefilling ? "Prefilling…" : "Prefill"}
           </button>
         )}
         <button onClick={handleDraftAgendaMessage} style={folioBtn}>
@@ -347,7 +347,7 @@ export default function MeetingDetailPage() {
           style={{ ...folioBtn, display: "inline-flex", alignItems: "center", gap: 4, opacity: attaching ? 0.5 : 1, cursor: attaching ? "not-allowed" : "pointer" }}
         >
           {attaching ? <Loader2 style={{ width: 10, height: 10, animation: "spin 1s linear infinite" }} /> : <Paperclip style={{ width: 10, height: 10 }} />}
-          {attaching ? "Processing\u2026" : "Transcript"}
+          {attaching ? "Processing…" : "Transcript"}
         </button>
         <button
           onClick={() => loadMeetingIntelligence()}
@@ -553,6 +553,11 @@ export default function MeetingDetailPage() {
                   ? "Attach a new transcript to re-process meeting outcomes."
                   : "Attach a transcript or manually capture meeting outcomes."}
               </p>
+              {meetingId && (
+                <div style={{ marginTop: 8 }}>
+                  <QuillSyncBadge meetingId={meetingId} />
+                </div>
+              )}
             </div>
             <button
               onClick={handleAttachTranscript}
@@ -2189,12 +2194,12 @@ function AppendixSection({
                       style={{
                         marginTop: 3,
                         fontSize: 14,
-                        color: item.startsWith("\u2713") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
+                        color: item.startsWith("✓") ? "var(--color-garden-sage)" : "var(--color-text-tertiary)",
                       }}
                     >
-                      {item.startsWith("\u2713") ? "\u2713" : "\u25CB"}
+                      {item.startsWith("✓") ? "✓" : "○"}
                     </span>
-                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[\u2713\u25CB]\s*/, "")}</span>
+                    <span style={{ color: "var(--color-text-primary)" }}>{item.replace(/^[✓○]\s*/, "")}</span>
                   </li>
                 ))}
               </ul>
@@ -2659,7 +2664,7 @@ function deriveRecentWins(data: FullMeetingPrep): { wins: string[]; sources: Sou
 
 function truncateText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars - 1).trim()}\u2026`;
+  return `${value.slice(0, maxChars - 1).trim()}…`;
 }
 
 // =============================================================================
@@ -2685,3 +2690,101 @@ function formatOpenItems(items: ActionWithContext[]): string {
     .join("\n");
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QuillSyncBadge — shows transcript sync status for a meeting
+// ═══════════════════════════════════════════════════════════════════════════
+
+function QuillSyncBadge({ meetingId }: { meetingId: string }) {
+  const [syncState, setSyncState] = useState<import("@/types").QuillSyncState | null>(null);
+
+  const loadSync = useCallback(async () => {
+    try {
+      const rows = await invoke<import("@/types").QuillSyncState[]>(
+        "get_quill_sync_states",
+        { meetingId },
+      );
+      setSyncState(rows.length > 0 ? rows[0] : null);
+    } catch {
+      // Quill not enabled or no sync state — expected
+    }
+  }, [meetingId]);
+
+  useEffect(() => {
+    loadSync();
+  }, [loadSync]);
+
+  // Listen for transcript-processed event to refresh
+  useEffect(() => {
+    let cancelled = false;
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<string>("transcript-processed", (event) => {
+        if (!cancelled && event.payload === meetingId) {
+          loadSync();
+        }
+      });
+    });
+    return () => { cancelled = true; };
+  }, [meetingId, loadSync]);
+
+  if (!syncState) return null;
+
+  const { state, matchConfidence, source } = syncState;
+  const sourceLabel = source === "granola" ? "via Granola" : "via Quill";
+
+  // Define badge content based on state
+  let icon: React.ReactNode;
+  let label: string;
+  let color: string;
+
+  switch (state) {
+    case "pending":
+    case "polling":
+    case "fetching":
+      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
+      label = "Syncing transcript...";
+      color = "var(--color-golden-turmeric)";
+      break;
+    case "processing":
+      icon = <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />;
+      label = "Processing transcript...";
+      color = "var(--color-sky-larkspur)";
+      break;
+    case "completed":
+      icon = <Check style={{ width: 14, height: 14 }} />;
+      label = matchConfidence
+        ? `Transcript synced ${sourceLabel} (${Math.round(matchConfidence * 100)}% match)`
+        : `Transcript synced ${sourceLabel}`;
+      color = "var(--color-garden-olive)";
+      break;
+    case "failed":
+    case "abandoned":
+      icon = <AlertTriangle style={{ width: 14, height: 14 }} />;
+      label = state === "abandoned" ? "Sync abandoned" : "Sync failed";
+      color = "var(--color-spice-terracotta)";
+      break;
+    default:
+      return null;
+  }
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        fontWeight: 500,
+        letterSpacing: "0.04em",
+        color,
+        padding: "4px 10px",
+        border: `1px solid ${color}`,
+        borderRadius: 4,
+      }}
+    >
+      {icon}
+      {label}
+    </div>
+  );
+}

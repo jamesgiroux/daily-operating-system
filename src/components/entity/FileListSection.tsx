@@ -119,7 +119,7 @@ export function FileListSection({
                 cursor: indexing ? "default" : "pointer",
               }}
             >
-              {indexing ? "Indexing\u2026" : "Re-index"}
+              {indexing ? "Indexing…" : "Re-index"}
             </button>
           )}
         </div>
