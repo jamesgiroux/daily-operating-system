@@ -180,6 +180,17 @@ pub fn run_hygiene_scan(
     report.low_confidence_entity_matches = count;
     all_details.extend(details);
 
+    // --- Phase 2c: Attendee group pattern mining (I307) ---
+    match crate::signals::patterns::mine_attendee_patterns(db) {
+        Ok(count) if count > 0 => {
+            log::info!("Hygiene: mined {} attendee group pattern updates", count);
+        }
+        Err(e) => {
+            log::warn!("Hygiene: attendee pattern mining failed: {}", e);
+        }
+        _ => {}
+    }
+
     // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
