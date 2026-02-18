@@ -111,6 +111,10 @@ pub struct AppState {
     pub clay_poller_wake: Arc<tokio::sync::Notify>,
     /// Queue of meeting IDs whose prep needs regeneration after entity correction (I305).
     pub prep_invalidation_queue: Mutex<Vec<String>>,
+    /// Signal propagation engine with registered cross-entity rules (I308).
+    pub signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
+    /// Wake signal for event-driven entity resolution (I308).
+    pub entity_resolution_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -174,6 +178,8 @@ impl AppState {
             pre_dev_workspace: Mutex::new(None),
             clay_poller_wake: Arc::new(tokio::sync::Notify::new()),
             prep_invalidation_queue: Mutex::new(Vec::new()),
+            signal_engine: Arc::new(crate::signals::propagation::default_engine()),
+            entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
