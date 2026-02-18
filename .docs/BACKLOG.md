@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.0 shipped (integrations). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.0 shipped (integrations). 0.10.0 planned (renewal workflow + meeting intelligence). 1.0.0 = beta gate.
 
 ---
 
@@ -14,15 +14,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 |----|-------|----------|------|
 | **I54** | MCP client integration framework | P0 | Integrations |
 | **I220** | Meeting forecast (4-5 business days ahead) | P1 | Meetings |
-| **I92** | ~~User-configurable metadata fields~~ → Superseded by I309-I312 (ADR-0079 Role Presets) | — | Entity |
-| **I309** | Role preset schema + JSON loader infrastructure | P1 | Entity |
-| **I310** | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) | P1 | Entity |
-| **I311** | Metadata storage migration (JSON column on accounts + projects) | P1 | Entity |
-| **I312** | Preset-driven vitals strip + entity detail fields | P1 | UX |
-| **I313** | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) | P1 | Intelligence |
-| **I314** | Role selection in Settings + community preset import | P1 | UX |
-| **I315** | Onboarding: role selection replaces entity mode selection | P1 | UX |
-| **I316** | Lift parent-child depth constraint (n-level entity nesting) | P1 | Entity |
+| **I92** | User-configurable metadata fields | P1 | Entity |
 | **I143** | Renewal lifecycle tracking | P1 | Entity |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
 | **I243** | Quill Meetings integration (local-first transcripts + MCP) | P1 | Integrations |
@@ -50,7 +42,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
-| **I305** | ~~Intelligent meeting-entity resolution — "it should just know"~~ ✅ | P1 | Intelligence |
+| **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
 | **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
 | **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
 | **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
@@ -103,7 +95,7 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P1 | ~~I305~~ ✅ | ~~Intelligent meeting-entity resolution — "it should just know"~~ |
+| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
 | P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
 | P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
 | P1 | I308 | Event-driven signal processing and cross-entity propagation |
@@ -114,25 +106,18 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ---
 
-### 0.11.0 — Role Presets & Entity Architecture
+### 0.11.0 — Renewal & Entity Management
 
-*Multi-role support via ADR-0079. Role presets replace Kits — lightweight JSON configs that shape vocabulary, metadata, prioritization, and AI enrichment per role. Entity hierarchy unlocked to n-level depth.*
+*TAM/CSM operational core: account metadata, renewal pipeline, entity lifecycle. Built on 0.10.0 signal intelligence.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P1 | I309 | Role preset schema + JSON loader infrastructure |
-| P1 | I310 | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) |
-| P1 | I311 | Metadata storage migration (JSON column on accounts + projects) |
-| P1 | I312 | Preset-driven vitals strip + entity detail fields |
-| P1 | I313 | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) |
-| P1 | I314 | Role selection in Settings + community preset import |
-| P1 | I315 | Onboarding: role selection replaces entity mode selection |
-| P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
+| P1 | I92 | User-configurable metadata fields (CS Kit defaults + CSV import) |
 | P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 
-**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence.
+**Rationale:** With the signal engine in place (0.10.0), renewal tracking benefits from compound intelligence out of the box — renewal dates, engagement frequency, email sentiment, and champion changes all feed into account health scoring via the signal bus. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (pipeline stages, health scores, ARR projections, risk alerts). Entity management (I198, I199) completes the lifecycle.
 
 ---
 
@@ -4045,138 +4030,3 @@ The `response_status` field exists in the internal `Attendee` deserialization st
 3. RSVP status persists across app restarts (stored in DB, not just memory)
 4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
 5. No regression on existing meeting prep for meetings without RSVP data
-
----
-
-### Role Presets & Entity Architecture (0.11.0)
-
-*ADR-0079 implementation. Role presets replace Kits — JSON configs that shape vocabulary, metadata, AI enrichment, and prioritization per role. Entity hierarchy deepened to support real organizational complexity.*
-
-**I309: Role preset schema + JSON loader infrastructure**
-
-**Priority:** P1 (0.11.0)
-**Area:** Entity / Config
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Define the role preset JSON schema (id, name, description, entityModeDefault, metadata fields, vocabulary, vitals, lifecycleEvents, prioritization, briefingEmphasis). Build a preset loader that reads from bundled presets (`resources/presets/`) and optional user-provided path (`customPresetPath` in config). Add `role` field to config, replacing `profile`. Active preset is loaded at startup and cached in AppState. Backwards compatibility: `profile` field derived from role + entity mode for existing backend code.
-
-**Acceptance criteria:**
-1. Preset JSON schema documented and validated on load
-2. Bundled presets load from resources directory
-3. Custom preset path loads and overrides bundled preset
-4. `role` config field persists across restarts
-5. `profile` backwards compat works for existing code
-
----
-
-**I310: Ship 9 role presets**
-
-**Priority:** P1 (0.11.0)
-**Area:** Entity / Config
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Write the 9 shipped role preset JSON files: Customer Success, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk. Each preset defines metadata fields, vocabulary (risk/win/urgency terms), vitals strip fields, lifecycle event types, prioritization signals, and briefing emphasis. CS preset maps to existing hardcoded fields (ARR, health, NPS). Other presets use the JSON metadata column (I311).
-
-**Presets:**
-- **Customer Success** — account mode, renewal/churn vocabulary, ARR/health/NPS fields
-- **Sales** — account mode, pipeline/close vocabulary, deal stage/value fields
-- **Marketing** — project mode, campaign/launch vocabulary. Projects are campaigns, launches, initiatives. Teams (via internal accounts) are the cross-functional groups: product marketing, brand, demand gen, agency partners, contractor teams. Metadata: campaign status, launch date, target audience, channel mix, budget, KPIs. Vocabulary frames risk as missed deadlines, off-brand, audience mismatch; wins as launch success, engagement lift, pipeline contribution.
-- **Partnerships** — both mode, partner/channel vocabulary, partner tier/revenue share fields
-- **Agency** — both mode, client/scope vocabulary, retainer/utilization fields
-- **Consulting** — both mode, engagement/deliverable vocabulary, SOW/billing fields
-- **Product** — project mode, feature/launch vocabulary, confidence/sprint fields
-- **Leadership** — both mode, cross-functional vocabulary, team health/headcount fields
-- **The Desk** — both mode, minimal neutral vocabulary, clean slate for customization
-
----
-
-**I311: Metadata storage migration**
-
-**Priority:** P1 (0.11.0)
-**Area:** Entity / DB
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Add `metadata TEXT DEFAULT '{}'` JSON column to `accounts` and `projects` tables. Existing hardcoded columns (ARR, health, NPS) remain for CS backwards compatibility and query efficiency. CS preset maps field keys to existing columns. Other presets store fields in the JSON metadata column. Vitals strip and detail page read from both: hardcoded columns (if present) + metadata JSON (for everything else).
-
-**Migration:** New migration adds columns. No data loss. Existing accounts unaffected.
-
----
-
-**I312: Preset-driven vitals strip + entity detail fields**
-
-**Priority:** P1 (0.11.0)
-**Area:** UX / Entity
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Wire the active role preset's `vitals` and `metadata` config into the entity detail page. Vitals strip shows fields defined in the preset's `vitals` array. Entity detail fields section renders the preset's `metadata` fields with appropriate input types (text, number, currency, date, select). Fields read from both hardcoded columns and JSON metadata column. Field edits persist to the appropriate storage (hardcoded column or JSON metadata).
-
-**Acceptance criteria:**
-1. Vitals strip shows preset-defined fields (not hardcoded CS fields)
-2. Entity detail renders preset metadata fields with correct input types
-3. CS preset renders identically to current hardcoded layout (no regression)
-4. Non-CS presets render their own field sets correctly
-5. Field edits persist and survive app restart
-
----
-
-**I313: Vocabulary-driven AI prompts**
-
-**Priority:** P1 (0.11.0)
-**Area:** Intelligence / AI
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Integrate the active role preset's vocabulary into all AI enrichment prompts. `riskVocabulary` shapes Watch List framing. `winVocabulary` shapes Recent Wins framing. `urgencySignals` shapes briefing prioritization. `healthFrame` shapes State of Play assessment. `briefingEmphasis` shapes the daily briefing's attention narrative. `entityNoun` controls language throughout ("account" vs "project" vs "client" vs "engagement").
-
-**Key integration points:**
-- Intelligence enrichment prompts (`entity_intel.rs`, `intelligence.rs`)
-- Daily briefing generation (`prepare/`)
-- Weekly briefing generation (`workflow/`)
-- Meeting prep prompts
-- Hygiene scanner narratives
-
----
-
-**I314: Role selection in Settings + community preset import**
-
-**Priority:** P1 (0.11.0)
-**Area:** UX / Settings
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Add role selection UI to Settings page. Grid of 8 shipped presets (name + one-line description). Active preset highlighted. Changing role updates config, reloads preset, and re-renders entity pages with new vocabulary/fields. "Import custom preset" button loads a JSON file from disk, validates against schema, and sets `customPresetPath` in config.
-
----
-
-**I315: Onboarding: role selection replaces entity mode selection**
-
-**Priority:** P1 (0.11.0)
-**Area:** UX / Onboarding
-**ADR:** [0079](decisions/0079-role-presets.md)
-
-Replace the current entity mode selection step in onboarding with a role preset picker. Role selection implies entity mode default (user can override later). One choice instead of three (entity mode + Kit + Intelligence). The Desk preset serves as "I'm not sure yet" — minimal, neutral, always available.
-
----
-
-**I316: Lift parent-child depth constraint (n-level entity nesting)**
-
-**Priority:** P1 (0.11.0)
-**Area:** Entity / Architecture
-**Builds on:** [ADR-0056](decisions/0056-hierarchical-accounts.md), [ADR-0070](decisions/0070-internal-team-entities.md)
-
-Remove the one-level depth restriction on parent-child account hierarchy. Allow n-level nesting to support real organizational complexity: Company → Division → Org → Group → Team → Sub-team. The `parent_id` column is already self-referential — the constraint is a business rule, not a schema limitation.
-
-**Motivation:** Internal organizations (ADR-0070) require depth. A user at Automattic might need: Automattic → VIP Division → Sales Org → CS Group → Key Accounts → Corporate Key Accounts. External enterprise accounts also benefit: Cox → Diversification → Regional → Local. The current one-level limit forces flat representations of inherently hierarchical structures.
-
-**Implementation:**
-- Remove one-level validation in account creation/import
-- Update `get_child_accounts_list` to support recursive tree queries
-- Breadcrumb navigation: `Accounts > Automattic > VIP > Sales > CS > Key Accounts`
-- AccountsPage: expandable tree with indent per level (lazy-loaded children)
-- AccountDetailPage: full breadcrumb, children section shows immediate children only
-- `tracker_path` resolution already handles nested directories — no file I/O changes
-
-**Acceptance criteria:**
-1. Accounts can nest 3+ levels deep (create grandchild, great-grandchild)
-2. Breadcrumb renders full path at any depth
-3. AccountsPage tree expands/collapses at each level
-4. Existing one-level accounts continue working (no regression)
-5. Internal org teams can nest to reflect real org structure
