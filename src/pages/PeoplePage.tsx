@@ -290,7 +290,7 @@ export default function PeoplePage() {
         countLabel="contacts"
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="\u2318  Search people..."
+        searchPlaceholder="⌘  Search people..."
       >
         <ArchiveToggle archiveTab={archiveTab} onTabChange={setArchiveTab} />
         {!isArchived && (

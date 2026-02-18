@@ -251,7 +251,7 @@ export default function ProjectsPage() {
         countLabel={isArchived ? "archived" : "active"}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="\u2318  Search projects..."
+        searchPlaceholder="⌘  Search projects..."
       >
         <ArchiveToggle archiveTab={archiveTab} onTabChange={setArchiveTab} />
         {!isArchived && (
