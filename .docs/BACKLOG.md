@@ -4285,6 +4285,12 @@ Extract `meeting:prep` from the daily orchestrator into a truly independent oper
 - `src-tauri/src/db.rs` — meeting intelligence state tracking columns
 - `src-tauri/src/commands.rs` — new `generate_meeting_intelligence` command
 
+**Call optimization (ADR-0081, Mechanical-First principle):**
+- A meeting should reach `Developing` quality on mechanical queries alone (attendee history, entity context, actions, past meetings) — no AI call required
+- On incremental refresh, pass only the signal delta since last enrichment, not a full regen prompt
+- The AI call upgrades intelligence from Developing → Ready (narrative synthesis layer)
+- Must degrade gracefully to mechanical-only if Claude Code is unavailable (ADR-0042)
+
 **Acceptance criteria:**
 1. `meeting:prep` callable independently (not just from daily orchestrator)
 2. Intelligence writes to SQLite permanently (not just ephemeral disk files)
@@ -4292,6 +4298,7 @@ Extract `meeting:prep` from the daily orchestrator into a truly independent oper
 4. State tracked per-meeting: detected/enriching/enriched/captured/archived
 5. Pre-meeting refresh (I147) works on any meeting, not just today's
 6. No regression on existing daily briefing pipeline
+7. Meeting reaches Developing quality without any AI call (mechanical-only path)
 
 ---
 
@@ -4317,6 +4324,11 @@ Wire the independent `meeting:prep` operation into the weekly orchestrator and c
 - Daily run is lightweight: signal refresh + narrative, not full generation
 - Calendar polling handles one meeting at a time (no batch timeout)
 
+**Call optimization (ADR-0081, Mechanical-First principle):**
+- Entity-clustered batching: group meetings by entity, generate intelligence for the cluster in a single AI call with shared entity context. Target: ~10-15 AI calls for 50 meetings, not 50.
+- External entity meetings get full narrative synthesis. Internal person meetings get lightweight prompts. Minimal meetings (training, personal) get mechanical-only intelligence (no AI call).
+- Weekly batch spreads calls across the run window (Sunday evening), not a burst.
+
 **Acceptance criteria:**
 1. Weekly run generates individual intelligence for all meetings in forecast window
 2. Daily run does NOT generate preps from scratch (freshness check + refresh only)
@@ -4324,6 +4336,7 @@ Wire the independent `meeting:prep` operation into the weekly orchestrator and c
 4. Meetings added mid-week get intelligence via polling (not waiting for next weekly run)
 5. Daily briefing generation time reduced (assembly vs generation)
 6. Week page shows intelligence for meetings 10 business days out
+7. Weekly run uses entity-clustered batching (not per-meeting AI calls)
 
 **Supersedes:** I220 (meeting forecast 4-5 business days ahead). I220 proposed a forecast section as a daily briefing add-on. I327 makes advance generation the default model for all meetings.
 
