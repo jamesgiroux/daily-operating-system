@@ -233,6 +233,11 @@ pub fn get_dashboard_data(state: State<Arc<AppState>>) -> DashboardResult {
                         if let Some(acct) = entities.iter().find(|e| e.entity_type == "account") {
                             m.account_id = Some(acct.id.clone());
                             m.account = Some(acct.name.clone());
+                        } else {
+                            // Linked to a project (not account) — clear stale account
+                            // from schedule.json so byline shows the correct entity.
+                            m.account_id = None;
+                            m.account = None;
                         }
                     }
                 }
