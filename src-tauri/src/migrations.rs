@@ -71,6 +71,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 19,
     sql: include_str!("migrations/019_correction_learning.sql"),
+}, Migration {
+    version: 20,
+    sql: include_str!("migrations/020_signal_propagation.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -232,13 +235,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 19,
-            "should apply all migrations including correction_learning"
+            applied, 20,
+            "should apply all migrations including signal_propagation"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -484,6 +487,30 @@ mod tests {
             [],
         )
         .expect("signal_events should accept source_context column");
+
+        // Verify signal_derivations table (migration 020)
+        conn.execute(
+            "INSERT INTO signal_derivations (id, source_signal_id, derived_signal_id, rule_name)
+             VALUES ('sd-1', 'sig-1', 'sig-2', 'rule_person_job_change')",
+            [],
+        )
+        .expect("signal_derivations table should exist and accept inserts");
+
+        // Verify post_meeting_emails table (migration 020)
+        conn.execute(
+            "INSERT INTO post_meeting_emails (id, meeting_id, email_signal_id, thread_id, actions_extracted)
+             VALUES ('pme-1', 'm1', 'sig-1', 'thread-1', '[\"follow up\"]')",
+            [],
+        )
+        .expect("post_meeting_emails table should exist and accept inserts");
+
+        // Verify briefing_callouts table (migration 020)
+        conn.execute(
+            "INSERT INTO briefing_callouts (id, signal_id, entity_type, entity_id, entity_name, severity, headline, detail)
+             VALUES ('bc-1', 'sig-1', 'account', 'a1', 'Acme', 'warning', 'Stakeholder change detected', 'Sarah promoted to CRO')",
+            [],
+        )
+        .expect("briefing_callouts table should exist and accept inserts");
     }
 
     #[test]
@@ -594,11 +621,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 18, "bootstrap should mark v1, then apply v2 through v19");
+        assert_eq!(applied, 19, "bootstrap should mark v1, then apply v2 through v20");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 19);
+        assert_eq!(version, 20);
 
         // Verify existing data is untouched
         let title: String = conn

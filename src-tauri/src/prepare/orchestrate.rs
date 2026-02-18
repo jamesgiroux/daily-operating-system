@@ -130,6 +130,19 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Drop DB guard before any further awaits
     drop(db_guard);
 
+    // Step 6b: Signal-driven briefing callouts (I308)
+    let callouts = {
+        let callout_guard = state.db.lock().ok();
+        let callout_db = callout_guard.as_ref().and_then(|g| g.as_ref());
+        match callout_db {
+            Some(db) => {
+                let model_ref = state.embedding_model.as_ref();
+                crate::signals::callouts::generate_callouts(db, Some(model_ref), &classified)
+            }
+            None => Vec::new(),
+        }
+    };
+
     // Step 7: File inventory
     let existing_today = inventory_today_files(workspace);
     let inbox_pending = count_inbox_pending(workspace);
@@ -179,6 +192,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "inbox_pending": inbox_pending,
         },
         "ai_tasks": ai_tasks,
+        "callouts": callouts,
     });
 
     // Write output
