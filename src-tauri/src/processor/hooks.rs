@@ -327,6 +327,8 @@ mod tests {
             is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&account).expect("upsert account");
 
@@ -378,6 +380,8 @@ mod tests {
             is_internal: false,
             updated_at: "2020-01-01T00:00:00Z".to_string(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&account).expect("upsert");
 
