@@ -127,12 +127,7 @@ pub fn get_stale_emails(conn: &Connection, max_count: usize) -> Result<Vec<(Stri
         })
         .map_err(|e| format!("Failed to read stale emails: {}", e))?;
 
-    let mut results = Vec::new();
-    for row in rows {
-        if let Ok(r) = row {
-            results.push(r);
-        }
-    }
+    let results: Vec<_> = rows.filter_map(|row| row.ok()).collect();
     Ok(results)
 }
 

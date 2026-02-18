@@ -10,6 +10,7 @@ mod audit;
 mod backfill_meetings;
 mod calendar_merge;
 mod capture;
+pub mod clay;
 mod commands;
 pub mod db;
 mod db_backup;
@@ -183,6 +184,13 @@ pub fn run() {
             let gravatar_state = state.clone();
             tauri::async_runtime::spawn(async move {
                 gravatar::client::run_gravatar_fetcher(gravatar_state).await;
+            });
+
+            // Spawn Clay enrichment poller (I228)
+            let clay_state = state.clone();
+            let clay_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                clay::poller::run_clay_poller(clay_state, clay_handle).await;
             });
 
             // Create tray menu
@@ -465,6 +473,16 @@ pub fn run() {
             commands::fetch_gravatar,
             commands::bulk_fetch_gravatars,
             commands::get_person_avatar,
+            // Clay Integration (I228)
+            commands::get_clay_status,
+            commands::set_clay_enabled,
+            commands::set_clay_api_key,
+            commands::set_clay_auto_enrich,
+            commands::test_clay_connection,
+            commands::enrich_person_from_clay,
+            commands::enrich_account_from_clay,
+            commands::start_clay_bulk_enrich,
+            commands::get_enrichment_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
