@@ -93,6 +93,44 @@ pub fn advance_attempt(db: &ActionDb, sync_id: &str) -> Result<bool, String> {
         .map_err(|e| format!("Failed to advance attempt: {}", e))
 }
 
+/// Convert a DB meeting row to a CalendarEvent for the transcript pipeline.
+pub fn db_meeting_to_calendar_event(meeting: &crate::db::DbMeeting) -> CalendarEvent {
+    let start = chrono::DateTime::parse_from_rfc3339(&meeting.start_time)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+
+    let end = meeting
+        .end_time
+        .as_deref()
+        .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now);
+
+    let meeting_type = match meeting.meeting_type.as_str() {
+        "customer" => MeetingType::Customer,
+        "qbr" => MeetingType::Qbr,
+        "training" => MeetingType::Training,
+        "internal" => MeetingType::Internal,
+        "team_sync" => MeetingType::TeamSync,
+        "one_on_one" => MeetingType::OneOnOne,
+        "partnership" => MeetingType::Partnership,
+        "all_hands" => MeetingType::AllHands,
+        "external" => MeetingType::External,
+        _ => MeetingType::Personal,
+    };
+
+    CalendarEvent {
+        id: meeting.id.clone(),
+        title: meeting.title.clone(),
+        start,
+        end,
+        meeting_type,
+        account: meeting.account_id.clone(),
+        attendees: vec![],
+        is_all_day: false,
+    }
+}
+
 /// Check if a meeting has ended (end time is in the past).
 pub fn has_meeting_ended(event: &CalendarEvent) -> bool {
     event.end < Utc::now()

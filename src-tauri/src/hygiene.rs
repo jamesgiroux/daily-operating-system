@@ -61,6 +61,7 @@ pub struct HygieneReport {
     pub unsummarized_files: usize,
     pub orphaned_meetings: usize,
     pub duplicate_people: usize,
+    pub abandoned_quill_syncs: usize,
     pub fixes: MechanicalFixes,
     pub fix_details: Vec<HygieneFixDetail>,
     pub scanned_at: String,
@@ -80,6 +81,7 @@ pub struct MechanicalFixes {
     pub people_deduped_by_alias: usize,
     pub renewals_rolled_over: usize,
     pub ai_enrichments_enqueued: usize,
+    pub quill_syncs_retried: usize,
 }
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
@@ -123,6 +125,7 @@ pub fn run_hygiene_scan(
         .map(|v| v.len())
         .unwrap_or(0);
     report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
+    report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
 
     // --- Phase 1: Mechanical fixes (free, instant) ---
     let user_domains = config.resolved_user_domains();
@@ -146,6 +149,10 @@ pub fn run_hygiene_scan(
 
     let (count, details) = fix_renewal_rollovers(db);
     report.fixes.renewals_rolled_over = count;
+    all_details.extend(details);
+
+    let (count, details) = retry_abandoned_quill_syncs(db);
+    report.fixes.quill_syncs_retried = count;
     all_details.extend(details);
 
     // --- Phase 2: Email name resolution + domain linking (free) ---
@@ -186,6 +193,7 @@ pub fn run_hygiene_scan(
         .unwrap_or(0);
     // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
     // duplicate_people is also unchanged (no auto-merge).
+    report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
 
     report.scan_duration_ms = scan_start.elapsed().as_millis() as u64;
     report
@@ -414,6 +422,32 @@ fn fix_renewal_rollovers(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
     }
 
     (fixed, details)
+}
+
+/// Retry abandoned Quill syncs that are between 7 and 14 days old.
+fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    let syncs = match db.get_retryable_abandoned_quill_syncs(7, 14) {
+        Ok(s) => s,
+        Err(_) => return (0, Vec::new()),
+    };
+
+    let mut retried = 0;
+    let mut details = Vec::new();
+    for sync_row in &syncs {
+        if db.reset_quill_sync_for_retry(&sync_row.id).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "quill_sync_retried".to_string(),
+                entity_name: Some(sync_row.meeting_id.clone()),
+                description: format!(
+                    "Reset abandoned Quill sync for meeting {}",
+                    sync_row.meeting_id
+                ),
+            });
+            retried += 1;
+        }
+    }
+
+    (retried, details)
 }
 
 // =============================================================================
