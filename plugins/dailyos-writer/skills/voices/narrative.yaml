@@ -1,0 +1,108 @@
+# Narrative Voice Profile
+# For: Video scripts, documentary content, explainers, thought leadership videos
+
+name: "Narrative"
+content_types:
+  - video-script
+  - documentary
+  - explainer
+  - podcast-outline
+
+audience:
+  primary: "Enterprise decision-makers, external viewers"
+  secondary: "Industry peers, potential customers"
+  context: "Viewers who want insight through story, not slides"
+
+voice:
+  tone: "Direct address, honest acknowledgment of complexity"
+  style: "Documentary storytelling - Trudeau communication approach"
+  authority: "Earned through argument, not asserted"
+
+  pronouns:
+    primary: "we"  # Shared journey with viewer
+    when_appropriate: "you"  # Direct address for emphasis
+
+  principles:
+    - "Show through specific stories, don't announce emotions"
+    - "Resolution is earned, not announced"
+    - "Explain the system before critiquing it"
+    - "Let tension breathe before resolution"
+    - "Connect new concepts to established context"
+
+  do:
+    - Use "we" to create shared journey
+    - Show the problem through concrete examples
+    - Explain mechanics before offering critique
+    - Let the argument earn the positioning
+    - Use specific stories as evidence
+    - Create natural transitions between ideas
+
+  avoid:
+    - Telling instead of showing ("This was frustrating" vs. showing frustration)
+    - Unearned resolution (positioning that doesn't flow from argument)
+    - Rushing mechanics (critique before explanation)
+    - Signposting ("In this video, we'll cover...")
+    - Announcing emotions ("This is exciting because...")
+
+structure:
+  default_template: "documentary-arc"
+
+  principles:
+    - "Problem-solution arc with earned resolution"
+    - "Let tension breathe before resolution"
+    - "VIP positioning emerges naturally from argument"
+    - "Each section advances the story"
+
+  arc_structure:
+    setup:
+      purpose: "Establish the world and the problem"
+      guidance: "Show, don't tell. Use specific examples."
+
+    tension:
+      purpose: "Develop the complexity"
+      guidance: "Let it breathe. Don't rush to resolution."
+
+    turn:
+      purpose: "The insight or shift"
+      guidance: "This should feel earned by the preceding argument."
+
+    resolution:
+      purpose: "What this means, what's possible"
+      guidance: "Positioning flows naturally, not inserted."
+
+  formats:
+    - documentary-arc: "Problem → Tension → Turn → Resolution"
+    - explainer: "Teaching a concept through story"
+    - future-vision: "What the world looks like if we succeed"
+
+quality_checks:
+  - "Are we showing through stories, not telling?"
+  - "Is the resolution earned through argument?"
+  - "Did we explain mechanics before critiquing?"
+  - "Does positioning emerge naturally?"
+  - "Would this work as a spoken piece?"
+  - "Does it create a shared journey with 'we'?"
+
+pacing_guidance:
+  # Video-specific considerations
+  attention:
+    - "Hook in first 10 seconds"
+    - "New idea or example every 30-60 seconds"
+    - "Tension peaks before resolution"
+
+  rhythm:
+    - "Vary sentence length for spoken delivery"
+    - "Short sentences for emphasis"
+    - "Longer sentences for exploration"
+    - "Pause moments (implied in script)"
+
+example_phrases:
+  good:
+    - "We've all been in that meeting where..."
+    - "Here's what that actually looks like..."
+    - "And this is where it gets interesting."
+
+  avoid:
+    - "In this video, we're going to discuss..."
+    - "This is really exciting because..."
+    - "As you can clearly see..."
