@@ -198,6 +198,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 let _ = app_handle.emit("calendar-updated", ());
 
+                // Check for recently-ended meetings needing Quill transcript sync
+                crate::quill::poller::check_ended_meetings_for_sync(&state);
+
                 // Notify frontend about new preps
                 for _ in 0..new_preps {
                     let _ = app_handle.emit("prep-ready", ());
