@@ -23,10 +23,16 @@ pub struct QuillConfig {
     pub bridge_path: String,
     #[serde(default)]
     pub auto_sync_contacts: bool,
+    #[serde(default = "default_poll_interval_minutes")]
+    pub poll_interval_minutes: u32,
 }
 
 fn default_delay_minutes() -> u32 {
     10
+}
+
+fn default_poll_interval_minutes() -> u32 {
+    5
 }
 
 fn default_bridge_path() -> String {
@@ -44,6 +50,7 @@ impl Default for QuillConfig {
             delay_minutes: default_delay_minutes(),
             bridge_path: default_bridge_path(),
             auto_sync_contacts: false,
+            poll_interval_minutes: default_poll_interval_minutes(),
         }
     }
 }
