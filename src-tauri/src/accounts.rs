@@ -526,6 +526,8 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 is_internal: false,
                 updated_at,
                 archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
             },
             json,
         })
@@ -554,6 +556,8 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
                 is_internal: false,
                 updated_at,
                 archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
             },
             json,
         })
@@ -629,6 +633,8 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     is_internal: false,
                     updated_at: now,
                     archived: false,
+                    keywords: None,
+                    keywords_extracted_at: None,
                 };
                 if db.upsert_account(&new_account).is_ok() {
                     let _ = write_account_json(workspace, &new_account, None, db);
@@ -783,6 +789,8 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                         is_internal: false,
                         updated_at: now,
                         archived: false,
+                        keywords: None,
+                        keywords_extracted_at: None,
                     };
                     if db.upsert_account(&new_child).is_ok() {
                         let _ = write_account_json(workspace, &new_child, None, db);
@@ -1107,6 +1115,8 @@ mod tests {
             is_internal: false,
             updated_at: now,
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         }
     }
 
@@ -1491,6 +1501,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1569,6 +1581,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1587,6 +1601,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1604,6 +1620,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1638,6 +1656,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         })
         .unwrap();
 
@@ -1656,6 +1676,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         })
         .unwrap();
 
@@ -1673,6 +1695,8 @@ END_ENRICHMENT";
             is_internal: false,
             updated_at: Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         })
         .unwrap();
 

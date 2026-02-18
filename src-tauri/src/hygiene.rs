@@ -62,6 +62,8 @@ pub struct HygieneReport {
     pub orphaned_meetings: usize,
     pub duplicate_people: usize,
     pub abandoned_quill_syncs: usize,
+    /// Meetings with low-confidence entity matches (I305).
+    pub low_confidence_entity_matches: usize,
     pub fixes: MechanicalFixes,
     pub fix_details: Vec<HygieneFixDetail>,
     pub scanned_at: String,
@@ -82,6 +84,8 @@ pub struct MechanicalFixes {
     pub renewals_rolled_over: usize,
     pub ai_enrichments_enqueued: usize,
     pub quill_syncs_retried: usize,
+    /// Entity suggestions created from low-confidence matches (I305).
+    pub entity_suggestions_created: usize,
 }
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
@@ -94,6 +98,7 @@ pub fn run_hygiene_scan(
     budget: Option<&crate::state::HygieneBudget>,
     queue: Option<&crate::intel_queue::IntelligenceQueue>,
     first_run: bool,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> HygieneReport {
     let scan_start = std::time::Instant::now();
     let mut report = HygieneReport {
@@ -166,6 +171,13 @@ pub fn run_hygiene_scan(
 
     let (count, details) = dedup_people_by_domain_alias(db, &user_domains);
     report.fixes.people_deduped_by_alias = count;
+    all_details.extend(details);
+
+    // --- Phase 2b: Low-confidence entity match detection (I305) ---
+    let accounts_dir = workspace.join("Accounts");
+    let (count, details) = detect_low_confidence_matches(db, &accounts_dir, embedding_model);
+    report.fixes.entity_suggestions_created = count;
+    report.low_confidence_entity_matches = count;
     all_details.extend(details);
 
     // --- Phase 3: AI-budgeted gap filling ---
@@ -1096,7 +1108,7 @@ pub fn run_overnight_scan(
     let overnight_limit = config.hygiene_ai_budget.saturating_mul(2).max(OVERNIGHT_AI_BUDGET);
     let overnight_budget = crate::state::HygieneBudget::new(overnight_limit);
 
-    let report = run_hygiene_scan(db, config, workspace, Some(&overnight_budget), Some(queue), false);
+    let report = run_hygiene_scan(db, config, workspace, Some(&overnight_budget), Some(queue), false, None);
 
     let overnight = OvernightReport {
         ran_at: Utc::now().to_rfc3339(),
@@ -1280,6 +1292,7 @@ fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
         Some(&state.hygiene_budget),
         Some(&state.intel_queue),
         first_run,
+        Some(state.embedding_model.as_ref()),
     ))
 }
 
@@ -1734,6 +1747,63 @@ pub fn build_intelligence_hygiene_status(
 }
 
 // =============================================================================
+// Low-confidence entity match detection (I305)
+// =============================================================================
+
+/// Detect meetings from the last 14 days with no entity links that could
+/// be matched to entities with low confidence (0.30–0.60 = suggestion).
+/// Returns up to 10 suggestions as HygieneFixDetail entries.
+fn detect_low_confidence_matches(
+    db: &ActionDb,
+    accounts_dir: &std::path::Path,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+) -> (usize, Vec<HygieneFixDetail>) {
+    use crate::prepare::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
+
+    let lookback = (Utc::now() - chrono::Duration::days(14)).to_rfc3339();
+    let meetings = db.get_unlinked_meetings(&lookback, 50).unwrap_or_default();
+
+    let mut suggestions = Vec::new();
+    let max_suggestions = 10;
+
+    for (_meeting_id, title, calendar_event_id, _start_time) in meetings {
+        if suggestions.len() >= max_suggestions {
+            break;
+        }
+
+        let event_id = calendar_event_id.as_deref().unwrap_or("");
+        let meeting_json = serde_json::json!({
+            "title": title,
+            "id": event_id,
+        });
+
+        let outcomes =
+            resolve_meeting_entities(db, event_id, &meeting_json, accounts_dir, embedding_model);
+
+        for outcome in &outcomes {
+            if let ResolutionOutcome::Suggestion(entity) = outcome {
+                suggestions.push(HygieneFixDetail {
+                    fix_type: "low_confidence_entity_match".to_string(),
+                    entity_name: Some(entity.entity_id.clone()),
+                    description: format!(
+                        "Meeting \"{}\" may be related to entity (confidence: {:.0}%, source: {})",
+                        title,
+                        entity.confidence * 100.0,
+                        entity.source,
+                    ),
+                });
+                if suggestions.len() >= max_suggestions {
+                    break;
+                }
+            }
+        }
+    }
+
+    let count = suggestions.len();
+    (count, suggestions)
+}
+
+// =============================================================================
 // Tests
 // =============================================================================
 
@@ -1795,6 +1865,8 @@ mod tests {
             is_internal: false,
             updated_at: now,
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -1981,7 +2053,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
 
         assert_eq!(report.unnamed_people, 0);
         assert_eq!(report.unknown_relationships, 0);
@@ -2004,7 +2076,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
 
         // Fixes applied
         assert_eq!(report.fixes.relationships_reclassified, 2);
@@ -2503,7 +2575,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
         assert_eq!(report.duplicate_people, 1);
     }
 
@@ -2552,6 +2624,8 @@ mod tests {
             is_internal: false,
             updated_at: now,
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -2650,7 +2724,7 @@ mod tests {
             ..default_test_config()
         };
 
-        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false);
+        let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
         assert_eq!(report.fixes.renewals_rolled_over, 1);
     }
 

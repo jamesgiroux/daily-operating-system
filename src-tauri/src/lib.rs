@@ -364,6 +364,9 @@ pub fn run() {
             // I184: Additive multi-entity link/unlink
             commands::add_meeting_entity,
             commands::remove_meeting_entity,
+            // I305: Entity keyword management
+            commands::remove_project_keyword,
+            commands::remove_account_keyword,
             // I129: Person Creation
             commands::create_person,
             commands::merge_people,

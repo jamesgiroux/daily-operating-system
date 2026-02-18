@@ -1,4 +1,95 @@
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+// ─── Node.js Binary Resolution ─────────────────────────────────────────────
+//
+// macOS apps launched from Finder/DMG don't inherit the user's shell PATH,
+// so bare `node` / `npx` fails even when installed via nvm or Homebrew.
+// These helpers resolve the absolute path once and cache it for the process
+// lifetime. Used by Quill, Clay, and Gravatar MCP clients.
+
+static NODE_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
+static NPX_BINARY: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Resolve the absolute path to the `node` binary.
+pub fn resolve_node_binary() -> Option<&'static PathBuf> {
+    NODE_BINARY
+        .get_or_init(|| resolve_node_tool("node"))
+        .as_ref()
+}
+
+/// Resolve the absolute path to the `npx` binary.
+pub fn resolve_npx_binary() -> Option<&'static PathBuf> {
+    NPX_BINARY
+        .get_or_init(|| resolve_node_tool("npx"))
+        .as_ref()
+}
+
+/// Shared resolution logic for node ecosystem binaries (`node`, `npx`, `npm`).
+fn resolve_node_tool(name: &str) -> Option<PathBuf> {
+    // 1. Try bare command (works in dev mode or if PATH is already correct)
+    if let Ok(output) = std::process::Command::new(name)
+        .arg("--version")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(which) = std::process::Command::new("which").arg(name).output() {
+                if which.status.success() {
+                    let path = String::from_utf8_lossy(&which.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        log::info!("Resolved {} via PATH: {}", name, path);
+                        return Some(PathBuf::from(path));
+                    }
+                }
+            }
+            return Some(PathBuf::from(name));
+        }
+    }
+
+    // 2. Check common install locations (Finder-launched apps need this)
+    let home = dirs::home_dir().unwrap_or_default();
+
+    // nvm: `current` symlink
+    let nvm_current = home.join(format!(".nvm/current/bin/{}", name));
+    if nvm_current.is_file() {
+        log::info!("Resolved {} via nvm current: {}", name, nvm_current.display());
+        return Some(nvm_current);
+    }
+
+    // nvm: scan versions directory (prefer newest)
+    let nvm_versions = home.join(".nvm/versions/node");
+    if nvm_versions.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&nvm_versions) {
+            let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            versions.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
+            for entry in versions {
+                let candidate = entry.path().join(format!("bin/{}", name));
+                if candidate.is_file() {
+                    log::info!("Resolved {} via nvm versions: {}", name, candidate.display());
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    // Standard install locations
+    let candidates = [
+        home.join(format!(".local/bin/{}", name)),
+        PathBuf::from(format!("/usr/local/bin/{}", name)),    // Homebrew Intel
+        PathBuf::from(format!("/opt/homebrew/bin/{}", name)),  // Homebrew Apple Silicon
+        PathBuf::from(format!("/usr/bin/{}", name)),           // System
+    ];
+
+    for candidate in &candidates {
+        if candidate.is_file() {
+            log::info!("Resolved {} at: {}", name, candidate.display());
+            return Some(candidate.clone());
+        }
+    }
+
+    log::warn!("{} not found in PATH or common install locations", name);
+    None
+}
 
 // ─── Entity Directory Template ──────────────────────────────────────────────
 //
