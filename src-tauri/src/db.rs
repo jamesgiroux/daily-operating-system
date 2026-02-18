@@ -1382,13 +1382,23 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Reject a proposed action by archiving it.
+    /// Reject a proposed action by archiving it and recording the rejection signal.
     pub fn reject_proposed_action(&self, id: &str) -> Result<(), DbError> {
+        self.reject_proposed_action_with_source(id, "unknown")
+    }
+
+    /// Reject a proposed action, recording the source surface for correction learning.
+    pub fn reject_proposed_action_with_source(
+        &self,
+        id: &str,
+        source: &str,
+    ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(
-            "UPDATE actions SET status = 'archived', updated_at = ?1
+            "UPDATE actions SET status = 'archived', updated_at = ?1,
+             rejected_at = ?1, rejection_source = ?3
              WHERE id = ?2 AND status = 'proposed'",
-            params![now, id],
+            params![now, id, source],
         )?;
         if changed == 0 {
             return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
