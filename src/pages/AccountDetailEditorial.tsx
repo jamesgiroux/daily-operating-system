@@ -201,28 +201,19 @@ export default function AccountDetailEditorial() {
     [accountId],
   );
 
-  if (acct.loading) return <EditorialLoading />;
-
-  if (acct.error || !acct.detail) {
-    return <EditorialError message={acct.error ?? "Account not found"} onRetry={acct.load} />;
-  }
-
-  const { detail, intelligence, events, files, programs } = acct;
-
-  // Notes dirty tracking (compare editNotes to saved detail.notes)
-  const notesDirty = acct.editNotes !== (detail.notes ?? "");
-
   // Parse keywords JSON and track removals (I305)
+  // Hooks must be above early returns to satisfy React's rules of hooks.
   const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
   const parsedKeywords = useMemo(() => {
-    if (!detail.keywords) return [];
+    const kw = acct.detail?.keywords;
+    if (!kw) return [];
     try {
-      const arr = JSON.parse(detail.keywords);
+      const arr = JSON.parse(kw);
       return Array.isArray(arr) ? (arr as string[]).filter((k) => !removedKeywords.has(k)) : [];
     } catch {
       return [];
     }
-  }, [detail.keywords, removedKeywords]);
+  }, [acct.detail?.keywords, removedKeywords]);
 
   const handleRemoveKeyword = useCallback(
     async (keyword: string) => {
@@ -241,6 +232,17 @@ export default function AccountDetailEditorial() {
     },
     [accountId],
   );
+
+  if (acct.loading) return <EditorialLoading />;
+
+  if (acct.error || !acct.detail) {
+    return <EditorialError message={acct.error ?? "Account not found"} onRetry={acct.load} />;
+  }
+
+  const { detail, intelligence, events, files, programs } = acct;
+
+  // Notes dirty tracking (compare editNotes to saved detail.notes)
+  const notesDirty = acct.editNotes !== (detail.notes ?? "");
 
   return (
     <>
