@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.0 shipped (integrations). 0.10.0 planned (renewal workflow + meeting intelligence). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 1.0.0 = beta gate.
 
 ---
 
@@ -12,40 +12,48 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 | ID | Title | Priority | Area |
 |----|-------|----------|------|
-| **I54** | MCP client integration framework | P0 | Integrations |
 | **I220** | Meeting forecast (4-5 business days ahead) | P1 | Meetings |
-| **I92** | User-configurable metadata fields | P1 | Entity |
+| **I92** | ~~User-configurable metadata fields~~ → Superseded by I309-I312 (ADR-0079 Role Presets) | — | Entity |
+| **I309** | Role preset schema + JSON loader infrastructure | P1 | Entity |
+| **I310** | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) | P1 | Entity |
+| **I311** | Metadata storage migration (JSON column on accounts + projects) | P1 | Entity |
+| **I312** | Preset-driven vitals strip + entity detail fields | P1 | UX |
+| **I313** | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) | P1 | Intelligence |
+| **I314** | Role selection in Settings + community preset import | P1 | UX |
+| **I315** | Onboarding: role selection replaces entity mode selection | P1 | UX |
+| **I316** | Lift parent-child depth constraint (n-level entity nesting) | P1 | Entity |
 | **I143** | Renewal lifecycle tracking | P1 | Entity |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
-| **I243** | Quill Meetings integration (local-first transcripts + MCP) | P1 | Integrations |
 | **I225** | Gong integration (sales call intelligence + transcripts) | P1 | Integrations |
-| **I244** | Claude Cowork plugin — operational intelligence bridge (umbrella) | P1 | Integrations |
-| **I276** | Phase 3: App-managed plugin distribution (Settings UI + auto-write) | P1 | Integrations |
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit (beta gate) | P1 | Code Quality |
-| **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
-| **I90** | Product telemetry & analytics infrastructure | P2 | Infra |
-| **I142** | Account Plan artifact | P2 | Entity |
-| **I115** | Multi-line action extraction | P2 | Data |
-| **I141** | AI content tagging during enrichment | P2 | Data |
-| **I198** | Account merge + transcript reassignment | P2 | Entity |
-| **I199** | Archived account recovery UX (restore + relink) | P2 | Entity |
-| **I226** | Fathom/Granola integration (meeting transcripts) | P2 | Integrations |
-| **I227** | Gainsight integration (CS platform data sync) | P2 | Integrations |
-| **I228** | Clay integration (contact/company enrichment) | P2 | Integrations |
-| **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
-| **I245** | "Open in Cowork" UX pattern — deferred, blocked by no URL scheme | P2 | UX |
-| **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
-| **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
-| **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
-| **I229** | Gravatar integration (profile pictures) | P3 | Integrations |
-| **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
-| **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 | **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
 | **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
 | **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
 | **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
+| **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
+| **I318** | Thread position tracking ("ball in your court") | P1 | Email |
+| **I319** | Entity-level email cadence monitoring + anomaly surfacing | P1 | Intelligence |
+| **I320** | Hybrid email classification (semantic upgrade for ambiguous bucket) | P1 | Email |
+| **I321** | Commitment & action extraction from email | P2 | Email / Data |
+| **I322** | Email briefing narrative (daily briefing integration) | P1 | UX |
+| **I323** | Zero-touch email disposition pipeline | P2 | Email |
+| **I324** | Email signals in entity intelligence enrichment | P2 | Intelligence |
+| **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
+| **I90** | Product telemetry & analytics infrastructure | P2 | Infra |
+| **I115** | Multi-line action extraction | P2 | Data |
+| **I141** | AI content tagging during enrichment | P2 | Data |
+| **I142** | Account Plan artifact | P2 | Entity |
+| **I198** | Account merge + transcript reassignment | P2 | Entity |
+| **I199** | Archived account recovery UX (restore + relink) | P2 | Entity |
+| **I227** | Gainsight integration (CS platform data sync) | P2 | Integrations |
+| **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
+| **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
+| **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
+| **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
+| **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
+| **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 
 ---
 
@@ -69,23 +77,9 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ---
 
-### 0.9.0 — Integrations
+### 0.9.0 — Integrations — CLOSED
 
-*MCP client framework + first-party integrations. Transcript ingestion and enterprise data sources.*
-
-| Priority | Issue | Scope |
-|----------|-------|-------|
-| P0 | I54 | MCP client integration framework (foundation) |
-| P1 | I243 | Quill Meetings integration (local-first transcripts + MCP) |
-| P1 | I276 | Cowork plugin distribution (Settings UI + auto-write) |
-| P2 | I225 | Gong integration (sales call intelligence + transcripts) | Deferred
-| P2 | I226 | Fathom/Granola integration (meeting transcripts) |
-| P2 | I227 | Gainsight integration (CS platform data sync) |
-| P2 | I228 | Clay integration (contact/company enrichment) |
-| P2 | I230 | Claude Cowork MCP integration (consume Cowork projects/tasks) |
-| P3 | I229 | Gravatar integration (profile pictures) |
-
-**Rationale:** I54 establishes the MCP client framework and **Quill (I243)** ships first — local-first, native MCP, proves the model. Then evaluate enterprise integrations (Gong, Gainsight, Clay) by strategic value. I230 (Cowork MCP client) is distinct from 0.8.0's Cowork plugin — I230 consumes Cowork data INTO DailyOS (bidirectional), while the plugin exposes DailyOS intelligence TO Cowork (outbound).
+All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client framework, Quill/Granola/Clay/Gravatar integrations, and plugin marketplace shipped. I225 (Gong), I227 (Gainsight), I230 (Cowork MCP client) deferred to future releases. I244 (Cowork plugin umbrella) superseded by I276. See CHANGELOG for details.
 
 ---
 
@@ -106,18 +100,44 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ---
 
-### 0.11.0 — Renewal & Entity Management
+### 0.11.0 — Role Presets & Entity Architecture
 
-*TAM/CSM operational core: account metadata, renewal pipeline, entity lifecycle. Built on 0.10.0 signal intelligence.*
+*Multi-role support via ADR-0079. Role presets replace Kits — lightweight JSON configs that shape vocabulary, metadata, prioritization, and AI enrichment per role. Entity hierarchy unlocked to n-level depth.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
-| P1 | I92 | User-configurable metadata fields (CS Kit defaults + CSV import) |
+| P1 | I309 | Role preset schema + JSON loader infrastructure |
+| P1 | I310 | Ship 9 role presets (CS, Sales, Marketing, Partnerships, Agency, Consulting, Product, Leadership, The Desk) |
+| P1 | I311 | Metadata storage migration (JSON column on accounts + projects) |
+| P1 | I312 | Preset-driven vitals strip + entity detail fields |
+| P1 | I313 | Vocabulary-driven AI prompts (enrichment, briefing, risk/win framing per role) |
+| P1 | I314 | Role selection in Settings + community preset import |
+| P1 | I315 | Onboarding: role selection replaces entity mode selection |
+| P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
 | P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 
-**Rationale:** With the signal engine in place (0.10.0), renewal tracking benefits from compound intelligence out of the box — renewal dates, engagement frequency, email sentiment, and champion changes all feed into account health scoring via the signal bus. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (pipeline stages, health scores, ARR projections, risk alerts). Entity management (I198, I199) completes the lifecycle.
+**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence.
+
+---
+
+### 0.12.0 — Email Intelligence
+
+*The chief of staff reads your email. Signals, not summaries. Briefing, not inbox. Built on 0.10.0 signal bus.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I317 | Meeting-aware email intelligence (structured digest, not excerpts) |
+| P1 | I318 | Thread position tracking ("ball in your court") |
+| P1 | I319 | Entity-level email cadence monitoring + anomaly surfacing |
+| P1 | I320 | Hybrid email classification (semantic upgrade for ambiguous bucket) |
+| P1 | I322 | Email briefing narrative (daily briefing integration) |
+| P2 | I321 | Commitment & action extraction from email |
+| P2 | I323 | Zero-touch email disposition pipeline |
+| P2 | I324 | Email signals in entity intelligence enrichment |
+
+**Rationale:** DailyOS already fetches, classifies, and enriches email (ADR-0024/0029). The 0.10.0 signal bus (I306) builds the email-calendar bridge infrastructure — correlating email threads with meeting attendees and surfacing raw excerpts in prep context. 0.12.0 builds the intelligence layer on top: structured meeting-aware digests that tell you what matters for each meeting (I317), thread position awareness so you know what you owe people (I318), entity-level cadence anomalies that flag when accounts go quiet or spike (I319), semantic classification for the ambiguous "medium" priority bucket (I320), and a narrative email section in the daily briefing that reads like a chief of staff's morning summary (I322). The design philosophy is "chief of staff who reads your email and tells you what matters" — not an email client, not an inbox UI, not unread counts. Email becomes the signal bus's richest data source and the briefing's most actionable section.
 
 ---
 
@@ -149,158 +169,11 @@ All issues (I221-I224, I237-I240) resolved or superseded. I221 (Focus page) move
 
 ---
 
-### Integrations (0.9.0)
+### Integrations (0.9.0) — CLOSED
 
-**I54: MCP client integration framework**
-Foundation infrastructure for all DailyOS integrations. Implements MCP (Model Context Protocol) client that connects to external data sources (Gong, Gainsight, Clay, etc.) via standardized MCP servers. Handles auth, data sync, caching, and error recovery for enterprise integrations.
+Shipped issues (I54, I243, I226, I228, I229, I276) closed in v0.9.0. Original specs preserved in git history.
 
-**Architecture (ADR-0027 foundation):**
-
-- **MCP Client** (Rust): connects to MCP servers via stdio or HTTP transport
-- **Integration Registry**: discovers and manages available integrations
-- **Sync Engine**: bidirectional data sync with conflict resolution
-- **Cache Layer**: SQLite caching of external data (transcripts, CRM records, enrichment)
-- **Auth Manager**: OAuth/API key management per integration
-
-**Core Operations:**
-
-1. **Discovery:** Scan for available MCP servers (local installed + remote)
-2. **Connection:** Establish transport (stdio for local, HTTP for remote MCP servers)
-3. **Schema Sync:** Pull integration schemas (what data types are available)
-4. **Data Sync:** Fetch entities (calls, accounts, contacts) and map to DailyOS entities
-5. **Bidirectional:** Push DailyOS changes back (e.g., Gainsight timeline updates, task creation)
-
-**Data Flow:**
-
-```
-External Source (Gong/Gainsight) → MCP Server → DailyOS MCP Client → SQLite cache → Entity Intelligence
-```
-
-**Integration Types:**
-
-- **Transcript Sources** (Quill, Gong, Fathom, Granola): Call recordings → entity content index
-- **CRM/CS Platforms** (Gainsight, Salesforce): Account data → metadata fields + health scores
-- **Enrichment** (Clay): Contact/company data → entity dashboards
-- **Task/Project** (Linear, Cowork): Project sync → entity linkage
-- **Profile** (Gravatar): Email → profile pictures
-
-**Settings UI:**
-
-- **Integrations tab** (Settings page): list of available integrations
-- Each integration card shows: status (connected/disconnected), last sync, error state
-- Connect button triggers OAuth flow or API key input
-- Sync frequency settings (real-time, hourly, daily)
-- Data mapping config (which Gong calls map to which accounts)
-
-**Implementation:**
-
-- `src-tauri/src/mcp/` module:
-  - `client.rs` — MCP protocol client
-  - `registry.rs` — integration discovery and management
-  - `sync.rs` — sync engine with conflict resolution
-  - `auth.rs` — credential storage (macOS keychain)
-- SQLite tables:
-  - `integrations` — installed integrations with config
-  - `integration_cache` — cached external data
-  - `sync_history` — sync jobs with timestamps + status
-- Frontend: Settings → Integrations tab
-
-**Acceptance criteria:**
-
-- MCP client connects to local MCP servers via stdio transport
-- Integration registry discovers available MCP servers
-- Auth manager securely stores credentials per integration (where needed)
-- Sync engine fetches data from MCP servers and caches in SQLite
-- Settings → Integrations tab shows connection status for all integrations
-- Connect/disconnect flow works for at least one integration (Quill as first implementation)
-- Sync history shows last sync timestamp and status
-- Error states clearly communicated (auth failed, network error, schema mismatch)
-
-**I243: Quill Meetings integration (local-first transcripts + MCP)**
-Sync meeting transcripts from Quill Meetings, the AI meeting recorder that stores recordings locally and provides native MCP support. **This is the flagship transcript integration** — it perfectly aligns with P5 (Local-First, Always). Your recordings stay on your machine, not in the cloud.
-
-**Why Quill Meetings is #1:**
-
-1. **Local-first architecture** — recordings stored on user's filesystem, not cloud servers
-2. **Native MCP support** — Quill provides an MCP server out-of-the-box (no custom wrapper needed)
-3. **Privacy by default** — no data leaves your machine unless you explicitly share
-4. **Philosophy alignment** — embodies DailyOS's P5 principle (data ownership, no vendor lock-in)
-5. **AI-quality transcripts** — high-quality transcription with speaker diarization
-
-**The Perfect Fit:**
-DailyOS is local-first. Quill is local-first. Both store data on the user's machine in open formats. Quill recordings feed DailyOS entity intelligence, and both tools interoperate via MCP without cloud dependencies. This is the integration that proves the local-first model works at enterprise scale.
-
-**Quill MCP Server:**
-Quill Meetings provides an MCP server that exposes:
-
-- Meeting list (recent recordings)
-- Transcript access (full text with timestamps)
-- Recording metadata (participants, duration, date)
-- Speaker diarization data (who said what)
-
-**Data to Sync:**
-
-1. **Meeting recordings** — stored locally in Quill's directory structure
-2. **Transcripts** — full text with speaker labels and timestamps
-3. **Metadata** — participants, meeting title, duration, date
-4. **Action items** — Quill's AI-extracted action items (if available)
-5. **Key moments** — highlights, decisions, questions (if available)
-
-**Mapping to DailyOS:**
-
-- **Quill Meeting → DailyOS Meeting** — match by time + participants
-- **Quill Transcript → Content index** — index for entity intelligence enrichment
-- **Quill Action Items → DailyOS Actions** — import action items as DailyOS actions
-- **Recording path → Filesystem reference** — link to local Quill recording file
-
-**Integration Flow:**
-
-1. **Discovery:** DailyOS detects Quill MCP server (stdio transport)
-2. **Connection:** Connect to Quill MCP server locally (no cloud, no auth)
-3. **Initial sync:** Fetch last 90 days of Quill recordings
-4. **Meeting matching:** Match Quill meetings to DailyOS meetings by time + participants
-5. **Transcript ingestion:** Store transcripts in SQLite cache, index content
-6. **Action import:** Import Quill action items as DailyOS actions (user confirmation)
-7. **Incremental sync:** Hourly fetch of new Quill recordings
-
-**Local-First Benefits:**
-
-- **No cloud dependency** — works offline, no network required after initial setup
-- **No data leakage** — transcripts never leave your machine
-- **Filesystem-based** — both Quill and DailyOS use local files
-- **MCP bridges the gap** — local-to-local data exchange via MCP protocol
-- **No vendor lock-in** — open formats, you own the data
-
-**UI:**
-
-- **Settings → Integrations:** Quill card with "Connect" button (no OAuth, just MCP discovery)
-- **Status:** "Connected" if Quill MCP server detected, "Not Installed" if not
-- **Sync frequency:** Real-time, hourly, or manual
-- **Meeting detail page:** "Quill Transcript" section if transcript available
-- **Entity intelligence:** Quill transcripts feed enrichment (local content indexing)
-- **Actions page:** Quill action items appear with Quill icon
-
-**Implementation:**
-
-- `src-tauri/src/integrations/quill.rs` — Quill-specific sync logic
-- MCP client connects to Quill MCP server via stdio transport
-- Meeting matching algorithm (time window + participant overlap)
-- Transcript storage in SQLite (`quill_transcripts` table)
-- Content indexing pipeline (Quill transcripts → entity content index)
-- Action import with deduplication (don't re-import same action)
-
-**Acceptance criteria:**
-
-- DailyOS detects Quill MCP server when Quill is installed
-- Connect button in Settings → Integrations triggers MCP connection
-- Initial sync fetches last 90 days of Quill recordings
-- Meeting matching associates Quill recordings with DailyOS meetings
-- Transcripts appear on Meeting detail page
-- Transcripts indexed and available to entity intelligence enrichment
-- Quill action items import as DailyOS actions (user confirms)
-- Incremental sync runs hourly (configurable)
-- Status indicator shows "Connected" / "Syncing" / "Error" states
-- Works completely offline (no cloud dependency)
+**Open integration issues** (deferred from 0.9.0):
 
 **I225: Gong integration (sales call intelligence + transcripts)**
 Connect to Gong's revenue intelligence platform to sync call recordings, transcripts, deal intelligence, and conversation analytics. Gong is the flagship integration — it's standard in sales organizations and contains treasure troves of customer context.
@@ -367,57 +240,6 @@ Option 2: Use existing Gong MCP server if available in MCP ecosystem
 - Meeting prep includes "Recent Gong calls" sidebar (last 3 calls with account)
 - Incremental sync runs hourly (configurable)
 
-**I226: Fathom/Granola integration (meeting transcripts)**
-Sync meeting transcripts from Fathom and Granola (AI meeting note tools). Lighter integration than Gong — primarily transcript ingestion for content indexing.
-
-**The Need:**
-Not all orgs use Gong (sales-focused). Fathom and Granola are popular meeting note tools across roles. Syncing their transcripts ensures DailyOS has access to meeting intelligence even without Gong.
-
-**Fathom:**
-
-- API: `GET /meetings` → list of recorded meetings
-- `GET /meetings/{id}/transcript` → transcript text
-- OAuth flow
-
-**Granola:**
-
-- **Official MCP server** launched Feb 2026: `https://mcp.granola.ai/mcp`
-- Transport: Streamable HTTP (SSE)
-- Auth: OAuth flow (no API key setup — same pattern as Claude/ChatGPT connectors)
-- Data: meeting notes, transcripts, workspace data
-- Cloud-based (not local-first like Quill — Granola stores notes server-side)
-- Enterprise tier offers advanced access controls, usage monitoring, higher rate limits
-
-**Mapping:**
-
-- Fathom/Granola meeting → DailyOS meeting (match by time + participants)
-- Transcript → content index → entity intelligence
-
-**Sync Workflow:**
-
-1. **Granola:** Connect DailyOS MCP client to `https://mcp.granola.ai/mcp` (Streamable HTTP + OAuth)
-2. **Fathom:** Connect via OAuth REST API (Settings → Integrations)
-3. Fetch meetings from last 90 days
-4. Match to DailyOS meetings (time window + participant overlap)
-5. Store transcripts in `integration_cache`
-6. Index content for entity intelligence
-
-**Implementation note:** Granola's official MCP server means no custom wrapper needed — DailyOS's I54 MCP client connects directly. Fathom still requires a REST-to-MCP adapter or direct API integration.
-
-**UI:**
-
-- Settings → Integrations: Fathom and Granola cards
-- Meeting detail page: "Transcript" section if Fathom/Granola transcript available
-- Entity intelligence includes Fathom/Granola transcript content
-
-**Acceptance criteria:**
-
-- Granola: MCP client connects to `https://mcp.granola.ai/mcp` via Streamable HTTP + OAuth
-- Fathom: OAuth connection works
-- Transcripts sync and associate with DailyOS meetings
-- Transcripts indexed for entity intelligence enrichment
-- Meeting detail page shows transcript when available
-
 **I227: Gainsight integration (CS platform data sync)**
 Sync customer success data from Gainsight (health scores, CTAs, timeline entries, product usage). CS teams live in Gainsight — syncing this data eliminates duplicate entry and enriches DailyOS entity intelligence.
 
@@ -468,77 +290,6 @@ CSMs maintain customer health, CTAs, and timeline in Gainsight. DailyOS should c
 - Health scores sync and display on Account detail page
 - CTAs sync and appear in Actions list
 - Meeting notes can be pushed to Gainsight timeline (bidirectional)
-
-**I228: Clay integration (contact/company enrichment)**
-Enrich DailyOS entities (accounts, people) with data from Clay (company info, contact details, signals, news). Clay is a powerful enrichment platform — integrating it adds depth to entity intelligence.
-
-**The Need:**
-When creating an account or person, DailyOS knows only what the user enters. Clay can automatically enrich with firmographics, contact details, funding signals, news, and social profiles.
-
-**Data to Enrich:**
-
-1. **Company data** — industry, size, location, funding, tech stack
-2. **Contact data** — email, phone, LinkedIn, title
-3. **Signals** — hiring trends, product launches, funding rounds
-4. **News** — recent company news and announcements
-
-**Clay Integration:**
-
-- Clay API or Clay MCP server (if available)
-- Enrichment triggers: on account/person creation, or manual "Enrich" button
-
-**Workflow:**
-
-1. User creates account (e.g., "Acme Corp")
-2. DailyOS calls Clay API with company domain
-3. Clay returns firmographics + signals
-4. DailyOS writes to account metadata (I92 fields)
-
-**UI:**
-
-- Account/Person detail page: "Enrich from Clay" button
-- Auto-enrichment on creation (optional Settings toggle)
-- Enrichment status indicator (enriched, pending, failed)
-
-**Acceptance criteria:**
-
-- Clay API connection works (API key in Settings → Integrations)
-- "Enrich" button on Account detail page triggers Clay enrichment
-- Enriched data writes to account metadata fields
-- Auto-enrichment works on account/person creation (if enabled)
-
-**I229: Gravatar integration (profile pictures)**
-Fetch profile pictures from Gravatar based on email addresses. Simple integration — enhances People area with profile images.
-
-**The Need:**
-People list and detail pages show initials avatars. Gravatar provides actual profile pictures for many email addresses (widely used by developers, open-source contributors).
-
-**Implementation:**
-
-- Gravatar doesn't require OAuth — just MD5 hash of email
-- URL pattern: `https://www.gravatar.com/avatar/{md5_hash}`
-- Fallback: if no Gravatar, show initials avatar
-
-**Workflow:**
-
-1. When rendering Person component, check if Gravatar enabled (Settings)
-2. Hash person's email (MD5)
-3. Fetch Gravatar URL
-4. Cache in SQLite (avoid repeated fetches)
-5. Display image or fallback to initials
-
-**UI:**
-
-- Settings → Integrations: Gravatar toggle (no auth needed)
-- Person cards show Gravatar image if available
-- People list, dashboard mentions, meeting prep all use Gravatar
-
-**Acceptance criteria:**
-
-- Gravatar toggle in Settings → Integrations
-- Person avatars use Gravatar when available
-- Graceful fallback to initials when Gravatar not found
-- Cached to avoid excessive requests
 
 **I230: Claude Cowork integration (project/task sync)**
 Sync projects and tasks from Claude Cowork (Anthropic's project management tool) to DailyOS. Enables project-based entity mode users to leverage Cowork data without manual duplication.
@@ -4030,3 +3781,432 @@ The `response_status` field exists in the internal `Attendee` deserialization st
 3. RSVP status persists across app restarts (stored in DB, not just memory)
 4. Calendar sync updates RSVP status on each run (attendees may accept after initial invite)
 5. No regression on existing meeting prep for meetings without RSVP data
+
+---
+
+### Role Presets & Entity Architecture (0.11.0)
+
+**I309: Role preset schema + JSON loader infrastructure**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Architecture
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Define the JSON schema for role presets and build the loader that reads, validates, and activates a preset at app startup. The preset configures metadata fields, AI vocabulary, prioritization signals, lifecycle events, entity mode defaults, and briefing emphasis.
+
+**Schema contract** (version from day one):
+```jsonc
+{
+  "schemaVersion": 1,
+  "id": "customer-success",
+  "name": "Customer Success",
+  "description": "For CSMs, TAMs, and Account Managers",
+  "entityModeDefault": "account",
+  "metadata": { "account": [...], "project": [...] },
+  "vocabulary": { "entityNoun": "account", "healthFrame": "...", "riskVocabulary": [...], "winVocabulary": [...], "urgencySignals": [...] },
+  "vitals": ["arr", "health", "lifecycle", "renewal_date"],
+  "lifecycleEvents": ["Renewal", "Expansion", "Churn"],
+  "prioritization": { "primary": "renewal_proximity", "secondary": [...] },
+  "briefingEmphasis": "..."
+}
+```
+
+**Implementation:**
+- `src-tauri/src/presets/` module: schema types, loader, validator
+- Shipped presets stored as embedded JSON in binary (include_str!) or in resources/
+- `config.json` gains `role` field (replaces `profile`), `customPresetPath` for community presets
+- Loader: read active role from config → load shipped preset OR custom file → validate schema → store in AppState
+- Backwards compatibility: `profile` field derived from role + entityMode for existing backend code
+
+**Acceptance criteria:**
+1. Role preset schema is defined as Rust types with serde deserialization
+2. 9 shipped presets load and validate without error
+3. Custom preset path loads and validates external JSON file
+4. Invalid presets produce clear error messages with field-level detail
+5. Active preset accessible from AppState for all consumers
+
+---
+
+**I310: Ship 9 role presets**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Author the 9 shipped role presets with role-specific metadata fields, vocabulary, prioritization signals, lifecycle events, and briefing emphasis. Each preset is a complete JSON file following the I309 schema.
+
+**Presets:**
+1. **Customer Success** (account) — ARR, health, lifecycle, renewal date, NPS, support tier. Churn/retention vocabulary.
+2. **Sales** (account) — Deal value, stage, close date, probability, champion. Pipeline/momentum vocabulary.
+3. **Marketing** (project) — Campaign type, launch date, budget, target audience, KPIs. Launch/engagement vocabulary.
+4. **Partnerships** (both) — Partner tier, revenue share, integration status, joint roadmap. Alliance/co-sell vocabulary.
+5. **Agency** (both) — Retainer value, contract type, satisfaction, scope. Client/delivery vocabulary.
+6. **Consulting** (both) — Engagement type, day rate, SOW status, deliverables. Advisory/engagement vocabulary.
+7. **Product** (project) — Feature status, sprint, confidence, dependencies. Shipping/blocking vocabulary.
+8. **Leadership** (both) — Department, headcount, budget, OKR status. Strategic/organizational vocabulary.
+9. **The Desk** (both) — Minimal neutral fields. Clean vocabulary. The blank canvas.
+
+**Acceptance criteria:**
+1. All 9 presets exist as valid JSON files
+2. Each preset has role-appropriate metadata fields (5-8 per entity type)
+3. Vocabulary shapes AI enrichment meaningfully (not generic)
+4. Briefing emphasis produces different daily briefing tone per role
+5. The Desk works as a dignified catch-all with minimal configuration
+
+---
+
+**I311: Metadata storage migration**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Data
+
+Add flexible JSON metadata columns to entity tables. Existing hardcoded columns (ARR, NPS, health) remain for backwards compatibility and query efficiency. The JSON column stores preset-specific fields that vary by role.
+
+**Migration:**
+```sql
+ALTER TABLE accounts ADD COLUMN metadata TEXT DEFAULT '{}';
+ALTER TABLE projects ADD COLUMN metadata TEXT DEFAULT '{}';
+```
+
+**Implementation:**
+- CS preset maps `arr`, `health`, `nps` to existing hardcoded columns
+- Other presets store their fields in the JSON `metadata` column
+- Read path: merge hardcoded columns + metadata JSON for display
+- Write path: determine target (hardcoded column vs JSON) based on field key
+
+**Acceptance criteria:**
+1. Migration adds metadata column without data loss
+2. Existing CS accounts with ARR/health/NPS continue working unchanged
+3. Non-CS presets can store and retrieve arbitrary metadata fields
+4. Metadata survives app restart (persisted in SQLite)
+
+---
+
+**I312: Preset-driven vitals strip + entity detail fields**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX
+**Depends on:** I309 (schema), I311 (storage)
+
+Wire the active role preset's `vitals` and `metadata` configuration into the entity detail page. The vitals strip shows the preset's configured fields. The detail page renders editable metadata fields defined by the preset.
+
+**Implementation:**
+- Vitals strip reads `preset.vitals` array → queries both hardcoded columns and metadata JSON
+- Entity detail renders `preset.metadata[entityType]` as editable fields
+- Field types: text, number, currency, date, select (from preset schema)
+- Unknown fields in metadata JSON are preserved but not displayed (forwards compatibility)
+
+**Acceptance criteria:**
+1. Vitals strip shows fields defined by the active preset
+2. Entity detail page renders preset-appropriate editable fields
+3. Switching presets changes visible fields without data loss
+4. Field types render correctly (date picker for dates, currency format for currency, etc.)
+
+---
+
+**I313: Vocabulary-driven AI prompts**
+
+**Priority:** P1 (0.11.0)
+**Area:** Intelligence
+**Depends on:** I309 (schema)
+
+Inject the active role preset's vocabulary into all AI enrichment prompts. The same intelligence pipeline produces role-appropriate language: "churn risk" for CS, "deal stalled" for Sales, "scope creep" for Agency, "blocked by dependency" for Product.
+
+**Implementation:**
+- Entity intelligence enrichment prompt includes `preset.vocabulary` fragments
+- Daily briefing prompt includes `preset.briefingEmphasis`
+- Risk/win framing uses `preset.vocabulary.riskVocabulary` and `preset.vocabulary.winVocabulary`
+- Urgency signals use `preset.vocabulary.urgencySignals` for prioritization language
+- Meeting prep incorporates `preset.vocabulary.entityNoun` for natural language
+
+**Acceptance criteria:**
+1. Intelligence enrichment uses role-appropriate vocabulary (not generic)
+2. Daily briefing tone shifts meaningfully between CS, Sales, Product presets
+3. Risk/win sections on entity detail use preset vocabulary
+4. Switching presets produces different enrichment output for the same entity data
+
+---
+
+**I314: Role selection in Settings + community preset import**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX
+**Depends on:** I309 (schema), I310 (shipped presets)
+
+Add role selection to Settings page. Display a grid of 9 shipped presets with name + one-line description. Support importing community presets from JSON files.
+
+**Implementation:**
+- Settings > General: "Your Role" section with preset selection grid
+- Each preset shows name, description, entity mode default
+- "Import Custom Preset" button → file picker → validate → store path in config
+- Active preset indicator (checkmark or highlight)
+- Changing preset updates config, reloads preset, does NOT delete existing metadata
+
+**Acceptance criteria:**
+1. All 9 presets displayed in a selection grid
+2. Selecting a preset updates config and activates immediately
+3. Community preset import validates JSON before accepting
+4. Invalid community presets show clear error with missing/invalid fields
+5. Changing preset preserves existing entity data
+
+---
+
+**I315: Onboarding: role selection replaces entity mode selection**
+
+**Priority:** P1 (0.11.0)
+**Area:** UX
+**ADR:** [0079](decisions/0079-role-presets.md)
+
+Replace the current entity mode selection step in onboarding with a role preset picker. Role selection implies entity mode default (user can override later). One choice instead of three (entity mode + Kit + Intelligence). The Desk preset serves as "I'm not sure yet" — minimal, neutral, always available.
+
+---
+
+**I316: Lift parent-child depth constraint (n-level entity nesting)**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Architecture
+**Builds on:** [ADR-0056](decisions/0056-hierarchical-accounts.md), [ADR-0070](decisions/0070-internal-team-entities.md)
+
+Remove the one-level depth restriction on parent-child account hierarchy. Allow n-level nesting to support real organizational complexity: Company → Division → Org → Group → Team → Sub-team. The `parent_id` column is already self-referential — the constraint is a business rule, not a schema limitation.
+
+**Motivation:** Internal organizations (ADR-0070) require depth. A user at Automattic might need: Automattic → VIP Division → Sales Org → CS Group → Key Accounts → Corporate Key Accounts. External enterprise accounts also benefit: Cox → Diversification → Regional → Local. The current one-level limit forces flat representations of inherently hierarchical structures.
+
+**Implementation:**
+- Remove one-level validation in account creation/import
+- Update `get_child_accounts_list` to support recursive tree queries
+- Breadcrumb navigation: `Accounts > Automattic > VIP > Sales > CS > Key Accounts`
+- AccountsPage: expandable tree with indent per level (lazy-loaded children)
+- AccountDetailPage: full breadcrumb, children section shows immediate children only
+- `tracker_path` resolution already handles nested directories — no file I/O changes
+
+**Acceptance criteria:**
+1. Accounts can nest 3+ levels deep (create grandchild, great-grandchild)
+2. Breadcrumb renders full path at any depth
+3. AccountsPage tree expands/collapses at each level
+4. Existing one-level accounts continue working (no regression)
+5. Internal org teams can nest to reflect real org structure
+
+---
+
+### Email Intelligence (0.12.0)
+
+**I317: Meeting-aware email intelligence (structured digest, not excerpts)**
+
+**Priority:** P1 (0.12.0)
+**Area:** Email / Intelligence
+**Depends on:** I306 (signal bus — email-calendar bridge builds the raw correlation)
+
+I306 builds the email-calendar bridge: correlating email threads with meeting attendees and surfacing raw email excerpts in prep context. I317 builds the intelligence layer on top — transforming raw excerpts into a structured, meeting-aware email digest.
+
+**What I306 delivers (infrastructure):** Email thread participants correlate with meeting attendees. Raw email excerpts surface in meeting prep weighted by recency + embedding similarity.
+
+**What I317 adds (intelligence):**
+- **Structured per-meeting digest**: "For your 2pm with Acme: Sarah mentioned budget 3 times across 2 threads. David asked about timeline — no response from you yet. Your proposal from Dec 14 has had no reply."
+- **Commitment tracking per meeting**: Extract "I'll..." and "Can you..." patterns from meeting-linked email threads. Surface outstanding commitments for each attendee.
+- **Sentiment trajectory**: Not just current sentiment but direction — is email tone with this account warming or cooling?
+- **Open question detection**: Questions asked in email that have not received answers, linked to the upcoming meeting.
+
+**Implementation:**
+- Consume I306's email-calendar correlation output (email threads matched to meetings)
+- Apply Claude enrichment to matched email threads: extract commitments, questions, sentiment shifts
+- Write structured digest to meeting prep data (new `email_digest` field in meeting prep JSON)
+- MeetingDetailPage renders digest as "Email Intelligence" section
+- Digest runs during `prepare_today()` after email classification + signal bus correlation
+
+**Acceptance criteria:**
+1. Meeting detail page shows structured email digest for meetings with matched email threads
+2. Digest identifies outstanding commitments, unanswered questions, and sentiment shifts
+3. Digest links to specific email threads (thread_id for reference, not inline full emails)
+4. Meetings with no matched emails show nothing (not an empty section)
+5. Digest updates on email refresh
+
+---
+
+**I318: Thread position tracking ("ball in your court")**
+
+**Priority:** P1 (0.12.0)
+**Area:** Email
+
+Detect whether the user is the one who needs to respond to each high-priority email thread. Surface "awaiting your reply" threads prominently in the daily briefing. This is the single most actionable email intelligence signal — it answers "What do I owe people?"
+
+**Implementation:**
+- Gmail API already provides `thread_id` per email. For each high-priority thread, determine the last sender.
+- If last sender is NOT the user → "ball in your court" (response needed)
+- If last sender IS the user → "waiting on them" (no action needed)
+- May require additional Gmail API call per thread (`threads.get` with `metadataHeaders`)
+- Store thread position as signal in `signal_events` (signal_type: `thread_position`)
+- Surface in daily briefing: "Replies needed" subsection with thread subject + wait duration
+
+**Privacy note:** Uses email headers (From, thread_id) only — no body content required.
+
+**Acceptance criteria:**
+1. High-priority email threads classified as "awaiting your reply" or "waiting on them"
+2. Daily briefing shows "Replies needed" count with thread subjects and wait duration
+3. Thread position updates on email refresh
+4. Accounts for multi-party threads correctly
+
+---
+
+**I319: Entity-level email cadence monitoring + anomaly surfacing**
+
+**Priority:** P1 (0.12.0)
+**Area:** Intelligence
+**Depends on:** I307 (per-person cadence tracking infrastructure)
+
+I307 builds per-person email response time tracking as a signal source for Thompson Sampling. I319 aggregates cadence at the entity level and surfaces anomalies in the daily briefing and entity intelligence.
+
+**What I307 delivers (person-level):** Rolling average response times per person. Deviation flagging.
+
+**What I319 adds (entity-level):**
+- **Entity cadence aggregation**: "Acme sent 12 emails last week, down from 25/week average."
+- **Anomaly detection**: Flag volume drops below 50% of rolling average (gone quiet) or spikes above 200% (sudden activity).
+- **Briefing surfacing**: "Acme went quiet — email volume dropped 70% this month."
+- **Entity intelligence feed**: Cadence anomalies become entity signals via signal bus.
+
+**Acceptance criteria:**
+1. Entity-level email cadence computed from per-person signals
+2. "Gone quiet" detected when volume drops below 50% of 30-day rolling average
+3. "Spike" detected when volume exceeds 200% of 30-day rolling average
+4. Anomalies appear in daily briefing for entities with upcoming meetings or high attention
+5. Entity detail page shows cadence trend indicator
+
+---
+
+**I320: Hybrid email classification (semantic upgrade for ambiguous bucket)**
+
+**Priority:** P1 (0.12.0)
+**Area:** Email
+
+Upgrade email classification from pure header heuristics to a hybrid model. Keep the deterministic classifier (`email_classify.rs`) for obvious high and low. For the "medium" bucket (~20-40% of total), add Claude-based semantic classification using subject + snippet only.
+
+**Why:** The current classifier correctly identifies newsletters (low) and customer/urgent emails (high). The "medium" catch-all contains both genuinely important emails and noise that doesn't quite qualify as newsletter-level. Semantic understanding of subject + snippet resolves this ambiguity.
+
+**Privacy-preserving:** Only subject + snippet sent to Claude — never full body content. Opt-in setting.
+
+**Implementation:**
+- After deterministic classification, collect "medium" emails
+- Batch send to Claude: subject + snippet + sender context (known account? upcoming meeting?)
+- Claude reclassifies: `high` (promote), `medium` (keep), `low` (demote)
+- Track reclassification via signal bus — corrections feed back to improve prompts
+
+**Acceptance criteria:**
+1. Medium-priority emails semantically reclassified using subject + snippet only
+2. Opt-in step in email processing pipeline
+3. At least 20% of medium emails reclassified (promoted or demoted)
+4. No email body content sent to Claude
+5. Disableable in settings (falls back to deterministic-only)
+
+---
+
+**I321: Commitment & action extraction from email**
+
+**Priority:** P2 (0.12.0)
+**Area:** Email / Data
+**Depends on:** I306 (signal bus)
+
+Extract explicit commitments ("I'll send the proposal by Friday"), requests ("Can you review?"), and deadlines from high-priority email bodies. Create auto-detected action items linked to person/entity.
+
+**Privacy escalation:** Requires reading email body content (opt-in, clearly communicated). Body content never stored — only extracted structured signals persisted.
+
+**Implementation:**
+- `emailBodyAccess` setting (default: false)
+- When enabled, fetch full body for high-priority emails via Gmail API
+- Claude extracts: commitments, requests, deadlines, follow-ups
+- Write as signals to `signal_events` table
+- Optional: create draft action items (user reviews before activation)
+
+**Acceptance criteria:**
+1. Commitments, requests, and deadlines extracted from high-priority email bodies
+2. Feature opt-in (disabled by default), clearly labeled in Settings
+3. No email body content stored — only structured signal data
+4. Draft action items require user review before activation
+
+---
+
+**I322: Email briefing narrative (daily briefing integration)**
+
+**Priority:** P1 (0.12.0)
+**Area:** UX
+
+Replace the current "3 actionable emails" dashboard widget with a narrative email intelligence section in the daily briefing. Instead of listing emails, tell the story.
+
+**Current:** Dashboard shows `EmailList` — 3 emails with sender, subject, summary. Useful but mechanical.
+
+**Target:** The briefing reads like a chief of staff's morning summary: "Sarah Chen at Acme replied to your proposal — she's forwarding to their VP of Engineering. David Kim asked for the timeline 3 days ago — still awaiting your reply. New thread from Contoso mentions 'budget review' — first contact in 6 weeks."
+
+**Components:**
+- Thread position awareness (I318): what needs your reply
+- Meeting linkage (I317): emails connected to today's meetings
+- Cadence context (I319): anomalies worth mentioning
+- Entity context: account health, relationship trajectory
+
+**Implementation:**
+- New `EmailBriefingNarrative` component replaces or augments `EmailList`
+- Narrative generated during `prepare_today()` — Claude synthesizes email signals into 2-4 sentence editorial narrative
+- Falls back to current `EmailList` if narrative generation fails
+- Stored in `briefing.json` alongside existing briefing data
+
+**Acceptance criteria:**
+1. Daily briefing shows narrative email section (not just a list)
+2. Narrative references specific people, accounts, and upcoming meetings
+3. Gracefully degrades to email list if I317-I319 dependencies unavailable
+4. Regenerates on email refresh
+
+---
+
+**I323: Zero-touch email disposition pipeline**
+
+**Priority:** P2 (0.12.0)
+**Area:** Email
+
+Complete the automatic email lifecycle: fetch → classify → extract signals → archive low → surface high in briefing → done. No unread counts. No inbox management prompts.
+
+**Current:** Low-priority archiving requires button click. Pipeline doesn't complete the loop.
+
+**Target:**
+- Low-priority auto-archived during `prepare_today()` after classification
+- Disposition manifest logs every action: sender, subject, reason, timestamp
+- Settings shows trust metrics: "147 auto-archived this week. 0 misclassified."
+- Corrections feed back to I307 learning
+
+**Implementation:**
+- `autoArchiveEnabled` setting (default: false for initial rollout)
+- Call `archive_emails()` for low-priority IDs during prep pipeline
+- Write disposition manifest to `_today/data/email-disposition.json`
+- Settings: "Email Disposition" card with weekly stats + accuracy
+
+**Acceptance criteria:**
+1. Low-priority emails auto-archived during daily prep (opt-in)
+2. Disposition manifest records every auto-archived email with reason
+3. Settings shows weekly stats and accuracy
+4. User can flag misclassifications (feeds to correction learning)
+5. No unread count or inbox-zero pressure anywhere in UI
+
+---
+
+**I324: Email signals in entity intelligence enrichment**
+
+**Priority:** P2 (0.12.0)
+**Area:** Intelligence
+**Depends on:** I306 (signal bus), I317 (meeting digest), I319 (cadence monitoring)
+
+Feed email-derived signals into entity intelligence enrichment. Account health incorporates email trends. Person intelligence includes communication patterns.
+
+**Signals to integrate:**
+- Sentiment trajectory per entity (from I317 + per-email enrichment)
+- Engagement cadence (from I319)
+- Commitment tracking (from I321 if available)
+- Thread density (active thread count per entity)
+- Response patterns (who responds fast, who goes quiet)
+
+**Implementation:**
+- Extend entity intelligence enrichment prompt to include email signal summary
+- Query `signal_events` for email signals when preparing intelligence context
+- No new UI — signals flow into existing intelligence sections naturally
+
+**Acceptance criteria:**
+1. Entity intelligence enrichment includes email signal context
+2. Account risk section flags email-derived concerns (cadence drop, sentiment shift)
+3. Account wins section highlights email positives (engagement increase)
+4. Person intelligence includes communication patterns from email
+5. No separate "email" section — signals integrate into existing chapters
