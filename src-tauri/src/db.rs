@@ -3288,6 +3288,10 @@ impl ActionDb {
 
     /// Get meeting IDs eligible for Quill backfill: past meetings within `days_back`
     /// that have no transcript and no existing quill_sync_state row.
+    ///
+    /// Only includes account-linked meetings with relationship-relevant types
+    /// (customer, qbr, partnership). Excludes internal, one_on_one, and external
+    /// meetings which are too broad and would pull in personal or tangential calls.
     pub fn get_backfill_eligible_meeting_ids(&self, days_back: i32) -> Result<Vec<String>, DbError> {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
@@ -3295,8 +3299,8 @@ impl ActionDb {
              WHERE transcript_path IS NULL AND transcript_processed_at IS NULL
                AND start_time >= datetime('now', ?1)
                AND end_time < datetime('now')
-               AND meeting_type IN ('customer','qbr','partnership','internal',
-                                    'team_sync','one_on_one','external')
+               AND account_id IS NOT NULL
+               AND meeting_type IN ('customer','qbr','partnership')
                AND id NOT IN (SELECT meeting_id FROM quill_sync_state)
              ORDER BY start_time DESC",
         )?;
