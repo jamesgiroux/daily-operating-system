@@ -877,6 +877,14 @@ export interface PersonDetail extends Person {
     startTime: string;
     meetingType: string;
   }[];
+  recentCaptures?: {
+    id: string;
+    captureType: string;
+    content: string;
+    meetingTitle: string;
+    meetingId?: string;
+  }[];
+  recentEmailSignals?: EmailSignal[];
   intelligence?: EntityIntelligence;
 }
 

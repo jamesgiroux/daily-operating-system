@@ -4390,6 +4390,8 @@ pub struct PersonDetailResult {
     pub signals: Option<crate::db::PersonSignals>,
     pub entities: Vec<EntitySummary>,
     pub recent_meetings: Vec<MeetingSummary>,
+    pub recent_captures: Vec<crate::db::DbCapture>,
+    pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
 }
 
@@ -4462,6 +4464,13 @@ pub fn get_person_detail(
         })
         .collect();
 
+    let recent_captures = db
+        .get_captures_for_person(&person_id, 90)
+        .unwrap_or_default();
+    let recent_email_signals = db
+        .list_recent_email_signals_for_entity(&person_id, 12)
+        .unwrap_or_default();
+
     // Load intelligence from person dir (if exists)
     let intelligence = {
         let config = state.config.read().map_err(|_| "Lock poisoned")?;
@@ -4479,6 +4488,8 @@ pub fn get_person_detail(
         signals,
         entities,
         recent_meetings,
+        recent_captures,
+        recent_email_signals,
         intelligence,
     })
 }

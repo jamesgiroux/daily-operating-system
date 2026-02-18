@@ -152,11 +152,6 @@ export default function PersonDetailEditorial() {
 
   const { detail, intelligence } = person;
 
-  // Build timeline data — PersonDetail has optional recentMeetings, no emails/captures
-  const timelineData = {
-    recentMeetings: detail.recentMeetings ?? [],
-  };
-
   return (
     <>
       {/* Chapter 1: The Profile (Hero) */}
@@ -206,7 +201,11 @@ export default function PersonDetailEditorial() {
 
       {/* Chapter 5: The Record */}
       <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <UnifiedTimeline data={timelineData} />
+        <UnifiedTimeline data={{
+          recentMeetings: detail.recentMeetings ?? [],
+          recentCaptures: detail.recentCaptures,
+          recentEmailSignals: detail.recentEmailSignals,
+        }} />
       </div>
 
       {/* Finis marker */}
