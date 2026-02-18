@@ -194,6 +194,12 @@ pub fn run() {
                 clay::poller::run_clay_poller(clay_state, clay_handle).await;
             });
 
+            // Spawn event-driven entity resolution trigger (I308)
+            let entity_res_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                signals::event_trigger::run_entity_resolution_trigger(entity_res_state).await;
+            });
+
             // Create tray menu
             let open_item = MenuItem::with_id(app, "open", "Open DailyOS", true, None::<&str>)?;
             let run_now_item =
