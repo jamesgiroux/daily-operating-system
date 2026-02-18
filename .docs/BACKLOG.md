@@ -91,7 +91,24 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 
 ### 0.10.0 — Intelligence
 
-*Regardless of role, intelligence should compound and signals should be weighted.*
+*The system that learns from you. Signals compound, corrections teach, events drive action.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
+| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
+| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
+| P1 | I308 | Event-driven signal processing and cross-entity propagation |
+| P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
+| P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
+
+**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine.
+
+---
+
+### 0.11.0 — Renewal & Entity Management
+
+*TAM/CSM operational core: account metadata, renewal pipeline, entity lifecycle. Built on 0.10.0 signal intelligence.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
@@ -99,14 +116,8 @@ MCP stdout pollution fix. Native library output (ONNX Runtime, fastembed) during
 | P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
-| P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
-| P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
-| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
-| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
-| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
-| P1 | I308 | Event-driven signal processing and cross-entity propagation |
 
-**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature, not a future promise. Renewal workflow (I92, I143) and entity management (I198, I199) round out the operational core.
+**Rationale:** With the signal engine in place (0.10.0), renewal tracking benefits from compound intelligence out of the box — renewal dates, engagement frequency, email sentiment, and champion changes all feed into account health scoring via the signal bus. I92 adds configurable account metadata fields with CS Kit defaults and CSV import/export. I143 builds renewal tracking infrastructure (pipeline stages, health scores, ARR projections, risk alerts). Entity management (I198, I199) completes the lifecycle.
 
 ---
 
