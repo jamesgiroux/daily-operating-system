@@ -8775,6 +8775,7 @@ pub struct QuillStatus {
     pub last_error: Option<String>,
     pub last_error_at: Option<String>,
     pub abandoned_syncs: usize,
+    pub poll_interval_minutes: u32,
 }
 
 /// Get the current status of the Quill integration.
@@ -8859,6 +8860,7 @@ pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
         last_error,
         last_error_at,
         abandoned_syncs: abandoned,
+        poll_interval_minutes: quill_config.poll_interval_minutes,
     }
 }
 
@@ -8870,6 +8872,47 @@ pub fn set_quill_enabled(
 ) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
         config.quill.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Result of a Quill historical backfill operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuillBackfillResult {
+    pub created: usize,
+    pub eligible: usize,
+}
+
+/// Create Quill sync rows for past meetings that never had transcript sync.
+#[tauri::command]
+pub fn start_quill_backfill(state: State<Arc<AppState>>) -> Result<QuillBackfillResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let ids = db
+        .get_backfill_eligible_meeting_ids(90)
+        .map_err(|e| e.to_string())?;
+    let eligible = ids.len();
+    let mut created = 0;
+    for id in &ids {
+        if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
+            created += 1;
+        }
+    }
+    Ok(QuillBackfillResult { created, eligible })
+}
+
+/// Set the Quill poll interval (1–60 minutes).
+#[tauri::command]
+pub fn set_quill_poll_interval(
+    minutes: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if !(1..=60).contains(&minutes) {
+        return Err("Poll interval must be between 1 and 60 minutes".to_string());
+    }
+    crate::state::create_or_update_config(&state, |config| {
+        config.quill.poll_interval_minutes = minutes;
     })?;
     Ok(())
 }
