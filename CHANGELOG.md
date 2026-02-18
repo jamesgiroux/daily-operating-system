@@ -4,6 +4,14 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.1] - 2026-02-18
+
+Hotfix for MCP integrations failing when app is launched from Finder/Applications.
+
+### Fixed
+
+- Quill, Clay, and Gravatar MCP clients fail with "connection failed" when launched from Finder — macOS GUI apps don't inherit shell PATH, so nvm-installed `node`/`npx` binaries aren't found. Added intelligent binary resolution that scans nvm versions, Homebrew, and system paths with process-lifetime caching.
+
 ## [0.9.0] - 2026-02-18
 
 The integrations release. Four new data integrations, a plugin marketplace, and UI polish.
