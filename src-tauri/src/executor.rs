@@ -74,6 +74,34 @@ impl Executor {
         err.to_lowercase().contains("model_unavailable")
     }
 
+    /// Build set of known external domains from account_domains + person emails.
+    fn build_known_domains(&self) -> HashSet<String> {
+        let mut domains = HashSet::new();
+        if let Ok(guard) = self.state.db.lock() {
+            if let Some(db) = guard.as_ref() {
+                // Account domains
+                if let Ok(rows) = db.conn_ref().prepare(
+                    "SELECT DISTINCT lower(domain) FROM account_domains"
+                ).and_then(|mut stmt| {
+                    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                    Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                }) {
+                    domains.extend(rows);
+                }
+                // Person email domains
+                if let Ok(rows) = db.conn_ref().prepare(
+                    "SELECT DISTINCT lower(substr(email, instr(email, '@') + 1)) FROM people WHERE email IS NOT NULL AND email != ''"
+                ).and_then(|mut stmt| {
+                    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                    Ok(rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                }) {
+                    domains.extend(rows);
+                }
+            }
+        }
+        domains
+    }
+
     fn enrich_emails_with_fallback(
         &self,
         data_dir: &Path,
@@ -82,7 +110,8 @@ impl Executor {
         extraction_pty: &PtyManager,
         synthesis_pty: &PtyManager,
     ) -> Result<(), String> {
-        match crate::workflow::deliver::enrich_emails(data_dir, extraction_pty, workspace, user_ctx)
+        let known_domains = self.build_known_domains();
+        match crate::workflow::deliver::enrich_emails(data_dir, extraction_pty, workspace, user_ctx, &known_domains)
         {
             Ok(()) => Ok(()),
             Err(err) if Self::is_model_unavailable_error(&err) => {
@@ -95,6 +124,7 @@ impl Executor {
                     synthesis_pty,
                     workspace,
                     user_ctx,
+                    &known_domains,
                 ) {
                     Ok(()) => {
                         let _ = self.app_handle.emit(
@@ -124,13 +154,15 @@ impl Executor {
         let payload: serde_json::Value = serde_json::from_str(&raw)
             .map_err(|e| format!("Failed to parse emails.json for signal sync: {}", e))?;
 
-        let high_priority = payload
-            .get("highPriority")
-            .and_then(|v| v.as_array())
-            .cloned()
-            .unwrap_or_default();
+        let mut emails_with_signals: Vec<serde_json::Value> = Vec::new();
+        if let Some(arr) = payload.get("highPriority").and_then(|v| v.as_array()) {
+            emails_with_signals.extend(arr.iter().cloned());
+        }
+        if let Some(arr) = payload.get("mediumPriority").and_then(|v| v.as_array()) {
+            emails_with_signals.extend(arr.iter().cloned());
+        }
 
-        if high_priority.is_empty() {
+        if emails_with_signals.is_empty() {
             return Ok(0);
         }
 
@@ -142,7 +174,7 @@ impl Executor {
             let mut inserted = 0usize;
 
             let result = (|| -> Result<usize, String> {
-                for email in high_priority {
+                for email in emails_with_signals {
                     let email_id = email
                         .get("id")
                         .and_then(|v| v.as_str())
