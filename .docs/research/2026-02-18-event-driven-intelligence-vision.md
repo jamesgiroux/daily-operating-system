@@ -312,23 +312,17 @@ Email is the connective tissue between meetings, actions, and entities. The syst
 ### v0.9 (shipped): Integration plumbing
 More data sources (Clay, Gravatar, Granola). More signals flowing in. But no intelligence about those signals — they write to entity fields and that's it.
 
-### v0.10 (next): Signal foundation
+### v0.10 — The Intelligence Release
+
+All four phases ship as one release. The signal engine, correction learning, event-driven processing, and compound intelligence are the headline feature — not incremental steps spread across dot releases. This is the release where DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you."
+
 - **I305** — Intelligent meeting-entity resolution (project keywords, re-enrichment on correction, confidence thresholds in hygiene)
-- **I306** — Signal bus foundation (signal_events table, Bayesian fusion, confidence scoring, email-calendar bridge for entity resolution)
-- **I307** — Correction learning and context tagging (Thompson Sampling weights, internal vs external source tagging, calendar description mining, attendee group patterns)
-
-### v0.11: Event-driven intelligence
-- **I308** — Event-driven signal processing and cross-entity propagation (calendar change → immediate resolution, Clay job change → account risk, email sentiment → relationship signal, embedding-based relevance scoring, fastembed reranker)
-- Scheduled pipelines remain as safety net, not primary driver
-- Email pre-meeting intelligence (48-hour thread surfacing in prep context)
-- Email post-meeting correlation (follow-up thread → action extraction with entity context)
-
-### v1.0: Compound intelligence
-- Pattern detection across entities and time (frequency analysis, sentiment trends)
-- Proactive surfacing of novel insights (things no single signal contains)
-- Personalized signal weights that reflect how this specific user works
+- **I306** — Signal bus foundation (signal_events table, Bayesian fusion, confidence scoring, email-calendar bridge for entity resolution, email pre-meeting context)
+- **I307** — Correction learning and context tagging (Thompson Sampling weights, internal vs external source tagging, calendar description mining, attendee group patterns, email relationship cadence)
+- **I308** — Event-driven signal processing and cross-entity propagation (calendar change → immediate resolution, Clay job change → account risk, email sentiment → relationship signal, embedding-based relevance scoring, post-meeting email correlation, proactive briefing callouts)
+- **Compound intelligence** — Pattern detection across entities and time, proactive surfacing of novel insights (things no single signal contains), personalized signal weights that reflect how this specific user works
 - The system gets measurably better each week as it learns from corrections
-- Email relationship cadence tracking and deviation detection
+- Scheduled pipelines remain as safety net, not primary driver
 
 ---
 
