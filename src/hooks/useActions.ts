@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DbAction } from "@/types";
 
-type StatusFilter = "all" | "pending" | "completed" | "waiting";
+type StatusFilter = "all" | "proposed" | "pending" | "completed" | "waiting";
 type PriorityFilter = "all" | "P1" | "P2" | "P3";
 
 export interface CreateActionParams {

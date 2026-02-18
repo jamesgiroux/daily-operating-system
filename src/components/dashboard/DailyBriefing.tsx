@@ -11,8 +11,9 @@
  */
 
 import { useState, useCallback, useMemo } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { useProposedActions } from "@/hooks/useProposedActions";
 import clsx from "clsx";
 import { useCalendar } from "@/hooks/useCalendar";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -210,10 +211,23 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
     invoke("complete_action", { id }).catch(() => {});
   }, []);
 
+  // Proposed actions for triage
+  const { proposedActions, acceptAction, rejectAction } = useProposedActions();
+  const navigate = useNavigate();
+
   // Meeting actions helper: find actions related to a specific meeting
   const getActionsForMeeting = useCallback((meetingId: string) => {
     return actions.filter((a) => a.source === meetingId && a.status !== "completed");
   }, [actions]);
+
+  // Meeting outcomes counts for past meeting summary lines
+  const getCapturedActionCount = useCallback((meetingId: string) => {
+    return actions.filter((a) => a.source === meetingId).length;
+  }, [actions]);
+
+  const getProposedActionCount = useCallback((meetingId: string) => {
+    return proposedActions.filter((a) => a.sourceId === meetingId).length;
+  }, [proposedActions]);
 
   // Featured meeting actions
   const featuredActions = featured ? getActionsForMeeting(featured.id) : [];
@@ -374,9 +388,129 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     onComplete={handleComplete}
                     completedIds={completedIds}
                     onEntitiesChanged={onRefresh}
+                    capturedActionCount={getCapturedActionCount(meeting.id)}
+                    proposedActionCount={getProposedActionCount(meeting.id)}
                   />
                 ))}
               </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ REVIEW (Proposed Actions) ═══ */}
+      {proposedActions.length > 0 && (
+        <section className={s.scheduleSection}>
+          <div className={s.marginGrid}>
+            <div className={s.marginLabel} style={{ color: "var(--color-spice-turmeric)" }}>
+              Review
+              <span className={s.marginLabelCount}>{proposedActions.length} suggested</span>
+            </div>
+            <div className={s.marginContent}>
+              <div className={s.sectionRule} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                {proposedActions.slice(0, 5).map((action, i) => (
+                  <div
+                    key={action.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "8px 0",
+                      borderBottom: i < Math.min(proposedActions.length, 5) - 1
+                        ? "1px solid var(--color-rule-light)"
+                        : "none",
+                      borderLeft: "2px dashed var(--color-spice-turmeric)",
+                      paddingLeft: 12,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontFamily: "var(--font-serif)",
+                          fontSize: 15,
+                          color: "var(--color-text-primary)",
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {action.title}
+                      </div>
+                      {action.sourceLabel && (
+                        <div
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 11,
+                            color: "var(--color-text-tertiary)",
+                            marginTop: 1,
+                          }}
+                        >
+                          {action.sourceLabel}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button
+                        onClick={() => acceptAction(action.id)}
+                        title="Accept"
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          border: "1px solid var(--color-garden-sage)",
+                          background: "transparent",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 0,
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M2.5 6L5 8.5L9.5 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => rejectAction(action.id)}
+                        title="Reject"
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 4,
+                          border: "1px solid var(--color-spice-terracotta)",
+                          background: "transparent",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 0,
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                          <path d="M3 3L9 9M9 3L3 9" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {proposedActions.length > 5 && (
+                <button
+                  onClick={() => navigate({ to: "/actions", search: { search: undefined } })}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    letterSpacing: "0.04em",
+                    color: "var(--color-spice-turmeric)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "8px 0 0 14px",
+                  }}
+                >
+                  See all {proposedActions.length} suggestions &rarr;
+                </button>
+              )}
             </div>
           </div>
         </section>
