@@ -107,9 +107,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let action_result = actions::collect_all_actions(workspace, db_ref);
     let actions_dict = action_result.to_value();
 
-    // Step 6: Meeting contexts
+    // Step 6: Meeting contexts (I305: thread embedding model for entity resolution)
+    let embedding_ref = state.embedding_model.as_ref();
     let meeting_contexts =
-        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref);
+        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref));
     // Drop DB guard before any further awaits
     drop(db_guard);
 
@@ -226,9 +227,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         None => json!({"overdue": [], "thisWeek": []}),
     };
 
-    // Meeting contexts
+    // Meeting contexts (I305: thread embedding model for entity resolution)
+    let embedding_ref_week = state.embedding_model.as_ref();
     let meeting_contexts =
-        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref);
+        meeting_context::gather_all_meeting_contexts(&classified, workspace, db_ref, Some(embedding_ref_week));
     drop(db_guard);
 
     // Gap analysis — resolve user timezone from schedule config for accurate UTC→local conversion

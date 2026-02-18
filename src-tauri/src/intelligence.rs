@@ -463,6 +463,8 @@ mod tests {
             is_internal: false,
             updated_at: chrono::Utc::now().to_rfc3339(),
             archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
         };
         db.upsert_account(&acct).expect("upsert");
 
