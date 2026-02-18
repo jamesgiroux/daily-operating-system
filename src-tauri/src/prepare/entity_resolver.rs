@@ -91,9 +91,14 @@ pub fn resolve_meeting_entities(
 ) -> Vec<ResolutionOutcome> {
     let mut all_signals: Vec<ResolutionSignal> = Vec::new();
 
-    // Gather signals from all producers
-    all_signals.extend(signal_explicit_assignment(db, event_id, meeting));
-    all_signals.extend(signal_junction_lookup(db, event_id, meeting));
+    // Gather signals from all producers.
+    // Junction table is authoritative (user-confirmed links) — if any exist,
+    // skip the legacy account_id signal which would otherwise override at 0.99.
+    let junction_signals = signal_junction_lookup(db, event_id, meeting);
+    if junction_signals.is_empty() {
+        all_signals.extend(signal_explicit_assignment(db, event_id, meeting));
+    }
+    all_signals.extend(junction_signals);
     all_signals.extend(signal_attendee_inference(db, meeting));
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
     all_signals.extend(signal_keyword_match(db, meeting));
@@ -175,6 +180,10 @@ pub fn resolve_meeting_entities(
 
 /// Backward-compatible wrapper: returns the top account match for existing
 /// callers that expect `Option<AccountMatch>`.
+///
+/// If the top resolved entity is a project (not an account), returns None —
+/// the user explicitly linked this meeting to a project, so we should not
+/// fall through to a lower-confidence account match.
 pub fn resolve_account_compat(
     db: &ActionDb,
     event_id: &str,
@@ -183,6 +192,20 @@ pub fn resolve_account_compat(
     embedding_model: Option<&EmbeddingModel>,
 ) -> Option<AccountMatch> {
     let outcomes = resolve_meeting_entities(db, event_id, meeting, accounts_dir, embedding_model);
+
+    // If the top resolved outcome is a non-account entity, respect it and
+    // return None so callers don't fall through to a stale account match.
+    if let Some(top) = outcomes.first() {
+        let top_entity = match top {
+            ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => Some(e),
+            _ => None,
+        };
+        if let Some(e) = top_entity {
+            if e.entity_type != EntityType::Account {
+                return None;
+            }
+        }
+    }
 
     // Find the best Resolved or ResolvedWithFlag outcome for an account
     for outcome in &outcomes {

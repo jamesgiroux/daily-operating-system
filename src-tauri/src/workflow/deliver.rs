@@ -1348,9 +1348,15 @@ fn build_prep_json(
     meeting_id: &str,
     ctx: Option<&DirectiveMeetingContext>,
 ) -> Value {
-    let account = ctx
-        .and_then(|c| c.account.as_deref())
-        .or(meeting.account.as_deref());
+    // Use the context account (from entity resolution) if available.
+    // Only fall back to the classified meeting.account when no context exists
+    // at all — if context exists but has no account, the resolver determined
+    // this meeting isn't account-linked (e.g., linked to a project instead).
+    let account = if ctx.is_some() {
+        ctx.and_then(|c| c.account.as_deref())
+    } else {
+        meeting.account.as_deref()
+    };
 
     // Account snapshot: intelligence-enriched Quick Context (I186)
     let account_snapshot = build_account_snapshot(ctx);
