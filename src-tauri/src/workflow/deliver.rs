@@ -627,7 +627,6 @@ pub fn deliver_schedule(
         let meeting_id = meeting_primary_id(event.id.as_deref(), summary, start, meeting_type);
 
         let mc = find_meeting_context(account.as_deref(), Some(event_id), meeting_contexts);
-        let resolved_account = mc.and_then(|c| c.account.clone()).or(account.clone());
         let prep_summary = mc
             .and_then(build_prep_summary)
             .or_else(|| build_prep_summary_from_file(data_dir, &meeting_id));
@@ -661,15 +660,6 @@ pub fn deliver_schedule(
                     "endTime".to_string(),
                     json!(format_time_display_tz(end, tz)),
                 );
-            }
-            if let Some(ref acct) = resolved_account {
-                obj.insert("account".to_string(), json!(acct));
-                // Resolve account name → slugified entity ID for intelligence lookup
-                if let Some(db) = db {
-                    if let Ok(Some(account_row)) = db.get_account_by_name(acct) {
-                        obj.insert("accountId".to_string(), json!(account_row.id));
-                    }
-                }
             }
             if let Some(ref pf) = prep_file {
                 obj.insert("prepFile".to_string(), json!(pf));
@@ -2726,17 +2716,15 @@ pub fn enrich_briefing(
         {
             let total = maintenance.entities_refreshed
                 + maintenance.names_resolved
-                + maintenance.meetings_linked
                 + maintenance.summaries_extracted;
             if total > 0 {
                 prompt.push_str(&format!(
                     "\n## Overnight Maintenance\n\
                      DailyOS refreshed intelligence for {} accounts, resolved names for {} people, \
-                     linked {} meetings, and extracted {} file summaries overnight.\n\
+                     and extracted {} file summaries overnight.\n\
                      Briefly mention this at the end of the narrative (one sentence).\n",
                     maintenance.entities_refreshed,
                     maintenance.names_resolved,
-                    maintenance.meetings_linked,
                     maintenance.summaries_extracted,
                 ));
             }
@@ -4264,7 +4252,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deliver_schedule_prefers_context_account() {
+    fn test_deliver_schedule_no_legacy_account_field() {
         let dir = tempfile::tempdir().unwrap();
         let data_dir = dir.path().join("data");
 
@@ -4309,7 +4297,9 @@ mod tests {
             .as_array()
             .and_then(|arr| arr.first())
             .expect("expected one meeting");
-        assert_eq!(meeting["account"], "Digital-Marketing-Technology");
+        // Legacy account/accountId fields are removed (I335); entity data comes from linkedEntities.
+        assert!(meeting.get("account").is_none());
+        assert!(meeting.get("accountId").is_none());
     }
 
     #[test]

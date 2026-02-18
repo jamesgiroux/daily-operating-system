@@ -173,10 +173,11 @@ pub fn write_person_markdown(
     match db.get_person_meetings(&person.id, 10) {
         Ok(meetings) if !meetings.is_empty() => {
             for m in &meetings {
-                let account_part = m
-                    .account_id
-                    .as_deref()
-                    .map(|a| format!(" ({})", a))
+                let account_part = db
+                    .get_meeting_entities(&m.id)
+                    .ok()
+                    .and_then(|ents| ents.into_iter().find(|e| e.entity_type == crate::entity::EntityType::Account))
+                    .map(|e| format!(" ({})", e.name))
                     .unwrap_or_default();
                 md.push_str(&format!(
                     "- **{}** — {}{}\n",
