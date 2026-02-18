@@ -406,7 +406,7 @@ pub async fn enrich_person_from_clay_with_client(
         insert_enrichment_log(db, "person", person_id, "clay", "signal", Some(signal), &fields_updated, None)?;
     }
 
-    // I306: Emit change signals to the signal bus
+    // I306/I308: Emit change signals to the signal bus with cross-entity propagation
     for signal in &signals {
         let value = serde_json::json!({
             "description": signal.description,
@@ -414,8 +414,9 @@ pub async fn enrich_person_from_clay_with_client(
             "new_value": signal.new_value,
         })
         .to_string();
-        let _ = crate::signals::bus::emit_signal(
+        let _ = crate::signals::bus::emit_signal_and_propagate(
             db,
+            &state.signal_engine,
             "person",
             person_id,
             &signal.signal_type,
