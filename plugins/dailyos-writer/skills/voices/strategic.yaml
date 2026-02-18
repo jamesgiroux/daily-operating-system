@@ -1,0 +1,87 @@
+# Strategic Voice Profile
+# For: Partnership updates, competitive wins, executive summaries, customer communications
+
+name: "Strategic"
+content_types:
+  - partnership-update
+  - competitive-win
+  - executive-summary
+  - customer-communication
+  - p2-strategic
+
+audience:
+  primary: "C-suite executives, VP-level leadership"
+  secondary: "Cross-functional stakeholders, leadership team"
+  context: "Fortune 500 strategic decision-makers who value evidence over assertions"
+
+voice:
+  tone: "Professional objectivity"
+  style: "Canadian diplomatic - collaborative without being tentative"
+  authority: "Confident, grounded in evidence"
+
+  principles:
+    - "Evidence over assertions - every claim grounded in specific source"
+    - "Outcomes over process - focus on impact, not methodology"
+    - "Direct over clever - say what you mean clearly"
+    - "Professional without pretense - strategic but accessible"
+
+  do:
+    - Lead with the answer (Pyramid Principle)
+    - Ground claims in customer conversations, data, specific events
+    - Use action titles (conclusions, not topics)
+    - Include specific next steps with owners and dates
+    - Acknowledge complexity without hedging unnecessarily
+
+  avoid:
+    - Contrast framing ("not X, Y" - just state Y)
+    - Negative parallels ("unlike competitors")
+    - Over-validation ("You're absolutely right!")
+    - Claiming strategic thinking instead of demonstrating it
+    - Unjustified superlatives without supporting evidence
+    - Throat-clearing phrases ("Here's the thing:")
+
+structure:
+  default_template: "bluf-standard"
+
+  principles:
+    - "BLUF for posts over 3 paragraphs"
+    - "Action titles that state conclusions"
+    - "Evidence integrated into narrative, not dumped"
+    - "What This Means section for implications"
+    - "Clear next steps with owners"
+
+  formats:
+    - bluf-standard: "BLUF → What Happened → What This Means → What's Next"
+    - scqa: "Situation → Complication → Question → Answer"
+    - pyramid: "Conclusion first, then supporting points"
+    - executive-briefing: "One-pager format for exec consumption"
+
+quality_checks:
+  - "Did we lead with the answer?"
+  - "Are headers action titles (conclusions, not topics)?"
+  - "Is every claim linked to a specific source?"
+  - "Would an exec get the point in 30 seconds?"
+  - "Are next steps specific with owners and dates?"
+  - "Does it pass the read-aloud test? (Not defensive)"
+
+evidence_standards:
+  required:
+    - Customer quotes with attribution (call date, person)
+    - Data points with sources
+    - Specific events with dates
+
+  preferred:
+    - Cross-reference to related documents
+    - External validation where relevant
+    - Pattern recognition across multiple data points
+
+example_phrases:
+  good:
+    - "The NXP opportunity validates our positioning. Salesforce AEs brought us into the deal within 24 hours."
+    - "Partnership formalization is moving to legal review."
+    - "Three enterprise deals in pipeline totaling $400K."
+
+  avoid:
+    - "This is absolutely incredible validation!"
+    - "We're clearly seeing massive success."
+    - "Unlike our competitors who struggle with this..."
