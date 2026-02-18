@@ -34,7 +34,7 @@ export const mockDashboardData: DashboardData = {
       endTime: "11:00 AM",
       title: "Discovery Call",
       type: "customer",
-      account: "TechStart Inc",
+      linkedEntities: [{ id: "e1", name: "TechStart Inc", entityType: "account" }],
       isCurrent: true,
       hasPrep: true,
       prepFile: "02-1030-customer-techstart-prep.md",
@@ -67,7 +67,7 @@ export const mockDashboardData: DashboardData = {
       endTime: "3:00 PM",
       title: "Quarterly Business Review",
       type: "customer",
-      account: "Acme Corp",
+      linkedEntities: [{ id: "e2", name: "Acme Corp", entityType: "account" }],
       hasPrep: true,
       prepFile: "03-1400-customer-acme-prep.md",
       prep: {

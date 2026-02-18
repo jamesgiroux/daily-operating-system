@@ -24,8 +24,6 @@ const STARTUP_DELAY_SECS: u64 = 30;
 /// Interval between scans (4 hours).
 const SCAN_INTERVAL_SECS: u64 = 4 * 60 * 60;
 
-/// How many days back to look for orphaned meetings.
-const ORPHANED_MEETING_LOOKBACK_DAYS: i32 = 90;
 
 /// Max people per domain for pairwise duplicate detection (prevents O(n²) explosion).
 const MAX_DOMAIN_GROUP_SIZE: usize = 200;
@@ -59,7 +57,6 @@ pub struct HygieneReport {
     pub missing_intelligence: usize,
     pub stale_intelligence: usize,
     pub unsummarized_files: usize,
-    pub orphaned_meetings: usize,
     pub duplicate_people: usize,
     pub abandoned_quill_syncs: usize,
     /// Meetings with low-confidence entity matches (I305).
@@ -76,7 +73,6 @@ pub struct HygieneReport {
 pub struct MechanicalFixes {
     pub relationships_reclassified: usize,
     pub summaries_extracted: usize,
-    pub orphaned_meetings_linked: usize,
     pub meeting_counts_updated: usize,
     pub names_resolved: usize,
     pub people_linked_by_domain: usize,
@@ -90,14 +86,13 @@ pub struct MechanicalFixes {
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
 /// If `budget` is provided, enqueue AI enrichment for remaining gaps.
-/// If `first_run` is true, scans ALL orphaned meetings (no lookback limit).
 pub fn run_hygiene_scan(
     db: &ActionDb,
     config: &Config,
     workspace: &Path,
     budget: Option<&crate::state::HygieneBudget>,
     queue: Option<&crate::intel_queue::IntelligenceQueue>,
-    first_run: bool,
+    _first_run: bool,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> HygieneReport {
     let scan_start = std::time::Instant::now();
@@ -124,11 +119,6 @@ pub fn run_hygiene_scan(
         .get_unsummarized_content_files()
         .map(|v| v.len())
         .unwrap_or(0);
-    let orphan_lookback = if first_run { 36500 } else { ORPHANED_MEETING_LOOKBACK_DAYS };
-    report.orphaned_meetings = db
-        .get_orphaned_meetings(orphan_lookback)
-        .map(|v| v.len())
-        .unwrap_or(0);
     report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
 
@@ -142,10 +132,6 @@ pub fn run_hygiene_scan(
 
     let (count, details) = backfill_file_summaries(db);
     report.fixes.summaries_extracted = count;
-    all_details.extend(details);
-
-    let (count, details) = fix_orphaned_meetings(db, orphan_lookback);
-    report.fixes.orphaned_meetings_linked = count;
     all_details.extend(details);
 
     let (count, details) = fix_meeting_counts(db);
@@ -208,10 +194,6 @@ pub fn run_hygiene_scan(
         .unwrap_or(0);
     report.unsummarized_files = db
         .get_unsummarized_content_files()
-        .map(|v| v.len())
-        .unwrap_or(0);
-    report.orphaned_meetings = db
-        .get_orphaned_meetings(orphan_lookback)
         .map(|v| v.len())
         .unwrap_or(0);
     // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
@@ -305,39 +287,6 @@ fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
         }
     }
     (extracted, details)
-}
-
-/// Link orphaned meetings to entities via account name resolution.
-fn fix_orphaned_meetings(db: &ActionDb, lookback_days: i32) -> (usize, Vec<HygieneFixDetail>) {
-    let meetings = match db.get_orphaned_meetings(lookback_days) {
-        Ok(m) => m,
-        Err(_) => return (0, Vec::new()),
-    };
-
-    let mut linked = 0;
-    let mut details = Vec::new();
-    for meeting in &meetings {
-        let account_name = match &meeting.account_id {
-            Some(name) if !name.is_empty() => name,
-            _ => continue,
-        };
-
-        // Try to resolve account name to an entity ID
-        if let Ok(Some(account)) = db.get_account_by_name(account_name) {
-            if db
-                .link_meeting_entity(&meeting.id, &account.id, "account")
-                .is_ok()
-            {
-                details.push(HygieneFixDetail {
-                    fix_type: "meeting_linked".to_string(),
-                    entity_name: Some(account.name.clone()),
-                    description: format!("Linked \"{}\" to {}", meeting.title, account.name),
-                });
-                linked += 1;
-            }
-        }
-    }
-    (linked, details)
 }
 
 /// Recompute meeting counts for people whose counts may be stale.
@@ -1018,7 +967,7 @@ pub fn check_upcoming_meeting_readiness(
         .conn_ref()
         .prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary,
+                    attendees, notes_path, summary,
                     created_at, calendar_event_id
              FROM meetings_history
              WHERE start_time > datetime('now')
@@ -1033,12 +982,11 @@ pub fn check_upcoming_meeting_readiness(
                     meeting_type: row.get(2)?,
                     start_time: row.get(3)?,
                     end_time: row.get(4)?,
-                    account_id: row.get(5)?,
-                    attendees: row.get(6)?,
-                    notes_path: row.get(7)?,
-                    summary: row.get(8)?,
-                    created_at: row.get(9)?,
-                    calendar_event_id: row.get(10)?,
+                    attendees: row.get(5)?,
+                    notes_path: row.get(6)?,
+                    summary: row.get(7)?,
+                    created_at: row.get(8)?,
+                    calendar_event_id: row.get(9)?,
                     description: None,
                     prep_context_json: None,
                     user_agenda_json: None,
@@ -1102,7 +1050,6 @@ pub struct OvernightReport {
     pub ran_at: String,
     pub entities_refreshed: usize,
     pub names_resolved: usize,
-    pub meetings_linked: usize,
     pub summaries_extracted: usize,
     pub relationships_reclassified: usize,
 }
@@ -1125,7 +1072,6 @@ pub fn run_overnight_scan(
         ran_at: Utc::now().to_rfc3339(),
         entities_refreshed: report.fixes.ai_enrichments_enqueued,
         names_resolved: report.fixes.names_resolved,
-        meetings_linked: report.fixes.orphaned_meetings_linked,
         summaries_extracted: report.fixes.summaries_extracted,
         relationships_reclassified: report.fixes.relationships_reclassified,
     };
@@ -1187,11 +1133,9 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             let overnight = try_run_overnight(&state);
             if let Some(report) = overnight {
                 log::info!(
-                    "HygieneLoop: overnight scan — {} entities refreshed, {} names resolved, \
-                     {} meetings linked",
+                    "HygieneLoop: overnight scan — {} entities refreshed, {} names resolved",
                     report.entities_refreshed,
                     report.names_resolved,
-                    report.meetings_linked,
                 );
             }
         }
@@ -1204,12 +1148,10 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
                 + report.unknown_relationships
                 + report.missing_intelligence
                 + report.stale_intelligence
-                + report.unsummarized_files
-                + report.orphaned_meetings;
+                + report.unsummarized_files;
 
             let total_fixes = report.fixes.relationships_reclassified
                 + report.fixes.summaries_extracted
-                + report.fixes.orphaned_meetings_linked
                 + report.fixes.meeting_counts_updated
                 + report.fixes.names_resolved
                 + report.fixes.people_linked_by_domain
@@ -1219,13 +1161,12 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, _app: AppHandle) {
             if total_gaps > 0 || total_fixes > 0 {
                 log::info!(
                     "HygieneLoop: {} gaps detected, {} fixes applied \
-                     (relationships={}, summaries={}, orphaned={}, counts={}, \
+                     (relationships={}, summaries={}, counts={}, \
                      names={}, domain_links={}, renewals={}, ai_enqueued={})",
                     total_gaps,
                     total_fixes,
                     report.fixes.relationships_reclassified,
                     report.fixes.summaries_extracted,
-                    report.fixes.orphaned_meetings_linked,
                     report.fixes.meeting_counts_updated,
                     report.fixes.names_resolved,
                     report.fixes.people_linked_by_domain,
@@ -1412,13 +1353,6 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
             if fixes.names_resolved == 1 { "person" } else { "people" }
         ));
     }
-    if fixes.orphaned_meetings_linked > 0 {
-        fix_parts.push(format!(
-            "linked {} orphaned {}",
-            fixes.orphaned_meetings_linked,
-            if fixes.orphaned_meetings_linked == 1 { "meeting" } else { "meetings" }
-        ));
-    }
     if fixes.relationships_reclassified > 0 {
         fix_parts.push(format!(
             "reclassified {} {}",
@@ -1471,7 +1405,6 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         ("missing intelligence", report.missing_intelligence, "medium"),
         ("stale intelligence", report.stale_intelligence, "low"),
         ("unsummarized files", report.unsummarized_files, "medium"),
-        ("orphaned meetings", report.orphaned_meetings, "medium"),
     ];
     for (label, count, severity) in &gap_rows {
         if *count > 0 {
@@ -1484,7 +1417,6 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
     }
 
     let total_fix_count = fixes.names_resolved
-        + fixes.orphaned_meetings_linked
         + fixes.relationships_reclassified
         + fixes.summaries_extracted
         + fixes.meeting_counts_updated
@@ -1568,7 +1500,6 @@ pub fn build_intelligence_hygiene_status(
     let missing_intelligence = report.map(|r| r.missing_intelligence).unwrap_or(0);
     let stale_intelligence = report.map(|r| r.stale_intelligence).unwrap_or(0);
     let unsummarized_files = report.map(|r| r.unsummarized_files).unwrap_or(0);
-    let orphaned_meetings = report.map(|r| r.orphaned_meetings).unwrap_or(0);
     let duplicate_people = report.map(|r| r.duplicate_people).unwrap_or(0);
 
     let fixes = report
@@ -1583,11 +1514,6 @@ pub fn build_intelligence_hygiene_status(
                     key: "summaries_extracted".to_string(),
                     label: "Summaries extracted".to_string(),
                     count: r.fixes.summaries_extracted,
-                },
-                HygieneFixView {
-                    key: "orphaned_meetings_linked".to_string(),
-                    label: "Orphaned meetings linked".to_string(),
-                    count: r.fixes.orphaned_meetings_linked,
                 },
                 HygieneFixView {
                     key: "meeting_counts_updated".to_string(),
@@ -1665,13 +1591,6 @@ pub fn build_intelligence_hygiene_status(
             "medium",
             "Summaries speed up context retrieval during prep.",
         ),
-        (
-            "orphaned_meetings",
-            "Orphaned meetings",
-            orphaned_meetings,
-            "medium",
-            "Orphaned meetings do not enrich the right entities.",
-        ),
     ];
 
     for (key, label, count, impact, description) in gap_rows {
@@ -1693,14 +1612,12 @@ pub fn build_intelligence_hygiene_status(
         + missing_intelligence
         + stale_intelligence
         + unsummarized_files
-        + orphaned_meetings
         + duplicate_people;
 
     let total_fixes = report
         .map(|r| {
             r.fixes.relationships_reclassified
                 + r.fixes.summaries_extracted
-                + r.fixes.orphaned_meetings_linked
                 + r.fixes.meeting_counts_updated
                 + r.fixes.names_resolved
                 + r.fixes.people_linked_by_domain
@@ -1954,13 +1871,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_orphaned_meetings_none() {
-        let db = test_db();
-        let result = db.get_orphaned_meetings(90).unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[test]
     fn test_get_unsummarized_content_files_empty() {
         let db = test_db();
         let result = db.get_unsummarized_content_files().unwrap();
@@ -2008,51 +1918,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fix_orphaned_meetings_links() {
-        let db = test_db();
-        seed_account(&db, "acme-corp", "Acme Corp");
-
-        // Insert a meeting with account_id but no junction row
-        let now = Utc::now().to_rfc3339();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at)
-                 VALUES ('m1', 'Acme Sync', 'customer', ?1, 'Acme Corp', ?1)",
-                rusqlite::params![now],
-            )
-            .unwrap();
-
-        let orphaned = db.get_orphaned_meetings(90).unwrap();
-        assert_eq!(orphaned.len(), 1);
-
-        let (linked, _) = fix_orphaned_meetings(&db, 90);
-        assert_eq!(linked, 1);
-
-        // Should no longer be orphaned
-        let orphaned_after = db.get_orphaned_meetings(90).unwrap();
-        assert_eq!(orphaned_after.len(), 0);
-    }
-
-    #[test]
-    fn test_fix_orphaned_meetings_idempotent() {
-        let db = test_db();
-        seed_account(&db, "acme-corp", "Acme Corp");
-
-        let now = Utc::now().to_rfc3339();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at)
-                 VALUES ('m1', 'Acme Sync', 'customer', ?1, 'Acme Corp', ?1)",
-                rusqlite::params![now],
-            )
-            .unwrap();
-
-        let _ = fix_orphaned_meetings(&db, 90);
-        let (linked, _) = fix_orphaned_meetings(&db, 90);
-        assert_eq!(linked, 0); // Nothing to fix on second run
-    }
-
-    #[test]
     fn test_fix_meeting_counts() {
         let db = test_db();
         seed_person(&db, "p1", "a@test.com", "A Test", "external");
@@ -2095,7 +1960,6 @@ mod tests {
         assert_eq!(report.missing_intelligence, 0);
         assert_eq!(report.stale_intelligence, 0);
         assert_eq!(report.unsummarized_files, 0);
-        assert_eq!(report.orphaned_meetings, 0);
         assert!(!report.scanned_at.is_empty());
     }
 
@@ -2801,13 +2665,11 @@ mod tests {
     fn test_build_narrative_only_fixes() {
         let mut report = HygieneReport::default();
         report.fixes.names_resolved = 3;
-        report.fixes.orphaned_meetings_linked = 2;
         report.scanned_at = "2026-01-15T10:00:00Z".to_string();
         let view = build_hygiene_narrative(&report).unwrap();
         assert!(view.narrative.contains("Resolved 3 unnamed people"));
-        assert!(view.narrative.contains("linked 2 orphaned meetings"));
         assert!(view.narrative.contains("All clear."));
-        assert_eq!(view.total_fixes, 5);
+        assert_eq!(view.total_fixes, 3);
         assert_eq!(view.total_remaining_gaps, 0);
         assert!(view.remaining_gaps.is_empty());
     }
@@ -2816,15 +2678,14 @@ mod tests {
     fn test_build_narrative_only_gaps() {
         let report = HygieneReport {
             unnamed_people: 4,
-            orphaned_meetings: 1,
             scanned_at: "2026-01-15T10:00:00Z".to_string(),
             ..Default::default()
         };
         let view = build_hygiene_narrative(&report).unwrap();
-        assert!(view.narrative.contains("5 gaps remaining"));
+        assert!(view.narrative.contains("4 gaps remaining"));
         assert_eq!(view.total_fixes, 0);
-        assert_eq!(view.total_remaining_gaps, 5);
-        assert_eq!(view.remaining_gaps.len(), 2);
+        assert_eq!(view.total_remaining_gaps, 4);
+        assert_eq!(view.remaining_gaps.len(), 1);
     }
 
     #[test]

@@ -69,8 +69,6 @@ export interface Meeting {
   startIso?: string;
   title: string;
   type: MeetingType;
-  account?: string;
-  accountId?: string;
   prep?: MeetingPrep;
   isCurrent?: boolean;
   /** Path to the prep file (e.g., "01-1630-customer-acme-prep.md") */
