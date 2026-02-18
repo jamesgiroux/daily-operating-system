@@ -62,7 +62,7 @@ fastembed = "5"
 libc = "0.2"
 
 # MCP Server (ADR-0075) + Quill MCP client
-rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"], optional = true }
+rmcp = { version = "0.1", features = ["server", "client", "transport-io", "transport-child-process", "macros"] }
 schemars = { version = "0.8", optional = true }
 anyhow = { version = "1", optional = true }
 
@@ -71,7 +71,7 @@ filetime = "0.2.27"
 tempfile = "3"
 
 [features]
-mcp = ["rmcp/server", "rmcp/macros", "dep:schemars", "dep:anyhow"]
+mcp = ["dep:schemars", "dep:anyhow"]
 
 [[bin]]
 name = "dailyos"
