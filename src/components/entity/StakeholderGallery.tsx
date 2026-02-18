@@ -15,6 +15,7 @@ import { X, Plus, UserPlus } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
+import { Avatar } from "@/components/ui/Avatar";
 import { EngagementSelector } from "./EngagementSelector";
 
 interface StakeholderGalleryProps {
@@ -247,7 +248,8 @@ export function StakeholderGallery({
                   </button>
                 )}
 
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                  <Avatar name={s.name} size={24} />
                   {canEdit ? (
                     <EditableText
                       value={s.name}
