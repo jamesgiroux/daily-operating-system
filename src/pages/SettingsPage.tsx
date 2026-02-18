@@ -702,6 +702,21 @@ function ClaudeDesktopCard() {
     binaryPath?: string;
   } | null>(null);
 
+  useEffect(() => {
+    invoke<{ success: boolean; message: string; configPath: string | null; binaryPath: string | null }>(
+      "get_claude_desktop_status"
+    )
+      .then((res) => {
+        setResult({
+          success: res.success,
+          message: res.message,
+          configPath: res.configPath ?? undefined,
+          binaryPath: res.binaryPath ?? undefined,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
   const handleConfigure = async () => {
     setConfiguring(true);
     setResult(null);
