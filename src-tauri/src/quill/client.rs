@@ -68,12 +68,11 @@ impl QuillClient {
         if !std::path::Path::new(bridge_path).exists() {
             return Err(QuillError::BridgeNotFound(bridge_path.to_string()));
         }
-        if !Self::node_available() {
-            return Err(QuillError::NodeNotFound);
-        }
+        let node_path = crate::util::resolve_node_binary()
+            .ok_or(QuillError::NodeNotFound)?;
 
         let transport = TokioChildProcess::new(
-            tokio::process::Command::new("node").arg(bridge_path),
+            tokio::process::Command::new(node_path).arg(bridge_path),
         )
         .map_err(|e| QuillError::SpawnFailed(e.to_string()))?;
 
@@ -180,12 +179,8 @@ impl QuillClient {
         std::path::Path::new(path).exists()
     }
 
-    /// Verify that Node.js is available on PATH.
+    /// Verify that Node.js is available (checks PATH and common install locations).
     pub fn node_available() -> bool {
-        std::process::Command::new("node")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        crate::util::resolve_node_binary().is_some()
     }
 }
