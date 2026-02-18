@@ -115,6 +115,8 @@ pub struct AppState {
     pub signal_engine: Arc<crate::signals::propagation::PropagationEngine>,
     /// Wake signal for event-driven entity resolution (I308).
     pub entity_resolution_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for Quill transcript poller (immediate sync after meeting ends).
+    pub quill_poller_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -180,6 +182,7 @@ impl AppState {
             prep_invalidation_queue: Mutex::new(Vec::new()),
             signal_engine: Arc::new(crate::signals::propagation::default_engine()),
             entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
+            quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 

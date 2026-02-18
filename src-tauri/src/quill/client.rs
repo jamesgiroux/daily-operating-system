@@ -121,15 +121,31 @@ impl QuillClient {
             .filter_map(|c| c.as_text().map(|t| t.text.as_str()))
             .collect();
 
-        serde_json::from_str(&text)
-            .map_err(|e| QuillError::ParseError(e.to_string()))
+        if text.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Quill returns XML, not JSON. Try JSON first for forward-compat,
+        // then fall back to XML parsing.
+        if text.trim_start().starts_with('[') || text.trim_start().starts_with('{') {
+            return serde_json::from_str(&text)
+                .map_err(|e| QuillError::ParseError(e.to_string()));
+        }
+
+        // Parse Quill's XML response:
+        // <ToolResponse><results count="N">
+        //   <meeting id="..." date="..." participants="..." ...>
+        //     <title>...</title><blurb>...</blurb>
+        //   </meeting>
+        // </results></ToolResponse>
+        parse_meetings_xml(&text)
     }
 
     /// List recent meetings from Quill by searching a wide time window.
     pub async fn list_meetings(&self) -> Result<Vec<QuillMeeting>, QuillError> {
         let now = chrono::Utc::now();
-        let after = (now - chrono::Duration::days(7)).to_rfc3339();
-        let before = now.to_rfc3339();
+        let after = (now - chrono::Duration::days(7)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let before = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
         self.search_meetings("", &after, &before).await
     }
 
@@ -183,4 +199,80 @@ impl QuillClient {
     pub fn node_available() -> bool {
         crate::util::resolve_node_binary().is_some()
     }
+}
+
+/// Parse Quill's XML response format into QuillMeeting structs.
+///
+/// Format: `<meeting id="..." date="..." participants="..."><title>...</title></meeting>`
+fn parse_meetings_xml(xml: &str) -> Result<Vec<QuillMeeting>, QuillError> {
+    let mut meetings = Vec::new();
+
+    // Find each <meeting ...>...</meeting> block
+    let mut search_from = 0;
+    while let Some(start) = xml[search_from..].find("<meeting ") {
+        let abs_start = search_from + start;
+        let tag_end = match xml[abs_start..].find('>') {
+            Some(pos) => abs_start + pos,
+            None => break,
+        };
+
+        let attrs = &xml[abs_start..=tag_end];
+
+        let id = extract_attr(attrs, "id").unwrap_or_default();
+        let date = extract_attr(attrs, "date");
+        let participants_raw = extract_attr(attrs, "participants").unwrap_or_default();
+
+        // Parse participants: "me, Alice, Bob" or "me, and other speakers"
+        let participants: Vec<QuillParticipant> = participants_raw
+            .split(',')
+            .map(|p| p.trim())
+            .filter(|p| !p.is_empty() && *p != "me")
+            .map(|p| {
+                let clean = p.trim_start_matches("and ").trim();
+                QuillParticipant {
+                    name: Some(clean.to_string()),
+                    email: None,
+                }
+            })
+            .collect();
+
+        // Extract <title>...</title>
+        let block_end = xml[abs_start..]
+            .find("</meeting>")
+            .map(|p| abs_start + p)
+            .unwrap_or(xml.len());
+        let block = &xml[abs_start..block_end];
+
+        let title = extract_element(block, "title").unwrap_or_default();
+
+        meetings.push(QuillMeeting {
+            id,
+            title,
+            start_time: date,
+            end_time: None,
+            participants,
+            has_transcript: true,
+        });
+
+        search_from = block_end;
+    }
+
+    Ok(meetings)
+}
+
+/// Extract an XML attribute value: `attr="value"` → `value`
+fn extract_attr(tag: &str, name: &str) -> Option<String> {
+    let pattern = format!("{}=\"", name);
+    let start = tag.find(&pattern)? + pattern.len();
+    let end = tag[start..].find('"')? + start;
+    Some(tag[start..end].to_string())
+}
+
+/// Extract text content of an XML element: `<tag>content</tag>` → `content`
+fn extract_element(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{}>", tag);
+    let close = format!("</{}>", tag);
+    let start = xml.find(&open)? + open.len();
+    let end = xml[start..].find(&close)? + start;
+    Some(xml[start..end].to_string())
 }

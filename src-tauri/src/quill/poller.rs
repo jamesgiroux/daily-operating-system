@@ -20,9 +20,17 @@ use super::sync;
 ///
 /// Follows the same pattern as `google::run_calendar_poller`: startup delay,
 /// then loop with config checks and work-hours gating.
+///
+/// The poller can be woken immediately via `AppState::quill_poller_wake` when
+/// new sync rows are created (e.g. after a meeting ends), so transcripts are
+/// fetched without waiting for the full poll interval.
 pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
     // 30-second startup delay to let other subsystems initialize
     tokio::time::sleep(Duration::from_secs(30)).await;
+
+    // Short idle interval when no work is found — allows quick pickup of new
+    // sync rows without relying solely on the wake signal.
+    const IDLE_CHECK_SECS: u64 = 120;
 
     loop {
         // Check if Quill is enabled in config
@@ -35,14 +43,23 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let config = match quill_config {
             Some(cfg) if cfg.enabled => cfg,
             _ => {
-                tokio::time::sleep(Duration::from_secs(60)).await;
+                // Wait for enable — but wake signal can interrupt
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(60)) => {}
+                    _ = state.quill_poller_wake.notified() => {
+                        log::info!("Quill poller: woken by signal (checking config)");
+                    }
+                }
                 continue;
             }
         };
 
         // Check work hours (reuse same pattern as google.rs)
         if !is_work_hours(&state) {
-            tokio::time::sleep(Duration::from_secs(300)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(300)) => {}
+                _ = state.quill_poller_wake.notified() => {}
+            }
             continue;
         }
 
@@ -50,15 +67,24 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
         let pending = match get_pending_syncs(&state) {
             Some(rows) => rows,
             None => {
-                tokio::time::sleep(Duration::from_secs(300)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(IDLE_CHECK_SECS)) => {}
+                    _ = state.quill_poller_wake.notified() => {
+                        log::info!("Quill poller: woken by signal");
+                    }
+                }
                 continue;
             }
         };
 
-        let poll_interval = Duration::from_secs((config.poll_interval_minutes as u64) * 60);
-
         if pending.is_empty() {
-            tokio::time::sleep(poll_interval).await;
+            // Nothing to do — wait for wake signal or short idle check
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(IDLE_CHECK_SECS)) => {}
+                _ = state.quill_poller_wake.notified() => {
+                    log::info!("Quill poller: woken by signal (new sync row)");
+                }
+            }
             continue;
         }
 
@@ -70,8 +96,8 @@ pub async fn run_quill_poller(state: Arc<AppState>, app_handle: AppHandle) {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
 
-        // Sleep between poll cycles (configurable)
-        tokio::time::sleep(poll_interval).await;
+        // Brief pause after processing before checking for more work
+        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
 
@@ -145,8 +171,9 @@ async fn process_sync_row(
         }
     };
 
-    let search_after = (start_time - chrono::Duration::hours(12)).to_rfc3339();
-    let search_before = (start_time + chrono::Duration::hours(12)).to_rfc3339();
+    let search_after = (start_time - chrono::Duration::hours(12)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let search_before = (start_time + chrono::Duration::hours(12)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
     let quill_meetings = match client.search_meetings("", &search_after, &search_before).await {
         Ok(meetings) => meetings,
         Err(e) => {
@@ -400,5 +427,7 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
             "Calendar poll: created {} Quill sync rows for ended meetings",
             created
         );
+        // Wake the poller immediately so it picks up new rows without waiting
+        state.quill_poller_wake.notify_one();
     }
 }
