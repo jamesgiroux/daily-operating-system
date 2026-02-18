@@ -2731,6 +2731,7 @@ mod tests {
             post_meeting_capture: crate::types::PostMeetingCaptureConfig::default(),
             quill: crate::quill::QuillConfig::default(),
             granola: crate::granola::GranolaConfig::default(),
+            gravatar: crate::gravatar::GravatarConfig::default(),
             features: std::collections::HashMap::new(),
             user_domain: None,
             user_domains: None,
