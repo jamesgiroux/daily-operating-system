@@ -101,6 +101,22 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         email_result.low_count,
     );
 
+    // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
+    {
+        let bridge_guard = state.db.lock().ok();
+        if let Some(db) = bridge_guard.as_ref().and_then(|g| g.as_ref()) {
+            match crate::signals::email_bridge::run_email_meeting_bridge(db) {
+                Ok(correlations) if !correlations.is_empty() => {
+                    log::info!("prepare_today: {} email-meeting correlations", correlations.len());
+                }
+                Err(e) => {
+                    log::warn!("prepare_today: email-meeting bridge failed: {}", e);
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Step 5: Collect actions (workspace markdown + SQLite)
     let db_guard = state.db.lock().ok();
     let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
