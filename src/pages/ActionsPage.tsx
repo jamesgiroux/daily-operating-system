@@ -1,6 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useSearch, Link } from "@tanstack/react-router";
 import { useActions } from "@/hooks/useActions";
+import { useProposedActions } from "@/hooks/useProposedActions";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { PriorityPicker } from "@/components/ui/priority-picker";
 import { EntityPicker } from "@/components/ui/entity-picker";
@@ -13,10 +14,10 @@ import { stripMarkdown } from "@/lib/utils";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { DatePicker } from "@/components/ui/date-picker";
 
-type StatusTab = "pending" | "completed" | "waiting" | "all";
+type StatusTab = "proposed" | "pending" | "completed" | "waiting" | "all";
 type PriorityTab = "all" | "P1" | "P2" | "P3";
 
-const statusTabs: StatusTab[] = ["pending", "completed", "waiting", "all"];
+const statusTabs: StatusTab[] = ["proposed", "pending", "completed", "waiting", "all"];
 const priorityTabs: PriorityTab[] = ["all", "P1", "P2", "P3"];
 
 export default function ActionsPage() {
@@ -37,14 +38,25 @@ export default function ActionsPage() {
     searchQuery,
     setSearchQuery,
   } = useActions(initialSearch as string | undefined);
+  const { proposedActions, acceptAction, rejectAction } = useProposedActions();
 
   const [showCreate, setShowCreate] = useState(false);
 
   // Computed stats
+  const proposedCount = proposedActions.length;
   const pendingCount = allActions.filter((a) => a.status === "pending").length;
   const overdueCount = allActions.filter(
     (a) => a.status === "pending" && a.dueDate && new Date(a.dueDate) < new Date()
   ).length;
+
+  const handleAccept = useCallback(async (id: string) => {
+    await acceptAction(id);
+    refresh();
+  }, [acceptAction, refresh]);
+
+  const handleReject = useCallback(async (id: string) => {
+    await rejectAction(id);
+  }, [rejectAction]);
 
   const formattedDate = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -56,10 +68,11 @@ export default function ActionsPage() {
   // FolioBar readiness stats
   const folioStats = useMemo((): ReadinessStat[] => {
     const stats: ReadinessStat[] = [];
+    if (proposedCount > 0) stats.push({ label: `${proposedCount} to review`, color: "terracotta" });
     if (pendingCount > 0) stats.push({ label: `${pendingCount} pending`, color: "sage" });
     if (overdueCount > 0) stats.push({ label: `${overdueCount} overdue`, color: "terracotta" });
     return stats;
-  }, [pendingCount, overdueCount]);
+  }, [proposedCount, pendingCount, overdueCount]);
 
   // Register magazine shell
   const shellConfig = useMemo(
@@ -192,9 +205,28 @@ export default function ActionsPage() {
                 padding: 0,
                 cursor: "pointer",
                 transition: "color 0.15s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
               }}
             >
               {tab}
+              {tab === "proposed" && proposedCount > 0 && (
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: "var(--color-spice-turmeric)",
+                    background: "rgba(228, 172, 60, 0.12)",
+                    borderRadius: 8,
+                    padding: "1px 6px",
+                    lineHeight: "16px",
+                  }}
+                >
+                  {proposedCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -259,7 +291,26 @@ export default function ActionsPage() {
 
       {/* ═══ ACTION ROWS ═══ */}
       <section>
-        {actions.length === 0 ? (
+        {statusFilter === "proposed" ? (
+          proposedActions.length === 0 ? (
+            <EditorialEmpty
+              title="All clear"
+              message="No AI suggestions waiting for review."
+            />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {proposedActions.map((action, i) => (
+                <ProposedActionRow
+                  key={action.id}
+                  action={action}
+                  onAccept={() => handleAccept(action.id)}
+                  onReject={() => handleReject(action.id)}
+                  showBorder={i < proposedActions.length - 1}
+                />
+              ))}
+            </div>
+          )
+        ) : actions.length === 0 ? (
           <EditorialEmpty
             {...getPersonalityCopy(
               statusFilter === "completed"
@@ -431,6 +482,141 @@ function ActionRow({
       >
         {action.priority}
       </span>
+    </div>
+  );
+}
+
+// ─── Proposed Action Row ────────────────────────────────────────────────────
+
+function ProposedActionRow({
+  action,
+  onAccept,
+  onReject,
+  showBorder,
+}: {
+  action: DbAction;
+  onAccept: () => void;
+  onReject: () => void;
+  showBorder: boolean;
+}) {
+  const contextParts: string[] = [];
+  if (action.sourceLabel) contextParts.push(action.sourceLabel);
+  if (action.accountName || action.accountId) {
+    contextParts.push(action.accountName || action.accountId!);
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "14px 0",
+        borderBottom: showBorder ? "1px solid var(--color-rule-light)" : "none",
+        borderLeft: "2px dashed var(--color-spice-turmeric)",
+        paddingLeft: 16,
+      }}
+    >
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--color-spice-turmeric)",
+            }}
+          >
+            AI Suggested
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              color: action.priority === "P1"
+                ? "var(--color-spice-terracotta)"
+                : action.priority === "P2"
+                  ? "var(--color-spice-turmeric)"
+                  : "var(--color-text-tertiary)",
+            }}
+          >
+            {action.priority}
+          </span>
+        </div>
+        <div
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 17,
+            fontWeight: 400,
+            color: "var(--color-text-primary)",
+            lineHeight: 1.4,
+          }}
+        >
+          {stripMarkdown(action.title)}
+        </div>
+        {contextParts.length > 0 && (
+          <div
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: 300,
+              color: "var(--color-text-tertiary)",
+              marginTop: 2,
+            }}
+          >
+            {contextParts.join(" \u00B7 ")}
+          </div>
+        )}
+      </div>
+
+      {/* Accept / Reject buttons */}
+      <div style={{ display: "flex", gap: 6, flexShrink: 0, marginTop: 4 }}>
+        <button
+          onClick={onAccept}
+          title="Accept"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 4,
+            border: "1px solid var(--color-garden-sage)",
+            background: "transparent",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <button
+          onClick={onReject}
+          title="Reject"
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 4,
+            border: "1px solid var(--color-spice-terracotta)",
+            background: "transparent",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }
