@@ -54,7 +54,28 @@ The user's first interaction is consumption, not configuration. Reading, not pro
 
 ---
 
-## Principle 3: Buttons, Not Commands
+## Principle 3: It Should Just Know
+
+**If the context exists, the system should connect it — not wait for you to ask.**
+
+The user shouldn't be the one stitching together who they're meeting with, what they discussed last quarter, which account is at risk, and what follow-up they promised. That context exists across their calendar, email, CRM, and meeting notes. The system should cross-reference it continuously.
+
+This is distinct from production (Principle 2). Production means the briefing is on your desk. Knowing means understanding *why* that briefing matters — right now, in the context of everything else.
+
+| Reactive | Proactive Intelligence |
+|----------|----------------------|
+| User searches for last meeting with contact | System links contact to meeting history automatically |
+| User checks CRM before a call | Account signals surfaced in meeting prep |
+| User asks "what did we discuss?" | Conversation patterns tracked across meetings |
+| User manually flags an at-risk account | System notices declining engagement and surfaces it |
+
+**The design test:** Is the user manually connecting information that the system already has? If yes, the system should be making that connection automatically.
+
+**The principle:** The system is always paying attention. The user never has to ask "wait, what's the history here?"
+
+---
+
+## Principle 4: Buttons, Not Commands
 
 **Most actions shouldn't require user interaction at all.**
 
@@ -73,7 +94,7 @@ The hierarchy of interaction:
 
 ---
 
-## Principle 4: Opinionated Defaults, Escapable Constraints
+## Principle 5: Opinionated Defaults, Escapable Constraints
 
 **The system should work beautifully out of the box for 80% of users.**
 
@@ -96,7 +117,7 @@ But we're not a prison.
 
 ---
 
-## Principle 5: Local-First, Always
+## Principle 6: Local-First, Always
 
 **Your data lives on your machine.**
 
@@ -118,7 +139,7 @@ Not "synced to your machine." Not "cached locally." Actually, primarily, definit
 
 ---
 
-## Principle 6: AI-Native, Not AI-Assisted
+## Principle 7: AI-Native, Not AI-Assisted
 
 **AI isn't a feature. It's the foundation.**
 
@@ -141,7 +162,7 @@ The difference:
 
 ---
 
-## Principle 7: Consumption Over Production
+## Principle 8: Consumption Over Production
 
 **Users should spend more time reading than writing.**
 
@@ -161,7 +182,7 @@ The work of gathering, compiling, synthesizing, formatting—that's the system's
 
 ---
 
-## Principle 8: Forgiveness Built In
+## Principle 9: Forgiveness Built In
 
 **The system recovers gracefully from neglect.**
 
@@ -187,7 +208,7 @@ The system must handle all of this without:
 
 ---
 
-## Principle 9: Show the Work, Hide the Plumbing
+## Principle 10: Show the Work, Hide the Plumbing
 
 **Users should see outputs, not processes.**
 
@@ -210,7 +231,7 @@ Don't show:
 
 ---
 
-## Principle 10: Outcomes Over Activity
+## Principle 11: Outcomes Over Activity
 
 **We measure what matters.**
 
