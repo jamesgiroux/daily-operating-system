@@ -3,7 +3,8 @@ use std::collections::HashSet;
 use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::db::{ActionDb, DbAction};
-use crate::helpers::{build_external_account_hints, normalize_key};
+use crate::google_api::classify::EntityHint;
+use crate::helpers::{build_entity_hints, normalize_key};
 use crate::types::{CalendarEvent, LiveProactiveSuggestion, MeetingType, TimeBlock};
 
 fn meeting_type_label(meeting_type: &MeetingType) -> &'static str {
@@ -251,12 +252,12 @@ pub fn suggest_from_live_inputs(
 
 pub fn load_live_suggestion_inputs(
     db: &ActionDb,
-) -> Result<(HashSet<String>, Vec<DbAction>), String> {
-    let account_hints = build_external_account_hints(db);
+) -> Result<(Vec<EntityHint>, Vec<DbAction>), String> {
+    let entity_hints = build_entity_hints(db);
     let actions = db
         .get_focus_candidate_actions(7)
         .map_err(|e| format!("Failed to query candidate actions: {}", e))?;
-    Ok((account_hints, actions))
+    Ok((entity_hints, actions))
 }
 
 /// Fetch and classify week calendar events from Google Calendar API.
@@ -264,7 +265,7 @@ pub fn load_live_suggestion_inputs(
 /// Separated from suggestion computation to enable TTL caching (W6).
 pub async fn fetch_week_events(
     config: &crate::types::Config,
-    account_hints: &HashSet<String>,
+    entity_hints: &[EntityHint],
 ) -> Result<Vec<CalendarEvent>, String> {
     let tz: chrono_tz::Tz = config
         .schedules
@@ -288,7 +289,7 @@ pub async fn fetch_week_events(
     let live_events: Vec<CalendarEvent> = raw_events
         .iter()
         .map(|raw| {
-            crate::google_api::classify::classify_meeting_multi(raw, &user_domains, account_hints)
+            crate::google_api::classify::classify_meeting_multi(raw, &user_domains, entity_hints)
         })
         .map(|classified| classified.to_calendar_event())
         .filter(|event| !event.is_all_day)
@@ -325,10 +326,10 @@ pub fn compute_suggestions_from_events(
 /// Full fetch + compute pipeline. Convenience for callers that don't need caching.
 pub async fn get_live_proactive_suggestions(
     config: &crate::types::Config,
-    account_hints: HashSet<String>,
+    entity_hints: Vec<EntityHint>,
     actions: Vec<DbAction>,
 ) -> Result<Vec<LiveProactiveSuggestion>, String> {
-    let live_events = fetch_week_events(config, &account_hints).await?;
+    let live_events = fetch_week_events(config, &entity_hints).await?;
     compute_suggestions_from_events(config, &live_events, &actions)
 }
 

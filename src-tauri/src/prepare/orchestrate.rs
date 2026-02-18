@@ -62,11 +62,31 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             .insert("focus".to_string(), json!(focus));
     }
 
-    // Step 2: Fetch calendar events + classify
-    let account_hints = build_account_domain_hints(workspace);
+    // Step 2: Fetch calendar events + classify (I336: entity-generic)
+    let entity_hints = {
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        match db_ref {
+            Some(db) => crate::helpers::build_entity_hints(db),
+            None => {
+                // Fallback: build from filesystem (legacy)
+                let fs_hints = build_account_domain_hints(workspace);
+                fs_hints.into_iter().map(|slug| crate::google_api::classify::EntityHint {
+                    id: slug.clone(),
+                    entity_type: crate::entity::EntityType::Account,
+                    name: slug.clone(),
+                    slugs: vec![slug],
+                    domains: vec![],
+                    keywords: vec![],
+                    emails: vec![],
+                }).collect()
+            }
+        }
+    };
+    let account_hints = crate::helpers::account_hints_from_entity_hints(&entity_hints);
 
     let (classified, events, meetings_by_type, time_status) =
-        fetch_and_classify_today(today, &user_domains, &account_hints).await;
+        fetch_and_classify_today(today, &user_domains, &entity_hints).await;
 
     log::info!("prepare_today: {} events fetched", events.len());
 
@@ -263,10 +283,17 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         "profile": profile,
     });
 
-    // Fetch and classify calendar events for the week
-    let account_hints = build_account_domain_hints(workspace);
+    // Fetch and classify calendar events for the week (I336: entity-generic)
+    let entity_hints = {
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        match db_ref {
+            Some(db) => crate::helpers::build_entity_hints(db),
+            None => Vec::new(),
+        }
+    };
     let (classified, _events, _meetings_by_type, _time_status, events_by_day) =
-        fetch_and_classify_week(monday, friday, &user_domains, &account_hints).await;
+        fetch_and_classify_week(monday, friday, &user_domains, &entity_hints).await;
 
     // Actions from SQLite
     let db_guard = state.db.lock().ok();
@@ -372,7 +399,14 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), ExecutionError> {
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
-    let account_hints = build_account_domain_hints(workspace);
+    let account_hints = {
+        let db_guard = state.db.lock().ok();
+        let db_ref = db_guard.as_ref().and_then(|g| g.as_ref());
+        match db_ref {
+            Some(db) => crate::helpers::build_external_account_hints(db),
+            None => build_account_domain_hints(workspace),
+        }
+    };
 
     // Extract customer domains from morning's schedule.json if available
     let mut customer_domains = HashSet::new();
@@ -548,7 +582,7 @@ fn build_account_domain_hints(workspace: &Path) -> HashSet<String> {
 async fn fetch_and_classify_today(
     today: NaiveDate,
     user_domains: &[String],
-    account_hints: &HashSet<String>,
+    entity_hints: &[crate::google_api::classify::EntityHint],
 ) -> (
     Vec<Value>,
     Vec<Value>,
@@ -581,7 +615,7 @@ async fn fetch_and_classify_today(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
-        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, account_hints);
+        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, entity_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
             "id": ev.id,
@@ -594,7 +628,8 @@ async fn fetch_and_classify_today(
             "organizer": raw.organizer,
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
-            "account": cm.account,
+            "account": cm.account(),
+            "entities": cm.resolved_entities,
             "description": cm.description,
         }));
         events.push(json!({
@@ -666,7 +701,7 @@ async fn fetch_and_classify_week(
     monday: NaiveDate,
     friday: NaiveDate,
     user_domains: &[String],
-    account_hints: &HashSet<String>,
+    entity_hints: &[crate::google_api::classify::EntityHint],
 ) -> (
     Vec<Value>,
     Vec<Value>,
@@ -713,7 +748,7 @@ async fn fetch_and_classify_week(
     let mut classified = Vec::new();
     let mut events = Vec::new();
     for raw in &raw_events {
-        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, account_hints);
+        let cm = google_api::classify::classify_meeting_multi(raw, user_domains, entity_hints);
         let ev = cm.to_calendar_event();
         classified.push(json!({
             "id": ev.id,
@@ -726,7 +761,8 @@ async fn fetch_and_classify_week(
             "organizer": raw.organizer,
             "external_domains": cm.external_domains,
             "is_recurring": raw.is_recurring,
-            "account": cm.account,
+            "account": cm.account(),
+            "entities": cm.resolved_entities,
             "description": cm.description,
         }));
         events.push(json!({
