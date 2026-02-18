@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "quill": {
+      "command": "dailyos-mcp",
+      "args": ["--workspace", "."],
+      "description": "Quill MCP sidecar — provides real-time access to DailyOS app data (schedule, prep, actions, emails, entity intelligence) via the local SQLite database. Falls back gracefully if the sidecar binary is not available."
+    }
+  }
+}

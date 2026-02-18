@@ -139,7 +139,7 @@ export default function RiskBriefingPage() {
         onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
       },
       chapters: briefing ? SLIDES : undefined,
-      folioStatusText: saveStatus === "saved" ? "\u2713 Saved" : undefined,
+      folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
       folioActions: briefing ? (
         <button
           onClick={handleGenerate}

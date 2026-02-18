@@ -1,0 +1,115 @@
+# Status Report Voice Profile
+# For: Weekly impacts, monthly reports, quarterly reviews, project updates
+
+name: "Status Report"
+content_types:
+  - weekly-impact
+  - monthly-report
+  - quarterly-review
+  - project-update
+
+audience:
+  primary: "Manager, leadership"
+  secondary: "Self (for records), peers"
+  context: "Busy readers who need to quickly understand impact and progress"
+
+voice:
+  tone: "Factual, accomplishment-focused"
+  style: "Impact over activity - outcomes, not tasks"
+  authority: "Grounded in specific results"
+
+  principles:
+    - "Lead with biggest impact"
+    - "Outcomes over activities"
+    - "Link to strategic priorities"
+    - "Specific metrics where possible"
+
+  do:
+    - Start each item with the outcome, not the activity
+    - Include specific numbers, names, dates
+    - Connect achievements to strategic goals
+    - Highlight wins without underselling
+    - Note blockers clearly with proposed solutions
+
+  avoid:
+    - Activity focus ("Did X" without outcome)
+    - Vague impact ("Made progress")
+    - Underselling in passive voice
+    - Burying wins in lengthy descriptions
+    - Listing tasks without context
+
+structure:
+  default_template: "weekly-impact"
+
+  principles:
+    - "Lead with highest-impact items"
+    - "Each item is outcome-focused"
+    - "Clear categorization (wins, progress, blockers)"
+    - "Forward-looking section for next period"
+
+  formats:
+    weekly-impact:
+      sections:
+        - "Key Wins (top 3-5 outcomes)"
+        - "Progress (ongoing initiatives)"
+        - "Blockers/Risks (with proposed solutions)"
+        - "Next Week Focus"
+
+    monthly-rollup:
+      sections:
+        - "Month Highlights (narrative)"
+        - "Key Metrics"
+        - "Account Highlights"
+        - "Strategic Progress"
+        - "Next Month Priorities"
+
+    quarterly-review:
+      sections:
+        - "Quarter Summary"
+        - "Goals vs. Actuals"
+        - "Key Achievements"
+        - "Lessons Learned"
+        - "Next Quarter Objectives"
+
+quality_checks:
+  - "Is each item outcome-focused (not activity-focused)?"
+  - "Are there specific metrics where applicable?"
+  - "Would this make sense to someone outside the context?"
+  - "Are wins clearly highlighted?"
+  - "Are blockers paired with proposed solutions?"
+
+transformation_examples:
+  # Activity → Outcome transformations
+  bad_to_good:
+    - activity: "Had meeting with Salesforce team"
+      outcome: "Salesforce partnership advanced to legal review (targeting Feb close)"
+
+    - activity: "Worked on Cox account"
+      outcome: "Cox NADA project greenlit - $150K expansion opportunity identified"
+
+    - activity: "Made progress on Agentforce"
+      outcome: "Agentforce MVP scope finalized - on track for Feb launch"
+
+metrics_guidance:
+  include_when_available:
+    - "ARR impact"
+    - "Pipeline generated"
+    - "Deals closed/advanced"
+    - "Customer health scores"
+    - "Engagement metrics"
+
+  format:
+    - "Use specific numbers: '$400K pipeline' not 'significant pipeline'"
+    - "Include comparisons: 'up 20% from last quarter'"
+    - "Note sources: '(per Salesforce CRM)'"
+
+example_phrases:
+  good:
+    - "Closed $250K renewal with 15% expansion"
+    - "Advanced NXP deal to technical evaluation (next: POC week of Jan 20)"
+    - "Identified $400K cross-sell opportunity at Cox (NADA project)"
+
+  avoid:
+    - "Had a productive week"
+    - "Made good progress on several fronts"
+    - "Continued to work on key initiatives"

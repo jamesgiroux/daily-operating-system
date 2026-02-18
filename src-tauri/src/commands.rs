@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 
 use chrono::TimeZone;
 use regex::Regex;
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::executor::request_workflow_execution;
 use crate::hygiene::{build_intelligence_hygiene_status, HygieneStatusView};
@@ -4867,6 +4867,17 @@ pub fn create_person(
         meeting_count: 0,
         updated_at: now,
         archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
@@ -5947,6 +5958,17 @@ pub fn create_internal_organization(
                     meeting_count: 0,
                     updated_at: now,
                     archived: false,
+                    linkedin_url: None,
+                    twitter_handle: None,
+                    phone: None,
+                    photo_url: None,
+                    bio: None,
+                    title_history: None,
+                    company_industry: None,
+                    company_size: None,
+                    company_hq: None,
+                    last_enriched_at: None,
+                    enrichment_sources: None,
                 };
                 db.upsert_person(&person).map_err(|e| e.to_string())?;
                 db.link_person_to_entity(&person_id, &root_account.id, "member")
@@ -8406,6 +8428,94 @@ pub struct ClaudeDesktopConfigResult {
     pub binary_path: Option<String>,
 }
 
+/// Check whether DailyOS is already registered in Claude Desktop's MCP config.
+#[tauri::command]
+pub fn get_claude_desktop_status() -> ClaudeDesktopConfigResult {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not find home directory".to_string(),
+                config_path: None,
+                binary_path: None,
+            }
+        }
+    };
+
+    let config_path = home
+        .join("Library")
+        .join("Application Support")
+        .join("Claude")
+        .join("claude_desktop_config.json");
+
+    if !config_path.exists() {
+        return ClaudeDesktopConfigResult {
+            success: false,
+            message: "Not configured".to_string(),
+            config_path: None,
+            binary_path: None,
+        };
+    }
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Could not read config".to_string(),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: None,
+            }
+        }
+    };
+
+    let config: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => {
+            return ClaudeDesktopConfigResult {
+                success: false,
+                message: "Config file is not valid JSON".to_string(),
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: None,
+            }
+        }
+    };
+
+    let entry = config
+        .get("mcpServers")
+        .and_then(|s| s.get("dailyos"));
+
+    match entry {
+        Some(server) => {
+            let binary = server
+                .get("command")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let binary_exists = binary
+                .as_ref()
+                .map(|p| std::path::Path::new(p).exists())
+                .unwrap_or(false);
+            ClaudeDesktopConfigResult {
+                success: binary_exists,
+                message: if binary_exists {
+                    "Connected".to_string()
+                } else {
+                    "Configured but binary not found — reconfigure or reinstall".to_string()
+                },
+                config_path: Some(config_path.to_string_lossy().to_string()),
+                binary_path: binary,
+            }
+        }
+        None => ClaudeDesktopConfigResult {
+            success: false,
+            message: "Not configured".to_string(),
+            config_path: Some(config_path.to_string_lossy().to_string()),
+            binary_path: None,
+        },
+    }
+}
+
 /// Configure Claude Desktop to use the DailyOS MCP server.
 ///
 /// Reads (or creates) `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -8530,6 +8640,141 @@ pub fn configure_claude_desktop() -> ClaudeDesktopConfigResult {
             binary_path: Some(binary_path_str),
         },
     }
+}
+
+// =============================================================================
+// Cowork Plugin Export
+// =============================================================================
+
+/// Result of a Cowork plugin export operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoworkPluginResult {
+    pub success: bool,
+    pub message: String,
+    pub path: Option<String>,
+}
+
+/// Info about a bundled Cowork plugin.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoworkPluginInfo {
+    pub name: String,
+    pub description: String,
+    pub filename: String,
+    pub available: bool,
+    pub exported: bool,
+}
+
+/// Export a bundled Cowork plugin zip to ~/Desktop.
+#[tauri::command]
+pub fn export_cowork_plugin(
+    app_handle: tauri::AppHandle,
+    plugin_name: String,
+) -> CoworkPluginResult {
+    let filename = match plugin_name.as_str() {
+        "dailyos" => "dailyos-plugin.zip",
+        "dailyos-writer" => "dailyos-writer-plugin.zip",
+        _ => {
+            return CoworkPluginResult {
+                success: false,
+                message: format!("Unknown plugin: {plugin_name}"),
+                path: None,
+            }
+        }
+    };
+
+    let resource_path = app_handle
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("resources/plugins").join(filename));
+
+    // In dev mode, fall back to the source tree
+    let source_path = resource_path
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let dev_path = std::env::current_dir()
+                .ok()?
+                .join("resources/plugins")
+                .join(filename);
+            dev_path.exists().then_some(dev_path)
+        });
+
+    let source = match source_path {
+        Some(p) => p,
+        None => {
+            return CoworkPluginResult {
+                success: false,
+                message: format!("Bundled plugin not found: {filename}"),
+                path: None,
+            }
+        }
+    };
+
+    let desktop = match dirs::home_dir() {
+        Some(h) => h.join("Desktop").join(filename),
+        None => {
+            return CoworkPluginResult {
+                success: false,
+                message: "Could not determine home directory".to_string(),
+                path: None,
+            }
+        }
+    };
+
+    match std::fs::copy(&source, &desktop) {
+        Ok(_) => CoworkPluginResult {
+            success: true,
+            message: format!("Saved to Desktop/{filename}"),
+            path: Some(desktop.to_string_lossy().to_string()),
+        },
+        Err(e) => CoworkPluginResult {
+            success: false,
+            message: format!("Failed to copy: {e}"),
+            path: None,
+        },
+    }
+}
+
+/// List available bundled Cowork plugins and their export status.
+#[tauri::command]
+pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPluginInfo> {
+    let plugins = vec![
+        ("dailyos", "dailyos-plugin.zip", "DailyOS workspace tools — briefings, accounts, meetings, actions"),
+        ("dailyos-writer", "dailyos-writer-plugin.zip", "DailyOS Writer — drafts emails, agendas, and follow-ups from your data"),
+    ];
+
+    let desktop = dirs::home_dir().map(|h| h.join("Desktop"));
+
+    let resource_dir = app_handle.path().resource_dir().ok();
+
+    plugins
+        .into_iter()
+        .map(|(name, filename, description)| {
+            let available = resource_dir
+                .as_ref()
+                .map(|d: &std::path::PathBuf| d.join("resources/plugins").join(filename).exists())
+                .unwrap_or(false)
+                || std::env::current_dir()
+                    .ok()
+                    .map(|d: std::path::PathBuf| d.join("resources/plugins").join(filename).exists())
+                    .unwrap_or(false);
+
+            let exported = desktop
+                .as_ref()
+                .map(|d| d.join(filename).exists())
+                .unwrap_or(false);
+
+            CoworkPluginInfo {
+                name: name.to_string(),
+                description: description.to_string(),
+                filename: filename.to_string(),
+                available,
+                exported,
+            }
+        })
+        .collect()
 }
 
 /// Resolve the MCP binary path by checking common locations.
@@ -8730,6 +8975,17 @@ pub fn create_person_from_stakeholder(
         meeting_count: 0,
         updated_at: now,
         archived: false,
+        linkedin_url: None,
+        twitter_handle: None,
+        phone: None,
+        photo_url: None,
+        bio: None,
+        title_history: None,
+        company_industry: None,
+        company_size: None,
+        company_hq: None,
+        last_enriched_at: None,
+        enrichment_sources: None,
     };
 
     db.upsert_person(&person).map_err(|e| e.to_string())?;
@@ -8755,4 +9011,940 @@ pub fn create_person_from_stakeholder(
     );
 
     Ok(id)
+}
+
+// =============================================================================
+// Quill MCP Integration
+// =============================================================================
+
+/// Quill integration status for the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuillStatus {
+    pub enabled: bool,
+    pub bridge_exists: bool,
+    pub bridge_path: String,
+    pub pending_syncs: usize,
+    pub failed_syncs: usize,
+    pub completed_syncs: usize,
+    pub last_sync_at: Option<String>,
+    pub last_error: Option<String>,
+    pub last_error_at: Option<String>,
+    pub abandoned_syncs: usize,
+    pub poll_interval_minutes: u32,
+}
+
+/// Get the current status of the Quill integration.
+#[tauri::command]
+pub fn get_quill_status(state: State<Arc<AppState>>) -> QuillStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.quill.clone()));
+
+    let quill_config = config.unwrap_or_default();
+    let bridge_exists =
+        std::path::Path::new(&quill_config.bridge_path).exists();
+
+    // Count sync states from DB
+    let (pending, failed, completed, last_sync, last_error, last_error_at, abandoned) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let pending = db
+                    .get_pending_quill_syncs()
+                    .map(|v| v.len())
+                    .unwrap_or(0);
+
+                // Count failed, completed, abandoned from all rows
+                let (failed_count, completed_count, last, abandoned_count) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT
+                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                            MAX(completed_at),
+                            SUM(CASE WHEN state = 'abandoned' THEN 1 ELSE 0 END)
+                         FROM quill_sync_state",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, i64>(0).unwrap_or(0) as usize,
+                                row.get::<_, i64>(1).unwrap_or(0) as usize,
+                                row.get::<_, Option<String>>(2)?,
+                                row.get::<_, i64>(3).unwrap_or(0) as usize,
+                            ))
+                        })
+                    })
+                    .unwrap_or((0, 0, None, 0));
+
+                // Get last error from failed/abandoned syncs
+                let (err_msg, err_at) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT error_message, updated_at FROM quill_sync_state
+                         WHERE state IN ('failed', 'abandoned') AND error_message IS NOT NULL
+                         ORDER BY updated_at DESC LIMIT 1",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, Option<String>>(0)?,
+                                row.get::<_, Option<String>>(1)?,
+                            ))
+                        })
+                    })
+                    .unwrap_or((None, None));
+
+                (pending, failed_count, completed_count, last, err_msg, err_at, abandoned_count)
+            })
+        })
+        .unwrap_or((0, 0, 0, None, None, None, 0));
+
+    QuillStatus {
+        enabled: quill_config.enabled,
+        bridge_exists,
+        bridge_path: quill_config.bridge_path,
+        pending_syncs: pending,
+        failed_syncs: failed,
+        completed_syncs: completed,
+        last_sync_at: last_sync,
+        last_error,
+        last_error_at,
+        abandoned_syncs: abandoned,
+        poll_interval_minutes: quill_config.poll_interval_minutes,
+    }
+}
+
+/// Enable or disable Quill integration.
+#[tauri::command]
+pub fn set_quill_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.quill.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Result of a Quill historical backfill operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuillBackfillResult {
+    pub created: usize,
+    pub eligible: usize,
+}
+
+/// Create Quill sync rows for past meetings that never had transcript sync.
+#[tauri::command]
+pub fn start_quill_backfill(state: State<Arc<AppState>>) -> Result<QuillBackfillResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    let ids = db
+        .get_backfill_eligible_meeting_ids(90)
+        .map_err(|e| e.to_string())?;
+    let eligible = ids.len();
+    let mut created = 0;
+    for id in &ids {
+        if crate::quill::sync::create_sync_for_meeting(db, id).is_ok() {
+            created += 1;
+        }
+    }
+    Ok(QuillBackfillResult { created, eligible })
+}
+
+/// Set the Quill poll interval (1–60 minutes).
+#[tauri::command]
+pub fn set_quill_poll_interval(
+    minutes: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if !(1..=60).contains(&minutes) {
+        return Err("Poll interval must be between 1 and 60 minutes".to_string());
+    }
+    crate::state::create_or_update_config(&state, |config| {
+        config.quill.poll_interval_minutes = minutes;
+    })?;
+    Ok(())
+}
+
+/// Test the Quill MCP connection by spawning the bridge and verifying connectivity.
+#[tauri::command]
+pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
+    let bridge_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .as_ref()
+        .map(|c| c.quill.bridge_path.clone())
+        .unwrap_or_default();
+
+    if bridge_path.is_empty() {
+        return Ok(false);
+    }
+
+    let client = crate::quill::client::QuillClient::connect(&bridge_path)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    client.disconnect().await;
+    Ok(true)
+}
+
+/// Get Quill sync states, optionally filtered by meeting ID.
+#[tauri::command]
+pub fn get_quill_sync_states(
+    meeting_id: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbQuillSyncState>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned".to_string())?;
+    let db = db_guard
+        .as_ref()
+        .ok_or_else(|| "Database not initialized".to_string())?;
+
+    match meeting_id {
+        Some(mid) => {
+            let row = db
+                .get_quill_sync_state(&mid)
+                .map_err(|e| e.to_string())?;
+            Ok(row.into_iter().collect())
+        }
+        None => db
+            .get_pending_quill_syncs()
+            .map_err(|e| e.to_string()),
+    }
+}
+
+// =============================================================================
+// Granola Integration (I226)
+// =============================================================================
+
+/// Granola integration status for the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaStatus {
+    pub enabled: bool,
+    pub cache_exists: bool,
+    pub cache_path: String,
+    pub document_count: usize,
+    pub pending_syncs: usize,
+    pub failed_syncs: usize,
+    pub completed_syncs: usize,
+    pub last_sync_at: Option<String>,
+    pub poll_interval_minutes: u32,
+}
+
+/// Get the current status of the Granola integration.
+#[tauri::command]
+pub fn get_granola_status(state: State<Arc<AppState>>) -> GranolaStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.granola.clone()));
+
+    let granola_config = config.unwrap_or_default();
+    let cache_path = std::path::Path::new(&granola_config.cache_path);
+    let cache_exists = cache_path.exists();
+
+    let document_count = if cache_exists {
+        crate::granola::cache::count_documents(cache_path).unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Count sync states from DB (source='granola')
+    let (pending, failed, completed, last_sync) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let (failed_count, completed_count, last, pending_count) = db
+                    .conn_ref()
+                    .prepare(
+                        "SELECT
+                            SUM(CASE WHEN state = 'failed' THEN 1 ELSE 0 END),
+                            SUM(CASE WHEN state = 'completed' THEN 1 ELSE 0 END),
+                            MAX(completed_at),
+                            SUM(CASE WHEN state IN ('pending', 'polling', 'processing') THEN 1 ELSE 0 END)
+                         FROM quill_sync_state WHERE source = 'granola'",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.query_row([], |row| {
+                            Ok((
+                                row.get::<_, i64>(0).unwrap_or(0) as usize,
+                                row.get::<_, i64>(1).unwrap_or(0) as usize,
+                                row.get::<_, Option<String>>(2)?,
+                                row.get::<_, i64>(3).unwrap_or(0) as usize,
+                            ))
+                        })
+                    })
+                    .unwrap_or((0, 0, None, 0));
+
+                (pending_count, failed_count, completed_count, last)
+            })
+        })
+        .unwrap_or((0, 0, 0, None));
+
+    GranolaStatus {
+        enabled: granola_config.enabled,
+        cache_exists,
+        cache_path: granola_config.cache_path,
+        document_count,
+        pending_syncs: pending,
+        failed_syncs: failed,
+        completed_syncs: completed,
+        last_sync_at: last_sync,
+        poll_interval_minutes: granola_config.poll_interval_minutes,
+    }
+}
+
+/// Enable or disable Granola integration.
+#[tauri::command]
+pub fn set_granola_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.granola.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set the Granola poll interval (1–60 minutes).
+#[tauri::command]
+pub fn set_granola_poll_interval(
+    minutes: u32,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    if !(1..=60).contains(&minutes) {
+        return Err("Poll interval must be between 1 and 60 minutes".to_string());
+    }
+    crate::state::create_or_update_config(&state, |config| {
+        config.granola.poll_interval_minutes = minutes;
+    })?;
+    Ok(())
+}
+
+/// Result of a Granola backfill operation.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GranolaBackfillResult {
+    pub created: usize,
+    pub eligible: usize,
+}
+
+/// Create Granola sync rows for past meetings found in the cache.
+#[tauri::command]
+pub fn start_granola_backfill(
+    state: State<Arc<AppState>>,
+) -> Result<GranolaBackfillResult, String> {
+    let (created, eligible) = crate::granola::poller::run_granola_backfill(&state)?;
+    Ok(GranolaBackfillResult { created, eligible })
+}
+
+/// Test whether the Granola cache file exists and is valid.
+#[tauri::command]
+pub fn test_granola_cache(state: State<Arc<AppState>>) -> Result<usize, String> {
+    let cache_path = state
+        .config
+        .read()
+        .map_err(|_| "Lock poisoned".to_string())?
+        .as_ref()
+        .map(|c| c.granola.cache_path.clone())
+        .unwrap_or_default();
+
+    let path = std::path::Path::new(&cache_path);
+    if !path.exists() {
+        return Err("Granola cache file not found".to_string());
+    }
+
+    crate::granola::cache::count_documents(path)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I229: Gravatar MCP Integration
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Gravatar integration status for the settings UI.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GravatarStatus {
+    pub enabled: bool,
+    pub cached_count: i64,
+    pub api_key_set: bool,
+}
+
+/// Get Gravatar integration status.
+#[tauri::command]
+pub fn get_gravatar_status(state: State<Arc<AppState>>) -> GravatarStatus {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.gravatar.clone()));
+
+    let gravatar_config = config.unwrap_or_default();
+
+    let cached_count = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref()
+                .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
+        })
+        .unwrap_or(0);
+
+    GravatarStatus {
+        enabled: gravatar_config.enabled,
+        cached_count,
+        api_key_set: gravatar_config.api_key.is_some(),
+    }
+}
+
+/// Enable or disable Gravatar integration.
+#[tauri::command]
+pub fn set_gravatar_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.gravatar.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set or clear the Gravatar API key.
+#[tauri::command]
+pub fn set_gravatar_api_key(
+    key: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.gravatar.api_key = key.filter(|k| !k.is_empty());
+    })?;
+    Ok(())
+}
+
+/// Fetch Gravatar data for a single person on demand.
+#[tauri::command]
+pub async fn fetch_gravatar(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    // Look up person's email
+    let (email, api_key) = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        let email: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT email FROM person_emails WHERE person_id = ?1 AND is_primary = 1 LIMIT 1",
+                [&person_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("No email found for person {}", person_id))?;
+
+        let api_key = state
+            .config
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+
+        (email, api_key)
+    };
+
+    // Connect and fetch
+    let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let profile = client
+        .get_profile(&email)
+        .await
+        .unwrap_or_default();
+
+    let data_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".dailyos")
+        .join("avatars");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let avatar_path = match client.get_avatar(&email, 200).await {
+        Ok(Some(bytes)) => {
+            use sha2::{Digest, Sha256};
+            let hash = Sha256::digest(email.as_bytes());
+            let hash_hex = hex::encode(&hash[..8]);
+            let path = data_dir.join(format!("{}.png", hash_hex));
+            if std::fs::write(&path, &bytes).is_ok() {
+                Some(path.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    };
+
+    let interests = client.get_interests(&email).await.unwrap_or_default();
+
+    client.disconnect().await;
+
+    // Cache result
+    let has_gravatar = profile.display_name.is_some() || avatar_path.is_some();
+    let cache_entry = crate::gravatar::cache::CachedGravatar {
+        email: email.clone(),
+        avatar_url: avatar_path,
+        display_name: profile.display_name,
+        bio: profile.bio,
+        location: profile.location,
+        company: profile.company,
+        job_title: profile.job_title,
+        interests_json: if interests.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&interests).ok()
+        },
+        has_gravatar,
+        fetched_at: chrono::Utc::now().to_rfc3339(),
+        person_id: Some(person_id),
+    };
+
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry)?;
+
+    Ok(())
+}
+
+/// Batch fetch Gravatar data for all people with stale or missing cache.
+#[tauri::command]
+pub async fn bulk_fetch_gravatars(
+    state: State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.gravatar.api_key.clone()));
+
+    let emails_to_fetch: Vec<(String, Option<String>)> = {
+        let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+        let db = db_guard.as_ref().ok_or("Database not initialized")?;
+        crate::gravatar::cache::get_stale_emails(db.conn_ref(), 100)?
+    };
+
+    if emails_to_fetch.is_empty() {
+        return Ok(0);
+    }
+
+    let client = crate::gravatar::client::GravatarClient::connect(api_key.as_deref())
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let data_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".dailyos")
+        .join("avatars");
+    let _ = std::fs::create_dir_all(&data_dir);
+
+    let mut fetched = 0;
+    for (email, person_id) in &emails_to_fetch {
+        let profile = client.get_profile(email).await.unwrap_or_default();
+
+        let avatar_path = match client.get_avatar(email, 200).await {
+            Ok(Some(bytes)) => {
+                use sha2::{Digest, Sha256};
+                let hash = Sha256::digest(email.as_bytes());
+                let hash_hex = hex::encode(&hash[..8]);
+                let path = data_dir.join(format!("{}.png", hash_hex));
+                if std::fs::write(&path, &bytes).is_ok() {
+                    Some(path.to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        let interests = client.get_interests(email).await.unwrap_or_default();
+
+        let has_gravatar = profile.display_name.is_some() || avatar_path.is_some();
+        let cache_entry = crate::gravatar::cache::CachedGravatar {
+            email: email.clone(),
+            avatar_url: avatar_path,
+            display_name: profile.display_name,
+            bio: profile.bio,
+            location: profile.location,
+            company: profile.company,
+            job_title: profile.job_title,
+            interests_json: if interests.is_empty() {
+                None
+            } else {
+                serde_json::to_string(&interests).ok()
+            },
+            has_gravatar,
+            fetched_at: chrono::Utc::now().to_rfc3339(),
+            person_id: person_id.clone(),
+        };
+
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                let _ = crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry);
+            }
+        }
+
+        fetched += 1;
+        // Rate limit: 1 req/sec
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    client.disconnect().await;
+    Ok(fetched)
+}
+
+/// Get local avatar file path for a person (fast cache lookup).
+#[tauri::command]
+pub fn get_person_avatar(
+    person_id: String,
+    state: State<Arc<AppState>>,
+) -> Option<String> {
+    let db_guard = state.db.lock().ok()?;
+    let db = db_guard.as_ref()?;
+    crate::gravatar::cache::get_avatar_url_for_person(db.conn_ref(), &person_id)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I228: Clay Contact & Company Enrichment
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Clay integration status for the settings UI.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClayStatusData {
+    pub enabled: bool,
+    pub api_key_set: bool,
+    pub auto_enrich_on_create: bool,
+    pub sweep_interval_hours: u32,
+    pub enriched_count: i64,
+    pub pending_count: i64,
+    pub last_enrichment_at: Option<String>,
+}
+
+/// Get Clay integration status.
+#[tauri::command]
+pub fn get_clay_status(state: State<Arc<AppState>>) -> ClayStatusData {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.clay.clone()));
+
+    let clay_config = config.unwrap_or_default();
+
+    let (enriched_count, pending_count, last_enrichment) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let enriched: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM people WHERE last_enriched_at IS NOT NULL",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let pending: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT COUNT(*) FROM clay_sync_state WHERE state = 'pending'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(0);
+                let last: Option<String> = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT MAX(last_enriched_at) FROM people",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(None);
+                (enriched, pending, last)
+            })
+        })
+        .unwrap_or((0, 0, None));
+
+    ClayStatusData {
+        enabled: clay_config.enabled,
+        api_key_set: clay_config.api_key.is_some(),
+        auto_enrich_on_create: clay_config.auto_enrich_on_create,
+        sweep_interval_hours: clay_config.sweep_interval_hours,
+        enriched_count,
+        pending_count,
+        last_enrichment_at: last_enrichment,
+    }
+}
+
+/// Enable or disable Clay integration.
+#[tauri::command]
+pub fn set_clay_enabled(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set or clear the Clay API key.
+#[tauri::command]
+pub fn set_clay_api_key(
+    key: Option<String>,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.api_key = key.filter(|k| !k.is_empty());
+    })?;
+    Ok(())
+}
+
+/// Toggle auto-enrich on person creation.
+#[tauri::command]
+pub fn set_clay_auto_enrich(
+    enabled: bool,
+    state: State<Arc<AppState>>,
+) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.clay.auto_enrich_on_create = enabled;
+    })?;
+    Ok(())
+}
+
+/// Test Clay connection by attempting to connect and list tools.
+#[tauri::command]
+pub async fn test_clay_connection(
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    client.disconnect().await;
+    Ok(true)
+}
+
+/// Enrichment result for the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentResultData {
+    pub person_id: String,
+    pub fields_updated: Vec<String>,
+    pub signals: Vec<String>,
+}
+
+/// Enrich a single person from Clay on demand.
+#[tauri::command]
+pub async fn enrich_person_from_clay(
+    person_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<EnrichmentResultData, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
+        &state, &person_id, &client,
+    )
+    .await?;
+
+    client.disconnect().await;
+
+    Ok(EnrichmentResultData {
+        person_id: result.person_id,
+        fields_updated: result.fields_updated,
+        signals: result.signals,
+    })
+}
+
+/// Enrich an account's company data from Clay (via linked people).
+#[tauri::command]
+pub async fn enrich_account_from_clay(
+    account_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<EnrichmentResultData, String> {
+    // Find a linked person for this account, enrich them, company data follows
+    let person_id: Option<String> = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().and_then(|db| {
+                db.conn_ref()
+                    .query_row(
+                        "SELECT person_id FROM entity_people WHERE entity_id = ?1 LIMIT 1",
+                        [&account_id],
+                        |row| row.get(0),
+                    )
+                    .ok()
+            })
+        });
+
+    let person_id = person_id.ok_or("No linked people found for this account")?;
+
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.clay.api_key.clone()))
+        .ok_or("No Clay API key configured")?;
+
+    let client = crate::clay::client::ClayClient::connect(&api_key)
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let result = crate::clay::enricher::enrich_person_from_clay_with_client(
+        &state, &person_id, &client,
+    )
+    .await?;
+
+    client.disconnect().await;
+
+    Ok(EnrichmentResultData {
+        person_id: result.person_id,
+        fields_updated: result.fields_updated,
+        signals: result.signals,
+    })
+}
+
+/// Bulk enrichment result.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkEnrichResult {
+    pub queued: usize,
+    pub total_unenriched: usize,
+}
+
+/// Start bulk Clay enrichment for all unenriched people.
+#[tauri::command]
+pub fn start_clay_bulk_enrich(
+    state: State<Arc<AppState>>,
+) -> Result<BulkEnrichResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let unenriched: Vec<String> = {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id FROM people WHERE last_enriched_at IS NULL AND archived = 0",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
+
+    let total = unenriched.len();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    for person_id in &unenriched {
+        let id = uuid::Uuid::new_v4().to_string();
+        let _ = db.conn_ref().execute(
+            "INSERT OR IGNORE INTO clay_sync_state (id, entity_type, entity_id, state, created_at, updated_at)
+             VALUES (?1, 'person', ?2, 'pending', ?3, ?3)",
+            rusqlite::params![id, person_id, now],
+        );
+    }
+
+    // Drop the DB lock before signaling
+    drop(db_guard);
+
+    // Wake the Clay poller immediately to process queued items
+    state.clay_poller_wake.notify_one();
+
+    Ok(BulkEnrichResult {
+        queued: total,
+        total_unenriched: total,
+    })
+}
+
+/// Enrichment log entry for the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnrichmentLogEntry {
+    pub id: String,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub source: String,
+    pub event_type: String,
+    pub signal_type: Option<String>,
+    pub fields_updated: Option<String>,
+    pub created_at: String,
+}
+
+/// Get enrichment log entries for an entity.
+#[tauri::command]
+pub fn get_enrichment_log(
+    entity_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<EnrichmentLogEntry>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, entity_type, entity_id, source, event_type, signal_type, fields_updated, created_at
+             FROM enrichment_log
+             WHERE entity_id = ?1
+             ORDER BY created_at DESC
+             LIMIT 50",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let entries = stmt
+        .query_map([&entity_id], |row| {
+            Ok(EnrichmentLogEntry {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                entity_id: row.get(2)?,
+                source: row.get(3)?,
+                event_type: row.get(4)?,
+                signal_type: row.get(5)?,
+                fields_updated: row.get(6)?,
+                created_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(entries)
 }
