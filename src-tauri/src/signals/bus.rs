@@ -1,5 +1,6 @@
 //! Signal event CRUD and source tier weights (ADR-0080).
 
+use chrono::Utc;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -103,6 +104,40 @@ pub fn emit_signal_with_context(
         confidence, half_life, source_context,
     )?;
     Ok(id)
+}
+
+/// Emit a signal and run propagation rules, returning the original signal ID
+/// and any derived signal IDs.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_and_propagate(
+    db: &ActionDb,
+    engine: &super::propagation::PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<(String, Vec<String>), DbError> {
+    let id = emit_signal(db, entity_type, entity_id, signal_type, source, value, confidence)?;
+
+    // Read back the signal for propagation
+    let signal = SignalEvent {
+        id: id.clone(),
+        entity_type: entity_type.to_string(),
+        entity_id: entity_id.to_string(),
+        signal_type: signal_type.to_string(),
+        source: source.to_string(),
+        value: value.map(|s| s.to_string()),
+        confidence,
+        decay_half_life_days: default_half_life(source),
+        created_at: Utc::now().to_rfc3339(),
+        superseded_by: None,
+        source_context: None,
+    };
+
+    let derived_ids = engine.propagate(db, &signal)?;
+    Ok((id, derived_ids))
 }
 
 /// Mark an old signal as superseded by a new one.
