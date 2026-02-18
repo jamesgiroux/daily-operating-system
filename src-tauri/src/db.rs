@@ -3304,7 +3304,7 @@ impl ActionDb {
     ) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, source, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -3317,7 +3317,7 @@ impl ActionDb {
     pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let next_attempt = (Utc::now() + chrono::Duration::minutes(10)).to_rfc3339();
+        let next_attempt = (Utc::now() + chrono::Duration::minutes(2)).to_rfc3339();
         self.conn.execute(
             "INSERT OR IGNORE INTO quill_sync_state (id, meeting_id, next_attempt_at, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -3439,8 +3439,8 @@ impl ActionDb {
             return Ok(false);
         }
 
-        // Exponential backoff: 10 * 2^attempts minutes
-        let delay_minutes = 10i64 * (1i64 << new_attempts);
+        // Exponential backoff: 5 * 2^attempts minutes (5, 10, 20, 40, 80 min)
+        let delay_minutes = 5i64 * (1i64 << new_attempts);
         let next_attempt = (Utc::now() + chrono::Duration::minutes(delay_minutes)).to_rfc3339();
 
         self.conn.execute(
@@ -3825,6 +3825,32 @@ impl ActionDb {
         )?;
 
         let rows = stmt.query_map(params![meeting_id], Self::map_capture_row)?;
+
+        let mut captures = Vec::new();
+        for row in rows {
+            captures.push(row?);
+        }
+        Ok(captures)
+    }
+
+    /// Get recent captures from meetings a person attended within `days_back` days.
+    pub fn get_captures_for_person(
+        &self,
+        person_id: &str,
+        days_back: i32,
+    ) -> Result<Vec<DbCapture>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, c.meeting_id, c.meeting_title, c.account_id, c.project_id, c.capture_type, c.content, c.captured_at
+             FROM captures c
+             JOIN meeting_attendees ma ON ma.meeting_id = c.meeting_id
+             WHERE ma.person_id = ?1
+               AND c.captured_at >= date('now', ?2 || ' days')
+             ORDER BY c.captured_at DESC
+             LIMIT 20",
+        )?;
+
+        let days_param = format!("-{days_back}");
+        let rows = stmt.query_map(params![person_id, days_param], Self::map_capture_row)?;
 
         let mut captures = Vec::new();
         for row in rows {
