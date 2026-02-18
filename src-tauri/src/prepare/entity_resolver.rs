@@ -92,13 +92,8 @@ pub fn resolve_meeting_entities(
     let mut all_signals: Vec<ResolutionSignal> = Vec::new();
 
     // Gather signals from all producers.
-    // Junction table is authoritative (user-confirmed links) — if any exist,
-    // skip the legacy account_id signal which would otherwise override at 0.99.
-    let junction_signals = signal_junction_lookup(db, event_id, meeting);
-    if junction_signals.is_empty() {
-        all_signals.extend(signal_explicit_assignment(db, event_id, meeting));
-    }
-    all_signals.extend(junction_signals);
+    // Junction table is authoritative (user-confirmed links).
+    all_signals.extend(signal_junction_lookup(db, event_id, meeting));
     all_signals.extend(signal_attendee_inference(db, meeting));
     all_signals.extend(crate::signals::patterns::signal_attendee_group_pattern(db, meeting));
     all_signals.extend(signal_keyword_match(db, meeting));
@@ -237,36 +232,7 @@ pub fn resolve_account_compat(
 // Signal producers
 // ---------------------------------------------------------------------------
 
-/// Signal 1: Explicit account_id assignment on meetings_history.
-/// Confidence: 0.99.
-fn signal_explicit_assignment(
-    db: &ActionDb,
-    event_id: &str,
-    _meeting: &Value,
-) -> Vec<ResolutionSignal> {
-    if event_id.is_empty() {
-        return Vec::new();
-    }
-
-    let meeting_row = match db.get_meeting_by_calendar_event_id(event_id).ok().flatten() {
-        Some(row) => row,
-        None => return Vec::new(),
-    };
-
-    let account_id = match meeting_row.account_id {
-        Some(ref id) if !id.is_empty() => id.clone(),
-        _ => return Vec::new(),
-    };
-
-    vec![ResolutionSignal {
-        entity_id: account_id,
-        entity_type: EntityType::Account,
-        confidence: 0.99,
-        source: "explicit".to_string(),
-    }]
-}
-
-/// Signal 2: meeting_entities junction table lookup.
+/// Signal: meeting_entities junction table lookup.
 /// Confidence: 0.95 per entry.
 fn signal_junction_lookup(
     db: &ActionDb,

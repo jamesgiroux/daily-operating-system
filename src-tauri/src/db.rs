@@ -145,7 +145,6 @@ pub struct DbMeeting {
     pub meeting_type: String,
     pub start_time: String,
     pub end_time: Option<String>,
-    pub account_id: Option<String>,
     pub attendees: Option<String>,
     pub notes_path: Option<String>,
     pub summary: Option<String>,
@@ -189,7 +188,6 @@ pub struct EnsureMeetingHistoryInput<'a> {
     pub meeting_type: &'a str,
     pub start_time: &'a str,
     pub end_time: Option<&'a str>,
-    pub account_id: Option<&'a str>,
     pub calendar_event_id: Option<&'a str>,
 }
 
@@ -767,7 +765,6 @@ impl ActionDb {
                          meeting_type = COALESCE(meeting_type, (SELECT meeting_type FROM meetings_history WHERE id = ?1)),
                          start_time = COALESCE(start_time, (SELECT start_time FROM meetings_history WHERE id = ?1)),
                          end_time = COALESCE(end_time, (SELECT end_time FROM meetings_history WHERE id = ?1)),
-                         account_id = COALESCE(account_id, (SELECT account_id FROM meetings_history WHERE id = ?1)),
                          attendees = COALESCE(attendees, (SELECT attendees FROM meetings_history WHERE id = ?1)),
                          notes_path = COALESCE(notes_path, (SELECT notes_path FROM meetings_history WHERE id = ?1)),
                          summary = COALESCE(summary, (SELECT summary FROM meetings_history WHERE id = ?1)),
@@ -1866,12 +1863,13 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
-             FROM meetings_history
-             WHERE account_id = ?1
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = 'account'
+             ORDER BY m.start_time DESC
              LIMIT ?2",
         )?;
         let rows = stmt.query_map(params![account_id, limit], |row| {
@@ -1881,12 +1879,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -1911,7 +1908,7 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id, m.prep_context_json
              FROM meetings_history m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
@@ -1926,14 +1923,13 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
-                prep_context_json: row.get(11)?,
+                prep_context_json: row.get(10)?,
                 user_agenda_json: None,
                 user_notes: None,
                 prep_frozen_json: None,
@@ -1955,7 +1951,7 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
              INNER JOIN meeting_entities me ON m.id = me.meeting_id
@@ -1971,12 +1967,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -2555,7 +2550,7 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
              JOIN meeting_entities me ON me.meeting_id = m.id
@@ -2570,12 +2565,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -2692,19 +2686,6 @@ impl ActionDb {
         self.conn.execute(
             "DELETE FROM meeting_entities WHERE meeting_id = ?1",
             params![meeting_id],
-        )?;
-        Ok(())
-    }
-
-    /// Update the legacy `account_id` column on `meetings_history`.
-    pub fn update_meeting_account(
-        &self,
-        meeting_id: &str,
-        account_id: Option<&str>,
-    ) -> Result<(), DbError> {
-        self.conn.execute(
-            "UPDATE meetings_history SET account_id = ?1 WHERE id = ?2",
-            params![account_id, meeting_id],
         )?;
         Ok(())
     }
@@ -2869,7 +2850,7 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
              JOIN meeting_entities me ON me.meeting_id = m.id
@@ -2884,12 +2865,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -3105,13 +3085,14 @@ impl ActionDb {
         limit: i32,
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
-                    calendar_event_id
-             FROM meetings_history
-             WHERE account_id = ?1
-               AND start_time >= date('now', ?2 || ' days')
-             ORDER BY start_time DESC
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1
+               AND m.start_time >= date('now', ?2 || ' days')
+             ORDER BY m.start_time DESC
              LIMIT ?3",
         )?;
 
@@ -3123,12 +3104,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -3153,7 +3133,7 @@ impl ActionDb {
     pub fn get_meeting_by_id(&self, id: &str) -> Result<Option<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
+                    attendees, notes_path, summary, created_at,
                     calendar_event_id, description, prep_context_json,
                     user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
                     prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
@@ -3168,22 +3148,21 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
-                description: row.get(11)?,
-                prep_context_json: row.get(12)?,
-                user_agenda_json: row.get(13)?,
-                user_notes: row.get(14)?,
-                prep_frozen_json: row.get(15)?,
-                prep_frozen_at: row.get(16)?,
-                prep_snapshot_path: row.get(17)?,
-                prep_snapshot_hash: row.get(18)?,
-                transcript_path: row.get(19)?,
-                transcript_processed_at: row.get(20)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
+                description: row.get(10)?,
+                prep_context_json: row.get(11)?,
+                user_agenda_json: row.get(12)?,
+                user_notes: row.get(13)?,
+                prep_frozen_json: row.get(14)?,
+                prep_frozen_at: row.get(15)?,
+                prep_snapshot_path: row.get(16)?,
+                prep_snapshot_hash: row.get(17)?,
+                transcript_path: row.get(18)?,
+                transcript_processed_at: row.get(19)?,
             })
         })?;
 
@@ -3546,14 +3525,14 @@ impl ActionDb {
     pub fn get_backfill_eligible_meeting_ids(&self, days_back: i32) -> Result<Vec<String>, DbError> {
         let offset = format!("-{} days", days_back);
         let mut stmt = self.conn.prepare(
-            "SELECT id FROM meetings_history
-             WHERE transcript_path IS NULL AND transcript_processed_at IS NULL
-               AND start_time >= datetime('now', ?1)
-               AND end_time < datetime('now')
-               AND account_id IS NOT NULL
-               AND meeting_type IN ('customer','qbr','partnership')
-               AND id NOT IN (SELECT meeting_id FROM quill_sync_state)
-             ORDER BY start_time DESC",
+            "SELECT m.id FROM meetings_history m
+             INNER JOIN meeting_entities me ON m.id = me.meeting_id AND me.entity_type = 'account'
+             WHERE m.transcript_path IS NULL AND m.transcript_processed_at IS NULL
+               AND m.start_time >= datetime('now', ?1)
+               AND m.end_time < datetime('now')
+               AND m.meeting_type IN ('customer','qbr','partnership')
+               AND m.id NOT IN (SELECT meeting_id FROM quill_sync_state)
+             ORDER BY m.start_time DESC",
         )?;
         let rows = stmt.query_map(params![offset], |row| row.get(0))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
@@ -3566,13 +3545,14 @@ impl ActionDb {
     /// Compute stakeholder signals for an account: meeting frequency, last contact,
     /// and relationship temperature. Returns `None` if account not found.
     pub fn get_stakeholder_signals(&self, account_id: &str) -> Result<StakeholderSignals, DbError> {
-        // Meeting counts for 30/90 day windows
+        // Meeting counts for 30/90 day windows (via junction table)
         let count_30d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history
-                 WHERE account_id = ?1
-                   AND start_time >= date('now', '-30 days')",
+                "SELECT COUNT(*) FROM meetings_history m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 WHERE me.entity_id = ?1
+                   AND m.start_time >= date('now', '-30 days')",
                 params![account_id],
                 |row| row.get(0),
             )
@@ -3581,9 +3561,10 @@ impl ActionDb {
         let count_90d: i32 = self
             .conn
             .query_row(
-                "SELECT COUNT(*) FROM meetings_history
-                 WHERE account_id = ?1
-                   AND start_time >= date('now', '-90 days')",
+                "SELECT COUNT(*) FROM meetings_history m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 WHERE me.entity_id = ?1
+                   AND m.start_time >= date('now', '-90 days')",
                 params![account_id],
                 |row| row.get(0),
             )
@@ -3593,7 +3574,9 @@ impl ActionDb {
         let last_meeting: Option<String> = self
             .conn
             .query_row(
-                "SELECT MAX(start_time) FROM meetings_history WHERE account_id = ?1",
+                "SELECT MAX(m.start_time) FROM meetings_history m
+                 INNER JOIN meeting_entities me ON m.id = me.meeting_id
+                 WHERE me.entity_id = ?1",
                 params![account_id],
                 |row| row.get(0),
             )
@@ -4113,17 +4096,16 @@ impl ActionDb {
         self.conn.execute(
             "INSERT INTO meetings_history (
                 id, title, meeting_type, start_time, end_time,
-                account_id, attendees, notes_path, summary, created_at,
+                attendees, notes_path, summary, created_at,
                 calendar_event_id, description, prep_context_json,
                 user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
                 prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 meeting_type = excluded.meeting_type,
                 start_time = excluded.start_time,
                 end_time = excluded.end_time,
-                account_id = excluded.account_id,
                 attendees = excluded.attendees,
                 notes_path = excluded.notes_path,
                 summary = excluded.summary,
@@ -4144,7 +4126,6 @@ impl ActionDb {
                 meeting.meeting_type,
                 meeting.start_time,
                 meeting.end_time,
-                meeting.account_id,
                 meeting.attendees,
                 meeting.notes_path,
                 meeting.summary,
@@ -4163,16 +4144,6 @@ impl ActionDb {
             ],
         )?;
 
-        // Auto-link junction when account_id is present (I52)
-        // Resolve account name → slugified entity ID via accounts table
-        if let Some(ref account_name) = meeting.account_id {
-            if !account_name.is_empty() {
-                if let Ok(Some(account)) = self.get_account_by_name(account_name) {
-                    let _ = self.link_meeting_entity(&meeting.id, &account.id, "account");
-                }
-            }
-        }
-
         Ok(())
     }
 
@@ -4183,7 +4154,7 @@ impl ActionDb {
     ) -> Result<Option<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, meeting_type, start_time, end_time,
-                    account_id, attendees, notes_path, summary, created_at,
+                    attendees, notes_path, summary, created_at,
                     calendar_event_id, description, prep_context_json,
                     user_agenda_json, user_notes, prep_frozen_json, prep_frozen_at,
                     prep_snapshot_path, prep_snapshot_hash, transcript_path, transcript_processed_at
@@ -4198,22 +4169,21 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
-                description: row.get(11)?,
-                prep_context_json: row.get(12)?,
-                user_agenda_json: row.get(13)?,
-                user_notes: row.get(14)?,
-                prep_frozen_json: row.get(15)?,
-                prep_frozen_at: row.get(16)?,
-                prep_snapshot_path: row.get(17)?,
-                prep_snapshot_hash: row.get(18)?,
-                transcript_path: row.get(19)?,
-                transcript_processed_at: row.get(20)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
+                description: row.get(10)?,
+                prep_context_json: row.get(11)?,
+                user_agenda_json: row.get(12)?,
+                user_notes: row.get(13)?,
+                prep_frozen_json: row.get(14)?,
+                prep_frozen_at: row.get(15)?,
+                prep_snapshot_path: row.get(16)?,
+                prep_snapshot_hash: row.get(17)?,
+                transcript_path: row.get(18)?,
+                transcript_processed_at: row.get(19)?,
             })
         })?;
         match rows.next() {
@@ -4232,15 +4202,14 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO meetings_history
-                (id, title, meeting_type, start_time, end_time, account_id, created_at, calendar_event_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                (id, title, meeting_type, start_time, end_time, created_at, calendar_event_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 input.id,
                 input.title,
                 input.meeting_type,
                 input.start_time,
                 input.end_time,
-                input.account_id,
                 Utc::now().to_rfc3339(),
                 input.calendar_event_id,
             ],
@@ -4840,7 +4809,7 @@ impl ActionDb {
     ) -> Result<Vec<DbMeeting>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
-                    m.account_id, m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
                     m.calendar_event_id
              FROM meetings_history m
              JOIN meeting_attendees ma ON m.id = ma.meeting_id
@@ -4855,12 +4824,11 @@ impl ActionDb {
                 meeting_type: row.get(2)?,
                 start_time: row.get(3)?,
                 end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
                 description: None,
                 prep_context_json: None,
                 user_agenda_json: None,
@@ -5139,49 +5107,6 @@ impl ActionDb {
                 embeddings_generated_at: row.get(12)?,
                 content_type: row.get(13)?,
                 priority: row.get(14)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<Vec<_>, _>>()?)
-    }
-
-    /// Meetings with an account_id (legacy column) but no meeting_entities junction row.
-    /// These are orphaned from the Sprint 9 M2M refactor.
-    pub fn get_orphaned_meetings(&self, days_back: i32) -> Result<Vec<DbMeeting>, DbError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT mh.id, mh.title, mh.meeting_type, mh.start_time, mh.end_time,
-                    mh.account_id, mh.attendees, mh.notes_path, mh.summary,
-                    mh.created_at, mh.calendar_event_id
-             FROM meetings_history mh
-             LEFT JOIN meeting_entities me ON me.meeting_id = mh.id
-             WHERE mh.account_id IS NOT NULL AND mh.account_id != ''
-               AND me.meeting_id IS NULL
-               AND mh.start_time >= datetime('now', ?1 || ' days')
-             ORDER BY mh.start_time DESC",
-        )?;
-        let days_param = format!("-{days_back}");
-        let rows = stmt.query_map(params![days_param], |row| {
-            Ok(DbMeeting {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                meeting_type: row.get(2)?,
-                start_time: row.get(3)?,
-                end_time: row.get(4)?,
-                account_id: row.get(5)?,
-                attendees: row.get(6)?,
-                notes_path: row.get(7)?,
-                summary: row.get(8)?,
-                created_at: row.get(9)?,
-                calendar_event_id: row.get(10)?,
-                description: None,
-                prep_context_json: None,
-                user_agenda_json: None,
-                user_notes: None,
-                prep_frozen_json: None,
-                prep_frozen_at: None,
-                prep_snapshot_path: None,
-                prep_snapshot_hash: None,
-                transcript_path: None,
-                transcript_processed_at: None,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -5977,7 +5902,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: Some("acme-corp".to_string()),
             attendees: Some(r#"["alice@acme.com","bob@us.com"]"#.to_string()),
             notes_path: None,
             summary: Some("Discussed renewal".to_string()),
@@ -5996,6 +5920,8 @@ mod tests {
         };
 
         db.upsert_meeting(&meeting).expect("upsert meeting");
+        db.link_meeting_entity("mtg-001", "acme-corp", "account")
+            .expect("link meeting entity");
 
         let results = db
             .get_meeting_history("acme-corp", 30, 10)
@@ -6011,13 +5937,13 @@ mod tests {
         let now = Utc::now().to_rfc3339();
 
         for i in 0..5 {
+            let mid = format!("mtg-{i:03}");
             let meeting = DbMeeting {
-                id: format!("mtg-{i:03}"),
+                id: mid.clone(),
                 title: format!("Meeting {i}"),
                 meeting_type: "customer".to_string(),
                 start_time: now.clone(),
                 end_time: None,
-                account_id: Some("acme-corp".to_string()),
                 attendees: None,
                 notes_path: None,
                 summary: None,
@@ -6035,6 +5961,8 @@ mod tests {
                 transcript_processed_at: None,
             };
             db.upsert_meeting(&meeting).expect("upsert");
+            db.link_meeting_entity(&mid, "acme-corp", "account")
+                .expect("link");
         }
 
         let results = db.get_meeting_history("acme-corp", 30, 3).expect("history");
@@ -6101,7 +6029,6 @@ mod tests {
             meeting_type: "customer".to_string(),
             start_time: Utc::now().to_rfc3339(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -6830,13 +6757,13 @@ mod tests {
 
         // Insert recent meetings
         for i in 0..5 {
+            let mid = format!("mtg-{}", i);
             let meeting = DbMeeting {
-                id: format!("mtg-{}", i),
+                id: mid.clone(),
                 title: format!("Sync #{}", i),
                 meeting_type: "customer".to_string(),
                 start_time: (now - chrono::Duration::days(i * 5)).to_rfc3339(),
                 end_time: None,
-                account_id: Some("acme-corp".to_string()),
                 attendees: None,
                 notes_path: None,
                 summary: None,
@@ -6854,6 +6781,8 @@ mod tests {
                 transcript_processed_at: None,
             };
             db.upsert_meeting(&meeting).expect("insert meeting");
+            db.link_meeting_entity(&mid, "acme-corp", "account")
+                .expect("link");
         }
 
         let signals = db.get_stakeholder_signals("acme-corp").expect("signals");
@@ -7268,7 +7197,6 @@ mod tests {
             meeting_type: "internal".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -7402,7 +7330,6 @@ mod tests {
             meeting_type: "internal".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,
@@ -8004,34 +7931,16 @@ mod tests {
     }
 
     #[test]
-    fn test_upsert_meeting_auto_links_junction() {
+    fn test_link_meeting_entity_manual() {
         let db = test_db();
         let now = Utc::now().to_rfc3339();
 
-        // Create account (required: upsert_meeting now resolves name → ID via accounts table)
-        db.conn
-            .execute(
-                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
-                params!["acme-auto", "Acme Auto", &now],
-            )
-            .expect("insert account");
-
-        // Create entity row (mirrors account, as ensure_entity_for_account would)
-        db.conn
-            .execute(
-                "INSERT INTO entities (id, name, entity_type, updated_at) VALUES (?1, ?2, ?3, ?4)",
-                params!["acme-auto", "Acme Auto", "account", &now],
-            )
-            .expect("insert entity");
-
-        // account_id is the display name (as passed from directive), not the slugified ID
         let meeting = DbMeeting {
-            id: "mtg-auto".to_string(),
-            title: "Auto-link Test".to_string(),
+            id: "mtg-link".to_string(),
+            title: "Link Test".to_string(),
             meeting_type: "customer".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: Some("Acme Auto".to_string()),
             attendees: None,
             notes_path: None,
             summary: None,
@@ -8049,13 +7958,15 @@ mod tests {
             transcript_processed_at: None,
         };
         db.upsert_meeting(&meeting).expect("upsert");
+        db.link_meeting_entity("mtg-link", "acme-auto", "account")
+            .expect("link");
 
-        // Junction should be auto-populated with the slugified entity ID
+        // Junction should contain the link
         let count: i32 = db
             .conn
             .query_row(
                 "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2",
-                params!["mtg-auto", "acme-auto"],
+                params!["mtg-link", "acme-auto"],
                 |row| row.get(0),
             )
             .expect("count");
@@ -8086,41 +7997,6 @@ mod tests {
             .expect("insert without project");
         let proj_captures = db.get_captures_for_project("acme", 30).expect("query");
         assert_eq!(proj_captures.len(), 0); // acme is account_id, not project_id
-    }
-
-    #[test]
-    fn test_backfill_junction_from_account_id() {
-        // Simulate what the migration does: meetings with account_id get junction entries
-        let db = test_db();
-        let now = Utc::now().to_rfc3339();
-
-        // Insert a meeting with account_id directly (simulating pre-junction data)
-        db.conn
-            .execute(
-                "INSERT INTO meetings_history (id, title, meeting_type, start_time, account_id, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params!["mtg-bf", "Backfill Test", "customer", &now, "acme-bf", &now],
-            )
-            .expect("insert");
-
-        // Run the backfill SQL
-        db.conn
-            .execute_batch(
-                "INSERT OR IGNORE INTO meeting_entities (meeting_id, entity_id, entity_type)
-                 SELECT id, account_id, 'account' FROM meetings_history
-                 WHERE account_id IS NOT NULL AND account_id != '';",
-            )
-            .expect("backfill");
-
-        let count: i32 = db
-            .conn
-            .query_row(
-                "SELECT COUNT(*) FROM meeting_entities WHERE meeting_id = 'mtg-bf' AND entity_id = 'acme-bf'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("count");
-        assert_eq!(count, 1);
     }
 
     // =========================================================================
@@ -8674,7 +8550,6 @@ mod tests {
             meeting_type: "external".to_string(),
             start_time: now.clone(),
             end_time: None,
-            account_id: None,
             attendees: None,
             notes_path: None,
             summary: None,

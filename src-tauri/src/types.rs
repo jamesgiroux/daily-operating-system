@@ -648,8 +648,6 @@ pub struct Meeting {
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub account: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub prep: Option<MeetingPrep>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_current: Option<bool>,
@@ -664,9 +662,6 @@ pub struct Meeting {
     /// Whether the user has reviewed this prep (ADR-0033)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_reviewed: Option<bool>,
-    /// SQLite entity ID for the linked account (populated from junction table)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub account_id: Option<String>,
     /// Entities linked via M2M junction table (I52)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_entities: Option<Vec<LinkedEntity>>,

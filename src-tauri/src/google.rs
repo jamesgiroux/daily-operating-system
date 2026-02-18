@@ -491,7 +491,6 @@ fn populate_people_from_events(events: &[CalendarEvent], state: &AppState, works
             meeting_type: event.meeting_type.as_str(),
             start_time: &event.start.to_rfc3339(),
             end_time: Some(&event.end.to_rfc3339()),
-            account_id: event.account.as_deref(),
             calendar_event_id: Some(&event.id),
         }) {
             log::warn!(

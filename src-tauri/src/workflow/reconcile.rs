@@ -247,7 +247,6 @@ pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace:
                 .end_time
                 .as_ref()
                 .map(|t| format!("{} {}", result.date, t)),
-            account_id: ms.account.clone(),
             attendees: None,
             notes_path: match &ms.transcript_status {
                 TranscriptStatus::Processed => Some("processed".to_string()),
@@ -392,7 +391,11 @@ fn freeze_meeting_snapshot(
     }
 
     let frozen_at = Utc::now().to_rfc3339();
-    let account_name = resolve_account_name(db, persisted.account_id.as_deref());
+    // Look up linked account from junction table instead of removed account_id field
+    let linked_entities = db.get_meeting_entities(&persisted.id).unwrap_or_default();
+    let linked_account = linked_entities.iter().find(|e| e.entity_type == crate::entity::EntityType::Account);
+    let account_id = linked_account.map(|a| a.id.clone());
+    let account_name = linked_account.map(|a| a.name.clone());
     let base_snapshot = serde_json::json!({
         "schemaVersion": 1,
         "meetingId": persisted.id,
@@ -401,7 +404,7 @@ fn freeze_meeting_snapshot(
         "meetingType": persisted.meeting_type,
         "startTime": persisted.start_time,
         "endTime": persisted.end_time,
-        "accountId": persisted.account_id,
+        "accountId": account_id,
         "accountName": account_name,
         "frozenAt": frozen_at,
         "prep": prep,
@@ -432,17 +435,6 @@ fn freeze_meeting_snapshot(
         )
         .map_err(|e| e.to_string())?;
     Ok(())
-}
-
-fn resolve_account_name(db: &ActionDb, account_id: Option<&str>) -> Option<String> {
-    let account_id = account_id?;
-    if let Ok(Some(account)) = db.get_account(account_id) {
-        return Some(account.name);
-    }
-    db.get_account_by_name(account_id)
-        .ok()
-        .flatten()
-        .map(|a| a.name)
 }
 
 fn resolve_snapshot_path(

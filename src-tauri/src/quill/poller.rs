@@ -338,7 +338,7 @@ async fn process_sync_row(
         let _ = crate::notification::notify_transcript_ready(
             app_handle,
             &meeting.title,
-            meeting.account_id.as_deref(),
+            None,
         );
     }
 }

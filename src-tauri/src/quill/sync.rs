@@ -125,7 +125,7 @@ pub fn db_meeting_to_calendar_event(meeting: &crate::db::DbMeeting) -> CalendarE
         start,
         end,
         meeting_type,
-        account: meeting.account_id.clone(),
+        account: None,
         attendees: vec![],
         is_all_day: false,
     }
