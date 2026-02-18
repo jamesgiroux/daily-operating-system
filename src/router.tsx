@@ -193,7 +193,7 @@ function DashboardPage() {
     case "loading":
       return <DashboardSkeleton />;
     case "empty":
-      return <DashboardEmpty message={state.message} onGenerate={runNow} googleAuth={state.googleAuth} />;
+      return <DashboardEmpty message={state.message} onGenerate={runNow} isRunning={isRunning} workflowStatus={status} googleAuth={state.googleAuth} />;
     case "error":
       return <DashboardError message={state.message} onRetry={refresh} />;
     case "success":
