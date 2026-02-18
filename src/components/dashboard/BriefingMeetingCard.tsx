@@ -37,6 +37,10 @@ interface BriefingMeetingCardProps {
   completedIds?: Set<string>;
   /** Callback when entities change (parent should refetch) */
   onEntitiesChanged?: () => void;
+  /** Number of total actions captured from this meeting (for past meetings) */
+  capturedActionCount?: number;
+  /** Number of proposed actions needing review from this meeting */
+  proposedActionCount?: number;
 }
 
 type TemporalState = "upcoming" | "in-progress" | "past" | "cancelled";
@@ -331,6 +335,8 @@ export function BriefingMeetingCard({
   onComplete,
   completedIds,
   onEntitiesChanged,
+  capturedActionCount,
+  proposedActionCount,
 }: BriefingMeetingCardProps) {
   const navigate = useNavigate();
   const state = getTemporalState(meeting, now, currentMeeting);
@@ -423,6 +429,23 @@ export function BriefingMeetingCard({
             {subtitleParts.join(" \u00B7 ")}
             {meeting.hasPrep && <span className={s.schedulePrepDot} title="Prep available" />}
           </div>
+          {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--color-text-tertiary)",
+                marginTop: 2,
+              }}
+            >
+              {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
+              {proposedActionCount != null && proposedActionCount > 0 && (
+                <span style={{ color: "var(--color-spice-turmeric)" }}>
+                  {" \u00B7 "}{proposedActionCount} needs review
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
