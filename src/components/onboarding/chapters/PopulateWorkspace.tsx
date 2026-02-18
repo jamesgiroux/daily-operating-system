@@ -17,21 +17,21 @@ const COPY = {
     subtitle:
       "The customers, clients, or partners you work with most. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Acme Corp",
-    prompt: "Start with 3\u20135 \u2014 you can always add more later.",
+    prompt: "Start with 3–5 — you can always add more later.",
   },
   project: {
     title: "Add your projects",
     subtitle:
-      "The initiatives, features, or campaigns you\u2019re actively working on. DailyOS uses these to connect your meetings to the right context.",
+      "The initiatives, features, or campaigns you're actively working on. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Q2 Platform Migration",
-    prompt: "Start with 3\u20135 \u2014 you can always add more later.",
+    prompt: "Start with 3–5 — you can always add more later.",
   },
   both: {
     title: "Add your accounts and projects",
     subtitle:
-      "The companies you work with and the initiatives you\u2019re driving. DailyOS uses these to connect your meetings to the right context.",
+      "The companies you work with and the initiatives you're driving. DailyOS uses these to connect your meetings to the right context.",
     placeholder: "e.g. Acme Corp",
-    prompt: "Start with a few of each \u2014 you can always add more later.",
+    prompt: "Start with a few of each — you can always add more later.",
   },
 };
 

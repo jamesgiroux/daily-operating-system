@@ -106,7 +106,7 @@ export function PersonAppendix({
                   padding: 0,
                 }}
               >
-                {saving ? "Saving\u2026" : "Save"}
+                {saving ? "Saving…" : "Save"}
               </button>
             )}
           </div>
@@ -128,7 +128,7 @@ export function PersonAppendix({
             <FieldInput value={editRole} onChange={setEditRole} placeholder="Role / Title" />
 
             <FieldLabel>Organization</FieldLabel>
-            <FieldValue>{detail.organization ?? "\u2014"}</FieldValue>
+            <FieldValue>{detail.organization ?? "—"}</FieldValue>
 
             <FieldLabel>Relationship</FieldLabel>
             <FieldValue style={{ textTransform: "capitalize" }}>{detail.relationship}</FieldValue>
@@ -155,7 +155,7 @@ export function PersonAppendix({
           <textarea
             value={editNotes}
             onChange={(e) => setEditNotes(e.target.value)}
-            placeholder="Notes about this person\u2026"
+            placeholder="Notes about this person…"
             rows={6}
             style={{
               width: "100%",

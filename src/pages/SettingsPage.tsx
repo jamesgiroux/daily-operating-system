@@ -37,6 +37,8 @@ import type {
   SettingsTabId,
   HygieneStatusView,
   HygieneNarrativeView,
+  GravatarStatus,
+  ClayStatusData,
 } from "@/types";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -57,6 +59,20 @@ interface ScheduleEntry {
   enabled: boolean;
   cron: string;
   timezone: string;
+}
+
+interface QuillStatusData {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  abandonedSyncs: number;
+  pollIntervalMinutes: number;
 }
 
 function parseSettingsTab(value: unknown): SettingsTabId {
@@ -340,6 +356,22 @@ export default function SettingsPage() {
         <GoogleAccountCard />
         <div style={{ height: 32 }} />
         <ClaudeDesktopCard />
+        <div style={{ height: 32 }} />
+        <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-light)", margin: 0 }} />
+        <div style={{ height: 32 }} />
+        <QuillSettingsCard />
+        <div style={{ height: 32 }} />
+        <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-light)", margin: 0 }} />
+        <div style={{ height: 32 }} />
+        <GranolaSettingsCard />
+        <div style={{ height: 32 }} />
+        <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-light)", margin: 0 }} />
+        <div style={{ height: 32 }} />
+        <GravatarSettingsCard />
+        <div style={{ height: 32 }} />
+        <hr style={{ border: "none", borderTop: "1px solid var(--color-rule-light)", margin: 0 }} />
+        <div style={{ height: 32 }} />
+        <ClaySettingsCard />
       </section>
 
       {/* ═══ CHAPTER 3: WORKFLOWS ═══ */}
@@ -684,6 +716,21 @@ function ClaudeDesktopCard() {
     binaryPath?: string;
   } | null>(null);
 
+  useEffect(() => {
+    invoke<{ success: boolean; message: string; configPath: string | null; binaryPath: string | null }>(
+      "get_claude_desktop_status"
+    )
+      .then((res) => {
+        setResult({
+          success: res.success,
+          message: res.message,
+          configPath: res.configPath ?? undefined,
+          binaryPath: res.binaryPath ?? undefined,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
   const handleConfigure = async () => {
     setConfiguring(true);
     setResult(null);
@@ -769,7 +816,136 @@ function ClaudeDesktopCard() {
         Claude can query your briefing, accounts, projects, and meeting
         history.
       </p>
+
+      <CoworkPluginsSubsection />
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CoworkPluginsSubsection
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CoworkPluginsSubsection() {
+  const [plugins, setPlugins] = useState<
+    { name: string; description: string; filename: string; available: boolean; exported: boolean }[]
+  >([]);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exported, setExported] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    invoke<
+      { name: string; description: string; filename: string; available: boolean; exported: boolean }[]
+    >("get_cowork_plugins_status")
+      .then((res) => {
+        setPlugins(res);
+        const initial: Record<string, boolean> = {};
+        for (const p of res) {
+          if (p.exported) initial[p.name] = true;
+        }
+        setExported(initial);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleExport = async (pluginName: string) => {
+    setExporting(pluginName);
+    try {
+      const res = await invoke<{ success: boolean; message: string; path: string | null }>(
+        "export_cowork_plugin",
+        { pluginName }
+      );
+      if (res.success) {
+        setExported((prev) => ({ ...prev, [pluginName]: true }));
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  if (plugins.length === 0) return null;
+
+  return (
+    <>
+      <hr
+        style={{
+          border: "none",
+          borderTop: "1px solid var(--color-rule)",
+          margin: "20px 0",
+        }}
+      />
+      <p style={styles.subsectionLabel}>Cowork Plugins</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Install plugins in Claude Desktop's Cowork sidebar for live workspace access.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {plugins
+          .filter((p) => p.available)
+          .map((plugin) => (
+            <div
+              key={plugin.name}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {plugin.name}
+                </span>
+                <p
+                  style={{
+                    ...styles.description,
+                    fontSize: 11,
+                    margin: "2px 0 0",
+                  }}
+                >
+                  {plugin.description}
+                </p>
+              </div>
+              <button
+                style={{
+                  ...styles.btn,
+                  ...styles.btnGhost,
+                  flexShrink: 0,
+                  opacity: exporting === plugin.name ? 0.5 : 1,
+                }}
+                onClick={() => handleExport(plugin.name)}
+                disabled={exporting === plugin.name}
+              >
+                {exporting === plugin.name ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Loader2 size={12} className="animate-spin" /> Saving...
+                  </span>
+                ) : exported[plugin.name] ? (
+                  "Saved to Desktop"
+                ) : (
+                  "Save to Desktop"
+                )}
+              </button>
+            </div>
+          ))}
+      </div>
+
+      <p style={{ ...styles.description, fontSize: 11, marginTop: 12, fontStyle: "italic" }}>
+        Drag the zip from your Desktop into Claude Desktop's Cowork sidebar to install.
+      </p>
+    </>
   );
 }
 
@@ -1390,6 +1566,778 @@ function CaptureSettingsCard() {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QuillSettingsCard
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface QuillStatusData {
+  enabled: boolean;
+  bridgeExists: boolean;
+  bridgePath: string;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  abandonedSyncs: number;
+  pollIntervalMinutes: number;
+}
+
+function QuillSettingsCard() {
+  const [status, setStatus] = useState<QuillStatusData | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
+
+  useEffect(() => {
+    invoke<QuillStatusData>("get_quill_status")
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  async function toggleEnabled() {
+    if (!status) return;
+    const newEnabled = !status.enabled;
+    try {
+      await invoke("set_quill_enabled", { enabled: newEnabled });
+      setStatus({ ...status, enabled: newEnabled });
+    } catch (err) {
+      console.error("Failed to toggle Quill:", err);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    try {
+      const ok = await invoke<boolean>("test_quill_connection");
+      toast(ok ? "Quill connection successful" : "Quill bridge not available");
+    } catch (err) {
+      toast.error("Connection test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const statusLabel = !status
+    ? "Loading..."
+    : !status.bridgeExists
+      ? "Bridge not found"
+      : status.lastSyncAt
+        ? `Last sync: ${new Date(status.lastSyncAt).toLocaleString()}`
+        : "Connected, no syncs yet";
+
+  const statusColor = !status
+    ? "var(--color-text-tertiary)"
+    : !status.bridgeExists
+      ? "var(--color-spice-terracotta)"
+      : "var(--color-garden-olive)";
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Quill Transcripts</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Automatically sync meeting transcripts from Quill
+      </p>
+
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {status?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {status?.enabled
+              ? "Transcripts will sync after meetings end"
+              : "Quill transcript sync is turned off"}
+          </p>
+        </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+          onClick={toggleEnabled}
+          disabled={!status}
+        >
+          {status?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+
+      {status?.enabled && (
+        <>
+          <div style={styles.settingRow}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot(statusColor)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {statusLabel}
+              </span>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+              onClick={testConnection}
+              disabled={testing}
+            >
+              {testing ? "Testing..." : "Test Connection"}
+            </button>
+          </div>
+
+          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div>
+              <span style={styles.monoLabel}>Bridge path</span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2, fontFamily: "var(--font-mono)" }}>
+                {status.bridgePath}
+              </p>
+            </div>
+          </div>
+
+          {(status.pendingSyncs > 0 || status.failedSyncs > 0 || status.completedSyncs > 0) && (
+            <div style={{ display: "flex", gap: 16, paddingTop: 8 }}>
+              {status.completedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-garden-olive)" }}>
+                  {status.completedSyncs} synced
+                </span>
+              )}
+              {status.pendingSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-golden-turmeric)" }}>
+                  {status.pendingSyncs} pending
+                </span>
+              )}
+              {status.failedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-spice-terracotta)" }}>
+                  {status.failedSyncs} failed
+                </span>
+              )}
+              {status.abandonedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-text-tertiary)" }}>
+                  {status.abandonedSyncs} abandoned
+                </span>
+              )}
+            </div>
+          )}
+
+          {status.lastError && (
+            <div style={{ paddingTop: 8 }}>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 12, color: "var(--color-spice-terracotta)" }}>
+                {status.lastError}
+              </span>
+              {status.lastErrorAt && (
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)", marginLeft: 8 }}>
+                  {new Date(status.lastErrorAt).toLocaleString()}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Poll interval
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                How often to check for new transcripts
+              </p>
+            </div>
+            <select
+              value={status.pollIntervalMinutes}
+              onChange={async (e) => {
+                const minutes = Number(e.target.value);
+                try {
+                  await invoke("set_quill_poll_interval", { minutes });
+                  setStatus({ ...status, pollIntervalMinutes: minutes });
+                } catch (err) {
+                  console.error("Failed to set poll interval:", err);
+                }
+              }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                padding: "4px 8px",
+                border: "1px solid var(--color-border)",
+                borderRadius: 4,
+                background: "var(--color-surface)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {[1, 2, 5, 10, 15, 30].map((m) => (
+                <option key={m} value={m}>
+                  {m} min
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Historical backfill
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Create sync rows for past meetings (last 90 days)
+              </p>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: backfilling ? 0.5 : 1 }}
+              onClick={async () => {
+                setBackfilling(true);
+                try {
+                  const result = await invoke<{ created: number; eligible: number }>("start_quill_backfill");
+                  toast(`Backfill: ${result.created} of ${result.eligible} eligible meetings queued`);
+                  const refreshed = await invoke<QuillStatusData>("get_quill_status");
+                  setStatus(refreshed);
+                } catch (err) {
+                  toast.error("Backfill failed");
+                } finally {
+                  setBackfilling(false);
+                }
+              }}
+              disabled={backfilling}
+            >
+              {backfilling ? "Running..." : "Start Backfill"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GranolaSettingsCard (I226)
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface GranolaStatusData {
+  enabled: boolean;
+  cacheExists: boolean;
+  cachePath: string;
+  documentCount: number;
+  pendingSyncs: number;
+  failedSyncs: number;
+  completedSyncs: number;
+  lastSyncAt: string | null;
+  pollIntervalMinutes: number;
+}
+
+function GranolaSettingsCard() {
+  const [status, setStatus] = useState<GranolaStatusData | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+
+  useEffect(() => {
+    invoke<GranolaStatusData>("get_granola_status")
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  async function toggleEnabled() {
+    if (!status) return;
+    const newEnabled = !status.enabled;
+    try {
+      await invoke("set_granola_enabled", { enabled: newEnabled });
+      const refreshed = await invoke<GranolaStatusData>("get_granola_status");
+      setStatus(refreshed);
+    } catch (err) {
+      console.error("Failed to toggle Granola:", err);
+    }
+  }
+
+  const statusLabel = !status
+    ? "Loading..."
+    : !status.cacheExists
+      ? "Cache not found"
+      : `Cache found (${status.documentCount} documents)`;
+
+  const statusColor = !status
+    ? "var(--color-text-tertiary)"
+    : !status.cacheExists
+      ? "var(--color-spice-terracotta)"
+      : "var(--color-garden-olive)";
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Granola Transcripts</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Sync meeting notes from Granola's local cache (no API key required)
+      </p>
+
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {status?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {status?.enabled
+              ? "Notes will sync from Granola cache"
+              : "Granola transcript sync is turned off"}
+          </p>
+        </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+          onClick={toggleEnabled}
+          disabled={!status}
+        >
+          {status?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+
+      {status?.enabled && (
+        <>
+          <div style={styles.settingRow}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot(statusColor)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {statusLabel}
+              </span>
+            </div>
+          </div>
+
+          {(status.pendingSyncs > 0 || status.failedSyncs > 0 || status.completedSyncs > 0) && (
+            <div style={{ display: "flex", gap: 16, paddingTop: 8 }}>
+              {status.completedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-garden-olive)" }}>
+                  {status.completedSyncs} synced
+                </span>
+              )}
+              {status.pendingSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-golden-turmeric)" }}>
+                  {status.pendingSyncs} pending
+                </span>
+              )}
+              {status.failedSyncs > 0 && (
+                <span style={{ ...styles.monoLabel, color: "var(--color-spice-terracotta)" }}>
+                  {status.failedSyncs} failed
+                </span>
+              )}
+            </div>
+          )}
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Poll interval
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                How often to check the Granola cache for new notes
+              </p>
+            </div>
+            <select
+              value={status.pollIntervalMinutes}
+              onChange={async (e) => {
+                const minutes = Number(e.target.value);
+                try {
+                  await invoke("set_granola_poll_interval", { minutes });
+                  setStatus({ ...status, pollIntervalMinutes: minutes });
+                } catch (err) {
+                  console.error("Failed to set poll interval:", err);
+                }
+              }}
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 13,
+                padding: "4px 8px",
+                border: "1px solid var(--color-border)",
+                borderRadius: 4,
+                background: "var(--color-surface)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              {[1, 2, 5, 10, 15, 30].map((m) => (
+                <option key={m} value={m}>
+                  {m} min
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Historical backfill
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Match Granola cache documents to past meetings
+              </p>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: backfilling ? 0.5 : 1 }}
+              onClick={async () => {
+                setBackfilling(true);
+                try {
+                  const result = await invoke<{ created: number; eligible: number }>("start_granola_backfill");
+                  toast(`Backfill: ${result.created} of ${result.eligible} documents matched`);
+                  const refreshed = await invoke<GranolaStatusData>("get_granola_status");
+                  setStatus(refreshed);
+                } catch (err) {
+                  toast.error("Backfill failed");
+                } finally {
+                  setBackfilling(false);
+                }
+              }}
+              disabled={backfilling}
+            >
+              {backfilling ? "Running..." : "Start Backfill"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GravatarSettingsCard
+// ═══════════════════════════════════════════════════════════════════════════
+
+function GravatarSettingsCard() {
+  const [status, setStatus] = useState<GravatarStatus | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
+
+  useEffect(() => {
+    invoke<GravatarStatus>("get_gravatar_status")
+      .then((s) => {
+        setStatus(s);
+        if (s.apiKeySet) setApiKey("••••••••");
+      })
+      .catch(() => {});
+  }, []);
+
+  async function toggleEnabled() {
+    if (!status) return;
+    const newEnabled = !status.enabled;
+    try {
+      await invoke("set_gravatar_enabled", { enabled: newEnabled });
+      setStatus({ ...status, enabled: newEnabled });
+    } catch (err) {
+      console.error("Failed to toggle Gravatar:", err);
+    }
+  }
+
+  async function saveApiKey() {
+    const trimmed = apiKey.trim();
+    if (!trimmed || trimmed === "••••••••") return;
+    try {
+      await invoke("set_gravatar_api_key", { apiKey: trimmed });
+      setApiKeyDirty(false);
+      setStatus((prev) => prev ? { ...prev, apiKeySet: true } : prev);
+      toast("Gravatar API key saved");
+    } catch (err) {
+      toast.error("Failed to save API key");
+    }
+  }
+
+  async function handleFetchNow() {
+    setFetching(true);
+    try {
+      const count = await invoke<number>("bulk_fetch_gravatars");
+      toast(`Fetched ${count} Gravatar profile${count !== 1 ? "s" : ""}`);
+      const refreshed = await invoke<GravatarStatus>("get_gravatar_status");
+      setStatus(refreshed);
+    } catch (err) {
+      toast.error("Gravatar fetch failed");
+    } finally {
+      setFetching(false);
+    }
+  }
+
+  const statusColor = !status
+    ? "var(--color-text-tertiary)"
+    : status.enabled && status.cachedCount > 0
+      ? "var(--color-garden-olive)"
+      : "var(--color-text-tertiary)";
+
+  const statusLabel = !status
+    ? "Loading..."
+    : `${status.cachedCount} profile${status.cachedCount !== 1 ? "s" : ""} cached`;
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Gravatar Avatars</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Fetch profile photos for your contacts from Gravatar
+      </p>
+
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {status?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {status?.enabled
+              ? "Avatars will be fetched for contacts with email addresses"
+              : "Gravatar avatar fetching is turned off"}
+          </p>
+        </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+          onClick={toggleEnabled}
+          disabled={!status}
+        >
+          {status?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+
+      {status?.enabled && (
+        <>
+          <div style={styles.settingRow}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot(statusColor)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {statusLabel}
+              </span>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost, opacity: fetching ? 0.5 : 1 }}
+              onClick={handleFetchNow}
+              disabled={fetching}
+            >
+              {fetching ? "Fetching..." : "Fetch Now"}
+            </button>
+          </div>
+
+          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div style={{ flex: 1 }}>
+              <span style={styles.monoLabel}>API Key</span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Optional — improves rate limits for large contact lists
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    setApiKeyDirty(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveApiKey();
+                  }}
+                  onFocus={() => {
+                    if (apiKey === "••••••••") { setApiKey(""); setApiKeyDirty(true); }
+                  }}
+                  placeholder="Gravatar API key"
+                  style={{
+                    ...styles.input,
+                    width: 260,
+                  }}
+                />
+                {apiKeyDirty && apiKey.trim() && (
+                  <button
+                    style={{ ...styles.btn, ...styles.btnPrimary }}
+                    onClick={saveApiKey}
+                  >
+                    Save
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I228: Clay Contact & Company Enrichment
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ClaySettingsCard() {
+  const [status, setStatus] = useState<ClayStatusData | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyDirty, setApiKeyDirty] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
+
+  useEffect(() => {
+    invoke<ClayStatusData>("get_clay_status")
+      .then((s) => {
+        setStatus(s);
+        if (s.apiKeySet) setApiKey("••••••••");
+      })
+      .catch(() => {});
+  }, []);
+
+  async function toggleEnabled() {
+    if (!status) return;
+    const newEnabled = !status.enabled;
+    try {
+      await invoke("set_clay_enabled", { enabled: newEnabled });
+      setStatus({ ...status, enabled: newEnabled });
+    } catch (err) {
+      console.error("Failed to toggle Clay:", err);
+    }
+  }
+
+  async function saveApiKey() {
+    const trimmed = apiKey.trim();
+    if (!trimmed || trimmed === "••••••••") return;
+    try {
+      await invoke("set_clay_api_key", { key: trimmed });
+      setApiKeyDirty(false);
+      setStatus((prev) => prev ? { ...prev, apiKeySet: true } : prev);
+      toast("Clay API key saved");
+    } catch (err) {
+      toast.error("Failed to save API key");
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    try {
+      await invoke<boolean>("test_clay_connection");
+      toast("Clay connection successful");
+    } catch (err) {
+      toast.error("Clay connection failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleBulkEnrich() {
+    setEnriching(true);
+    try {
+      const result = await invoke<{ queued: number; totalUnenriched: number }>("start_clay_bulk_enrich");
+      toast(`Queued ${result.queued} people for enrichment`);
+      const refreshed = await invoke<ClayStatusData>("get_clay_status");
+      setStatus(refreshed);
+    } catch (err) {
+      toast.error("Bulk enrichment failed");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
+  async function toggleAutoEnrich() {
+    if (!status) return;
+    const newValue = !status.autoEnrichOnCreate;
+    try {
+      await invoke("set_clay_auto_enrich", { enabled: newValue });
+      setStatus({ ...status, autoEnrichOnCreate: newValue });
+    } catch (err) {
+      console.error("Failed to toggle auto-enrich:", err);
+    }
+  }
+
+  const statusColor = !status
+    ? "var(--color-text-tertiary)"
+    : status.enabled && status.enrichedCount > 0
+      ? "var(--color-garden-olive)"
+      : "var(--color-text-tertiary)";
+
+  const statusLabel = !status
+    ? "Loading..."
+    : `${status.enrichedCount} enriched · ${status.pendingCount} pending`;
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Clay Contact Enrichment</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Enrich contacts with social profiles, bios, and company data from Clay.earth
+      </p>
+
+      <div style={styles.settingRow}>
+        <div>
+          <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+            {status?.enabled ? "Enabled" : "Disabled"}
+          </span>
+          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            {status?.enabled
+              ? "Contacts will be enriched with Clay data"
+              : "Clay enrichment is turned off"}
+          </p>
+        </div>
+        <button
+          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+          onClick={toggleEnabled}
+          disabled={!status}
+        >
+          {status?.enabled ? "Disable" : "Enable"}
+        </button>
+      </div>
+
+      {status?.enabled && (
+        <>
+          <div style={styles.settingRow}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={styles.statusDot(statusColor)} />
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
+                {statusLabel}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+                onClick={testConnection}
+                disabled={testing || !status.apiKeySet}
+              >
+                {testing ? "Testing..." : "Test Connection"}
+              </button>
+              <button
+                style={{ ...styles.btn, ...styles.btnGhost, opacity: enriching ? 0.5 : 1 }}
+                onClick={handleBulkEnrich}
+                disabled={enriching}
+              >
+                {enriching ? "Enriching..." : "Enrich All"}
+              </button>
+            </div>
+          </div>
+
+          <div style={styles.settingRow}>
+            <div>
+              <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                Auto-enrich new contacts
+              </span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Automatically enrich when new people are created
+              </p>
+            </div>
+            <button
+              style={{ ...styles.btn, ...styles.btnGhost }}
+              onClick={toggleAutoEnrich}
+            >
+              {status.autoEnrichOnCreate ? "Disable" : "Enable"}
+            </button>
+          </div>
+
+          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div style={{ flex: 1 }}>
+              <span style={styles.monoLabel}>API Key</span>
+              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                Clay API key for contact enrichment
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    setApiKeyDirty(true);
+                  }}
+                  placeholder="Enter Clay API key"
+                  style={{
+                    ...styles.input,
+                    width: 260,
+                  }}
+                />
+                {apiKeyDirty && apiKey.trim() && (
+                  <button
+                    style={{ ...styles.btn, ...styles.btnPrimary }}
+                    onClick={saveApiKey}
+                  >
+                    Save
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {status.lastEnrichmentAt && (
+            <div style={{ padding: "8px 0", fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-tertiary)" }}>
+              Last enrichment: {new Date(status.lastEnrichmentAt).toLocaleString()}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -50,6 +50,18 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 12,
     sql: include_str!("migrations/012_person_emails.sql"),
+}, Migration {
+    version: 13,
+    sql: include_str!("migrations/013_quill_sync.sql"),
+}, Migration {
+    version: 14,
+    sql: include_str!("migrations/014_granola_sync.sql"),
+}, Migration {
+    version: 15,
+    sql: include_str!("migrations/015_gravatar_cache.sql"),
+}, Migration {
+    version: 16,
+    sql: include_str!("migrations/016_clay_enrichment.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -211,13 +223,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 12,
-            "should apply all migrations including person_emails"
+            applied, 16,
+            "should apply all migrations including clay_enrichment"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 12);
+        assert_eq!(version, 16);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -358,6 +370,54 @@ mod tests {
             [],
         )
         .expect("person_emails table should exist");
+
+        // Verify quill_sync_state table accepts inserts (migration 013)
+        conn.execute(
+            "INSERT INTO quill_sync_state (id, meeting_id, state)
+             VALUES ('qs-1', 'm1', 'pending')",
+            [],
+        )
+        .expect("quill_sync_state table should exist and accept inserts");
+
+        // Verify source column exists and allows granola source (migration 014)
+        conn.execute(
+            "INSERT INTO quill_sync_state (id, meeting_id, state, source)
+             VALUES ('qs-2', 'm1', 'pending', 'granola')",
+            [],
+        )
+        .expect("quill_sync_state should accept granola source for same meeting_id");
+
+        // Verify gravatar_cache table accepts inserts (migration 015)
+        conn.execute(
+            "INSERT INTO gravatar_cache (email, has_gravatar, fetched_at, person_id)
+             VALUES ('alice@acme.com', 1, '2025-01-01T00:00:00Z', 'p1')",
+            [],
+        )
+        .expect("gravatar_cache table should exist and accept inserts");
+
+        // Verify clay enrichment tables (migration 016)
+        conn.execute(
+            "INSERT INTO enrichment_log (id, entity_type, entity_id, source, fields_updated)
+             VALUES ('el-1', 'person', 'p1', 'clay', '[\"linkedinUrl\"]')",
+            [],
+        )
+        .expect("enrichment_log table should exist and accept inserts");
+
+        conn.execute(
+            "INSERT INTO clay_sync_state (id, entity_id, state)
+             VALUES ('cs-1', 'p1', 'pending')",
+            [],
+        )
+        .expect("clay_sync_state table should exist and accept inserts");
+
+        // Verify people has Clay enrichment columns
+        conn.execute(
+            "UPDATE people SET linkedin_url = 'https://linkedin.com/in/test',
+             last_enriched_at = '2026-01-01', enrichment_sources = '{}'
+             WHERE id = 'p1'",
+            [],
+        )
+        .expect("people should have Clay enrichment columns");
     }
 
     #[test]
@@ -455,13 +515,13 @@ mod tests {
         )
         .expect("seed existing tables");
 
-        // Run migrations — should bootstrap v1 and apply v2 through v9
+        // Run migrations — should bootstrap v1 and apply v2 through v14
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 11, "bootstrap should mark v1, then apply v2 through v12");
+        assert_eq!(applied, 15, "bootstrap should mark v1, then apply v2 through v16");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 12);
+        assert_eq!(version, 16);
 
         // Verify existing data is untouched
         let title: String = conn
