@@ -73,6 +73,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
 | **I351** | Standardize actions chapter across all entity types (ADR-0084 D5) | P1 | Entity / UX |
 | **I352** | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) | P1 | Entity / Code Quality |
+| **I353** | Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking | P1 | Intelligence / Data Quality |
 
 ---
 
@@ -173,6 +174,7 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | P2 | I321 | Commitment & action extraction from email |
 | P2 | I323 | Zero-touch email disposition pipeline |
 | P2 | I324 | Email signals in entity intelligence enrichment |
+| P1 | I353 | Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking |
 
 **Rationale:** DailyOS already fetches, classifies, and enriches email (ADR-0024/0029). The 0.10.0 signal bus (I306) builds the email-calendar bridge infrastructure — correlating email threads with meeting attendees and surfacing raw excerpts in prep context. 0.12.0 builds the intelligence layer on top: structured meeting-aware digests that tell you what matters for each meeting (I317), thread position awareness so you know what you owe people (I318), entity-level cadence anomalies that flag when accounts go quiet or spike (I319), semantic classification for the ambiguous "medium" priority bucket (I320), and a narrative email section in the daily briefing that reads like a chief of staff's morning summary (I322). The design philosophy is "chief of staff who reads your email and tells you what matters" — not an email client, not an inbox UI, not unread counts. Email becomes the signal bus's richest data source and the briefing's most actionable section.
 
@@ -3051,6 +3053,50 @@ Store in `content_index.tags` column (JSON array).
 - Relevance score (1-5) + tags (array of strings) stored in `content_index.tags`
 - Prep generation prioritizes high-relevance content
 - Future: Search content by tag (e.g., "tag:renewal")
+
+---
+
+<a name="i353"></a>
+**I353: Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking**
+
+**Priority:** P1
+**Version:** 0.12.0
+**Area:** Intelligence / Data Quality
+**Depends on:** None (builds on existing hygiene scanner, signal bus, and DB infrastructure)
+
+**Problem:** The hygiene scanner detects data quality gaps but doesn't fix the most impactful ones. `detect_duplicate_people()` flags duplicates but never merges them. Google Calendar has display names ("James Giroux") but the person record says "jgiroux". People attend meetings linked to accounts but have no `entity_people` link unless their email domain matches the account. Signals fire but don't feed back into data cleanup.
+
+**Solution — Phase 1 (shipped on dev):**
+
+Three new self-healing functions in `hygiene.rs`, wired into `run_hygiene_scan()` as Phase 2d:
+
+1. **Auto-merge high-confidence duplicates** (`fix_auto_merge_duplicates`): Calls existing `detect_duplicate_people()`, filters to confidence >= 0.95, merges via `db.merge_people()` keeping the person with higher meeting count. Capped at 10 merges per scan. Emits `auto_merged` signal for audit trail.
+
+2. **Calendar display name resolution** (`resolve_names_from_calendar`): New `attendee_display_names` table (migration 026) populated during calendar sync from Google Calendar `displayName` field. Hygiene matches unnamed people (name has no space) against stored display names and resolves them. Pipeline: `Attendee.display_name` → `GoogleCalendarEvent.attendee_names` → `save_attendee_display_names()` (upsert on poll) → hygiene resolution.
+
+3. **Co-attendance account linking** (`fix_co_attendance_links`): SQL join across `meeting_attendees` + `meeting_entities` finds people attending 3+ meetings linked to an account with no `entity_people` link. Creates the link with tiered confidence signals (3-4 meetings = 0.75, 5-9 = 0.85, 10+ = 0.95).
+
+All three emit signals for audit trail. `MechanicalFixes` extended with `people_auto_merged`, `names_resolved_calendar`, `people_linked_co_attendance`. Narrative and status views updated. Post-fix recount now includes `duplicate_people` (previously skipped since no auto-merge existed).
+
+**Phase 2 (follow-up — signal → hygiene feedback loop):**
+
+- `HygieneActionRule` type parallel to `PropagationRule` — signal-triggered cleanup
+- Concrete rules: `person_created` → targeted duplicate check, email with sender name → immediate name resolve, entity resolved → co-attendance link, `person_departed` → archive after 30d
+- Bridge `email_signals` → `signal_events` (currently disconnected)
+- `hygiene_actions_log` audit table
+
+**Phase 3 (future — inference engine):**
+
+SQL-based inference rules (no AI cost): shared-people account relationships, seniority inference from meeting patterns, compound health scores, departure detection, domain-cluster account suggestions.
+
+**Acceptance criteria (Phase 1):**
+
+- [x] Two people with identical normalized name on same domain → merged after scan
+- [x] Two people at 0.70 confidence → NOT merged
+- [x] Unnamed person + `attendee_display_names` row → name resolved after scan
+- [x] Person in 3+ meetings with account (no link) → `entity_people` link created
+- [x] Narrative shows "merged N duplicates, resolved N names, linked N people by co-attendance"
+- [x] 901 tests pass, clippy clean
 
 ---
 
