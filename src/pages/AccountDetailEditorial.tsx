@@ -136,7 +136,7 @@ export default function AccountDetailEditorial() {
       folioLabel: acct.detail?.isInternal ? "Internal" : "Account",
       atmosphereColor: acct.detail?.isInternal ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
-      backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
       folioActions: (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
