@@ -38,6 +38,7 @@ mod notification;
 mod parser;
 pub mod people;
 pub mod prepare;
+pub mod presets;
 pub mod proactive;
 mod processor;
 pub mod projects;
@@ -412,6 +413,8 @@ pub fn run() {
             commands::get_accounts_list,
             commands::get_accounts_for_picker,
             commands::get_child_accounts_list,
+            commands::get_account_ancestors,
+            commands::get_descendant_accounts,
             commands::get_account_detail,
             commands::get_account_team,
             commands::update_account_field,
@@ -448,6 +451,10 @@ pub fn run() {
             commands::get_archived_accounts,
             commands::get_archived_projects,
             commands::get_archived_people,
+            // I198: Account Merge
+            commands::merge_accounts,
+            // I199: Account Recovery
+            commands::restore_account,
             // I171: Multi-Domain Config
             commands::set_user_domains,
             // I162: Bulk Entity Creation
@@ -511,6 +518,13 @@ pub fn run() {
             commands::set_linear_api_key,
             commands::test_linear_connection,
             commands::start_linear_sync,
+            // I309: Role Presets
+            commands::set_role,
+            commands::get_active_preset,
+            commands::get_available_presets,
+            // I311: Entity Metadata
+            commands::update_entity_metadata,
+            commands::get_entity_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -76,6 +76,21 @@ export function UnifiedTimeline({
     }
   }
 
+  if (data.accountEvents) {
+    for (const ev of data.accountEvents) {
+      const label = ev.eventType
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      items.push({
+        date: formatShortDate(ev.eventDate),
+        sortDate: ev.eventDate,
+        type: "event" as TimelineEntryType,
+        title: `${label}${ev.arrImpact != null ? ` ($${(ev.arrImpact / 1000).toFixed(0)}k)` : ""}`,
+        subtitle: ev.notes || undefined,
+      });
+    }
+  }
+
   items.sort((a, b) => {
     if (!a.sortDate && !b.sortDate) return 0;
     if (!a.sortDate) return 1;
