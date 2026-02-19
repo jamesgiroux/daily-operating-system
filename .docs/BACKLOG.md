@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (telemetry + user communication). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (reports + product communication). 1.0.0 = beta gate.
 
 ---
 
@@ -144,11 +144,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 |----------|-------|-------|
 | P1 | I345 | Onboarding: back navigation loses entered state (bug) |
 | P2 | I344 | Onboarding: suggest closest teammates from Gmail frequent correspondents |
-| P2 | I347 | SWOT report type — account S/W/O/T from existing intelligence |
 | P2 | I346 | Linear integration (project management sync) |
-| P2 | I348 | Email digest — push DailyOS intelligence summaries via scheduled email |
 
-**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I347 extends the report system (currently risk briefing only) with a SWOT analysis that reorganizes intelligence already in the system. I346 adds Linear as a project management signal source. I348 opens DailyOS as a distribution surface via email (morning digest, share-with-colleague, post-meeting summary). These are quick wins that demonstrate responsiveness to user feedback while the heavier intelligence work (0.10.0) continues.
+**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I346 adds Linear as a project management signal source. I347 (SWOT) and I348 (email digest) moved to 0.14.0 (Reports release) where they join a broader reporting and distribution surface effort.
 
 ---
 
@@ -233,16 +231,18 @@ This is the "make it feel like a product" release. Not by adding polish — by s
 
 ---
 
-### 0.14.0 — Product Telemetry & User Communication
+### 0.14.0 — Reports & Product Communication
 
-*The app knows how it's being used and can tell users what's new. Feedback loop closed.*
+*Intelligence leaves the app. Reports go to leadership, digests go to inboxes, release notes go to users, telemetry comes back.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
+| P1 | I347 | SWOT report type — account S/W/O/T from existing intelligence |
+| P1 | I348 | Email digest — push DailyOS intelligence summaries via scheduled email |
 | P1 | I350 | In-app notifications — release announcements, what's new, system status alerts |
 | P1 | I90 | Product telemetry & analytics infrastructure |
 
-**Rationale:** DailyOS has no way to communicate with its users after installation. New features ship silently — users discover them by accident or not at all. The app has no visibility into which features are used, which surfaces are visited, or where users get stuck. I350 adds a lightweight notification layer: a "What's New" modal on launch (powered by GitHub Releases API, no SaaS dependency), macOS Notification Center integration for system status alerts (integration disconnected, briefing ready), and in-app badges for unread announcements. I90 adds anonymous local telemetry: feature usage, surface visits, workflow completions, error rates — all stored locally in SQLite with opt-in anonymous aggregate reporting. Together these close the feedback loop: the product can speak to users and learn from them. Both are prerequisites for a credible beta (1.0.0).
+**Rationale:** DailyOS generates intelligence but keeps it trapped in the app. The Reports button on accounts currently only produces a risk briefing — one report type from one surface. This release builds reporting into a first-class capability: SWOT analysis (I347) joins risk briefing as a second report type, with the architecture designed for more (account plan, QBR deck, portfolio summary). Email digest (I348) lets intelligence leave the app entirely — morning briefings to your inbox, meeting outcomes to colleagues, account summaries shared before a joint call. All powered by existing Gmail OAuth, no cloud relay. Meanwhile, the app itself learns to communicate: I350 adds a "What's New" modal on launch (GitHub Releases API, no SaaS), macOS Notification Center for system alerts, and in-app badges for unseen releases. I90 closes the loop with anonymous local telemetry — feature usage, surface visits, workflow completions — so we know what's working before 1.0.0 beta. Together: intelligence flows out to users and stakeholders, product knowledge flows back to us.
 
 ---
 
@@ -5276,8 +5276,8 @@ Integrate with Linear for project management sync. Linear is widely used in prod
 
 ### I347 — SWOT Report Type
 
-**Version:** 0.10.1
-**Priority:** P2
+**Version:** 0.14.0
+**Priority:** P1
 **Area:** Intelligence / Reports
 **Source:** User feedback (Nacho, 2026-02-18)
 
@@ -5313,8 +5313,8 @@ Most of the data already exists in `intelligence.json`. The SWOT report is large
 
 ### I348 — Email Digest
 
-**Version:** 0.10.1
-**Priority:** P2
+**Version:** 0.14.0
+**Priority:** P1
 **Area:** Distribution
 **Source:** User feedback (Nacho, 2026-02-18)
 **Related:** Slack integration research (`.docs/research/2026-02-18-slack-integration-research.md`)
