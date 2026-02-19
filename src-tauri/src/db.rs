@@ -3504,7 +3504,7 @@ impl ActionDb {
                     next_attempt_at, last_attempt_at, completed_at, error_message,
                     match_confidence, transcript_path, created_at, updated_at, source
              FROM quill_sync_state
-             WHERE state IN ('pending', 'polling') AND next_attempt_at <= datetime('now')
+             WHERE state IN ('pending', 'polling', 'fetching') AND next_attempt_at <= datetime('now')
                AND source = 'quill'",
         )?;
         let rows = stmt.query_map([], map_sync_row)?;
