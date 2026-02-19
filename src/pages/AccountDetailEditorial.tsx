@@ -52,6 +52,7 @@ import { EntityKeywords } from "@/components/entity/EntityKeywords";
 import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
+import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -93,7 +94,15 @@ function buildAccountVitals(detail: {
     });
   }
   if (detail.lifecycle) vitals.push({ text: detail.lifecycle });
-  if (detail.renewalDate) vitals.push({ text: formatRenewalCountdown(detail.renewalDate) });
+  if (detail.renewalDate) {
+    const renewal = new Date(detail.renewalDate);
+    const now = new Date();
+    const diffDays = Math.round((renewal.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    vitals.push({
+      text: formatRenewalCountdown(detail.renewalDate),
+      highlight: diffDays <= 60 ? "saffron" : undefined,
+    });
+  }
   if (detail.nps != null) vitals.push({ text: `NPS ${detail.nps}` });
   if (detail.signals?.meetingFrequency30d != null) {
     vitals.push({ text: `${detail.signals.meetingFrequency30d} meetings / 30d` });
@@ -124,14 +133,14 @@ export default function AccountDetailEditorial() {
   // Register magazine shell configuration — MagazinePageLayout consumes this
   const shellConfig = useMemo(
     () => ({
-      folioLabel: "Account",
-      atmosphereColor: "turmeric" as const,
+      folioLabel: acct.detail?.isInternal ? "Internal" : "Account",
+      atmosphereColor: acct.detail?.isInternal ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
       backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
       folioActions: (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {!acct.detail?.isInternal && (!acct.detail?.parentId || acct.detail?.isParent) && (
+          {acct.detail && (
             <button
               onClick={() => acct.setCreateChildOpen(true)}
               style={{
@@ -185,7 +194,9 @@ export default function AccountDetailEditorial() {
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [rolloverDismissed, setRolloverDismissed] = useState(false);
 
   // I312: Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
@@ -297,9 +308,73 @@ export default function AccountDetailEditorial() {
           onUnarchive={acct.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
+          {!detail.isInternal && (
+            <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
+          )}
         </div>
         <EntityKeywords entityId={accountId} entityType="account" keywordsJson={detail.keywords} />
+
+        {/* Auto-rollover prompt for past renewal dates */}
+        {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
+          <div
+            style={{
+              margin: "24px 0",
+              padding: "16px 20px",
+              background: "rgba(222, 184, 65, 0.08)",
+              borderLeft: "3px solid var(--color-spice-saffron)",
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              color: "var(--color-text-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
+            <span>Renewal date has passed — what happened?</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  acct.setNewEventType("renewal");
+                  acct.setNewEventDate(detail.renewalDate!);
+                  setEventDrawerOpen(true);
+                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+              >
+                Renewed
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  acct.setNewEventType("churn");
+                  acct.setNewEventDate(detail.renewalDate!);
+                  setEventDrawerOpen(true);
+                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+              >
+                Churned
+              </Button>
+              <button
+                onClick={() => setRolloverDismissed(true)}
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 10,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Chapter 2: State of Play */}
@@ -337,7 +412,7 @@ export default function AccountDetailEditorial() {
 
       {/* Chapter 5: The Record */}
       <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <UnifiedTimeline data={detail} />
+        <UnifiedTimeline data={{ ...detail, accountEvents: events }} />
       </div>
 
       {/* Chapter 6: The Work */}
@@ -378,6 +453,7 @@ export default function AccountDetailEditorial() {
           indexing={acct.indexing}
           indexFeedback={acct.indexFeedback}
           onCreateChild={() => acct.setCreateChildOpen(true)}
+          onMerge={() => setMergeDialogOpen(true)}
         />
       </div>
 
@@ -398,6 +474,9 @@ export default function AccountDetailEditorial() {
         setEditNps={acct.setEditNps}
         editRenewal={acct.editRenewal}
         setEditRenewal={acct.setEditRenewal}
+        editParentId={acct.editParentId}
+        setEditParentId={acct.setEditParentId}
+        accountId={accountId}
         setDirty={acct.setDirty}
         onSave={async () => {
           await acct.handleSave();
@@ -518,6 +597,14 @@ export default function AccountDetailEditorial() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AccountMergeDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        sourceAccountId={accountId!}
+        sourceAccountName={detail.name}
+        onMerged={() => navigate({ to: "/accounts" })}
+      />
     </>
   );
 }
