@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
 
 ---
 
@@ -69,6 +69,11 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I341** | Product vocabulary audit — translate system terms in all user-facing UI copy (ADR-0083) | P1 | UX |
 | **I342** | Surface JTBD critique — define each surface's job, audit every element, cut what doesn't belong, execute | P1 | UX / Product |
 | **I343** | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges | P1 | UX |
+| **I344** | Onboarding: suggest closest teammates from Gmail frequent correspondents | P2 | UX / Onboarding |
+| **I345** | Onboarding: back navigation loses entered state (bug) | P1 | UX / Onboarding |
+| **I346** | Linear integration (project management sync) | P2 | Integrations |
+| **I347** | SWOT report type — account strengths/weaknesses/opportunities/threats from existing intelligence | P2 | Intelligence / Reports |
+| **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 
 ---
 
@@ -126,6 +131,22 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
 
 **Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. I335–I339 implement ADR-0082 (Entity-Generic Prep Pipeline): rebuild the account-privileged prep pipeline so accounts, projects, and people are first-class entities throughout classification, context building, prep generation, and dashboard display. This includes 1:1 relationship intelligence — recurring 1:1 meetings resolve to the counterpart person as primary entity with the three-file pattern (ADR-0057). The legacy `account_id` column on `meetings_history` is dropped; the `meeting_entities` junction table becomes the sole source of truth. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
+
+---
+
+### 0.10.1 — User Feedback & Onboarding Polish
+
+*First real user feedback, acted on fast. Fix what's broken, add what's obviously missing.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I345 | Onboarding: back navigation loses entered state (bug) |
+| P2 | I344 | Onboarding: suggest closest teammates from Gmail frequent correspondents |
+| P2 | I347 | SWOT report type — account S/W/O/T from existing intelligence |
+| P2 | I346 | Linear integration (project management sync) |
+| P2 | I348 | Email digest — push DailyOS intelligence summaries via scheduled email |
+
+**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I347 extends the report system (currently risk briefing only) with a SWOT analysis that reorganizes intelligence already in the system. I346 adds Linear as a project management signal source. I348 opens DailyOS as a distribution surface via email (morning digest, share-with-colleague, post-meeting summary). These are quick wins that demonstrate responsiveness to user feedback while the heavier intelligence work (0.10.0) continues.
 
 ---
 
@@ -5189,3 +5210,146 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 8. Badge changes propagate — switching engagement on account detail reflects in meeting prep and briefing cards
 9. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
 10. `pnpm build` compiles clean, `cargo test` passes
+
+---
+
+### I344 — Onboarding: Suggest Closest Teammates from Gmail
+
+**Version:** 0.10.1
+**Priority:** P2
+**Area:** UX / Onboarding
+**Source:** User feedback (Nacho, 2026-02-18)
+
+During onboarding, the "Closest Teammates" step asks users to manually enter email addresses for their core collaborators. Since we already have Gmail OAuth by that point, we can query the user's recent email history and suggest frequently-contacted internal addresses.
+
+**Approach:**
+- After Gmail OAuth completes, query sent mail for the most frequent recipients (last 90 days)
+- Filter to same-domain addresses (likely colleagues, not external contacts)
+- Present as clickable suggestions: "People you email most: [chips]"
+- User clicks to add, can still type manually for anyone not surfaced
+- Respects existing flow — suggestions are additive, not a replacement
+
+**Acceptance criteria:**
+1. After Gmail OAuth, onboarding teammate step shows suggested emails from recent sent mail
+2. Suggestions filtered to same-domain addresses
+3. Click-to-add from suggestions, manual entry still works
+4. Graceful fallback if Gmail query returns no results or fails
+
+---
+
+### I345 — Onboarding: Back Navigation Loses Entered State (Bug)
+
+**Version:** 0.10.1
+**Priority:** P1
+**Area:** UX / Onboarding
+**Source:** User feedback (Nacho, 2026-02-18)
+
+If a user clicks "Continue" past the accounts step, then navigates back (e.g., clicks the accounts icon in the stepper), all previously entered data is lost. The onboarding wizard doesn't persist state between steps.
+
+**Root cause (likely):** Each onboarding step holds its data in local component state. Navigating away unmounts the component and loses everything. State needs to be lifted to the wizard parent or persisted to localStorage/DB as the user progresses.
+
+**Fix approach:**
+- Lift onboarding state to the wizard container (or use a context/reducer)
+- Each step reads from and writes to shared state
+- Back navigation remounts the step with previously entered data intact
+- Optionally persist to localStorage so a browser refresh also recovers progress
+
+**Acceptance criteria:**
+1. Enter accounts → Continue → navigate back → accounts are still there
+2. Enter teammates → Continue → navigate back → teammates still there
+3. All onboarding steps preserve state through forward/back navigation
+4. Bonus: closing and reopening the app mid-onboarding resumes where you left off
+
+---
+
+### I346 — Linear Integration
+
+**Version:** 0.10.1
+**Priority:** P2
+**Area:** Integrations
+**Source:** User feedback (Nacho, 2026-02-18)
+
+Integrate with Linear for project management sync. Linear is widely used in product/engineering teams for issue tracking, sprint planning, and project status.
+
+**Potential value for DailyOS:**
+- Pull project/cycle status into entity intelligence (account health context)
+- Surface relevant issues before meetings with engineering or product stakeholders
+- Track velocity and delivery signals for project entities
+- Action items could sync bidirectionally (DailyOS actions ↔ Linear issues)
+
+**Research needed:**
+- Linear API (GraphQL) — authentication, rate limits, webhook support
+- What data is most valuable: issues, projects, cycles, comments?
+- MCP server availability (Linear may have an official or community MCP server)
+- Same architectural pattern as Quill/Granola: sidecar or direct API?
+
+**Dependencies:** None immediate. Similar integration scope to I225 (Gong), I227 (Gainsight), I340 (Glean).
+
+---
+
+### I347 — SWOT Report Type
+
+**Version:** 0.10.1
+**Priority:** P2
+**Area:** Intelligence / Reports
+**Source:** User feedback (Nacho, 2026-02-18)
+
+Add a SWOT (Strengths, Weaknesses, Opportunities, Threats) report type to the account reports system. The "Reports" button on the account detail page (`AccountDetailEditorial.tsx:170`) currently only generates a Risk Briefing — the architecture was built to support multiple report types and SWOT is a natural second.
+
+**Why this maps well to existing intelligence:**
+
+| SWOT quadrant | Existing intelligence source |
+|---------------|------------------------------|
+| **Strengths** | `recentWins`, `currentState.working`, champion stakeholders |
+| **Weaknesses** | `currentState.struggling`, passive/at-risk stakeholders, low engagement signals |
+| **Opportunities** | Expansion signals, active pipeline, stakeholder engagement trends |
+| **Threats** | `risks`, competitive mentions, attrition signals, declining engagement |
+
+Most of the data already exists in `intelligence.json`. The SWOT report is largely a **reorganization and synthesis** of existing intelligence into the S/W/O/T framework, with an AI pass to frame each quadrant as a concise narrative.
+
+**Implementation:**
+- Add "SWOT Analysis" option to the Reports button menu (currently goes straight to risk briefing)
+- New route: `/accounts/$accountId/swot`
+- New page: `SwotReportPage.tsx` — 4-quadrant layout, editorial styled, same inline editing as risk briefing
+- Backend: `generate_swot_report` command — reads intelligence.json, runs AI synthesis per quadrant
+- Storage: `{workspace}/accounts/{slug}/swot-report.json`
+- Same patterns as risk briefing: generate → edit → regenerate, debounced save, "Saved" indicator
+
+**Acceptance criteria:**
+1. Reports button on account detail shows menu with "Risk Briefing" and "SWOT Analysis"
+2. SWOT page renders 4 quadrants with narrative text per quadrant
+3. All quadrants are inline-editable (EditableText)
+4. Regenerate refreshes from current intelligence
+5. SWOT data persists to account workspace directory
+
+---
+
+### I348 — Email Digest
+
+**Version:** 0.10.1
+**Priority:** P2
+**Area:** Distribution
+**Source:** User feedback (Nacho, 2026-02-18)
+**Related:** Slack integration research (`.docs/research/2026-02-18-slack-integration-research.md`)
+
+Push DailyOS intelligence summaries to the user (and optionally colleagues) via scheduled email. Same thesis as the Slack research: DailyOS as distribution surface, not just a desktop app you have to open.
+
+**Use cases:**
+- Morning briefing email (daily digest of today's schedule + intelligence highlights)
+- Account summary email (share account health/context with a colleague before a joint call)
+- Weekly digest (week's outcomes, action items, intelligence changes)
+- Post-meeting summary email (transcript processed → email outcome to attendees/stakeholders)
+
+**Architecture considerations:**
+- We already have Gmail OAuth with send scope — can use Gmail API to send
+- Template as clean HTML email (editorial styled, not heavy HTML)
+- Could be user-triggered ("Email this briefing") or scheduled ("Daily digest at 7am")
+- Local-first constraint: email is composed and sent from the user's machine, no cloud relay
+- Only works when DailyOS is running (same constraint as Slack Socket Mode)
+
+**Implementation phases:**
+1. **Manual send** — "Email this" button on briefing/account/meeting pages, composes and sends via Gmail API
+2. **Scheduled digest** — configurable in Settings, morning briefing email at user-chosen time
+3. **Share with others** — send account summary or meeting outcome to specific recipients
+
+**Dependencies:** Gmail OAuth (already have), HTML email template design
