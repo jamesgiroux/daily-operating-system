@@ -783,6 +783,14 @@ pub fn write_enrichment_results(
     let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
     let _ = db.upsert_entity_intelligence(&final_intel);
 
+    // I338: Regenerate person files after intelligence enrichment
+    if input.entity_type == "person" {
+        if let Ok(Some(person)) = db.get_person(&input.entity_id) {
+            let _ = crate::people::write_person_markdown(&input.workspace, &person, &db);
+            let _ = crate::people::write_person_dashboard_json(&input.workspace, &person, &db);
+        }
+    }
+
     log::debug!(
         "IntelProcessor: wrote intelligence for {} to file + DB",
         input.entity_id,
