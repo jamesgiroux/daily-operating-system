@@ -98,6 +98,7 @@ pub fn classify_email_priority(
 }
 
 /// Classify email priority with optional role-preset keywords.
+#[allow(clippy::too_many_arguments)]
 pub fn classify_email_priority_with_extras(
     from_raw: &str,
     subject: &str,
