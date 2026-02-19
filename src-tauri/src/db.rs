@@ -535,6 +535,16 @@ pub fn days_since_iso(iso: &str) -> Option<i64> {
 /// This is intentionally NOT `Clone` or `Sync`. It is held behind a
 /// `std::sync::Mutex` in `AppState` so that Tauri sync commands can
 /// access it safely.
+/// Result of merging two accounts (I198).
+#[derive(Debug, serde::Serialize)]
+pub struct MergeResult {
+    pub actions_moved: usize,
+    pub meetings_moved: usize,
+    pub people_moved: usize,
+    pub events_moved: usize,
+    pub children_moved: usize,
+}
+
 pub struct ActionDb {
     conn: Connection,
 }
@@ -2040,6 +2050,47 @@ impl ActionDb {
     /// Update a single whitelisted field on an account.
     pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
+        // parent_id uses NULL for empty values (top-level accounts)
+        if field == "parent_id" {
+            if value.is_empty() {
+                self.conn.execute(
+                    "UPDATE accounts SET parent_id = NULL, updated_at = ?2 WHERE id = ?1",
+                    params![id, now],
+                )?;
+            } else {
+                // Prevent self-reference
+                if value == id {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set an account as its own parent".to_string(),
+                    )));
+                }
+                // Prevent circular reference: check that value is not a descendant of id
+                let descendants = self.get_descendant_accounts(id).unwrap_or_default();
+                if descendants.iter().any(|d| d.id == value) {
+                    return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(
+                        "Cannot set a descendant as parent (circular reference)".to_string(),
+                    )));
+                }
+                self.conn.execute(
+                    "UPDATE accounts SET parent_id = ?1, updated_at = ?3 WHERE id = ?2",
+                    params![value, id, now],
+                )?;
+
+                // Propagate is_internal: if the child is internal, the parent should be too
+                let child_is_internal: i32 = self.conn.query_row(
+                    "SELECT is_internal FROM accounts WHERE id = ?1",
+                    params![id],
+                    |row| row.get(0),
+                ).unwrap_or(0);
+                if child_is_internal == 1 {
+                    self.conn.execute(
+                        "UPDATE accounts SET is_internal = 1, updated_at = ?2 WHERE id = ?1 AND is_internal = 0",
+                        params![value, now],
+                    )?;
+                }
+            }
+            return Ok(());
+        }
         let sql = match field {
             "name" => "UPDATE accounts SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
@@ -5434,6 +5485,139 @@ impl ActionDb {
         )?)
     }
 
+    /// Restore an archived account, optionally restoring archived children.
+    /// Returns the number of child accounts restored.
+    pub fn restore_account(&self, id: &str, restore_children: bool) -> Result<usize, DbError> {
+        let now = Utc::now().to_rfc3339();
+
+        // Unarchive the account itself
+        self.conn.execute(
+            "UPDATE accounts SET archived = 0, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+
+        // Optionally restore archived children
+        let children_restored = if restore_children {
+            self.conn.execute(
+                "UPDATE accounts SET archived = 0, updated_at = ?1 WHERE parent_id = ?2 AND archived = 1",
+                params![now, id],
+            )?
+        } else {
+            0
+        };
+
+        Ok(children_restored)
+    }
+
+    // =========================================================================
+    // I198: Account Merge
+    // =========================================================================
+
+    /// Merge source account into target account.
+    /// Reassigns all associated records and archives the source.
+    pub fn merge_accounts(&self, from_id: &str, into_id: &str) -> Result<MergeResult, DbError> {
+        let conn = self.conn_ref();
+
+        // Reassign actions
+        let actions_moved = conn.execute(
+            "UPDATE actions SET account_id = ?2 WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Reassign meeting_entities (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE meeting_entities SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        // Clean up remaining dupes
+        let meetings_moved = conn.execute(
+            "DELETE FROM meeting_entities WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign entity_people (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE entity_people SET entity_id = ?2
+             WHERE entity_id = ?1",
+            params![from_id, into_id],
+        )?;
+        let people_moved = conn.execute(
+            "DELETE FROM entity_people WHERE entity_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign account_team (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE account_team SET account_id = ?2
+             WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM account_team WHERE account_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign account_events
+        let events_moved = conn.execute(
+            "UPDATE account_events SET account_id = ?2 WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Reassign signal_events
+        conn.execute(
+            "UPDATE OR IGNORE signal_events SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM signal_events WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign content_index
+        conn.execute(
+            "UPDATE OR IGNORE content_index SET entity_id = ?2
+             WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM content_index WHERE entity_id = ?1 AND entity_type = 'account'",
+            params![from_id],
+        )?;
+
+        // Reassign account_domains (ignore dupes)
+        conn.execute(
+            "UPDATE OR IGNORE account_domains SET account_id = ?2
+             WHERE account_id = ?1",
+            params![from_id, into_id],
+        )?;
+        conn.execute(
+            "DELETE FROM account_domains WHERE account_id = ?1",
+            params![from_id],
+        )?;
+
+        // Reassign children
+        let children_moved = conn.execute(
+            "UPDATE accounts SET parent_id = ?2 WHERE parent_id = ?1",
+            params![from_id, into_id],
+        )?;
+
+        // Archive source account
+        conn.execute(
+            "UPDATE accounts SET archived = 1 WHERE id = ?1",
+            params![from_id],
+        )?;
+
+        Ok(MergeResult {
+            actions_moved,
+            meetings_moved,
+            people_moved,
+            events_moved,
+            children_moved,
+        })
+    }
+
     /// Get archived accounts (top-level + children).
     pub fn get_archived_accounts(&self) -> Result<Vec<DbAccount>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -5536,6 +5720,15 @@ impl ActionDb {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![account_id, event_type, event_date, arr_impact, notes],
         )?;
+
+        // Auto-archive on churn
+        if event_type == "churn" {
+            self.conn.execute(
+                "UPDATE accounts SET archived = 1, updated_at = ?2 WHERE id = ?1",
+                params![account_id, chrono::Utc::now().to_rfc3339()],
+            )?;
+        }
+
         Ok(self.conn.last_insert_rowid())
     }
 
