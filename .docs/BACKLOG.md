@@ -22,7 +22,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I314** | Role selection in Settings + community preset import | P1 | UX |
 | **I315** | Onboarding: role selection replaces entity mode selection | P1 | UX |
 | **I316** | Lift parent-child depth constraint (n-level entity nesting) | P1 | Entity |
-| **I143** | Renewal lifecycle tracking | P1 | Entity |
+| **I143** | ~~Renewal lifecycle tracking~~ → Decomposed into I143a (metadata + events, 0.11.0), I143b (signal type, 0.10.0), I143c (reporting, parked) | — | Entity |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
 | **I225** | Gong integration (sales call intelligence + transcripts) | P1 | Integrations |
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
@@ -144,13 +144,14 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | P1 | I314 | Role selection in Settings + community preset import |
 | P1 | I315 | Onboarding: role selection replaces entity mode selection |
 | P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
-| P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
+| P1 | I143a | Renewal metadata + lifecycle events (decomposed from I143) |
+| P1 | I143b | Renewal proximity as a signal type (decomposed from I143, depends on I143a + I306) |
 | P1 | I351 | Standardize actions chapter across all entity types (ADR-0084 D5) |
 | P1 | I352 | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 
-**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence. I351 and I352 land here from the I342 JTBD critique (ADR-0084): actions appear as a main chapter on accounts but are in the appendix on projects and absent on people — standardizing while entity detail is already being reworked for presets avoids re-touching these files in 0.12.1. Similarly, the shared intelligence field update hook and keywords component eliminate copy-paste code across all three entity detail pages during the same rework.
+**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) has been decomposed: the original described a renewal management product (kanban, ARR charts, health dashboards) — that's Gainsight, not DailyOS. I143a ships renewal date as preset metadata + lifecycle event recording on the timeline. I143b wires renewal proximity into the signal bus so "Cox Auto renews in 6 weeks and you haven't met with them since January" surfaces in the daily briefing and Watch List. I143c (reporting surface) is parked. I351 and I352 land here from the I342 JTBD critique (ADR-0084): actions appear as a main chapter on accounts but are in the appendix on projects and absent on people — standardizing while entity detail is already being reworked for presets avoids re-touching these files in 0.12.1. Similarly, the shared intelligence field update hook and keywords component eliminate copy-paste code across all three entity detail pages during the same rework.
 
 ---
 
@@ -862,215 +863,97 @@ Frontend:
 - **Eliminate spreadsheets:** All TAM/CSM operational data lives in DailyOS
 - **Bulk management:** CSV import/export for fast metadata updates across accounts
 - **Intelligence enrichment:** Metadata feeds into entity intelligence (ARR in executive assessment, renewal date in readiness)
-- **Renewal tracking:** I143 depends on renewal metadata fields
+- **Renewal tracking:** I143a depends on renewal metadata fields
 - **Portfolio analytics:** I88 uses metadata for portfolio metrics
 
 **Aligns with:**
 
 - **P5 (Local-First):** Metadata stored in local SQLite, CSV export for portability
 - **P4 (Opinionated Defaults, Escapable Constraints):** CS Kit defaults work out-of-box, users can disable/customize
-- I143 (Renewal tracking consumes renewal metadata)
+- I143a (Renewal metadata consumes preset-driven fields)
 - I88 (Portfolio report aggregates metadata across accounts)
 
 ---
 
-**I143: Renewal lifecycle tracking**
-Build renewal tracking infrastructure: renewal calendar, pipeline stages, health scores, ARR projections, and risk alerts. Transforms DailyOS into TAM/CSM operating system for managing the full account lifecycle from onboarding → growth → renewal.
+**I143: ~~Renewal lifecycle tracking~~ → Decomposed into I143a, I143b, I143c**
 
-**The Need:**
-Renewals are the **core TAM/CSM workflow**. User's CSV shows:
+**Status:** Decomposed. The original I143 described a renewal management product (kanban pipelines, ARR waterfall charts, health score dashboards, a dedicated `/renewals` page). That's Gainsight, not DailyOS. The chief of staff tells you "Cox Auto renews in 6 weeks and the relationship is cooling" — they don't hand you a renewal pipeline kanban.
 
-- 30 accounts, 15 renewals in next 12 months
-- Renewal stages: Coming Up (3), In Progress (8), Completed (19)
-- Renewal outcomes: Expansion (21), Flat (8), Down Sell (2)
-- Risk tracking: Churn Risk (all Low), Down-Sell Risk (2 Medium, rest Low)
+Decomposed into three pieces that fit the app's identity:
 
-TAMs need:
+- **I143a** (0.11.0) — Renewal metadata + lifecycle events. Small, natural, lands alongside I311/I312 preset-driven metadata.
+- **I143b** (0.10.0 signal bus) — Renewal proximity as a signal type. "Renewal in 30 days + stale engagement" compounds into an attention signal.
+- **I143c** (parked) — Renewal reporting surface. If needed, belongs in 0.14.0 (Reports) or a CS platform integration (I227 Gainsight).
 
-1. **Renewal calendar** — "What's renewing when?"
-2. **Renewal pipeline** — "Where are we in the renewal process?"
-3. **Renewal health** — "Is this renewal at risk?"
-4. **ARR projections** — "What's our forecasted ARR?"
-5. **Proactive alerts** — "3 renewals need attention this week"
+---
 
-**Renewal Tracking Features:**
+<a name="i143a"></a>
+**I143a: Renewal metadata + lifecycle events**
 
-**1. Renewal Calendar**
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Data
+**Depends on:** I311 (JSON metadata columns)
 
-**Monthly view:**
+Renewal date becomes a first-class metadata field on accounts via role presets (I311). Lifecycle events (renewal, expansion, churn, downsell) are recordable on the account timeline. This is the data layer — no new surfaces, no dashboards.
 
-- Calendar grid showing renewals by month (next 12 months)
-- Color-coded by renewal health (green = healthy, yellow = attention, red = at risk)
-- Click account → jump to account detail
+**What ships:**
+- Renewal date in preset-driven metadata (I311 JSON column). CS/Sales/Partnerships presets include `renewal_date` as a default field.
+- `account_events` table for lifecycle events: `(id, account_id, event_type, event_date, arr_before, arr_after, notes, created_at)`. Event types: `renewal`, `expansion`, `churn`, `downsell`, `contraction`.
+- UI for recording events on AccountDetailPage — a simple "Record Event" action in the appendix that writes to the events table.
+- Lifecycle events appear in the UnifiedTimeline alongside meetings and captures.
+- Renewal countdown in VitalsStrip when a renewal date exists (e.g., "47 days to renewal" in terracotta when <60 days).
 
-**Quarterly view:**
-
-- Renewals grouped by quarter (Q1, Q2, Q3, Q4)
-- ARR total per quarter
-- Expansion/flat/downsell breakdown per quarter
-
-**List view:**
-
-- Sortable table: Account | Next Renewal Date | ARR | Stage | Health | Days Until Renewal
-- Filters: stage, health, quarter, risk level
-
-**2. Renewal Pipeline**
-
-**Pipeline stages** (from I92 metadata):
-
-- **Coming Up** (renewal 60-90 days out): Planning phase
-- **In Progress** (renewal 30-60 days out): Active renewal conversations
-- **Completed** (renewal done): Outcome recorded
-
-**Pipeline kanban:**
-
-- Drag accounts between stages
-- ARR total per stage
-- Stage-specific actions:
-  - Coming Up: "Draft renewal proposal", "Schedule exec meeting"
-  - In Progress: "Send contract", "Negotiate terms"
-  - Completed: Record outcome (Expansion/Flat/Down Sell/Churned)
-
-**3. Renewal Health Score**
-
-**Computed from:**
-
-- **Engagement:** Time since last meeting (stale = unhealthy)
-- **Relationship depth:** Multi-threaded (healthy) vs. single-threaded (risky)
-- **Value delivered:** Recent wins, adoption metrics
-- **Risk flags:** At Risk Flag, Churn Risk, Down-Sell Risk (from I92 metadata)
-- **Success plan:** Exists + recently updated (healthy) vs. missing/stale (risky)
-
-**Health score formula:**
-
-```
-Health = (
-  engagement_score * 0.3 +
-  relationship_score * 0.2 +
-  value_score * 0.2 +
-  risk_score * 0.2 +
-  success_plan_score * 0.1
-) * 100
-```
-
-**Health bands:**
-
-- 80-100: Healthy (green) — renewal on track
-- 60-79: Attention (yellow) — needs action
-- 0-59: At Risk (red) — escalation required
-
-**4. ARR Projections**
-
-**Current ARR:** Sum of all active accounts (from I92 metadata `arr_2025`)
-
-**Projected ARR:** Current ARR + expansion pipeline - churn risk
-
-```
-Projected ARR = Current ARR + (accounts with expansion signals * avg expansion %) - (at-risk accounts * churn probability)
-```
-
-**Expansion pipeline:**
-
-- Accounts with expansion signals (from I215 email intelligence)
-- Historical expansion rate (actual expansion vs. projected)
-- Conservative/optimistic/realistic scenarios
-
-**ARR waterfall chart:**
-
-- Starting ARR (current)
-- - New business
-- - Expansion
-- - Downsell
-- - Churn
-- = Ending ARR (projected)
-
-**5. Renewal Alerts**
-
-**Alert triggers:**
-
-- **30 days before renewal:** "Acme renewal in 30 days — health score 65 (attention needed)"
-- **Stale engagement:** "No meeting with Acme in 45 days — renewal in 60 days"
-- **Missing success plan:** "Acme renewal in 30 days — no success plan on file"
-- **At-risk flag:** "Acme marked at-risk — renewal in 90 days"
-- **Champion leaving:** "Acme champion Alice leaving — renewal in 60 days" (from transcript/email signals)
-
-**Alert delivery:**
-
-- In-app notifications (I87)
-- Dashboard "Renewal Attention" card
-- Weekly digest (optional email summary)
-
-**UI/UX:**
-
-**Dashboard card: "Renewals"**
-
-- Next 3 renewals (sorted by date)
-- Health score per renewal (color-coded)
-- Quick actions: "View All", "Review Pipeline"
-
-**Dedicated page: `/renewals`**
-
-- Tab 1: Calendar (monthly/quarterly/list views)
-- Tab 2: Pipeline (kanban by stage)
-- Tab 3: Health (sortable list with health scores)
-- Tab 4: Projections (ARR waterfall chart, scenarios)
-
-**Account detail page:**
-
-- Renewal section showing: Next Renewal Date, Stage, Health Score, ARR
-- Renewal timeline (past renewals, outcomes, ARR history)
-- Renewal actions: "Move to In Progress", "Record Outcome"
-
-**Implementation:**
-
-Database (extends I92 metadata):
-
-```sql
--- Renewal metadata in account_metadata table (from I92)
--- Additional computed fields:
-ALTER TABLE accounts ADD COLUMN renewal_health_score REAL;
-ALTER TABLE accounts ADD COLUMN days_until_renewal INTEGER;
-
--- Renewal events table (history):
-CREATE TABLE renewal_events (
-  id TEXT PRIMARY KEY,
-  account_id TEXT,
-  renewal_date TEXT,
-  renewal_stage TEXT,
-  renewal_outcome TEXT,
-  arr_before REAL,
-  arr_after REAL,
-  expansion_amount REAL,
-  notes TEXT,
-  created_at TEXT,
-  FOREIGN KEY (account_id) REFERENCES accounts(id)
-);
-```
-
-Backend (`src-tauri/src/renewals/`):
-
-- `compute_renewal_health(account_id)` — calculate health score from engagement, relationship, value, risk, success plan
-- `get_renewal_calendar(start_date, end_date)` — fetch renewals in date range
-- `get_renewal_pipeline()` — group renewals by stage with ARR totals
-- `project_arr()` — compute ARR projections (current + expansion - churn)
-- `generate_renewal_alerts()` — check triggers, create notifications
-
-Frontend:
-
-- `/renewals` route with Calendar/Pipeline/Health/Projections tabs
-- Dashboard "Renewals" card
-- Account detail renewal section
+**What doesn't ship:**
+- No `/renewals` page. No kanban. No calendar view. No ARR projections. No health score formula.
 
 **Acceptance criteria:**
+1. Renewal date editable via account metadata (preset-driven field)
+2. Lifecycle events recordable from account detail page
+3. Events appear in UnifiedTimeline
+4. VitalsStrip shows renewal countdown when date exists
+5. Auto-rollover: when renewal date passes without a churn event, system can prompt for outcome recording
 
-- Renewal calendar shows renewals by month/quarter with health color-coding
-- Renewal pipeline kanban with stages (Coming Up, In Progress, Completed)
-- Renewal health score computed from engagement, relationship, value, risk, success plan
-- ARR projections with expansion pipeline and churn risk
-- Renewal alerts trigger at 30/60/90 days before renewal
-- Alerts surface stale engagement, missing success plans, at-risk flags
-- Dashboard "Renewals" card shows next 3 renewals with health scores
-- Account detail page shows renewal timeline (past outcomes, ARR history)
+---
+
+<a name="i143b"></a>
+**I143b: Renewal proximity as a signal type**
+
+**Priority:** P1 (0.10.0, signal bus)
+**Area:** Intelligence / Signals
+**Depends on:** I306 (signal bus), I143a (renewal date metadata)
+
+Renewal proximity becomes a signal in the signal bus. The system compounds renewal signals with engagement signals to surface attention where it matters — in the daily briefing and account detail, not a separate dashboard.
+
+**What ships:**
+- `renewal_proximity` signal type emitted when an account has a renewal date within 90 days. Confidence scales with proximity: 0.5 at 90 days, 0.7 at 60 days, 0.9 at 30 days.
+- Signal compounds with engagement signals via Bayesian fusion (I306): "renewal in 30 days" (0.9) + "no meeting in 45 days" (0.8 engagement_warning) = high-confidence attention signal.
+- Surfaced on the daily briefing when compound confidence exceeds threshold — the chief of staff says "Cox Auto renews in 6 weeks and you haven't met with them since January."
+- Surfaced on account detail as a risk in the Watch List — "Renewal approaching with stale engagement."
+- 30-day decay half-life (renewal proximity is time-sensitive).
+
+**What doesn't ship:**
+- No health score formula. No weighted components. The signal bus handles the compounding.
+- No renewal-specific alerts system. The existing signal surfacing pipeline handles it.
+
+**Acceptance criteria:**
+1. `renewal_proximity` signals emitted for accounts with renewal dates within 90 days
+2. Signals compound with engagement/relationship signals via Bayesian fusion
+3. Compound signals surface in daily briefing when confidence exceeds threshold
+4. Compound signals surface in account Watch List as risks
+5. Signal decays appropriately as renewal passes or is recorded
+
+---
+
+<a name="i143c"></a>
+**I143c: Renewal reporting surface (parked)**
+
+**Priority:** P2 (0.14.0 or later)
+**Area:** Reporting
+**Depends on:** I143a (data), I143b (signals), I347 (SWOT reports, if shipped)
+
+If there's demand for a dedicated renewal view — calendar, pipeline, ARR projections — it belongs in the Reports release (0.14.0) alongside I347 (SWOT) and I348 (email digest). This is portfolio analytics, not daily intelligence. Alternatively, a CS platform integration (I227 Gainsight) may serve this need better with real CRM data.
+
+**Parked until:** User feedback on I143a/I143b indicates the intelligence-layer approach isn't sufficient and a dedicated reporting surface is needed.
 - Renewal events tracked in history table (audit trail)
 
 **Benefits:**
@@ -1494,8 +1377,7 @@ Enables:
 **I142: Account Plan — leadership-facing artifact**
 Structured Account Plan (exec summary, 90-day focus, risk table, products/adoption) generated from intelligence.json + dashboard.json. Markdown output in account directory. UI entry point on AccountDetailPage.
 
-**I143: Renewal lifecycle tracking**
-(a) Auto-rollover when renewal passes without churn. (b) Lifecycle event markers (churn, expansion, renewal) in `account_events` table. (c) UI for recording events on AccountDetailPage.
+**I143: ~~Renewal lifecycle tracking~~ → Decomposed.** See I143a (0.11.0), I143b (0.11.0), I143c (parked). Original scope described a renewal management product; decomposed into metadata + signals + parked reporting.
 
 ### UX & Polish
 
@@ -2811,7 +2693,7 @@ Delivery:
 
 - **P7 (Consumption):** Briefing surfaces strategic insights, not raw data
 - **P6 (AI-Native):** Portfolio trends require AI synthesis across accounts
-- I92/I143 (Renewal tracking provides renewal pipeline data)
+- I92/I143a (Renewal metadata provides renewal context data)
 - I218 (Wrapped pattern applied to portfolio-level celebration)
 
 ---
@@ -3174,7 +3056,7 @@ Store in `content_index.tags` column (JSON array).
 
 - **I26** (Web search for unknown meetings) — Superseded by entity intelligence (ADR-0057) + email signals (I215)
 - **I3** (Low-friction web capture) — Superseded by inbox dropzone + email forwarding workflow
-- **I110** (Portfolio alerts on sidebar) — Superseded by I92/I143 renewal tracking + existing attention systems
+- **I110** (Portfolio alerts on sidebar) — Superseded by I92/I143b renewal signals + existing attention systems
 - **I122** (Sunday briefing date label) — Verified fixed in Sprint 24, no longer reproducible
 
 ---
