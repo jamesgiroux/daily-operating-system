@@ -58,6 +58,33 @@ export default function AccountsPage() {
       setError(null);
       const result = await invoke<AccountListItem[]>("get_accounts_list");
       setAccounts(result);
+
+      // Auto-expand all parents recursively and pre-fetch the full tree
+      const expanded = new Set<string>();
+      const cache: Record<string, AccountListItem[]> = {};
+
+      async function expandRecursive(items: AccountListItem[]) {
+        const parents = items.filter((a) => a.isParent);
+        if (parents.length === 0) return;
+        await Promise.all(
+          parents.map(async (p) => {
+            expanded.add(p.id);
+            if (!cache[p.id]) {
+              try {
+                const children = await invoke<AccountListItem[]>("get_child_accounts_list", { parentId: p.id });
+                cache[p.id] = children;
+                await expandRecursive(children);
+              } catch { /* ignore */ }
+            }
+          }),
+        );
+      }
+
+      await expandRecursive(result);
+      if (expanded.size > 0) {
+        setExpandedParents(expanded);
+        setChildrenCache((prev) => ({ ...prev, ...cache }));
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -393,23 +420,15 @@ export default function AccountsPage() {
                   </EntityRow>
                 ))
               : filtered.map((account, i) => (
-                  <div key={account.id}>
-                    <AccountRow
-                      account={account}
-                      isExpanded={expandedParents.has(account.id)}
-                      onToggleExpand={account.isParent ? () => toggleExpand(account.id) : undefined}
-                      showBorder={i < filtered.length - 1 || (expandedParents.has(account.id) && !!childrenCache[account.id]?.length)}
-                    />
-                    {account.isParent && expandedParents.has(account.id) &&
-                      childrenCache[account.id]?.map((child, ci) => (
-                        <AccountRow
-                          key={child.id}
-                          account={child}
-                          isChild
-                          showBorder={ci < (childrenCache[account.id]?.length ?? 0) - 1 || i < filtered.length - 1}
-                        />
-                      ))}
-                  </div>
+                  <AccountTreeNode
+                    key={account.id}
+                    account={account}
+                    depth={0}
+                    expandedParents={expandedParents}
+                    childrenCache={childrenCache}
+                    toggleExpand={toggleExpand}
+                    isLastSibling={i === filtered.length - 1}
+                  />
                 ))}
           </div>
         )}
@@ -420,19 +439,67 @@ export default function AccountsPage() {
   );
 }
 
+// ─── Recursive Account Tree Node ─────────────────────────────────────────────
+
+function AccountTreeNode({
+  account,
+  depth,
+  expandedParents,
+  childrenCache,
+  toggleExpand,
+  isLastSibling,
+}: {
+  account: AccountListItem;
+  depth: number;
+  expandedParents: Set<string>;
+  childrenCache: Record<string, AccountListItem[]>;
+  toggleExpand: (id: string) => void;
+  isLastSibling: boolean;
+}) {
+  const isExpanded = expandedParents.has(account.id);
+  const children = childrenCache[account.id] ?? [];
+  const hasExpandedChildren = account.isParent && isExpanded && children.length > 0;
+
+  return (
+    <div>
+      <AccountRow
+        account={account}
+        isChild={depth > 0}
+        depth={depth}
+        isExpanded={isExpanded}
+        onToggleExpand={account.isParent ? () => toggleExpand(account.id) : undefined}
+        showBorder={!isLastSibling || hasExpandedChildren}
+      />
+      {hasExpandedChildren &&
+        children.map((child, ci) => (
+          <AccountTreeNode
+            key={child.id}
+            account={child}
+            depth={depth + 1}
+            expandedParents={expandedParents}
+            childrenCache={childrenCache}
+            toggleExpand={toggleExpand}
+            isLastSibling={ci === children.length - 1 && isLastSibling}
+          />
+        ))}
+    </div>
+  );
+}
+
 // ─── Account Row ────────────────────────────────────────────────────────────
 
 function AccountRow({
   account,
   isExpanded,
   onToggleExpand,
-  isChild,
+  depth = 0,
   showBorder,
 }: {
   account: AccountListItem;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
-  isChild?: boolean;
+  isChild?: boolean; // kept for call-site compat
+  depth?: number;
   showBorder: boolean;
 }) {
   const daysSince = account.daysSinceLastMeeting;
@@ -490,10 +557,10 @@ function AccountRow({
     <EntityRow
       to="/accounts/$accountId"
       params={{ accountId: account.id }}
-      dotColor={healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)"}
+      dotColor={account.isInternal ? "var(--color-garden-larkspur)" : (healthDotColor[account.health ?? ""] ?? "var(--color-paper-linen)")}
       name={account.name}
       showBorder={showBorder}
-      paddingLeft={isChild ? 28 : 0}
+      paddingLeft={depth > 0 ? depth * 28 : 0}
       nameSuffix={nameSuffix}
       subtitle={subtitle}
     >
