@@ -37,6 +37,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I323** | Zero-touch email disposition pipeline | P2 | Email |
 | **I324** | Email signals in entity intelligence enrichment | P2 | Intelligence |
 | **I326** | Per-meeting intelligence lifecycle — detect, enrich, update, archive | P1 | Architecture |
+| **I337** | Meeting-topic-aware context building — calendar description steers intelligence narrative | P1 | Pipeline |
 | **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
 | **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
 | **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
@@ -161,10 +162,11 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
+| P1 | I337 | Meeting-topic-aware context building — calendar description steers intelligence narrative |
 | P1 | I317 | Meeting-aware email intelligence (structured digest, not excerpts) |
 | P1 | I318 | Thread position tracking ("ball in your court") |
 | P1 | I319 | Entity-level email cadence monitoring + anomaly surfacing |
-| P1 | I320 | Hybrid email classification (semantic upgrade for ambiguous bucket) |
+| P1 | I320 | Hybrid email classification (semantic + signal-context boosting) |
 | P1 | I322 | Email briefing narrative (daily briefing integration) |
 | P2 | I321 | Commitment & action extraction from email |
 | P2 | I323 | Zero-touch email disposition pipeline |
@@ -4985,23 +4987,27 @@ Replace `build_account_domain_hints` (filesystem-only, account-only) with `build
 
 ---
 
-**I337: Entity-generic context building — type-dispatched intelligence injection**
+**I337: Meeting-topic-aware context building — calendar description steers intelligence narrative**
 
-**Priority:** P1 (0.10.0)
+**Priority:** P1 (0.12.0)
 **Area:** Backend / Prep pipeline
 **Depends on:** I335 (data model), I336 (classification)
 **ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phase 3
 
-Replace `resolve_account_compat` callers in `meeting_context.rs` with a generic `resolve_primary_entity` that dispatches to type-specific context assembly.
+The prep pipeline generates intelligence about the entity, not about the meeting. A Parse.ly demo meeting linked to Corporate Key Accounts gets a narrative about renewal order forms and TAM ownership — completely irrelevant to what the meeting is actually about. The calendar description ("Nacho to present Parse.ly Demo Toolkit") tells the system exactly what the meeting covers, but the AI prompt ignores it.
 
-**Changes:**
-- New `resolve_primary_entity(db, event_id, meeting, workspace, embedding_model) -> Option<EntityMatch>` that returns the top resolved entity regardless of type
-- `EntityMatch` struct: `{ entity_id, entity_type, name, confidence, source, workspace_path }`
-- Type-dispatched context assembly:
-  - **Account**: Existing account context path (dashboard.json, intelligence.json, stakeholders, actions, captures, email signals). Refactored from inline code into `gather_account_context()`.
-  - **Project**: New path. Load project intelligence.json + dashboard.json from `Projects/{name}/`. Query SQLite: project metadata, linked meetings, open actions, captures. Inject project status, blockers, milestones, team context.
-  - **Person (1:1)**: New path. Load person intelligence.json from `People/{name}/` (if exists). Query SQLite: interaction history (last N meetings via meeting_attendees), open actions between user and person, cross-entity connections (shared accounts/projects), relationship signals.
+This issue has two parts: entity-generic context dispatching (original scope) and **calendar-description-aware narrative framing** (new, critical).
+
+**Part 1: Entity-generic context dispatching** (structural, from ADR-0082)
+- `resolve_primary_entity` dispatches to type-specific context assembly
+- Account, project, person paths each inject their own intelligence
 - Context JSON uses `entity_id` + `entity_type` instead of `account` string
+
+**Part 2: Calendar description steers narrative** (new)
+- The AI prompt for meeting intelligence receives the calendar event description as a primary framing constraint
+- The prompt instruction: "This meeting is about [description]. Surface only the entity intelligence that's relevant to this specific topic. Do not generate a generic entity overview."
+- If the description says "Parse.ly Demo Toolkit" and the entity intelligence mentions Parse.ly, surface that. If the entity intelligence is about renewal order forms, omit it — it's not what this meeting is about.
+- The meeting card narrative should answer "what do I need to know for THIS meeting" not "what do I know about this account"
 
 **Acceptance criteria:**
 1. Customer meeting resolves to account and injects account intelligence (existing behavior preserved)
@@ -5009,6 +5015,9 @@ Replace `resolve_account_compat` callers in `meeting_context.rs` with a generic 
 3. 1:1 meeting injects person relationship context
 4. Meeting with both project and account entities uses primary entity for context, secondary for supplementary data
 5. Missing intelligence files degrade gracefully (no crash, thin context)
+6. **Calendar description is included in the AI enrichment prompt as a framing constraint**
+7. **Meeting narrative references the meeting topic (from description), not just entity-level data**
+8. **A Parse.ly demo meeting about Corporate Key Accounts produces intelligence about Parse.ly positioning, not about renewal order forms**
 
 ---
 
