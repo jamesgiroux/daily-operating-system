@@ -166,6 +166,83 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
+    // Step 4a3: Email commitment extraction (I321 — extract actions from high-priority email bodies)
+    {
+        let body_access_enabled = {
+            let config_guard = state.config.read().ok();
+            config_guard
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| crate::types::is_feature_enabled(c, "emailBodyAccess"))
+                .unwrap_or(false)
+        };
+
+        if body_access_enabled {
+            let access_token = google_api::get_valid_access_token().await.ok();
+            if let Some(token) = access_token {
+                // Phase 1: Fetch bodies (async, no db lock held)
+                let mut fetched_bodies: Vec<(String, String, String, String)> = Vec::new();
+                for email_val in &email_result.high {
+                    let email_id =
+                        email_val.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let subject =
+                        email_val.get("subject").and_then(|v| v.as_str()).unwrap_or("");
+                    let from_email = email_val
+                        .get("from_email")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    if email_id.is_empty() {
+                        continue;
+                    }
+
+                    match google_api::gmail::fetch_message_body(&token, email_id).await {
+                        Ok(Some(body)) => {
+                            fetched_bodies.push((
+                                email_id.to_string(),
+                                subject.to_string(),
+                                from_email.to_string(),
+                                body,
+                            ));
+                        }
+                        Ok(None) => {
+                            log::debug!("prepare_today: no body for email {}", email_id);
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "prepare_today: failed to fetch body for {}: {}",
+                                email_id,
+                                e
+                            );
+                        }
+                    }
+                }
+
+                // Phase 2: Extract commitments (sync, with db lock)
+                if !fetched_bodies.is_empty() {
+                    let commitment_guard = state.db.lock().ok();
+                    if let Some(db) = commitment_guard.as_ref().and_then(|g| g.as_ref()) {
+                        let mut total_commitments = 0usize;
+                        for (email_id, subject, from_email, body) in &fetched_bodies {
+                            let commitments =
+                                crate::processor::email_actions::extract_email_commitments(
+                                    body, email_id, subject, from_email, db,
+                                );
+                            total_commitments += commitments.len();
+                        }
+                        if total_commitments > 0 {
+                            log::info!(
+                                "prepare_today: extracted {} commitments from {} high-priority emails",
+                                total_commitments,
+                                email_result.high.len()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
     {
         let bridge_guard = state.db.lock().ok();
@@ -195,6 +272,80 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             Vec::new()
         }
     };
+
+    // Step 4b3: Auto-archive low-priority emails (I323)
+    let mut archived_count = 0u64;
+    {
+        let auto_archive_enabled = {
+            let config_guard = state.config.read().ok();
+            config_guard
+                .as_ref()
+                .and_then(|g| g.as_ref())
+                .map(|c| crate::types::is_feature_enabled(c, "autoArchiveEnabled"))
+                .unwrap_or(false)
+        };
+
+        if auto_archive_enabled && !email_result.low.is_empty() {
+            match google_api::get_valid_access_token().await {
+                Ok(token) => {
+                    let low_ids: Vec<String> = email_result
+                        .low
+                        .iter()
+                        .filter_map(|e| e.get("id").and_then(|v| v.as_str()).map(String::from))
+                        .collect();
+
+                    if !low_ids.is_empty() {
+                        match google_api::gmail::archive_emails(&token, &low_ids).await {
+                            Ok(count) => {
+                                log::info!(
+                                    "prepare_today: auto-archived {} low-priority emails",
+                                    count
+                                );
+                                archived_count = count as u64;
+
+                                // Write disposition manifest
+                                let manifest: Vec<Value> = email_result
+                                    .low
+                                    .iter()
+                                    .map(|e| {
+                                        json!({
+                                            "id": e.get("id"),
+                                            "from": e.get("from"),
+                                            "subject": e.get("subject"),
+                                            "reason": "low_priority_auto_archive",
+                                            "archived_at": chrono::Utc::now().to_rfc3339(),
+                                        })
+                                    })
+                                    .collect();
+
+                                let manifest_path = workspace
+                                    .join("_today")
+                                    .join("data")
+                                    .join("email-disposition.json");
+                                if let Ok(manifest_json) = serde_json::to_string_pretty(&manifest)
+                                {
+                                    if let Err(e) =
+                                        crate::util::atomic_write_str(&manifest_path, &manifest_json)
+                                    {
+                                        log::warn!(
+                                            "prepare_today: failed to write disposition manifest: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("prepare_today: auto-archive failed: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("prepare_today: auto-archive skipped (auth failed): {}", e);
+                }
+            }
+        }
+    }
 
     // Step 4c: Thread position tracking (I318 — "ball in your court")
     // Only track high-priority email threads for "ball in your court" detection
@@ -342,6 +493,14 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "sync_error": email_result.sync_error.as_ref().map(EmailSyncFailure::to_json),
             "repliesNeeded": replies_needed,
             "narrative": email_narrative,
+            "disposition": if archived_count > 0 {
+                json!({
+                    "archived_count": archived_count,
+                    "manifest_path": "data/email-disposition.json",
+                })
+            } else {
+                json!(null)
+            },
         },
         "files": {
             "existing_today": existing_today,
@@ -1038,6 +1197,7 @@ async fn fetch_and_classify_week(
 struct EmailResult {
     all: Vec<Value>,
     high: Vec<Value>,
+    low: Vec<Value>,
     medium_count: u64,
     low_count: u64,
     sync_error: Option<EmailSyncFailure>,
@@ -1073,6 +1233,7 @@ async fn fetch_and_classify_emails(
             return EmailResult {
                 all: Vec::new(),
                 high: Vec::new(),
+                low: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
                 sync_error: Some(EmailSyncFailure {
@@ -1091,6 +1252,7 @@ async fn fetch_and_classify_emails(
             return EmailResult {
                 all: Vec::new(),
                 high: Vec::new(),
+                low: Vec::new(),
                 medium_count: 0,
                 low_count: 0,
                 sync_error: Some(EmailSyncFailure {
@@ -1104,6 +1266,7 @@ async fn fetch_and_classify_emails(
 
     let mut all = Vec::new();
     let mut high = Vec::new();
+    let mut low = Vec::new();
     let mut medium_count: u64 = 0;
     let mut low_count: u64 = 0;
 
@@ -1136,13 +1299,17 @@ async fn fetch_and_classify_emails(
         match priority {
             "high" => high.push(obj),
             "medium" => medium_count += 1,
-            _ => low_count += 1,
+            _ => {
+                low_count += 1;
+                low.push(obj);
+            }
         }
     }
 
     EmailResult {
         all,
         high,
+        low,
         medium_count,
         low_count,
         sync_error: None,

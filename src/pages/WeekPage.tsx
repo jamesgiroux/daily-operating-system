@@ -1078,6 +1078,11 @@ export default function WeekPage() {
                         </div>
                       );
 
+                      // Derive entity display from linkedEntities, fall back to account string (I339)
+                      const entityLabel = meeting.linkedEntities?.length
+                        ? meeting.linkedEntities.map((e) => e.name).join(", ")
+                        : meeting.account;
+
                       // Subtitle line
                       const subtitle = (
                         <p
@@ -1089,8 +1094,8 @@ export default function WeekPage() {
                             paddingBottom: 4,
                           }}
                         >
-                          {meeting.account && <span>{meeting.account}</span>}
-                          {meeting.account && meeting.type && (
+                          {entityLabel && <span>{entityLabel}</span>}
+                          {entityLabel && meeting.type && (
                             <span> &middot; </span>
                           )}
                           <span>{meeting.type.replace(/_/g, " ")}</span>
