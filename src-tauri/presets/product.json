@@ -1,0 +1,75 @@
+{
+  "id": "product",
+  "name": "Product",
+  "description": "For product managers coordinating feature development, launches, and cross-functional alignment. Tracks initiative milestones, stakeholder feedback, and delivery cadence across the roadmap.",
+  "defaultEntityMode": "project",
+  "vocabulary": {
+    "entityNoun": "initiative",
+    "entityNounPlural": "initiatives",
+    "primaryMetric": "Delivery Confidence",
+    "healthLabel": "Confidence",
+    "riskLabel": "Delivery Risk",
+    "successVerb": "shipped",
+    "cadenceNoun": "sprint review"
+  },
+  "vitals": {
+    "account": [
+      { "key": "health", "label": "Alignment", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["aligned", "mixed", "misaligned"] },
+      { "key": "lifecycle", "label": "Relationship Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "beta", "ga", "strategic", "sunset"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["idea", "discovery", "design", "development", "beta", "shipped", "measuring", "on_hold", "cancelled"] },
+      { "key": "target_date", "label": "Ship Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "PM Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [
+      { "key": "initiative_type", "label": "Initiative Type", "fieldType": "select", "options": ["feature", "infrastructure", "tech_debt", "experiment", "platform"], "required": false },
+      { "key": "customer_impact", "label": "Customer Impact", "fieldType": "select", "options": ["high", "medium", "low"], "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "design_partner", "label": "Design Partner", "description": "Customer co-developing a feature" },
+    { "id": "beta_tester", "label": "Beta Tester", "description": "Customer providing pre-release feedback" },
+    { "id": "advisory_board", "label": "Advisory Board Member", "description": "Customer providing strategic input" },
+    { "id": "analyst", "label": "Industry Analyst", "description": "Gartner/Forrester analyst covering the space" }
+  ],
+  "internalTeamRoles": [
+    { "id": "pm", "label": "PM", "description": "Product Manager — owns the what and why" },
+    { "id": "em", "label": "Engineering Manager", "description": "Owns the how and when, manages eng team" },
+    { "id": "tech_lead", "label": "Tech Lead", "description": "Senior engineer making architecture decisions" },
+    { "id": "designer", "label": "Product Designer", "description": "UX research, interaction design" },
+    { "id": "data", "label": "Data Analyst", "description": "Metrics, experimentation, impact measurement" },
+    { "id": "pmm", "label": "Product Marketing", "description": "Go-to-market, positioning, launch" }
+  ],
+  "lifecycleEvents": [
+    "discovery_started",
+    "spec_approved",
+    "development_started",
+    "design_review",
+    "beta_launched",
+    "ga_shipped",
+    "impact_measured",
+    "retrospective",
+    "descoped"
+  ],
+  "prioritization": {
+    "primarySignal": "deadline",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "ship_date_within_14d",
+      "blocker_unresolved",
+      "stakeholder_misalignment"
+    ]
+  },
+  "briefingEmphasis": "Focus on initiative timelines, blockers, and cross-functional dependencies. Prioritize initiatives approaching ship dates with unresolved blockers or stakeholder misalignment.",
+  "emailPriorityKeywords": [
+    "roadmap", "release", "launch", "blocker", "p0", "p1", "incident", "outage", "feature request",
+    "customer feedback", "beta"
+  ]
+}

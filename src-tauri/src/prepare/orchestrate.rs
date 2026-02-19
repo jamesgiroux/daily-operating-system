@@ -104,8 +104,14 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
+    let preset_email_keywords: Vec<String> = state
+        .active_preset
+        .read()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
+        .unwrap_or_default();
     let email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
             "prepare_today: email sync degraded [{}] {}",
@@ -453,8 +459,14 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
         }
     }
 
+    let preset_email_keywords: Vec<String> = state
+        .active_preset
+        .read()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
+        .unwrap_or_default();
     let email_result =
-        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints).await;
+        fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
     if let Some(sync_error) = email_result.sync_error {
         return Err(ExecutionError::NetworkError(sync_error.message));
     }
@@ -952,6 +964,7 @@ async fn fetch_and_classify_emails(
     user_domain: &str,
     customer_domains: &HashSet<String>,
     account_hints: &HashSet<String>,
+    extra_high_keywords: &[String],
 ) -> EmailResult {
     let access_token = match google_api::get_valid_access_token().await {
         Ok(t) => t,
@@ -995,7 +1008,7 @@ async fn fetch_and_classify_emails(
     let mut low_count: u64 = 0;
 
     for email in &raw_emails {
-        let priority = email_classify::classify_email_priority(
+        let priority = email_classify::classify_email_priority_with_extras(
             &email.from,
             &email.subject,
             &email.list_unsubscribe,
@@ -1003,6 +1016,7 @@ async fn fetch_and_classify_emails(
             customer_domains,
             user_domain,
             account_hints,
+            extra_high_keywords,
         );
 
         let from_email = email_classify::extract_email_address(&email.from);
@@ -2179,7 +2193,7 @@ fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
             let narrative = ctx.get("narrative").and_then(|v| v.as_str()).unwrap_or("");
 
             let needs_alert =
-                matches!(health, "yellow" | "red") || matches!(lifecycle, "at-risk" | "churned");
+                matches!(health, "yellow" | "red") || lifecycle == "churned";
 
             if needs_alert {
                 let severity = if health == "red" || lifecycle == "churned" {
@@ -2512,7 +2526,7 @@ mod tests {
             "meetingContexts": [
                 {
                     "account": "Globex Industries",
-                    "account_data": {"lifecycle": "at-risk", "arr": 800000, "health": "yellow"},
+                    "account_data": {"lifecycle": "renewal", "arr": 800000, "health": "yellow"},
                     "narrative": "Team B usage declining."
                 }
             ]

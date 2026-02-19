@@ -1,0 +1,79 @@
+{
+  "id": "leadership",
+  "name": "Leadership",
+  "description": "For executives and team leads who need a strategic overview across people, projects, and priorities. Surfaces cross-team risks, key decisions, and organizational health without micromanaging details.",
+  "defaultEntityMode": "both",
+  "vocabulary": {
+    "entityNoun": "team",
+    "entityNounPlural": "teams",
+    "primaryMetric": "OKR Progress",
+    "healthLabel": "Business Health",
+    "riskLabel": "Execution Risk",
+    "successVerb": "achieved",
+    "cadenceNoun": "leadership sync"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Revenue", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Business Health", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["strong", "stable", "concerning", "critical"] },
+      { "key": "lifecycle", "label": "Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["growth", "steady_state", "turnaround", "sunset"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Initiative Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["on_track", "needs_attention", "blocked", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Target Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "DRI", "fieldType": "text", "source": "column", "columnMapping": "owner" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "business_unit", "label": "Business Unit", "fieldType": "text", "required": false },
+      { "key": "headcount", "label": "Headcount", "fieldType": "number", "required": false }
+    ],
+    "project": [
+      { "key": "okr_alignment", "label": "OKR Alignment", "fieldType": "text", "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "board_member", "label": "Board Member", "description": "Governance, strategic oversight" },
+    { "id": "investor", "label": "Investor", "description": "Financial stakeholder" },
+    { "id": "key_customer", "label": "Key Customer Executive", "description": "Strategic customer relationship" },
+    { "id": "advisor", "label": "Advisor", "description": "External strategic counsel" },
+    { "id": "analyst", "label": "Industry Analyst", "description": "Gartner/Forrester influencer" }
+  ],
+  "internalTeamRoles": [
+    { "id": "direct_report", "label": "Direct Report", "description": "People you manage" },
+    { "id": "chief_of_staff", "label": "Chief of Staff", "description": "Operational right hand" },
+    { "id": "peer", "label": "Peer / Cross-Functional Leader", "description": "Fellow executives you collaborate with" },
+    { "id": "hrbp", "label": "HR Business Partner", "description": "People strategy and team health" },
+    { "id": "finance_partner", "label": "Finance Partner", "description": "Budget, forecasting, business review" },
+    { "id": "ea", "label": "Executive Assistant", "description": "Calendar, logistics, communications" }
+  ],
+  "lifecycleEvents": [
+    "okr_cycle_start",
+    "mid_cycle_review",
+    "okr_scoring",
+    "board_meeting",
+    "all_hands",
+    "reorg",
+    "key_hire",
+    "key_departure",
+    "initiative_greenlit",
+    "annual_planning"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "team_health_declining",
+      "initiative_blocked",
+      "board_meeting_within_14d"
+    ]
+  },
+  "briefingEmphasis": "Focus on cross-team risks, key decisions requiring attention, and strategic initiative progress. Surface blocked work and escalations that need executive intervention.",
+  "emailPriorityKeywords": [
+    "board", "investor", "fundraise", "runway", "headcount", "reorg", "strategy", "all hands",
+    "executive", "quarterly"
+  ]
+}

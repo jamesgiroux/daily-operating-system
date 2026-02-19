@@ -1,0 +1,80 @@
+{
+  "id": "customer-success",
+  "name": "Customer Success",
+  "description": "For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to surface retention risks and expansion opportunities.",
+  "defaultEntityMode": "account",
+  "vocabulary": {
+    "entityNoun": "account",
+    "entityNounPlural": "accounts",
+    "primaryMetric": "ARR",
+    "healthLabel": "Health Score",
+    "riskLabel": "Churn Risk",
+    "successVerb": "retained",
+    "cadenceNoun": "QBR"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "ARR", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Health", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["green", "yellow", "red"] },
+      { "key": "lifecycle", "label": "Lifecycle", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["onboarding", "adoption", "nurture", "renewal", "churned"] },
+      { "key": "nps", "label": "NPS", "fieldType": "number", "source": "column", "columnMapping": "nps" },
+      { "key": "contract_end", "label": "Renewal Date", "fieldType": "date", "source": "column", "columnMapping": "contract_end" }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Target Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "champion", "label": "Champion", "description": "Internal advocate who drives adoption and champions your solution" },
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "Senior leader who authorized the purchase and advocates at the executive level" },
+    { "id": "decision_maker", "label": "Decision Maker", "description": "Final authority on renewal and purchase decisions" },
+    { "id": "primary_contact", "label": "Primary Contact", "description": "Day-to-day point of contact for the CSM" },
+    { "id": "technical_contact", "label": "Technical Contact", "description": "Point of contact for technical and integration issues" },
+    { "id": "power_user", "label": "Power User", "description": "Heavy product user, often an admin or super user" },
+    { "id": "end_user", "label": "End User", "description": "Regular product user with limited decision authority" }
+  ],
+  "internalTeamRoles": [
+    { "id": "csm", "label": "CSM", "description": "Customer Success Manager — primary relationship owner" },
+    { "id": "tam", "label": "TAM", "description": "Technical Account Manager" },
+    { "id": "ae", "label": "AE", "description": "Account Executive — commercial relationship" },
+    { "id": "rm", "label": "Renewal Manager", "description": "Renewal process and forecasting" },
+    { "id": "se", "label": "Solutions Engineer", "description": "Technical implementation and solution design" },
+    { "id": "support", "label": "Support Engineer", "description": "Tier 2/3 technical support and escalation" }
+  ],
+  "lifecycleEvents": [
+    "onboarding_complete",
+    "go_live",
+    "qbr_completed",
+    "ebr_completed",
+    "renewal",
+    "expansion",
+    "downsell",
+    "churn",
+    "escalation",
+    "champion_change"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "renewal_within_90d",
+      "health_declining",
+      "champion_change"
+    ]
+  },
+  "briefingEmphasis": "Focus on retention metrics, upcoming renewals, and health score changes. Prioritize at-risk accounts by ARR.",
+  "emailPriorityKeywords": [
+    "nps", "health score", "qbr", "ebr", "business review",
+    "onboarding", "go live", "go-live", "adoption",
+    "success plan", "escalation", "at risk", "at-risk",
+    "champion", "executive sponsor"
+  ]
+}

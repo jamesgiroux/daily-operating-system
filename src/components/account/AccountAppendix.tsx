@@ -32,6 +32,8 @@ interface AccountAppendixProps {
   indexFeedback?: string | null;
   // Child account creation
   onCreateChild?: () => void;
+  // Account merge
+  onMerge?: () => void;
 }
 
 function formatCurrency(amount: number): string {
@@ -179,6 +181,7 @@ export function AccountAppendix({
   indexing,
   indexFeedback,
   onCreateChild,
+  onMerge,
 }: AccountAppendixProps) {
   const companyContext = intelligence?.companyContext ?? detail.companyOverview;
   const [expandedValue, setExpandedValue] = useState(false);
@@ -216,6 +219,11 @@ export function AccountAppendix({
           {onRecordEvent && (
             <button onClick={onRecordEvent} style={monoActionButtonStyle}>
               + Record
+            </button>
+          )}
+          {onMerge && (
+            <button onClick={onMerge} style={{ ...monoActionButtonStyle, marginLeft: 12 }}>
+              Merge Into...
             </button>
           )}
         </div>

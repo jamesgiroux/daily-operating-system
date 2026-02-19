@@ -22,7 +22,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I314** | Role selection in Settings + community preset import | P1 | UX |
 | **I315** | Onboarding: role selection replaces entity mode selection | P1 | UX |
 | **I316** | Lift parent-child depth constraint (n-level entity nesting) | P1 | Entity |
-| **I143** | Renewal lifecycle tracking | P1 | Entity |
+| **I143** | ~~Renewal lifecycle tracking~~ → Decomposed into I143a (metadata + events, 0.11.0), I143b (signal type, 0.10.0), I143c (reporting, parked) | — | Entity |
 | **I221** | Focus/Priorities page redesign (name, purpose, visual refresh) | P1 | UX |
 | **I225** | Gong integration (sales call intelligence + transcripts) | P1 | Integrations |
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
@@ -31,7 +31,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
 | **I318** | Thread position tracking ("ball in your court") | P1 | Email |
 | **I319** | Entity-level email cadence monitoring + anomaly surfacing | P1 | Intelligence |
-| **I320** | Hybrid email classification (semantic upgrade for ambiguous bucket) | P1 | Email |
+| **I320** | Hybrid email classification (semantic + signal-context boosting) | P1 | Email |
 | **I321** | Commitment & action extraction from email | P2 | Email / Data |
 | **I322** | Email briefing narrative (daily briefing integration) | P1 | UX |
 | **I323** | Zero-touch email disposition pipeline | P2 | Email |
@@ -40,7 +40,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
 | **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
 | **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
-| **I330** | Weekly forecast as live intelligence surface | P1 | Surfaces |
+| **I330** | Week page — ±7-day meeting intelligence timeline | P1 | Surfaces |
 | **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
 | **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
 | **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
@@ -69,6 +69,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 | **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
 | **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
+| **I351** | Standardize actions chapter across all entity types (ADR-0084 D5) | P1 | Entity / UX |
+| **I352** | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) | P1 | Entity / Code Quality |
 
 ---
 
@@ -142,11 +144,14 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | P1 | I314 | Role selection in Settings + community preset import |
 | P1 | I315 | Onboarding: role selection replaces entity mode selection |
 | P1 | I316 | Lift parent-child depth constraint (n-level entity nesting) |
-| P1 | I143 | Renewal lifecycle tracking (dashboard, pipeline, health score) |
+| P1 | I143a | Renewal metadata + lifecycle events (decomposed from I143) |
+| P1 | I143b | Renewal proximity as a signal type (decomposed from I143, depends on I143a + I306) |
+| P1 | I351 | Standardize actions chapter across all entity types (ADR-0084 D5) |
+| P1 | I352 | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) |
 | P2 | I198 | Account merge + transcript reassignment |
 | P2 | I199 | Archived account recovery UX (restore + relink) |
 
-**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) stays — it builds on preset metadata fields and benefits from 0.10.0 signal intelligence.
+**Rationale:** ADR-0079 established that the real differentiator between roles is vocabulary, not architecture. Role presets (I309-I310) are JSON configurations that adjust metadata fields, AI vocabulary, prioritization signals, lifecycle events, and entity mode defaults — no module infrastructure needed. I311 adds flexible JSON metadata columns so any preset's fields work without schema changes. I312-I313 wire preset config into the UI and AI prompts. I314-I315 surface role selection in Settings and onboarding. I316 lifts the one-level parent-child constraint (ADR-0056) to support deep organizational hierarchies — critical for internal org modeling where Company → Division → Org → Group → Team is common. I92 (user-configurable metadata) is superseded: presets deliver opinionated defaults per role; community presets handle the long tail. I143 (renewal tracking) has been decomposed: the original described a renewal management product (kanban, ARR charts, health dashboards) — that's Gainsight, not DailyOS. I143a ships renewal date as preset metadata + lifecycle event recording on the timeline. I143b wires renewal proximity into the signal bus so "Cox Auto renews in 6 weeks and you haven't met with them since January" surfaces in the daily briefing and Watch List. I143c (reporting surface) is parked. I351 and I352 land here from the I342 JTBD critique (ADR-0084): actions appear as a main chapter on accounts but are in the appendix on projects and absent on people — standardizing while entity detail is already being reworked for presets avoids re-touching these files in 0.12.1. Similarly, the shared intelligence field update hook and keywords component eliminate copy-paste code across all three entity detail pages during the same rework.
 
 ---
 
@@ -198,7 +203,7 @@ This is the "make it feel like a product" release. Not by adding polish — by s
 | P1 | I326 | Per-meeting intelligence lifecycle — detect, enrich, update, archive |
 | P1 | I327 | Advance intelligence generation (weekly + polling, not day-of) |
 | P1 | I328 | Classification expansion — all meetings get intelligence |
-| P1 | I330 | Weekly forecast as live intelligence surface *(depends on I342, I341)* |
+| P1 | I330 | Week page — ±7-day meeting intelligence timeline *(depends on I342, I341)* |
 | P1 | I331 | Daily briefing intelligence assembly (diff model, fast refresh) *(depends on I342, I341)* |
 | P1 | I332 | Signal-triggered meeting intelligence refresh |
 | P2 | I333 | Meeting intelligence collaboration — share, request input, draft agenda |
@@ -858,215 +863,97 @@ Frontend:
 - **Eliminate spreadsheets:** All TAM/CSM operational data lives in DailyOS
 - **Bulk management:** CSV import/export for fast metadata updates across accounts
 - **Intelligence enrichment:** Metadata feeds into entity intelligence (ARR in executive assessment, renewal date in readiness)
-- **Renewal tracking:** I143 depends on renewal metadata fields
+- **Renewal tracking:** I143a depends on renewal metadata fields
 - **Portfolio analytics:** I88 uses metadata for portfolio metrics
 
 **Aligns with:**
 
 - **P5 (Local-First):** Metadata stored in local SQLite, CSV export for portability
 - **P4 (Opinionated Defaults, Escapable Constraints):** CS Kit defaults work out-of-box, users can disable/customize
-- I143 (Renewal tracking consumes renewal metadata)
+- I143a (Renewal metadata consumes preset-driven fields)
 - I88 (Portfolio report aggregates metadata across accounts)
 
 ---
 
-**I143: Renewal lifecycle tracking**
-Build renewal tracking infrastructure: renewal calendar, pipeline stages, health scores, ARR projections, and risk alerts. Transforms DailyOS into TAM/CSM operating system for managing the full account lifecycle from onboarding → growth → renewal.
+**I143: ~~Renewal lifecycle tracking~~ → Decomposed into I143a, I143b, I143c**
 
-**The Need:**
-Renewals are the **core TAM/CSM workflow**. User's CSV shows:
+**Status:** Decomposed. The original I143 described a renewal management product (kanban pipelines, ARR waterfall charts, health score dashboards, a dedicated `/renewals` page). That's Gainsight, not DailyOS. The chief of staff tells you "Cox Auto renews in 6 weeks and the relationship is cooling" — they don't hand you a renewal pipeline kanban.
 
-- 30 accounts, 15 renewals in next 12 months
-- Renewal stages: Coming Up (3), In Progress (8), Completed (19)
-- Renewal outcomes: Expansion (21), Flat (8), Down Sell (2)
-- Risk tracking: Churn Risk (all Low), Down-Sell Risk (2 Medium, rest Low)
+Decomposed into three pieces that fit the app's identity:
 
-TAMs need:
+- **I143a** (0.11.0) — Renewal metadata + lifecycle events. Small, natural, lands alongside I311/I312 preset-driven metadata.
+- **I143b** (0.10.0 signal bus) — Renewal proximity as a signal type. "Renewal in 30 days + stale engagement" compounds into an attention signal.
+- **I143c** (parked) — Renewal reporting surface. If needed, belongs in 0.14.0 (Reports) or a CS platform integration (I227 Gainsight).
 
-1. **Renewal calendar** — "What's renewing when?"
-2. **Renewal pipeline** — "Where are we in the renewal process?"
-3. **Renewal health** — "Is this renewal at risk?"
-4. **ARR projections** — "What's our forecasted ARR?"
-5. **Proactive alerts** — "3 renewals need attention this week"
+---
 
-**Renewal Tracking Features:**
+<a name="i143a"></a>
+**I143a: Renewal metadata + lifecycle events**
 
-**1. Renewal Calendar**
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Data
+**Depends on:** I311 (JSON metadata columns)
 
-**Monthly view:**
+Renewal date becomes a first-class metadata field on accounts via role presets (I311). Lifecycle events (renewal, expansion, churn, downsell) are recordable on the account timeline. This is the data layer — no new surfaces, no dashboards.
 
-- Calendar grid showing renewals by month (next 12 months)
-- Color-coded by renewal health (green = healthy, yellow = attention, red = at risk)
-- Click account → jump to account detail
+**What ships:**
+- Renewal date in preset-driven metadata (I311 JSON column). CS/Sales/Partnerships presets include `renewal_date` as a default field.
+- `account_events` table for lifecycle events: `(id, account_id, event_type, event_date, arr_before, arr_after, notes, created_at)`. Event types: `renewal`, `expansion`, `churn`, `downsell`, `contraction`.
+- UI for recording events on AccountDetailPage — a simple "Record Event" action in the appendix that writes to the events table.
+- Lifecycle events appear in the UnifiedTimeline alongside meetings and captures.
+- Renewal countdown in VitalsStrip when a renewal date exists (e.g., "47 days to renewal" in terracotta when <60 days).
 
-**Quarterly view:**
-
-- Renewals grouped by quarter (Q1, Q2, Q3, Q4)
-- ARR total per quarter
-- Expansion/flat/downsell breakdown per quarter
-
-**List view:**
-
-- Sortable table: Account | Next Renewal Date | ARR | Stage | Health | Days Until Renewal
-- Filters: stage, health, quarter, risk level
-
-**2. Renewal Pipeline**
-
-**Pipeline stages** (from I92 metadata):
-
-- **Coming Up** (renewal 60-90 days out): Planning phase
-- **In Progress** (renewal 30-60 days out): Active renewal conversations
-- **Completed** (renewal done): Outcome recorded
-
-**Pipeline kanban:**
-
-- Drag accounts between stages
-- ARR total per stage
-- Stage-specific actions:
-  - Coming Up: "Draft renewal proposal", "Schedule exec meeting"
-  - In Progress: "Send contract", "Negotiate terms"
-  - Completed: Record outcome (Expansion/Flat/Down Sell/Churned)
-
-**3. Renewal Health Score**
-
-**Computed from:**
-
-- **Engagement:** Time since last meeting (stale = unhealthy)
-- **Relationship depth:** Multi-threaded (healthy) vs. single-threaded (risky)
-- **Value delivered:** Recent wins, adoption metrics
-- **Risk flags:** At Risk Flag, Churn Risk, Down-Sell Risk (from I92 metadata)
-- **Success plan:** Exists + recently updated (healthy) vs. missing/stale (risky)
-
-**Health score formula:**
-
-```
-Health = (
-  engagement_score * 0.3 +
-  relationship_score * 0.2 +
-  value_score * 0.2 +
-  risk_score * 0.2 +
-  success_plan_score * 0.1
-) * 100
-```
-
-**Health bands:**
-
-- 80-100: Healthy (green) — renewal on track
-- 60-79: Attention (yellow) — needs action
-- 0-59: At Risk (red) — escalation required
-
-**4. ARR Projections**
-
-**Current ARR:** Sum of all active accounts (from I92 metadata `arr_2025`)
-
-**Projected ARR:** Current ARR + expansion pipeline - churn risk
-
-```
-Projected ARR = Current ARR + (accounts with expansion signals * avg expansion %) - (at-risk accounts * churn probability)
-```
-
-**Expansion pipeline:**
-
-- Accounts with expansion signals (from I215 email intelligence)
-- Historical expansion rate (actual expansion vs. projected)
-- Conservative/optimistic/realistic scenarios
-
-**ARR waterfall chart:**
-
-- Starting ARR (current)
-- - New business
-- - Expansion
-- - Downsell
-- - Churn
-- = Ending ARR (projected)
-
-**5. Renewal Alerts**
-
-**Alert triggers:**
-
-- **30 days before renewal:** "Acme renewal in 30 days — health score 65 (attention needed)"
-- **Stale engagement:** "No meeting with Acme in 45 days — renewal in 60 days"
-- **Missing success plan:** "Acme renewal in 30 days — no success plan on file"
-- **At-risk flag:** "Acme marked at-risk — renewal in 90 days"
-- **Champion leaving:** "Acme champion Alice leaving — renewal in 60 days" (from transcript/email signals)
-
-**Alert delivery:**
-
-- In-app notifications (I87)
-- Dashboard "Renewal Attention" card
-- Weekly digest (optional email summary)
-
-**UI/UX:**
-
-**Dashboard card: "Renewals"**
-
-- Next 3 renewals (sorted by date)
-- Health score per renewal (color-coded)
-- Quick actions: "View All", "Review Pipeline"
-
-**Dedicated page: `/renewals`**
-
-- Tab 1: Calendar (monthly/quarterly/list views)
-- Tab 2: Pipeline (kanban by stage)
-- Tab 3: Health (sortable list with health scores)
-- Tab 4: Projections (ARR waterfall chart, scenarios)
-
-**Account detail page:**
-
-- Renewal section showing: Next Renewal Date, Stage, Health Score, ARR
-- Renewal timeline (past renewals, outcomes, ARR history)
-- Renewal actions: "Move to In Progress", "Record Outcome"
-
-**Implementation:**
-
-Database (extends I92 metadata):
-
-```sql
--- Renewal metadata in account_metadata table (from I92)
--- Additional computed fields:
-ALTER TABLE accounts ADD COLUMN renewal_health_score REAL;
-ALTER TABLE accounts ADD COLUMN days_until_renewal INTEGER;
-
--- Renewal events table (history):
-CREATE TABLE renewal_events (
-  id TEXT PRIMARY KEY,
-  account_id TEXT,
-  renewal_date TEXT,
-  renewal_stage TEXT,
-  renewal_outcome TEXT,
-  arr_before REAL,
-  arr_after REAL,
-  expansion_amount REAL,
-  notes TEXT,
-  created_at TEXT,
-  FOREIGN KEY (account_id) REFERENCES accounts(id)
-);
-```
-
-Backend (`src-tauri/src/renewals/`):
-
-- `compute_renewal_health(account_id)` — calculate health score from engagement, relationship, value, risk, success plan
-- `get_renewal_calendar(start_date, end_date)` — fetch renewals in date range
-- `get_renewal_pipeline()` — group renewals by stage with ARR totals
-- `project_arr()` — compute ARR projections (current + expansion - churn)
-- `generate_renewal_alerts()` — check triggers, create notifications
-
-Frontend:
-
-- `/renewals` route with Calendar/Pipeline/Health/Projections tabs
-- Dashboard "Renewals" card
-- Account detail renewal section
+**What doesn't ship:**
+- No `/renewals` page. No kanban. No calendar view. No ARR projections. No health score formula.
 
 **Acceptance criteria:**
+1. Renewal date editable via account metadata (preset-driven field)
+2. Lifecycle events recordable from account detail page
+3. Events appear in UnifiedTimeline
+4. VitalsStrip shows renewal countdown when date exists
+5. Auto-rollover: when renewal date passes without a churn event, system can prompt for outcome recording
 
-- Renewal calendar shows renewals by month/quarter with health color-coding
-- Renewal pipeline kanban with stages (Coming Up, In Progress, Completed)
-- Renewal health score computed from engagement, relationship, value, risk, success plan
-- ARR projections with expansion pipeline and churn risk
-- Renewal alerts trigger at 30/60/90 days before renewal
-- Alerts surface stale engagement, missing success plans, at-risk flags
-- Dashboard "Renewals" card shows next 3 renewals with health scores
-- Account detail page shows renewal timeline (past outcomes, ARR history)
+---
+
+<a name="i143b"></a>
+**I143b: Renewal proximity as a signal type**
+
+**Priority:** P1 (0.10.0, signal bus)
+**Area:** Intelligence / Signals
+**Depends on:** I306 (signal bus), I143a (renewal date metadata)
+
+Renewal proximity becomes a signal in the signal bus. The system compounds renewal signals with engagement signals to surface attention where it matters — in the daily briefing and account detail, not a separate dashboard.
+
+**What ships:**
+- `renewal_proximity` signal type emitted when an account has a renewal date within 90 days. Confidence scales with proximity: 0.5 at 90 days, 0.7 at 60 days, 0.9 at 30 days.
+- Signal compounds with engagement signals via Bayesian fusion (I306): "renewal in 30 days" (0.9) + "no meeting in 45 days" (0.8 engagement_warning) = high-confidence attention signal.
+- Surfaced on the daily briefing when compound confidence exceeds threshold — the chief of staff says "Cox Auto renews in 6 weeks and you haven't met with them since January."
+- Surfaced on account detail as a risk in the Watch List — "Renewal approaching with stale engagement."
+- 30-day decay half-life (renewal proximity is time-sensitive).
+
+**What doesn't ship:**
+- No health score formula. No weighted components. The signal bus handles the compounding.
+- No renewal-specific alerts system. The existing signal surfacing pipeline handles it.
+
+**Acceptance criteria:**
+1. `renewal_proximity` signals emitted for accounts with renewal dates within 90 days
+2. Signals compound with engagement/relationship signals via Bayesian fusion
+3. Compound signals surface in daily briefing when confidence exceeds threshold
+4. Compound signals surface in account Watch List as risks
+5. Signal decays appropriately as renewal passes or is recorded
+
+---
+
+<a name="i143c"></a>
+**I143c: Renewal reporting surface (parked)**
+
+**Priority:** P2 (0.14.0 or later)
+**Area:** Reporting
+**Depends on:** I143a (data), I143b (signals), I347 (SWOT reports, if shipped)
+
+If there's demand for a dedicated renewal view — calendar, pipeline, ARR projections — it belongs in the Reports release (0.14.0) alongside I347 (SWOT) and I348 (email digest). This is portfolio analytics, not daily intelligence. Alternatively, a CS platform integration (I227 Gainsight) may serve this need better with real CRM data.
+
+**Parked until:** User feedback on I143a/I143b indicates the intelligence-layer approach isn't sufficient and a dedicated reporting surface is needed.
 - Renewal events tracked in history table (audit trail)
 
 **Benefits:**
@@ -1490,8 +1377,7 @@ Enables:
 **I142: Account Plan — leadership-facing artifact**
 Structured Account Plan (exec summary, 90-day focus, risk table, products/adoption) generated from intelligence.json + dashboard.json. Markdown output in account directory. UI entry point on AccountDetailPage.
 
-**I143: Renewal lifecycle tracking**
-(a) Auto-rollover when renewal passes without churn. (b) Lifecycle event markers (churn, expansion, renewal) in `account_events` table. (c) UI for recording events on AccountDetailPage.
+**I143: ~~Renewal lifecycle tracking~~ → Decomposed.** See I143a (0.11.0), I143b (0.11.0), I143c (parked). Original scope described a renewal management product; decomposed into metadata + signals + parked reporting.
 
 ### UX & Polish
 
@@ -2807,7 +2693,7 @@ Delivery:
 
 - **P7 (Consumption):** Briefing surfaces strategic insights, not raw data
 - **P6 (AI-Native):** Portfolio trends require AI synthesis across accounts
-- I92/I143 (Renewal tracking provides renewal pipeline data)
+- I92/I143a (Renewal metadata provides renewal context data)
 - I218 (Wrapped pattern applied to portfolio-level celebration)
 
 ---
@@ -3170,7 +3056,7 @@ Store in `content_index.tags` column (JSON array).
 
 - **I26** (Web search for unknown meetings) — Superseded by entity intelligence (ADR-0057) + email signals (I215)
 - **I3** (Low-friction web capture) — Superseded by inbox dropzone + email forwarding workflow
-- **I110** (Portfolio alerts on sidebar) — Superseded by I92/I143 renewal tracking + existing attention systems
+- **I110** (Portfolio alerts on sidebar) — Superseded by I92/I143b renewal signals + existing attention systems
 - **I122** (Sunday briefing date label) — Verified fixed in Sprint 24, no longer reproducible
 
 ---
@@ -4379,6 +4265,62 @@ Remove the one-level depth restriction on parent-child account hierarchy. Allow 
 
 ---
 
+<a name="i351"></a>
+**I351: Standardize actions chapter across all entity types**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / UX
+**Source:** ADR-0084 decision D5 (I342 JTBD critique)
+**Related:** I312 (Preset-driven vitals + entity detail fields)
+
+The I342 audit found that actions appear as a main chapter ("The Work") on accounts, are buried in the appendix on projects, and are absent entirely on people. This inconsistency feels accidental rather than intentional. All three entity types have commitments — accounts have customer deliverables, projects have task items, people have follow-ups and relationship actions.
+
+**What changes:**
+- Projects: promote actions from the appendix to a main chapter (same position as accounts)
+- People: add an actions chapter showing actions linked to this person (either directly or through their associated entities)
+- Use the shared `TheWork` component (or its successor from C1 merge) across all three types
+- Maintain entity-specific content in the chapter: accounts keep "Next Meeting" readiness callout, projects keep milestone-adjacent positioning, people show relationship-relevant actions
+
+**What doesn't change:**
+- Chapter order within each entity type stays type-appropriate (The Work doesn't need to be in the same slot on all three)
+- Entity-specific chapters (Trajectory, Horizon, The Dynamic/Rhythm) remain unique
+
+**Acceptance criteria:**
+1. All three entity types show actions as a main chapter, not appendix
+2. People detail page shows actions linked to that person
+3. Shared component used across all three entity detail pages
+4. No regression on account or project action display
+
+---
+
+<a name="i352"></a>
+**I352: Shared entity detail hooks and components — intelligence field update, keywords**
+
+**Priority:** P1 (0.11.0)
+**Area:** Entity / Code Quality
+**Source:** ADR-0084 decisions C4 and C5 (I342 JTBD critique)
+**Related:** I312 (Preset-driven vitals + entity detail fields)
+
+The I342 audit found two significant code duplications across entity detail pages that should be consolidated while I312 is already reworking entity detail fields.
+
+**C4: Intelligence field update hook**
+All three entity detail pages (account, project, person) copy-paste the same `handleUpdateIntelField` callback (~20 lines each). Same pattern, same logic: take a field key, update the intelligence record, refresh local state.
+
+Extract `useIntelligenceFieldUpdate(entityType, entityId, refreshFn)` hook that returns the update handler.
+
+**C5: Keywords shared component**
+Accounts and projects both implement identical keyword parsing, rendering, and removal logic (~120 lines each). Same parsing of comma-separated strings, same chip rendering with remove buttons, same add-keyword input, same `invoke("update_*_keywords")` call pattern.
+
+Extract shared `EntityKeywords` component (or `MatchingKeywords` per ADR-0083 vocabulary) that takes `entityType`, `entityId`, and `keywords` string.
+
+**Acceptance criteria:**
+1. `useIntelligenceFieldUpdate` hook extracted and used by all three entity detail pages
+2. Shared keywords component extracted and used by accounts and projects
+3. No behavioral change — same functionality, shared implementation
+4. ~180 lines of duplicated code eliminated
+
+---
+
 ### Email Intelligence (0.12.0)
 
 **I317: Meeting-aware email intelligence (structured digest, not excerpts)**
@@ -4463,29 +4405,62 @@ I307 builds per-person email response time tracking as a signal source for Thomp
 
 ---
 
-**I320: Hybrid email classification (semantic upgrade for ambiguous bucket)**
+**I320: Hybrid email classification (semantic + signal-context upgrade)**
 
 **Priority:** P1 (0.12.0)
 **Area:** Email
+**Depends on:** I306 (signal bus — provides entity context for boosting)
 
-Upgrade email classification from pure header heuristics to a hybrid model. Keep the deterministic classifier (`email_classify.rs`) for obvious high and low. For the "medium" bucket (~20-40% of total), add Claude-based semantic classification using subject + snippet only.
+Upgrade email classification from pure header heuristics to a hybrid model with two new layers: semantic understanding of content, and signal-context boosting from what the system already knows about the entities involved.
 
-**Why:** The current classifier correctly identifies newsletters (low) and customer/urgent emails (high). The "medium" catch-all contains both genuinely important emails and noise that doesn't quite qualify as newsletter-level. Semantic understanding of subject + snippet resolves this ambiguity.
+**Why:** The current classifier correctly identifies newsletters (low) and customer/urgent emails (high via domain or keyword). But it's context-blind — it doesn't know that Bring a Trailer has a renewal approaching, risks flagged, and active intelligence about the renewal conversation. An email with "order form" + Bring a Trailer should be high priority not because "order form" is a keyword, but because the system already knows BaT's renewal is the most important thing happening right now. The email's importance is contextual, not textual.
 
-**Privacy-preserving:** Only subject + snippet sent to Claude — never full body content. Opt-in setting.
+**Two new classification layers:**
 
-**Implementation:**
-- After deterministic classification, collect "medium" emails
-- Batch send to Claude: subject + snippet + sender context (known account? upcoming meeting?)
+**Layer 1: Signal-context boosting** (entity-aware priority)
+
+After mechanical classification resolves an email to an entity, query active signals for that entity from the signal bus. Use compound signal confidence to boost or demote email priority.
+
+- Classify email mechanically → "medium"
+- Resolve email to entity → Bring a Trailer
+- Query active signals for BaT → `renewal_approaching` (0.9), `engagement_warning` (0.7), `risk_flagged` (0.8)
+- Compound: medium email + high-signal entity = high priority
+- Surface with context: "Renan sent the renewal order form to Bring a Trailer — renewal approaching in 47 days"
+
+Signal types that boost email priority:
+- `renewal_approaching` (I143b) — any email about a renewing account is elevated
+- `engagement_warning` — emails about accounts going quiet are elevated
+- `champion_risk` / `person_departed` — emails involving at-risk stakeholders are elevated
+- `project_health_warning` — emails about struggling projects are elevated
+
+This uses the Bayesian fusion infrastructure (I306) — the email's "medium" classification becomes a weak signal that compounds with existing entity signals to produce a priority decision. Thompson Sampling (I307) learns over time: when users correct the priority of entity-context-boosted emails, the system adjusts how aggressively it boosts for that signal pattern.
+
+**Layer 2: Semantic reclassification** (for the ambiguous bucket)
+
+For emails that remain "medium" after signal-context boosting (~20-40% of total), add Claude-based semantic classification using subject + snippet only.
+
+- After deterministic + signal-context classification, collect remaining "medium" emails
+- Batch send to Claude: subject + snippet + sender context (known account? upcoming meeting? active signals?)
 - Claude reclassifies: `high` (promote), `medium` (keep), `low` (demote)
 - Track reclassification via signal bus — corrections feed back to improve prompts
 
+**Privacy-preserving:** Only subject + snippet sent to Claude — never full body content. Semantic step is opt-in.
+
+**Implementation:**
+- `email_classify.rs`: after mechanical classification, call new `boost_with_entity_context()` that queries signal bus for the resolved entity
+- `boost_with_entity_context()`: returns a priority override when compound signal confidence exceeds threshold (e.g., 0.75)
+- For remaining "medium" emails: batch semantic reclassification via Claude (opt-in)
+- Track all reclassifications as signals — corrections feed Thompson Sampling
+
 **Acceptance criteria:**
-1. Medium-priority emails semantically reclassified using subject + snippet only
-2. Opt-in step in email processing pipeline
-3. At least 20% of medium emails reclassified (promoted or demoted)
-4. No email body content sent to Claude
-5. Disableable in settings (falls back to deterministic-only)
+1. Emails resolved to entities with active high-confidence signals are boosted to high priority
+2. Signal-context boosting runs for every email, not just "medium" — an internally-sent email about a renewing account should be boosted
+3. Medium-priority emails remaining after boost are semantically reclassified using subject + snippet only (opt-in)
+4. At least 20% of medium emails reclassified (promoted or demoted) across both layers
+5. No email body content sent to Claude
+6. Signal-context boosting is automatic (no opt-in — it uses data already in the system)
+7. Semantic reclassification is opt-in, disableable in settings
+8. Thompson Sampling learns from user corrections to boosted/reclassified emails
 
 ---
 
@@ -4764,13 +4739,18 @@ Replace the binary "needs prep" badge with intelligence quality indicators that 
 
 ---
 
-**I330: Weekly forecast as live intelligence surface**
+**I330: Week page — ±7-day meeting intelligence timeline**
 
 **Priority:** P1 (0.13.0)
 **Area:** Surfaces
 **Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators), I342 (surface JTBD definition), I341 (product vocabulary audit)
 
-Transform the weekly forecast from a static overview into a live meeting intelligence browser. Each meeting shows accumulated intelligence state. The forecast updates throughout the week as intelligence evolves.
+**Job this surface does:**
+> Navigate a ±7-day intelligence window — review what happened last week, prepare for what's coming this week. Not a calendar. This is the meeting intelligence layer: what was learned, what needs attention, what's ready.
+
+Transform the week page from a forward-looking planning view into a temporal intelligence workspace. Today is the anchor. The past 7 days are retrospective — review outcomes, captured intelligence, what was learned. The next 7 days are preparatory — intelligence quality, readiness signals, upcoming context. The ratio of review to prep shifts naturally as the week progresses.
+
+**Why ±7, not just forward:** Most meeting intelligence decays or is absorbed within a rolling 2-week window. Last week's outcomes inform this week's preparation — a QBR on Tuesday shapes how you approach the follow-up on Friday. Right now accessing that context requires: Account List → Account Page → Record → Meeting. That's four clicks and requires knowing where to look. The timeline closes that gap without building a general-purpose archive.
 
 **Current week page (ADR-0052):**
 - Week narrative (AI, point-in-time)
@@ -4784,12 +4764,24 @@ Transform the weekly forecast from a static overview into a live meeting intelli
 - Week narrative → evolves to reference intelligence quality ("3 meetings ready, 2 developing, 1 sparse")
 - Top priority → unchanged
 - Readiness checks → replaced by intelligence quality summary ("3 meetings with sparse context", "2 with stale intelligence — tap to refresh")
-- Day shapes → each meeting shows intelligence quality badge + "new signals" dot
-- Meeting detail → click any meeting to open full intelligence report (same `MeetingDetailPage`)
+- Timeline → ±7 days centered on today; past meetings show captured intelligence + outcomes; upcoming meetings show quality badge + "new signals" dot
+- Meeting detail → click any meeting (past or future) to open full intelligence report (`MeetingDetailPage`)
 - Actions → unchanged
 - Account health → unchanged
 
-**Live vs. static:** The overview (`week-overview.json`) regenerates on weekly run and on-demand. But individual meeting intelligence is always live — fetched from SQLite via `get_meeting_intelligence()`. The overview provides the narrative frame; meetings provide the detail. This means meetings always show current intelligence state even if the overview narrative is stale.
+**Temporal window design:**
+- Default view: today anchored, 7 days back, 7 days forward
+- Past section: collapsed by default beyond 2 days back; expandable to full 7-day history
+- Past meetings show: title, attendees, intelligence quality, outcome summary if captured
+- Upcoming meetings show: intelligence quality badge, "new signals" dot, readiness state
+- "Today" visually anchors the timeline; the page is not a calendar — no empty time slots, no scheduling affordances
+
+**Contextual history linking:**
+- On any upcoming meeting with a prior meeting in the same series or with overlapping attendees: surface a "Review last meeting →" link
+- Link opens the past meeting's intelligence report directly — no navigation through accounts required
+- This is the primary access path for historical context on meeting detail pages; the timeline view provides the secondary browsing path
+
+**Live vs. static:** The overview (`week-overview.json`) regenerates on weekly run and on-demand. Individual meeting intelligence — past and future — is always live from SQLite via `get_meeting_intelligence()`. The overview provides the narrative frame; meetings provide the detail regardless of narrative staleness.
 
 **Readiness checks evolution:**
 - Old: "no_prep" / "no_agenda" / "stale_contact" — binary, from ADR-0052
@@ -4797,12 +4789,16 @@ Transform the weekly forecast from a static overview into a live meeting intelli
 - The readiness check becomes a quality assessment, not a checklist
 
 **Acceptance criteria:**
-1. Each meeting in week view shows intelligence quality badge
-2. "New signals" dot appears on meetings that received new signals since last view
-3. Clicking a meeting opens MeetingDetailPage with full intelligence
-4. Readiness checks reflect intelligence quality (not binary prep/no-prep)
-5. Week page works even if week overview hasn't regenerated (meetings are live from SQLite)
-6. Refresh action available at week level (re-run weekly orchestrator) and per-meeting level
+1. Timeline spans ±7 days centered on today; today is visually anchored
+2. Past meetings (up to 7 days back) are accessible with their captured intelligence and outcomes
+3. Each meeting (past and future) shows an intelligence quality badge
+4. "New signals" dot appears on upcoming meetings that received new signals since last view
+5. Upcoming meetings with a prior meeting in the same series or with overlapping attendees show "Review last meeting →" link
+6. Clicking any meeting opens `MeetingDetailPage` with full intelligence
+7. Readiness checks reflect intelligence quality (not binary prep/no-prep)
+8. Week page works even if week overview hasn't regenerated (meetings are live from SQLite)
+9. Refresh action available at week level (re-run weekly orchestrator) and per-meeting level
+10. Past section beyond 2 days is collapsed by default; expandable to full 7-day history
 
 ---
 
@@ -5169,6 +5165,18 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 | `src-tauri/src/entity_intel.rs` | Signal emission helper |
 | `package.json` | Add `@dnd-kit/core`, `@dnd-kit/sortable` |
 
+9. **Signal correction gestures** — Signals surface on email and meeting detail pages with no way to correct misattributions. Two gestures needed:
+   - **Dismiss** (X) — "this signal is wrong." Feeds negative correction to I307 Thompson Sampling. Signal disappears.
+   - **Re-attribute** (tap entity chip → picker) — "right signal, wrong account." Change entity attribution. Feeds positive correction to I307.
+   - No forms, no confidence sliders. Just "wrong" or "wrong account." The system gets visibly better over time as Thompson Sampling demotes sources that keep getting it wrong for specific entity patterns.
+
+10. **Drawer elimination** (ADR-0084 Section 5) — Entity detail pages are documents you read; editing is part of reading, not a separate mode. Field-editing drawers are replaced by inline editing on the page where data is displayed:
+   - **AccountFieldsDrawer** — deleted. Name, health, lifecycle, ARR, NPS, renewal date become inline-editable in hero + vitals strip.
+   - **ProjectFieldsDrawer** — deleted. Status, owner, milestone, target date edit inline.
+   - **PresetFieldsEditor** — renders inline in the appropriate page section, not a drawer.
+   - **TeamManagementDrawer** — exception. Add/search/create workflows still warrant a modal. Viewing/removing team members moves inline to StakeholderGallery "Your Team" section.
+   - The StakeholderGallery is the model: inline editable names, roles, engagement badges. Every other editable field follows this pattern.
+
 **Acceptance criteria:**
 1. Editing a stakeholder assessment opens a textarea showing the full text, not a truncated input
 2. Every intelligence field edit (text or badge) emits a `user_correction` signal event (visible in signal_events table)
@@ -5178,8 +5186,10 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 6. Stakeholders, risks, and wins can be drag-reordered; new order persists
 7. Engagement badge is switchable via click-dropdown on any surface showing stakeholders
 8. Badge changes propagate — switching engagement on account detail reflects in meeting prep and briefing cards
-9. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
-10. `pnpm build` compiles clean, `cargo test` passes
+9. AccountFieldsDrawer and ProjectFieldsDrawer deleted — all fields inline-editable on the page
+10. Signals on email/meeting surfaces can be dismissed or re-attributed; corrections feed I307
+11. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
+12. `pnpm build` compiles clean, `cargo test` passes
 
 ---
 

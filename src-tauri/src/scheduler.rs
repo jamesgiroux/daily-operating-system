@@ -74,6 +74,9 @@ impl Scheduler {
             // Check and run due jobs
             self.check_and_run_due_jobs(now).await;
 
+            // I305: Drain prep invalidation queue and trigger re-generation
+            self.drain_prep_invalidation_queue().await;
+
             // Auto-archive stale proposed actions daily (I256)
             if (now - last_proposed_archive).num_hours() >= 24 {
                 self.auto_archive_proposed_actions();
@@ -82,6 +85,41 @@ impl Scheduler {
 
             last_check = now;
         }
+    }
+
+    /// I305: Drain the prep invalidation queue and trigger a briefing refresh.
+    ///
+    /// When a user corrects a meeting's entity, the prep is invalidated (data
+    /// cleared, file deleted) but nothing regenerates it. This method drains
+    /// the queue and triggers a `today` workflow so preps regenerate with the
+    /// correct entity context.
+    async fn drain_prep_invalidation_queue(&self) {
+        let meeting_ids: Vec<String> = {
+            match self.state.prep_invalidation_queue.lock() {
+                Ok(mut queue) => {
+                    if queue.is_empty() {
+                        return;
+                    }
+                    queue.drain(..).collect()
+                }
+                Err(_) => return,
+            }
+        };
+
+        log::info!(
+            "Prep invalidation: draining {} meetings, triggering briefing refresh: {:?}",
+            meeting_ids.len(),
+            meeting_ids
+        );
+
+        // Trigger a today workflow to regenerate preps with corrected entities.
+        // The pipeline will re-classify, re-gather context, and re-generate
+        // prep for all today's meetings including the invalidated ones.
+        self.trigger_workflow(
+            WorkflowId::Today,
+            ExecutionTrigger::Missed, // Reuse Missed trigger — semantically "catch-up"
+        )
+        .await;
     }
 
     /// Auto-archive proposed actions older than 7 days (I256).

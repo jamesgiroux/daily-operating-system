@@ -9,12 +9,16 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
-import type { AccountHealth } from "@/types";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
+import type { AccountHealth, PickerAccount } from "@/types";
+import type { PresetMetadataField } from "@/types/preset";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
-const lifecycleOptions = ["onboarding", "ramping", "steady-state", "at-risk", "churned"];
+const lifecycleOptions = ["onboarding", "adoption", "nurture", "renewal", "churned"];
 
 interface AccountFieldsDrawerProps {
   open: boolean;
@@ -31,11 +35,18 @@ interface AccountFieldsDrawerProps {
   setEditNps: (v: string) => void;
   editRenewal: string;
   setEditRenewal: (v: string) => void;
+  editParentId: string;
+  setEditParentId: (v: string) => void;
+  accountId?: string;
   setDirty: (v: boolean) => void;
   onSave: () => Promise<void>;
   onCancel: () => void;
   saving: boolean;
   dirty: boolean;
+  /** I312: Optional preset metadata fields */
+  metadataFields?: PresetMetadataField[];
+  metadataValues?: Record<string, string>;
+  onMetadataChange?: (key: string, value: string) => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -76,12 +87,26 @@ export function AccountFieldsDrawer({
   setEditNps,
   editRenewal,
   setEditRenewal,
+  editParentId,
+  setEditParentId,
+  accountId,
   setDirty,
   onSave,
   onCancel,
   saving,
   dirty,
+  metadataFields,
+  metadataValues,
+  onMetadataChange,
 }: AccountFieldsDrawerProps) {
+  const [pickerAccounts, setPickerAccounts] = useState<PickerAccount[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    invoke<PickerAccount[]>("get_accounts_for_picker")
+      .then((all) => setPickerAccounts(all.filter((a) => a.id !== accountId)))
+      .catch(() => setPickerAccounts([]));
+  }, [open, accountId]);
+
   function handleChange<T extends string>(setter: (v: T) => void) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setter(e.target.value as T);
@@ -180,6 +205,34 @@ export function AccountFieldsDrawer({
               placeholder="Set renewal date"
             />
           </div>
+
+          <div>
+            <label style={labelStyle}>Parent Organization</label>
+            <select
+              value={editParentId}
+              onChange={(e) => { setEditParentId(e.target.value); setDirty(true); }}
+              style={{ ...inputStyle, height: 38 }}
+            >
+              <option value="">None (top-level)</option>
+              {pickerAccounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                  {a.parentName ? ` (${a.parentName})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {metadataFields && metadataFields.length > 0 && metadataValues && onMetadataChange && (
+            <PresetFieldsEditor
+              fields={metadataFields}
+              values={metadataValues}
+              onChange={(key, value) => {
+                onMetadataChange(key, value);
+                setDirty(true);
+              }}
+            />
+          )}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 32 }}>

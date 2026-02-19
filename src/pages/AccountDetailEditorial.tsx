@@ -1,9 +1,12 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
+import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
+import { useActivePreset } from "@/hooks/useActivePreset";
+import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
@@ -45,9 +48,11 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { EntityKeywords } from "@/components/entity/EntityKeywords";
 import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
+import { AccountMergeDialog } from "@/components/account/AccountMergeDialog";
 
 /* ── Vitals assembly (moved from old account/VitalsStrip) ── */
 
@@ -89,7 +94,15 @@ function buildAccountVitals(detail: {
     });
   }
   if (detail.lifecycle) vitals.push({ text: detail.lifecycle });
-  if (detail.renewalDate) vitals.push({ text: formatRenewalCountdown(detail.renewalDate) });
+  if (detail.renewalDate) {
+    const renewal = new Date(detail.renewalDate);
+    const now = new Date();
+    const diffDays = Math.round((renewal.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    vitals.push({
+      text: formatRenewalCountdown(detail.renewalDate),
+      highlight: diffDays <= 60 ? "saffron" : undefined,
+    });
+  }
   if (detail.nps != null) vitals.push({ text: `NPS ${detail.nps}` });
   if (detail.signals?.meetingFrequency30d != null) {
     vitals.push({ text: `${detail.signals.meetingFrequency30d} meetings / 30d` });
@@ -114,19 +127,20 @@ export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
+  const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
   // Register magazine shell configuration — MagazinePageLayout consumes this
   const shellConfig = useMemo(
     () => ({
-      folioLabel: "Account",
-      atmosphereColor: "turmeric" as const,
+      folioLabel: acct.detail?.isInternal ? "Internal" : "Account",
+      atmosphereColor: acct.detail?.isInternal ? "larkspur" as const : "turmeric" as const,
       activePage: "accounts" as const,
-      backLink: { label: "Accounts", onClick: () => navigate({ to: "/accounts" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts" }) },
       chapters: CHAPTERS,
       folioActions: (
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {!acct.detail?.isInternal && (!acct.detail?.parentId || acct.detail?.isParent) && (
+          {acct.detail && (
             <button
               onClick={() => acct.setCreateChildOpen(true)}
               style={{
@@ -180,58 +194,32 @@ export default function AccountDetailEditorial() {
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [teamDrawerOpen, setTeamDrawerOpen] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+  const [rolloverDismissed, setRolloverDismissed] = useState(false);
 
-  // Intelligence field update callback (I261)
-  // No reload needed — EditableText already shows the edited value locally.
-  const handleUpdateIntelField = useCallback(
-    async (fieldPath: string, value: string) => {
-      if (!accountId) return;
-      try {
-        await invoke("update_intelligence_field", {
-          entityId: accountId,
-          entityType: "account",
-          fieldPath,
-          value,
-        });
-      } catch (e) {
-        console.error("Failed to update intelligence field:", e);
-      }
-    },
-    [accountId],
-  );
+  // I312: Preset metadata state
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<string>("get_entity_metadata", { entityType: "account", entityId: accountId })
+      .then((json) => {
+        try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
+      })
+      .catch(() => setMetadataValues({}));
+  }, [accountId]);
 
-  // Parse keywords JSON and track removals (I305)
-  // Hooks must be above early returns to satisfy React's rules of hooks.
-  const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
-  const parsedKeywords = useMemo(() => {
-    const kw = acct.detail?.keywords;
-    if (!kw) return [];
-    try {
-      const arr = JSON.parse(kw);
-      return Array.isArray(arr) ? (arr as string[]).filter((k) => !removedKeywords.has(k)) : [];
-    } catch {
-      return [];
-    }
-  }, [acct.detail?.keywords, removedKeywords]);
+  // I316: Fetch ancestor accounts for breadcrumb navigation
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
+      .then(setAncestors)
+      .catch(() => setAncestors([]));
+  }, [accountId]);
 
-  const handleRemoveKeyword = useCallback(
-    async (keyword: string) => {
-      if (!accountId) return;
-      setRemovedKeywords((prev) => new Set(prev).add(keyword));
-      try {
-        await invoke("remove_account_keyword", { accountId, keyword });
-      } catch (e) {
-        console.error("Failed to remove keyword:", e);
-        setRemovedKeywords((prev) => {
-          const next = new Set(prev);
-          next.delete(keyword);
-          return next;
-        });
-      }
-    },
-    [accountId],
-  );
+  // I352: Shared intelligence field update hook
+  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
 
   if (acct.loading) return <EditorialLoading />;
 
@@ -246,6 +234,66 @@ export default function AccountDetailEditorial() {
 
   return (
     <>
+      {/* I316: Ancestor breadcrumbs for nested accounts */}
+      {ancestors.length > 0 && (
+        <nav
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: "var(--color-text-tertiary)",
+            padding: "8px 0 4px",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => navigate({ to: "/accounts" })}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              color: "var(--color-text-tertiary)",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              letterSpacing: "inherit",
+            }}
+          >
+            Accounts
+          </button>
+          {ancestors.map((anc) => (
+            <React.Fragment key={anc.id}>
+              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <button
+                onClick={() =>
+                  navigate({
+                    to: "/accounts/$accountId",
+                    params: { accountId: anc.id },
+                  })
+                }
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  color: "var(--color-spice-turmeric)",
+                  fontFamily: "inherit",
+                  fontSize: "inherit",
+                  letterSpacing: "inherit",
+                }}
+              >
+                {anc.name}
+              </button>
+            </React.Fragment>
+          ))}
+          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+        </nav>
+      )}
+
       {/* Chapter 1: The Headline (Hero) — no reveal, visible immediately */}
       <section id="headline" style={{ scrollMarginTop: 60 }}>
         <AccountHero
@@ -260,70 +308,70 @@ export default function AccountDetailEditorial() {
           onUnarchive={acct.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={buildAccountVitals(detail)} />
+          {!detail.isInternal && (
+            <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
+          )}
         </div>
-        {parsedKeywords.length > 0 && (
-          <div className="editorial-reveal" style={{ padding: "12px 0 0" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-              <span
+        <EntityKeywords entityId={accountId} entityType="account" keywordsJson={detail.keywords} />
+
+        {/* Auto-rollover prompt for past renewal dates */}
+        {detail.renewalDate && new Date(detail.renewalDate) < new Date() && !rolloverDismissed && (
+          <div
+            style={{
+              margin: "24px 0",
+              padding: "16px 20px",
+              background: "rgba(222, 184, 65, 0.08)",
+              borderLeft: "3px solid var(--color-spice-saffron)",
+              fontFamily: "var(--font-sans)",
+              fontSize: 14,
+              color: "var(--color-text-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
+            <span>Renewal date has passed — what happened?</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  acct.setNewEventType("renewal");
+                  acct.setNewEventDate(detail.renewalDate!);
+                  setEventDrawerOpen(true);
+                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+              >
+                Renewed
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  acct.setNewEventType("churn");
+                  acct.setNewEventDate(detail.renewalDate!);
+                  setEventDrawerOpen(true);
+                }}
+                style={{ fontFamily: "var(--font-sans)", fontSize: 12 }}
+              >
+                Churned
+              </Button>
+              <button
+                onClick={() => setRolloverDismissed(true)}
                 style={{
                   fontFamily: "var(--font-mono)",
                   fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
                   textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
+                  letterSpacing: "0.06em",
                 }}
               >
-                Resolution Keywords
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  fontStyle: "italic",
-                }}
-              >
-                (auto-extracted)
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {parsedKeywords.map((kw) => (
-                <span
-                  key={kw}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "2px 10px",
-                    borderRadius: 12,
-                    background: "var(--color-paper-linen)",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    lineHeight: "20px",
-                  }}
-                >
-                  {kw}
-                  <button
-                    onClick={() => handleRemoveKeyword(kw)}
-                    aria-label={`Remove keyword ${kw}`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                      fontSize: 14,
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 2,
-                    }}
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
+                Dismiss
+              </button>
             </div>
           </div>
         )}
@@ -364,7 +412,7 @@ export default function AccountDetailEditorial() {
 
       {/* Chapter 5: The Record */}
       <div id="the-record" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
-        <UnifiedTimeline data={detail} />
+        <UnifiedTimeline data={{ ...detail, accountEvents: events }} />
       </div>
 
       {/* Chapter 6: The Work */}
@@ -405,6 +453,7 @@ export default function AccountDetailEditorial() {
           indexing={acct.indexing}
           indexFeedback={acct.indexFeedback}
           onCreateChild={() => acct.setCreateChildOpen(true)}
+          onMerge={() => setMergeDialogOpen(true)}
         />
       </div>
 
@@ -425,11 +474,28 @@ export default function AccountDetailEditorial() {
         setEditNps={acct.setEditNps}
         editRenewal={acct.editRenewal}
         setEditRenewal={acct.setEditRenewal}
+        editParentId={acct.editParentId}
+        setEditParentId={acct.setEditParentId}
+        accountId={accountId}
         setDirty={acct.setDirty}
-        onSave={acct.handleSave}
+        onSave={async () => {
+          await acct.handleSave();
+          if (accountId && Object.keys(metadataValues).length > 0) {
+            await invoke("update_entity_metadata", {
+              entityType: "account",
+              entityId: accountId,
+              metadata: JSON.stringify(metadataValues),
+            }).catch((e: unknown) => console.error("Failed to save metadata:", e));
+          }
+        }}
         onCancel={acct.handleCancelEdit}
         saving={acct.saving}
         dirty={acct.dirty}
+        metadataFields={preset?.metadata.account}
+        metadataValues={metadataValues}
+        onMetadataChange={(key, value) =>
+          setMetadataValues((prev) => ({ ...prev, [key]: value }))
+        }
       />
 
       <TeamManagementDrawer
@@ -531,6 +597,14 @@ export default function AccountDetailEditorial() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AccountMergeDialog
+        open={mergeDialogOpen}
+        onOpenChange={setMergeDialogOpen}
+        sourceAccountId={accountId!}
+        sourceAccountName={detail.name}
+        onMerged={() => navigate({ to: "/accounts" })}
+      />
     </>
   );
 }

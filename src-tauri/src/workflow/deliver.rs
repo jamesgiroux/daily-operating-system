@@ -5138,7 +5138,7 @@ END_SUGGESTIONS
                 "dueThisWeekItems": [{ "id": "a2", "title": "Due task", "account": "Globex", "dueDate": "2026-02-12", "priority": "P2" }]
             },
             "hygieneAlerts": [
-                { "account": "Globex", "lifecycle": "at-risk", "arr": "$800K", "issue": "Usage declining.", "severity": "warning" }
+                { "account": "Globex", "lifecycle": "renewal", "arr": "$800K", "issue": "Usage declining.", "severity": "warning" }
             ]
         }"#;
 
