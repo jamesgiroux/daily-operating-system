@@ -38,6 +38,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I324** | Email signals in entity intelligence enrichment | P2 | Intelligence |
 | **I326** | Per-meeting intelligence lifecycle — detect, enrich, update, archive | P1 | Architecture |
 | **I337** | Meeting-topic-aware context building — calendar description steers intelligence narrative | P1 | Pipeline |
+| **I338** | 1:1 relationship intelligence — three-file pattern for people (incomplete, plumbing only) | P1 | Intelligence |
 | **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
 | **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
 | **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
@@ -163,6 +164,7 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | Priority | Issue | Scope |
 |----------|-------|-------|
 | P1 | I337 | Meeting-topic-aware context building — calendar description steers intelligence narrative |
+| P1 | I338 | 1:1 relationship intelligence — three-file pattern for people (plumbing shipped, files never generated) |
 | P1 | I317 | Meeting-aware email intelligence (structured digest, not excerpts) |
 | P1 | I318 | Thread position tracking ("ball in your court") |
 | P1 | I319 | Entity-level email cadence monitoring + anomaly surfacing |
@@ -5021,9 +5023,11 @@ The system knows the entity. It doesn't know the meeting.
 
 **I338: 1:1 relationship intelligence — three-file pattern for people**
 
-**Priority:** P1 (0.10.0)
+**Priority:** P1 (0.12.0)
 **Area:** Backend / Intelligence
 **Depends on:** I337 (context building)
+
+**Status: INCOMPLETE.** Commit `6ac8400` added code paths for the three-file pattern but no person has ever received an `intelligence.json` file. The plumbing exists — enrichment trigger, freshness check, AI queue — but the actual file generation isn't firing. Zero `intelligence.json` files exist under `People/`. Either the trigger conditions (recurring 1:1, 5+ meetings) aren't being met for any person, or the enrichment pipeline silently fails for people. Needs investigation and completion in 0.12.0.
 **ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Section 4
 
 Extend the ADR-0057 three-file pattern to people who have 1:1 relationships with the user. Create `People/{name}/` directories with `dashboard.json`, `intelligence.json`, and `dashboard.md` for relationship intelligence.
