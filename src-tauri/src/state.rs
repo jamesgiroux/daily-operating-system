@@ -117,6 +117,8 @@ pub struct AppState {
     pub entity_resolution_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for Quill transcript poller (immediate sync after meeting ends).
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
+    /// Wake signal for Linear sync poller (I346).
+    pub linear_poller_wake: Arc<tokio::sync::Notify>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -183,6 +185,7 @@ impl AppState {
             signal_engine: Arc::new(crate::signals::propagation::default_engine()),
             entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
             quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -466,6 +469,7 @@ pub fn create_or_update_config(
                 granola: crate::granola::GranolaConfig::default(),
                 gravatar: crate::gravatar::GravatarConfig::default(),
                 clay: crate::clay::ClayConfig::default(),
+                linear: crate::linear::LinearConfig::default(),
                 features: std::collections::HashMap::new(),
                 user_domain: None,
                 user_domains: None,

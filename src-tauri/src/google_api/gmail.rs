@@ -247,6 +247,157 @@ pub async fn archive_emails(
 }
 
 // ============================================================================
+// Frequent correspondents (onboarding teammate suggestions)
+// ============================================================================
+
+/// A frequent email correspondent within the user's domain.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrequentCorrespondent {
+    pub name: String,
+    pub email: String,
+    pub message_count: usize,
+}
+
+/// Fetch the user's most frequent same-domain correspondents from sent mail.
+///
+/// Scans `in:sent newer_than:90d` messages, extracts To/Cc headers,
+/// filters to the user's domain, and returns the top N by frequency.
+pub async fn fetch_frequent_correspondents(
+    access_token: &str,
+    user_email: &str,
+    limit: usize,
+) -> Result<Vec<FrequentCorrespondent>, GoogleApiError> {
+    let user_domain = user_email
+        .split('@')
+        .nth(1)
+        .unwrap_or("")
+        .to_lowercase();
+    let user_email_lower = user_email.to_lowercase();
+
+    let client = reqwest::Client::new();
+    let mut counts: std::collections::HashMap<String, (String, usize)> =
+        std::collections::HashMap::new();
+    let mut page_token: Option<String> = None;
+
+    for _ in 0..3 {
+        let mut query_params: Vec<(&str, String)> = vec![
+            ("q", "in:sent newer_than:90d".to_string()),
+            ("maxResults", "100".to_string()),
+        ];
+        if let Some(ref token) = page_token {
+            query_params.push(("pageToken", token.clone()));
+        }
+
+        let resp = send_with_retry(
+            client
+                .get("https://gmail.googleapis.com/gmail/v1/users/me/messages")
+                .bearer_auth(access_token)
+                .query(&query_params),
+            &RetryPolicy::default(),
+        )
+        .await?;
+
+        if !resp.status().is_success() {
+            break;
+        }
+        let list: MessageListResponse = resp.json().await?;
+
+        // Fetch metadata for each message
+        for msg in &list.messages {
+            let detail_url = format!(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/{}",
+                msg.id
+            );
+            let detail_resp = match send_with_retry(
+                client
+                    .get(&detail_url)
+                    .bearer_auth(access_token)
+                    .query(&[
+                        ("format", "metadata"),
+                        ("metadataHeaders", "To"),
+                        ("metadataHeaders", "Cc"),
+                    ]),
+                &RetryPolicy::default(),
+            )
+            .await
+            {
+                Ok(r) if r.status().is_success() => r,
+                _ => continue,
+            };
+
+            let detail: MessageDetail = match detail_resp.json().await {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+
+            if let Some(payload) = &detail.payload {
+                for header in &payload.headers {
+                    if header.name.eq_ignore_ascii_case("To")
+                        || header.name.eq_ignore_ascii_case("Cc")
+                    {
+                        for addr in parse_email_addresses(&header.value) {
+                            let email_lower = addr.1.to_lowercase();
+                            if email_lower == user_email_lower {
+                                continue;
+                            }
+                            if let Some(domain) = email_lower.split('@').nth(1) {
+                                if domain == user_domain {
+                                    let entry = counts
+                                        .entry(email_lower.clone())
+                                        .or_insert_with(|| (addr.0.clone(), 0));
+                                    entry.1 += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        page_token = list.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    let mut results: Vec<FrequentCorrespondent> = counts
+        .into_iter()
+        .map(|(email, (name, count))| FrequentCorrespondent {
+            name: if name.is_empty() {
+                email.clone()
+            } else {
+                name
+            },
+            email,
+            message_count: count,
+        })
+        .collect();
+    results.sort_by(|a, b| b.message_count.cmp(&a.message_count));
+    results.truncate(limit);
+
+    Ok(results)
+}
+
+/// Parse email addresses from a header value like `"Alice" <alice@co.com>, Bob <bob@co.com>`.
+fn parse_email_addresses(header: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+    for part in header.split(',') {
+        let trimmed = part.trim();
+        if let Some(lt) = trimmed.find('<') {
+            if let Some(gt) = trimmed.find('>') {
+                let email = trimmed[lt + 1..gt].trim().to_string();
+                let name = trimmed[..lt].trim().trim_matches('"').trim().to_string();
+                results.push((name, email));
+            }
+        } else if trimmed.contains('@') {
+            results.push((String::new(), trimmed.to_string()));
+        }
+    }
+    results
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

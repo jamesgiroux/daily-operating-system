@@ -12,6 +12,7 @@ mod calendar_merge;
 mod capture;
 pub mod clay;
 mod commands;
+pub mod linear;
 pub mod db;
 mod db_backup;
 mod devtools;
@@ -195,6 +196,12 @@ pub fn run() {
                 clay::poller::run_clay_poller(clay_state, clay_handle).await;
             });
 
+            // Spawn Linear sync poller (I346)
+            let linear_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                linear::poller::run_linear_poller(linear_state).await;
+            });
+
             // Spawn event-driven entity resolution trigger (I308)
             let entity_res_state = state.clone();
             tauri::async_runtime::spawn(async move {
@@ -354,6 +361,7 @@ pub fn run() {
             commands::check_claude_status,
             commands::get_latency_rollups,
             commands::install_inbox_sample,
+            commands::get_frequent_correspondents,
             // Dev Tools
             commands::dev_apply_scenario,
             commands::dev_get_state,
@@ -497,6 +505,12 @@ pub fn run() {
             commands::enrich_account_from_clay,
             commands::start_clay_bulk_enrich,
             commands::get_enrichment_log,
+            // Linear Integration (I346)
+            commands::get_linear_status,
+            commands::set_linear_enabled,
+            commands::set_linear_api_key,
+            commands::test_linear_connection,
+            commands::start_linear_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
