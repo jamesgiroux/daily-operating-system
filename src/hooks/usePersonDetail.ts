@@ -41,6 +41,11 @@ export function usePersonDetail(personId: string | undefined) {
   // Duplicates
   const [duplicateCandidates, setDuplicateCandidates] = useState<DuplicateCandidate[]>([]);
 
+  // Inline action creation
+  const [addingAction, setAddingAction] = useState(false);
+  const [newActionTitle, setNewActionTitle] = useState("");
+  const [creatingAction, setCreatingAction] = useState(false);
+
   // Files
   const [files, setFiles] = useState<ContentFile[]>([]);
   const [indexing, setIndexing] = useState(false);
@@ -332,6 +337,25 @@ export function usePersonDetail(personId: string | undefined) {
     }
   }
 
+  // ─── Action creation ────────────────────────────────────────────────
+
+  async function handleCreateAction() {
+    if (!detail || !newActionTitle.trim()) return;
+    setCreatingAction(true);
+    try {
+      await invoke("create_action", {
+        request: { title: newActionTitle.trim(), personId: detail.id },
+      });
+      setNewActionTitle("");
+      setAddingAction(false);
+      await load();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setCreatingAction(false);
+    }
+  }
+
   // ─── Derived ──────────────────────────────────────────────────────────
 
   const intelligence = detail?.intelligence ?? null;
@@ -390,5 +414,11 @@ export function usePersonDetail(personId: string | undefined) {
     // Archive
     handleArchive,
     handleUnarchive,
+
+    // Action creation
+    addingAction, setAddingAction,
+    newActionTitle, setNewActionTitle,
+    creatingAction,
+    handleCreateAction,
   };
 }

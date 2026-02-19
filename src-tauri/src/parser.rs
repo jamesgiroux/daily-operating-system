@@ -2069,6 +2069,7 @@ fn parse_week_meeting_row(line: &str) -> Option<(String, WeekMeeting)> {
             meeting_id: None,
             meeting_type,
             prep_status,
+            linked_entities: None,
         },
     ))
 }

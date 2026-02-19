@@ -2780,9 +2780,35 @@ pub fn enrich_briefing(
 
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
+
+    // I313: Read vocabulary and briefing emphasis from active preset
+    let preset_guard = state.active_preset.read().ok();
+    let preset_ref = preset_guard.as_ref().and_then(|g| g.as_ref());
+    let vocab_context = preset_ref
+        .map(|p| {
+            format!(
+                "Domain vocabulary: entities are \"{noun_plural}\" (singular: \"{noun}\"). \
+                 Primary metric: \"{metric}\". Health: \"{health}\". Risk: \"{risk}\". \
+                 Success: \"{verb}\". Regular cadence: \"{cadence}\".\n",
+                noun = p.vocabulary.entity_noun,
+                noun_plural = p.vocabulary.entity_noun_plural,
+                metric = p.vocabulary.primary_metric,
+                health = p.vocabulary.health_label,
+                risk = p.vocabulary.risk_label,
+                verb = p.vocabulary.success_verb,
+                cadence = p.vocabulary.cadence_noun,
+            )
+        })
+        .unwrap_or_default();
+    let emphasis_context = preset_ref
+        .map(|p| format!("Briefing emphasis: {}\n", p.briefing_emphasis))
+        .unwrap_or_default();
+
     let mut prompt = format!(
         "You are writing a morning briefing narrative for {role_label}.\n\
          {user_fragment}\n\
+         {vocab_context}\
+         {emphasis_context}\
          Today's context:\n\
          - Date: {}\n\
          - Meetings: {} ({} customer) — density: {}\n\
@@ -3911,6 +3937,29 @@ pub fn enrich_week(
     let user_fragment = user_ctx.prompt_fragment();
     let role_label = user_ctx.title_or_default();
 
+    // I313: Read vocabulary and briefing emphasis from active preset
+    let week_preset_guard = state.active_preset.read().ok();
+    let week_preset_ref = week_preset_guard.as_ref().and_then(|g| g.as_ref());
+    let week_vocab_context = week_preset_ref
+        .map(|p| {
+            format!(
+                "Domain vocabulary: entities are \"{noun_plural}\" (singular: \"{noun}\"). \
+                 Primary metric: \"{metric}\". Health: \"{health}\". Risk: \"{risk}\". \
+                 Success: \"{verb}\". Regular cadence: \"{cadence}\".\n",
+                noun = p.vocabulary.entity_noun,
+                noun_plural = p.vocabulary.entity_noun_plural,
+                metric = p.vocabulary.primary_metric,
+                health = p.vocabulary.health_label,
+                risk = p.vocabulary.risk_label,
+                verb = p.vocabulary.success_verb,
+                cadence = p.vocabulary.cadence_noun,
+            )
+        })
+        .unwrap_or_default();
+    let week_emphasis_context = week_preset_ref
+        .map(|p| format!("Briefing emphasis: {}\n", p.briefing_emphasis))
+        .unwrap_or_default();
+
     let intel_section = if week_intel_context.is_empty() {
         String::new()
     } else {
@@ -3942,6 +3991,8 @@ pub fn enrich_week(
     let prompt = format!(
         "You are writing a weekly briefing for {role_label}.\n\
          {user_fragment}\n\
+         {week_vocab_context}\
+         {week_emphasis_context}\
          Week context:\n\
          - Week: {week_number} ({date_range})\n\
          - Total meetings: {total_meetings}\n\
