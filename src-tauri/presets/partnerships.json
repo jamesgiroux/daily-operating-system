@@ -1,0 +1,75 @@
+{
+  "id": "partnerships",
+  "name": "Partnerships",
+  "description": "For partnership and alliance managers cultivating co-sell, integration, and channel relationships. Tracks partner engagement, joint pipeline, and co-marketing activities across the ecosystem.",
+  "defaultEntityMode": "account",
+  "vocabulary": {
+    "entityNoun": "partner",
+    "entityNounPlural": "partners",
+    "primaryMetric": "Partner-Sourced Revenue",
+    "healthLabel": "Partner Engagement",
+    "riskLabel": "Partner Risk",
+    "successVerb": "activated",
+    "cadenceNoun": "partner review"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Partner-Sourced Revenue", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Engagement", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["thriving", "stable", "cooling", "dormant"] },
+      { "key": "lifecycle", "label": "Partner Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["identified", "recruited", "onboarding", "enabled", "activated", "scaling", "mature", "inactive"] },
+      { "key": "contract_end", "label": "Agreement End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "nps", "label": "Partner NPS", "fieldType": "number", "source": "column", "columnMapping": "nps" }
+    ],
+    "project": [
+      { "key": "status", "label": "Initiative Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Target Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "partner_type", "label": "Partner Type", "fieldType": "select", "options": ["technology", "channel", "consulting", "co_sell", "marketplace"], "required": false },
+      { "key": "partner_tier", "label": "Partner Tier", "fieldType": "select", "options": ["premier", "advanced", "select", "emerging"], "required": false },
+      { "key": "integration_status", "label": "Integration Status", "fieldType": "select", "options": ["live", "beta", "development", "planned", "none"], "required": false }
+    ],
+    "project": [],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "partner_manager", "label": "Partner Manager", "description": "Your counterpart on the partner side" },
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "Senior leader who greenlit the partnership" },
+    { "id": "technical_lead", "label": "Technical Lead", "description": "Solutions architect managing the integration" },
+    { "id": "partner_sales", "label": "Partner Sales Rep", "description": "Their seller who co-sells with your team" },
+    { "id": "partner_marketing", "label": "Partner Marketing", "description": "Runs co-marketing campaigns" },
+    { "id": "partner_enablement", "label": "Partner Enablement", "description": "Ensures their team is trained on your product" }
+  ],
+  "internalTeamRoles": [
+    { "id": "am", "label": "Alliance Manager", "description": "Owns the partner relationship end-to-end" },
+    { "id": "partner_ops", "label": "Partner Operations", "description": "Deal registration, reporting, systems" },
+    { "id": "partner_marketing", "label": "Partner Marketing", "description": "Co-marketing campaigns and joint content" },
+    { "id": "partner_sa", "label": "Partner SA", "description": "Technical integration and joint architecture" },
+    { "id": "channel_sales", "label": "Channel Sales", "description": "Working co-sell deals with partner reps" }
+  ],
+  "lifecycleEvents": [
+    "agreement_signed",
+    "onboarding_complete",
+    "integration_live",
+    "first_co_sell_deal",
+    "co_marketing_launch",
+    "tier_change",
+    "qbr_held",
+    "agreement_renewed",
+    "wind_down"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "agreement_expiring_90d",
+      "partner_engagement_declining",
+      "co_sell_pipeline_stalled"
+    ]
+  },
+  "briefingEmphasis": "Focus on partner engagement trends, joint pipeline health, and upcoming agreement renewals. Prioritize strategic partners with declining activity or stalled co-sell deals."
+}

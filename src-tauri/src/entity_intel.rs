@@ -1096,10 +1096,13 @@ pub fn build_intelligence_prompt(
     entity_type: &str,
     ctx: &IntelligenceContext,
     relationship: Option<&str>,
+    vocabulary: Option<&crate::presets::schema::PresetVocabulary>,
 ) -> String {
     let is_incremental = ctx.prior_intelligence.is_some();
     let entity_label = match entity_type {
-        "account" => "customer account",
+        "account" => vocabulary
+            .map(|v| v.entity_noun.as_str())
+            .unwrap_or("customer account"),
         "project" => "project",
         "person" => match relationship {
             Some("internal") => "internal teammate / colleague",
@@ -1225,15 +1228,16 @@ pub fn build_intelligence_prompt(
     }
 
     // Writing style instructions
-    prompt.push_str(
+    prompt.push_str(&format!(
         "WRITING RULES:\n\
          - Lead with conclusions, not evidence. State the \"so what\" first.\n\
          - Be concise. Every sentence must earn its place.\n\
          - Do NOT include footnotes, reference numbers, or source citations in prose.\n\
          - Do NOT embed filenames or source references inline in prose.\n\
          - Do NOT narrate chronologically. Synthesize themes and conclusions.\n\
-         - Write for a busy executive who has 60 seconds to understand this account.\n\n",
-    );
+         - Write for a busy executive who has 60 seconds to understand this {}.\n\n",
+        entity_label,
+    ));
 
     // Person-specific writing rules based on relationship type
     if entity_type == "person" {
@@ -1982,7 +1986,7 @@ pub fn enrich_entity_intelligence(
     // For person entities, we'd need the relationship from the DB but this code path
     // doesn't have the person record. The intel_queue path (which is the primary path)
     // handles this correctly. Pass None here for the legacy direct-enrichment path.
-    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx, None);
+    let prompt = build_intelligence_prompt(entity_name, entity_type, &ctx, None, None);
 
     // Step 4: Spawn Claude Code
     let output = pty
@@ -2808,6 +2812,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         let overview = CompanyOverview {
@@ -2860,6 +2865,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         let overview = CompanyOverview {
@@ -2968,7 +2974,7 @@ mod tests {
             next_meeting: Some("2026-02-05 — Weekly sync".to_string()),
         };
 
-        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None);
+        let prompt = build_intelligence_prompt("Acme Corp", "account", &ctx, None, None);
 
         assert!(prompt.contains("INITIAL intelligence build"));
         assert!(prompt.contains("Acme Corp"));
@@ -2994,7 +3000,7 @@ mod tests {
             ..Default::default()
         };
 
-        let prompt = build_intelligence_prompt("Project X", "project", &ctx, None);
+        let prompt = build_intelligence_prompt("Project X", "project", &ctx, None, None);
 
         assert!(prompt.contains("INCREMENTAL update"));
         assert!(prompt.contains("Prior."));
@@ -3010,7 +3016,7 @@ mod tests {
         };
 
         let prompt =
-            build_intelligence_prompt("Alice Chen", "person", &ctx, Some("external"));
+            build_intelligence_prompt("Alice Chen", "person", &ctx, Some("external"), None);
 
         assert!(prompt.contains("external stakeholder / customer contact"));
         assert!(prompt.contains("EXTERNAL STAKEHOLDER"));
@@ -3027,7 +3033,7 @@ mod tests {
         };
 
         let prompt =
-            build_intelligence_prompt("Bob Kim", "person", &ctx, Some("internal"));
+            build_intelligence_prompt("Bob Kim", "person", &ctx, Some("internal"), None);
 
         assert!(prompt.contains("internal teammate / colleague"));
         assert!(prompt.contains("INTERNAL TEAMMATE"));
@@ -3043,11 +3049,35 @@ mod tests {
         let ctx = IntelligenceContext::default();
 
         let prompt =
-            build_intelligence_prompt("Unknown Person", "person", &ctx, None);
+            build_intelligence_prompt("Unknown Person", "person", &ctx, None, None);
 
         assert!(prompt.contains("professional contact"));
         assert!(prompt.contains("Relationship type is unknown"));
         assert!(prompt.contains("relationship dynamic"));
+    }
+
+    #[test]
+    fn test_build_intelligence_prompt_with_vocabulary() {
+        let vocab = crate::presets::schema::PresetVocabulary {
+            entity_noun: "partner".to_string(),
+            entity_noun_plural: "partners".to_string(),
+            primary_metric: "Deal Value".to_string(),
+            health_label: "Engagement".to_string(),
+            risk_label: "Deal Risk".to_string(),
+            success_verb: "closed".to_string(),
+            cadence_noun: "pipeline review".to_string(),
+        };
+        let ctx = IntelligenceContext {
+            facts_block: "Health: green".to_string(),
+            ..Default::default()
+        };
+
+        let prompt =
+            build_intelligence_prompt("Acme Corp", "account", &ctx, None, Some(&vocab));
+
+        // Should use vocabulary noun instead of default "customer account"
+        assert!(prompt.contains("partner"));
+        assert!(!prompt.contains("customer account"));
     }
 
     #[test]
@@ -3316,6 +3346,7 @@ Hope this helps!"#;
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&account).expect("upsert");
 
