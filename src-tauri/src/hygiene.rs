@@ -61,6 +61,8 @@ pub struct HygieneReport {
     pub abandoned_quill_syncs: usize,
     /// Meetings with low-confidence entity matches (I305).
     pub low_confidence_entity_matches: usize,
+    /// Empty shell accounts (no meetings, no actions, no people after 30d).
+    pub empty_shell_accounts: usize,
     pub fixes: MechanicalFixes,
     pub fix_details: Vec<HygieneFixDetail>,
     pub scanned_at: String,
@@ -82,6 +84,12 @@ pub struct MechanicalFixes {
     pub quill_syncs_retried: usize,
     /// Entity suggestions created from low-confidence matches (I305).
     pub entity_suggestions_created: usize,
+    /// Phantom accounts archived (structural folders bootstrapped as accounts).
+    pub phantom_accounts_archived: usize,
+    /// Orphan internal accounts re-linked to internal root.
+    pub orphan_internals_relinked: usize,
+    /// Empty shell accounts auto-archived (no activity after 30d).
+    pub empty_shells_archived: usize,
 }
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
@@ -121,6 +129,7 @@ pub fn run_hygiene_scan(
         .unwrap_or(0);
     report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
+    report.empty_shell_accounts = count_empty_shell_accounts(db);
 
     // --- Phase 1: Mechanical fixes (free, instant) ---
     let user_domains = config.resolved_user_domains();
@@ -144,6 +153,19 @@ pub fn run_hygiene_scan(
 
     let (count, details) = retry_abandoned_quill_syncs(db);
     report.fixes.quill_syncs_retried = count;
+    all_details.extend(details);
+
+    // --- Phase 1b: Account cleanup (free, instant) ---
+    let (count, details) = archive_phantom_accounts(db);
+    report.fixes.phantom_accounts_archived = count;
+    all_details.extend(details);
+
+    let (count, details) = relink_orphan_internal_accounts(db);
+    report.fixes.orphan_internals_relinked = count;
+    all_details.extend(details);
+
+    let (count, details) = archive_empty_shell_accounts(db);
+    report.fixes.empty_shells_archived = count;
     all_details.extend(details);
 
     // --- Phase 2: Email name resolution + domain linking (free) ---
@@ -199,6 +221,7 @@ pub fn run_hygiene_scan(
     // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
     // duplicate_people is also unchanged (no auto-merge).
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
+    report.empty_shell_accounts = count_empty_shell_accounts(db);
 
     report.scan_duration_ms = scan_start.elapsed().as_millis() as u64;
     report
@@ -420,6 +443,178 @@ fn retry_abandoned_quill_syncs(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) 
     }
 
     (retried, details)
+}
+
+// =============================================================================
+// Phase 1b: Account Cleanup
+// =============================================================================
+
+/// Archive phantom accounts — structural folders (like "Internal") that were
+/// incorrectly bootstrapped as standalone accounts during workspace sync.
+/// A phantom account is: named "Internal", not flagged as is_internal, and has
+/// no meetings, actions, or people linked.
+fn archive_phantom_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    let conn = db.conn_ref();
+
+    // Find accounts named "Internal" (case-insensitive) that are NOT the real
+    // internal org root (is_internal = 0) and have zero activity.
+    let phantoms: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT a.id, a.name FROM accounts a
+             WHERE LOWER(a.name) = 'internal'
+               AND a.is_internal = 0
+               AND a.archived = 0
+               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut archived = 0;
+    let mut details = Vec::new();
+    let now = chrono::Utc::now().to_rfc3339();
+    for (id, name) in &phantoms {
+        if conn
+            .execute(
+                "UPDATE accounts SET archived = 1, updated_at = ?2 WHERE id = ?1",
+                rusqlite::params![id, now],
+            )
+            .is_ok()
+        {
+            details.push(HygieneFixDetail {
+                fix_type: "phantom_account_archived".to_string(),
+                entity_name: Some(name.clone()),
+                description: format!(
+                    "Archived phantom account '{}' (structural folder, no activity)",
+                    name
+                ),
+            });
+            archived += 1;
+        }
+    }
+
+    (archived, details)
+}
+
+/// Re-link orphan internal accounts to the internal root.
+/// An orphan internal account has is_internal = 1 but parent_id IS NULL and
+/// is not the root account itself (i.e., there's another internal account that IS the root).
+fn relink_orphan_internal_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    let root = match db.get_internal_root_account() {
+        Ok(Some(r)) => r,
+        _ => return (0, Vec::new()),
+    };
+
+    let conn = db.conn_ref();
+
+    // Find internal accounts with no parent that aren't the root
+    let orphans: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT id, name FROM accounts
+             WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0 AND id != ?1",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map(rusqlite::params![root.id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut relinked = 0;
+    let mut details = Vec::new();
+    let now = chrono::Utc::now().to_rfc3339();
+    for (id, name) in &orphans {
+        if conn
+            .execute(
+                "UPDATE accounts SET parent_id = ?2, updated_at = ?3 WHERE id = ?1",
+                rusqlite::params![id, root.id, now],
+            )
+            .is_ok()
+        {
+            details.push(HygieneFixDetail {
+                fix_type: "orphan_internal_relinked".to_string(),
+                entity_name: Some(name.clone()),
+                description: format!(
+                    "Re-linked orphan internal account '{}' under '{}'",
+                    name, root.name
+                ),
+            });
+            relinked += 1;
+        }
+    }
+
+    (relinked, details)
+}
+
+/// Archive empty shell accounts that have no meetings, no actions, no people,
+/// and were created more than 30 days ago.
+fn archive_empty_shell_accounts(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    let conn = db.conn_ref();
+
+    let shells: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT a.id, a.name FROM accounts a
+             WHERE a.archived = 0
+               AND a.updated_at <= datetime('now', '-30 days')
+               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account')",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut archived = 0;
+    let mut details = Vec::new();
+    let now = chrono::Utc::now().to_rfc3339();
+    for (id, name) in &shells {
+        if conn
+            .execute(
+                "UPDATE accounts SET archived = 1, updated_at = ?2 WHERE id = ?1",
+                rusqlite::params![id, now],
+            )
+            .is_ok()
+        {
+            details.push(HygieneFixDetail {
+                fix_type: "empty_shell_archived".to_string(),
+                entity_name: Some(name.clone()),
+                description: format!(
+                    "Archived empty shell account '{}' (no activity after 30 days)",
+                    name
+                ),
+            });
+            archived += 1;
+        }
+    }
+
+    (archived, details)
+}
+
+/// Count empty shell accounts for gap reporting (before fixes run).
+fn count_empty_shell_accounts(db: &ActionDb) -> usize {
+    db.conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM accounts a
+             WHERE a.archived = 0
+               AND a.updated_at <= datetime('now', '-30 days')
+               AND NOT EXISTS (SELECT 1 FROM meeting_entities me WHERE me.entity_id = a.id AND me.entity_type = 'account')
+               AND NOT EXISTS (SELECT 1 FROM actions act WHERE act.account_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM entity_people ep WHERE ep.entity_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM account_events ae WHERE ae.account_id = a.id)
+               AND NOT EXISTS (SELECT 1 FROM email_signals es WHERE es.entity_id = a.id AND es.entity_type = 'account')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0)
 }
 
 // =============================================================================
@@ -1395,6 +1590,27 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
             if fixes.ai_enrichments_enqueued == 1 { "refresh" } else { "refreshes" }
         ));
     }
+    if fixes.phantom_accounts_archived > 0 {
+        fix_parts.push(format!(
+            "archived {} phantom {}",
+            fixes.phantom_accounts_archived,
+            if fixes.phantom_accounts_archived == 1 { "account" } else { "accounts" }
+        ));
+    }
+    if fixes.orphan_internals_relinked > 0 {
+        fix_parts.push(format!(
+            "re-linked {} orphan internal {}",
+            fixes.orphan_internals_relinked,
+            if fixes.orphan_internals_relinked == 1 { "account" } else { "accounts" }
+        ));
+    }
+    if fixes.empty_shells_archived > 0 {
+        fix_parts.push(format!(
+            "archived {} empty shell {}",
+            fixes.empty_shells_archived,
+            if fixes.empty_shells_archived == 1 { "account" } else { "accounts" }
+        ));
+    }
 
     // Build gap summaries
     let mut remaining_gaps: Vec<HygieneGapSummary> = Vec::new();
@@ -1405,6 +1621,7 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         ("missing intelligence", report.missing_intelligence, "medium"),
         ("stale intelligence", report.stale_intelligence, "low"),
         ("unsummarized files", report.unsummarized_files, "medium"),
+        ("empty shell accounts", report.empty_shell_accounts, "low"),
     ];
     for (label, count, severity) in &gap_rows {
         if *count > 0 {
@@ -1422,7 +1639,10 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         + fixes.meeting_counts_updated
         + fixes.people_linked_by_domain
         + fixes.renewals_rolled_over
-        + fixes.ai_enrichments_enqueued;
+        + fixes.ai_enrichments_enqueued
+        + fixes.phantom_accounts_archived
+        + fixes.orphan_internals_relinked
+        + fixes.empty_shells_archived;
     let total_remaining_gaps: usize = remaining_gaps.iter().map(|g| g.count).sum();
 
     // Return None when nothing happened
