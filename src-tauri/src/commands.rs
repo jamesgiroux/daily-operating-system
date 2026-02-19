@@ -2499,6 +2499,24 @@ pub fn set_user_profile(
         }
     })?;
 
+    // Sync company name to internal root account entity if it changed
+    let current_company = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.user_company.clone()));
+    if let Some(ref company_name) = current_company {
+        if let Ok(db_guard) = state.db.lock() {
+            if let Some(db) = db_guard.as_ref() {
+                if let Ok(Some(root)) = db.get_internal_root_account() {
+                    if root.name != *company_name {
+                        let _ = db.update_account_field(&root.id, "name", company_name);
+                    }
+                }
+            }
+        }
+    }
+
     Ok("ok".to_string())
 }
 
@@ -5119,6 +5137,7 @@ pub struct AccountListItem {
     pub child_count: usize,
     pub is_parent: bool,
     pub is_internal: bool,
+    pub archived: bool,
 }
 
 /// Full account detail for the detail page.
@@ -5151,6 +5170,7 @@ pub struct AccountDetailResult {
     pub children: Vec<AccountChildSummary>,
     pub parent_aggregate: Option<crate::db::ParentAggregate>,
     pub is_internal: bool,
+    pub archived: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -5252,7 +5272,8 @@ pub fn get_child_accounts_list(
     let items: Vec<AccountListItem> = children
         .into_iter()
         .map(|a| {
-            let mut item = account_to_list_item(&a, db, 0);
+            let grandchild_count = db.get_child_accounts(&a.id).map(|c| c.len()).unwrap_or(0);
+            let mut item = account_to_list_item(&a, db, grandchild_count);
             item.parent_name = parent_name.clone();
             item
         })
@@ -5345,6 +5366,7 @@ fn account_to_list_item(
         child_count,
         is_parent: child_count > 0,
         is_internal: a.is_internal,
+        archived: a.archived,
     }
 }
 
@@ -5502,6 +5524,7 @@ pub fn get_account_detail(
         children,
         parent_aggregate,
         is_internal: account.is_internal,
+        archived: account.archived,
         intelligence,
     })
 }
@@ -6896,6 +6919,7 @@ pub struct ProjectDetailResult {
     pub signals: Option<crate::db::ProjectSignals>,
     pub recent_captures: Vec<crate::db::DbCapture>,
     pub recent_email_signals: Vec<crate::db::DbEmailSignal>,
+    pub archived: bool,
     /// Entity intelligence (ADR-0057) — synthesized assessment from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::entity_intel::IntelligenceJson>,
@@ -7019,6 +7043,7 @@ pub fn get_project_detail(
         signals,
         recent_captures,
         recent_email_signals,
+        archived: project.archived,
         intelligence,
     })
 }
@@ -7393,6 +7418,19 @@ pub fn archive_account(
     Ok(())
 }
 
+/// Merge source account into target account.
+#[tauri::command]
+pub fn merge_accounts(
+    from_id: String,
+    into_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<crate::db::MergeResult, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.merge_accounts(&from_id, &into_id)
+        .map_err(|e| e.to_string())
+}
+
 /// Archive or unarchive a project.
 #[tauri::command]
 pub fn archive_project(
@@ -7449,6 +7487,19 @@ pub fn get_archived_people(
     let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
     let db = db_guard.as_ref().ok_or("Database not initialized")?;
     db.get_archived_people_with_signals()
+        .map_err(|e| e.to_string())
+}
+
+/// Restore an archived account with optional child restoration (I199).
+#[tauri::command]
+pub fn restore_account(
+    account_id: String,
+    restore_children: bool,
+    state: State<Arc<AppState>>,
+) -> Result<usize, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.restore_account(&account_id, restore_children)
         .map_err(|e| e.to_string())
 }
 
@@ -7632,7 +7683,7 @@ pub fn bulk_create_projects(
 // I143: Account Events
 // =============================================================================
 
-/// Record an account lifecycle event (expansion, contraction, churn, etc.)
+/// Record an account lifecycle event (expansion, downsell, churn, etc.)
 #[tauri::command]
 pub fn record_account_event(
     account_id: String,
