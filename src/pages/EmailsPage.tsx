@@ -9,7 +9,7 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { getPersonalityCopy } from "@/lib/personality";
 import { usePersonality } from "@/hooks/usePersonality";
-import { AlertTriangle, Eye, Archive, Zap } from "lucide-react";
+import { AlertTriangle, Eye, Archive, Zap, RefreshCw } from "lucide-react";
 import type { EmailBriefingData, EnrichedEmail, EntityEmailThread } from "@/types";
 import type { ReadinessStat } from "@/components/layout/FolioBar";
 import type { ChapterItem } from "@/components/layout/FloatingNavIsland";
@@ -24,13 +24,21 @@ function buildChapters(data: EmailBriefingData | null): ChapterItem[] {
   if (data.stats.highCount > 0) chapters.push({ id: "emails-attention", label: "Attention", icon: <AlertTriangle size={18} strokeWidth={1.5} /> });
   if (data.stats.mediumCount > 0) chapters.push({ id: "emails-look", label: "Worth a Look", icon: <Eye size={18} strokeWidth={1.5} /> });
   if (data.stats.lowCount > 0) chapters.push({ id: "emails-filed", label: "Filed Away", icon: <Archive size={18} strokeWidth={1.5} /> });
-  if (data.entityThreads.length > 0) chapters.push({ id: "emails-signals", label: "Signals", icon: <Zap size={18} strokeWidth={1.5} /> });
+  if (data.entityThreads.some((t) => filterConfidentSignals(t.signals).length > 0)) chapters.push({ id: "emails-signals", label: "Signals", icon: <Zap size={18} strokeWidth={1.5} /> });
   return chapters;
 }
 
 // =============================================================================
 // Signal dot color by type
 // =============================================================================
+
+/** Minimum confidence for a signal to surface in the UI. Below this, the system
+ *  stays quiet rather than showing something wrong. */
+const SIGNAL_CONFIDENCE_THRESHOLD = 0.6;
+
+function filterConfidentSignals(signals: import("@/types").EmailSignal[]): import("@/types").EmailSignal[] {
+  return signals.filter((s) => (s.confidence ?? 0) >= SIGNAL_CONFIDENCE_THRESHOLD);
+}
 
 function signalColor(signalType: string): string {
   const lower = signalType.toLowerCase();
@@ -61,6 +69,7 @@ export default function EmailsPage() {
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadEmails = useCallback(async () => {
     try {
@@ -75,6 +84,18 @@ export default function EmailsPage() {
 
   useEffect(() => {
     loadEmails();
+  }, [loadEmails]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await invoke<string>("refresh_emails");
+      await loadEmails();
+    } catch (err) {
+      console.error("Email refresh failed:", err);
+    } finally {
+      setRefreshing(false);
+    }
   }, [loadEmails]);
 
   // Archive low priority — preserved exactly
@@ -113,6 +134,20 @@ export default function EmailsPage() {
     return stats;
   }, [data]);
 
+  const folioActions = useMemo(() => (
+    <button
+      onClick={handleRefresh}
+      disabled={refreshing}
+      className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+      title={refreshing ? "Refreshing emails…" : "Check for new emails"}
+    >
+      <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, letterSpacing: "0.04em" }}>
+        {refreshing ? "Refreshing…" : "Refresh"}
+      </span>
+    </button>
+  ), [handleRefresh, refreshing]);
+
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Email Intelligence",
@@ -120,8 +155,9 @@ export default function EmailsPage() {
       activePage: "inbox" as const,
       chapters,
       folioReadinessStats: folioStats,
+      folioActions,
     }),
-    [chapters, folioStats],
+    [chapters, folioStats, folioActions],
   );
   useRegisterMagazineShell(shellConfig);
 
@@ -364,7 +400,7 @@ export default function EmailsPage() {
       )}
 
       {/* ═══ CHAPTER 4: ENTITY SIGNALS ═══ */}
-      {data && data.entityThreads.length > 0 && (
+      {data && data.entityThreads.some((t) => filterConfidentSignals(t.signals).length > 0) && (
         <section id="emails-signals" style={{ marginBottom: 48 }}>
           <ChapterHeading
             title="Entity Signals"
@@ -395,8 +431,9 @@ function HighPriorityCard({
   email: EnrichedEmail;
   showBorder: boolean;
 }) {
-  // First signal entity name for context
-  const entitySignal = email.signals?.length > 0 ? email.signals[0] : null;
+  // First confident signal entity name for context
+  const confidentSigs = filterConfidentSignals(email.signals ?? []);
+  const entitySignal = confidentSigs.length > 0 ? confidentSigs[0] : null;
 
   return (
     <div
@@ -525,10 +562,10 @@ function HighPriorityCard({
         </p>
       )}
 
-      {/* Signal badges */}
-      {email.signals?.length > 0 && (
+      {/* Signal badges — only show confident signals */}
+      {filterConfidentSignals(email.signals ?? []).length > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          {email.signals.map((sig, i) => (
+          {filterConfidentSignals(email.signals ?? []).map((sig, i) => (
             <span
               key={i}
               style={{
@@ -640,6 +677,11 @@ function EntityThreadCard({ thread }: { thread: EntityEmailThread }) {
       ? `/accounts/${thread.entityId}`
       : `/projects/${thread.entityId}`;
 
+  const confidentSignals = filterConfidentSignals(thread.signals);
+
+  // Don't render the card at all if no signals pass the confidence threshold
+  if (confidentSignals.length === 0) return null;
+
   return (
     <div>
       {/* Entity name with dot */}
@@ -682,9 +724,9 @@ function EntityThreadCard({ thread }: { thread: EntityEmailThread }) {
       </p>
 
       {/* Signal narrative */}
-      {thread.signals.length > 0 && (
+      {confidentSignals.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          {thread.signals.slice(0, 3).map((sig, i) => (
+          {confidentSignals.slice(0, 3).map((sig, i) => (
             <p
               key={i}
               style={{
@@ -703,7 +745,7 @@ function EntityThreadCard({ thread }: { thread: EntityEmailThread }) {
               {sig.signalText}
             </p>
           ))}
-          {thread.signals.length > 3 && (
+          {confidentSignals.length > 3 && (
             <p
               style={{
                 fontFamily: "var(--font-mono)",
@@ -712,7 +754,7 @@ function EntityThreadCard({ thread }: { thread: EntityEmailThread }) {
                 marginTop: 4,
               }}
             >
-              + {thread.signals.length - 3} more signal{thread.signals.length - 3 !== 1 ? "s" : ""}
+              + {confidentSignals.length - 3} more signal{confidentSignals.length - 3 !== 1 ? "s" : ""}
             </p>
           )}
         </div>

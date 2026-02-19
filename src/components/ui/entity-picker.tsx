@@ -32,6 +32,8 @@ interface EntityPickerProps {
   /** When set, shows a non-removable chip (for pre-filled entity) */
   locked?: boolean;
   className?: string;
+  /** Entity IDs to exclude from the picker (already linked) */
+  excludeIds?: string[];
 }
 
 export function EntityPicker({
@@ -41,6 +43,7 @@ export function EntityPicker({
   placeholder = "Link entity...",
   locked = false,
   className,
+  excludeIds,
 }: EntityPickerProps) {
   const [open, setOpen] = useState(false);
   const [entities, setEntities] = useState<EntityOption[]>([]);
@@ -94,18 +97,25 @@ export function EntityPicker({
     load();
   }, [entityType, value]);
 
+  const excludeSet = excludeIds ? new Set(excludeIds) : null;
+  const isExcluded = (id: string) => excludeSet?.has(id) ?? false;
+  // Multiselect mode: when excludeIds is provided, picker stays open after selection
+  const isMultiSelect = !!excludeIds;
+
   const internalAccounts = entities.filter(
-    (e) => e.type === "account" && e.isInternal
+    (e) => e.type === "account" && e.isInternal && !isExcluded(e.id)
   );
+  // Keep parents even if excluded, so their children still render nested.
+  // The parent CommandItem itself is hidden via the render.
   const externalParentAccounts = entities.filter(
     (e) => e.type === "account" && !e.isInternal && !e.parentName
   );
   const externalChildAccounts = entities.filter(
-    (e) => e.type === "account" && !e.isInternal && e.parentName
+    (e) => e.type === "account" && !e.isInternal && e.parentName && !isExcluded(e.id)
   );
-  const projects = entities.filter((e) => e.type === "project");
+  const projects = entities.filter((e) => e.type === "project" && !isExcluded(e.id));
 
-  if (value && selectedName) {
+  if (value && selectedName && !isMultiSelect) {
     const entity = entities.find((e) => e.id === value);
     const Icon = entity?.type === "project" ? FolderKanban : Building2;
     return (
@@ -162,8 +172,7 @@ export function EntityPicker({
                     value={`internal ${a.name}`}
                     onSelect={() => {
                       onChange(a.id, a.name, a.type);
-                      setSelectedName(a.name);
-                      setOpen(false);
+                      if (!isMultiSelect) { setSelectedName(a.name); setOpen(false); }
                     }}
                   >
                     <Building2 className="mr-2 size-3.5 text-primary" />
@@ -178,27 +187,33 @@ export function EntityPicker({
                   const children = externalChildAccounts.filter(
                     (c) => c.parentName === a.name
                   );
+                  const parentExcluded = isExcluded(a.id);
+                  // Skip parent entirely if excluded AND has no visible children
+                  if (parentExcluded && children.length === 0) return null;
                   return (
                     <div key={a.id}>
-                      <CommandItem
-                        value={a.name}
-                        onSelect={() => {
-                          onChange(a.id, a.name, a.type);
-                          setSelectedName(a.name);
-                          setOpen(false);
-                        }}
-                      >
-                        <Building2 className="mr-2 size-3.5 text-muted-foreground" />
-                        {a.name}
-                      </CommandItem>
+                      {!parentExcluded && (
+                        <CommandItem
+                          value={a.name}
+                          onSelect={() => {
+                            onChange(a.id, a.name, a.type);
+                            if (!isMultiSelect) { setSelectedName(a.name); setOpen(false); }
+                          }}
+                        >
+                          <Building2 className="mr-2 size-3.5 text-muted-foreground" />
+                          {a.name}
+                        </CommandItem>
+                      )}
+                      {parentExcluded && children.length > 0 && (
+                        <div className="px-2 py-1 text-xs text-muted-foreground/60">{a.name}</div>
+                      )}
                       {children.map((c) => (
                         <CommandItem
                           key={c.id}
                           value={`${a.name} ${c.name}`}
                           onSelect={() => {
                             onChange(c.id, c.name, c.type);
-                            setSelectedName(c.name);
-                            setOpen(false);
+                            if (!isMultiSelect) { setSelectedName(c.name); setOpen(false); }
                           }}
                         >
                           <Building2 className="ml-4 mr-2 size-3.5 text-muted-foreground/60" />
@@ -218,8 +233,7 @@ export function EntityPicker({
                     value={p.name}
                     onSelect={() => {
                       onChange(p.id, p.name, p.type);
-                      setSelectedName(p.name);
-                      setOpen(false);
+                      if (!isMultiSelect) { setSelectedName(p.name); setOpen(false); }
                     }}
                   >
                     <FolderKanban className="mr-2 size-3.5 text-muted-foreground" />

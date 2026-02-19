@@ -18,6 +18,7 @@ export function useAccountFields(
   const [editArr, setEditArr] = useState("");
   const [editNps, setEditNps] = useState("");
   const [editRenewal, setEditRenewal] = useState("");
+  const [editParentId, setEditParentId] = useState("");
   const [editNotes, setEditNotes] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -35,6 +36,7 @@ export function useAccountFields(
     setEditArr(detail.arr?.toString() ?? "");
     setEditNps(detail.nps?.toString() ?? "");
     setEditRenewal(detail.renewalDate ?? "");
+    setEditParentId(detail.parentId ?? "");
     setEditNotes(detail.notes ?? "");
     setDirty(false);
   }, [detail]);
@@ -50,6 +52,7 @@ export function useAccountFields(
       if (editArr !== (detail.arr?.toString() ?? "")) fieldUpdates.push(["arr", editArr]);
       if (editNps !== (detail.nps?.toString() ?? "")) fieldUpdates.push(["nps", editNps]);
       if (editRenewal !== (detail.renewalDate ?? "")) fieldUpdates.push(["contract_end", editRenewal]);
+      if (editParentId !== (detail.parentId ?? "")) fieldUpdates.push(["parent_id", editParentId]);
 
       for (const [field, value] of fieldUpdates) {
         await invoke("update_account_field", { accountId: detail.id, field, value });
@@ -65,7 +68,7 @@ export function useAccountFields(
     } finally {
       setSaving(false);
     }
-  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editNotes, reload, setError]);
+  }, [detail, editName, editHealth, editLifecycle, editArr, editNps, editRenewal, editParentId, editNotes, reload, setError]);
 
   const handleCancelEdit = useCallback(() => {
     if (!detail) return;
@@ -75,6 +78,7 @@ export function useAccountFields(
     setEditArr(detail.arr?.toString() ?? "");
     setEditNps(detail.nps?.toString() ?? "");
     setEditRenewal(detail.renewalDate ?? "");
+    setEditParentId(detail.parentId ?? "");
     setDirty(false);
     setEditing(false);
   }, [detail]);
@@ -87,6 +91,7 @@ export function useAccountFields(
     editArr, setEditArr,
     editNps, setEditNps,
     editRenewal, setEditRenewal,
+    editParentId, setEditParentId,
     editNotes, setEditNotes,
     dirty, setDirty,
     saving,
