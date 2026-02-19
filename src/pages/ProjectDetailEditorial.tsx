@@ -115,7 +115,7 @@ export default function ProjectDetailEditorial() {
       folioLabel: "Project",
       atmosphereColor: "olive" as const,
       activePage: "projects" as const,
-      backLink: { label: "Projects", onClick: () => navigate({ to: "/projects" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/projects" }) },
       chapters: CHAPTERS,
     }),
     [navigate],
