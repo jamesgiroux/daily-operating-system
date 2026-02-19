@@ -1499,3 +1499,16 @@ export interface EnrichmentLogEntry {
   fieldsUpdated?: string;
   createdAt: string;
 }
+
+// =============================================================================
+// Linear Integration (I346)
+// =============================================================================
+
+export interface LinearStatusData {
+  enabled: boolean;
+  apiKeySet: boolean;
+  pollIntervalMinutes: number;
+  issueCount: number;
+  projectCount: number;
+  lastSyncAt: string | null;
+}

@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
+**Current state:** 886 Rust tests. v0.10.0 shipped (intelligence + signals). 0.10.1 in progress (user feedback + onboarding polish + Linear data layer). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (reports + product communication). 1.0.0 = beta gate.
 
 ---
 
@@ -28,10 +28,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit (beta gate) | P1 | Code Quality |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
-| **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
-| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
-| **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
-| **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
 | **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
 | **I318** | Thread position tracking ("ball in your court") | P1 | Email |
 | **I319** | Entity-level email cadence monitoring + anomaly surfacing | P1 | Intelligence |
@@ -48,7 +44,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
 | **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
 | **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
-| **I334** | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing | P1 | UX / Actions |
 | **I200** | ~~Week page proactive suggestions~~ → Partially superseded by I330 (ADR-0081) | — | UX |
 | **I202** | ~~Prep prefill + draft agenda actions~~ → Superseded by I333 (ADR-0081) | — | UX |
 | **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
@@ -61,19 +56,19 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I227** | Gainsight integration (CS platform data sync) | P2 | Integrations |
 | **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
 | **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
-| **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
-| **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 | **I340** | Glean integration — enterprise knowledge enrichment for meeting prep | P2 | Integrations |
 | **I341** | Product vocabulary audit — translate system terms in all user-facing UI copy (ADR-0083) | P1 | UX |
-| **I342** | Surface JTBD critique — define each surface's job, audit every element, cut what doesn't belong, execute | P1 | UX / Product |
+| **I342** | Surface JTBD critique — define, audit, cut, execute (Phases 1-3 complete, Phase 4 pending) | P1 | UX / Product |
 | **I343** | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges | P1 | UX |
 | **I344** | Onboarding: suggest closest teammates from Gmail frequent correspondents | P2 | UX / Onboarding |
 | **I345** | Onboarding: back navigation loses entered state (bug) | P1 | UX / Onboarding |
-| **I346** | Linear integration (project management sync) | P2 | Integrations |
+| **I346** | Linear integration — data layer shipped (0.10.1), signal consumers in I306/I326/I332 | P2 | Integrations |
 | **I347** | SWOT report type — account strengths/weaknesses/opportunities/threats from existing intelligence | P2 | Intelligence / Reports |
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
+| **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
+| **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
 
 ---
 
@@ -103,7 +98,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
-### 0.9.2 — Bug Fixes
+### 0.9.2 — Bug Fixes — CLOSED
+
+Entity re-indexing fixed for projects and people. I325 resolved — re-index now works across all entity types, not just accounts. See CHANGELOG for details.
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
@@ -111,26 +108,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
-### 0.10.0 — Intelligence
+### 0.10.0 — Intelligence — CLOSED
 
-*The system that learns from you. Signals compound, corrections teach, events drive action.*
-
-| Priority | Issue | Scope |
-|----------|-------|-------|
-| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
-| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
-| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
-| P1 | I308 | Event-driven signal processing and cross-entity propagation |
-| P1 | I334 | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing |
-| P1 | I335 | Entity-generic data model — replace `account` fields with `entities` arrays (ADR-0082 Phase 1+4) |
-| P1 | I336 | Entity-generic classification — entity hints from DB, 1:1 person detection (ADR-0082 Phase 2) |
-| P1 | I337 | Entity-generic context building — type-dispatched intelligence injection (ADR-0082 Phase 3) |
-| P1 | I338 | 1:1 relationship intelligence — three-file pattern for people, relationship prep (ADR-0082 Section 4) |
-| P1 | I339 | Entity-generic dashboard and frontend — entities array on all surfaces (ADR-0082 Phase 1+4) |
-| P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
-| P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
-
-**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. I335–I339 implement ADR-0082 (Entity-Generic Prep Pipeline): rebuild the account-privileged prep pipeline so accounts, projects, and people are first-class entities throughout classification, context building, prep generation, and dashboard display. This includes 1:1 relationship intelligence — recurring 1:1 meetings resolve to the counterpart person as primary entity with the three-file pattern (ADR-0057). The legacy `account_id` column on `meetings_history` is dropped; the `meeting_entities` junction table becomes the sole source of truth. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
+Signal intelligence architecture shipped (I305–I308): typed event log, Bayesian fusion, Thompson Sampling correction learning, event-driven processing, and cross-entity propagation. Entity-generic data model (I335–I339) rebuilt the account-privileged prep pipeline to treat accounts, projects, and people as first-class entities. I334 (proposed actions triage) completed the briefing and meeting outcomes surface. I260 (proactive surfacing) and I262 (The Record) enable compound intelligence. See CHANGELOG for details.
 
 ---
 
@@ -142,11 +122,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 |----------|-------|-------|
 | P1 | I345 | Onboarding: back navigation loses entered state (bug) |
 | P2 | I344 | Onboarding: suggest closest teammates from Gmail frequent correspondents |
-| P2 | I347 | SWOT report type — account S/W/O/T from existing intelligence |
-| P2 | I346 | Linear integration (project management sync) |
-| P2 | I348 | Email digest — push DailyOS intelligence summaries via scheduled email |
+| P2 | I346 | Linear integration — data layer (sync tables, poller, settings card) |
 
-**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I347 extends the report system (currently risk briefing only) with a SWOT analysis that reorganizes intelligence already in the system. I346 adds Linear as a project management signal source. I348 opens DailyOS as a distribution surface via email (morning digest, share-with-colleague, post-meeting summary). These are quick wins that demonstrate responsiveness to user feedback while the heavier intelligence work (0.10.0) continues.
+**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I346 ships the Linear data layer: sync tables (`linear_issues`, `linear_projects`), background poller, settings card with API key + test connection. This is the "connect your Linear" step — data flows in but isn't consumed yet. The consumer side (entity linking, prep enrichment, signal surfacing) lives in the signal bus (I306) and meeting intelligence (I326/I332) issues where Linear joins email, calendar, and Clay as a signal source. I347 (SWOT) and I348 (email digest) moved to 0.14.0 (Reports release) where they join a broader reporting and distribution surface effort.
 
 ---
 
@@ -201,10 +179,11 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P1 | I341 | Product vocabulary audit — translate system terms in all UI copy, informed by I342 outcomes |
 | P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
 | P1 | I343 | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges |
+| P1 | I349 | Settings redesign — kill the control panel, build a connections hub |
 
 **Rationale:** DailyOS has been built at speed — features added because they were possible, scope expanded six times, a full design system refresh applied to content that was never questioned. The app has never had a "why is this here?" pass. Every time we've been critical, the app has been better for it. This release does the critique.
 
-I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious.
+I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious. I349 is the biggest single-surface redesign: the Settings page goes from an 18-card scrolling control panel to a focused connections hub with progressive disclosure, moving in-context actions to the surfaces that use them and collapsing identity into one card.
 
 This is the "make it feel like a product" release. Not by adding polish — by subtracting everything that doesn't serve the user's actual job.
 
@@ -230,15 +209,29 @@ This is the "make it feel like a product" release. Not by adding polish — by s
 
 ---
 
+### 0.14.0 — Reports & Product Communication
+
+*Intelligence leaves the app. Reports go to leadership, digests go to inboxes, release notes go to users, telemetry comes back.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I347 | SWOT report type — account S/W/O/T from existing intelligence |
+| P1 | I348 | Email digest — push DailyOS intelligence summaries via scheduled email |
+| P1 | I350 | In-app notifications — release announcements, what's new, system status alerts |
+| P1 | I90 | Product telemetry & analytics infrastructure |
+
+**Rationale:** DailyOS generates intelligence but keeps it trapped in the app. The Reports button on accounts currently only produces a risk briefing — one report type from one surface. This release builds reporting into a first-class capability: SWOT analysis (I347) joins risk briefing as a second report type, with the architecture designed for more (account plan, QBR deck, portfolio summary). Email digest (I348) lets intelligence leave the app entirely — morning briefings to your inbox, meeting outcomes to colleagues, account summaries shared before a joint call. All powered by existing Gmail OAuth, no cloud relay. Meanwhile, the app itself learns to communicate: I350 adds a "What's New" modal on launch (GitHub Releases API, no SaaS), macOS Notification Center for system alerts, and in-app badges for unseen releases. I90 closes the loop with anonymous local telemetry — feature usage, surface visits, workflow completions — so we know what's working before 1.0.0 beta. Together: intelligence flows out to users and stakeholders, product knowledge flows back to us.
+
+---
+
 ### 1.0.0 — Beta
 
-*Onboarding complete, telemetry, full loop validated. First version for non-technical testers.*
+*Onboarding complete, full loop validated. First version for non-technical testers.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
 | P0 | I56 | Onboarding: educational redesign (demo data, dashboard tour) |
 | P0 | I57 | Onboarding: add accounts/projects + user domain |
-| P2 | I90 | Product telemetry & analytics infrastructure |
 
 ---
 
@@ -1119,6 +1112,7 @@ A user demos "Agentforce" (a project) to Jefferies (a customer). The system can'
 | Historical group patterns (same N people = same entity) | **Not implemented** | High potential |
 | User correction learning (re-tag → training signal) | **Not implemented** | High potential |
 | Post-meeting transcript entity mentions | **Not implemented** | High potential |
+| Linear project/issue names vs entity names/keywords | **Not implemented** (data layer in 0.10.1, I346) | Medium-high potential |
 
 **Proposed Architecture — Signal Cascade:**
 
@@ -1201,8 +1195,8 @@ Projects are currently manual-only. Minimum viable project matching:
 
 ---
 
-**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge**
-Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
+**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source**
+Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, Linear, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
 
 **Core deliverables:**
 
@@ -1213,10 +1207,11 @@ Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, 
 5. **Email-calendar bridge for entity resolution** — Correlate email threads with meeting attendees in the 48 hours before a meeting. Email thread participants + subject line → entity resolution signal for the meeting. Join on email addresses (both sources use them).
 6. **Email pre-meeting context** — Surface relevant email thread excerpts in meeting prep context, weighted by recency and embedding similarity to meeting title.
 7. **Integration retrofit** — Clay, Gravatar, and hygiene enrichment pipelines emit signals to the bus instead of writing directly to entity fields. Signal consumers read from the bus.
+8. **Linear signal source** — Linear issue state changes (blocked, overdue, completed) and project status changes emit signals to the bus. Linear projects and issues are linked to DailyOS entities via keyword matching (same pattern as meeting-entity resolution in I305). The data layer (sync tables, poller) ships in 0.10.1 (I346); this item wires the synced data into the signal bus. Linear signals have 14-day decay half-life (issue status is fast-moving). Entity linking uses Linear project names matched against DailyOS entity names/keywords — auto-suggested, user-confirmed (Option C hybrid from I346 product discussion).
 
 **New dependencies:** None (pure SQLite + existing Rust math).
 
-**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`.
+**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`, `linear/poller.rs` (emit signals on sync).
 
 **Acceptance criteria:**
 - All enrichment sources write to `signal_events` table
@@ -1224,8 +1219,10 @@ Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, 
 - Temporal decay reduces signal weight as age increases
 - Email threads from 48 hours before a meeting are surfaced in prep context
 - Email participant overlap with meeting attendees produces entity resolution signal
+- Linear issue state changes (blocked, completed, overdue) emit signals to the bus
+- Linear projects linked to DailyOS entities via keyword matching produce entity context signals
 
-**Dependencies:** ADR-0080 (architecture). Consumed by I305 (entity resolution) and I307 (learning).
+**Dependencies:** ADR-0080 (architecture), I346 (Linear data layer, 0.10.1). Consumed by I305 (entity resolution) and I307 (learning).
 
 ---
 
@@ -3842,97 +3839,69 @@ Define each surface's job-to-be-done. Not "this page shows meetings" — the ful
 
 **Deliverable:** ADR-0084 (Surface Jobs-to-Be-Done). This becomes the reference for all subsequent UI work.
 
+**Status: COMPLETE.** ADR-0084 written at `.docs/decisions/0084-surface-jobs-to-be-done.md`.
+
 ---
 
 #### Phase 2: Element Inventory & Prosecution
 
-Walk every surface in the running app. For each section, component, badge, button, label, and card:
+Six-agent audit inventoried every visible element across all five surface types. Each agent read the full component code and produced a structured document with JTBD analysis and element-by-element verdicts (keep/cut/move/merge/rethink).
 
-- **What is it?** (Name, location, current behavior)
-- **What job does it serve?** (Reference Phase 1 JTBD)
-- **Does it serve that job well?** (Is it clear? Is it in the right place? Does the user understand it without explanation?)
-- **Is it duplicated?** (Does another surface show the same information? Which one should own it?)
-- **Could the user do their job without it?** (If yes — does it actively help or is it decoration?)
-- **Is it earning its space?** (On an editorial layout with generous whitespace, every element must justify its real estate)
+**Deliverable:** Element audit documents. Every element with a verdict.
 
-This is the critique. Be ruthless. The question isn't "is this useful?" — lots of things are useful. The question is "does this serve the specific job this surface was hired to do?"
-
-**Deliverable:** Element audit spreadsheet or structured document. Every element with a verdict: keep, cut, move, merge, rethink.
+**Status: COMPLETE.** Six audit reports at `.docs/research/i342-*.md`:
+- `i342-daily-briefing-audit.md` — 8 sections, ~50 elements inventoried
+- `i342-weekly-forecast-audit.md` — 7 sections, 33 elements inventoried, collapse hypothesis evaluated
+- `i342-meeting-detail-audit.md` — 9 sections + shell, 72 elements inventoried
+- `i342-actions-audit.md` — 11 sections, 58 elements inventoried
+- `i342-entity-detail-audit.md` — 3 entity types, shared components, vocabulary violations
+- `i342-cross-cutting-audit.md` — nav structure, duplication map, dead code inventory
 
 ---
 
 #### Phase 3: Cut List, Restructure Plan & Vocabulary
 
-The hard part. From the Phase 2 audit, produce:
+Decision checklist produced from Phase 2 findings. All verdicts provided.
 
-1. **Cut list** — Elements that don't serve the JTBD. These get removed.
-2. **Move list** — Elements on the wrong surface. These relocate.
-3. **Merge list** — Duplicated elements across surfaces. One surface owns it, others link to it.
-4. **Rethink list** — Elements that serve the job but do it poorly. These get redesigned.
-5. **Section restructure** — If the daily briefing's section order doesn't match the user's mental model of their morning, reorder it. If a section is doing two jobs, split it. If two sections are doing one job, merge them.
-6. **Vocabulary alignment** — With the JTBD frame established, review ADR-0083's translation table. Do the product terms still make sense? Does "Briefing" work for the daily surface if its job turns out to be "ongoing awareness" rather than "morning preparation"? This is where vocabulary gets tested against real jobs, not just translated from system terms.
+**Deliverable:** Structured changelist in ADR-0084 Section 2.
 
-**Deliverable:** Structured changelist that I341 (vocabulary audit) and I329 (quality indicators) execute against. This is the source of truth for what the surfaces should look like.
+**Status: COMPLETE.** Decisions at `.docs/research/i342-phase3-decisions.md` and formalized in ADR-0084. Summary:
+- **9 cuts** approved (weekly forecast meetings/commitments chapters, daily "Later This Week", meeting detail appendix pruning, dead code)
+- **5 merges** approved (shared ActionRow, ProposedActionRow, MeetingRow, useIntelligenceFieldUpdate hook, ResolutionKeywords component)
+- **8 rethinks** decided (lead story compacted, temperature dots deferred, actions standardized across entities, command menu completed, etc.)
+- **Weekly forecast verdict: partial collapse.** Keeps Hero + The Three + The Shape + Open Time. Cuts meetings and commitments chapters.
 
 ---
 
 #### Phase 4: Execute
 
-Ship the changes. This is not a future consideration — it's part of this issue.
+Ship the changes from the Phase 3 changelist. See ADR-0084 Section 2 for the full approved list.
 
-- Remove elements on the cut list
-- Relocate elements on the move list
-- Merge duplicated elements
-- Redesign rethink-list elements
-- Restructure sections as needed
+**Status: PENDING.** This is the implementation phase.
+
+- Remove elements on the cut list (9 items)
+- Merge duplicated implementations (5 items)
+- Redesign rethink-list elements (8 items)
 - Validate against JTBD: does each surface now do its job and only its job?
 
 I341 (vocabulary audit) follows as a dependent step, applying ADR-0083's product vocabulary to the restructured surfaces with full awareness of the JTBD outcomes.
 
 ---
 
-#### Hypothesis: The Weekly Forecast May Not Be a Surface
+#### Weekly Forecast Hypothesis: Resolved
 
-Going into Phase 1 with an open question: does the weekly forecast justify its existence as a separate surface, or is its job better served as a section within the daily briefing?
-
-**Evidence for collapsing:**
-- Actual usage pattern: time is spent on the daily briefing and meeting briefings. The weekly forecast is rarely visited.
-- The weekly planning job ("plan my week") sounds like a Monday-morning activity, not a surface that earns nav space seven days a week.
-- Almost everything on the weekly forecast is duplicated elsewhere: actions (Actions page + daily briefing), account health (entity detail), schedule (daily briefing). The unique value — multi-day horizon — could be a "Coming up" section within the daily.
-- The chief-of-staff metaphor: one briefing that covers today in detail and flags what's ahead. Not two separate documents.
-- I330 planned to bring meetings weeks out into the weekly surface. But if the user plans upcoming meetings within the context of their day, that content belongs on the daily surface, not a separate one.
-
-**What collapsing would mean:**
-- The daily briefing expands with a "Coming up" or "This week" section — upcoming meetings that need attention, shown with intelligence quality and new-signal indicators.
-- The Monday daily briefing is naturally richer (more forward-looking content) without a separate surface for that job.
-- I330 (weekly forecast as live intelligence surface) either gets absorbed into I331 (daily briefing assembly) or is scoped to "upcoming meetings section within daily" rather than a standalone rebuild.
-- One fewer surface to maintain, one fewer nav destination, clearer product story.
-
-**What collapsing would lose:**
-- The at-a-glance week shape (which days are heavy, where deep work fits). Could this be a compact visual within the daily?
-- A dedicated space for weekly narrative. Does anyone read this, or does the daily narrative serve the same purpose?
-
-**This hypothesis gets tested in Phase 1.** If the weekly forecast's JTBD can be distinguished from "a section within the daily briefing" in a way that justifies a separate surface, it stays. If it can't, it collapses. The critique decides — not the architecture that's already built.
-
----
-
-#### What this is NOT
-
-- Not a theoretical exercise. Phases 1-3 produce findings; Phase 4 ships code.
-- Not additive. The goal is to subtract. If nothing gets cut, the critique wasn't honest.
-- Not just about I330/I331. All five surface types get the same treatment. The daily briefing and weekly forecast are the most urgent because 0.13.0 will rebuild them, but every surface benefits.
-- Not a redesign. The editorial design system (ADR-0073/0076/0077) is solid. This is about *content* — what appears, where, and why — not how it looks.
+**Verdict: Partial collapse.** The weekly forecast keeps its four unique sections (Hero, The Three, The Shape, Open Time) and cuts three redundant sections (Your Meetings, Commitments, prep action buttons). It becomes a focused 2-minute planning read with zero duplication. See ADR-0084 Section 1 for the redefined weekly forecast JTBD.
 
 ---
 
 **Acceptance criteria:**
-1. ADR-0084 exists defining JTBD for each surface and each section within surfaces
-2. Element audit completed for all five surface types with verdicts documented
+1. ~~ADR-0084 exists defining JTBD for each surface and each section within surfaces~~ DONE
+2. ~~Element audit completed for all five surface types with verdicts documented~~ DONE
 3. Cut list executed — elements removed from the app
 4. Move/merge list executed — elements relocated or consolidated
 5. Section structure validated against JTBD (reordered/split/merged as needed)
 6. I330/I331 acceptance criteria reviewed and updated against JTBD findings
-7. I341 (vocabulary audit) has a clear, JTBD-informed scope to execute against
+7. ~~I341 (vocabulary audit) has a clear, JTBD-informed scope to execute against~~ DONE (ADR-0084 + 16 vocabulary violations catalogued)
 8. No section on any surface exists without a one-sentence job statement justifying it
 
 ---
@@ -4908,6 +4877,7 @@ Connect the signal bus (ADR-0080) to meeting intelligence. When relevant signals
 | Earlier meeting transcript mentions later meeting's entity | Transcript processing | Cross-meeting intelligence propagation; affected meeting flagged |
 | Calendar change (new attendee, time, description) | Calendar polling | Meeting re-classified, entity re-resolved, intelligence refresh triggered |
 | Entity intelligence updated (risk, health, win) | Entity enrichment | All meetings associated with entity get "new signals" flag |
+| Linear issue state change (blocked, overdue) on entity-linked project | Linear sync | Meeting marked "has new signals"; issue context queued for next refresh |
 | User edits agenda/notes on meeting | User action | Intelligence incorporates user input on next refresh |
 | RSVP status changes | Calendar sync | "The Room" updated with latest attendance |
 
@@ -5264,33 +5234,49 @@ If a user clicks "Continue" past the accounts step, then navigates back (e.g., c
 
 ### I346 — Linear Integration
 
-**Version:** 0.10.1
+**Version:** 0.10.1 (data layer), consumer side in I306/I326/I332
 **Priority:** P2
 **Area:** Integrations
 **Source:** User feedback (Nacho, 2026-02-18)
 
-Integrate with Linear for project management sync. Linear is widely used in product/engineering teams for issue tracking, sprint planning, and project status.
+**Status: Data layer shipped (0.10.1). Consumer side deferred to signal bus and meeting intelligence releases.**
 
-**Potential value for DailyOS:**
-- Pull project/cycle status into entity intelligence (account health context)
-- Surface relevant issues before meetings with engineering or product stakeholders
-- Track velocity and delivery signals for project entities
-- Action items could sync bidirectionally (DailyOS actions ↔ Linear issues)
+Linear integration connects project management signals to DailyOS intelligence. The job is not "see Linear issues in DailyOS" — it's "walk into a meeting knowing the status of the feature your customer is asking about, and know where to follow up afterward."
 
-**Research needed:**
-- Linear API (GraphQL) — authentication, rate limits, webhook support
-- What data is most valuable: issues, projects, cycles, comments?
-- MCP server availability (Linear may have an official or community MCP server)
-- Same architectural pattern as Quill/Granola: sidecar or direct API?
+**What shipped (0.10.1 data layer):**
+- `linear_issues` and `linear_projects` SQLite tables (migration 024)
+- Background poller syncing assigned issues + team projects via GraphQL API (Bearer token auth, configurable poll interval)
+- Settings card: enable/disable, API key, test connection, sync now
+- Follows Clay integration architectural pattern (poller, sync, commands)
+- Files: `src-tauri/src/linear/` (mod.rs, client.rs, poller.rs, sync.rs)
 
-**Dependencies:** None immediate. Similar integration scope to I225 (Gong), I227 (Gainsight), I340 (Glean).
+**What's deferred (consumer side — lives in existing roadmap issues):**
+
+| Consumer | Roadmap issue | What Linear adds |
+|----------|---------------|------------------|
+| Signal bus | I306 (0.10.0) | Linear issue state changes (blocked, overdue, completed) emit signals. Linear projects linked to DailyOS entities via keyword matching. |
+| Entity resolution | I305 (0.10.0) | Linear project names as entity resolution signal. "API Migration" in Linear matches "API Migration" DailyOS project. |
+| Meeting prep | I326 (0.13.0) | "Related Linear projects: API Migration (3 blocked), Mobile SDK (on track)" in meeting intelligence context. |
+| Signal-triggered refresh | I332 (0.13.0) | Linear issue state change on linked entity triggers meeting intelligence refresh. |
+| Role presets | I310 (0.11.0) | Which roles surface Linear signals. Product/Engineering roles see issue-level detail; CS/Sales roles see project-level status only. |
+
+**Product decisions (from 2026-02-19 discussion):**
+- Linear is a **signal source**, not a standalone surface. No "Linear dashboard" in DailyOS.
+- Linear issues do NOT map to DailyOS actions. Actions come from meetings and human decisions; Linear issues are engineering work items with different scope and lifecycle.
+- Entity linking uses **hybrid approach**: auto-suggest matches via keyword matching, user confirms. Same pattern as entity resolution corrections.
+- Only entity-linked Linear data surfaces in intelligence — no dumping every issue on the user.
+- Value chain: Linear sync → entity linking → prep enrichment → "customer asks about feature X, you already know it's blocked"
+
+**Architecture:** Direct GraphQL API client (reqwest + Bearer token). No MCP server needed — the API surface is small (viewer, assigned issues, team projects). Poller pattern follows Clay (60s startup delay, configurable interval, wake via Notify).
+
+**Dependencies:** I306 (signal bus — Linear becomes a signal source). I305 (entity resolution — Linear project ↔ DailyOS entity matching). Similar integration scope to I225 (Gong), I227 (Gainsight), I340 (Glean).
 
 ---
 
 ### I347 — SWOT Report Type
 
-**Version:** 0.10.1
-**Priority:** P2
+**Version:** 0.14.0
+**Priority:** P1
 **Area:** Intelligence / Reports
 **Source:** User feedback (Nacho, 2026-02-18)
 
@@ -5326,8 +5312,8 @@ Most of the data already exists in `intelligence.json`. The SWOT report is large
 
 ### I348 — Email Digest
 
-**Version:** 0.10.1
-**Priority:** P2
+**Version:** 0.14.0
+**Priority:** P1
 **Area:** Distribution
 **Source:** User feedback (Nacho, 2026-02-18)
 **Related:** Slack integration research (`.docs/research/2026-02-18-slack-integration-research.md`)
@@ -5353,3 +5339,238 @@ Push DailyOS intelligence summaries to the user (and optionally colleagues) via 
 3. **Share with others** — send account summary or meeting outcome to specific recipients
 
 **Dependencies:** Gmail OAuth (already have), HTML email template design
+
+---
+
+### I349 — Settings Redesign: Kill the Control Panel, Build a Connections Hub
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** UX
+**Depends on:** I342 (Surface JTBD critique — defines what belongs on Settings vs in-context)
+**Related:** I343 (inline editing service — YouCard uses it), I341 (vocabulary audit)
+
+**The job of the Settings page:** "Confirm my system is working and fix it when it's not."
+
+Not: "Configure every aspect of the application." Not: "Learn what all the features are." Not: "Manage technical infrastructure."
+
+The current page fails this job. It's a 3,350-line monolith with 6 chapters and ~18 cards in a long vertical scroll. Every setting, toggle, cron expression, bridge path, and feature flag is exposed at once. No progressive disclosure, mixed audiences, and growing worse with every new integration. The app's philosophy is "AI produces, users consume — no prompts, no maintenance" but the Settings page is the opposite: prompts everywhere, maintenance central.
+
+#### What Dies
+
+| Current Card | Verdict | Reasoning |
+|---|---|---|
+| EntityModeCard | Kill | Onboarding decision, not a setting. Changing entity mode is a migration, not a toggle. |
+| WorkspaceCard | Kill from settings | Onboarding. Show path read-only in System strip. Changing workspace is destructive — deserves its own focused flow if ever needed. |
+| SchedulesSection (cron editor) | Kill | Users should never see cron expressions. Replace with "What time does your day start?" in YouCard. |
+| ManualRunSection | Move to surfaces | "Run Daily Briefing" → daily briefing page header. "Run Weekly" → week page. "Run Archive" → diagnostics. |
+| FeaturesCard | Kill | Feature toggles are developer anxiety. Ship features on or off. If genuinely optional (like post-meeting capture), configure where experienced. |
+| AiModelsCard | Move to Advanced | Power-user territory. 95% of users never touch model selectors. |
+
+#### What Survives (Three Sections)
+
+**1. You** — One identity card, not six.
+
+Name, title, domains, personality, "what time does your day start?" — one cohesive card with inline editing (I343). Click any field to edit. No separate cards for profile, domains, personality, workspace, entity mode.
+
+**2. Connections** — Compact grid with drill-down detail panels.
+
+Each integration is a row: name, status dot, one-line status text. Green = working, amber = issue, gray = available but not connected. Click a connection to open its detail panel (inline expand or slide-over) with full config, status history, and actions.
+
+```
+CONNECTIONS
+● Google     Connected · james@automattic.com
+● Claude     Active · MCP tools available
+● Quill      Syncing · 142 transcripts
+● Granola    Connected · local cache
+● Gravatar   Fetching · 47 profiles cached
+● Clay       Connected · API key set
+○ Linear     Available
+○ Gainsight  Available
+○ Slack      Available
+```
+
+This scales to 20 integrations without scrolling past the fold. Adding a new integration means adding one file to `src/components/settings/connections/`, not editing a 3,350-line monolith.
+
+**Connection detail panel** (opened by clicking a connection):
+- Status summary (connected/disconnected, last sync, error state)
+- Integration-specific config (API key, bridge path, poll interval, etc.)
+- Action buttons (Test Connection, Sync Now, Disconnect)
+- Recent activity log (last 5 syncs with status)
+- Back button returns to main settings
+
+**3. System** — Status strip, not cards.
+
+Version, update status, intelligence health (one line), last briefing time. A subtle "Advanced" disclosure reveals AI model selection, hygiene tuning, developer mode — the 5% territory.
+
+#### In-Context Relocations
+
+| Setting | New Home |
+|---|---|
+| Post-meeting capture toggle + delay | Meeting detail page or daily briefing (where you experience it) |
+| "Run Daily Briefing" button | Daily briefing page header |
+| "Run Weekly Briefing" button | Week page header |
+| Feature toggles | Remove or move to integration detail panels |
+| Entity mode | Onboarding only |
+| Workspace path display | System strip (read-only) |
+
+#### File Architecture
+
+The 3,350-line monolith becomes ~1,200 lines across focused files:
+
+```
+src/pages/SettingsPage.tsx                     (~200 lines — layout shell)
+src/components/settings/
+  YouCard.tsx                                  (~150 lines — identity card)
+  ConnectionsGrid.tsx                          (~100 lines — status dot grid)
+  ConnectionDetail.tsx                         (~100 lines — shared detail panel)
+  SystemStatus.tsx                             (~80 lines — version, health strip)
+  AdvancedSettings.tsx                         (~150 lines — AI models, hygiene)
+src/components/settings/connections/
+  GoogleConnection.tsx                         (~120 lines)
+  ClaudeDesktopConnection.tsx                  (~80 lines)
+  QuillConnection.tsx                          (~150 lines)
+  GranolaConnection.tsx                        (~100 lines)
+  GravatarConnection.tsx                       (~100 lines)
+  ClayConnection.tsx                           (~120 lines)
+  index.ts                                     (connection registry)
+```
+
+Adding Linear = one new file + one registry entry. No 3,350-line edit.
+
+#### Interaction Design
+
+**First visit (post-onboarding):** YouCard shows your info. Connections grid shows Google green, everything else gray ("Available"). The page teaches through absence — you see what's connected and what could be.
+
+**Returning power user:** Quick scan of dots. All green? Leave. Something amber? Click it, see the issue, fix it, done. Page respects your time.
+
+**Adding a new integration:** Click the gray dot. Detail panel opens with one-paragraph description and "Connect" button. Follow the OAuth/API key flow. Dot turns green. Done.
+
+**"Advanced" disclosure:** Below system strip. Subtle link. Expands to reveal AI model selection, hygiene tuning knobs, developer mode. Most users never open it.
+
+#### Acceptance Criteria
+
+1. Settings page loads with three visible sections: You, Connections, System
+2. No scrolling required to see all connection statuses on a typical display
+3. YouCard consolidates name, title, domains, personality, schedule into one editable card
+4. Each integration has a detail panel with status, config, actions, and recent activity
+5. "Run Daily Briefing" button lives on the daily briefing page, not Settings
+6. Post-meeting capture configured in-context (meeting or briefing page), not Settings
+7. No cron expressions visible to users — schedule expressed as "day starts at" preference
+8. Feature toggles removed or moved to integration-specific detail panels
+9. EntityModeCard and WorkspaceCard removed from Settings (onboarding only)
+10. "Advanced" section hidden by default, discloses AI models + hygiene on click
+11. Adding a new integration requires one new file + one registry entry (no monolith edits)
+12. SettingsPage.tsx under 250 lines
+13. `pnpm build` compiles clean
+
+---
+
+### I350 — In-App Notifications: Release Announcements, What's New, System Status
+
+**Version:** 0.14.0
+**Priority:** P1
+**Area:** UX / Infra
+**Related:** I90 (telemetry), I349 (settings redesign — System status strip)
+
+**Problem:** DailyOS ships features silently. Users discover new capabilities by accident or not at all. The app has no way to communicate with users after installation — no "what's new," no system status alerts, no onboarding nudges. When an integration disconnects or a briefing fails, the user finds out by noticing stale data, not by being told.
+
+**Research conclusion: Roll our own, skip SaaS.**
+
+Changelog services (Beamer $49/mo, AnnounceKit $29/mo, Headway, LaunchNotes) are designed for SaaS web apps, require cloud connectivity, and add vendor lock-in for a product with <100 users. They violate local-first philosophy. Instead: GitHub Releases API (free, already our source of truth) + Tauri notification plugin (native macOS) + in-app what's-new modal.
+
+**Three tiers of notification:**
+
+#### Tier 1: What's New (on app launch)
+
+When the user opens DailyOS after an update, show a modal with release highlights. Dismiss to continue. Only appears once per release.
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│  What's New in DailyOS 0.12.0           │
+│  ─────────────────────────────────────  │
+│                                         │
+│  Email Intelligence                     │
+│  Your briefings now include email       │
+│  context — thread positions, cadence    │
+│  anomalies, and meeting-aware digests.  │
+│                                         │
+│  SWOT Reports                           │
+│  Generate strengths/weaknesses/         │
+│  opportunities/threats analysis for     │
+│  any account from existing intelligence.│
+│                                         │
+│        [View Full Changelog]            │
+│        [Dismiss]                        │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+**Data source:** GitHub Releases API (`GET /repos/{owner}/{repo}/releases`). Fetch on app startup, cache in SQLite. Compare `version` to `last_seen_version` in user settings. Render release body as markdown.
+
+**Backend:**
+- `fetch_releases` command — polls GitHub Releases API, caches in `app_releases` table
+- `get_unseen_releases` command — returns releases newer than `last_seen_version`
+- `mark_releases_seen` command — updates `last_seen_version`
+
+#### Tier 2: System Status Alerts (macOS Notification Center)
+
+Critical system events push to macOS Notification Center via Tauri's notification plugin. These are rare and actionable — not "your briefing is ready" noise.
+
+**Events that trigger native notifications:**
+- Integration disconnected (Google OAuth expired, Quill bridge not found)
+- Briefing generation failed (AI error, workspace issue)
+- Update available (new version ready to install)
+
+**Events that do NOT trigger native notifications:**
+- Briefing ready (user will see it in the UI)
+- Transcript synced (background operation, not urgent)
+- Enrichment complete (invisible to user by design)
+
+**Implementation:** Already have `tauri-plugin-notification` in the project. Add a `notify_system_event` Rust function that maps event types to notification severity and only fires for critical events.
+
+#### Tier 3: In-App Indicators (Persistent, Non-Intrusive)
+
+- Blue dot badge on Settings nav icon when unseen releases exist
+- "What's New" link in System status strip (I349) with unread count
+- Changelog page accessible from Settings → System → "View Changelog"
+
+**No toast notifications for releases.** Toasts are for user-initiated actions ("Saved", "Synced"). Release announcements are ambient — discovered on launch or via badge, not interrupting workflow.
+
+#### File Architecture
+
+```
+src-tauri/src/notifications/
+  mod.rs                          (notification dispatch + event mapping)
+  releases.rs                     (GitHub Releases API client + cache)
+src/components/notifications/
+  WhatsNewModal.tsx               (launch modal for new releases)
+  ChangelogPage.tsx               (full changelog, rendered markdown)
+  NotificationBadge.tsx           (blue dot indicator)
+```
+
+#### Why Not SaaS
+
+| Factor | SaaS (Beamer etc.) | Roll Our Own |
+|---|---|---|
+| Cost | $29-49/mo | $0 |
+| Privacy | External tracking | Local-only |
+| Dependency | Cloud service | GitHub API (already used) |
+| Styling | Widget chrome | Full editorial control |
+| Offline | Broken | Cached locally |
+| Complexity | SDK + config | ~400 lines of code |
+
+**When to revisit:** If DailyOS reaches 1,000+ users and needs segmented announcements (show feature X only to power users), notification analytics, or A/B testing release notes. Not before.
+
+#### Acceptance Criteria
+
+1. On first launch after update, "What's New" modal appears with release highlights
+2. Modal only shows once per release (dismissed state persists)
+3. GitHub Releases API data cached in SQLite (works offline after first fetch)
+4. Integration disconnect triggers macOS Notification Center alert
+5. Blue dot badge appears on Settings when unseen releases exist
+6. Full changelog page accessible from Settings
+7. No third-party notification SaaS dependencies
+8. Native macOS notification appearance (not custom toast)
+9. `pnpm build` compiles clean, `cargo test` passes

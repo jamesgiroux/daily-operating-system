@@ -2714,6 +2714,7 @@ mod tests {
             granola: crate::granola::GranolaConfig::default(),
             gravatar: crate::gravatar::GravatarConfig::default(),
             clay: crate::clay::ClayConfig::default(),
+            linear: crate::linear::LinearConfig::default(),
             features: std::collections::HashMap::new(),
             user_domain: None,
             user_domains: None,
