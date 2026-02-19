@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 1.0.0 = beta gate.
+**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (telemetry + user communication). 1.0.0 = beta gate.
 
 ---
 
@@ -75,6 +75,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I347** | SWOT report type — account strengths/weaknesses/opportunities/threats from existing intelligence | P2 | Intelligence / Reports |
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 | **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
+| **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
 
 ---
 
@@ -232,15 +233,27 @@ This is the "make it feel like a product" release. Not by adding polish — by s
 
 ---
 
+### 0.14.0 — Product Telemetry & User Communication
+
+*The app knows how it's being used and can tell users what's new. Feedback loop closed.*
+
+| Priority | Issue | Scope |
+|----------|-------|-------|
+| P1 | I350 | In-app notifications — release announcements, what's new, system status alerts |
+| P1 | I90 | Product telemetry & analytics infrastructure |
+
+**Rationale:** DailyOS has no way to communicate with its users after installation. New features ship silently — users discover them by accident or not at all. The app has no visibility into which features are used, which surfaces are visited, or where users get stuck. I350 adds a lightweight notification layer: a "What's New" modal on launch (powered by GitHub Releases API, no SaaS dependency), macOS Notification Center integration for system status alerts (integration disconnected, briefing ready), and in-app badges for unread announcements. I90 adds anonymous local telemetry: feature usage, surface visits, workflow completions, error rates — all stored locally in SQLite with opt-in anonymous aggregate reporting. Together these close the feedback loop: the product can speak to users and learn from them. Both are prerequisites for a credible beta (1.0.0).
+
+---
+
 ### 1.0.0 — Beta
 
-*Onboarding complete, telemetry, full loop validated. First version for non-technical testers.*
+*Onboarding complete, full loop validated. First version for non-technical testers.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
 | P0 | I56 | Onboarding: educational redesign (demo data, dashboard tour) |
 | P0 | I57 | Onboarding: add accounts/projects + user domain |
-| P2 | I90 | Product telemetry & analytics infrastructure |
 
 ---
 
@@ -5451,3 +5464,114 @@ Adding Linear = one new file + one registry entry. No 3,350-line edit.
 11. Adding a new integration requires one new file + one registry entry (no monolith edits)
 12. SettingsPage.tsx under 250 lines
 13. `pnpm build` compiles clean
+
+---
+
+### I350 — In-App Notifications: Release Announcements, What's New, System Status
+
+**Version:** 0.14.0
+**Priority:** P1
+**Area:** UX / Infra
+**Related:** I90 (telemetry), I349 (settings redesign — System status strip)
+
+**Problem:** DailyOS ships features silently. Users discover new capabilities by accident or not at all. The app has no way to communicate with users after installation — no "what's new," no system status alerts, no onboarding nudges. When an integration disconnects or a briefing fails, the user finds out by noticing stale data, not by being told.
+
+**Research conclusion: Roll our own, skip SaaS.**
+
+Changelog services (Beamer $49/mo, AnnounceKit $29/mo, Headway, LaunchNotes) are designed for SaaS web apps, require cloud connectivity, and add vendor lock-in for a product with <100 users. They violate local-first philosophy. Instead: GitHub Releases API (free, already our source of truth) + Tauri notification plugin (native macOS) + in-app what's-new modal.
+
+**Three tiers of notification:**
+
+#### Tier 1: What's New (on app launch)
+
+When the user opens DailyOS after an update, show a modal with release highlights. Dismiss to continue. Only appears once per release.
+
+```
+┌─────────────────────────────────────────┐
+│                                         │
+│  What's New in DailyOS 0.12.0           │
+│  ─────────────────────────────────────  │
+│                                         │
+│  Email Intelligence                     │
+│  Your briefings now include email       │
+│  context — thread positions, cadence    │
+│  anomalies, and meeting-aware digests.  │
+│                                         │
+│  SWOT Reports                           │
+│  Generate strengths/weaknesses/         │
+│  opportunities/threats analysis for     │
+│  any account from existing intelligence.│
+│                                         │
+│        [View Full Changelog]            │
+│        [Dismiss]                        │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+**Data source:** GitHub Releases API (`GET /repos/{owner}/{repo}/releases`). Fetch on app startup, cache in SQLite. Compare `version` to `last_seen_version` in user settings. Render release body as markdown.
+
+**Backend:**
+- `fetch_releases` command — polls GitHub Releases API, caches in `app_releases` table
+- `get_unseen_releases` command — returns releases newer than `last_seen_version`
+- `mark_releases_seen` command — updates `last_seen_version`
+
+#### Tier 2: System Status Alerts (macOS Notification Center)
+
+Critical system events push to macOS Notification Center via Tauri's notification plugin. These are rare and actionable — not "your briefing is ready" noise.
+
+**Events that trigger native notifications:**
+- Integration disconnected (Google OAuth expired, Quill bridge not found)
+- Briefing generation failed (AI error, workspace issue)
+- Update available (new version ready to install)
+
+**Events that do NOT trigger native notifications:**
+- Briefing ready (user will see it in the UI)
+- Transcript synced (background operation, not urgent)
+- Enrichment complete (invisible to user by design)
+
+**Implementation:** Already have `tauri-plugin-notification` in the project. Add a `notify_system_event` Rust function that maps event types to notification severity and only fires for critical events.
+
+#### Tier 3: In-App Indicators (Persistent, Non-Intrusive)
+
+- Blue dot badge on Settings nav icon when unseen releases exist
+- "What's New" link in System status strip (I349) with unread count
+- Changelog page accessible from Settings → System → "View Changelog"
+
+**No toast notifications for releases.** Toasts are for user-initiated actions ("Saved", "Synced"). Release announcements are ambient — discovered on launch or via badge, not interrupting workflow.
+
+#### File Architecture
+
+```
+src-tauri/src/notifications/
+  mod.rs                          (notification dispatch + event mapping)
+  releases.rs                     (GitHub Releases API client + cache)
+src/components/notifications/
+  WhatsNewModal.tsx               (launch modal for new releases)
+  ChangelogPage.tsx               (full changelog, rendered markdown)
+  NotificationBadge.tsx           (blue dot indicator)
+```
+
+#### Why Not SaaS
+
+| Factor | SaaS (Beamer etc.) | Roll Our Own |
+|---|---|---|
+| Cost | $29-49/mo | $0 |
+| Privacy | External tracking | Local-only |
+| Dependency | Cloud service | GitHub API (already used) |
+| Styling | Widget chrome | Full editorial control |
+| Offline | Broken | Cached locally |
+| Complexity | SDK + config | ~400 lines of code |
+
+**When to revisit:** If DailyOS reaches 1,000+ users and needs segmented announcements (show feature X only to power users), notification analytics, or A/B testing release notes. Not before.
+
+#### Acceptance Criteria
+
+1. On first launch after update, "What's New" modal appears with release highlights
+2. Modal only shows once per release (dismissed state persists)
+3. GitHub Releases API data cached in SQLite (works offline after first fetch)
+4. Integration disconnect triggers macOS Notification Center alert
+5. Blue dot badge appears on Settings when unseen releases exist
+6. Full changelog page accessible from Settings
+7. No third-party notification SaaS dependencies
+8. Native macOS notification appearance (not custom toast)
+9. `pnpm build` compiles clean, `cargo test` passes
