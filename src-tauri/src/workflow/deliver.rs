@@ -1629,6 +1629,17 @@ fn build_prep_json(
                     obj.insert("recentEmailSignals".to_string(), json!(signals));
                 }
             }
+
+            // I317: Pre-meeting email context → emailDigest
+            if let Some(ref email_ctx) = ctx.pre_meeting_email_context {
+                if !email_ctx.is_empty() {
+                    // Build structured email digest from raw email context
+                    let digest = build_email_digest(email_ctx);
+                    if !digest.is_null() {
+                        obj.insert("emailDigest".to_string(), digest);
+                    }
+                }
+            }
         }
     }
 
@@ -1642,6 +1653,56 @@ fn build_prep_json(
     }
 
     prep
+}
+
+/// I317: Build a structured email digest from pre-meeting email context.
+///
+/// Structures raw email context items into a digest with thread summary,
+/// key senders, and recent snippets. This is a mechanical structuring pass;
+/// AI enrichment (commitments, questions, sentiment) is done during enrich_preps.
+fn build_email_digest(email_ctx: &[Value]) -> Value {
+    if email_ctx.is_empty() {
+        return Value::Null;
+    }
+
+    let mut senders: Vec<String> = Vec::new();
+    let mut threads: Vec<Value> = Vec::new();
+    let mut seen_senders = std::collections::HashSet::new();
+
+    for item in email_ctx.iter().take(10) {
+        let from = item.get("from").and_then(|v| v.as_str()).unwrap_or("");
+        let snippet = item.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+        let date = item.get("date").and_then(|v| v.as_str()).unwrap_or("");
+        let source = item.get("source").and_then(|v| v.as_str()).unwrap_or("");
+
+        if !from.is_empty() && seen_senders.insert(from.to_lowercase()) {
+            senders.push(from.to_string());
+        }
+
+        threads.push(json!({
+            "from": from,
+            "snippet": snippet,
+            "date": date,
+            "source": source,
+        }));
+    }
+
+    let summary = format!(
+        "{} email thread{} from {}",
+        threads.len(),
+        if threads.len() == 1 { "" } else { "s" },
+        if senders.len() <= 3 {
+            senders.join(", ")
+        } else {
+            format!("{} and {} others", senders[..2].join(", "), senders.len() - 2)
+        }
+    );
+
+    json!({
+        "threadSummary": summary,
+        "threads": threads,
+        "senderCount": senders.len(),
+    })
 }
 
 /// Synthesize open items from raw meeting context data.
