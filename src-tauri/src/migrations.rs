@@ -83,6 +83,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 23,
     sql: include_str!("migrations/023_drop_meeting_account_id.sql"),
+}, Migration {
+    version: 24,
+    sql: include_str!("migrations/024_linear_sync.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -244,13 +247,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 23,
-            "should apply all migrations including drop_meeting_account_id"
+            applied, 24,
+            "should apply all migrations including linear_sync"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 23);
+        assert_eq!(version, 24);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -545,6 +548,22 @@ mod tests {
             [],
         )
         .expect("actions should have rejected_at and rejection_source columns");
+
+        // Verify linear_issues table (migration 024)
+        conn.execute(
+            "INSERT INTO linear_issues (id, identifier, title, url)
+             VALUES ('li-1', 'DOS-1', 'Test issue', 'https://linear.app/dos/issue/DOS-1')",
+            [],
+        )
+        .expect("linear_issues table should exist and accept inserts");
+
+        // Verify linear_projects table (migration 024)
+        conn.execute(
+            "INSERT INTO linear_projects (id, name, url)
+             VALUES ('lp-1', 'DailyOS', 'https://linear.app/dos/project/dailyos')",
+            [],
+        )
+        .expect("linear_projects table should exist and accept inserts");
     }
 
     #[test]
@@ -670,11 +689,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 22, "bootstrap should mark v1, then apply v2 through v23");
+        assert_eq!(applied, 23, "bootstrap should mark v1, then apply v2 through v24");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 23);
+        assert_eq!(version, 24);
 
         // Verify existing data is untouched
         let title: String = conn

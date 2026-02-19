@@ -6,8 +6,15 @@ import { Input } from "@/components/ui/input";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import type { EntityMode } from "@/types";
 
+export interface PopulateFormData {
+  accounts: string[];
+  projects: string[];
+}
+
 interface PopulateWorkspaceProps {
   entityMode: EntityMode;
+  formData: PopulateFormData;
+  onFormChange: (data: PopulateFormData) => void;
   onNext: () => void;
 }
 
@@ -60,11 +67,12 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 4,
 };
 
-export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps) {
-  const [accounts, setAccounts] = useState<string[]>([]);
-  const [projects, setProjects] = useState<string[]>([]);
+export function PopulateWorkspace({ entityMode, formData, onFormChange, onNext }: PopulateWorkspaceProps) {
+  // Transient input state stays local
   const [accountInput, setAccountInput] = useState("");
   const [projectInput, setProjectInput] = useState("");
+
+  const { accounts, projects } = formData;
 
   const copy = COPY[entityMode];
   const showAccounts = entityMode === "account" || entityMode === "both";
@@ -74,7 +82,7 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
   function addAccount() {
     const name = accountInput.trim();
     if (name && !accounts.includes(name)) {
-      setAccounts([...accounts, name]);
+      onFormChange({ ...formData, accounts: [...accounts, name] });
       setAccountInput("");
     }
   }
@@ -82,17 +90,17 @@ export function PopulateWorkspace({ entityMode, onNext }: PopulateWorkspaceProps
   function addProject() {
     const name = projectInput.trim();
     if (name && !projects.includes(name)) {
-      setProjects([...projects, name]);
+      onFormChange({ ...formData, projects: [...projects, name] });
       setProjectInput("");
     }
   }
 
   function removeAccount(name: string) {
-    setAccounts(accounts.filter((a) => a !== name));
+    onFormChange({ ...formData, accounts: accounts.filter((a) => a !== name) });
   }
 
   function removeProject(name: string) {
-    setProjects(projects.filter((p) => p !== name));
+    onFormChange({ ...formData, projects: projects.filter((p) => p !== name) });
   }
 
   async function handleContinue() {

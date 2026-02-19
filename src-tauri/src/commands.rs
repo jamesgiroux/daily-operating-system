@@ -4146,6 +4146,24 @@ pub fn install_inbox_sample(state: State<Arc<AppState>>) -> Result<String, Strin
     Ok(filename.to_string())
 }
 
+/// Get frequent same-domain correspondents from Gmail sent mail.
+#[tauri::command]
+pub async fn get_frequent_correspondents(
+    user_email: String,
+    _state: State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::google_api::gmail::FrequentCorrespondent>, String> {
+    let token = crate::google_api::load_token()
+        .map_err(|e| format!("Google not connected: {}", e))?;
+
+    crate::google_api::gmail::fetch_frequent_correspondents(
+        &token.token,
+        &user_email,
+        10,
+    )
+    .await
+    .map_err(|e| format!("Failed to fetch correspondents: {}", e))
+}
+
 // =============================================================================
 // Dev Tools
 // =============================================================================
@@ -10060,4 +10078,110 @@ pub fn get_enrichment_log(
         .collect();
 
     Ok(entries)
+}
+
+// =============================================================================
+// I346: Linear Integration
+// =============================================================================
+
+/// Linear integration status for the frontend.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinearStatusData {
+    pub enabled: bool,
+    pub api_key_set: bool,
+    pub poll_interval_minutes: u32,
+    pub issue_count: i64,
+    pub project_count: i64,
+    pub last_sync_at: Option<String>,
+}
+
+/// Get Linear integration status.
+#[tauri::command]
+pub fn get_linear_status(state: State<Arc<AppState>>) -> LinearStatusData {
+    let config = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|c| c.linear.clone()));
+
+    let linear_config = config.unwrap_or_default();
+
+    let (issue_count, project_count, last_sync) = state
+        .db
+        .lock()
+        .ok()
+        .and_then(|g| {
+            g.as_ref().map(|db| {
+                let issues: i64 = db
+                    .conn_ref()
+                    .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
+                    .unwrap_or(0);
+                let projects: i64 = db
+                    .conn_ref()
+                    .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
+                    .unwrap_or(0);
+                let last: Option<String> = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT MAX(synced_at) FROM linear_issues",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(None);
+                (issues, projects, last)
+            })
+        })
+        .unwrap_or((0, 0, None));
+
+    LinearStatusData {
+        enabled: linear_config.enabled,
+        api_key_set: linear_config.api_key.is_some(),
+        poll_interval_minutes: linear_config.poll_interval_minutes,
+        issue_count,
+        project_count,
+        last_sync_at: last_sync,
+    }
+}
+
+/// Enable or disable Linear integration.
+#[tauri::command]
+pub fn set_linear_enabled(enabled: bool, state: State<Arc<AppState>>) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.linear.enabled = enabled;
+    })?;
+    Ok(())
+}
+
+/// Set or clear the Linear API key.
+#[tauri::command]
+pub fn set_linear_api_key(key: Option<String>, state: State<Arc<AppState>>) -> Result<(), String> {
+    crate::state::create_or_update_config(&state, |config| {
+        config.linear.api_key = key.filter(|k| !k.is_empty());
+    })?;
+    Ok(())
+}
+
+/// Test Linear connection by fetching the viewer.
+#[tauri::command]
+pub async fn test_linear_connection(
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let api_key = state
+        .config
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().and_then(|c| c.linear.api_key.clone()))
+        .ok_or("No Linear API key configured")?;
+
+    let client = crate::linear::client::LinearClient::new(&api_key);
+    let viewer = client.test_connection().await?;
+    Ok(viewer.name)
+}
+
+/// Trigger an immediate Linear sync.
+#[tauri::command]
+pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
+    state.linear_poller_wake.notify_one();
+    Ok(())
 }
