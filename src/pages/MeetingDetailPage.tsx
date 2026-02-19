@@ -325,7 +325,7 @@ export default function MeetingDetailPage() {
     folioLabel: "Intelligence Report",
     atmosphereColor: "turmeric" as const,
     activePage: "today" as const,
-    backLink: { label: "Today", onClick: () => navigate({ to: "/" }) },
+    backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/" }) },
     chapters: CHAPTERS,
     folioStatusText: saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "✓ Saved" : undefined,
     folioActions: data ? (
