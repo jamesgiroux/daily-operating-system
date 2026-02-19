@@ -75,6 +75,12 @@ pub struct Config {
     /// Embedding model/runtime configuration for semantic retrieval (Sprint 26).
     #[serde(default)]
     pub embeddings: EmbeddingConfig,
+    /// Active role preset ID (I309). Defaults to "customer-success".
+    #[serde(default = "default_role")]
+    pub role: String,
+    /// Optional path to a custom preset JSON file (I309).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_preset_path: Option<String>,
     /// Hygiene scan interval in hours (default: 4). Options: 1, 2, 4, 8.
     #[serde(default = "default_hygiene_scan_interval_hours")]
     pub hygiene_scan_interval_hours: u32,
@@ -171,6 +177,10 @@ fn default_mechanical_model() -> String {
 
 fn default_entity_mode() -> String {
     "account".to_string()
+}
+
+fn default_role() -> String {
+    "customer-success".to_string()
 }
 
 /// Embedding runtime configuration.
@@ -1891,6 +1901,8 @@ mod tests {
             personality: "professional".to_string(),
             ai_models: AiModelConfig::default(),
             embeddings: EmbeddingConfig::default(),
+            role: "customer-success".to_string(),
+            custom_preset_path: None,
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

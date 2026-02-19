@@ -471,14 +471,58 @@ pub struct ReadAccountResult {
     pub json: AccountJson,
 }
 
+/// Walk up from `account_dir` to the `Accounts` directory, collecting path
+/// segments. Returns `(id, name, parent_id, tracker_path)` (I316: n-level nesting).
+fn compute_account_hierarchy(
+    account_dir: &Path,
+) -> Result<(String, String, Option<String>, String), String> {
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = account_dir;
+    loop {
+        let dir_name = current
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid directory name")?
+            .to_string();
+        if dir_name == "Accounts" {
+            break;
+        }
+        parts.push(dir_name);
+        current = current
+            .parent()
+            .ok_or("Reached filesystem root without finding Accounts")?;
+    }
+    parts.reverse(); // Now [grandparent, parent, child] order
+
+    let name = parts.last().cloned().unwrap_or_default();
+    let id = parts
+        .iter()
+        .map(|p| slugify(p))
+        .collect::<Vec<_>>()
+        .join("--");
+    let parent_id = if parts.len() > 1 {
+        Some(
+            parts[..parts.len() - 1]
+                .iter()
+                .map(|p| slugify(p))
+                .collect::<Vec<_>>()
+                .join("--"),
+        )
+    } else {
+        None
+    };
+    let tracker_path = format!("Accounts/{}", parts.join("/"));
+
+    Ok((id, name, parent_id, tracker_path))
+}
+
 /// Read a dashboard.json file and convert to DbAccount + narrative fields.
 ///
-/// Supports both flat (`Accounts/Acme/dashboard.json`) and nested/child
-/// (`Accounts/Cox/Consumer-Brands/dashboard.json`) paths (I114).
+/// Supports flat (`Accounts/Acme/dashboard.json`) and arbitrarily nested
+/// accounts (`Accounts/Cox/Consumer-Brands/dashboard.json`, or deeper).
 ///
-/// Depth detection: if the grandparent of the JSON file is `Accounts`, this is
-/// a flat account. If it's deeper, the immediate parent dir is the BU name and
-/// the grandparent is the parent account name.
+/// I316: Uses `compute_account_hierarchy` to walk up the directory tree and
+/// build an ID chain with `--` separators for any nesting depth.
 pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
     let account_dir = path.parent().ok_or("No parent dir")?;
     let json: AccountJson = crate::entity_io::read_entity_json(
@@ -488,80 +532,32 @@ pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
 
     let updated_at = crate::entity_io::file_updated_at(path);
 
-    // Depth detection: is grandparent "Accounts"?
-    // Flat:   workspace/Accounts/{name}/dashboard.json  → parent.parent.filename == "Accounts"
-    // Child:  workspace/Accounts/{parent}/{child}/dashboard.json → parent.parent.filename != "Accounts"
-    let grandparent = account_dir.parent().ok_or("No grandparent dir")?;
-    let grandparent_name = grandparent
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let (id, name, parent_id, tracker_path) = compute_account_hierarchy(account_dir)?;
 
-    let is_child = grandparent_name != "Accounts";
+    // For flat accounts without a parent, honour parent_id from JSON (manual override)
+    let effective_parent_id = parent_id.or_else(|| json.parent_id.clone());
 
-    if is_child {
-        // Child account: Accounts/{parent_name}/{child_name}/dashboard.json
-        let child_name = account_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-        let parent_name = grandparent_name.to_string();
-        let parent_id = slugify(&parent_name);
-        let child_id = format!("{}--{}", parent_id, slugify(&child_name));
-        let tracker_path = Some(format!("Accounts/{}/{}", parent_name, child_name));
-
-        Ok(ReadAccountResult {
-            account: DbAccount {
-                id: child_id,
-                name: child_name,
-                lifecycle: json.structured.lifecycle.clone(),
-                arr: json.structured.arr,
-                health: json.structured.health.clone(),
-                contract_start: None,
-                contract_end: json.structured.renewal_date.clone(),
-                nps: json.structured.nps,
-                tracker_path,
-                parent_id: Some(parent_id),
-                is_internal: false,
-                updated_at,
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-            },
-            json,
-        })
-    } else {
-        // Flat account: Accounts/{name}/dashboard.json
-        let name = account_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("Unknown")
-            .to_string();
-        let id = slugify(&name);
-        let tracker_path = Some(format!("Accounts/{}", name));
-
-        Ok(ReadAccountResult {
-            account: DbAccount {
-                id,
-                name,
-                lifecycle: json.structured.lifecycle.clone(),
-                arr: json.structured.arr,
-                health: json.structured.health.clone(),
-                contract_start: None,
-                contract_end: json.structured.renewal_date.clone(),
-                nps: json.structured.nps,
-                tracker_path,
-                parent_id: json.parent_id.clone(),
-                is_internal: false,
-                updated_at,
-                archived: false,
-                keywords: None,
-                keywords_extracted_at: None,
-            },
-            json,
-        })
-    }
+    Ok(ReadAccountResult {
+        account: DbAccount {
+            id,
+            name,
+            lifecycle: json.structured.lifecycle.clone(),
+            arr: json.structured.arr,
+            health: json.structured.health.clone(),
+            contract_start: None,
+            contract_end: json.structured.renewal_date.clone(),
+            nps: json.structured.nps,
+            tracker_path: Some(tracker_path),
+            parent_id: effective_parent_id,
+            is_internal: false,
+            updated_at,
+            archived: false,
+            keywords: None,
+            keywords_extracted_at: None,
+        metadata: None,
+        },
+        json,
+    })
 }
 
 // =============================================================================
@@ -600,9 +596,10 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
         }
 
         // Skip system/hidden folders (e.g. _Uncategorized, .DS_Store)
+        // and structural folders (Internal/ is used for internal org workspace files)
         let dir_name = entry.file_name();
         let name_str = dir_name.to_string_lossy();
-        if name_str.starts_with('_') || name_str.starts_with('.') {
+        if name_str.starts_with('_') || name_str.starts_with('.') || name_str == "Internal" {
             continue;
         }
 
@@ -635,6 +632,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     archived: false,
                     keywords: None,
                     keywords_extracted_at: None,
+                metadata: None,
                 };
                 if db.upsert_account(&new_account).is_ok() {
                     let _ = write_account_json(workspace, &new_account, None, db);
@@ -658,6 +656,9 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             let mut merged = file_account;
                             // Preserve DB-only fields
                             merged.contract_start = db_account.contract_start.clone();
+                            // Preserve user-edited name: the DB name is authoritative
+                            // because users rename via the UI, not by renaming directories.
+                            merged.name = db_account.name.clone();
                             let _ = db.upsert_account(&merged);
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
@@ -708,103 +709,8 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             continue;
         }
 
-        let parent_id = slugify(&parent_name_str);
-
-        // Scan subdirectories for BU candidates
-        let sub_entries = match std::fs::read_dir(entry.path()) {
-            Ok(rd) => rd.collect::<Vec<_>>(),
-            Err(_) => continue,
-        };
-
-        for sub_entry in sub_entries {
-            let sub_entry = match sub_entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            if !sub_entry.path().is_dir() {
-                continue;
-            }
-            let sub_name = sub_entry.file_name();
-            let sub_name_str = sub_name.to_string_lossy();
-
-            if !is_bu_directory(&sub_name_str) {
-                continue;
-            }
-
-            let child_json_path = sub_entry.path().join("dashboard.json");
-            let child_id = format!("{}--{}", parent_id, slugify(&sub_name_str));
-
-            if child_json_path.exists() {
-                // BU has dashboard.json — use depth-aware read_account_json
-                match read_account_json(&child_json_path) {
-                    Ok(ReadAccountResult {
-                        account: file_account,
-                        json,
-                    }) => match db.get_account(&file_account.id) {
-                        Ok(Some(db_account)) => {
-                            if file_account.updated_at > db_account.updated_at {
-                                let mut merged = file_account;
-                                merged.contract_start = db_account.contract_start.clone();
-                                let _ = db.upsert_account(&merged);
-                                let _ = write_account_markdown(workspace, &merged, Some(&json), db);
-                                synced += 1;
-                            } else if db_account.updated_at > file_account.updated_at {
-                                let _ = write_account_json(workspace, &db_account, Some(&json), db);
-                                let _ =
-                                    write_account_markdown(workspace, &db_account, Some(&json), db);
-                                synced += 1;
-                            }
-                        }
-                        Ok(None) => {
-                            let _ = db.upsert_account(&file_account);
-                            let _ =
-                                write_account_markdown(workspace, &file_account, Some(&json), db);
-                            synced += 1;
-                        }
-                        Err(_) => continue,
-                    },
-                    Err(e) => {
-                        log::warn!("Failed to read child {}: {}", child_json_path.display(), e);
-                        continue;
-                    }
-                }
-            } else {
-                // BU directory without dashboard.json — bootstrap child record
-                if db.get_account(&child_id).ok().flatten().is_none() {
-                    let now = Utc::now().to_rfc3339();
-                    let new_child = DbAccount {
-                        id: child_id,
-                        name: sub_name_str.to_string(),
-                        lifecycle: None,
-                        arr: None,
-                        health: None,
-                        contract_start: None,
-                        contract_end: None,
-                        nps: None,
-                        tracker_path: Some(format!(
-                            "Accounts/{}/{}",
-                            parent_name_str, sub_name_str
-                        )),
-                        parent_id: Some(parent_id.clone()),
-                        is_internal: false,
-                        updated_at: now,
-                        archived: false,
-                        keywords: None,
-                        keywords_extracted_at: None,
-                    };
-                    if db.upsert_account(&new_child).is_ok() {
-                        let _ = write_account_json(workspace, &new_child, None, db);
-                        let _ = write_account_markdown(workspace, &new_child, None, db);
-                        log::info!(
-                            "Bootstrapped child account '{}/{}' from BU folder",
-                            parent_name_str,
-                            sub_name_str
-                        );
-                        synced += 1;
-                    }
-                }
-            }
-        }
+        // I316: Recursive BU scan — discover child accounts at any depth
+        synced += scan_child_accounts_recursive(workspace, db, &entry.path());
     }
 
     // Also check: SQLite accounts that have no workspace dir yet
@@ -820,6 +726,134 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
     }
 
     Ok(synced)
+}
+
+/// Recursively scan a parent directory for BU child subdirectories (I316).
+///
+/// Discovers child accounts at any nesting depth. Directories that contain
+/// `dashboard.json` are synced via `read_account_json`; bare directories are
+/// bootstrapped. The function recurses into BU-named subdirectories up to a
+/// depth limit of 10.
+fn scan_child_accounts_recursive(
+    workspace: &Path,
+    db: &ActionDb,
+    parent_dir: &Path,
+) -> usize {
+    scan_child_accounts_inner(workspace, db, parent_dir, 0)
+}
+
+fn scan_child_accounts_inner(
+    workspace: &Path,
+    db: &ActionDb,
+    parent_dir: &Path,
+    depth: usize,
+) -> usize {
+    if depth >= 10 {
+        return 0;
+    }
+    let sub_entries = match std::fs::read_dir(parent_dir) {
+        Ok(rd) => rd.collect::<Vec<_>>(),
+        Err(_) => return 0,
+    };
+
+    let mut synced = 0;
+
+    for sub_entry in sub_entries {
+        let sub_entry = match sub_entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !sub_entry.path().is_dir() {
+            continue;
+        }
+        let sub_name = sub_entry.file_name();
+        let sub_name_str = sub_name.to_string_lossy();
+
+        if !is_bu_directory(&sub_name_str) {
+            continue;
+        }
+
+        let child_json_path = sub_entry.path().join("dashboard.json");
+
+        if child_json_path.exists() {
+            // BU has dashboard.json — use depth-aware read_account_json
+            match read_account_json(&child_json_path) {
+                Ok(ReadAccountResult {
+                    account: file_account,
+                    json,
+                }) => match db.get_account(&file_account.id) {
+                    Ok(Some(db_account)) => {
+                        if file_account.updated_at > db_account.updated_at {
+                            let mut merged = file_account;
+                            merged.contract_start = db_account.contract_start.clone();
+                            let _ = db.upsert_account(&merged);
+                            let _ = write_account_markdown(workspace, &merged, Some(&json), db);
+                            synced += 1;
+                        } else if db_account.updated_at > file_account.updated_at {
+                            let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                            let _ =
+                                write_account_markdown(workspace, &db_account, Some(&json), db);
+                            synced += 1;
+                        }
+                    }
+                    Ok(None) => {
+                        let _ = db.upsert_account(&file_account);
+                        let _ =
+                            write_account_markdown(workspace, &file_account, Some(&json), db);
+                        synced += 1;
+                    }
+                    Err(_) => continue,
+                },
+                Err(e) => {
+                    log::warn!("Failed to read child {}: {}", child_json_path.display(), e);
+                    continue;
+                }
+            }
+        } else {
+            // BU directory without dashboard.json — bootstrap using hierarchy walker
+            let (child_id, child_name, child_parent_id, child_tracker) =
+                match compute_account_hierarchy(&sub_entry.path()) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+            if db.get_account(&child_id).ok().flatten().is_none() {
+                let now = Utc::now().to_rfc3339();
+                let new_child = DbAccount {
+                    id: child_id,
+                    name: child_name,
+                    lifecycle: None,
+                    arr: None,
+                    health: None,
+                    contract_start: None,
+                    contract_end: None,
+                    nps: None,
+                    tracker_path: Some(child_tracker.clone()),
+                    parent_id: child_parent_id,
+                    is_internal: false,
+                    updated_at: now,
+                    archived: false,
+                    keywords: None,
+                    keywords_extracted_at: None,
+                metadata: None,
+                };
+                if db.upsert_account(&new_child).is_ok() {
+                    let _ = write_account_json(workspace, &new_child, None, db);
+                    let _ = write_account_markdown(workspace, &new_child, None, db);
+                    log::info!(
+                        "Bootstrapped child account '{}' from BU folder",
+                        child_tracker,
+                    );
+                    synced += 1;
+                }
+            }
+        }
+
+        // Recurse into this directory's subdirectories (I316: n-level)
+        synced += scan_child_accounts_inner(workspace, db, &sub_entry.path(), depth + 1);
+    }
+
+    synced
 }
 
 // =============================================================================
@@ -1117,6 +1151,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         }
     }
 
@@ -1503,6 +1538,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         write_account_json(workspace, &account, None, &db).unwrap();
@@ -1583,6 +1619,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&parent).unwrap();
 
@@ -1603,6 +1640,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&child1).unwrap();
 
@@ -1622,6 +1660,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&child2).unwrap();
 
@@ -1658,6 +1697,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         })
         .unwrap();
 
@@ -1678,6 +1718,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         })
         .unwrap();
 
@@ -1697,6 +1738,7 @@ END_ENRICHMENT";
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         })
         .unwrap();
 
