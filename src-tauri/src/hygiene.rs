@@ -90,6 +90,12 @@ pub struct MechanicalFixes {
     pub orphan_internals_relinked: usize,
     /// Empty shell accounts auto-archived (no activity after 30d).
     pub empty_shells_archived: usize,
+    /// High-confidence duplicate people auto-merged.
+    pub people_auto_merged: usize,
+    /// Names resolved from calendar display names.
+    pub names_resolved_calendar: usize,
+    /// People linked to accounts via meeting co-attendance.
+    pub people_linked_co_attendance: usize,
 }
 
 /// Run a full hygiene scan: detect gaps, apply mechanical fixes, return report.
@@ -199,6 +205,19 @@ pub fn run_hygiene_scan(
         _ => {}
     }
 
+    // --- Phase 2d: Self-healing intelligence (I342) ---
+    let (count, details) = fix_auto_merge_duplicates(db);
+    report.fixes.people_auto_merged = count;
+    all_details.extend(details);
+
+    let (count, details) = resolve_names_from_calendar(db);
+    report.fixes.names_resolved_calendar = count;
+    all_details.extend(details);
+
+    let (count, details) = fix_co_attendance_links(db);
+    report.fixes.people_linked_co_attendance = count;
+    all_details.extend(details);
+
     // --- Phase 3: AI-budgeted gap filling ---
     if let (Some(budget), Some(queue)) = (budget, queue) {
         report.fixes.ai_enrichments_enqueued = enqueue_ai_enrichments(db, budget, queue);
@@ -218,8 +237,7 @@ pub fn run_hygiene_scan(
         .get_unsummarized_content_files()
         .map(|v| v.len())
         .unwrap_or(0);
-    // Intelligence gaps don't change from mechanical fixes — only AI enrichment resolves them.
-    // duplicate_people is also unchanged (no auto-merge).
+    report.duplicate_people = detect_duplicate_people(db).map(|v| v.len()).unwrap_or(0);
     report.abandoned_quill_syncs = db.count_quill_syncs_by_state("abandoned").unwrap_or(0);
     report.empty_shell_accounts = count_empty_shell_accounts(db);
 
@@ -874,6 +892,223 @@ fn dedup_people_by_domain_alias(
     }
 
     (merged, details)
+}
+
+// =============================================================================
+// Phase 2d: Self-Healing Intelligence
+// =============================================================================
+
+/// Auto-merge duplicate people with confidence >= 0.95.
+///
+/// Uses `detect_duplicate_people()` to find candidates, then merges each pair
+/// via `db.merge_people()`. Keeps the person with the higher meeting count.
+/// Capped at 10 merges per scan to prevent cascades.
+fn fix_auto_merge_duplicates(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    let candidates = match detect_duplicate_people(db) {
+        Ok(c) => c,
+        Err(_) => return (0, Vec::new()),
+    };
+
+    let mut merged = 0;
+    let mut details = Vec::new();
+    let mut already_merged: std::collections::HashSet<String> = std::collections::HashSet::new();
+    const MAX_MERGES: usize = 10;
+
+    for candidate in &candidates {
+        if merged >= MAX_MERGES {
+            break;
+        }
+        if candidate.confidence < 0.95 {
+            break; // sorted descending, no more high-confidence candidates
+        }
+
+        // Skip if either person was already merged this scan
+        if already_merged.contains(&candidate.person1_id)
+            || already_merged.contains(&candidate.person2_id)
+        {
+            continue;
+        }
+
+        // Determine keep vs. remove: higher meeting_count wins
+        let (keep_id, keep_name, remove_id, remove_name) = {
+            let p1 = db.get_person(&candidate.person1_id).ok().flatten();
+            let p2 = db.get_person(&candidate.person2_id).ok().flatten();
+            match (p1, p2) {
+                (Some(p1), Some(p2)) => {
+                    if p1.meeting_count >= p2.meeting_count {
+                        (p1.id, p1.name, p2.id, p2.name)
+                    } else {
+                        (p2.id, p2.name, p1.id, p1.name)
+                    }
+                }
+                _ => continue,
+            }
+        };
+
+        if db.merge_people(&keep_id, &remove_id).is_ok() {
+            // Emit audit signal on the kept person
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                "person",
+                &keep_id,
+                "auto_merged",
+                "hygiene",
+                Some(&format!("merged {} into {}", remove_name, keep_name)),
+                candidate.confidence as f64,
+            );
+
+            already_merged.insert(remove_id.clone());
+            already_merged.insert(keep_id.clone());
+
+            details.push(HygieneFixDetail {
+                fix_type: "people_auto_merged".to_string(),
+                entity_name: Some(keep_name.clone()),
+                description: format!(
+                    "Auto-merged duplicate: {} into {} ({:.0}% confidence)",
+                    remove_name,
+                    keep_name,
+                    candidate.confidence * 100.0
+                ),
+            });
+            merged += 1;
+        }
+    }
+
+    (merged, details)
+}
+
+/// Link people to accounts based on meeting co-attendance patterns.
+///
+/// If a person attends 3+ meetings that are linked to an account (via
+/// `meeting_entities`) but has no `entity_people` link to that account,
+/// create the link automatically.
+fn fix_co_attendance_links(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    // Find (person_id, entity_id, shared_meeting_count) where the person
+    // co-attends meetings linked to an account but has no entity_people link.
+    let candidates: Vec<(String, String, String, String, i64)> = db
+        .conn_ref()
+        .prepare(
+            "SELECT ma.person_id, p.name, me.entity_id, a.name, COUNT(*) AS shared
+             FROM meeting_attendees ma
+             JOIN meeting_entities me ON me.meeting_id = ma.meeting_id AND me.entity_type = 'account'
+             JOIN people p ON p.id = ma.person_id AND p.archived = 0
+             JOIN accounts a ON a.id = me.entity_id AND a.archived = 0
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM entity_people ep
+                 WHERE ep.person_id = ma.person_id AND ep.entity_id = me.entity_id
+             )
+             GROUP BY ma.person_id, me.entity_id
+             HAVING shared >= 3
+             ORDER BY shared DESC",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut linked = 0;
+    let mut details = Vec::new();
+
+    for (person_id, person_name, entity_id, account_name, shared_count) in &candidates {
+        if db
+            .link_person_to_entity(person_id, entity_id, "co-attendee")
+            .is_ok()
+        {
+            let confidence = match *shared_count {
+                3..=4 => 0.75,
+                5..=9 => 0.85,
+                _ => 0.95,
+            };
+
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                "person",
+                person_id,
+                "account_linked",
+                "hygiene",
+                Some(&format!(
+                    "{} meetings with {}",
+                    shared_count, account_name
+                )),
+                confidence,
+            );
+
+            if details.len() < 5 {
+                details.push(HygieneFixDetail {
+                    fix_type: "person_linked_co_attendance".to_string(),
+                    entity_name: Some(person_name.clone()),
+                    description: format!(
+                        "Linked {} to {} ({} shared meetings)",
+                        person_name, account_name, shared_count
+                    ),
+                });
+            }
+            linked += 1;
+        }
+    }
+
+    (linked, details)
+}
+
+/// Resolve unnamed people from calendar attendee display names.
+///
+/// Google Calendar provides display names like "James Giroux" for attendees,
+/// but the person record may only have an email-derived name like "jgiroux".
+/// This function matches unnamed people against the `attendee_display_names`
+/// table (populated during calendar sync) and updates their names.
+fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneFixDetail>) {
+    // Find unnamed people whose email exists in attendee_display_names
+    // with a proper display name (contains a space, no @ sign).
+    let candidates: Vec<(String, String, String)> = db
+        .conn_ref()
+        .prepare(
+            "SELECT p.id, p.email, adn.display_name
+             FROM people p
+             JOIN attendee_display_names adn ON LOWER(adn.email) = LOWER(p.email)
+             WHERE p.archived = 0
+               AND p.name NOT LIKE '% %'
+               AND adn.display_name LIKE '% %'
+               AND adn.display_name NOT LIKE '%@%'",
+        )
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?;
+            Ok(rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut resolved = 0;
+    let mut details = Vec::new();
+
+    for (person_id, email, display_name) in &candidates {
+        if db.update_person_name(person_id, display_name).is_ok() {
+            details.push(HygieneFixDetail {
+                fix_type: "name_resolved_calendar".to_string(),
+                entity_name: Some(display_name.clone()),
+                description: format!(
+                    "Resolved {}'s name from calendar: {}",
+                    email, display_name
+                ),
+            });
+            resolved += 1;
+        }
+    }
+
+    (resolved, details)
 }
 
 /// A candidate pair of potentially duplicate people.
@@ -1611,6 +1846,27 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
             if fixes.empty_shells_archived == 1 { "account" } else { "accounts" }
         ));
     }
+    if fixes.people_auto_merged > 0 {
+        fix_parts.push(format!(
+            "merged {} duplicate {}",
+            fixes.people_auto_merged,
+            if fixes.people_auto_merged == 1 { "person" } else { "people" }
+        ));
+    }
+    if fixes.names_resolved_calendar > 0 {
+        fix_parts.push(format!(
+            "resolved {} {} from calendar",
+            fixes.names_resolved_calendar,
+            if fixes.names_resolved_calendar == 1 { "name" } else { "names" }
+        ));
+    }
+    if fixes.people_linked_co_attendance > 0 {
+        fix_parts.push(format!(
+            "linked {} {} by co-attendance",
+            fixes.people_linked_co_attendance,
+            if fixes.people_linked_co_attendance == 1 { "person" } else { "people" }
+        ));
+    }
 
     // Build gap summaries
     let mut remaining_gaps: Vec<HygieneGapSummary> = Vec::new();
@@ -1642,7 +1898,10 @@ pub fn build_hygiene_narrative(report: &HygieneReport) -> Option<HygieneNarrativ
         + fixes.ai_enrichments_enqueued
         + fixes.phantom_accounts_archived
         + fixes.orphan_internals_relinked
-        + fixes.empty_shells_archived;
+        + fixes.empty_shells_archived
+        + fixes.people_auto_merged
+        + fixes.names_resolved_calendar
+        + fixes.people_linked_co_attendance;
     let total_remaining_gaps: usize = remaining_gaps.iter().map(|g| g.count).sum();
 
     // Return None when nothing happened
@@ -1759,6 +2018,21 @@ pub fn build_intelligence_hygiene_status(
                     key: "ai_enrichments_enqueued".to_string(),
                     label: "AI enrichments enqueued".to_string(),
                     count: r.fixes.ai_enrichments_enqueued,
+                },
+                HygieneFixView {
+                    key: "people_auto_merged".to_string(),
+                    label: "Duplicates auto-merged".to_string(),
+                    count: r.fixes.people_auto_merged,
+                },
+                HygieneFixView {
+                    key: "names_resolved_calendar".to_string(),
+                    label: "Names resolved from calendar".to_string(),
+                    count: r.fixes.names_resolved_calendar,
+                },
+                HygieneFixView {
+                    key: "people_linked_co_attendance".to_string(),
+                    label: "People linked by co-attendance".to_string(),
+                    count: r.fixes.people_linked_co_attendance,
                 },
             ]
         })
@@ -2696,7 +2970,9 @@ mod tests {
         };
 
         let report = run_hygiene_scan(&db, &config, Path::new("/tmp/nonexistent"), None, None, false, None);
-        assert_eq!(report.duplicate_people, 1);
+        // After auto-merge of high-confidence duplicates (>=0.95), the re-count should be 0
+        assert_eq!(report.duplicate_people, 0);
+        assert_eq!(report.fixes.people_auto_merged, 1);
     }
 
     #[test]

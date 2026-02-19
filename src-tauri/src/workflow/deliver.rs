@@ -333,28 +333,55 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
         .filter(|s| !s.is_empty())
         .map(|s| truncate_to_sentences(s, 2));
 
-    // Stakeholders from entity intelligence (exclude internal people)
+    // Key people: prefer actual meeting attendees, fall back to entity stakeholders.
+    // The attendee list comes from the calendar invite; stakeholder_insights comes
+    // from entity intelligence and may include people not on this specific invite.
     let stakeholders: Vec<Value> = ctx
-        .stakeholder_insights
+        .attendees
         .as_ref()
+        .filter(|arr| !arr.is_empty())
         .map(|arr| {
             arr.iter()
                 .filter(|v| {
-                    v.get("relationship")
-                        .and_then(|r| r.as_str()) != Some("internal")
+                    // Exclude organizer/self and internal-only attendees
+                    v.get("self").and_then(|s| s.as_bool()) != Some(true)
                 })
                 .take(6)
                 .filter_map(|v| {
-                    let name = v.get("name").and_then(|n| n.as_str())?;
+                    let name = v.get("displayName")
+                        .or_else(|| v.get("name"))
+                        .and_then(|n| n.as_str())
+                        .or_else(|| v.get("email").and_then(|e| e.as_str()))?;
                     Some(json!({
                         "name": name,
                         "role": v.get("role").and_then(|r| r.as_str()),
-                        "focus": v.get("focus").and_then(|f| f.as_str()),
                     }))
                 })
                 .collect()
         })
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            // Fallback: entity stakeholders (exclude internal people)
+            ctx.stakeholder_insights
+                .as_ref()
+                .map(|arr| {
+                    arr.iter()
+                        .filter(|v| {
+                            v.get("relationship")
+                                .and_then(|r| r.as_str()) != Some("internal")
+                        })
+                        .take(6)
+                        .filter_map(|v| {
+                            let name = v.get("name").and_then(|n| n.as_str())?;
+                            Some(json!({
+                                "name": name,
+                                "role": v.get("role").and_then(|r| r.as_str()),
+                                "focus": v.get("focus").and_then(|f| f.as_str()),
+                            }))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
 
     if at_a_glance.is_empty()
         && discuss.is_empty()

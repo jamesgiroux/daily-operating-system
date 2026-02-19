@@ -37,6 +37,8 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I323** | Zero-touch email disposition pipeline | P2 | Email |
 | **I324** | Email signals in entity intelligence enrichment | P2 | Intelligence |
 | **I326** | Per-meeting intelligence lifecycle — detect, enrich, update, archive | P1 | Architecture |
+| **I337** | Meeting-topic-aware context building — calendar description steers intelligence narrative | P1 | Pipeline |
+| **I338** | 1:1 relationship intelligence — three-file pattern for people (incomplete, plumbing only) | P1 | Intelligence |
 | **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
 | **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
 | **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
@@ -71,6 +73,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I350** | In-app notifications — release announcements, what's new, system status alerts | P1 | UX / Infra |
 | **I351** | Standardize actions chapter across all entity types (ADR-0084 D5) | P1 | Entity / UX |
 | **I352** | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) | P1 | Entity / Code Quality |
+| **I353** | Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking | P1 | Intelligence / Data Quality |
 
 ---
 
@@ -161,14 +164,17 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
+| P1 | I337 | Meeting-topic-aware context building — calendar description steers intelligence narrative |
+| P1 | I338 | 1:1 relationship intelligence — three-file pattern for people (plumbing shipped, files never generated) |
 | P1 | I317 | Meeting-aware email intelligence (structured digest, not excerpts) |
 | P1 | I318 | Thread position tracking ("ball in your court") |
 | P1 | I319 | Entity-level email cadence monitoring + anomaly surfacing |
-| P1 | I320 | Hybrid email classification (semantic upgrade for ambiguous bucket) |
+| P1 | I320 | Hybrid email classification (semantic + signal-context boosting) |
 | P1 | I322 | Email briefing narrative (daily briefing integration) |
 | P2 | I321 | Commitment & action extraction from email |
 | P2 | I323 | Zero-touch email disposition pipeline |
 | P2 | I324 | Email signals in entity intelligence enrichment |
+| P1 | I353 | Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking |
 
 **Rationale:** DailyOS already fetches, classifies, and enriches email (ADR-0024/0029). The 0.10.0 signal bus (I306) builds the email-calendar bridge infrastructure — correlating email threads with meeting attendees and surfacing raw excerpts in prep context. 0.12.0 builds the intelligence layer on top: structured meeting-aware digests that tell you what matters for each meeting (I317), thread position awareness so you know what you owe people (I318), entity-level cadence anomalies that flag when accounts go quiet or spike (I319), semantic classification for the ambiguous "medium" priority bucket (I320), and a narrative email section in the daily briefing that reads like a chief of staff's morning summary (I322). The design philosophy is "chief of staff who reads your email and tells you what matters" — not an email client, not an inbox UI, not unread counts. Email becomes the signal bus's richest data source and the briefing's most actionable section.
 
@@ -3050,6 +3056,50 @@ Store in `content_index.tags` column (JSON array).
 
 ---
 
+<a name="i353"></a>
+**I353: Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking**
+
+**Priority:** P1
+**Version:** 0.12.0
+**Area:** Intelligence / Data Quality
+**Depends on:** None (builds on existing hygiene scanner, signal bus, and DB infrastructure)
+
+**Problem:** The hygiene scanner detects data quality gaps but doesn't fix the most impactful ones. `detect_duplicate_people()` flags duplicates but never merges them. Google Calendar has display names ("James Giroux") but the person record says "jgiroux". People attend meetings linked to accounts but have no `entity_people` link unless their email domain matches the account. Signals fire but don't feed back into data cleanup.
+
+**Solution — Phase 1 (shipped on dev):**
+
+Three new self-healing functions in `hygiene.rs`, wired into `run_hygiene_scan()` as Phase 2d:
+
+1. **Auto-merge high-confidence duplicates** (`fix_auto_merge_duplicates`): Calls existing `detect_duplicate_people()`, filters to confidence >= 0.95, merges via `db.merge_people()` keeping the person with higher meeting count. Capped at 10 merges per scan. Emits `auto_merged` signal for audit trail.
+
+2. **Calendar display name resolution** (`resolve_names_from_calendar`): New `attendee_display_names` table (migration 026) populated during calendar sync from Google Calendar `displayName` field. Hygiene matches unnamed people (name has no space) against stored display names and resolves them. Pipeline: `Attendee.display_name` → `GoogleCalendarEvent.attendee_names` → `save_attendee_display_names()` (upsert on poll) → hygiene resolution.
+
+3. **Co-attendance account linking** (`fix_co_attendance_links`): SQL join across `meeting_attendees` + `meeting_entities` finds people attending 3+ meetings linked to an account with no `entity_people` link. Creates the link with tiered confidence signals (3-4 meetings = 0.75, 5-9 = 0.85, 10+ = 0.95).
+
+All three emit signals for audit trail. `MechanicalFixes` extended with `people_auto_merged`, `names_resolved_calendar`, `people_linked_co_attendance`. Narrative and status views updated. Post-fix recount now includes `duplicate_people` (previously skipped since no auto-merge existed).
+
+**Phase 2 (follow-up — signal → hygiene feedback loop):**
+
+- `HygieneActionRule` type parallel to `PropagationRule` — signal-triggered cleanup
+- Concrete rules: `person_created` → targeted duplicate check, email with sender name → immediate name resolve, entity resolved → co-attendance link, `person_departed` → archive after 30d
+- Bridge `email_signals` → `signal_events` (currently disconnected)
+- `hygiene_actions_log` audit table
+
+**Phase 3 (future — inference engine):**
+
+SQL-based inference rules (no AI cost): shared-people account relationships, seniority inference from meeting patterns, compound health scores, departure detection, domain-cluster account suggestions.
+
+**Acceptance criteria (Phase 1):**
+
+- [x] Two people with identical normalized name on same domain → merged after scan
+- [x] Two people at 0.70 confidence → NOT merged
+- [x] Unnamed person + `attendee_display_names` row → name resolved after scan
+- [x] Person in 3+ meetings with account (no link) → `entity_people` link created
+- [x] Narrative shows "merged N duplicates, resolved N names, linked N people by co-attendance"
+- [x] 901 tests pass, clippy clean
+
+---
+
 ## Superseded Issues
 
 *Closed as superseded by other work. Tracking for historical context.*
@@ -4985,38 +5035,45 @@ Replace `build_account_domain_hints` (filesystem-only, account-only) with `build
 
 ---
 
-**I337: Entity-generic context building — type-dispatched intelligence injection**
+**I337: Meeting-topic-aware context building — calendar description steers intelligence narrative**
 
-**Priority:** P1 (0.10.0)
+**Priority:** P1 (0.12.0)
 **Area:** Backend / Prep pipeline
-**Depends on:** I335 (data model), I336 (classification)
-**ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Phase 3
 
-Replace `resolve_account_compat` callers in `meeting_context.rs` with a generic `resolve_primary_entity` that dispatches to type-specific context assembly.
+**Part 1 (SHIPPED in 0.10.0):** Entity-generic context dispatching — `resolve_primary_entity` dispatches to type-specific context assembly (account, project, person). Commit `a5852d1`.
 
-**Changes:**
-- New `resolve_primary_entity(db, event_id, meeting, workspace, embedding_model) -> Option<EntityMatch>` that returns the top resolved entity regardless of type
-- `EntityMatch` struct: `{ entity_id, entity_type, name, confidence, source, workspace_path }`
-- Type-dispatched context assembly:
-  - **Account**: Existing account context path (dashboard.json, intelligence.json, stakeholders, actions, captures, email signals). Refactored from inline code into `gather_account_context()`.
-  - **Project**: New path. Load project intelligence.json + dashboard.json from `Projects/{name}/`. Query SQLite: project metadata, linked meetings, open actions, captures. Inject project status, blockers, milestones, team context.
-  - **Person (1:1)**: New path. Load person intelligence.json from `People/{name}/` (if exists). Query SQLite: interaction history (last N meetings via meeting_attendees), open actions between user and person, cross-entity connections (shared accounts/projects), relationship signals.
-- Context JSON uses `entity_id` + `entity_type` instead of `account` string
+**Part 2 (THIS ISSUE):** The prep pipeline generates intelligence about the entity, not about the meeting. A Parse.ly demo meeting linked to Corporate Key Accounts gets a narrative about renewal order forms and TAM ownership — completely irrelevant to what the meeting is actually about. The calendar description ("Nacho to present Parse.ly Demo Toolkit") tells the system exactly what the meeting covers, but the AI prompt ignores it.
+
+**The problem in practice:**
+- Calendar description: "Nacho to present the Parse.ly Demo Toolkit and help us position and upsell Parse.ly within our vertical"
+- Generated narrative: "The team resolved its near-term prioritization conflict... a 2026 renewal order form is in play with high urgency"
+- Key people shown: the account's TAM team — none of whom were on the invite (fixed separately in 0.11.0)
+- Watch item: "2026 renewal order form in play" — irrelevant to a Parse.ly demo
+
+The system knows the entity. It doesn't know the meeting.
+
+**What needs to change:**
+- The AI prompt for meeting intelligence receives the calendar event description as a primary framing constraint
+- Prompt instruction: "This meeting is about [description]. Surface only the entity intelligence relevant to this specific topic. Do not generate a generic entity overview."
+- If the description says "Parse.ly Demo Toolkit" and the entity intelligence mentions Parse.ly, surface that. If the entity intelligence is about renewal order forms, omit it.
+- The meeting card narrative should answer "what do I need to know for THIS meeting" not "what do I know about this account"
 
 **Acceptance criteria:**
-1. Customer meeting resolves to account and injects account intelligence (existing behavior preserved)
-2. Meeting linked to project injects project intelligence context
-3. 1:1 meeting injects person relationship context
-4. Meeting with both project and account entities uses primary entity for context, secondary for supplementary data
-5. Missing intelligence files degrade gracefully (no crash, thin context)
+1. Calendar description is included in the AI enrichment prompt as a framing constraint
+2. Meeting narrative references the meeting topic (from description), not just entity-level data
+3. A Parse.ly demo meeting about Corporate Key Accounts produces intelligence about Parse.ly positioning, not about renewal order forms
+4. Meetings without descriptions fall back to entity-level intelligence (no regression)
+5. The calendar description is available in `DirectiveMeetingContext` for both the AI prompt and the prep summary builder
 
 ---
 
 **I338: 1:1 relationship intelligence — three-file pattern for people**
 
-**Priority:** P1 (0.10.0)
+**Priority:** P1 (0.12.0)
 **Area:** Backend / Intelligence
 **Depends on:** I337 (context building)
+
+**Status: INCOMPLETE.** Commit `6ac8400` added code paths for the three-file pattern but no person has ever received an `intelligence.json` file. The plumbing exists — enrichment trigger, freshness check, AI queue — but the actual file generation isn't firing. Zero `intelligence.json` files exist under `People/`. Either the trigger conditions (recurring 1:1, 5+ meetings) aren't being met for any person, or the enrichment pipeline silently fails for people. Needs investigation and completion in 0.12.0.
 **ADR:** [0082](decisions/0082-entity-generic-prep-pipeline.md) Section 4
 
 Extend the ADR-0057 three-file pattern to people who have 1:1 relationships with the user. Create `People/{name}/` directories with `dashboard.json`, `intelligence.json`, and `dashboard.md` for relationship intelligence.
