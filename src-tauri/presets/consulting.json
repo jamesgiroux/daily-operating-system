@@ -1,0 +1,82 @@
+{
+  "id": "consulting",
+  "name": "Consulting",
+  "description": "For consultants and professional services leads managing client engagements. Tracks engagement health, milestone delivery, utilization, and stakeholder alignment across active workstreams.",
+  "defaultEntityMode": "both",
+  "vocabulary": {
+    "entityNoun": "engagement",
+    "entityNounPlural": "engagements",
+    "primaryMetric": "Engagement Value",
+    "healthLabel": "Engagement Health",
+    "riskLabel": "Delivery Risk",
+    "successVerb": "delivered",
+    "cadenceNoun": "steering committee"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Engagement Value", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Engagement Health", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["green", "yellow", "red"] },
+      { "key": "lifecycle", "label": "Engagement Phase", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["pursuit", "proposal", "discovery", "analysis", "delivery", "transition", "complete"] },
+      { "key": "contract_end", "label": "Engagement End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "nps", "label": "Client Satisfaction", "fieldType": "number", "source": "column", "columnMapping": "nps" }
+    ],
+    "project": [
+      { "key": "status", "label": "Workstream Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Milestone Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Workstream Lead", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "engagement_type", "label": "Engagement Type", "fieldType": "select", "options": ["assessment", "implementation", "advisory", "managed_services", "training"], "required": false }
+    ],
+    "project": [
+      { "key": "deliverable_type", "label": "Deliverable Type", "fieldType": "select", "options": ["assessment", "implementation", "workshop", "report", "roadmap"], "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "project_sponsor", "label": "Project Sponsor", "description": "Senior executive who authorized and funded the engagement" },
+    { "id": "steering_committee", "label": "Steering Committee", "description": "Senior leaders who review progress and make decisions at checkpoints" },
+    { "id": "client_project_lead", "label": "Client Project Lead", "description": "Day-to-day counterpart managing the client side" },
+    { "id": "sme", "label": "Subject Matter Expert", "description": "Domain expert providing data, context, and interviews" },
+    { "id": "change_agent", "label": "Change Agent", "description": "Internal champion driving adoption of recommendations" },
+    { "id": "working_team", "label": "Working Team Member", "description": "Client-side staff collaborating on workstreams" },
+    { "id": "budget_owner", "label": "Budget Owner", "description": "Controls the engagement budget" }
+  ],
+  "internalTeamRoles": [
+    { "id": "partner", "label": "Partner", "description": "Sells work, owns client relationship" },
+    { "id": "em", "label": "Engagement Manager", "description": "Day-to-day engagement delivery lead" },
+    { "id": "consultant", "label": "Consultant", "description": "Core analysis and workstream ownership" },
+    { "id": "analyst", "label": "Analyst", "description": "Data analysis, research, and model building" },
+    { "id": "sme", "label": "Internal SME", "description": "Practice-area subject matter expert" }
+  ],
+  "lifecycleEvents": [
+    "sow_signed",
+    "kickoff",
+    "discovery_complete",
+    "steering_committee",
+    "workstream_complete",
+    "draft_delivered",
+    "final_presentation",
+    "engagement_close",
+    "follow_on_sold",
+    "change_order"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "milestone_overdue",
+      "client_escalation",
+      "scope_creep_detected"
+    ]
+  },
+  "briefingEmphasis": "Focus on milestone delivery, client escalations, and engagement health. Prioritize engagements with overdue deliverables or upcoming steering committees.",
+  "emailPriorityKeywords": [
+    "engagement", "deliverable", "milestone", "scope", "statement of work", "sow", "phase",
+    "assessment", "recommendation", "findings"
+  ]
+}
