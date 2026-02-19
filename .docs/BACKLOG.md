@@ -74,6 +74,10 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I351** | Standardize actions chapter across all entity types (ADR-0084 D5) | P1 | Entity / UX |
 | **I352** | Shared entity detail hooks and components — intelligence field update, keywords (ADR-0084 C4/C5) | P1 | Entity / Code Quality |
 | **I353** | Self-healing hygiene — auto-merge duplicates, calendar name resolution, co-attendance linking | P1 | Intelligence / Data Quality |
+| **I354** | Email digest AI enrichment — extract commitments, questions, sentiment from meeting-linked threads | P1 | Email / Intelligence |
+| **I355** | Email intelligence UI — EmailBriefingNarrative component + email digest in MeetingDetailPage | P1 | UX / Email |
+| **I356** | Thread position UI — "Replies Needed" section in daily briefing with wait duration | P1 | UX / Email |
+| **I357** | Semantic email reclassification (I320 Layer 2) — opt-in AI re-scoring of medium emails | P2 | Email / Intelligence |
 
 ---
 
@@ -180,9 +184,9 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 
 ---
 
-### 0.12.1 — Product Language & UX Polish
+### 0.12.1 — Product Language & UX Polish + Email Intelligence UI
 
-*The first release that subtracts. Define each surface's job, cut what doesn't serve it, then give everything the right name.*
+*The first release that subtracts. Define each surface's job, cut what doesn't serve it, then give everything the right name. Also surfaces the 0.12.0 email intelligence backend through editorial UI components.*
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
@@ -191,8 +195,14 @@ Signal intelligence architecture shipped (I305–I308): typed event log, Bayesia
 | P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
 | P1 | I343 | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges |
 | P1 | I349 | Settings redesign — kill the control panel, build a connections hub |
+| P1 | I354 | Email digest AI enrichment — Claude extracts commitments, questions, sentiment from meeting-linked email threads |
+| P1 | I355 | Email intelligence UI — EmailBriefingNarrative in daily briefing + email digest section in MeetingDetailPage |
+| P1 | I356 | Thread position UI — "Replies Needed" section with wait duration, thread subjects, sender context |
+| P2 | I357 | Semantic email reclassification (I320 Layer 2) — opt-in AI re-scoring of medium-priority emails |
 
 **Rationale:** DailyOS has been built at speed — features added because they were possible, scope expanded six times, a full design system refresh applied to content that was never questioned. The app has never had a "why is this here?" pass. Every time we've been critical, the app has been better for it. This release does the critique.
+
+The 0.12.0 email intelligence backend shipped thread tracking, cadence monitoring, signal-context boosting, and email narratives — all writing to the directive JSON but not yet rendered. I354-I356 surface this data through editorial UI that fits the JTBD framework being established by I342. I354 adds AI enrichment to the mechanical email digest (commitments, questions, sentiment). I355 designs the email sections as editorial components — the narrative replaces raw email lists, the digest appears as an "Email Intelligence" chapter in meeting prep. I356 renders thread positions as actionable cards. I357 (P2) is the opt-in semantic reclassification layer that adds AI cost — deferred until Layer 1 boosting proves its value in production.
 
 I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious. I349 is the biggest single-surface redesign: the Settings page goes from an 18-card scrolling control panel to a focused connections hub with progressive disclosure, moving in-context actions to the surfaces that use them and collapsing identity into one card.
 
@@ -3097,6 +3107,125 @@ SQL-based inference rules (no AI cost): shared-people account relationships, sen
 - [x] Person in 3+ meetings with account (no link) → `entity_people` link created
 - [x] Narrative shows "merged N duplicates, resolved N names, linked N people by co-attendance"
 - [x] 901 tests pass, clippy clean
+
+---
+
+### I354 — Email Digest AI Enrichment (Commitments, Questions, Sentiment)
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** Email / Intelligence
+**Deps:** I317 (shipped in 0.12.0 — mechanical email digest)
+
+**Problem:** The `emailDigest` field in meeting prep JSON contains raw email thread data (senders, snippets, dates) but no intelligence layer. A CSM opening a meeting prep sees "3 email threads from Sarah Chen, Mike Johnson" but not "Sarah committed to sending the SOW by Friday" or "Mike asked about pricing changes — unanswered."
+
+**Solution:** During `enrich_preps()`, include the `emailDigest` data in the Claude context window alongside existing prep ingredients. Add prompt instructions to extract:
+- **Commitments:** "I'll…", "We can…", "Let me…" patterns with owner attribution
+- **Open questions:** Questions asked in threads that haven't received answers
+- **Sentiment shifts:** Warming/cooling signals across the thread timeline
+
+Parse enriched fields from Claude output and merge back into the prep JSON as:
+```json
+{
+  "emailDigest": {
+    "threadSummary": "3 email threads from Sarah Chen, Mike Johnson",
+    "commitments": [{"text": "SOW by Friday", "owner": "Sarah Chen"}],
+    "openQuestions": [{"question": "Pricing for enterprise tier?", "askedBy": "Mike Johnson"}],
+    "sentimentShifts": [{"direction": "warming", "evidence": "Sarah escalated to VP"}],
+    "threads": [...]
+  }
+}
+```
+
+**Files:** `src-tauri/src/workflow/deliver.rs` (enrich_preps prompt + parsing)
+
+**Acceptance criteria:**
+- Meeting with email threads → prep includes commitments and questions
+- Meeting with no email threads → no emailDigest field (unchanged from 0.12.0)
+- Enrichment failures → graceful fallback to mechanical digest
+
+---
+
+### I355 — Email Intelligence UI (Briefing Narrative + Meeting Digest)
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** UX / Email
+**Deps:** I354 (AI enrichment), I322 (narrative backend), I342 (JTBD critique — defines surface jobs)
+
+**Problem:** 0.12.0 shipped the backend for email narratives (`emails.narrative` in today-directive) and email digests (`emailDigest` in prep JSON), but the frontend still renders raw email lists. The intelligence exists in the JSON but users can't see it.
+
+**Solution:** Two new editorial components, designed after I342 establishes each surface's job:
+
+1. **EmailBriefingNarrative** — Replaces the current email list in the daily briefing with the synthesized narrative. Falls back to email list if narrative is null. Editorial typography: Newsreader serif for the narrative text, DM Sans for metadata.
+
+2. **EmailDigestSection** — New chapter in MeetingDetailPage that renders commitments, open questions, and sentiment shifts from `emailDigest`. Only appears when email threads exist for the meeting. Uses the section-rule layout pattern (ADR-0077), not cards.
+
+**Files:**
+- `src/components/editorial/EmailBriefingNarrative.tsx` (new)
+- `src/components/editorial/EmailDigestSection.tsx` (new)
+- `src/pages/MeetingDetailPage.tsx` (integrate EmailDigestSection)
+- `src/components/dashboard/DailyBriefing.tsx` (integrate EmailBriefingNarrative)
+- `src/types/index.ts` (EmailDigest interface)
+
+**Acceptance criteria:**
+- Daily briefing shows narrative when available, email list when not
+- Meeting prep shows "Email Intelligence" section with commitments/questions
+- Meetings with no email context show no email section
+- Both components follow editorial design language (ADR-0073/0077)
+
+---
+
+### I356 — Thread Position UI ("Replies Needed")
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** UX / Email
+**Deps:** I318 (thread tracking backend shipped in 0.12.0)
+
+**Problem:** `emails.repliesNeeded` is in the today-directive JSON with thread subjects, sender emails, dates, and wait durations, but not rendered. Users can't see which high-priority threads are awaiting their reply.
+
+**Solution:** Add a "Replies Needed" subsection to the daily briefing email area. Each thread shows: subject, sender, wait duration ("3 days"), with a visual urgency indicator for threads waiting >48h. Compact card layout, max 5 threads, sorted by wait duration.
+
+**Files:**
+- `src/components/editorial/RepliesNeeded.tsx` (new)
+- `src/components/dashboard/DailyBriefing.tsx` (integrate)
+- `src/types/index.ts` (ThreadPosition interface)
+
+**Acceptance criteria:**
+- Threads awaiting reply shown with subject, sender, wait duration
+- Threads >48h visually distinguished
+- Section hidden when no replies needed
+- Clicking thread subject could open Gmail thread (stretch)
+
+---
+
+### I357 — Semantic Email Reclassification (I320 Layer 2)
+
+**Version:** 0.12.1 (P2 — after Layer 1 proves value)
+**Priority:** P2
+**Area:** Email / Intelligence
+**Deps:** I320 Layer 1 (shipped in 0.12.0)
+
+**Problem:** Layer 1 (signal-context boosting) elevates medium emails when the sender's entity has active high-confidence signals. But many medium emails are misclassified because the mechanical classifier can't understand semantic intent. "Quick question about the renewal" from an unknown domain stays medium even though the subject screams high-priority.
+
+**Solution:** Opt-in semantic reclassification layer:
+1. After signal-context boosting, collect remaining "medium" emails
+2. Batch subject + snippet + sender context to Claude (no email body)
+3. Claude reclassifies each as high/medium/low with reasoning
+4. Track reclassifications as correction signals for Thompson Sampling (I307)
+5. New `semanticEmailClassification` setting (default: false)
+
+**Files:**
+- `src-tauri/src/prepare/email_classify.rs` (semantic layer)
+- `src-tauri/src/prepare/orchestrate.rs` (wire into pipeline)
+- Settings UI for opt-in toggle
+
+**Acceptance criteria:**
+- Setting off → no AI cost, no reclassification
+- Setting on → >=20% of medium emails reclassified with reasoning
+- Reclassification reasons stored as correction signals
+- Thompson Sampling learns from user corrections of AI reclassifications
 
 ---
 
