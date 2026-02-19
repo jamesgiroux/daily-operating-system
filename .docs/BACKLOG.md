@@ -67,13 +67,14 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 | **I340** | Glean integration — enterprise knowledge enrichment for meeting prep | P2 | Integrations |
 | **I341** | Product vocabulary audit — translate system terms in all user-facing UI copy (ADR-0083) | P1 | UX |
-| **I342** | Surface JTBD critique — define each surface's job, audit every element, cut what doesn't belong, execute | P1 | UX / Product |
+| **I342** | Surface JTBD critique — define, audit, cut, execute (Phases 1-3 complete, Phase 4 pending) | P1 | UX / Product |
 | **I343** | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges | P1 | UX |
 | **I344** | Onboarding: suggest closest teammates from Gmail frequent correspondents | P2 | UX / Onboarding |
 | **I345** | Onboarding: back navigation loses entered state (bug) | P1 | UX / Onboarding |
 | **I346** | Linear integration (project management sync) | P2 | Integrations |
 | **I347** | SWOT report type — account strengths/weaknesses/opportunities/threats from existing intelligence | P2 | Intelligence / Reports |
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
+| **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
 
 ---
 
@@ -201,10 +202,11 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | P1 | I341 | Product vocabulary audit — translate system terms in all UI copy, informed by I342 outcomes |
 | P1 | I329 | Intelligence quality indicators (replace "needs prep" badge) |
 | P1 | I343 | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges |
+| P1 | I349 | Settings redesign — kill the control panel, build a connections hub |
 
 **Rationale:** DailyOS has been built at speed — features added because they were possible, scope expanded six times, a full design system refresh applied to content that was never questioned. The app has never had a "why is this here?" pass. Every time we've been critical, the app has been better for it. This release does the critique.
 
-I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious.
+I342 is the gate. It defines each surface's job-to-be-done (granular: section-level, not just page-level), inventories every element against that job, produces a cut/move/merge list, and executes the changes. This is not a report that informs future work — it ships code that reshapes the surfaces. I341 follows as a dependent step: with the JTBD frame established and the surfaces restructured, the vocabulary audit walks every surviving string and makes it speak in product terms (ADR-0083). The right words come from understanding the job, not from a translation table applied blindly. I329 moves here from 0.13.0 because quality indicator labels (Sparse → New, Developing → Building) are a vocabulary decision that must align with the JTBD findings. I343 addresses how editing feels — the interaction quality that makes corrections feel powerful rather than tedious. I349 is the biggest single-surface redesign: the Settings page goes from an 18-card scrolling control panel to a focused connections hub with progressive disclosure, moving in-context actions to the surfaces that use them and collapsing identity into one card.
 
 This is the "make it feel like a product" release. Not by adding polish — by subtracting everything that doesn't serve the user's actual job.
 
@@ -3842,97 +3844,69 @@ Define each surface's job-to-be-done. Not "this page shows meetings" — the ful
 
 **Deliverable:** ADR-0084 (Surface Jobs-to-Be-Done). This becomes the reference for all subsequent UI work.
 
+**Status: COMPLETE.** ADR-0084 written at `.docs/decisions/0084-surface-jobs-to-be-done.md`.
+
 ---
 
 #### Phase 2: Element Inventory & Prosecution
 
-Walk every surface in the running app. For each section, component, badge, button, label, and card:
+Six-agent audit inventoried every visible element across all five surface types. Each agent read the full component code and produced a structured document with JTBD analysis and element-by-element verdicts (keep/cut/move/merge/rethink).
 
-- **What is it?** (Name, location, current behavior)
-- **What job does it serve?** (Reference Phase 1 JTBD)
-- **Does it serve that job well?** (Is it clear? Is it in the right place? Does the user understand it without explanation?)
-- **Is it duplicated?** (Does another surface show the same information? Which one should own it?)
-- **Could the user do their job without it?** (If yes — does it actively help or is it decoration?)
-- **Is it earning its space?** (On an editorial layout with generous whitespace, every element must justify its real estate)
+**Deliverable:** Element audit documents. Every element with a verdict.
 
-This is the critique. Be ruthless. The question isn't "is this useful?" — lots of things are useful. The question is "does this serve the specific job this surface was hired to do?"
-
-**Deliverable:** Element audit spreadsheet or structured document. Every element with a verdict: keep, cut, move, merge, rethink.
+**Status: COMPLETE.** Six audit reports at `.docs/research/i342-*.md`:
+- `i342-daily-briefing-audit.md` — 8 sections, ~50 elements inventoried
+- `i342-weekly-forecast-audit.md` — 7 sections, 33 elements inventoried, collapse hypothesis evaluated
+- `i342-meeting-detail-audit.md` — 9 sections + shell, 72 elements inventoried
+- `i342-actions-audit.md` — 11 sections, 58 elements inventoried
+- `i342-entity-detail-audit.md` — 3 entity types, shared components, vocabulary violations
+- `i342-cross-cutting-audit.md` — nav structure, duplication map, dead code inventory
 
 ---
 
 #### Phase 3: Cut List, Restructure Plan & Vocabulary
 
-The hard part. From the Phase 2 audit, produce:
+Decision checklist produced from Phase 2 findings. All verdicts provided.
 
-1. **Cut list** — Elements that don't serve the JTBD. These get removed.
-2. **Move list** — Elements on the wrong surface. These relocate.
-3. **Merge list** — Duplicated elements across surfaces. One surface owns it, others link to it.
-4. **Rethink list** — Elements that serve the job but do it poorly. These get redesigned.
-5. **Section restructure** — If the daily briefing's section order doesn't match the user's mental model of their morning, reorder it. If a section is doing two jobs, split it. If two sections are doing one job, merge them.
-6. **Vocabulary alignment** — With the JTBD frame established, review ADR-0083's translation table. Do the product terms still make sense? Does "Briefing" work for the daily surface if its job turns out to be "ongoing awareness" rather than "morning preparation"? This is where vocabulary gets tested against real jobs, not just translated from system terms.
+**Deliverable:** Structured changelist in ADR-0084 Section 2.
 
-**Deliverable:** Structured changelist that I341 (vocabulary audit) and I329 (quality indicators) execute against. This is the source of truth for what the surfaces should look like.
+**Status: COMPLETE.** Decisions at `.docs/research/i342-phase3-decisions.md` and formalized in ADR-0084. Summary:
+- **9 cuts** approved (weekly forecast meetings/commitments chapters, daily "Later This Week", meeting detail appendix pruning, dead code)
+- **5 merges** approved (shared ActionRow, ProposedActionRow, MeetingRow, useIntelligenceFieldUpdate hook, ResolutionKeywords component)
+- **8 rethinks** decided (lead story compacted, temperature dots deferred, actions standardized across entities, command menu completed, etc.)
+- **Weekly forecast verdict: partial collapse.** Keeps Hero + The Three + The Shape + Open Time. Cuts meetings and commitments chapters.
 
 ---
 
 #### Phase 4: Execute
 
-Ship the changes. This is not a future consideration — it's part of this issue.
+Ship the changes from the Phase 3 changelist. See ADR-0084 Section 2 for the full approved list.
 
-- Remove elements on the cut list
-- Relocate elements on the move list
-- Merge duplicated elements
-- Redesign rethink-list elements
-- Restructure sections as needed
+**Status: PENDING.** This is the implementation phase.
+
+- Remove elements on the cut list (9 items)
+- Merge duplicated implementations (5 items)
+- Redesign rethink-list elements (8 items)
 - Validate against JTBD: does each surface now do its job and only its job?
 
 I341 (vocabulary audit) follows as a dependent step, applying ADR-0083's product vocabulary to the restructured surfaces with full awareness of the JTBD outcomes.
 
 ---
 
-#### Hypothesis: The Weekly Forecast May Not Be a Surface
+#### Weekly Forecast Hypothesis: Resolved
 
-Going into Phase 1 with an open question: does the weekly forecast justify its existence as a separate surface, or is its job better served as a section within the daily briefing?
-
-**Evidence for collapsing:**
-- Actual usage pattern: time is spent on the daily briefing and meeting briefings. The weekly forecast is rarely visited.
-- The weekly planning job ("plan my week") sounds like a Monday-morning activity, not a surface that earns nav space seven days a week.
-- Almost everything on the weekly forecast is duplicated elsewhere: actions (Actions page + daily briefing), account health (entity detail), schedule (daily briefing). The unique value — multi-day horizon — could be a "Coming up" section within the daily.
-- The chief-of-staff metaphor: one briefing that covers today in detail and flags what's ahead. Not two separate documents.
-- I330 planned to bring meetings weeks out into the weekly surface. But if the user plans upcoming meetings within the context of their day, that content belongs on the daily surface, not a separate one.
-
-**What collapsing would mean:**
-- The daily briefing expands with a "Coming up" or "This week" section — upcoming meetings that need attention, shown with intelligence quality and new-signal indicators.
-- The Monday daily briefing is naturally richer (more forward-looking content) without a separate surface for that job.
-- I330 (weekly forecast as live intelligence surface) either gets absorbed into I331 (daily briefing assembly) or is scoped to "upcoming meetings section within daily" rather than a standalone rebuild.
-- One fewer surface to maintain, one fewer nav destination, clearer product story.
-
-**What collapsing would lose:**
-- The at-a-glance week shape (which days are heavy, where deep work fits). Could this be a compact visual within the daily?
-- A dedicated space for weekly narrative. Does anyone read this, or does the daily narrative serve the same purpose?
-
-**This hypothesis gets tested in Phase 1.** If the weekly forecast's JTBD can be distinguished from "a section within the daily briefing" in a way that justifies a separate surface, it stays. If it can't, it collapses. The critique decides — not the architecture that's already built.
-
----
-
-#### What this is NOT
-
-- Not a theoretical exercise. Phases 1-3 produce findings; Phase 4 ships code.
-- Not additive. The goal is to subtract. If nothing gets cut, the critique wasn't honest.
-- Not just about I330/I331. All five surface types get the same treatment. The daily briefing and weekly forecast are the most urgent because 0.13.0 will rebuild them, but every surface benefits.
-- Not a redesign. The editorial design system (ADR-0073/0076/0077) is solid. This is about *content* — what appears, where, and why — not how it looks.
+**Verdict: Partial collapse.** The weekly forecast keeps its four unique sections (Hero, The Three, The Shape, Open Time) and cuts three redundant sections (Your Meetings, Commitments, prep action buttons). It becomes a focused 2-minute planning read with zero duplication. See ADR-0084 Section 1 for the redefined weekly forecast JTBD.
 
 ---
 
 **Acceptance criteria:**
-1. ADR-0084 exists defining JTBD for each surface and each section within surfaces
-2. Element audit completed for all five surface types with verdicts documented
+1. ~~ADR-0084 exists defining JTBD for each surface and each section within surfaces~~ DONE
+2. ~~Element audit completed for all five surface types with verdicts documented~~ DONE
 3. Cut list executed — elements removed from the app
 4. Move/merge list executed — elements relocated or consolidated
 5. Section structure validated against JTBD (reordered/split/merged as needed)
 6. I330/I331 acceptance criteria reviewed and updated against JTBD findings
-7. I341 (vocabulary audit) has a clear, JTBD-informed scope to execute against
+7. ~~I341 (vocabulary audit) has a clear, JTBD-informed scope to execute against~~ DONE (ADR-0084 + 16 vocabulary violations catalogued)
 8. No section on any surface exists without a one-sentence job statement justifying it
 
 ---
@@ -5353,3 +5327,127 @@ Push DailyOS intelligence summaries to the user (and optionally colleagues) via 
 3. **Share with others** — send account summary or meeting outcome to specific recipients
 
 **Dependencies:** Gmail OAuth (already have), HTML email template design
+
+---
+
+### I349 — Settings Redesign: Kill the Control Panel, Build a Connections Hub
+
+**Version:** 0.12.1
+**Priority:** P1
+**Area:** UX
+**Depends on:** I342 (Surface JTBD critique — defines what belongs on Settings vs in-context)
+**Related:** I343 (inline editing service — YouCard uses it), I341 (vocabulary audit)
+
+**The job of the Settings page:** "Confirm my system is working and fix it when it's not."
+
+Not: "Configure every aspect of the application." Not: "Learn what all the features are." Not: "Manage technical infrastructure."
+
+The current page fails this job. It's a 3,350-line monolith with 6 chapters and ~18 cards in a long vertical scroll. Every setting, toggle, cron expression, bridge path, and feature flag is exposed at once. No progressive disclosure, mixed audiences, and growing worse with every new integration. The app's philosophy is "AI produces, users consume — no prompts, no maintenance" but the Settings page is the opposite: prompts everywhere, maintenance central.
+
+#### What Dies
+
+| Current Card | Verdict | Reasoning |
+|---|---|---|
+| EntityModeCard | Kill | Onboarding decision, not a setting. Changing entity mode is a migration, not a toggle. |
+| WorkspaceCard | Kill from settings | Onboarding. Show path read-only in System strip. Changing workspace is destructive — deserves its own focused flow if ever needed. |
+| SchedulesSection (cron editor) | Kill | Users should never see cron expressions. Replace with "What time does your day start?" in YouCard. |
+| ManualRunSection | Move to surfaces | "Run Daily Briefing" → daily briefing page header. "Run Weekly" → week page. "Run Archive" → diagnostics. |
+| FeaturesCard | Kill | Feature toggles are developer anxiety. Ship features on or off. If genuinely optional (like post-meeting capture), configure where experienced. |
+| AiModelsCard | Move to Advanced | Power-user territory. 95% of users never touch model selectors. |
+
+#### What Survives (Three Sections)
+
+**1. You** — One identity card, not six.
+
+Name, title, domains, personality, "what time does your day start?" — one cohesive card with inline editing (I343). Click any field to edit. No separate cards for profile, domains, personality, workspace, entity mode.
+
+**2. Connections** — Compact grid with drill-down detail panels.
+
+Each integration is a row: name, status dot, one-line status text. Green = working, amber = issue, gray = available but not connected. Click a connection to open its detail panel (inline expand or slide-over) with full config, status history, and actions.
+
+```
+CONNECTIONS
+● Google     Connected · james@automattic.com
+● Claude     Active · MCP tools available
+● Quill      Syncing · 142 transcripts
+● Granola    Connected · local cache
+● Gravatar   Fetching · 47 profiles cached
+● Clay       Connected · API key set
+○ Linear     Available
+○ Gainsight  Available
+○ Slack      Available
+```
+
+This scales to 20 integrations without scrolling past the fold. Adding a new integration means adding one file to `src/components/settings/connections/`, not editing a 3,350-line monolith.
+
+**Connection detail panel** (opened by clicking a connection):
+- Status summary (connected/disconnected, last sync, error state)
+- Integration-specific config (API key, bridge path, poll interval, etc.)
+- Action buttons (Test Connection, Sync Now, Disconnect)
+- Recent activity log (last 5 syncs with status)
+- Back button returns to main settings
+
+**3. System** — Status strip, not cards.
+
+Version, update status, intelligence health (one line), last briefing time. A subtle "Advanced" disclosure reveals AI model selection, hygiene tuning, developer mode — the 5% territory.
+
+#### In-Context Relocations
+
+| Setting | New Home |
+|---|---|
+| Post-meeting capture toggle + delay | Meeting detail page or daily briefing (where you experience it) |
+| "Run Daily Briefing" button | Daily briefing page header |
+| "Run Weekly Briefing" button | Week page header |
+| Feature toggles | Remove or move to integration detail panels |
+| Entity mode | Onboarding only |
+| Workspace path display | System strip (read-only) |
+
+#### File Architecture
+
+The 3,350-line monolith becomes ~1,200 lines across focused files:
+
+```
+src/pages/SettingsPage.tsx                     (~200 lines — layout shell)
+src/components/settings/
+  YouCard.tsx                                  (~150 lines — identity card)
+  ConnectionsGrid.tsx                          (~100 lines — status dot grid)
+  ConnectionDetail.tsx                         (~100 lines — shared detail panel)
+  SystemStatus.tsx                             (~80 lines — version, health strip)
+  AdvancedSettings.tsx                         (~150 lines — AI models, hygiene)
+src/components/settings/connections/
+  GoogleConnection.tsx                         (~120 lines)
+  ClaudeDesktopConnection.tsx                  (~80 lines)
+  QuillConnection.tsx                          (~150 lines)
+  GranolaConnection.tsx                        (~100 lines)
+  GravatarConnection.tsx                       (~100 lines)
+  ClayConnection.tsx                           (~120 lines)
+  index.ts                                     (connection registry)
+```
+
+Adding Linear = one new file + one registry entry. No 3,350-line edit.
+
+#### Interaction Design
+
+**First visit (post-onboarding):** YouCard shows your info. Connections grid shows Google green, everything else gray ("Available"). The page teaches through absence — you see what's connected and what could be.
+
+**Returning power user:** Quick scan of dots. All green? Leave. Something amber? Click it, see the issue, fix it, done. Page respects your time.
+
+**Adding a new integration:** Click the gray dot. Detail panel opens with one-paragraph description and "Connect" button. Follow the OAuth/API key flow. Dot turns green. Done.
+
+**"Advanced" disclosure:** Below system strip. Subtle link. Expands to reveal AI model selection, hygiene tuning knobs, developer mode. Most users never open it.
+
+#### Acceptance Criteria
+
+1. Settings page loads with three visible sections: You, Connections, System
+2. No scrolling required to see all connection statuses on a typical display
+3. YouCard consolidates name, title, domains, personality, schedule into one editable card
+4. Each integration has a detail panel with status, config, actions, and recent activity
+5. "Run Daily Briefing" button lives on the daily briefing page, not Settings
+6. Post-meeting capture configured in-context (meeting or briefing page), not Settings
+7. No cron expressions visible to users — schedule expressed as "day starts at" preference
+8. Feature toggles removed or moved to integration-specific detail panels
+9. EntityModeCard and WorkspaceCard removed from Settings (onboarding only)
+10. "Advanced" section hidden by default, discloses AI models + hygiene on click
+11. Adding a new integration requires one new file + one registry entry (no monolith edits)
+12. SettingsPage.tsx under 250 lines
+13. `pnpm build` compiles clean
