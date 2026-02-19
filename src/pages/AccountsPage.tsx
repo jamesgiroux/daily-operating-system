@@ -119,6 +119,7 @@ export default function AccountsPage() {
       next.add(parentId);
       if (!childrenCache[parentId]) {
         try {
+          // I316: Use get_descendant_accounts for n-level nesting support
           const children = await invoke<AccountListItem[]>(
             "get_child_accounts_list",
             { parentId }

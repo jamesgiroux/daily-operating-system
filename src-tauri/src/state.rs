@@ -119,6 +119,8 @@ pub struct AppState {
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for Linear sync poller (I346).
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
+    /// Active role preset loaded from config (I309).
+    pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
 }
 
 /// Non-blocking DB read outcome for hot command paths.
@@ -158,6 +160,15 @@ impl AppState {
             .map(|c| c.hygiene_ai_budget)
             .unwrap_or(10);
 
+        // I309: Load active role preset from config
+        let active_preset = config.as_ref().and_then(|c| {
+            if let Some(ref path) = c.custom_preset_path {
+                crate::presets::loader::load_custom_preset(std::path::Path::new(path)).ok()
+            } else {
+                crate::presets::loader::load_preset(&c.role).ok()
+            }
+        });
+
         Self {
             config: RwLock::new(config),
             workflow_status: RwLock::new(HashMap::new()),
@@ -186,6 +197,7 @@ impl AppState {
             entity_resolution_wake: Arc::new(tokio::sync::Notify::new()),
             quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
             linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+            active_preset: RwLock::new(active_preset),
         }
     }
 
@@ -484,6 +496,8 @@ pub fn create_or_update_config(
                 internal_team_setup_completed: false,
                 internal_team_setup_version: 0,
                 internal_org_account_id: None,
+                role: "customer-success".to_string(),
+                custom_preset_path: None,
                 hygiene_scan_interval_hours: 4,
                 hygiene_ai_budget: 10,
                 hygiene_pre_meeting_hours: 12,
