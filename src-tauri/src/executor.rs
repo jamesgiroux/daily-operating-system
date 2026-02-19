@@ -199,19 +199,30 @@ impl Executor {
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
 
-                    let person_id = sender_email.as_deref().and_then(|sender| {
+                    let person = sender_email.as_deref().and_then(|sender| {
                         db.get_person_by_email_or_alias(sender)
                             .ok()
                             .flatten()
-                            .map(|person| person.id)
                     });
+                    let person_id = person.as_ref().map(|p| p.id.clone());
 
                     let mut targets: HashSet<(String, String)> = HashSet::new();
-                    if let Some(ref pid) = person_id {
-                        if let Ok(entities) = db.get_entities_for_person(pid) {
-                            for entity in entities {
-                                targets
-                                    .insert((entity.id, entity.entity_type.as_str().to_string()));
+
+                    // Only fan out person→entity signals for external contacts.
+                    // Internal people are linked to many accounts as team members —
+                    // fanning their email signals to all those accounts creates noise.
+                    // For internal senders, fall through to domain-based attribution.
+                    let is_external = person.as_ref()
+                        .map(|p| p.relationship == "external")
+                        .unwrap_or(false);
+
+                    if is_external {
+                        if let Some(ref pid) = person_id {
+                            if let Ok(entities) = db.get_entities_for_person(pid) {
+                                for entity in entities {
+                                    targets
+                                        .insert((entity.id, entity.entity_type.as_str().to_string()));
+                                }
                             }
                         }
                     }
