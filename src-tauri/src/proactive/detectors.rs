@@ -660,7 +660,81 @@ pub fn detect_no_contact_accounts(db: &ActionDb, ctx: &DetectorContext) -> Vec<R
 }
 
 // ---------------------------------------------------------------------------
-// Tests for detectors 5-8
+// Detector 9: Renewal proximity (standalone)
+// ---------------------------------------------------------------------------
+
+/// Account with contract_end within 90 days. Tiered confidence by proximity.
+/// Skips accounts that already have a churn event recorded.
+pub fn detect_renewal_proximity(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawInsight> {
+    let conn = db.conn_ref();
+
+    // Get accounts with renewal within 90 days
+    let accounts: Vec<(String, String, String)> = conn
+        .prepare(
+            "SELECT a.id, a.name, a.contract_end FROM accounts a
+             WHERE a.contract_end IS NOT NULL
+               AND a.contract_end >= date('now')
+               AND a.contract_end <= date('now', '+90 days')
+               AND a.archived = 0
+               AND a.is_internal = 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM account_events ae
+                   WHERE ae.account_id = a.id AND ae.event_type = 'churn'
+               )",
+        )
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+
+    let mut insights = Vec::new();
+    for (account_id, account_name, contract_end) in accounts {
+        let days_until = if let Ok(end_date) =
+            chrono::NaiveDate::parse_from_str(&contract_end, "%Y-%m-%d")
+        {
+            (end_date - ctx.today).num_days()
+        } else {
+            90
+        };
+
+        // Tiered confidence
+        let confidence = if days_until <= 30 {
+            0.90
+        } else if days_until <= 60 {
+            0.70
+        } else {
+            0.50
+        };
+
+        let fp = fingerprint(&["account", &account_id, "renewal_proximity"]);
+        let context_json = serde_json::json!({
+            "account_name": account_name,
+            "renewal_date": contract_end,
+            "days_until_renewal": days_until,
+        });
+
+        insights.push(RawInsight {
+            detector_name: "detect_renewal_proximity".to_string(),
+            fingerprint: fp,
+            entity_type: "account".to_string(),
+            entity_id: account_id,
+            signal_type: "renewal_proximity".to_string(),
+            headline: format!("{} renews in {} days", account_name, days_until),
+            detail: format!(
+                "Account {} has a renewal on {} ({} days away).",
+                account_name, contract_end, days_until
+            ),
+            confidence,
+            context_json: Some(context_json.to_string()),
+        });
+    }
+
+    insights
+}
+
+// ---------------------------------------------------------------------------
+// Tests for detectors 5-9
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
@@ -1213,6 +1287,72 @@ mod tests {
         let ctx = test_ctx(today);
         let results = detect_no_contact_accounts(&db, &ctx);
         assert!(results.is_empty(), "Internal accounts should be excluded");
+    }
+
+    // -- Detector 9: Renewal proximity --
+
+    #[test]
+    fn test_renewal_proximity_fires_tiered_confidence() {
+        let db = test_db();
+        let ctx = test_ctx(NaiveDate::from_ymd_opt(2026, 2, 18).unwrap());
+
+        // Account renewing in 25 days (should get 0.90 confidence)
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, contract_end, updated_at, archived, is_internal)
+                 VALUES ('a1', 'NearCo', '2026-03-15', '2026-01-01', 0, 0)",
+                [],
+            )
+            .unwrap();
+
+        let insights = detect_renewal_proximity(&db, &ctx);
+        assert_eq!(insights.len(), 1);
+        assert_eq!(insights[0].signal_type, "renewal_proximity");
+        assert_eq!(insights[0].confidence, 0.90);
+    }
+
+    #[test]
+    fn test_renewal_proximity_skips_churned() {
+        let db = test_db();
+        let ctx = test_ctx(NaiveDate::from_ymd_opt(2026, 2, 18).unwrap());
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, contract_end, updated_at, archived, is_internal)
+                 VALUES ('a1', 'ChurnedCo', '2026-03-15', '2026-01-01', 0, 0)",
+                [],
+            )
+            .unwrap();
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_events (account_id, event_type, event_date)
+                 VALUES ('a1', 'churn', '2026-02-01')",
+                [],
+            )
+            .unwrap();
+
+        let insights = detect_renewal_proximity(&db, &ctx);
+        assert!(insights.is_empty(), "Should skip churned accounts");
+    }
+
+    #[test]
+    fn test_renewal_proximity_60d_confidence() {
+        let db = test_db();
+        let ctx = test_ctx(NaiveDate::from_ymd_opt(2026, 2, 18).unwrap());
+
+        // Account renewing in ~45 days (should get 0.70 confidence)
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, contract_end, updated_at, archived, is_internal)
+                 VALUES ('a1', 'MidCo', '2026-04-04', '2026-01-01', 0, 0)",
+                [],
+            )
+            .unwrap();
+
+        let insights = detect_renewal_proximity(&db, &ctx);
+        assert_eq!(insights.len(), 1);
+        assert_eq!(insights[0].confidence, 0.70);
     }
 
     #[test]

@@ -265,6 +265,50 @@ pub fn rule_departure_renewal(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
 }
 
 // ---------------------------------------------------------------------------
+// Rule: Renewal proximity + no recent meeting -> renewal_at_risk
+// ---------------------------------------------------------------------------
+
+/// When `renewal_proximity` fires for an account, check if there has been
+/// no meeting in the last 30 days. If so, derive `renewal_at_risk`.
+pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
+    if signal.entity_type != "account" || signal.signal_type != "renewal_proximity" {
+        return Vec::new();
+    }
+
+    let thirty_days_ago = chrono::Utc::now()
+        .checked_sub_signed(chrono::Duration::days(30))
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S").to_string())
+        .unwrap_or_default();
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    let recent_meeting_count = db
+        .get_meeting_count_for_account(&signal.entity_id, &thirty_days_ago, &now)
+        .unwrap_or(0);
+
+    if recent_meeting_count > 0 {
+        return Vec::new();
+    }
+
+    let value = serde_json::json!({
+        "source_signal": signal.id,
+        "account_id": signal.entity_id,
+        "days_without_meeting": 30,
+        "detail": signal.value,
+    })
+    .to_string();
+
+    vec![DerivedSignal {
+        entity_type: "account".to_string(),
+        entity_id: signal.entity_id.clone(),
+        signal_type: "renewal_at_risk".to_string(),
+        source: "propagation".to_string(),
+        value: Some(value),
+        confidence: 0.85,
+        rule_name: "rule_renewal_engagement_compound".to_string(),
+    }]
+}
+
+// ---------------------------------------------------------------------------
 // ActionDb helper methods for rules
 // ---------------------------------------------------------------------------
 
@@ -499,5 +543,50 @@ mod tests {
         assert_eq!(derived.len(), 1);
         assert_eq!(derived[0].signal_type, "renewal_risk_escalation");
         assert!((derived[0].confidence - 0.90).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_renewal_engagement_compound_fires_no_meeting() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('a1', 'RenewalCo', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "a1", "renewal_proximity", Some("{\"days_until_renewal\": 25}"));
+        let derived = rule_renewal_engagement_compound(&signal, &db);
+
+        assert_eq!(derived.len(), 1);
+        assert_eq!(derived[0].signal_type, "renewal_at_risk");
+        assert!((derived[0].confidence - 0.85).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_rule_renewal_engagement_compound_skips_with_meeting() {
+        let db = test_db();
+        let conn = db.conn_ref();
+
+        conn.execute(
+            "INSERT INTO accounts (id, name, updated_at) VALUES ('a1', 'ActiveCo', '2026-01-01')",
+            [],
+        ).unwrap();
+
+        // Recent meeting
+        conn.execute(
+            "INSERT INTO meetings_history (id, title, meeting_type, start_time, created_at)
+             VALUES ('m1', 'Sync', 'external', datetime('now', '-5 days'), datetime('now', '-5 days'))",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+             VALUES ('m1', 'a1', 'account')",
+            [],
+        ).unwrap();
+
+        let signal = make_signal("account", "a1", "renewal_proximity", None);
+        let derived = rule_renewal_engagement_compound(&signal, &db);
+        assert!(derived.is_empty(), "Should not fire when recent meeting exists");
     }
 }
