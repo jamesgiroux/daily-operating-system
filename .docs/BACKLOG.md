@@ -40,7 +40,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I327** | Advance intelligence generation (weekly + polling, not day-of) | P1 | Pipeline |
 | **I328** | Classification expansion — all meetings get intelligence | P1 | Classification |
 | **I329** | Intelligence quality indicators (replace "needs prep" badge) | P1 | UX |
-| **I330** | Weekly forecast as live intelligence surface | P1 | Surfaces |
+| **I330** | Week page — ±7-day meeting intelligence timeline | P1 | Surfaces |
 | **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
 | **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
 | **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
@@ -203,7 +203,7 @@ This is the "make it feel like a product" release. Not by adding polish — by s
 | P1 | I326 | Per-meeting intelligence lifecycle — detect, enrich, update, archive |
 | P1 | I327 | Advance intelligence generation (weekly + polling, not day-of) |
 | P1 | I328 | Classification expansion — all meetings get intelligence |
-| P1 | I330 | Weekly forecast as live intelligence surface *(depends on I342, I341)* |
+| P1 | I330 | Week page — ±7-day meeting intelligence timeline *(depends on I342, I341)* |
 | P1 | I331 | Daily briefing intelligence assembly (diff model, fast refresh) *(depends on I342, I341)* |
 | P1 | I332 | Signal-triggered meeting intelligence refresh |
 | P2 | I333 | Meeting intelligence collaboration — share, request input, draft agenda |
@@ -4706,13 +4706,18 @@ Replace the binary "needs prep" badge with intelligence quality indicators that 
 
 ---
 
-**I330: Weekly forecast as live intelligence surface**
+**I330: Week page — ±7-day meeting intelligence timeline**
 
 **Priority:** P1 (0.13.0)
 **Area:** Surfaces
 **Depends on:** I326 (intelligence lifecycle), I327 (advance generation), I329 (quality indicators), I342 (surface JTBD definition), I341 (product vocabulary audit)
 
-Transform the weekly forecast from a static overview into a live meeting intelligence browser. Each meeting shows accumulated intelligence state. The forecast updates throughout the week as intelligence evolves.
+**Job this surface does:**
+> Navigate a ±7-day intelligence window — review what happened last week, prepare for what's coming this week. Not a calendar. This is the meeting intelligence layer: what was learned, what needs attention, what's ready.
+
+Transform the week page from a forward-looking planning view into a temporal intelligence workspace. Today is the anchor. The past 7 days are retrospective — review outcomes, captured intelligence, what was learned. The next 7 days are preparatory — intelligence quality, readiness signals, upcoming context. The ratio of review to prep shifts naturally as the week progresses.
+
+**Why ±7, not just forward:** Most meeting intelligence decays or is absorbed within a rolling 2-week window. Last week's outcomes inform this week's preparation — a QBR on Tuesday shapes how you approach the follow-up on Friday. Right now accessing that context requires: Account List → Account Page → Record → Meeting. That's four clicks and requires knowing where to look. The timeline closes that gap without building a general-purpose archive.
 
 **Current week page (ADR-0052):**
 - Week narrative (AI, point-in-time)
@@ -4726,12 +4731,24 @@ Transform the weekly forecast from a static overview into a live meeting intelli
 - Week narrative → evolves to reference intelligence quality ("3 meetings ready, 2 developing, 1 sparse")
 - Top priority → unchanged
 - Readiness checks → replaced by intelligence quality summary ("3 meetings with sparse context", "2 with stale intelligence — tap to refresh")
-- Day shapes → each meeting shows intelligence quality badge + "new signals" dot
-- Meeting detail → click any meeting to open full intelligence report (same `MeetingDetailPage`)
+- Timeline → ±7 days centered on today; past meetings show captured intelligence + outcomes; upcoming meetings show quality badge + "new signals" dot
+- Meeting detail → click any meeting (past or future) to open full intelligence report (`MeetingDetailPage`)
 - Actions → unchanged
 - Account health → unchanged
 
-**Live vs. static:** The overview (`week-overview.json`) regenerates on weekly run and on-demand. But individual meeting intelligence is always live — fetched from SQLite via `get_meeting_intelligence()`. The overview provides the narrative frame; meetings provide the detail. This means meetings always show current intelligence state even if the overview narrative is stale.
+**Temporal window design:**
+- Default view: today anchored, 7 days back, 7 days forward
+- Past section: collapsed by default beyond 2 days back; expandable to full 7-day history
+- Past meetings show: title, attendees, intelligence quality, outcome summary if captured
+- Upcoming meetings show: intelligence quality badge, "new signals" dot, readiness state
+- "Today" visually anchors the timeline; the page is not a calendar — no empty time slots, no scheduling affordances
+
+**Contextual history linking:**
+- On any upcoming meeting with a prior meeting in the same series or with overlapping attendees: surface a "Review last meeting →" link
+- Link opens the past meeting's intelligence report directly — no navigation through accounts required
+- This is the primary access path for historical context on meeting detail pages; the timeline view provides the secondary browsing path
+
+**Live vs. static:** The overview (`week-overview.json`) regenerates on weekly run and on-demand. Individual meeting intelligence — past and future — is always live from SQLite via `get_meeting_intelligence()`. The overview provides the narrative frame; meetings provide the detail regardless of narrative staleness.
 
 **Readiness checks evolution:**
 - Old: "no_prep" / "no_agenda" / "stale_contact" — binary, from ADR-0052
@@ -4739,12 +4756,16 @@ Transform the weekly forecast from a static overview into a live meeting intelli
 - The readiness check becomes a quality assessment, not a checklist
 
 **Acceptance criteria:**
-1. Each meeting in week view shows intelligence quality badge
-2. "New signals" dot appears on meetings that received new signals since last view
-3. Clicking a meeting opens MeetingDetailPage with full intelligence
-4. Readiness checks reflect intelligence quality (not binary prep/no-prep)
-5. Week page works even if week overview hasn't regenerated (meetings are live from SQLite)
-6. Refresh action available at week level (re-run weekly orchestrator) and per-meeting level
+1. Timeline spans ±7 days centered on today; today is visually anchored
+2. Past meetings (up to 7 days back) are accessible with their captured intelligence and outcomes
+3. Each meeting (past and future) shows an intelligence quality badge
+4. "New signals" dot appears on upcoming meetings that received new signals since last view
+5. Upcoming meetings with a prior meeting in the same series or with overlapping attendees show "Review last meeting →" link
+6. Clicking any meeting opens `MeetingDetailPage` with full intelligence
+7. Readiness checks reflect intelligence quality (not binary prep/no-prep)
+8. Week page works even if week overview hasn't regenerated (meetings are live from SQLite)
+9. Refresh action available at week level (re-run weekly orchestrator) and per-meeting level
+10. Past section beyond 2 days is collapsed by default; expandable to full 7-day history
 
 ---
 
@@ -5111,6 +5132,18 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 | `src-tauri/src/entity_intel.rs` | Signal emission helper |
 | `package.json` | Add `@dnd-kit/core`, `@dnd-kit/sortable` |
 
+9. **Signal correction gestures** — Signals surface on email and meeting detail pages with no way to correct misattributions. Two gestures needed:
+   - **Dismiss** (X) — "this signal is wrong." Feeds negative correction to I307 Thompson Sampling. Signal disappears.
+   - **Re-attribute** (tap entity chip → picker) — "right signal, wrong account." Change entity attribution. Feeds positive correction to I307.
+   - No forms, no confidence sliders. Just "wrong" or "wrong account." The system gets visibly better over time as Thompson Sampling demotes sources that keep getting it wrong for specific entity patterns.
+
+10. **Drawer elimination** (ADR-0084 Section 5) — Entity detail pages are documents you read; editing is part of reading, not a separate mode. Field-editing drawers are replaced by inline editing on the page where data is displayed:
+   - **AccountFieldsDrawer** — deleted. Name, health, lifecycle, ARR, NPS, renewal date become inline-editable in hero + vitals strip.
+   - **ProjectFieldsDrawer** — deleted. Status, owner, milestone, target date edit inline.
+   - **PresetFieldsEditor** — renders inline in the appropriate page section, not a drawer.
+   - **TeamManagementDrawer** — exception. Add/search/create workflows still warrant a modal. Viewing/removing team members moves inline to StakeholderGallery "Your Team" section.
+   - The StakeholderGallery is the model: inline editable names, roles, engagement badges. Every other editable field follows this pattern.
+
 **Acceptance criteria:**
 1. Editing a stakeholder assessment opens a textarea showing the full text, not a truncated input
 2. Every intelligence field edit (text or badge) emits a `user_correction` signal event (visible in signal_events table)
@@ -5120,8 +5153,10 @@ Update all frontend surfaces to read `meeting.entities` instead of `meeting.acco
 6. Stakeholders, risks, and wins can be drag-reordered; new order persists
 7. Engagement badge is switchable via click-dropdown on any surface showing stakeholders
 8. Badge changes propagate — switching engagement on account detail reflects in meeting prep and briefing cards
-9. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
-10. `pnpm build` compiles clean, `cargo test` passes
+9. AccountFieldsDrawer and ProjectFieldsDrawer deleted — all fields inline-editable on the page
+10. Signals on email/meeting surfaces can be dismissed or re-attributed; corrections feed I307
+11. Only new npm dependency: `@dnd-kit/core` + `@dnd-kit/sortable`
+12. `pnpm build` compiles clean, `cargo test` passes
 
 ---
 
