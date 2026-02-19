@@ -293,27 +293,54 @@ async fn process_sync_row(
         }
     };
 
-    let result = {
+    // Transition to "processing" state (brief lock, then release)
+    {
         let db_guard = match state.db.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        match db_guard.as_ref() {
-            Some(db) => sync::process_fetched_transcript(
-                db,
-                &row.id,
-                &calendar_event,
-                &transcript,
-                &workspace,
-                &profile,
-                ai_config.as_ref(),
-            ),
-            None => Err("Database not available".to_string()),
+        if let Some(db) = db_guard.as_ref() {
+            let _ = sync::transition_state(db, &row.id, "processing", None, None, None, None);
         }
-    };
+    }
+    // DB lock released — run the AI pipeline WITHOUT holding the mutex.
+    // This was the critical hang: the pipeline (AI calls, file I/O) ran
+    // while holding db.lock(), blocking the entire app.
+    let result = sync::process_fetched_transcript_without_db(
+        &row.id,
+        &calendar_event,
+        &transcript,
+        &workspace,
+        &profile,
+        ai_config.as_ref(),
+    );
+
+    // Re-acquire lock briefly to write results
+    {
+        let db_guard = match state.db.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if let Some(db) = db_guard.as_ref() {
+            match &result {
+                Ok((dest, summary)) => {
+                    let _ = db.update_meeting_transcript_metadata(
+                        &calendar_event.id,
+                        dest,
+                        &chrono::Utc::now().to_rfc3339(),
+                        summary.as_deref(),
+                    );
+                    let _ = sync::transition_state(db, &row.id, "completed", None, None, Some(dest), None);
+                }
+                Err(error) => {
+                    let _ = sync::transition_state(db, &row.id, "failed", None, None, None, Some(error));
+                }
+            }
+        }
+    }
 
     match &result {
-        Ok(dest) => {
+        Ok((dest, _)) => {
             log::info!(
                 "Quill sync: transcript processed for '{}' → {} ({} chars)",
                 meeting.title,
