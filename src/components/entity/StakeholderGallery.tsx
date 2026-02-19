@@ -8,10 +8,10 @@
  * I261: Live editing (name, role, assessment, engagement), add/remove
  * stakeholders, internal people filter, create contact from stakeholder.
  */
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Plus, UserPlus } from "lucide-react";
+import { X, Plus, UserPlus, Search } from "lucide-react";
 import type { EntityIntelligence, StakeholderInsight, Person, AccountTeamMember } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
@@ -110,6 +110,22 @@ export function StakeholderGallery({
   const [newName, setNewName] = useState("");
   const [newRole, setNewRole] = useState("");
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
+  const [searchResults, setSearchResults] = useState<Person[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const addContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    if (!showDropdown) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (addContainerRef.current && !addContainerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDropdown]);
 
   // Empty section collapse: return null when nothing to show (and not editing)
   if (!hasStakeholders && linkedPeople.length === 0 && teamMembers.length === 0 && !canEdit) {
@@ -161,7 +177,51 @@ export function StakeholderGallery({
     updateStakeholders(updated);
   }
 
-  // ── Add stakeholder ──
+  // ── Search people as user types ──
+  function handleNameChange(value: string) {
+    setNewName(value);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (value.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    searchTimeout.current = setTimeout(async () => {
+      try {
+        const results = await invoke<Person[]>("search_people", { query: value.trim() });
+        // Filter out people already in the stakeholder list
+        const existingNames = new Set(allStakeholders.map((s) => s.name.toLowerCase()));
+        const filtered = results.filter((p) => !existingNames.has(p.name.toLowerCase()));
+        setSearchResults(filtered.slice(0, 5));
+        setShowDropdown(filtered.length > 0);
+      } catch {
+        setSearchResults([]);
+        setShowDropdown(false);
+      }
+    }, 200);
+  }
+
+  // ── Select existing person from search ──
+  function handleSelectPerson(person: Person) {
+    const newStakeholder: StakeholderInsight = {
+      name: person.name,
+      role: person.role || newRole.trim() || undefined,
+      engagement: "unknown",
+    };
+    const updated = [...allStakeholders, newStakeholder];
+    updateStakeholders(updated);
+    // Also link the person to this entity
+    if (entityId && entityType) {
+      invoke("link_person_entity", { personId: person.id, entityId, relationshipType: "associated" }).catch(() => {});
+    }
+    setNewName("");
+    setNewRole("");
+    setSearchResults([]);
+    setShowDropdown(false);
+    setAddingStakeholder(false);
+  }
+
+  // ── Add new stakeholder (create new) ──
   function handleAdd() {
     if (!newName.trim()) return;
     const newStakeholder: StakeholderInsight = {
@@ -173,6 +233,8 @@ export function StakeholderGallery({
     updateStakeholders(updated);
     setNewName("");
     setNewRole("");
+    setSearchResults([]);
+    setShowDropdown(false);
     setAddingStakeholder(false);
   }
 
@@ -389,63 +451,120 @@ export function StakeholderGallery({
       {canEdit && (
         <div style={{ marginTop: hasStakeholders ? 32 : 16 }}>
           {addingStakeholder ? (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Name"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); }
-                }}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
-                  padding: "4px 8px",
+            <div ref={addContainerRef}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ position: "relative", width: 200 }}>
+                  <Search size={12} style={{ position: "absolute", left: 8, top: 9, color: "var(--color-text-tertiary)" }} />
+                  <input
+                    value={newName}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="Search people or type name"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAdd();
+                      if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); setShowDropdown(false); }
+                    }}
+                    style={{
+                      fontFamily: "var(--font-sans)",
+                      fontSize: 14,
+                      padding: "4px 8px 4px 26px",
+                      border: "1px solid var(--color-rule-light)",
+                      borderRadius: 4,
+                      background: "transparent",
+                      color: "var(--color-text-primary)",
+                      width: "100%",
+                    }}
+                  />
+                </div>
+                <input
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  placeholder="Role (optional)"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAdd();
+                    if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); }
+                  }}
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    padding: "4px 8px",
+                    border: "1px solid var(--color-rule-light)",
+                    borderRadius: 4,
+                    background: "transparent",
+                    color: "var(--color-text-primary)",
+                    width: 160,
+                  }}
+                />
+                <button
+                  onClick={handleAdd}
+                  disabled={!newName.trim()}
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: newName.trim() ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
+                    background: "none",
+                    border: "none",
+                    cursor: newName.trim() ? "pointer" : "default",
+                    padding: "4px 0",
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+
+              {/* Inline search results — no absolute positioning, no z-index issues */}
+              {showDropdown && searchResults.length > 0 && (
+                <div style={{
+                  marginTop: 8,
                   border: "1px solid var(--color-rule-light)",
                   borderRadius: 4,
-                  background: "transparent",
-                  color: "var(--color-text-primary)",
-                  width: 160,
-                }}
-              />
-              <input
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                placeholder="Role (optional)"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAdd();
-                  if (e.key === "Escape") { setAddingStakeholder(false); setNewName(""); setNewRole(""); }
-                }}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 14,
-                  padding: "4px 8px",
-                  border: "1px solid var(--color-rule-light)",
-                  borderRadius: 4,
-                  background: "transparent",
-                  color: "var(--color-text-primary)",
-                  width: 160,
-                }}
-              />
-              <button
-                onClick={handleAdd}
-                disabled={!newName.trim()}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: newName.trim() ? "var(--color-spice-turmeric)" : "var(--color-text-tertiary)",
-                  background: "none",
-                  border: "none",
-                  cursor: newName.trim() ? "pointer" : "default",
-                  padding: "4px 0",
-                }}
-              >
-                Add
-              </button>
+                  background: "var(--color-paper-warm-white)",
+                }}>
+                  <p style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--color-text-tertiary)",
+                    padding: "8px 12px 4px",
+                    margin: 0,
+                  }}>
+                    Existing People
+                  </p>
+                  {searchResults.map((person) => (
+                    <button
+                      key={person.id}
+                      onClick={() => handleSelectPerson(person)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        width: "100%",
+                        padding: "8px 12px",
+                        background: "none",
+                        border: "none",
+                        borderTop: "1px solid var(--color-rule-light)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <UserPlus size={14} style={{ color: "var(--color-garden-larkspur)", flexShrink: 0 }} />
+                      <div>
+                        <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
+                          {person.name}
+                        </span>
+                        {(person.role || person.organization) && (
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginLeft: 8 }}>
+                            {[person.role, person.organization].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <button
