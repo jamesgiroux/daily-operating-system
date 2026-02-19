@@ -32,6 +32,8 @@ interface EntityPickerProps {
   /** When set, shows a non-removable chip (for pre-filled entity) */
   locked?: boolean;
   className?: string;
+  /** Entity IDs to exclude from the picker (already linked) */
+  excludeIds?: string[];
 }
 
 export function EntityPicker({
@@ -41,6 +43,7 @@ export function EntityPicker({
   placeholder = "Link entity...",
   locked = false,
   className,
+  excludeIds,
 }: EntityPickerProps) {
   const [open, setOpen] = useState(false);
   const [entities, setEntities] = useState<EntityOption[]>([]);
@@ -94,16 +97,19 @@ export function EntityPicker({
     load();
   }, [entityType, value]);
 
-  const internalAccounts = entities.filter(
+  const excludeSet = excludeIds ? new Set(excludeIds) : null;
+  const available = excludeSet ? entities.filter((e) => !excludeSet.has(e.id)) : entities;
+
+  const internalAccounts = available.filter(
     (e) => e.type === "account" && e.isInternal
   );
-  const externalParentAccounts = entities.filter(
+  const externalParentAccounts = available.filter(
     (e) => e.type === "account" && !e.isInternal && !e.parentName
   );
-  const externalChildAccounts = entities.filter(
+  const externalChildAccounts = available.filter(
     (e) => e.type === "account" && !e.isInternal && e.parentName
   );
-  const projects = entities.filter((e) => e.type === "project");
+  const projects = available.filter((e) => e.type === "project");
 
   if (value && selectedName) {
     const entity = entities.find((e) => e.id === value);

@@ -3,6 +3,7 @@
  * Inverted from StakeholderGallery: that shows people for an entity,
  * this shows entities for a person.
  */
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "@tanstack/react-router";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
@@ -15,8 +16,8 @@ interface LinkedEntity {
 
 interface PersonNetworkProps {
   entities?: LinkedEntity[];
-  onLink?: (entityId: string) => void;
-  onUnlink?: (entityId: string) => void;
+  onLink?: (entityId: string) => Promise<void> | void;
+  onUnlink?: (entityId: string) => Promise<void> | void;
   sectionId?: string;
   chapterTitle?: string;
 }
@@ -33,8 +34,35 @@ export function PersonNetwork({
   sectionId = "the-network",
   chapterTitle = "The Network",
 }: PersonNetworkProps) {
-  const accounts = entities?.filter((e) => e.entityType === "account") ?? [];
-  const projects = entities?.filter((e) => e.entityType === "project") ?? [];
+  // Optimistic local state — updates immediately, syncs in background
+  const [localEntities, setLocalEntities] = useState<LinkedEntity[]>(entities ?? []);
+  useEffect(() => { setLocalEntities(entities ?? []); }, [entities]);
+
+  const handleLink = useCallback(async (entityId: string, entityName?: string, entityType?: string) => {
+    if (!entityId) return;
+    // Optimistic add
+    const newEntity: LinkedEntity = {
+      id: entityId,
+      name: entityName ?? entityId,
+      entityType: entityType ?? "account",
+    };
+    setLocalEntities((prev) => {
+      if (prev.some((e) => e.id === entityId)) return prev;
+      return [...prev, newEntity];
+    });
+    // Background persist — no await, no reload
+    onLink?.(entityId);
+  }, [onLink]);
+
+  const handleUnlink = useCallback(async (entityId: string) => {
+    // Optimistic remove
+    setLocalEntities((prev) => prev.filter((e) => e.id !== entityId));
+    // Background persist
+    onUnlink?.(entityId);
+  }, [onUnlink]);
+
+  const accounts = localEntities.filter((e) => e.entityType === "account");
+  const projects = localEntities.filter((e) => e.entityType === "project");
 
   return (
     <section id={sectionId} style={{ scrollMarginTop: 60 }}>
@@ -81,7 +109,7 @@ export function PersonNetwork({
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {accounts.map((e) => (
-                <EntityRow key={e.id} entity={e} onUnlink={onUnlink} />
+                <EntityRow key={e.id} entity={e} onUnlink={onUnlink ? handleUnlink : undefined} />
               ))}
             </div>
           </div>
@@ -105,21 +133,22 @@ export function PersonNetwork({
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {projects.map((e) => (
-                <EntityRow key={e.id} entity={e} onUnlink={onUnlink} />
+                <EntityRow key={e.id} entity={e} onUnlink={onUnlink ? handleUnlink : undefined} />
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* Entity picker for linking */}
+      {/* Entity picker for linking — add multiple without page reload */}
       {onLink && (
         <div style={{ marginTop: 24, maxWidth: 320 }}>
           <EntityPicker
             value={null}
-            onChange={(entityId) => {
-              if (entityId) onLink(entityId);
+            onChange={(entityId, entityName, entityType) => {
+              if (entityId) handleLink(entityId, entityName, entityType);
             }}
+            excludeIds={localEntities.map((e) => e.id)}
             placeholder="Link account or project…"
           />
         </div>
