@@ -1047,6 +1047,90 @@ impl ActionDb {
         Ok(actions)
     }
 
+    /// Query pending and waiting actions for a specific person.
+    pub fn get_person_actions(&self, person_id: &str) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, updated_at, person_id
+             FROM actions
+             WHERE person_id = ?1
+               AND status IN ('pending', 'waiting')
+             ORDER BY priority, due_date",
+        )?;
+
+        let rows = stmt.query_map(params![person_id], |row| {
+            Ok(DbAction {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                priority: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                due_date: row.get(5)?,
+                completed_at: row.get(6)?,
+                account_id: row.get(7)?,
+                project_id: row.get(8)?,
+                source_type: row.get(9)?,
+                source_id: row.get(10)?,
+                source_label: row.get(11)?,
+                context: row.get(12)?,
+                waiting_on: row.get(13)?,
+                updated_at: row.get(14)?,
+                person_id: row.get(15)?,
+            })
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    /// Get upcoming (future) meetings for a person, soonest first.
+    pub fn get_upcoming_meetings_for_person(
+        &self,
+        person_id: &str,
+        limit: i32,
+    ) -> Result<Vec<DbMeeting>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT m.id, m.title, m.meeting_type, m.start_time, m.end_time,
+                    m.attendees, m.notes_path, m.summary, m.created_at,
+                    m.calendar_event_id
+             FROM meetings_history m
+             JOIN meeting_attendees ma ON m.id = ma.meeting_id
+             WHERE ma.person_id = ?1
+               AND m.start_time >= datetime('now')
+             ORDER BY m.start_time ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![person_id, limit], |row| {
+            Ok(DbMeeting {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                meeting_type: row.get(2)?,
+                start_time: row.get(3)?,
+                end_time: row.get(4)?,
+                attendees: row.get(5)?,
+                notes_path: row.get(6)?,
+                summary: row.get(7)?,
+                created_at: row.get(8)?,
+                calendar_event_id: row.get(9)?,
+                description: None,
+                prep_context_json: None,
+                user_agenda_json: None,
+                user_notes: None,
+                prep_frozen_json: None,
+                prep_frozen_at: None,
+                prep_snapshot_path: None,
+                prep_snapshot_hash: None,
+                transcript_path: None,
+                transcript_processed_at: None,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// Mark an action as completed with the current timestamp.
     pub fn complete_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
