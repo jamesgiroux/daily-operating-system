@@ -4,7 +4,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 
 **Convention:** Issues use `I` prefix. When resolved, move to CHANGELOG with a one-line resolution.
 
-**Current state:** 772 Rust tests. v0.9.1 shipped (integrations + MCP PATH hotfix). 0.10.0 planned (intelligence + signals). 0.10.1 planned (user feedback + onboarding polish). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (reports + product communication). 1.0.0 = beta gate.
+**Current state:** 886 Rust tests. v0.10.0 shipped (intelligence + signals). 0.10.1 in progress (user feedback + onboarding polish + Linear data layer). 0.11.0 planned (role presets + entity architecture, ADR-0079). 0.12.0 planned (email intelligence). 0.12.1 planned (product language + UX polish, ADR-0083). 0.13.0 planned (event-driven meeting intelligence, ADR-0081). 0.14.0 planned (reports + product communication). 1.0.0 = beta gate.
 
 ---
 
@@ -29,7 +29,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit (beta gate) | P1 | Code Quality |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
 | **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
-| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge | P1 | Intelligence |
+| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source | P1 | Intelligence |
 | **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
 | **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
 | **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
@@ -71,7 +71,7 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I343** | Inline editing service — unified EditableText, signal emission, keyboard nav, textarea-first, drag-reorder, switchable badges | P1 | UX |
 | **I344** | Onboarding: suggest closest teammates from Gmail frequent correspondents | P2 | UX / Onboarding |
 | **I345** | Onboarding: back navigation loses entered state (bug) | P1 | UX / Onboarding |
-| **I346** | Linear integration (project management sync) | P2 | Integrations |
+| **I346** | Linear integration — data layer shipped (0.10.1), signal consumers in I306/I326/I332 | P2 | Integrations |
 | **I347** | SWOT report type — account strengths/weaknesses/opportunities/threats from existing intelligence | P2 | Intelligence / Reports |
 | **I348** | Email digest — push DailyOS intelligence summaries via scheduled email | P2 | Distribution |
 | **I349** | Settings redesign — kill the control panel, build a connections hub | P1 | UX |
@@ -120,7 +120,7 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 | Priority | Issue | Scope |
 |----------|-------|-------|
 | P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
-| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge |
+| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source |
 | P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
 | P1 | I308 | Event-driven signal processing and cross-entity propagation |
 | P1 | I334 | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing |
@@ -144,9 +144,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 |----------|-------|-------|
 | P1 | I345 | Onboarding: back navigation loses entered state (bug) |
 | P2 | I344 | Onboarding: suggest closest teammates from Gmail frequent correspondents |
-| P2 | I346 | Linear integration (project management sync) |
+| P2 | I346 | Linear integration — data layer (sync tables, poller, settings card) |
 
-**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I346 adds Linear as a project management signal source. I347 (SWOT) and I348 (email digest) moved to 0.14.0 (Reports release) where they join a broader reporting and distribution surface effort.
+**Rationale:** Nacho's first session surfaced real friction. I345 is a bug — navigating back in onboarding loses all entered data, which is unacceptable for a first-run experience. I344 leverages existing Gmail OAuth to suggest teammates from email history instead of requiring manual entry. I346 ships the Linear data layer: sync tables (`linear_issues`, `linear_projects`), background poller, settings card with API key + test connection. This is the "connect your Linear" step — data flows in but isn't consumed yet. The consumer side (entity linking, prep enrichment, signal surfacing) lives in the signal bus (I306) and meeting intelligence (I326/I332) issues where Linear joins email, calendar, and Clay as a signal source. I347 (SWOT) and I348 (email digest) moved to 0.14.0 (Reports release) where they join a broader reporting and distribution surface effort.
 
 ---
 
@@ -1134,6 +1134,7 @@ A user demos "Agentforce" (a project) to Jefferies (a customer). The system can'
 | Historical group patterns (same N people = same entity) | **Not implemented** | High potential |
 | User correction learning (re-tag → training signal) | **Not implemented** | High potential |
 | Post-meeting transcript entity mentions | **Not implemented** | High potential |
+| Linear project/issue names vs entity names/keywords | **Not implemented** (data layer in 0.10.1, I346) | Medium-high potential |
 
 **Proposed Architecture — Signal Cascade:**
 
@@ -1216,8 +1217,8 @@ Projects are currently manual-only. Minimum viable project matching:
 
 ---
 
-**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge**
-Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
+**I306: Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source**
+Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, Gmail, Linear, transcripts, user corrections) produces typed signals into a SQLite event log. Signals are fused using log-odds Bayesian combination and scored by confidence.
 
 **Core deliverables:**
 
@@ -1228,10 +1229,11 @@ Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, 
 5. **Email-calendar bridge for entity resolution** — Correlate email threads with meeting attendees in the 48 hours before a meeting. Email thread participants + subject line → entity resolution signal for the meeting. Join on email addresses (both sources use them).
 6. **Email pre-meeting context** — Surface relevant email thread excerpts in meeting prep context, weighted by recency and embedding similarity to meeting title.
 7. **Integration retrofit** — Clay, Gravatar, and hygiene enrichment pipelines emit signals to the bus instead of writing directly to entity fields. Signal consumers read from the bus.
+8. **Linear signal source** — Linear issue state changes (blocked, overdue, completed) and project status changes emit signals to the bus. Linear projects and issues are linked to DailyOS entities via keyword matching (same pattern as meeting-entity resolution in I305). The data layer (sync tables, poller) ships in 0.10.1 (I346); this item wires the synced data into the signal bus. Linear signals have 14-day decay half-life (issue status is fast-moving). Entity linking uses Linear project names matched against DailyOS entity names/keywords — auto-suggested, user-confirmed (Option C hybrid from I346 product discussion).
 
 **New dependencies:** None (pure SQLite + existing Rust math).
 
-**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`.
+**Files affected:** New `src-tauri/src/signals/` module. Modifications to `clay/enricher.rs`, `gravatar/client.rs`, `hygiene.rs`, `prepare/meeting_context.rs`, `workflow/deliver.rs`, `linear/poller.rs` (emit signals on sync).
 
 **Acceptance criteria:**
 - All enrichment sources write to `signal_events` table
@@ -1239,8 +1241,10 @@ Infrastructure layer for ADR-0080. Every data source (Clay, Gravatar, Calendar, 
 - Temporal decay reduces signal weight as age increases
 - Email threads from 48 hours before a meeting are surfaced in prep context
 - Email participant overlap with meeting attendees produces entity resolution signal
+- Linear issue state changes (blocked, completed, overdue) emit signals to the bus
+- Linear projects linked to DailyOS entities via keyword matching produce entity context signals
 
-**Dependencies:** ADR-0080 (architecture). Consumed by I305 (entity resolution) and I307 (learning).
+**Dependencies:** ADR-0080 (architecture), I346 (Linear data layer, 0.10.1). Consumed by I305 (entity resolution) and I307 (learning).
 
 ---
 
@@ -4895,6 +4899,7 @@ Connect the signal bus (ADR-0080) to meeting intelligence. When relevant signals
 | Earlier meeting transcript mentions later meeting's entity | Transcript processing | Cross-meeting intelligence propagation; affected meeting flagged |
 | Calendar change (new attendee, time, description) | Calendar polling | Meeting re-classified, entity re-resolved, intelligence refresh triggered |
 | Entity intelligence updated (risk, health, win) | Entity enrichment | All meetings associated with entity get "new signals" flag |
+| Linear issue state change (blocked, overdue) on entity-linked project | Linear sync | Meeting marked "has new signals"; issue context queued for next refresh |
 | User edits agenda/notes on meeting | User action | Intelligence incorporates user input on next refresh |
 | RSVP status changes | Calendar sync | "The Room" updated with latest attendance |
 
@@ -5251,26 +5256,42 @@ If a user clicks "Continue" past the accounts step, then navigates back (e.g., c
 
 ### I346 — Linear Integration
 
-**Version:** 0.10.1
+**Version:** 0.10.1 (data layer), consumer side in I306/I326/I332
 **Priority:** P2
 **Area:** Integrations
 **Source:** User feedback (Nacho, 2026-02-18)
 
-Integrate with Linear for project management sync. Linear is widely used in product/engineering teams for issue tracking, sprint planning, and project status.
+**Status: Data layer shipped (0.10.1). Consumer side deferred to signal bus and meeting intelligence releases.**
 
-**Potential value for DailyOS:**
-- Pull project/cycle status into entity intelligence (account health context)
-- Surface relevant issues before meetings with engineering or product stakeholders
-- Track velocity and delivery signals for project entities
-- Action items could sync bidirectionally (DailyOS actions ↔ Linear issues)
+Linear integration connects project management signals to DailyOS intelligence. The job is not "see Linear issues in DailyOS" — it's "walk into a meeting knowing the status of the feature your customer is asking about, and know where to follow up afterward."
 
-**Research needed:**
-- Linear API (GraphQL) — authentication, rate limits, webhook support
-- What data is most valuable: issues, projects, cycles, comments?
-- MCP server availability (Linear may have an official or community MCP server)
-- Same architectural pattern as Quill/Granola: sidecar or direct API?
+**What shipped (0.10.1 data layer):**
+- `linear_issues` and `linear_projects` SQLite tables (migration 024)
+- Background poller syncing assigned issues + team projects via GraphQL API (Bearer token auth, configurable poll interval)
+- Settings card: enable/disable, API key, test connection, sync now
+- Follows Clay integration architectural pattern (poller, sync, commands)
+- Files: `src-tauri/src/linear/` (mod.rs, client.rs, poller.rs, sync.rs)
 
-**Dependencies:** None immediate. Similar integration scope to I225 (Gong), I227 (Gainsight), I340 (Glean).
+**What's deferred (consumer side — lives in existing roadmap issues):**
+
+| Consumer | Roadmap issue | What Linear adds |
+|----------|---------------|------------------|
+| Signal bus | I306 (0.10.0) | Linear issue state changes (blocked, overdue, completed) emit signals. Linear projects linked to DailyOS entities via keyword matching. |
+| Entity resolution | I305 (0.10.0) | Linear project names as entity resolution signal. "API Migration" in Linear matches "API Migration" DailyOS project. |
+| Meeting prep | I326 (0.13.0) | "Related Linear projects: API Migration (3 blocked), Mobile SDK (on track)" in meeting intelligence context. |
+| Signal-triggered refresh | I332 (0.13.0) | Linear issue state change on linked entity triggers meeting intelligence refresh. |
+| Role presets | I310 (0.11.0) | Which roles surface Linear signals. Product/Engineering roles see issue-level detail; CS/Sales roles see project-level status only. |
+
+**Product decisions (from 2026-02-19 discussion):**
+- Linear is a **signal source**, not a standalone surface. No "Linear dashboard" in DailyOS.
+- Linear issues do NOT map to DailyOS actions. Actions come from meetings and human decisions; Linear issues are engineering work items with different scope and lifecycle.
+- Entity linking uses **hybrid approach**: auto-suggest matches via keyword matching, user confirms. Same pattern as entity resolution corrections.
+- Only entity-linked Linear data surfaces in intelligence — no dumping every issue on the user.
+- Value chain: Linear sync → entity linking → prep enrichment → "customer asks about feature X, you already know it's blocked"
+
+**Architecture:** Direct GraphQL API client (reqwest + Bearer token). No MCP server needed — the API surface is small (viewer, assigned issues, team projects). Poller pattern follows Clay (60s startup delay, configurable interval, wake via Notify).
+
+**Dependencies:** I306 (signal bus — Linear becomes a signal source). I305 (entity resolution — Linear project ↔ DailyOS entity matching). Similar integration scope to I225 (Gong), I227 (Gainsight), I340 (Glean).
 
 ---
 
