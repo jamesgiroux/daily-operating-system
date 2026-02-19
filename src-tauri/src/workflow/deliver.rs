@@ -3085,7 +3085,7 @@ pub fn enrich_preps(
         }
         if let Some(notes) = prep.get("calendarNotes").and_then(|v| v.as_str()) {
             if !notes.trim().is_empty() {
-                prep_context.push_str("Calendar Notes:\n");
+                prep_context.push_str("Meeting Purpose (from calendar):\n");
                 prep_context.push_str(notes.trim());
                 prep_context.push('\n');
             }
@@ -3141,14 +3141,17 @@ pub fn enrich_preps(
     let prompt = format!(
         "You are refining meeting prep reports for a Customer Success Manager.\n\n\
          For each meeting below, review recent wins, risks, open items, questions, \
-         calendar notes, and current mechanical agenda. Produce:\n\
+         meeting purpose, and current mechanical agenda. Produce:\n\
          1) A refined agenda that:\n\
-         0. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
-         1. Orders items by impact (highest-stakes first)\n\
-         2. Adds a brief 'why' rationale for each item\n\
-         3. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
-         4. Avoids duplicating recent wins unless there are no other substantive topics\n\
-         5. Caps at 7 items per meeting\n\
+         0. When a 'Meeting Purpose (from calendar)' is provided, treat it as the primary framing constraint: \
+         steer agenda items, risks, and talking points toward that stated purpose. \
+         Deprioritize entity-level intelligence that does not directly relate to the meeting topic.\n\
+         1. Keeps calendar agenda items as primary structure when they exist (enrich around them, do not replace them)\n\
+         2. Orders items by impact (highest-stakes first)\n\
+         3. Adds a brief 'why' rationale for each item\n\
+         4. Uses source category (calendar_note, risk, talking_point, question, open_item)\n\
+         5. Avoids duplicating recent wins unless there are no other substantive topics\n\
+         6. Caps at 7 items per meeting\n\
          2) A clean recent wins list (max 4) with source provenance separated.\n\n\
          Format your response as:\n\
          AGENDA:meeting-id\n\
