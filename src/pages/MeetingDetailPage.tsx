@@ -497,7 +497,7 @@ export default function MeetingDetailPage() {
   const hasDeepDive = Boolean(
     recentWinsForDisplay.length > 0 ||
     (data.openItems && data.openItems.length > 0) ||
-    (data.recentEmailSignals && data.recentEmailSignals.length > 0) ||
+    (data.recentEmailSignals && data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).length > 0) ||
     hasReferenceContent(data) ||
     (data.sinceLast?.length ?? 0) > 0 ||
     (data.strategicPrograms?.length ?? 0) > 0
@@ -939,15 +939,15 @@ export default function MeetingDetailPage() {
                     </div>
                   )}
 
-                  {/* Email Signals — compact */}
-                  {data.recentEmailSignals && data.recentEmailSignals.length > 0 && (
+                  {/* Email Signals — compact, filtered by confidence */}
+                  {data.recentEmailSignals && data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).length > 0 && (
                     <div>
                       <SectionLabel
                         label="Email Signals"
                         labelColor="var(--color-spice-turmeric)"
                       />
                       <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 20 }}>
-                        {data.recentEmailSignals.slice(0, 4).map((signal, i) => (
+                        {data.recentEmailSignals.filter((s) => (s.confidence ?? 0) >= 0.6).slice(0, 4).map((signal, i) => (
                           <li key={`${signal.id ?? i}-${signal.signalType}`} style={{ fontSize: 14, borderBottom: "1px solid rgba(30, 37, 48, 0.04)", paddingBottom: 10 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <span
