@@ -1819,6 +1819,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -2525,6 +2526,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
     }
@@ -2729,6 +2731,8 @@ mod tests {
             personality: "professional".to_string(),
             ai_models: crate::types::AiModelConfig::default(),
             embeddings: crate::types::EmbeddingConfig::default(),
+            role: "customer-success".to_string(),
+            custom_preset_path: None,
             hygiene_scan_interval_hours: 4,
             hygiene_ai_budget: 10,
             hygiene_pre_meeting_hours: 12,

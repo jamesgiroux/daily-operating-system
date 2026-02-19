@@ -499,7 +499,10 @@ pub fn gather_enrichment_input(
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing
     let relationship = person.as_ref().map(|p| p.relationship.as_str());
-    let prompt = build_intelligence_prompt(&entity_name, &request.entity_type, &ctx, relationship);
+    // Read vocabulary from active preset for domain-specific prompt language (I313)
+    let preset_guard = state.active_preset.read().map_err(|_| "Preset lock poisoned")?;
+    let vocabulary = preset_guard.as_ref().map(|p| &p.vocabulary);
+    let prompt = build_intelligence_prompt(&entity_name, &request.entity_type, &ctx, relationship, vocabulary);
 
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();

@@ -2073,6 +2073,7 @@ mod tests {
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
+            metadata: None,
             })
             .expect("upsert account");
         }
@@ -2090,6 +2091,7 @@ mod tests {
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
+            metadata: None,
             })
             .expect("upsert project");
         }
