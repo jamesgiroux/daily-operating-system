@@ -1,0 +1,76 @@
+{
+  "id": "agency",
+  "name": "Agency",
+  "description": "For agency account managers and project leads juggling multiple client engagements. Tracks retainer utilization, deliverable timelines, and client satisfaction across a portfolio of client relationships.",
+  "defaultEntityMode": "both",
+  "vocabulary": {
+    "entityNoun": "client",
+    "entityNounPlural": "clients",
+    "primaryMetric": "Retainer Value",
+    "healthLabel": "Client Satisfaction",
+    "riskLabel": "Delivery Risk",
+    "successVerb": "delivered",
+    "cadenceNoun": "status call"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Retainer Value", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Satisfaction", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["delighted", "satisfied", "neutral", "frustrated", "escalated"] },
+      { "key": "lifecycle", "label": "Client Status", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospect", "onboarding", "active", "renewing", "dormant", "churned"] },
+      { "key": "contract_end", "label": "Contract End", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "nps", "label": "CSAT", "fieldType": "number", "source": "column", "columnMapping": "nps" }
+    ],
+    "project": [
+      { "key": "status", "label": "Phase", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["brief", "discovery", "production", "review", "revisions", "delivered", "on_hold", "cancelled"] },
+      { "key": "target_date", "label": "Deadline", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Project Lead", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Phase", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "billing_model", "label": "Billing Model", "fieldType": "select", "options": ["retainer", "project", "time_and_materials", "performance", "hybrid"], "required": false }
+    ],
+    "project": [
+      { "key": "scope_type", "label": "Scope Type", "fieldType": "select", "options": ["retainer", "fixed_bid", "time_and_materials", "milestone"], "required": false },
+      { "key": "budget", "label": "Project Budget", "fieldType": "currency", "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "client_lead", "label": "Client Lead", "description": "Day-to-day decision maker on the client side" },
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "Senior client leader, budget authority" },
+    { "id": "approver", "label": "Approver", "description": "Final sign-off on deliverables" },
+    { "id": "brand_manager", "label": "Brand Manager", "description": "Owns brand guidelines and creative direction" },
+    { "id": "sme", "label": "Subject Matter Expert", "description": "Client-side domain expert for content accuracy" },
+    { "id": "procurement", "label": "Procurement", "description": "Handles contracts, SOWs, and billing" }
+  ],
+  "internalTeamRoles": [
+    { "id": "ad", "label": "Account Director", "description": "Senior relationship owner, strategic counsel" },
+    { "id": "am", "label": "Account Manager", "description": "Day-to-day client liaison, project coordination" },
+    { "id": "pm", "label": "Project Manager", "description": "Timeline, budget, and resource management" },
+    { "id": "cd", "label": "Creative Director", "description": "Oversees creative vision and quality" },
+    { "id": "strategist", "label": "Strategist", "description": "Research, insights, and campaign strategy" }
+  ],
+  "lifecycleEvents": [
+    "contract_signed",
+    "kickoff_complete",
+    "first_deliverable",
+    "client_review",
+    "launch",
+    "scope_change",
+    "contract_renewal",
+    "wrap_postmortem"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "deadline_within_7d",
+      "client_satisfaction_declining",
+      "scope_creep_detected"
+    ]
+  },
+  "briefingEmphasis": "Focus on deliverable deadlines, client satisfaction trends, and scope status. Prioritize at-risk client relationships and overdue deliverables."
+}

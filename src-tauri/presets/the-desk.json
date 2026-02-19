@@ -1,0 +1,58 @@
+{
+  "id": "the-desk",
+  "name": "The Desk",
+  "description": "A minimal, general-purpose preset for individual contributors and knowledge workers. No opinionated entity model or domain vocabulary. Tracks projects, meetings, and actions without role-specific assumptions.",
+  "defaultEntityMode": "project",
+  "vocabulary": {
+    "entityNoun": "project",
+    "entityNounPlural": "projects",
+    "primaryMetric": "Progress",
+    "healthLabel": "Status",
+    "riskLabel": "Risk",
+    "successVerb": "completed",
+    "cadenceNoun": "check-in"
+  },
+  "vitals": {
+    "account": [
+      { "key": "health", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["active", "inactive"] },
+      { "key": "lifecycle", "label": "Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["active", "archived"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["not_started", "active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Due Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "client", "label": "Client / Customer", "description": "External person you serve" },
+    { "id": "collaborator", "label": "Collaborator", "description": "External person you work with" },
+    { "id": "vendor", "label": "Vendor / Contractor", "description": "External person who serves you" }
+  ],
+  "internalTeamRoles": [
+    { "id": "manager", "label": "Manager", "description": "Your direct manager" },
+    { "id": "colleague", "label": "Colleague", "description": "People you work with daily" },
+    { "id": "stakeholder", "label": "Stakeholder", "description": "People who care about your output" }
+  ],
+  "lifecycleEvents": [
+    "project_started",
+    "milestone_reached",
+    "project_completed",
+    "retrospective"
+  ],
+  "prioritization": {
+    "primarySignal": "deadline",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "deadline_within_7d",
+      "project_blocked"
+    ]
+  },
+  "briefingEmphasis": "Focus on upcoming deadlines, blocked work, and action items. Keep the briefing concise and action-oriented."
+}

@@ -3832,6 +3832,7 @@ pub fn populate_workspace(
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         if let Ok(db_guard) = state.db.lock() {
@@ -3869,6 +3870,7 @@ pub fn populate_workspace(
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         // Create folder + directory template (ADR-0059, idempotent)
@@ -5259,6 +5261,30 @@ pub fn get_child_accounts_list(
     Ok(items)
 }
 
+/// I316: Get ancestor accounts for breadcrumb navigation.
+#[tauri::command]
+pub fn get_account_ancestors(
+    account_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccount>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_account_ancestors(&account_id)
+        .map_err(|e| e.to_string())
+}
+
+/// I316: Get all descendant accounts for a given ancestor.
+#[tauri::command]
+pub fn get_descendant_accounts(
+    ancestor_id: String,
+    state: State<Arc<AppState>>,
+) -> Result<Vec<crate::db::DbAccount>, String> {
+    let db_guard = state.db.lock().map_err(|_| "Lock poisoned")?;
+    let db = db_guard.as_ref().ok_or("Database not initialized")?;
+    db.get_descendant_accounts(&ancestor_id)
+        .map_err(|e| e.to_string())
+}
+
 /// Convert a DbAccount to an AccountListItem with computed signals.
 fn account_to_list_item(
     a: &crate::db::DbAccount,
@@ -5692,6 +5718,7 @@ pub fn create_account(
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
+    metadata: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -5813,6 +5840,7 @@ fn create_child_account_record(
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
+    metadata: None,
     };
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -6025,6 +6053,7 @@ pub fn create_internal_organization(
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
+            metadata: None,
             };
             db.upsert_account(&root_account)
                 .map_err(|e| e.to_string())?;
@@ -7021,6 +7050,7 @@ pub fn create_project(name: String, state: State<Arc<AppState>>) -> Result<Strin
         archived: false,
         keywords: None,
         keywords_extracted_at: None,
+    metadata: None,
     };
 
     db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -7521,6 +7551,7 @@ pub fn bulk_create_accounts(
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         db.upsert_account(&account).map_err(|e| e.to_string())?;
@@ -7579,6 +7610,7 @@ pub fn bulk_create_projects(
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+        metadata: None,
         };
 
         db.upsert_project(&project).map_err(|e| e.to_string())?;
@@ -10184,4 +10216,76 @@ pub async fn test_linear_connection(
 pub fn start_linear_sync(state: State<Arc<AppState>>) -> Result<(), String> {
     state.linear_poller_wake.notify_one();
     Ok(())
+}
+
+// =============================================================================
+// I309: Role Presets
+// =============================================================================
+
+/// Set the active role preset.
+#[tauri::command]
+pub async fn set_role(
+    role: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    let preset = crate::presets::loader::load_preset(&role)?;
+
+    crate::state::create_or_update_config(&state, |c| {
+        c.role = role.clone();
+        c.custom_preset_path = None;
+        c.entity_mode = preset.default_entity_mode.clone();
+        c.profile = crate::types::profile_for_entity_mode(&c.entity_mode);
+    })?;
+
+    if let Ok(mut guard) = state.active_preset.write() {
+        *guard = Some(preset);
+    }
+
+    Ok("ok".to_string())
+}
+
+/// Get the currently active role preset.
+#[tauri::command]
+pub async fn get_active_preset(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<crate::presets::schema::RolePreset>, String> {
+    Ok(state
+        .active_preset
+        .read()
+        .map_err(|_| "Lock poisoned")?
+        .clone())
+}
+
+/// List all available role presets.
+#[tauri::command]
+pub async fn get_available_presets() -> Result<Vec<(String, String, String)>, String> {
+    Ok(crate::presets::loader::get_available_presets())
+}
+
+// =============================================================================
+// I311: Entity Metadata
+// =============================================================================
+
+/// Update JSON metadata for an entity (account or project).
+#[tauri::command]
+pub async fn update_entity_metadata(
+    entity_type: String,
+    entity_id: String,
+    metadata: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    serde_json::from_str::<serde_json::Value>(&metadata)
+        .map_err(|e| format!("Invalid JSON metadata: {}", e))?;
+    state.with_db_write(|db| db.update_entity_metadata(&entity_type, &entity_id, &metadata))?;
+    Ok("ok".to_string())
+}
+
+/// Get JSON metadata for an entity (account or project).
+#[tauri::command]
+pub async fn get_entity_metadata(
+    entity_type: String,
+    entity_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<String, String> {
+    state.with_db_read(|db| db.get_entity_metadata(&entity_type, &entity_id))
 }

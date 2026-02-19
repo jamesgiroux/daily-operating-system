@@ -22,11 +22,12 @@ interface EngagementOption {
 
 const ENGAGEMENT_OPTIONS: EngagementOption[] = [
   { stored: "champion", label: "Champion", background: "rgba(201, 162, 39, 0.12)", color: "var(--color-spice-turmeric)" },
-  { stored: "high", label: "Active Partner", background: "rgba(74, 103, 65, 0.14)", color: "var(--color-garden-rosemary)" },
-  { stored: "medium", label: "Participates", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
-  { stored: "low", label: "Passive", background: "rgba(196, 101, 74, 0.10)", color: "var(--color-spice-terracotta)" },
-  { stored: "unknown", label: "Not Yet Seen", background: "rgba(143, 163, 196, 0.08)", color: "var(--color-text-tertiary)" },
-  { stored: "at-risk", label: "At Risk", background: "rgba(196, 101, 74, 0.10)", color: "var(--color-spice-terracotta)" },
+  { stored: "executive_sponsor", label: "Exec Sponsor", background: "rgba(74, 103, 65, 0.14)", color: "var(--color-garden-rosemary)" },
+  { stored: "decision_maker", label: "Decision Maker", background: "rgba(74, 103, 65, 0.14)", color: "var(--color-garden-rosemary)" },
+  { stored: "primary_contact", label: "Primary Contact", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
+  { stored: "technical_contact", label: "Technical Contact", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
+  { stored: "power_user", label: "Power User", background: "rgba(143, 163, 196, 0.14)", color: "var(--color-garden-larkspur)" },
+  { stored: "end_user", label: "End User", background: "rgba(143, 163, 196, 0.08)", color: "var(--color-text-tertiary)" },
 ];
 
 /** Map a stored engagement value to its display configuration. */

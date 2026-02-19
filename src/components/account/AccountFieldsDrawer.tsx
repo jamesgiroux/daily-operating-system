@@ -11,10 +11,12 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
+import { PresetFieldsEditor } from "@/components/entity/PresetFieldsEditor";
 import type { AccountHealth } from "@/types";
+import type { PresetMetadataField } from "@/types/preset";
 
 const healthOptions: AccountHealth[] = ["green", "yellow", "red"];
-const lifecycleOptions = ["onboarding", "ramping", "steady-state", "at-risk", "churned"];
+const lifecycleOptions = ["onboarding", "adoption", "nurture", "renewal", "churned"];
 
 interface AccountFieldsDrawerProps {
   open: boolean;
@@ -36,6 +38,10 @@ interface AccountFieldsDrawerProps {
   onCancel: () => void;
   saving: boolean;
   dirty: boolean;
+  /** I312: Optional preset metadata fields */
+  metadataFields?: PresetMetadataField[];
+  metadataValues?: Record<string, string>;
+  onMetadataChange?: (key: string, value: string) => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -81,6 +87,9 @@ export function AccountFieldsDrawer({
   onCancel,
   saving,
   dirty,
+  metadataFields,
+  metadataValues,
+  onMetadataChange,
 }: AccountFieldsDrawerProps) {
   function handleChange<T extends string>(setter: (v: T) => void) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -180,6 +189,17 @@ export function AccountFieldsDrawer({
               placeholder="Set renewal date"
             />
           </div>
+
+          {metadataFields && metadataFields.length > 0 && metadataValues && onMetadataChange && (
+            <PresetFieldsEditor
+              fields={metadataFields}
+              values={metadataValues}
+              onChange={(key, value) => {
+                onMetadataChange(key, value);
+                setDirty(true);
+              }}
+            />
+          )}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 32 }}>

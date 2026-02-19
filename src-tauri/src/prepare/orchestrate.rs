@@ -2179,7 +2179,7 @@ fn build_hygiene_alerts(directive: &Value) -> Vec<Value> {
             let narrative = ctx.get("narrative").and_then(|v| v.as_str()).unwrap_or("");
 
             let needs_alert =
-                matches!(health, "yellow" | "red") || matches!(lifecycle, "at-risk" | "churned");
+                matches!(health, "yellow" | "red") || lifecycle == "churned";
 
             if needs_alert {
                 let severity = if health == "red" || lifecycle == "churned" {
@@ -2512,7 +2512,7 @@ mod tests {
             "meetingContexts": [
                 {
                     "account": "Globex Industries",
-                    "account_data": {"lifecycle": "at-risk", "arr": 800000, "health": "yellow"},
+                    "account_data": {"lifecycle": "renewal", "arr": 800000, "health": "yellow"},
                     "narrative": "Team B usage declining."
                 }
             ]

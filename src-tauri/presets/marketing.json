@@ -1,0 +1,73 @@
+{
+  "id": "marketing",
+  "name": "Marketing",
+  "description": "For marketing managers running campaigns and programs. Tracks campaign performance, content pipelines, and cross-functional coordination to surface deadlines and impact metrics.",
+  "defaultEntityMode": "project",
+  "vocabulary": {
+    "entityNoun": "campaign",
+    "entityNounPlural": "campaigns",
+    "primaryMetric": "Pipeline Influenced",
+    "healthLabel": "Campaign Pacing",
+    "riskLabel": "Delivery Risk",
+    "successVerb": "launched",
+    "cadenceNoun": "campaign review"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "Budget", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["active", "prospect", "partner", "inactive"] },
+      { "key": "lifecycle", "label": "Engagement Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["awareness", "consideration", "evaluation", "customer", "advocate"] }
+    ],
+    "project": [
+      { "key": "status", "label": "Campaign Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["planning", "building", "review", "scheduled", "active", "optimizing", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Launch Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Campaign Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" },
+      { "key": "milestone", "label": "Current Milestone", "fieldType": "text", "source": "column", "columnMapping": "milestone" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [],
+    "project": [
+      { "key": "campaign_type", "label": "Campaign Type", "fieldType": "select", "options": ["event", "webinar", "content", "email", "paid", "partner", "product_launch"], "required": false },
+      { "key": "target_audience", "label": "Target Audience", "fieldType": "text", "required": false },
+      { "key": "budget_allocated", "label": "Budget Allocated", "fieldType": "currency", "required": false }
+    ],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "executive_sponsor", "label": "Executive Sponsor", "description": "VP/CMO providing budget and strategic direction" },
+    { "id": "agency_partner", "label": "Agency Partner", "description": "External agency executing creative or media" },
+    { "id": "customer_advocate", "label": "Customer Advocate", "description": "Customer participating in case study, testimonial, or reference" },
+    { "id": "guest_speaker", "label": "Guest Speaker / SME", "description": "External expert for webinars or content" },
+    { "id": "influencer", "label": "Influencer / Creator", "description": "Content collaborator for co-marketing" }
+  ],
+  "internalTeamRoles": [
+    { "id": "campaign_manager", "label": "Campaign Manager", "description": "Orchestrates the campaign end-to-end" },
+    { "id": "demand_gen", "label": "Demand Gen", "description": "Owns pipeline targets and MQL/SQL goals" },
+    { "id": "pmm", "label": "Product Marketing", "description": "Messaging, positioning, and competitive intel" },
+    { "id": "content", "label": "Content Marketing", "description": "Blog posts, whitepapers, and ebooks" },
+    { "id": "designer", "label": "Designer", "description": "Visual assets and landing pages" },
+    { "id": "mops", "label": "Marketing Ops", "description": "Automation, reporting, and CRM config" }
+  ],
+  "lifecycleEvents": [
+    "brief_approved",
+    "creative_complete",
+    "stakeholder_review",
+    "launch",
+    "mid_campaign_review",
+    "campaign_complete",
+    "attribution_report",
+    "retrospective"
+  ],
+  "prioritization": {
+    "primarySignal": "deadline",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "launch_within_14d",
+      "milestone_overdue",
+      "stakeholder_review_pending"
+    ]
+  },
+  "briefingEmphasis": "Focus on upcoming launch dates, content pipeline status, and cross-functional dependencies. Prioritize campaigns approaching deadlines with unresolved blockers."
+}
