@@ -137,9 +137,55 @@ pub fn has_meeting_ended(event: &CalendarEvent) -> bool {
 }
 
 /// Process a fetched transcript through the existing AI pipeline.
+/// Run the transcript pipeline WITHOUT holding the DB mutex.
+///
+/// Returns `Ok((destination_path, optional_summary))` or `Err(message)`.
+/// The caller is responsible for DB state transitions before and after.
+pub fn process_fetched_transcript_without_db(
+    sync_id: &str,
+    meeting: &CalendarEvent,
+    transcript_text: &str,
+    workspace: &Path,
+    profile: &str,
+    ai_config: Option<&crate::types::AiModelConfig>,
+) -> Result<(String, Option<String>), String> {
+    let temp_dir = workspace.join("_temp");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
+
+    std::fs::write(&temp_path, transcript_text)
+        .map_err(|e| format!("Failed to write temp transcript: {}", e))?;
+
+    let temp_path_str = temp_path.display().to_string();
+
+    // Run the AI pipeline — this is the expensive part that must NOT hold the DB lock
+    let result = crate::processor::transcript::process_transcript(
+        workspace,
+        &temp_path_str,
+        meeting,
+        None, // No DB reference — caller handles DB writes
+        profile,
+        ai_config,
+    );
+
+    let _ = std::fs::remove_file(&temp_path);
+
+    if result.status == "success" {
+        let dest = result.destination.clone().unwrap_or_default();
+        Ok((dest, result.summary))
+    } else {
+        Err(result.message.unwrap_or_else(|| "Transcript processing failed".to_string()))
+    }
+}
+
+/// Process a fetched transcript through the AI pipeline.
 ///
 /// Writes the transcript to a temp file, runs `process_transcript`,
 /// and updates the sync state row with results.
+///
+/// **WARNING:** This function takes a `&ActionDb` and holds it for the
+/// duration of the AI pipeline. Prefer `process_fetched_transcript_without_db`
+/// from the poller to avoid blocking the entire app.
 pub fn process_fetched_transcript(
     db: &ActionDb,
     sync_id: &str,
