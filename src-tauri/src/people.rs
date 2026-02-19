@@ -75,6 +75,102 @@ fn default_relationship() -> String {
     "unknown".to_string()
 }
 
+/// Dashboard JSON for person entities (I338 — three-file pattern).
+///
+/// Mechanical facts + cadence, analogous to `AccountJson` for accounts.
+/// Written to `People/{Name}/dashboard.json`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonDashboardJson {
+    #[serde(default = "default_version")]
+    pub version: u32,
+    #[serde(default = "default_entity_type")]
+    pub entity_type: String,
+    pub name: String,
+    pub email: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub organization: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    pub relationship: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cadence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_meeting: Option<String>,
+    pub meeting_count: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signals: Option<PersonDashboardSignals>,
+}
+
+/// Signal snapshot embedded in `PersonDashboardJson`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersonDashboardSignals {
+    pub meeting_frequency_30d: i32,
+    pub meeting_frequency_90d: i32,
+    pub temperature: String,
+    pub trend: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_meeting: Option<String>,
+}
+
+/// Infer meeting cadence from frequency signals.
+///
+/// - freq_30d >= 4 → "weekly"
+/// - freq_30d 2–3 → "bi-weekly"
+/// - freq_30d >= 1 OR freq_90d >= 3 → "monthly"
+/// - else → "ad-hoc"
+pub fn infer_cadence(freq_30d: i32, freq_90d: i32) -> &'static str {
+    if freq_30d >= 4 {
+        "weekly"
+    } else if freq_30d >= 2 {
+        "bi-weekly"
+    } else if freq_30d >= 1 || freq_90d >= 3 {
+        "monthly"
+    } else {
+        "ad-hoc"
+    }
+}
+
+/// Write `dashboard.json` for a person (I338 — three-file pattern).
+///
+/// Queries signals from SQLite, infers cadence, and writes via `entity_io::write_entity_json`.
+pub fn write_person_dashboard_json(
+    workspace: &Path,
+    person: &DbPerson,
+    db: &ActionDb,
+) -> Result<(), String> {
+    let dir = person_dir(workspace, &person.name);
+
+    let signals = db
+        .get_person_signals(&person.id)
+        .map_err(|e| format!("Failed to get signals for {}: {}", person.id, e))?;
+
+    let cadence = infer_cadence(signals.meeting_frequency_30d, signals.meeting_frequency_90d);
+
+    let dashboard = PersonDashboardJson {
+        version: 1,
+        entity_type: "person".to_string(),
+        name: person.name.clone(),
+        email: person.email.clone(),
+        organization: person.organization.clone(),
+        role: person.role.clone(),
+        relationship: person.relationship.clone(),
+        cadence: Some(cadence.to_string()),
+        first_meeting: person.first_seen.clone(),
+        meeting_count: person.meeting_count,
+        signals: Some(PersonDashboardSignals {
+            meeting_frequency_30d: signals.meeting_frequency_30d,
+            meeting_frequency_90d: signals.meeting_frequency_90d,
+            temperature: signals.temperature,
+            trend: signals.trend,
+            last_meeting: signals.last_meeting,
+        }),
+    };
+
+    crate::entity_io::write_entity_json(&dir, "dashboard.json", &dashboard)
+}
+
 /// Resolve the directory for a person's workspace files.
 ///
 /// I337: Uses `entity_dir()` for consistent filesystem name sanitization.
@@ -400,4 +496,149 @@ pub fn sync_people_from_workspace(
     }
 
     Ok(synced)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_infer_cadence_weekly() {
+        assert_eq!(infer_cadence(4, 10), "weekly");
+        assert_eq!(infer_cadence(8, 20), "weekly");
+    }
+
+    #[test]
+    fn test_infer_cadence_biweekly() {
+        assert_eq!(infer_cadence(2, 6), "bi-weekly");
+        assert_eq!(infer_cadence(3, 8), "bi-weekly");
+    }
+
+    #[test]
+    fn test_infer_cadence_monthly() {
+        assert_eq!(infer_cadence(1, 2), "monthly");
+        assert_eq!(infer_cadence(0, 3), "monthly");
+        assert_eq!(infer_cadence(0, 5), "monthly");
+    }
+
+    #[test]
+    fn test_infer_cadence_ad_hoc() {
+        assert_eq!(infer_cadence(0, 0), "ad-hoc");
+        assert_eq!(infer_cadence(0, 2), "ad-hoc");
+        assert_eq!(infer_cadence(0, 1), "ad-hoc");
+    }
+
+    fn test_db() -> ActionDb {
+        let dir = tempfile::tempdir().expect("Failed to create temp dir");
+        let path = dir.path().join("test.db");
+        std::mem::forget(dir);
+        let db = ActionDb::open_at(path).expect("open test DB");
+        db.conn_ref()
+            .execute_batch("PRAGMA foreign_keys = OFF;")
+            .expect("disable FK");
+        db
+    }
+
+    fn sample_person() -> DbPerson {
+        DbPerson {
+            id: "person_alice_example_com".to_string(),
+            email: "alice@example.com".to_string(),
+            name: "Alice Example".to_string(),
+            organization: Some("Acme Corp".to_string()),
+            role: Some("VP Engineering".to_string()),
+            relationship: "external".to_string(),
+            notes: None,
+            tracker_path: None,
+            last_seen: Some("2026-02-15T10:00:00Z".to_string()),
+            first_seen: Some("2025-06-01T00:00:00Z".to_string()),
+            meeting_count: 12,
+            updated_at: Utc::now().to_rfc3339(),
+            archived: false,
+            linkedin_url: None,
+            twitter_handle: None,
+            phone: None,
+            photo_url: None,
+            bio: None,
+            title_history: None,
+            company_industry: None,
+            company_size: None,
+            company_hq: None,
+            last_enriched_at: None,
+            enrichment_sources: None,
+        }
+    }
+
+    #[test]
+    fn test_write_person_dashboard_json() {
+        let db = test_db();
+        let person = sample_person();
+        let _ = db.upsert_person(&person);
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        write_person_dashboard_json(workspace.path(), &person, &db).expect("write dashboard");
+
+        let dir = person_dir(workspace.path(), &person.name);
+        let path = dir.join("dashboard.json");
+        assert!(path.exists(), "dashboard.json should exist");
+
+        // Round-trip parse
+        let content = std::fs::read_to_string(&path).expect("read");
+        let parsed: PersonDashboardJson = serde_json::from_str(&content).expect("parse");
+        assert_eq!(parsed.name, "Alice Example");
+        assert_eq!(parsed.email, "alice@example.com");
+        assert_eq!(parsed.entity_type, "person");
+        assert_eq!(parsed.relationship, "external");
+        assert!(parsed.cadence.is_some());
+        assert!(parsed.signals.is_some());
+    }
+
+    #[test]
+    fn test_three_file_pattern_complete() {
+        let db = test_db();
+        let person = sample_person();
+        let _ = db.upsert_person(&person);
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        write_person_json(workspace.path(), &person, &db).expect("person.json");
+        write_person_dashboard_json(workspace.path(), &person, &db).expect("dashboard.json");
+        write_person_markdown(workspace.path(), &person, &db).expect("person.md");
+
+        let dir = person_dir(workspace.path(), &person.name);
+        assert!(dir.join("person.json").exists(), "person.json missing");
+        assert!(dir.join("dashboard.json").exists(), "dashboard.json missing");
+        assert!(dir.join("person.md").exists(), "person.md missing");
+    }
+
+    #[test]
+    fn test_person_md_includes_intelligence() {
+        let db = test_db();
+        let person = sample_person();
+        let _ = db.upsert_person(&person);
+
+        let workspace = tempfile::tempdir().expect("workspace");
+        let dir = person_dir(workspace.path(), &person.name);
+        std::fs::create_dir_all(&dir).expect("create dir");
+
+        // Write a minimal intelligence.json via serde_json (camelCase keys)
+        let intel_json = serde_json::json!({
+            "version": 1,
+            "entityId": person.id,
+            "entityType": "person",
+            "enrichedAt": Utc::now().to_rfc3339(),
+            "executiveAssessment": "Alice is a key technical leader at Acme.",
+        });
+        let intel_str = serde_json::to_string_pretty(&intel_json).expect("serialize");
+        crate::util::atomic_write_str(&dir.join("intelligence.json"), &intel_str)
+            .expect("write intel");
+
+        // Regenerate person.md — it should pick up intelligence
+        write_person_markdown(workspace.path(), &person, &db).expect("regen md");
+
+        let md = std::fs::read_to_string(dir.join("person.md")).expect("read md");
+        assert!(
+            md.contains("Alice is a key technical leader at Acme"),
+            "person.md should include executive assessment from intelligence.json.\nGot:\n{}",
+            md,
+        );
+    }
 }
