@@ -209,6 +209,7 @@ const BOOST_SIGNAL_TYPES: &[&str] = &[
     "escalation",
     "expansion_opportunity",
     "cadence_anomaly",
+    "project_health_warning",
 ];
 
 /// A boost result explaining why an email was elevated.
@@ -260,9 +261,9 @@ pub fn boost_with_entity_context(
             "SELECT signal_type, value, confidence
              FROM signal_events
              WHERE entity_id = ?1 AND entity_type = ?2
-               AND emitted_at >= datetime('now', '-30 days')
+               AND created_at >= datetime('now', '-30 days')
                AND confidence >= 0.6
-             ORDER BY emitted_at DESC
+             ORDER BY created_at DESC
              LIMIT 20",
         ) {
             Ok(s) => s,

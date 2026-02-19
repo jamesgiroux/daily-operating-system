@@ -4611,7 +4611,18 @@ impl ActionDb {
 
     /// Insert or update a person. Idempotent — won't overwrite manually-set fields
     /// unless the incoming data explicitly provides them.
-    pub fn upsert_person(&self, person: &DbPerson) -> Result<(), DbError> {
+    /// Upsert a person record. Returns true if the person was newly inserted (not updated).
+    pub fn upsert_person(&self, person: &DbPerson) -> Result<bool, DbError> {
+        // Check if person exists before upsert to detect new inserts
+        let existed: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM people WHERE id = ?1)",
+                params![person.id],
+                |row| row.get(0),
+            )
+            .unwrap_or(true);
+
         self.conn.execute(
             "INSERT INTO people (
                 id, email, name, organization, role, relationship, notes,
@@ -4652,7 +4663,7 @@ impl ActionDb {
         self.ensure_entity_for_person(person)?;
         // Seed person_emails with the primary email
         self.add_person_email(&person.id, &person.email, true)?;
-        Ok(())
+        Ok(!existed)
     }
 
     /// Mirror a person to the entities table.
