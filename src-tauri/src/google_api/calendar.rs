@@ -54,6 +54,8 @@ struct Attendee {
     #[serde(default)]
     email: String,
     #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
     response_status: Option<String>,
     #[serde(default)]
     resource: Option<bool>,
@@ -84,6 +86,9 @@ pub struct GoogleCalendarEvent {
     /// Key is lowercase email.
     #[serde(default)]
     pub attendee_rsvp: std::collections::HashMap<String, String>,
+    /// Per-attendee display names from Google Calendar (email → display name).
+    #[serde(default)]
+    pub attendee_names: std::collections::HashMap<String, String>,
     pub organizer: String,
     pub description: String,
     pub location: String,
@@ -178,6 +183,15 @@ pub async fn fetch_events(
                 .filter(|a| a.resource != Some(true) && !a.email.is_empty())
                 .collect();
             let attendees: Vec<String> = non_resource.iter().map(|a| a.email.clone()).collect();
+            let attendee_names: std::collections::HashMap<String, String> = non_resource
+                .iter()
+                .filter_map(|a| {
+                    a.display_name
+                        .as_ref()
+                        .filter(|n| !n.is_empty())
+                        .map(|name| (a.email.to_lowercase(), name.clone()))
+                })
+                .collect();
             let attendee_rsvp: std::collections::HashMap<String, String> = non_resource
                 .iter()
                 .filter_map(|a| {
@@ -213,6 +227,7 @@ pub async fn fetch_events(
                 end: end_str,
                 attendees,
                 attendee_rsvp,
+                attendee_names,
                 organizer: item.organizer.map(|o| o.email).unwrap_or_default(),
                 description: item.description.unwrap_or_default(),
                 location: item.location.unwrap_or_default(),
