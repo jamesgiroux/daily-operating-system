@@ -284,6 +284,13 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 8: Generate AI tasks
     let ai_tasks = generate_ai_tasks(&classified, &time_status, &email_result.high);
 
+    // Step 7b: Synthesize email briefing narrative (I322)
+    let email_narrative = synthesize_email_narrative(
+        &replies_needed,
+        &email_result.high,
+        &meeting_contexts,
+    );
+
     // Build lean events (strip attendees)
     let lean_events: Vec<Value> = events
         .iter()
@@ -321,6 +328,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             "low_count": email_result.low_count,
             "sync_error": email_result.sync_error.as_ref().map(EmailSyncFailure::to_json),
             "repliesNeeded": replies_needed,
+            "narrative": email_narrative,
         },
         "files": {
             "existing_today": existing_today,
@@ -1182,6 +1190,90 @@ fn track_thread_positions(
     }
 
     (total, awaiting)
+}
+
+/// I322: Synthesize a 2-4 sentence email briefing narrative from:
+/// - Thread positions (replies_needed from I318)
+/// - High-priority emails
+/// - Meeting contexts with email digests (I317)
+///
+/// Returns None if there's nothing meaningful to say.
+fn synthesize_email_narrative(
+    replies_needed: &[Value],
+    high_priority: &[Value],
+    meeting_contexts: &[Value],
+) -> Option<String> {
+    let mut sentences = Vec::new();
+
+    // Thread position sentence
+    if !replies_needed.is_empty() {
+        let count = replies_needed.len();
+        if count == 1 {
+            let subject = replies_needed[0]
+                .get("subject")
+                .and_then(|v| v.as_str())
+                .unwrap_or("a thread");
+            let from = replies_needed[0]
+                .get("from")
+                .and_then(|v| v.as_str())
+                .unwrap_or("someone");
+            sentences.push(format!("{} replied to \"{}\" — awaiting your response.", from, subject));
+        } else {
+            sentences.push(format!("{} threads are awaiting your reply.", count));
+        }
+    }
+
+    // High-priority count
+    if high_priority.len() > 2 {
+        sentences.push(format!("{} high-priority emails today.", high_priority.len()));
+    } else if high_priority.len() == 1 {
+        let from = high_priority[0]
+            .get("from")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown");
+        let subject = high_priority[0]
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !subject.is_empty() {
+            sentences.push(format!("Priority email from {}: \"{}\".", from, subject));
+        }
+    }
+
+    // Meeting-linked emails
+    let meetings_with_email: Vec<&str> = meeting_contexts
+        .iter()
+        .filter(|mc| {
+            mc.get("pre_meeting_email_context")
+                .and_then(|v| v.as_array())
+                .is_some_and(|a| !a.is_empty())
+        })
+        .filter_map(|mc| {
+            mc.get("title")
+                .or_else(|| mc.get("account"))
+                .and_then(|v| v.as_str())
+        })
+        .collect();
+
+    if !meetings_with_email.is_empty() {
+        if meetings_with_email.len() == 1 {
+            sentences.push(format!(
+                "Email threads connected to your {} meeting.",
+                meetings_with_email[0]
+            ));
+        } else {
+            sentences.push(format!(
+                "Email threads connected to {} of today's meetings.",
+                meetings_with_email.len()
+            ));
+        }
+    }
+
+    if sentences.is_empty() {
+        None
+    } else {
+        Some(sentences.join(" "))
+    }
 }
 
 /// Extract customer domains from classified meetings.
