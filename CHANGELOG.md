@@ -4,6 +4,31 @@ All notable changes to DailyOS are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.10.0] - 2026-02-18
+
+The intelligence release. The system that learns from you. Signals compound, corrections teach, events drive action.
+
+### Added
+
+- **I305: Intelligent meeting-entity resolution** — Bayesian fusion of 5 signal producers (junction table, attendee inference, group patterns, keyword match, embedding similarity) with three-tier confidence thresholds (resolved/flagged/suggestion)
+- **I306: Signal bus foundation** — event log, weighted log-odds Bayesian fusion, temporal decay, email-calendar bridge. 13 modules in `signals/` with ~57 unit tests
+- **I307: Correction learning** — Thompson Sampling with Beta distribution for per-source reliability weights, gated behind 5-sample minimum. User corrections update alpha/beta parameters
+- **I308: Event-driven signal processing** — cross-entity propagation engine with 5 rules (job change, frequency drop, overdue actions, champion sentiment, departure+renewal risk)
+- **I334: Proposed actions triage** — accept/reject flow on Actions page and Daily Briefing. Transcript-sourced actions default to "proposed" status. Auto-archive hygiene for stale proposals
+- **I335: Entity-generic data model** — `meeting_entities` junction table replaces `meetings_history.account_id`. Migration 023 backfills existing data before column drop
+- **I336: Entity-generic classification** — entity hints from DB, 1:1 person detection, multi-type resolution (accounts, projects, people)
+- **I337: Entity-generic context building** — type-dispatched intelligence injection: accounts get dashboard/stakeholders/captures, projects get status/milestones, people get relationship signals/shared entities
+- **I338: 1:1 relationship intelligence** — three-file pattern (dashboard.json, intelligence.json, context.md) for people entities, relationship-specific enrichment prompts
+- **I339: Entity-generic frontend** — "person" as first-class entity type with User icon, larkspur color, `/people` routing. `formatEntityByline()` shows type-specific labels ("Acme - Customer", "Alice - 1:1")
+- **I260: Proactive surfacing** — 8 pure SQL+Rust detectors (renewal gap, relationship drift, email volume spike, meeting load forecast, stale champion, action cluster, prep coverage gap, no-contact accounts) with fingerprint dedup and signal bus integration
+- **I262: The Record** — content_index populated with transcripts and notes as timeline sources for entity intelligence enrichment
+
+### Fixed
+
+- Migration 023 blocked by foreign key constraints from captures/quill_sync_state tables — added `PRAGMA foreign_keys = OFF`
+- Migration 023 dropped unique index on `calendar_event_id` during table recreation — now recreated
+- Stale `account_id` column reference in `meeting_context.rs` inline SQL query after migration 023 dropped the column — updated to use `meeting_entities` junction table
+
 ## [0.9.1] - 2026-02-18
 
 Hotfix for MCP integrations failing when app is launched from Finder/Applications.
