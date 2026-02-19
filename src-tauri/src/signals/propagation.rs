@@ -89,6 +89,9 @@ impl PropagationEngine {
             }
         }
 
+        // I353 Phase 2: Evaluate signal-driven hygiene actions
+        super::rules::evaluate_hygiene_actions(source_signal, db);
+
         Ok(derived_ids)
     }
 }
