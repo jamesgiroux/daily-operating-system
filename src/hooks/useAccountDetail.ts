@@ -275,15 +275,13 @@ export function useAccountDetail(accountId: string | undefined) {
         arrImpact: newArrImpact ? parseFloat(newArrImpact) : null,
         notes: newEventNotes || null,
       });
-      const updated = await invoke<AccountEvent[]>("get_account_events", {
-        accountId: detail.id,
-      });
-      setEvents(updated);
       setShowEventForm(false);
       setNewEventType("renewal");
       setNewEventDate("");
       setNewArrImpact("");
       setNewEventNotes("");
+      // Reload full detail so archived state updates (e.g. churn auto-archives)
+      await load();
     } catch (err) {
       setError(String(err));
     }
