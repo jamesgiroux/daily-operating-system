@@ -100,6 +100,9 @@ pub struct DbAccount {
     /// UTC timestamp when keywords were last extracted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords_extracted_at: Option<String>,
+    /// JSON metadata for preset-driven custom fields (I311).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
 }
 
 /// A row from `account_team`.
@@ -351,6 +354,9 @@ pub struct DbProject {
     /// UTC timestamp when keywords were last extracted.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keywords_extracted_at: Option<String>,
+    /// JSON metadata for preset-driven custom fields (I311).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<String>,
 }
 
 /// Activity signals for a project (parallel to StakeholderSignals).
@@ -1494,7 +1500,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE id = ?1",
         )?;
@@ -1512,7 +1518,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE LOWER(name) = LOWER(?1)",
         )?;
@@ -1530,7 +1536,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1542,7 +1548,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id IS NULL AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -1554,10 +1560,53 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE parent_id = ?1 AND archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map(params![parent_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Walk the parent_id chain to get all ancestors (I316: n-level nesting).
+    pub fn get_account_ancestors(&self, account_id: &str) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE ancestors(id) AS (
+                SELECT parent_id FROM accounts WHERE id = ?1
+                UNION ALL
+                SELECT a.parent_id FROM accounts a JOIN ancestors anc ON a.id = anc.id
+                WHERE a.parent_id IS NOT NULL
+            )
+            SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
+                   nps, tracker_path, parent_id, is_internal, updated_at, archived,
+                   keywords, keywords_extracted_at, metadata
+            FROM accounts
+            WHERE id IN (SELECT id FROM ancestors WHERE id IS NOT NULL)
+            ORDER BY id",
+        )?;
+        let rows = stmt.query_map(params![account_id], Self::map_account_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Get all descendants using recursive CTE with depth limit (I316: n-level nesting).
+    pub fn get_descendant_accounts(&self, ancestor_id: &str) -> Result<Vec<DbAccount>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "WITH RECURSIVE descendants(id, depth) AS (
+                SELECT id, 1 FROM accounts WHERE parent_id = ?1
+                UNION ALL
+                SELECT a.id, d.depth + 1 FROM accounts a
+                JOIN descendants d ON a.parent_id = d.id
+                WHERE d.depth < 10
+            )
+            SELECT acc.id, acc.name, acc.lifecycle, acc.arr, acc.health,
+                   acc.contract_start, acc.contract_end, acc.nps, acc.tracker_path,
+                   acc.parent_id, acc.is_internal, acc.updated_at, acc.archived,
+                   acc.keywords, acc.keywords_extracted_at, acc.metadata
+            FROM accounts acc
+            JOIN descendants d ON acc.id = d.id
+            WHERE acc.archived = 0
+            ORDER BY acc.name",
+        )?;
+        let rows = stmt.query_map(params![ancestor_id], Self::map_account_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
@@ -1597,7 +1646,7 @@ impl ActionDb {
         let query = if include_archived {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -1605,7 +1654,7 @@ impl ActionDb {
         } else {
             "SELECT a.id, a.name, a.lifecycle, a.arr, a.health, a.contract_start,
                     a.contract_end, a.nps, a.tracker_path, a.parent_id, a.is_internal,
-                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at,
+                    a.updated_at, a.archived, a.keywords, a.keywords_extracted_at, a.metadata,
                     ad.domain
              FROM accounts a
              LEFT JOIN account_domains ad ON a.id = ad.account_id
@@ -1621,7 +1670,7 @@ impl ActionDb {
 
         while let Some(row) = rows.next()? {
             let account_id: String = row.get(0)?;
-            let domain: Option<String> = row.get(15)?;
+            let domain: Option<String> = row.get(16)?;
 
             if current_id.as_deref() != Some(&account_id) {
                 // New account — push a new entry
@@ -1641,6 +1690,7 @@ impl ActionDb {
                     archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
                     keywords: row.get(13).unwrap_or(None),
                     keywords_extracted_at: row.get(14).unwrap_or(None),
+                    metadata: row.get(15).unwrap_or(None),
                 };
                 let domains = domain.into_iter().collect();
                 result.push((account, domains));
@@ -1695,7 +1745,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE is_internal = 1 AND parent_id IS NULL AND archived = 0
              ORDER BY updated_at DESC
@@ -1713,7 +1763,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE is_internal = 1 AND archived = 0
              ORDER BY name",
@@ -2013,6 +2063,49 @@ impl ActionDb {
     }
 
     // =========================================================================
+    // Entity Metadata (I311)
+    // =========================================================================
+
+    /// Update JSON metadata for an entity (account or project).
+    pub fn update_entity_metadata(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+        metadata_json: &str,
+    ) -> Result<(), String> {
+        let table = match entity_type {
+            "account" => "accounts",
+            "project" => "projects",
+            _ => return Err(format!("Invalid entity type for metadata: {}", entity_type)),
+        };
+        let sql = format!("UPDATE {} SET metadata = ?1 WHERE id = ?2", table);
+        self.conn
+            .execute(&sql, params![metadata_json, entity_id])
+            .map_err(|e| format!("Failed to update metadata: {}", e))?;
+        Ok(())
+    }
+
+    /// Get JSON metadata for an entity (account or project).
+    pub fn get_entity_metadata(
+        &self,
+        entity_type: &str,
+        entity_id: &str,
+    ) -> Result<String, String> {
+        let table = match entity_type {
+            "account" => "accounts",
+            "project" => "projects",
+            _ => return Err(format!("Invalid entity type for metadata: {}", entity_type)),
+        };
+        let sql = format!(
+            "SELECT COALESCE(metadata, '{{}}') FROM {} WHERE id = ?1",
+            table
+        );
+        self.conn
+            .query_row(&sql, params![entity_id], |row| row.get(0))
+            .map_err(|e| format!("Failed to get metadata: {}", e))
+    }
+
+    // =========================================================================
     // Content Index (I124)
     // =========================================================================
 
@@ -2273,6 +2366,7 @@ impl ActionDb {
             archived: row.get::<_, i32>(8).unwrap_or(0) != 0,
             keywords: row.get(9).unwrap_or(None),
             keywords_extracted_at: row.get(10).unwrap_or(None),
+            metadata: row.get(11).unwrap_or(None),
         })
     }
 
@@ -2326,7 +2420,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], Self::map_project_row)?;
@@ -2341,7 +2435,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE LOWER(name) = LOWER(?1)",
         )?;
         let mut rows = stmt.query_map(params![name], Self::map_project_row)?;
@@ -2356,7 +2450,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
                     tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 0 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -4324,7 +4418,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE contract_end IS NOT NULL
                AND contract_end >= date('now')
@@ -4345,7 +4439,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts
              WHERE updated_at <= datetime('now', ?1 || ' days')
              ORDER BY updated_at ASC",
@@ -4979,6 +5073,7 @@ impl ActionDb {
             archived: row.get::<_, i32>(12).unwrap_or(0) != 0,
             keywords: row.get(13).unwrap_or(None),
             keywords_extracted_at: row.get(14).unwrap_or(None),
+            metadata: row.get(15).unwrap_or(None),
         })
     }
 
@@ -5344,7 +5439,7 @@ impl ActionDb {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, lifecycle, arr, health, contract_start, contract_end,
                     nps, tracker_path, parent_id, is_internal, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM accounts WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_account_row)?;
@@ -5355,7 +5450,7 @@ impl ActionDb {
     pub fn get_archived_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date, tracker_path, updated_at, archived,
-                    keywords, keywords_extracted_at
+                    keywords, keywords_extracted_at, metadata
              FROM projects WHERE archived = 1 ORDER BY name",
         )?;
         let rows = stmt.query_map([], Self::map_project_row)?;
@@ -5822,6 +5917,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_account(&account).expect("upsert account");
@@ -5862,6 +5958,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         let archived = DbAccount {
@@ -5880,6 +5977,7 @@ mod tests {
             archived: true,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_account(&active).expect("upsert active");
@@ -6284,6 +6382,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert");
 
@@ -6311,6 +6410,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
             tracker_path: None,
             parent_id: None,
             is_internal: false,
@@ -6411,6 +6511,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         // upsert_account now calls ensure_entity_for_account automatically
@@ -6613,6 +6714,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&soon).expect("insert");
 
@@ -6633,6 +6735,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&no_end).expect("insert");
 
@@ -6653,6 +6756,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&expired).expect("insert");
 
@@ -6682,6 +6786,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&stale).expect("insert");
 
@@ -6702,6 +6807,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&fresh).expect("insert");
 
@@ -6812,6 +6918,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("insert account");
 
@@ -7159,6 +7266,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
 
@@ -7394,6 +7502,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&remove.id, "acme", "associated")
@@ -7533,6 +7642,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.link_person_to_entity(&person.id, "doom-corp", "associated")
@@ -7587,6 +7697,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7614,6 +7725,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7644,6 +7756,7 @@ mod tests {
                 archived: false,
                 keywords: None,
                 keywords_extracted_at: None,
+                metadata: None,
             };
             db.upsert_project(&project).expect("upsert");
         }
@@ -7670,6 +7783,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7697,6 +7811,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7721,6 +7836,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
 
         db.upsert_project(&project).expect("upsert");
@@ -7747,6 +7863,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert");
 
@@ -7803,6 +7920,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -7899,6 +8017,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_project(&project).expect("upsert project");
 
@@ -8535,6 +8654,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         };
         db.upsert_account(&account).expect("upsert account");
         db.ensure_entity_for_account(&account)
@@ -8773,6 +8893,7 @@ mod tests {
             archived: false,
             keywords: None,
             keywords_extracted_at: None,
+            metadata: None,
         }
     }
 

@@ -8,6 +8,7 @@ export type ProfileType = "customer-success" | "general";
 export type EntityMode = "account" | "project" | "both";
 export type SettingsTabId =
   | "profile"
+  | "role"
   | "integrations"
   | "workflows"
   | "intelligence"
