@@ -70,6 +70,9 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
     let entity_hints = build_entity_hints_from_state(state);
 
+    // Save attendee display names for hygiene name resolution (I342)
+    save_attendee_display_names(&raw_events, state);
+
     // Classify and convert (I171 + I336: multi-domain, entity-generic)
     let events: Vec<CalendarEvent> = raw_events
         .iter()
@@ -91,6 +94,49 @@ fn build_entity_hints_from_state(state: &AppState) -> Vec<google_api::classify::
         }
     }
     Vec::new()
+}
+
+/// Save attendee display names from raw Google Calendar events into the DB
+/// for hygiene name resolution. Upserts into `attendee_display_names`.
+fn save_attendee_display_names(
+    raw_events: &[google_api::calendar::GoogleCalendarEvent],
+    state: &AppState,
+) {
+    let db_guard = match state.db.lock().ok() {
+        Some(g) => g,
+        None => return,
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return,
+    };
+
+    let mut saved = 0;
+    for event in raw_events {
+        for (email, name) in &event.attendee_names {
+            // Only store names that look like real display names (contain a space, no @)
+            if !name.contains(' ') || name.contains('@') {
+                continue;
+            }
+            if db
+                .conn_ref()
+                .execute(
+                    "INSERT INTO attendee_display_names (email, display_name, last_seen)
+                     VALUES (?1, ?2, datetime('now'))
+                     ON CONFLICT(email) DO UPDATE SET
+                         display_name = excluded.display_name,
+                         last_seen = excluded.last_seen",
+                    rusqlite::params![email, name],
+                )
+                .is_ok()
+            {
+                saved += 1;
+            }
+        }
+    }
+    if saved > 0 {
+        log::debug!("Calendar sync: saved {} attendee display names", saved);
+    }
 }
 
 /// Calendar polling errors
