@@ -71,5 +71,9 @@
       "board_meeting_within_14d"
     ]
   },
-  "briefingEmphasis": "Focus on cross-team risks, key decisions requiring attention, and strategic initiative progress. Surface blocked work and escalations that need executive intervention."
+  "briefingEmphasis": "Focus on cross-team risks, key decisions requiring attention, and strategic initiative progress. Surface blocked work and escalations that need executive intervention.",
+  "emailPriorityKeywords": [
+    "board", "investor", "fundraise", "runway", "headcount", "reorg", "strategy", "all hands",
+    "executive", "quarterly"
+  ]
 }

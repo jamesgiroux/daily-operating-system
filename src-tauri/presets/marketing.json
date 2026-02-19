@@ -69,5 +69,9 @@
       "stakeholder_review_pending"
     ]
   },
-  "briefingEmphasis": "Focus on upcoming launch dates, content pipeline status, and cross-functional dependencies. Prioritize campaigns approaching deadlines with unresolved blockers."
+  "briefingEmphasis": "Focus on upcoming launch dates, content pipeline status, and cross-functional dependencies. Prioritize campaigns approaching deadlines with unresolved blockers.",
+  "emailPriorityKeywords": [
+    "campaign", "launch", "press release", "media", "analyst", "briefing", "webinar", "event",
+    "sponsorship", "brand", "coverage"
+  ]
 }

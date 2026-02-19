@@ -23,6 +23,7 @@ pub const PERSONAL_EMAIL_DOMAINS: &[&str] = &[
 
 /// High-priority email subject keywords.
 pub const HIGH_PRIORITY_SUBJECT_KEYWORDS: &[&str] = &[
+    // Urgency signals
     "urgent",
     "asap",
     "action required",
@@ -30,6 +31,23 @@ pub const HIGH_PRIORITY_SUBJECT_KEYWORDS: &[&str] = &[
     "deadline",
     "escalation",
     "critical",
+    // Business/revenue signals — renewals, contracts, commercial activity
+    "renewal",
+    "order form",
+    "contract",
+    "proposal",
+    "invoice",
+    "expansion",
+    "churn",
+    "cancellation",
+    "cancel",
+    "sow",
+    "msa",
+    "amendment",
+    "pricing",
+    "budget",
+    "signature required",
+    "docusign",
 ];
 
 /// Low-priority signals in from/subject fields.
