@@ -309,6 +309,8 @@ pub fn default_features_for_mode(profile: &str, entity_mode: &str) -> HashMap<St
     features.insert("accountTracking".to_string(), is_cs && accounts_on);
     features.insert("projectTracking".to_string(), projects_on);
     features.insert("impactRollup".to_string(), is_cs && accounts_on);
+    // I323: auto-archive low-priority emails
+    features.insert("autoArchiveEnabled".to_string(), false);
     features
 }
 
@@ -684,7 +686,7 @@ pub struct Meeting {
 }
 
 /// An entity linked to a meeting via the junction table.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkedEntity {
     pub id: String,
@@ -884,12 +886,17 @@ pub struct WeekDay {
 pub struct WeekMeeting {
     pub time: String,
     pub title: String,
+    /// Deprecated: use linked_entities instead. Kept for backward compat.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub account: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meeting_id: Option<String>,
     #[serde(rename = "type")]
     pub meeting_type: MeetingType,
     pub prep_status: PrepStatus,
+    /// Entities linked via M2M junction table or entity resolution (I339)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_entities: Option<Vec<LinkedEntity>>,
 }
 
 /// Prep status for week view
