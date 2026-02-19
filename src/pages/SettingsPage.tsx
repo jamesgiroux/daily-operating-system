@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Play,
   ToggleRight,
+  Briefcase,
 } from "lucide-react";
 import type {
   PostMeetingCaptureConfig,
@@ -82,6 +83,7 @@ function parseSettingsTab(value: unknown): SettingsTabId {
     value === "integrations" ||
     value === "workflows" ||
     value === "intelligence" ||
+    value === "role" ||
     value === "hygiene" ||
     value === "diagnostics"
   ) {
@@ -193,6 +195,7 @@ const styles = {
 
 const CHAPTER_DEFS = [
   { id: "settings-profile", label: "Profile", icon: <User size={18} strokeWidth={1.5} /> },
+  { id: "settings-role", label: "Your Role", icon: <Briefcase size={18} strokeWidth={1.5} /> },
   { id: "settings-integrations", label: "Integrations", icon: <Globe size={18} strokeWidth={1.5} /> },
   { id: "settings-workflows", label: "Workflows", icon: <Play size={18} strokeWidth={1.5} /> },
   { id: "settings-intelligence", label: "Intelligence", icon: <Cpu size={18} strokeWidth={1.5} /> },
@@ -351,7 +354,13 @@ export default function SettingsPage() {
         <PersonalityCard />
       </section>
 
-      {/* ═══ CHAPTER 2: INTEGRATIONS ═══ */}
+      {/* ═══ CHAPTER 2: YOUR ROLE ═══ */}
+      <section id="settings-role" style={styles.sectionGap}>
+        <ChapterHeading title="Your Role" epigraph="Choose how DailyOS understands your work. This shapes vitals, vocabulary, and AI emphasis." />
+        <RoleSelectionCard />
+      </section>
+
+      {/* ═══ CHAPTER 3: INTEGRATIONS ═══ */}
       <section id="settings-integrations" style={styles.sectionGap}>
         <ChapterHeading title="Integrations" epigraph="External services that feed your intelligence layer." />
         <GoogleAccountCard />
@@ -2788,6 +2797,124 @@ function ScheduleRow({
           <Play size={16} />
         )}
       </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RoleSelectionCard (I314)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function RoleSelectionCard() {
+  const [presets, setPresets] = useState<[string, string, string][]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    invoke<[string, string, string][]>("get_available_presets")
+      .then(setPresets)
+      .catch(() => setPresets([]));
+    invoke<{ id: string } | null>("get_active_preset")
+      .then((p) => setActiveId(p?.id ?? null))
+      .catch(() => setActiveId(null));
+  }, []);
+
+  async function handleSelect(presetId: string) {
+    if (presetId === activeId || saving) return;
+    setSaving(true);
+    try {
+      await invoke("set_role", { role: presetId });
+      setActiveId(presetId);
+      toast.success("Role updated -- reloading...");
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : "Failed to set role");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <p style={styles.subsectionLabel}>Role Presets</p>
+      <p style={{ ...styles.description, marginBottom: 16 }}>
+        Select your role to tailor vitals, vocabulary, and AI emphasis across DailyOS.
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 12,
+        }}
+      >
+        {presets.map(([id, name, description]) => {
+          const isActive = id === activeId;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => handleSelect(id)}
+              disabled={saving}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                padding: 16,
+                textAlign: "left" as const,
+                background: "none",
+                border: isActive
+                  ? "2px solid var(--color-spice-turmeric)"
+                  : "1px solid var(--color-rule-light)",
+                borderRadius: 6,
+                cursor: saving && !isActive ? "default" : "pointer",
+                opacity: saving && !isActive ? 0.5 : 1,
+                transition: "all 0.15s ease",
+                position: "relative" as const,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: "var(--color-text-primary)",
+                  }}
+                >
+                  {name}
+                </span>
+                {isActive && (
+                  <Check
+                    size={14}
+                    style={{ color: "var(--color-spice-turmeric)", flexShrink: 0 }}
+                  />
+                )}
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 12,
+                  color: "var(--color-text-tertiary)",
+                  lineHeight: 1.4,
+                }}
+              >
+                {description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {activeId && (
+        <p
+          style={{
+            ...styles.monoLabel,
+            marginTop: 12,
+            color: "var(--color-spice-turmeric)",
+          }}
+        >
+          Active: {presets.find(([id]) => id === activeId)?.[1] ?? activeId}
+        </p>
+      )}
     </div>
   );
 }
