@@ -94,7 +94,13 @@ export function LifecycleEventDrawer({
               <option value="renewal">Renewal</option>
               <option value="expansion">Expansion</option>
               <option value="churn">Churn</option>
-              <option value="downgrade">Downgrade</option>
+              <option value="downsell">Downsell</option>
+              <option value="escalation">Escalation</option>
+              <option value="champion_change">Champion Change</option>
+              <option value="go_live">Go-Live</option>
+              <option value="qbr_completed">QBR Completed</option>
+              <option value="ebr_completed">EBR Completed</option>
+              <option value="onboarding_complete">Onboarding Complete</option>
             </select>
           </div>
 

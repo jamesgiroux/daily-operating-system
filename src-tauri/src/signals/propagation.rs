@@ -102,6 +102,7 @@ pub fn default_engine() -> PropagationEngine {
     engine.register("rule_overdue_actions", super::rules::rule_overdue_actions);
     engine.register("rule_champion_sentiment", super::rules::rule_champion_sentiment);
     engine.register("rule_departure_renewal", super::rules::rule_departure_renewal);
+    engine.register("rule_renewal_engagement_compound", super::rules::rule_renewal_engagement_compound);
 
     engine
 }
