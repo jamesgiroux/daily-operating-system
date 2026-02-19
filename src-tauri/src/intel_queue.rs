@@ -15,7 +15,7 @@ use chrono::Utc;
 use tauri::{AppHandle, Emitter};
 
 use crate::entity_intel::{
-    build_intelligence_context, build_intelligence_prompt, parse_intelligence_response,
+    build_intelligence_context, build_intelligence_prompt_with_preset, parse_intelligence_response,
     read_intelligence_json, write_intelligence_json, IntelligenceJson, SourceManifestEntry,
 };
 use crate::pty::{ModelTier, PtyManager};
@@ -499,10 +499,9 @@ pub fn gather_enrichment_input(
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing
     let relationship = person.as_ref().map(|p| p.relationship.as_str());
-    // Read vocabulary from active preset for domain-specific prompt language (I313)
+    // Read active preset for domain-specific prompt language (I313)
     let preset_guard = state.active_preset.read().map_err(|_| "Preset lock poisoned")?;
-    let vocabulary = preset_guard.as_ref().map(|p| &p.vocabulary);
-    let prompt = build_intelligence_prompt(&entity_name, &request.entity_type, &ctx, relationship, vocabulary);
+    let prompt = build_intelligence_prompt_with_preset(&entity_name, &request.entity_type, &ctx, relationship, preset_guard.as_ref());
 
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
