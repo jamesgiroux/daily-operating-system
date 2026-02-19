@@ -226,11 +226,15 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
     let total = attendees.len() as f64;
     let mut entity_votes: HashMap<(String, EntityType), usize> = HashMap::new();
 
+    // I338: Track person matches for 1:1 detection
+    let mut person_matches: Vec<(String, String)> = Vec::new(); // (person_id, email)
+
     for email in &attendees {
         let person = match db.get_person_by_email_or_alias(email) {
             Ok(Some(p)) => p,
             _ => continue,
         };
+        person_matches.push((person.id.clone(), email.clone()));
         if let Ok(entities) = db.get_entities_for_person(&person.id) {
             for entity in entities {
                 *entity_votes
@@ -238,6 +242,18 @@ fn signal_attendee_inference(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSi
                     .or_insert(0) += 1;
             }
         }
+    }
+
+    // I338: For 1:1 meetings (2 attendees), emit a person signal for the matched person
+    if attendees.len() == 2 && person_matches.len() == 1 {
+        let (person_id, _) = &person_matches[0];
+        entity_votes
+            .entry((person_id.clone(), EntityType::Person))
+            .or_insert(0);
+        // Give the person a direct vote so it gets a meaningful confidence
+        *entity_votes
+            .entry((person_id.clone(), EntityType::Person))
+            .or_insert(0) += 1;
     }
 
     entity_votes
@@ -390,6 +406,48 @@ fn signal_keyword_match(db: &ActionDb, meeting: &Value) -> Vec<ResolutionSignal>
         }
     }
 
+    // I338: Check people by name in meeting title/description
+    if let Ok(people) = db.get_people(None) {
+        for person in &people {
+            if person.archived {
+                continue;
+            }
+            let name_normalized = normalize_key(&person.name);
+            if name_normalized.len() < 3 {
+                continue;
+            }
+            if search_normalized.contains(&name_normalized) {
+                signals.push(ResolutionSignal {
+                    entity_id: person.id.clone(),
+                    entity_type: EntityType::Person,
+                    confidence: 0.80,
+                    source: "keyword".to_string(),
+                });
+                exact_matched_ids.insert(person.id.clone());
+                continue;
+            }
+        }
+
+        // Fuzzy pass for people not already matched
+        for person in &people {
+            if person.archived || exact_matched_ids.contains(&person.id) {
+                continue;
+            }
+            let name_lower = person.name.to_lowercase();
+            if name_lower.len() < 3 {
+                continue;
+            }
+            if fuzzy_matches_tokens(&name_lower, &tokens) {
+                signals.push(ResolutionSignal {
+                    entity_id: person.id.clone(),
+                    entity_type: EntityType::Person,
+                    confidence: 0.55,
+                    source: "keyword_fuzzy".to_string(),
+                });
+            }
+        }
+    }
+
     signals
 }
 
@@ -455,6 +513,27 @@ fn signal_embedding_similarity(
                     signals.push(ResolutionSignal {
                         entity_id: project.id.clone(),
                         entity_type: EntityType::Project,
+                        confidence: 0.4 + 0.4 * sim as f64,
+                        source: "embedding".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    // I338: Compare against person names
+    if let Ok(people) = db.get_people(None) {
+        for person in &people {
+            if person.archived {
+                continue;
+            }
+            let doc_text = format!("{}{}", crate::embeddings::DOCUMENT_PREFIX, person.name);
+            if let Ok(entity_emb) = model.embed(&doc_text) {
+                let sim = crate::embeddings::cosine_similarity(&title_embedding, &entity_emb);
+                if sim > 0.75 {
+                    signals.push(ResolutionSignal {
+                        entity_id: person.id.clone(),
+                        entity_type: EntityType::Person,
                         confidence: 0.4 + 0.4 * sim as f64,
                         source: "embedding".to_string(),
                     });
