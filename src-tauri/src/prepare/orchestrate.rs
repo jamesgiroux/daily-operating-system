@@ -110,7 +110,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .ok()
         .and_then(|guard| guard.as_ref().map(|p| p.email_priority_keywords.clone()))
         .unwrap_or_default();
-    let email_result =
+    let mut email_result =
         fetch_and_classify_emails(&primary_user_domain, &customer_domains, &account_hints, &preset_email_keywords).await;
     if let Some(ref sync_error) = email_result.sync_error {
         log::warn!(
@@ -126,6 +126,45 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         email_result.medium_count,
         email_result.low_count,
     );
+
+    // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
+    {
+        let boost_guard = state.db.lock().ok();
+        if let Some(db) = boost_guard.as_ref().and_then(|g| g.as_ref()) {
+            let mut boosted_count = 0u32;
+            let mut new_high = Vec::new();
+            let mut new_all = Vec::new();
+
+            for email_val in &email_result.all {
+                let priority = email_val.get("priority").and_then(|v| v.as_str()).unwrap_or("medium");
+                let from_email = email_val.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+
+                if let Some(boost) = email_classify::boost_with_entity_context(from_email, priority, db) {
+                    // Clone and update priority
+                    let mut boosted = email_val.clone();
+                    if let Some(obj) = boosted.as_object_mut() {
+                        obj.insert("priority".to_string(), json!("high"));
+                        obj.insert("boost_reason".to_string(), json!(boost.reason));
+                    }
+                    new_high.push(boosted.clone());
+                    new_all.push(boosted);
+                    boosted_count += 1;
+                } else {
+                    new_all.push(email_val.clone());
+                    if priority == "high" {
+                        new_high.push(email_val.clone());
+                    }
+                }
+            }
+
+            if boosted_count > 0 {
+                email_result.all = new_all;
+                email_result.high = new_high;
+                email_result.medium_count = email_result.medium_count.saturating_sub(boosted_count as u64);
+                log::info!("prepare_today: boosted {} medium emails to high via entity signals", boosted_count);
+            }
+        }
+    }
 
     // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
     {
