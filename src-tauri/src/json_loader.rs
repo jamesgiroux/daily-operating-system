@@ -810,6 +810,27 @@ pub struct DirectiveMeetingContext {
     pub account: Option<String>,
     #[serde(default)]
     pub account_data: Option<serde_json::Value>,
+    /// I337: Resolved entity ID (account, project, or person).
+    #[serde(default)]
+    pub entity_id: Option<String>,
+    /// I337: Resolved entity type ("account", "project", "person").
+    #[serde(default)]
+    pub entity_type: Option<String>,
+    /// I337: Structured primary entity data.
+    #[serde(default)]
+    pub primary_entity: Option<serde_json::Value>,
+    /// I337: Project-specific data when entity is a project.
+    #[serde(default)]
+    pub project_data: Option<serde_json::Value>,
+    /// I337: Person-specific data when entity is a person.
+    #[serde(default)]
+    pub person_data: Option<serde_json::Value>,
+    /// I337: Relationship signals when entity is a person.
+    #[serde(default)]
+    pub relationship_signals: Option<serde_json::Value>,
+    /// I337: Shared entities (accounts/projects) when entity is a person.
+    #[serde(default)]
+    pub shared_entities: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub attendees: Option<Vec<serde_json::Value>>,
     #[serde(default)]

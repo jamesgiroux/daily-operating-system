@@ -1,17 +1,35 @@
 //! Rich meeting context gathering (ported from ops/meeting_prep.py).
 //!
 //! Builds context bundles for each meeting that needs prep:
+//! - Entity-generic context assembly (I337: accounts, projects, people)
 //! - Account dashboard data
 //! - Recent meeting history (SQLite)
 //! - Recent captures (wins/risks from post-meeting, I33)
-//! - Open actions for account
-//! - File references (account tracker, summaries, archive)
+//! - Open actions for entity
+//! - File references (entity tracker, summaries, archive)
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::{json, Value};
+
+// ---------------------------------------------------------------------------
+// Entity context match (I337)
+// ---------------------------------------------------------------------------
+
+/// Resolved entity for context assembly (I337).
+///
+/// Produced by `resolve_primary_entity()`, consumed by type-specific
+/// context gathering functions (`gather_account_context`, etc.).
+struct EntityContextMatch {
+    entity_id: String,
+    entity_type: crate::entity::EntityType,
+    name: String,
+    workspace_path: PathBuf,
+    confidence: f64,
+    source: String,
+}
 
 /// Build rich context for all meetings that need prep.
 ///
@@ -33,7 +51,421 @@ pub fn gather_all_meeting_contexts(
     contexts
 }
 
+// ---------------------------------------------------------------------------
+// Primary entity resolution (I337)
+// ---------------------------------------------------------------------------
+
+/// Resolve the primary entity for a meeting by merging I336 classification
+/// entities with the entity resolver's signal cascade.
+///
+/// Returns the highest-confidence entity above threshold (0.60).
+fn resolve_primary_entity(
+    db: Option<&crate::db::ActionDb>,
+    event_id: &str,
+    meeting: &Value,
+    workspace: &Path,
+    embedding_model: Option<&crate::embeddings::EmbeddingModel>,
+) -> Option<EntityContextMatch> {
+    use crate::entity::EntityType;
+    use super::entity_resolver::{resolve_meeting_entities, ResolutionOutcome};
+
+    let db = db?;
+    let accounts_dir = workspace.join("Accounts");
+
+    // 1. Entity resolver signals (junction, attendee, keyword, embedding)
+    let resolver_outcomes = resolve_meeting_entities(
+        db, event_id, meeting, &accounts_dir, embedding_model,
+    );
+
+    // 2. I336 classification entities from meeting JSON
+    let classification_entities: Vec<(String, EntityType, f64, String)> = meeting
+        .get("entities")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    let id = e.get("entity_id").and_then(|v| v.as_str())?;
+                    let etype = e
+                        .get("entity_type")
+                        .and_then(|v| v.as_str())
+                        .map(EntityType::from_str_lossy)
+                        .unwrap_or(EntityType::Other);
+                    let conf = e.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    let source = e
+                        .get("source")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("classification")
+                        .to_string();
+                    Some((id.to_string(), etype, conf, source))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 3. Build merged candidates: (entity_id, entity_type) -> (confidence, source, name)
+    let mut candidates: HashMap<(String, EntityType), (f64, String, String)> = HashMap::new();
+
+    // Insert resolver outcomes
+    for outcome in &resolver_outcomes {
+        let entity = match outcome {
+            ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => e,
+            _ => continue,
+        };
+        let name = db
+            .get_entity(&entity.entity_id)
+            .ok()
+            .flatten()
+            .map(|e| e.name)
+            .or_else(|| {
+                match entity.entity_type {
+                    EntityType::Account => db
+                        .get_account(&entity.entity_id)
+                        .ok()
+                        .flatten()
+                        .map(|a| a.name),
+                    EntityType::Project => db
+                        .get_project(&entity.entity_id)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.name),
+                    EntityType::Person => db
+                        .get_person(&entity.entity_id)
+                        .ok()
+                        .flatten()
+                        .map(|p| p.name),
+                    _ => None,
+                }
+            })
+            .unwrap_or_default();
+        candidates.insert(
+            (entity.entity_id.clone(), entity.entity_type),
+            (entity.confidence, entity.source.clone(), name),
+        );
+    }
+
+    // Merge classification entities (take higher confidence)
+    for (id, etype, conf, source) in &classification_entities {
+        let key = (id.clone(), *etype);
+        match candidates.get(&key) {
+            Some((existing_conf, _, _)) if *existing_conf >= *conf => {}
+            _ => {
+                let name = db
+                    .get_entity(id)
+                    .ok()
+                    .flatten()
+                    .map(|e| e.name)
+                    .or_else(|| match etype {
+                        EntityType::Account => db.get_account(id).ok().flatten().map(|a| a.name),
+                        EntityType::Project => db.get_project(id).ok().flatten().map(|p| p.name),
+                        EntityType::Person => db.get_person(id).ok().flatten().map(|p| p.name),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                candidates.insert(key, (*conf, source.clone(), name));
+            }
+        }
+    }
+
+    // 4. Select highest-confidence candidate above threshold (0.60)
+    let best = candidates
+        .into_iter()
+        .filter(|(_, (conf, _, _))| *conf >= 0.60)
+        .max_by(|a, b| {
+            a.1 .0
+                .partial_cmp(&b.1 .0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+
+    let ((entity_id, entity_type), (confidence, source, name)) = best;
+    if name.is_empty() {
+        return None;
+    }
+
+    // 5. Resolve workspace_path by entity type
+    let workspace_path = match entity_type {
+        EntityType::Account => {
+            if let Ok(Some(acct)) = db.get_account(&entity_id) {
+                crate::accounts::resolve_account_dir(workspace, &acct)
+            } else {
+                // Fallback: try finding by name in Accounts dir
+                let accounts_dir = workspace.join("Accounts");
+                find_account_dir_by_name(&name, &accounts_dir)
+                    .map(|m| accounts_dir.join(&m.relative_path))
+                    .unwrap_or_else(|| accounts_dir.join(&name))
+            }
+        }
+        EntityType::Project => crate::projects::project_dir(workspace, &name),
+        EntityType::Person => crate::entity_io::entity_dir(workspace, "People", &name),
+        _ => return None,
+    };
+
+    Some(EntityContextMatch {
+        entity_id,
+        entity_type,
+        name,
+        workspace_path,
+        confidence,
+        source,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Type-specific context assembly (I337)
+// ---------------------------------------------------------------------------
+
+/// Gather account-specific context into the meeting context JSON.
+///
+/// Extracted from the inline code in the former `gather_meeting_context()` match arms.
+fn gather_account_context(
+    db: &crate::db::ActionDb,
+    _workspace: &Path,
+    entity_match: &EntityContextMatch,
+    ctx: &mut Value,
+) {
+    let account_path = &entity_match.workspace_path;
+
+    // Backward compat: set ctx["account"] for deliver.rs
+    ctx["account"] = json!(&entity_match.name);
+
+    // File references
+    if let Some(dashboard) = find_file_in_dir(account_path, "dashboard.md") {
+        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
+        if let Some(data) = parse_dashboard(&dashboard) {
+            ctx["account_data"] = data;
+        }
+    }
+    if let Some(stakeholders) = find_file_in_dir(account_path, "stakeholders.md") {
+        ctx["refs"]["stakeholder_map"] = json!(stakeholders.to_string_lossy());
+    }
+    if let Some(actions_file) = find_file_in_dir(account_path, "actions.md") {
+        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
+    }
+
+    // Archive summaries
+    let archive_dir = account_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|ws| ws.join("_archive"))
+        .unwrap_or_default();
+    if archive_dir.is_dir() {
+        let recent = find_recent_summaries(&entity_match.name, &archive_dir, 2);
+        if !recent.is_empty() {
+            ctx["refs"]["meeting_history"] = json!(recent
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // SQLite enrichment
+    ctx["recent_captures"] = get_captures_for_account(db, &entity_match.name, 14);
+    ctx["open_actions"] = get_account_actions(db, &entity_match.name);
+    ctx["meeting_history"] = get_meeting_history(db, &entity_match.name, 30, 3);
+    if let Ok(Some(acct)) = db.get_account_by_name(&entity_match.name) {
+        ctx["entity_id"] = json!(acct.id);
+        if let Ok(team) = db.get_account_team(&acct.id) {
+            if !team.is_empty() {
+                ctx["account_team"] = json!(team
+                    .iter()
+                    .map(|m| {
+                        json!({
+                            "personId": m.person_id,
+                            "name": m.person_name,
+                            "email": m.person_email,
+                            "role": m.role,
+                        })
+                    })
+                    .collect::<Vec<_>>());
+            }
+        }
+    }
+}
+
+/// Gather project-specific context into the meeting context JSON (I337).
+fn gather_project_context(
+    db: &crate::db::ActionDb,
+    workspace: &Path,
+    entity_match: &EntityContextMatch,
+    ctx: &mut Value,
+) {
+    // Project data from DB
+    if let Ok(Some(project)) = db.get_project(&entity_match.entity_id) {
+        ctx["project_data"] = json!({
+            "id": project.id,
+            "name": project.name,
+            "status": project.status,
+            "milestone": project.milestone,
+            "owner": project.owner,
+            "target_date": project.target_date,
+        });
+    }
+
+    // Open actions for this project
+    if let Ok(actions) = db.get_project_actions(&entity_match.entity_id) {
+        if !actions.is_empty() {
+            ctx["open_actions"] = json!(actions
+                .iter()
+                .map(|a| json!({
+                    "id": a.id,
+                    "title": a.title,
+                    "priority": a.priority,
+                    "status": a.status,
+                    "due_date": a.due_date,
+                }))
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // Recent meetings linked to this project
+    if let Ok(meetings) = db.get_meetings_for_project(&entity_match.entity_id, 3) {
+        if !meetings.is_empty() {
+            ctx["meeting_history"] = json!(meetings
+                .iter()
+                .map(|m| json!({
+                    "id": m.id,
+                    "title": m.title,
+                    "type": m.meeting_type,
+                    "start_time": m.start_time,
+                    "summary": m.summary,
+                }))
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // Project team (people linked to this entity)
+    if let Ok(people) = db.get_people_for_entity(&entity_match.entity_id) {
+        if !people.is_empty() {
+            ctx["project_team"] = json!(people
+                .iter()
+                .map(|p| json!({
+                    "personId": p.id,
+                    "name": p.name,
+                    "email": p.email,
+                    "role": p.role,
+                }))
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // Filesystem: dashboard.json in project dir
+    let project_dir = &entity_match.workspace_path;
+    if let Some(dashboard) = find_file_in_dir(project_dir, "dashboard.json") {
+        ctx["refs"]["project_dashboard"] = json!(dashboard.to_string_lossy());
+    }
+
+    // Archive summaries
+    let archive_dir = workspace.join("_archive");
+    if archive_dir.is_dir() {
+        let recent = find_recent_summaries(&entity_match.name, &archive_dir, 2);
+        if !recent.is_empty() {
+            ctx["refs"]["meeting_history"] = json!(recent
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>());
+        }
+    }
+}
+
+/// Gather person-specific context into the meeting context JSON (I337).
+fn gather_person_context(
+    db: &crate::db::ActionDb,
+    workspace: &Path,
+    entity_match: &EntityContextMatch,
+    ctx: &mut Value,
+) {
+    // Person data from DB
+    if let Ok(Some(person)) = db.get_person(&entity_match.entity_id) {
+        ctx["person_data"] = json!({
+            "id": person.id,
+            "name": person.name,
+            "email": person.email,
+            "organization": person.organization,
+            "role": person.role,
+            "relationship": person.relationship,
+            "bio": person.bio,
+            "linkedin_url": person.linkedin_url,
+        });
+    }
+
+    // Meeting history with this person
+    if let Ok(meetings) = db.get_person_meetings(&entity_match.entity_id, 5) {
+        if !meetings.is_empty() {
+            ctx["meeting_history"] = json!(meetings
+                .iter()
+                .map(|m| json!({
+                    "id": m.id,
+                    "title": m.title,
+                    "type": m.meeting_type,
+                    "start_time": m.start_time,
+                    "summary": m.summary,
+                }))
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // Relationship signals (frequency, temperature, trend)
+    if let Ok(signals) = db.get_person_signals(&entity_match.entity_id) {
+        ctx["relationship_signals"] = json!({
+            "meeting_frequency_30d": signals.meeting_frequency_30d,
+            "meeting_frequency_90d": signals.meeting_frequency_90d,
+            "temperature": signals.temperature,
+            "trend": signals.trend,
+            "last_meeting": signals.last_meeting,
+        });
+    }
+
+    // Shared entities (accounts/projects this person is linked to)
+    if let Ok(entities) = db.get_entities_for_person(&entity_match.entity_id) {
+        if !entities.is_empty() {
+            ctx["shared_entities"] = json!(entities
+                .iter()
+                .map(|e| json!({
+                    "id": e.id,
+                    "name": e.name,
+                    "entity_type": e.entity_type.as_str(),
+                }))
+                .collect::<Vec<_>>());
+        }
+    }
+
+    // Open actions mentioning this person (filter from all pending)
+    let all_actions = get_all_pending_actions(db, 50);
+    let person_name_lower = entity_match.name.to_lowercase();
+    if let Some(arr) = all_actions.as_array() {
+        let person_actions: Vec<_> = arr
+            .iter()
+            .filter(|a| {
+                a.get("title")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t.to_lowercase().contains(&person_name_lower))
+                    .unwrap_or(false)
+            })
+            .take(5)
+            .cloned()
+            .collect();
+        if !person_actions.is_empty() {
+            ctx["open_actions"] = json!(person_actions);
+        }
+    }
+
+    // Archive summaries
+    let archive_dir = workspace.join("_archive");
+    if archive_dir.is_dir() {
+        let recent = find_recent_summaries(&entity_match.name, &archive_dir, 3);
+        if !recent.is_empty() {
+            ctx["refs"]["recent_meetings"] = json!(recent
+                .iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect::<Vec<_>>());
+        }
+    }
+}
+
 /// Build rich context for a single meeting prep.
+///
+/// I337: Entity-first dispatch. Resolves the primary entity (account, project,
+/// or person) and delegates to type-specific context assembly. Falls back to
+/// title/archive heuristics when no entity is resolved.
 fn gather_meeting_context(
     meeting: &Value,
     workspace: &Path,
@@ -70,95 +502,93 @@ fn gather_meeting_context(
         return ctx;
     }
 
-    let accounts_dir = workspace.join("Accounts");
     let archive_dir = workspace.join("_archive");
 
-    match meeting_type {
-        "customer" | "qbr" | "training" => {
-            if accounts_dir.is_dir() {
-                // I305: Use confidence-scored entity resolver, then heuristic fallback.
-                let resolver_result = db.and_then(|db| {
-                    super::entity_resolver::resolve_account_compat(
-                        db,
-                        event_id,
-                        meeting,
-                        &accounts_dir,
-                        embedding_model,
-                    )
-                });
-                // Inject resolution metadata for downstream use
-                if let Some(ref r) = resolver_result {
-                    ctx["resolution_confidence"] = json!(r.confidence);
-                    ctx["resolution_source"] = json!(&r.source);
-                }
-                let matched = resolver_result
-                    .map(|r| AccountMatch {
-                        name: r.name,
-                        relative_path: r.relative_path,
-                    })
-                    .or_else(|| guess_account_name(meeting, &accounts_dir));
-                if let Some(matched) = matched {
-                    ctx["account"] = json!(&matched.name);
-                    let account_path = accounts_dir.join(&matched.relative_path);
+    // --- I337: Entity-first dispatch ---
+    let entity_match = resolve_primary_entity(db, event_id, meeting, workspace, embedding_model);
 
-                    // File references
+    if let Some(ref em) = entity_match {
+        // Inject resolution metadata
+        ctx["resolution_confidence"] = json!(em.confidence);
+        ctx["resolution_source"] = json!(&em.source);
+        ctx["entity_id"] = json!(&em.entity_id);
+        ctx["primary_entity"] = json!({
+            "entity_id": em.entity_id,
+            "entity_type": em.entity_type.as_str(),
+            "name": em.name,
+            "confidence": em.confidence,
+            "source": em.source,
+        });
+
+        // Type-specific context assembly
+        if let Some(db) = db {
+            match em.entity_type {
+                crate::entity::EntityType::Account => {
+                    gather_account_context(db, workspace, em, &mut ctx);
+                }
+                crate::entity::EntityType::Project => {
+                    gather_project_context(db, workspace, em, &mut ctx);
+                }
+                crate::entity::EntityType::Person => {
+                    gather_person_context(db, workspace, em, &mut ctx);
+                }
+                _ => {}
+            }
+        }
+
+        // I135: Entity-generic intelligence injection
+        inject_entity_intelligence(&em.workspace_path, &mut ctx);
+    } else {
+        // No entity resolved — type-based fallbacks
+
+        // Internal/1:1 fallback: try resolve_internal_account_for_meeting
+        let internal_types = ["internal", "team_sync", "one_on_one"];
+        if internal_types.contains(&meeting_type) {
+            if let Some(db) = db {
+                if let Some(internal_account) = resolve_internal_account_for_meeting(
+                    db,
+                    event_id,
+                    title,
+                    meeting.get("attendees"),
+                ) {
+                    ctx["account"] = json!(internal_account.name.clone());
+                    ctx["entity_id"] = json!(internal_account.id.clone());
+                    let account_path =
+                        crate::accounts::resolve_account_dir(workspace, &internal_account);
                     if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
                         ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
+                    }
+                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
+                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
+                    }
+                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
+                    ctx["meeting_history"] =
+                        get_meeting_history(db, &internal_account.id, 30, 3);
+                }
+            }
+        }
 
-                        // Dashboard data extraction (I33)
+        // Customer/partnership fallback: guess account from title/domain
+        let account_types = ["customer", "qbr", "training", "partnership"];
+        if account_types.contains(&meeting_type) {
+            let accounts_dir = workspace.join("Accounts");
+            if accounts_dir.is_dir() {
+                if let Some(matched) = guess_account_name(meeting, &accounts_dir) {
+                    ctx["account"] = json!(&matched.name);
+                    let account_path = accounts_dir.join(&matched.relative_path);
+                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
+                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
                         if let Some(data) = parse_dashboard(&dashboard) {
                             ctx["account_data"] = data;
                         }
                     }
-
-                    if let Some(stakeholders) = find_file_in_dir(&account_path, "stakeholders.md") {
-                        ctx["refs"]["stakeholder_map"] = json!(stakeholders.to_string_lossy());
-                    }
-
-                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
-                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
-                    }
-
-                    let recent = find_recent_summaries(&matched.name, &archive_dir, 2);
-                    if !recent.is_empty() {
-                        ctx["refs"]["meeting_history"] = json!(recent
-                            .iter()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .collect::<Vec<_>>());
-                    }
-
-                    // SQLite enrichment
-                    if let Some(db) = db {
-                        ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
-                        ctx["open_actions"] = get_account_actions(db, &matched.name);
-                        ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
-                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
-                            ctx["entity_id"] = json!(acct.id);
-                            if let Ok(team) = db.get_account_team(&acct.id) {
-                                if !team.is_empty() {
-                                    ctx["account_team"] = json!(team
-                                        .iter()
-                                        .map(|m| {
-                                            json!({
-                                                "personId": m.person_id,
-                                                "name": m.person_name,
-                                                "email": m.person_email,
-                                                "role": m.role,
-                                            })
-                                        })
-                                        .collect::<Vec<_>>());
-                                }
-                            }
-                        }
-                    }
-
-                    // I135: Persistent entity prep from intelligence.json
                     inject_entity_intelligence(&account_path, &mut ctx);
                 }
             }
         }
 
-        "external" => {
+        // External: unknown domain archive search
+        if meeting_type == "external" {
             let unknown_domains: Vec<String> = meeting
                 .get("external_domains")
                 .and_then(|v| v.as_array())
@@ -168,7 +598,6 @@ fn gather_meeting_context(
                         .collect()
                 })
                 .unwrap_or_default();
-
             if !unknown_domains.is_empty() {
                 ctx["unknown_domains"] = json!(unknown_domains);
                 for domain in unknown_domains.iter().take(3) {
@@ -183,165 +612,34 @@ fn gather_meeting_context(
             }
         }
 
-        "internal" | "team_sync" => {
-            if let Some(db) = db {
-                if let Some(internal_account) = resolve_internal_account_for_meeting(
-                    db,
-                    event_id,
-                    title,
-                    meeting.get("attendees"),
-                ) {
-                    ctx["account"] = json!(internal_account.name.clone());
-                    ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path =
-                        crate::accounts::resolve_account_dir(workspace, &internal_account);
-                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
-                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                    }
-                    if let Some(actions_file) = find_file_in_dir(&account_path, "actions.md") {
-                        ctx["refs"]["account_actions"] = json!(actions_file.to_string_lossy());
-                    }
-                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
-                    ctx["meeting_history"] = get_meeting_history(db, &internal_account.id, 30, 3);
-                }
+        // Title-based archive/history fallback
+        if !title.is_empty() {
+            let recent = find_recent_summaries(title, &archive_dir, 2);
+            if !recent.is_empty() {
+                ctx["refs"]["recent_meetings"] = json!(recent
+                    .iter()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .collect::<Vec<_>>());
             }
-            if !title.is_empty() {
-                let recent = find_recent_summaries(title, &archive_dir, 1);
-                if !recent.is_empty() {
-                    ctx["refs"]["last_meeting"] = json!(recent[0].to_string_lossy());
-                }
-            }
-
             if let Some(db) = db {
-                if !title.is_empty() {
-                    ctx["meeting_history"] = get_meeting_history_by_title(db, title, 30, 2);
+                if ctx.get("meeting_history").is_none() {
+                    ctx["meeting_history"] = get_meeting_history_by_title(db, title, 30, 3);
+                }
+                if ctx.get("recent_captures").is_none() {
                     ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 14);
                 }
+            }
+        }
+
+        // Fallback pending actions for internal types
+        if internal_types.contains(&meeting_type) {
+            if let Some(db) = db {
                 ctx["open_actions"] = get_all_pending_actions(db, 10);
             }
         }
-
-        "one_on_one" => {
-            if let Some(db) = db {
-                if let Some(internal_account) = resolve_internal_account_for_meeting(
-                    db,
-                    event_id,
-                    title,
-                    meeting.get("attendees"),
-                ) {
-                    ctx["account"] = json!(internal_account.name.clone());
-                    ctx["entity_id"] = json!(internal_account.id.clone());
-                    let account_path =
-                        crate::accounts::resolve_account_dir(workspace, &internal_account);
-                    if let Some(dashboard) = find_file_in_dir(&account_path, "dashboard.md") {
-                        ctx["refs"]["account_dashboard"] = json!(dashboard.to_string_lossy());
-                    }
-                    ctx["open_actions"] = get_account_actions(db, &internal_account.id);
-                }
-            }
-            if !title.is_empty() {
-                let recent = find_recent_summaries(title, &archive_dir, 3);
-                if !recent.is_empty() {
-                    ctx["refs"]["recent_meetings"] = json!(recent
-                        .iter()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .collect::<Vec<_>>());
-                }
-            }
-
-            if let Some(db) = db {
-                if !title.is_empty() {
-                    ctx["meeting_history"] = get_meeting_history_by_title(db, title, 60, 3);
-                    ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 30);
-                }
-                ctx["open_actions"] = get_all_pending_actions(db, 10);
-            }
-        }
-
-        "partnership" => {
-            if accounts_dir.is_dir() {
-                // I305: Use confidence-scored entity resolver, then heuristic fallback.
-                let resolver_result = db.and_then(|db| {
-                    super::entity_resolver::resolve_account_compat(
-                        db,
-                        event_id,
-                        meeting,
-                        &accounts_dir,
-                        embedding_model,
-                    )
-                });
-                if let Some(ref r) = resolver_result {
-                    ctx["resolution_confidence"] = json!(r.confidence);
-                    ctx["resolution_source"] = json!(&r.source);
-                }
-                let matched = resolver_result
-                    .map(|r| AccountMatch {
-                        name: r.name,
-                        relative_path: r.relative_path,
-                    })
-                    .or_else(|| guess_account_name(meeting, &accounts_dir));
-                if let Some(matched) = matched {
-                    ctx["account"] = json!(&matched.name);
-                    let account_path = accounts_dir.join(&matched.relative_path);
-                    for fname in &["dashboard.md", "stakeholders.md", "actions.md"] {
-                        if let Some(found) = find_file_in_dir(&account_path, fname) {
-                            let key = fname.replace(".md", "");
-                            ctx["refs"][key] = json!(found.to_string_lossy());
-                        }
-                    }
-
-                    if let Some(db) = db {
-                        ctx["recent_captures"] = get_captures_for_account(db, &matched.name, 14);
-                        ctx["open_actions"] = get_account_actions(db, &matched.name);
-                        ctx["meeting_history"] = get_meeting_history(db, &matched.name, 30, 3);
-                        if let Ok(Some(acct)) = db.get_account_by_name(&matched.name) {
-                            ctx["entity_id"] = json!(acct.id);
-                            if let Ok(team) = db.get_account_team(&acct.id) {
-                                if !team.is_empty() {
-                                    ctx["account_team"] = json!(team
-                                        .iter()
-                                        .map(|m| {
-                                            json!({
-                                                "personId": m.person_id,
-                                                "name": m.person_name,
-                                                "email": m.person_email,
-                                                "role": m.role,
-                                            })
-                                        })
-                                        .collect::<Vec<_>>());
-                                }
-                            }
-                        }
-                    }
-
-                    // I135: Persistent entity prep from intelligence.json
-                    inject_entity_intelligence(&account_path, &mut ctx);
-                }
-            }
-
-            if !title.is_empty() {
-                let recent = find_recent_summaries(title, &archive_dir, 2);
-                if !recent.is_empty() {
-                    ctx["refs"]["recent_meetings"] = json!(recent
-                        .iter()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .collect::<Vec<_>>());
-                }
-
-                if let Some(db) = db {
-                    if ctx.get("account").is_none()
-                        || ctx["account"].as_str().unwrap_or("").is_empty()
-                    {
-                        ctx["meeting_history"] = get_meeting_history_by_title(db, title, 30, 3);
-                        ctx["recent_captures"] = get_captures_by_meeting_title(db, title, 14);
-                    }
-                }
-            }
-        }
-
-        _ => {}
     }
 
+    // --- Email signals (shared across all paths) ---
     if let Some(db) = db {
         if let Some(entity_id) = ctx
             .get("entity_id")
@@ -1731,5 +2029,266 @@ mod tests {
         let contexts = gather_all_meeting_contexts(&classified, dir.path(), None, None);
         assert_eq!(contexts.len(), 1);
         assert_eq!(contexts[0]["event_id"], "2");
+    }
+
+    // -----------------------------------------------------------------------
+    // I337 Entity-generic context building tests
+    // -----------------------------------------------------------------------
+
+    /// Helper: set up a DB with an entity + meeting + junction link.
+    fn setup_entity_db(
+        dir: &Path,
+        entity_id: &str,
+        entity_name: &str,
+        entity_type: crate::entity::EntityType,
+        event_id: &str,
+    ) -> crate::db::ActionDb {
+        let db = crate::db::ActionDb::open_at(dir.join("test.db")).expect("open test db");
+        let now = chrono::Utc::now().to_rfc3339();
+
+        db.upsert_entity(&crate::entity::DbEntity {
+            id: entity_id.to_string(),
+            name: entity_name.to_string(),
+            entity_type,
+            tracker_path: None,
+            updated_at: now.clone(),
+        })
+        .expect("upsert entity");
+
+        if entity_type == crate::entity::EntityType::Account {
+            db.upsert_account(&crate::db::DbAccount {
+                id: entity_id.to_string(),
+                name: entity_name.to_string(),
+                lifecycle: None,
+                health: None,
+                arr: None,
+                contract_start: None,
+                contract_end: None,
+                nps: None,
+                parent_id: None,
+                is_internal: false,
+                tracker_path: None,
+                updated_at: now.clone(),
+                archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
+            })
+            .expect("upsert account");
+        }
+
+        if entity_type == crate::entity::EntityType::Project {
+            db.upsert_project(&crate::db::DbProject {
+                id: entity_id.to_string(),
+                name: entity_name.to_string(),
+                status: "active".to_string(),
+                milestone: Some("Phase 2".to_string()),
+                owner: Some("Alice".to_string()),
+                target_date: Some("2026-03-15".to_string()),
+                tracker_path: None,
+                updated_at: now.clone(),
+                archived: false,
+                keywords: None,
+                keywords_extracted_at: None,
+            })
+            .expect("upsert project");
+        }
+
+        if entity_type == crate::entity::EntityType::Person {
+            db.upsert_person(&crate::db::DbPerson {
+                id: entity_id.to_string(),
+                email: format!("{}@example.com", entity_name.to_lowercase().replace(' ', ".")),
+                name: entity_name.to_string(),
+                organization: Some("Acme Corp".to_string()),
+                role: Some("VP Engineering".to_string()),
+                relationship: "external".to_string(),
+                notes: None,
+                tracker_path: None,
+                last_seen: None,
+                first_seen: None,
+                meeting_count: 5,
+                updated_at: now.clone(),
+                archived: false,
+                linkedin_url: None,
+                twitter_handle: None,
+                phone: None,
+                photo_url: None,
+                bio: None,
+                title_history: None,
+                company_industry: None,
+                company_size: None,
+                company_hq: None,
+                last_enriched_at: None,
+                enrichment_sources: None,
+            })
+            .expect("upsert person");
+        }
+
+        db.upsert_meeting(&crate::db::DbMeeting {
+            id: event_id.to_string(),
+            title: "Test Meeting".to_string(),
+            meeting_type: "customer".to_string(),
+            start_time: "2026-02-18T10:00:00Z".to_string(),
+            end_time: None,
+            attendees: None,
+            notes_path: None,
+            summary: None,
+            created_at: now,
+            calendar_event_id: Some(event_id.to_string()),
+            description: None,
+            prep_context_json: None,
+            user_agenda_json: None,
+            user_notes: None,
+            prep_frozen_json: None,
+            prep_frozen_at: None,
+            prep_snapshot_path: None,
+            prep_snapshot_hash: None,
+            transcript_path: None,
+            transcript_processed_at: None,
+        })
+        .expect("upsert meeting");
+
+        db.link_meeting_entity(event_id, entity_id, entity_type.as_str())
+            .expect("link meeting entity");
+
+        db
+    }
+
+    #[test]
+    fn test_gather_context_account_entity() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts").join("Acme")).unwrap();
+        std::fs::write(
+            dir.path().join("Accounts").join("Acme").join("dashboard.md"),
+            "# Acme\n## Quick View\nARR: $500K\nHealth: Green\n",
+        )
+        .unwrap();
+
+        let db = setup_entity_db(
+            dir.path(),
+            "acme-entity",
+            "Acme",
+            crate::entity::EntityType::Account,
+            "evt-acme",
+        );
+
+        let meeting = json!({
+            "id": "evt-acme",
+            "title": "Acme QBR",
+            "type": "customer",
+            "start": "2026-02-18T10:00:00Z",
+        });
+
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+
+        // Should have account set for backward compat
+        assert_eq!(ctx["account"].as_str(), Some("Acme"));
+        // Should have primary_entity
+        assert!(ctx.get("primary_entity").is_some());
+        assert_eq!(
+            ctx["primary_entity"]["entity_type"].as_str(),
+            Some("account")
+        );
+        assert_eq!(ctx["primary_entity"]["name"].as_str(), Some("Acme"));
+        // Should have entity_id
+        assert!(ctx.get("entity_id").is_some());
+    }
+
+    #[test]
+    fn test_gather_context_project_entity() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create workspace directories
+        std::fs::create_dir_all(dir.path().join("Projects").join("launch-v2")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts")).unwrap();
+
+        let db = setup_entity_db(
+            dir.path(),
+            "proj-launch",
+            "Launch V2",
+            crate::entity::EntityType::Project,
+            "evt-proj",
+        );
+
+        let meeting = json!({
+            "id": "evt-proj",
+            "title": "Launch V2 Planning",
+            "type": "internal",
+            "start": "2026-02-18T14:00:00Z",
+        });
+
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+
+        // Should have primary_entity with project type
+        assert!(ctx.get("primary_entity").is_some());
+        assert_eq!(
+            ctx["primary_entity"]["entity_type"].as_str(),
+            Some("project")
+        );
+        assert_eq!(ctx["primary_entity"]["name"].as_str(), Some("Launch V2"));
+        // Should have project_data
+        assert!(ctx.get("project_data").is_some());
+        assert_eq!(ctx["project_data"]["status"].as_str(), Some("active"));
+        assert_eq!(ctx["project_data"]["milestone"].as_str(), Some("Phase 2"));
+    }
+
+    #[test]
+    fn test_gather_context_person_entity() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("People").join("Jane-Smith")).unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts")).unwrap();
+
+        let db = setup_entity_db(
+            dir.path(),
+            "person-jane",
+            "Jane Smith",
+            crate::entity::EntityType::Person,
+            "evt-1on1",
+        );
+
+        let meeting = json!({
+            "id": "evt-1on1",
+            "title": "1:1 with Jane Smith",
+            "type": "one_on_one",
+            "start": "2026-02-18T15:00:00Z",
+        });
+
+        let ctx = gather_meeting_context(&meeting, dir.path(), Some(&db), None);
+
+        // Should have primary_entity with person type
+        assert!(ctx.get("primary_entity").is_some());
+        assert_eq!(
+            ctx["primary_entity"]["entity_type"].as_str(),
+            Some("person")
+        );
+        assert_eq!(
+            ctx["primary_entity"]["name"].as_str(),
+            Some("Jane Smith")
+        );
+        // Should have person_data
+        assert!(ctx.get("person_data").is_some());
+        assert_eq!(
+            ctx["person_data"]["organization"].as_str(),
+            Some("Acme Corp")
+        );
+    }
+
+    #[test]
+    fn test_gather_context_no_entity_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Accounts")).unwrap();
+
+        let meeting = json!({
+            "id": "evt-unknown",
+            "title": "Random Sync",
+            "type": "internal",
+            "start": "2026-02-18T11:00:00Z",
+        });
+
+        // No DB → no entity resolution → should still produce base context
+        let ctx = gather_meeting_context(&meeting, dir.path(), None, None);
+
+        assert_eq!(ctx["event_id"].as_str(), Some("evt-unknown"));
+        assert_eq!(ctx["title"].as_str(), Some("Random Sync"));
+        // No primary_entity should be set
+        assert!(ctx.get("primary_entity").is_none());
     }
 }

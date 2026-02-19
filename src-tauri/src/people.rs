@@ -76,8 +76,10 @@ fn default_relationship() -> String {
 }
 
 /// Resolve the directory for a person's workspace files.
+///
+/// I337: Uses `entity_dir()` for consistent filesystem name sanitization.
 pub fn person_dir(workspace: &Path, name: &str) -> PathBuf {
-    workspace.join("People").join(name)
+    crate::entity_io::entity_dir(workspace, "People", name)
 }
 
 /// Write `person.json` for a person.

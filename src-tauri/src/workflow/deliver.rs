@@ -194,7 +194,10 @@ fn find_meeting_entry<'a>(
     (None, None)
 }
 
-/// Find the meeting context matching an account or event_id.
+/// Find the meeting context matching an event_id, entity_id, or account.
+///
+/// I337: Added entity_id matching from primary_entity alongside existing
+/// account matching for backward compatibility.
 pub fn find_meeting_context<'a>(
     account: Option<&str>,
     event_id: Option<&str>,
@@ -210,6 +213,18 @@ pub fn find_meeting_context<'a>(
         }
     }
 
+    // I337: Match by entity_id from primary_entity
+    if let Some(acct) = account {
+        for ctx in contexts {
+            if let Some(ref pe) = ctx.primary_entity {
+                if pe.get("name").and_then(|n| n.as_str()) == Some(acct) {
+                    return Some(ctx);
+                }
+            }
+        }
+    }
+
+    // Backward compat: match by account string
     if let Some(acct) = account {
         for ctx in contexts {
             if ctx.account.as_deref() == Some(acct) {
@@ -1338,12 +1353,14 @@ fn build_prep_json(
     meeting_id: &str,
     ctx: Option<&DirectiveMeetingContext>,
 ) -> Value {
-    // Use the context account (from entity resolution) if available.
-    // Only fall back to the classified meeting.account when no context exists
-    // at all — if context exists but has no account, the resolver determined
-    // this meeting isn't account-linked (e.g., linked to a project instead).
-    let account = if ctx.is_some() {
-        ctx.and_then(|c| c.account.as_deref())
+    // I337: Use primary_entity name when available, fall back to account.
+    // If context exists but has neither, the resolver determined this meeting
+    // isn't account-linked (e.g., linked to a project or person instead).
+    let account = if let Some(c) = ctx {
+        c.primary_entity
+            .as_ref()
+            .and_then(|e| e.get("name").and_then(|n| n.as_str()))
+            .or(c.account.as_deref())
     } else {
         meeting.account.as_deref()
     };
