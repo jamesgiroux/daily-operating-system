@@ -1,9 +1,12 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { formatArr, formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
+import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useAccountDetail } from "@/hooks/useAccountDetail";
+import { useActivePreset } from "@/hooks/useActivePreset";
+import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
@@ -45,6 +48,7 @@ import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
 import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { EntityKeywords } from "@/components/entity/EntityKeywords";
 import { AccountFieldsDrawer } from "@/components/account/AccountFieldsDrawer";
 import { TeamManagementDrawer } from "@/components/account/TeamManagementDrawer";
 import { LifecycleEventDrawer } from "@/components/account/LifecycleEventDrawer";
@@ -114,6 +118,7 @@ export default function AccountDetailEditorial() {
   const { accountId } = useParams({ strict: false });
   const navigate = useNavigate();
   const acct = useAccountDetail(accountId);
+  const preset = useActivePreset();
   useRevealObserver(!acct.loading && !!acct.detail);
 
   // Register magazine shell configuration — MagazinePageLayout consumes this
@@ -182,56 +187,28 @@ export default function AccountDetailEditorial() {
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
-  // Intelligence field update callback (I261)
-  // No reload needed — EditableText already shows the edited value locally.
-  const handleUpdateIntelField = useCallback(
-    async (fieldPath: string, value: string) => {
-      if (!accountId) return;
-      try {
-        await invoke("update_intelligence_field", {
-          entityId: accountId,
-          entityType: "account",
-          fieldPath,
-          value,
-        });
-      } catch (e) {
-        console.error("Failed to update intelligence field:", e);
-      }
-    },
-    [accountId],
-  );
+  // I312: Preset metadata state
+  const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<string>("get_entity_metadata", { entityType: "account", entityId: accountId })
+      .then((json) => {
+        try { setMetadataValues(JSON.parse(json) ?? {}); } catch { setMetadataValues({}); }
+      })
+      .catch(() => setMetadataValues({}));
+  }, [accountId]);
 
-  // Parse keywords JSON and track removals (I305)
-  // Hooks must be above early returns to satisfy React's rules of hooks.
-  const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
-  const parsedKeywords = useMemo(() => {
-    const kw = acct.detail?.keywords;
-    if (!kw) return [];
-    try {
-      const arr = JSON.parse(kw);
-      return Array.isArray(arr) ? (arr as string[]).filter((k) => !removedKeywords.has(k)) : [];
-    } catch {
-      return [];
-    }
-  }, [acct.detail?.keywords, removedKeywords]);
+  // I316: Fetch ancestor accounts for breadcrumb navigation
+  const [ancestors, setAncestors] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!accountId) return;
+    invoke<{ id: string; name: string }[]>("get_account_ancestors", { accountId })
+      .then(setAncestors)
+      .catch(() => setAncestors([]));
+  }, [accountId]);
 
-  const handleRemoveKeyword = useCallback(
-    async (keyword: string) => {
-      if (!accountId) return;
-      setRemovedKeywords((prev) => new Set(prev).add(keyword));
-      try {
-        await invoke("remove_account_keyword", { accountId, keyword });
-      } catch (e) {
-        console.error("Failed to remove keyword:", e);
-        setRemovedKeywords((prev) => {
-          const next = new Set(prev);
-          next.delete(keyword);
-          return next;
-        });
-      }
-    },
-    [accountId],
-  );
+  // I352: Shared intelligence field update hook
+  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("account", accountId);
 
   if (acct.loading) return <EditorialLoading />;
 
@@ -246,6 +223,66 @@ export default function AccountDetailEditorial() {
 
   return (
     <>
+      {/* I316: Ancestor breadcrumbs for nested accounts */}
+      {ancestors.length > 0 && (
+        <nav
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            letterSpacing: "0.04em",
+            color: "var(--color-text-tertiary)",
+            padding: "8px 0 4px",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={() => navigate({ to: "/accounts" })}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              color: "var(--color-text-tertiary)",
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              letterSpacing: "inherit",
+            }}
+          >
+            Accounts
+          </button>
+          {ancestors.map((anc) => (
+            <React.Fragment key={anc.id}>
+              <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+              <button
+                onClick={() =>
+                  navigate({
+                    to: "/accounts/$accountId",
+                    params: { accountId: anc.id },
+                  })
+                }
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  color: "var(--color-spice-turmeric)",
+                  fontFamily: "inherit",
+                  fontSize: "inherit",
+                  letterSpacing: "inherit",
+                }}
+              >
+                {anc.name}
+              </button>
+            </React.Fragment>
+          ))}
+          <span style={{ color: "var(--color-text-tertiary)", opacity: 0.5 }}>/</span>
+          <span style={{ color: "var(--color-text-primary)" }}>{detail?.name ?? ""}</span>
+        </nav>
+      )}
+
       {/* Chapter 1: The Headline (Hero) — no reveal, visible immediately */}
       <section id="headline" style={{ scrollMarginTop: 60 }}>
         <AccountHero
@@ -260,73 +297,9 @@ export default function AccountDetailEditorial() {
           onUnarchive={acct.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={buildAccountVitals(detail)} />
+          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.account, { ...detail, metadata: metadataValues }) : buildAccountVitals(detail)} />
         </div>
-        {parsedKeywords.length > 0 && (
-          <div className="editorial-reveal" style={{ padding: "12px 0 0" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                Resolution Keywords
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  fontStyle: "italic",
-                }}
-              >
-                (auto-extracted)
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {parsedKeywords.map((kw) => (
-                <span
-                  key={kw}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "2px 10px",
-                    borderRadius: 12,
-                    background: "var(--color-paper-linen)",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    lineHeight: "20px",
-                  }}
-                >
-                  {kw}
-                  <button
-                    onClick={() => handleRemoveKeyword(kw)}
-                    aria-label={`Remove keyword ${kw}`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                      fontSize: 14,
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 2,
-                    }}
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        <EntityKeywords entityId={accountId} entityType="account" keywordsJson={detail.keywords} />
       </section>
 
       {/* Chapter 2: State of Play */}
@@ -426,10 +399,24 @@ export default function AccountDetailEditorial() {
         editRenewal={acct.editRenewal}
         setEditRenewal={acct.setEditRenewal}
         setDirty={acct.setDirty}
-        onSave={acct.handleSave}
+        onSave={async () => {
+          await acct.handleSave();
+          if (accountId && Object.keys(metadataValues).length > 0) {
+            await invoke("update_entity_metadata", {
+              entityType: "account",
+              entityId: accountId,
+              metadata: JSON.stringify(metadataValues),
+            }).catch((e: unknown) => console.error("Failed to save metadata:", e));
+          }
+        }}
         onCancel={acct.handleCancelEdit}
         saving={acct.saving}
         dirty={acct.dirty}
+        metadataFields={preset?.metadata.account}
+        metadataValues={metadataValues}
+        onMetadataChange={(key, value) =>
+          setMetadataValues((prev) => ({ ...prev, [key]: value }))
+        }
       />
 
       <TeamManagementDrawer
