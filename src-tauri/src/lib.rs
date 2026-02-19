@@ -451,6 +451,10 @@ pub fn run() {
             commands::get_archived_accounts,
             commands::get_archived_projects,
             commands::get_archived_people,
+            // I198: Account Merge
+            commands::merge_accounts,
+            // I199: Account Recovery
+            commands::restore_account,
             // I171: Multi-Domain Config
             commands::set_user_domains,
             // I162: Bulk Entity Creation
