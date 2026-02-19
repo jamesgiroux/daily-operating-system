@@ -59,14 +59,6 @@ pub struct ResolvedEntity {
     pub source: String,
 }
 
-/// Backward-compatible result for existing callers in meeting_context.rs.
-pub struct AccountMatch {
-    pub name: String,
-    pub relative_path: String,
-    pub entity_id: Option<String>,
-    pub confidence: f64,
-    pub source: String,
-}
 
 // ---------------------------------------------------------------------------
 // Confidence thresholds
@@ -173,60 +165,6 @@ pub fn resolve_meeting_entities(
     }
 }
 
-/// Backward-compatible wrapper: returns the top account match for existing
-/// callers that expect `Option<AccountMatch>`.
-///
-/// If the top resolved entity is a project (not an account), returns None —
-/// the user explicitly linked this meeting to a project, so we should not
-/// fall through to a lower-confidence account match.
-pub fn resolve_account_compat(
-    db: &ActionDb,
-    event_id: &str,
-    meeting: &Value,
-    accounts_dir: &Path,
-    embedding_model: Option<&EmbeddingModel>,
-) -> Option<AccountMatch> {
-    let outcomes = resolve_meeting_entities(db, event_id, meeting, accounts_dir, embedding_model);
-
-    // If the top resolved outcome is a non-account entity, respect it and
-    // return None so callers don't fall through to a stale account match.
-    if let Some(top) = outcomes.first() {
-        let top_entity = match top {
-            ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => Some(e),
-            _ => None,
-        };
-        if let Some(e) = top_entity {
-            if e.entity_type != EntityType::Account {
-                return None;
-            }
-        }
-    }
-
-    // Find the best Resolved or ResolvedWithFlag outcome for an account
-    for outcome in &outcomes {
-        let entity = match outcome {
-            ResolutionOutcome::Resolved(e) | ResolutionOutcome::ResolvedWithFlag(e) => e,
-            _ => continue,
-        };
-        if entity.entity_type != EntityType::Account {
-            continue;
-        }
-
-        // Resolve entity to filesystem path
-        if let Some(matched) = resolve_entity_to_account_match(db, &entity.entity_id, accounts_dir)
-        {
-            return Some(AccountMatch {
-                name: matched.0,
-                relative_path: matched.1,
-                entity_id: Some(entity.entity_id.clone()),
-                confidence: entity.confidence,
-                source: entity.source.clone(),
-            });
-        }
-    }
-
-    None
-}
 
 // ---------------------------------------------------------------------------
 // Signal producers
