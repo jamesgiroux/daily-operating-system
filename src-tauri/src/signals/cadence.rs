@@ -121,6 +121,49 @@ pub fn compute_and_emit_cadence_anomalies(db: &ActionDb) -> Vec<CadenceAnomaly> 
         }
     }
 
+    // Step 4b: Detect completely silent entities (had baseline activity but zero this week)
+    let active_entity_ids: std::collections::HashSet<(String, String)> = weekly_counts
+        .iter()
+        .map(|(eid, etype, _)| (eid.clone(), etype.clone()))
+        .collect();
+
+    if let Ok(mut silent_stmt) = conn.prepare(
+        "SELECT entity_id, entity_type, AVG(message_count) as avg_count
+         FROM entity_email_cadence
+         WHERE updated_at >= datetime('now', '-30 days')
+           AND period != ?1
+         GROUP BY entity_id, entity_type
+         HAVING avg_count >= 3.0",
+    ) {
+        let silent_entities: Vec<(String, String, f64)> = silent_stmt
+            .query_map(rusqlite::params![current_week], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, f64>(2)?,
+                ))
+            })
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for (entity_id, entity_type, avg) in silent_entities {
+            if active_entity_ids.contains(&(entity_id.clone(), entity_type.clone())) {
+                continue; // Already processed above
+            }
+            anomalies.push(CadenceAnomaly {
+                entity_id,
+                entity_type,
+                anomaly_type: "gone_quiet".to_string(),
+                current_count: 0,
+                rolling_avg: avg,
+                confidence: 0.90,
+            });
+        }
+    }
+
     // Step 5: Emit signals for anomalies
     for anomaly in &anomalies {
         let _ = super::bus::emit_signal(
