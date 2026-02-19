@@ -544,7 +544,12 @@ pub fn run_enrichment(
                 "project" => {
                     let _ = db.update_project_keywords(&input.entity_id, &keywords_json);
                 }
-                _ => {}
+                _ => {
+                    log::debug!(
+                        "intel_queue: keyword persistence not implemented for entity_type={}",
+                        input.entity_type
+                    );
+                }
             }
         }
     }
