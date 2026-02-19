@@ -210,7 +210,7 @@ export function usePersonDetail(personId: string | undefined) {
         entityId,
         relationshipType: "associated",
       });
-      await load();
+      // No reload — PersonNetwork manages optimistic local state
     } catch (e) {
       setError(String(e));
     }
@@ -223,7 +223,7 @@ export function usePersonDetail(personId: string | undefined) {
         personId: detail.id,
         entityId,
       });
-      await load();
+      // No reload — PersonNetwork manages optimistic local state
     } catch (e) {
       setError(String(e));
     }
