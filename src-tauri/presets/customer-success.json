@@ -56,7 +56,7 @@
     "ebr_completed",
     "renewal",
     "expansion",
-    "contraction",
+    "downsell",
     "churn",
     "escalation",
     "champion_change"
@@ -70,5 +70,11 @@
       "champion_change"
     ]
   },
-  "briefingEmphasis": "Focus on retention metrics, upcoming renewals, and health score changes. Prioritize at-risk accounts by ARR."
+  "briefingEmphasis": "Focus on retention metrics, upcoming renewals, and health score changes. Prioritize at-risk accounts by ARR.",
+  "emailPriorityKeywords": [
+    "nps", "health score", "qbr", "ebr", "business review",
+    "onboarding", "go live", "go-live", "adoption",
+    "success plan", "escalation", "at risk", "at-risk",
+    "champion", "executive sponsor"
+  ]
 }
