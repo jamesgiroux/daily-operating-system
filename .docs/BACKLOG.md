@@ -28,10 +28,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I259** | Decompose intelligence fields into page-zone-mapped sub-fields | P1 | Intelligence |
 | **I280** | Beta hardening umbrella — dependency, DB, token, DRY audit (beta gate) | P1 | Code Quality |
 | **I301** | Calendar attendee RSVP status + schema enrichment for meeting intelligence | P1 | Meetings |
-| **I305** | Intelligent meeting-entity resolution — "it should just know" | P1 | Intelligence |
-| **I306** | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source | P1 | Intelligence |
-| **I307** | Correction learning — Thompson Sampling weights, context tagging, pattern detection | P1 | Intelligence |
-| **I308** | Event-driven signal processing and cross-entity propagation | P1 | Intelligence |
 | **I317** | Meeting-aware email intelligence (structured digest, not excerpts) | P1 | Email / Intelligence |
 | **I318** | Thread position tracking ("ball in your court") | P1 | Email |
 | **I319** | Entity-level email cadence monitoring + anomaly surfacing | P1 | Intelligence |
@@ -48,7 +44,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I331** | Daily briefing intelligence assembly (diff model, fast refresh) | P1 | Surfaces |
 | **I332** | Signal-triggered meeting intelligence refresh | P1 | Pipeline |
 | **I333** | Meeting intelligence collaboration — share, request input, draft agenda | P2 | Actions |
-| **I334** | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing | P1 | UX / Actions |
 | **I200** | ~~Week page proactive suggestions~~ → Partially superseded by I330 (ADR-0081) | — | UX |
 | **I202** | ~~Prep prefill + draft agenda actions~~ → Superseded by I333 (ADR-0081) | — | UX |
 | **I88** | Monthly Book Intelligence (portfolio report) | P2 | Intelligence |
@@ -61,8 +56,6 @@ Active issues, known risks, and dependencies. Closed issues live in [CHANGELOG.m
 | **I227** | Gainsight integration (CS platform data sync) | P2 | Integrations |
 | **I230** | Claude Cowork integration (project/task sync) | P2 | Integrations |
 | **I258** | Report Mode — export account detail as leadership-ready slide deck/PDF | P2 | UX |
-| **I260** | Proactive surfacing — trigger → insight → briefing pipeline for new situations | P2 | Intelligence |
-| **I262** | Define and populate The Record — transcripts and content_index as timeline sources | P2 | UX / Entity |
 | **I277** | Phase 4: Marketplace repo for discoverability (optional) | P3 | Integrations |
 | **I302** | Shareable PDF export for intelligence reports (editorial-styled) | P2 | UX |
 | **I340** | Glean integration — enterprise knowledge enrichment for meeting prep | P2 | Integrations |
@@ -105,7 +98,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
-### 0.9.2 — Bug Fixes
+### 0.9.2 — Bug Fixes — CLOSED
+
+Entity re-indexing fixed for projects and people. I325 resolved — re-index now works across all entity types, not just accounts. See CHANGELOG for details.
 
 | Priority | Issue | Scope |
 |----------|-------|-------|
@@ -113,26 +108,9 @@ All core issues (I54, I243, I276, I226, I228, I229) closed in v0.9.0. MCP client
 
 ---
 
-### 0.10.0 — Intelligence
+### 0.10.0 — Intelligence — CLOSED
 
-*The system that learns from you. Signals compound, corrections teach, events drive action.*
-
-| Priority | Issue | Scope |
-|----------|-------|-------|
-| P1 | I305 | Intelligent meeting-entity resolution — "it should just know" |
-| P1 | I306 | Signal bus foundation — event log, Bayesian fusion, email-calendar bridge, Linear signal source |
-| P1 | I307 | Correction learning — Thompson Sampling weights, context tagging, pattern detection |
-| P1 | I308 | Event-driven signal processing and cross-entity propagation |
-| P1 | I334 | Proposed actions triage — accept/reject flow on Actions page, meeting outcomes, and briefing |
-| P1 | I335 | Entity-generic data model — replace `account` fields with `entities` arrays (ADR-0082 Phase 1+4) |
-| P1 | I336 | Entity-generic classification — entity hints from DB, 1:1 person detection (ADR-0082 Phase 2) |
-| P1 | I337 | Entity-generic context building — type-dispatched intelligence injection (ADR-0082 Phase 3) |
-| P1 | I338 | 1:1 relationship intelligence — three-file pattern for people, relationship prep (ADR-0082 Section 4) |
-| P1 | I339 | Entity-generic dashboard and frontend — entities array on all surfaces (ADR-0082 Phase 1+4) |
-| P2 | I260 | Proactive surfacing — trigger → insight → briefing pipeline |
-| P2 | I262 | Define and populate The Record — transcripts and content_index as timeline |
-
-**Rationale:** The intelligence release. DailyOS goes from "pipeline that runs on a schedule" to "system that learns from you." I305–I308 implement ADR-0080 (Signal Intelligence Architecture): a signal bus where every data source produces typed, weighted, time-decaying signals; Bayesian fusion that compounds weak signals into strong convictions; Thompson Sampling that learns from user corrections; event-driven processing that responds to what happens, not what time it is; and cross-entity propagation that connects dots across accounts, projects, people, and meetings. I335–I339 implement ADR-0082 (Entity-Generic Prep Pipeline): rebuild the account-privileged prep pipeline so accounts, projects, and people are first-class entities throughout classification, context building, prep generation, and dashboard display. This includes 1:1 relationship intelligence — recurring 1:1 meetings resolve to the counterpart person as primary entity with the three-file pattern (ADR-0057). The legacy `account_id` column on `meetings_history` is dropped; the `meeting_entities` junction table becomes the sole source of truth. Email becomes a first-class signal source (pre-meeting context, relationship cadence, entity resolution, post-meeting correlation). Compound intelligence — the system surfaces insights no single signal contains — ships as a meaningful feature. I260 and I262 are natural consumers of the signal engine. I334 closes the gap on proposed actions — the backend triage plumbing from I256 (0.8.1) never reached the Actions page, meeting outcomes, or briefing schedule section; this issue gives AI-extracted actions a proper accept/reject flow everywhere they appear.
+Signal intelligence architecture shipped (I305–I308): typed event log, Bayesian fusion, Thompson Sampling correction learning, event-driven processing, and cross-entity propagation. Entity-generic data model (I335–I339) rebuilt the account-privileged prep pipeline to treat accounts, projects, and people as first-class entities. I334 (proposed actions triage) completed the briefing and meeting outcomes surface. I260 (proactive surfacing) and I262 (The Record) enable compound intelligence. See CHANGELOG for details.
 
 ---
 
