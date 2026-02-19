@@ -247,10 +247,13 @@ export interface WeekDay {
 export interface WeekMeeting {
   time: string;
   title: string;
+  /** @deprecated Use linkedEntities instead. Kept for backward compat. */
   account?: string;
   meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
+  /** Entities linked via M2M junction table or entity resolution (I339) */
+  linkedEntities?: LinkedEntity[];
 }
 
 export interface WeekActionSummary {
@@ -885,6 +888,8 @@ export interface PersonDetail extends Person {
   }[];
   recentEmailSignals?: EmailSignal[];
   intelligence?: EntityIntelligence;
+  openActions: Action[];
+  upcomingMeetings?: { id: string; title: string; startTime: string; meetingType: string }[];
 }
 
 export interface AttendeeContext {
