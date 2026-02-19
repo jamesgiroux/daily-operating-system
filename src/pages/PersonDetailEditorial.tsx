@@ -122,7 +122,7 @@ export default function PersonDetailEditorial() {
       folioLabel: "Person",
       atmosphereColor: "larkspur" as const,
       activePage: "people" as const,
-      backLink: { label: "People", onClick: () => navigate({ to: "/people" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/people" }) },
       chapters: buildChapters(relationship),
     }),
     [navigate, relationship],

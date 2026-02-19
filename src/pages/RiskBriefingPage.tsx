@@ -135,8 +135,8 @@ export default function RiskBriefingPage() {
       atmosphereColor: "terracotta" as const,
       activePage: "accounts" as const,
       backLink: {
-        label: "Account",
-        onClick: () => navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
+        label: "Back",
+        onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/accounts/$accountId", params: { accountId: accountId! } }),
       },
       chapters: briefing ? SLIDES : undefined,
       folioStatusText: saveStatus === "saved" ? "✓ Saved" : undefined,
