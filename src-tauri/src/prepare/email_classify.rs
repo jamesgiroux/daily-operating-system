@@ -85,6 +85,29 @@ pub fn classify_email_priority(
     user_domain: &str,
     account_hints: &HashSet<String>,
 ) -> &'static str {
+    classify_email_priority_with_extras(
+        from_raw,
+        subject,
+        list_unsubscribe,
+        precedence,
+        customer_domains,
+        user_domain,
+        account_hints,
+        &[],
+    )
+}
+
+/// Classify email priority with optional role-preset keywords.
+pub fn classify_email_priority_with_extras(
+    from_raw: &str,
+    subject: &str,
+    list_unsubscribe: &str,
+    precedence: &str,
+    customer_domains: &HashSet<String>,
+    user_domain: &str,
+    account_hints: &HashSet<String>,
+    extra_high_keywords: &[String],
+) -> &'static str {
     let from_addr = extract_email_address(from_raw);
     let domain = extract_domain(&from_addr);
     let subject_lower = subject.to_lowercase();
@@ -104,10 +127,18 @@ pub fn classify_email_priority(
         }
     }
 
-    // HIGH: Urgency keywords in subject
+    // HIGH: Urgency + business keywords in subject (hardcoded base list)
     if HIGH_PRIORITY_SUBJECT_KEYWORDS
         .iter()
         .any(|kw| subject_lower.contains(kw))
+    {
+        return "high";
+    }
+
+    // HIGH: Role-preset keywords in subject (I313)
+    if extra_high_keywords
+        .iter()
+        .any(|kw| subject_lower.contains(&kw.to_lowercase()))
     {
         return "high";
     }

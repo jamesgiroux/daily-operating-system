@@ -86,6 +86,9 @@ const MIGRATIONS: &[Migration] = &[Migration {
 }, Migration {
     version: 24,
     sql: include_str!("migrations/024_linear_sync.sql"),
+}, Migration {
+    version: 25,
+    sql: include_str!("migrations/025_entity_metadata.sql"),
 }];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -247,13 +250,13 @@ mod tests {
         let conn = mem_db();
         let applied = run_migrations(&conn).expect("migrations should succeed");
         assert_eq!(
-            applied, 24,
-            "should apply all migrations including linear_sync"
+            applied, 25,
+            "should apply all migrations including entity_metadata"
         );
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -689,11 +692,11 @@ mod tests {
 
         // Run migrations — should bootstrap v1 and apply v2 through v23
         let applied = run_migrations(&conn).expect("migrations should succeed");
-        assert_eq!(applied, 23, "bootstrap should mark v1, then apply v2 through v24");
+        assert_eq!(applied, 24, "bootstrap should mark v1, then apply v2 through v25");
 
         // Verify schema version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
 
         // Verify existing data is untouched
         let title: String = conn

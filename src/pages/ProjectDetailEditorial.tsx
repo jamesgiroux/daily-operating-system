@@ -1,8 +1,10 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import { useParams, useNavigate } from "@tanstack/react-router";
-import { invoke } from "@tauri-apps/api/core";
 import type { VitalDisplay } from "@/lib/entity-types";
+import { buildVitalsFromPreset } from "@/lib/preset-vitals";
 import { useProjectDetail } from "@/hooks/useProjectDetail";
+import { useActivePreset } from "@/hooks/useActivePreset";
+import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import {
@@ -12,6 +14,7 @@ import {
   Users,
   Eye,
   Activity,
+  CheckSquare2,
 } from "lucide-react";
 import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
@@ -35,7 +38,9 @@ import { VitalsStrip } from "@/components/entity/VitalsStrip";
 import { StakeholderGallery } from "@/components/entity/StakeholderGallery";
 import { WatchList } from "@/components/entity/WatchList";
 import { UnifiedTimeline } from "@/components/entity/UnifiedTimeline";
+import { TheWork } from "@/components/entity/TheWork";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { EntityKeywords } from "@/components/entity/EntityKeywords";
 
 /* ── Vitals assembly ── */
 
@@ -95,12 +100,14 @@ const CHAPTERS: { id: string; label: string; icon: React.ReactNode }[] = [
   { id: "the-landscape", label: "The Landscape", icon: <Eye size={18} strokeWidth={1.5} /> },
   { id: "the-room", label: "The Team", icon: <Users size={18} strokeWidth={1.5} /> },
   { id: "the-record", label: "The Record", icon: <Activity size={18} strokeWidth={1.5} /> },
+  { id: "the-work", label: "The Work", icon: <CheckSquare2 size={18} strokeWidth={1.5} /> },
 ];
 
 export default function ProjectDetailEditorial() {
   const { projectId } = useParams({ strict: false });
   const navigate = useNavigate();
   const proj = useProjectDetail(projectId);
+  const preset = useActivePreset();
   useRevealObserver(!proj.loading && !!proj.detail);
 
   const shellConfig = useMemo(
@@ -108,7 +115,7 @@ export default function ProjectDetailEditorial() {
       folioLabel: "Project",
       atmosphereColor: "olive" as const,
       activePage: "projects" as const,
-      backLink: { label: "Projects", onClick: () => navigate({ to: "/projects" }) },
+      backLink: { label: "Back", onClick: () => window.history.length > 1 ? window.history.back() : navigate({ to: "/projects" }) },
       chapters: CHAPTERS,
     }),
     [navigate],
@@ -118,55 +125,8 @@ export default function ProjectDetailEditorial() {
   const [fieldsDrawerOpen, setFieldsDrawerOpen] = useState(false);
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 
-  // Intelligence field update callback (I261)
-  const handleUpdateIntelField = useCallback(
-    async (fieldPath: string, value: string) => {
-      if (!projectId) return;
-      try {
-        await invoke("update_intelligence_field", {
-          entityId: projectId,
-          entityType: "project",
-          fieldPath,
-          value,
-        });
-      } catch (e) {
-        console.error("Failed to update intelligence field:", e);
-      }
-    },
-    [projectId],
-  );
-
-  // Parse keywords JSON and track removals (I305)
-  // Hooks must be above early returns to satisfy React's rules of hooks.
-  const [removedKeywords, setRemovedKeywords] = useState<Set<string>>(new Set());
-  const parsedKeywords = useMemo(() => {
-    const kw = proj.detail?.keywords;
-    if (!kw) return [];
-    try {
-      const arr = JSON.parse(kw);
-      return Array.isArray(arr) ? (arr as string[]).filter((k) => !removedKeywords.has(k)) : [];
-    } catch {
-      return [];
-    }
-  }, [proj.detail?.keywords, removedKeywords]);
-
-  const handleRemoveKeyword = useCallback(
-    async (keyword: string) => {
-      if (!projectId) return;
-      setRemovedKeywords((prev) => new Set(prev).add(keyword));
-      try {
-        await invoke("remove_project_keyword", { projectId, keyword });
-      } catch (e) {
-        console.error("Failed to remove keyword:", e);
-        setRemovedKeywords((prev) => {
-          const next = new Set(prev);
-          next.delete(keyword);
-          return next;
-        });
-      }
-    },
-    [projectId],
-  );
+  // I352: Shared intelligence field update hook
+  const { updateField: handleUpdateIntelField } = useIntelligenceFieldUpdate("project", projectId);
 
   if (proj.loading) return <EditorialLoading />;
 
@@ -192,73 +152,9 @@ export default function ProjectDetailEditorial() {
           onUnarchive={proj.handleUnarchive}
         />
         <div className="editorial-reveal">
-          <VitalsStrip vitals={buildProjectVitals(detail)} />
+          <VitalsStrip vitals={preset ? buildVitalsFromPreset(preset.vitals.project, detail) : buildProjectVitals(detail)} />
         </div>
-        {parsedKeywords.length > 0 && (
-          <div className="editorial-reveal" style={{ padding: "12px 0 0" }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--color-text-tertiary)",
-                }}
-              >
-                Resolution Keywords
-              </span>
-              <span
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  fontStyle: "italic",
-                }}
-              >
-                (auto-extracted)
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {parsedKeywords.map((kw) => (
-                <span
-                  key={kw}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "2px 10px",
-                    borderRadius: 12,
-                    background: "var(--color-paper-linen)",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 12,
-                    color: "var(--color-text-secondary)",
-                    lineHeight: "20px",
-                  }}
-                >
-                  {kw}
-                  <button
-                    onClick={() => handleRemoveKeyword(kw)}
-                    aria-label={`Remove keyword ${kw}`}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      padding: 0,
-                      lineHeight: 1,
-                      fontSize: 14,
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: 2,
-                    }}
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        <EntityKeywords entityId={projectId} entityType="project" keywordsJson={detail.keywords} />
       </section>
 
       {/* Chapter 2: Trajectory */}
@@ -304,6 +200,20 @@ export default function ProjectDetailEditorial() {
         <UnifiedTimeline data={detail} />
       </div>
 
+      {/* Chapter 7: The Work (I351) */}
+      <div id="the-work" className="editorial-reveal" style={{ scrollMarginTop: 60 }}>
+        <TheWork
+          data={detail}
+          intelligence={intelligence}
+          addingAction={proj.addingAction}
+          setAddingAction={proj.setAddingAction}
+          newActionTitle={proj.newActionTitle}
+          setNewActionTitle={proj.setNewActionTitle}
+          creatingAction={proj.creatingAction}
+          onCreateAction={proj.handleCreateAction}
+        />
+      </div>
+
       {/* Finis marker */}
       <div className="editorial-reveal">
         <FinisMarker enrichedAt={intelligence?.enrichedAt} />
@@ -324,13 +234,6 @@ export default function ProjectDetailEditorial() {
           onIndexFiles={proj.handleIndexFiles}
           indexing={proj.indexing}
           indexFeedback={proj.indexFeedback}
-          openActions={detail.openActions}
-          addingAction={proj.addingAction}
-          setAddingAction={proj.setAddingAction}
-          newActionTitle={proj.newActionTitle}
-          setNewActionTitle={proj.setNewActionTitle}
-          creatingAction={proj.creatingAction}
-          onCreateAction={proj.handleCreateAction}
         />
       </div>
 

@@ -6,7 +6,7 @@ import { FolioBar } from "@/components/layout/FolioBar";
 import { FloatingNavIsland, type ChapterItem } from "@/components/layout/FloatingNavIsland";
 import {
   Sparkles,
-  Layers,
+  Briefcase,
   FolderOpen,
   Mail,
   Terminal,
@@ -52,7 +52,7 @@ type Chapter = (typeof CHAPTERS)[number];
 
 const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
   "welcome": <Sparkles size={16} strokeWidth={1.8} />,
-  "entity-mode": <Layers size={16} strokeWidth={1.8} />,
+  "entity-mode": <Briefcase size={16} strokeWidth={1.8} />,
   "workspace": <FolderOpen size={16} strokeWidth={1.8} />,
   "google": <Mail size={16} strokeWidth={1.8} />,
   "claude-code": <Terminal size={16} strokeWidth={1.8} />,
@@ -66,7 +66,7 @@ const CHAPTER_ICONS: Record<Chapter, React.ReactNode> = {
 
 const CHAPTER_LABELS: Record<Chapter, string> = {
   "welcome": "Welcome",
-  "entity-mode": "Work Style",
+  "entity-mode": "Your Role",
   "workspace": "Workspace",
   "google": "Google",
   "claude-code": "Claude",

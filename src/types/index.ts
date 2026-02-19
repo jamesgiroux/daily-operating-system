@@ -8,6 +8,7 @@ export type ProfileType = "customer-success" | "general";
 export type EntityMode = "account" | "project" | "both";
 export type SettingsTabId =
   | "profile"
+  | "role"
   | "integrations"
   | "workflows"
   | "intelligence"
@@ -1330,7 +1331,13 @@ export type AccountEventType =
   | "renewal"
   | "expansion"
   | "churn"
-  | "downgrade";
+  | "downsell"
+  | "escalation"
+  | "champion_change"
+  | "go_live"
+  | "qbr_completed"
+  | "ebr_completed"
+  | "onboarding_complete";
 
 export interface AccountEvent {
   id: number;
