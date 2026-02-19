@@ -31,7 +31,7 @@ import type { WorkflowStatus } from "@/hooks/useWorkflow";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { formatDayTime, stripMarkdown } from "@/lib/utils";
-import { getPrimaryEntityName } from "@/lib/entity-helpers";
+import { formatEntityByline } from "@/lib/entity-helpers";
 import type { DashboardData, DataFreshness, Meeting, MeetingType, Action, Email, PrioritizedAction } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -307,10 +307,10 @@ export function DailyBriefing({ data, freshness, onRunBriefing, isRunning, workf
                     <span>{featuredDuration}</span>
                   </>
                 )}
-                {getPrimaryEntityName(featured.linkedEntities) && (
+                {formatEntityByline(featured.linkedEntities) && (
                   <>
                     <span className={s.leadMetaSep}>/</span>
-                    <span>{getPrimaryEntityName(featured.linkedEntities)}</span>
+                    <span>{formatEntityByline(featured.linkedEntities)}</span>
                   </>
                 )}
                 {featured.prep?.stakeholders && featured.prep.stakeholders.length > 0 && (
