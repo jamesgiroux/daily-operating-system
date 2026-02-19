@@ -74,5 +74,9 @@
       "scope_creep_detected"
     ]
   },
-  "briefingEmphasis": "Focus on milestone delivery, client escalations, and engagement health. Prioritize engagements with overdue deliverables or upcoming steering committees."
+  "briefingEmphasis": "Focus on milestone delivery, client escalations, and engagement health. Prioritize engagements with overdue deliverables or upcoming steering committees.",
+  "emailPriorityKeywords": [
+    "engagement", "deliverable", "milestone", "scope", "statement of work", "sow", "phase",
+    "assessment", "recommendation", "findings"
+  ]
 }

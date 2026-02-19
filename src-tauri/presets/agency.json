@@ -72,5 +72,9 @@
       "scope_creep_detected"
     ]
   },
-  "briefingEmphasis": "Focus on deliverable deadlines, client satisfaction trends, and scope status. Prioritize at-risk client relationships and overdue deliverables."
+  "briefingEmphasis": "Focus on deliverable deadlines, client satisfaction trends, and scope status. Prioritize at-risk client relationships and overdue deliverables.",
+  "emailPriorityKeywords": [
+    "retainer", "scope", "deliverable", "milestone", "sprint", "review", "approval", "feedback",
+    "revision", "brief", "creative"
+  ]
 }

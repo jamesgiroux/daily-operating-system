@@ -23,6 +23,10 @@ pub struct RolePreset {
     pub lifecycle_events: Vec<String>,
     pub prioritization: PresetPrioritization,
     pub briefing_emphasis: String,
+    /// Role-specific email subject keywords that trigger high-priority classification.
+    /// Added to the hardcoded base list in `constants.rs`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub email_priority_keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
