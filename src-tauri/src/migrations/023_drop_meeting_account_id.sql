@@ -3,6 +3,10 @@
 -- The account_id column is replaced by the meeting_entities junction table (I52).
 -- Before dropping, backfill any orphaned account_id values into meeting_entities.
 
+-- Disable FK enforcement so DROP TABLE succeeds when captures/quill_sync_state
+-- reference meetings_history(id) via foreign keys.
+PRAGMA foreign_keys = OFF;
+
 -- Step 1: Backfill meeting_entities from existing account_id values.
 -- Join accounts table to find the matching entity ID for the account name stored
 -- in account_id (which may be either a slug ID or a display name).
@@ -62,3 +66,6 @@ ALTER TABLE meetings_history_new RENAME TO meetings_history;
 
 -- Step 5: Recreate indexes (without the old idx_meetings_account).
 CREATE INDEX IF NOT EXISTS idx_meetings_start ON meetings_history(start_time);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meetings_calendar_event_id
+    ON meetings_history(calendar_event_id)
+    WHERE calendar_event_id IS NOT NULL;
