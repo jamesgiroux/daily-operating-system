@@ -16,6 +16,7 @@ export interface TimelineSource {
   recentMeetings: { id: string; title: string; startTime: string; meetingType: string }[];
   recentEmailSignals?: EmailSignal[];
   recentCaptures?: { id: string; captureType: string; content: string; meetingTitle: string; meetingId?: string }[];
+  accountEvents?: { id: number; eventType: string; eventDate: string; arrImpact?: number; notes?: string }[];
 }
 
 /** Data source for TheWork (commitments + upcoming meetings). */

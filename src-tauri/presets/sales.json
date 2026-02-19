@@ -1,0 +1,82 @@
+{
+  "id": "sales",
+  "name": "Sales",
+  "description": "For account executives managing a pipeline of deals. Tracks deal value, pipeline stages, close dates, and buyer engagement to surface deal risks and coaching opportunities.",
+  "defaultEntityMode": "account",
+  "vocabulary": {
+    "entityNoun": "deal",
+    "entityNounPlural": "deals",
+    "primaryMetric": "ACV",
+    "healthLabel": "Deal Momentum",
+    "riskLabel": "Deal Risk",
+    "successVerb": "closed",
+    "cadenceNoun": "pipeline review"
+  },
+  "vitals": {
+    "account": [
+      { "key": "arr", "label": "ACV", "fieldType": "currency", "source": "column", "columnMapping": "arr" },
+      { "key": "health", "label": "Momentum", "fieldType": "select", "source": "column", "columnMapping": "health", "options": ["strong", "steady", "stalled", "slipping"] },
+      { "key": "lifecycle", "label": "Deal Stage", "fieldType": "select", "source": "column", "columnMapping": "lifecycle", "options": ["prospecting", "discovery", "evaluation", "proposal", "negotiation", "closed_won", "closed_lost"] },
+      { "key": "contract_end", "label": "Close Date", "fieldType": "date", "source": "column", "columnMapping": "contract_end" },
+      { "key": "nps", "label": "Engagement Score", "fieldType": "number", "source": "column", "columnMapping": "nps" }
+    ],
+    "project": [
+      { "key": "status", "label": "Status", "fieldType": "select", "source": "column", "columnMapping": "status", "options": ["active", "on_hold", "completed", "cancelled"] },
+      { "key": "target_date", "label": "Target Date", "fieldType": "date", "source": "column", "columnMapping": "target_date" },
+      { "key": "owner", "label": "Owner", "fieldType": "text", "source": "column", "columnMapping": "owner" }
+    ],
+    "person": []
+  },
+  "metadata": {
+    "account": [
+      { "key": "forecast_category", "label": "Forecast Category", "fieldType": "select", "options": ["pipeline", "best_case", "commit", "closed"], "required": false },
+      { "key": "deal_source", "label": "Deal Source", "fieldType": "select", "options": ["inbound", "outbound", "referral", "partner", "event"], "required": false },
+      { "key": "competitor", "label": "Competitor", "fieldType": "text", "required": false }
+    ],
+    "project": [],
+    "person": []
+  },
+  "stakeholderRoles": [
+    { "id": "champion", "label": "Champion", "description": "Internal advocate who sells when you are not in the room" },
+    { "id": "economic_buyer", "label": "Economic Buyer", "description": "Person with budget authority who can say yes when everyone says no" },
+    { "id": "decision_maker", "label": "Decision Maker", "description": "Final authority on the purchase decision" },
+    { "id": "technical_evaluator", "label": "Technical Evaluator", "description": "Assesses technical fit, runs POCs and evaluations" },
+    { "id": "coach", "label": "Coach", "description": "Provides insider information about the buying process" },
+    { "id": "procurement", "label": "Procurement / Legal", "description": "Contract reviewers and final gate before signature" },
+    { "id": "end_user", "label": "End User", "description": "Person who will use the product daily" },
+    { "id": "blocker", "label": "Blocker", "description": "Person actively opposing or slowing the deal" }
+  ],
+  "internalTeamRoles": [
+    { "id": "ae", "label": "AE", "description": "Account Executive — owns the deal from discovery to close" },
+    { "id": "sdr", "label": "SDR/BDR", "description": "Sales Development Rep — qualifies leads, books meetings" },
+    { "id": "se", "label": "SE", "description": "Sales Engineer — technical demos, POC support" },
+    { "id": "sm", "label": "Sales Manager", "description": "Pipeline review, forecast, coaching" },
+    { "id": "csm", "label": "CSM", "description": "Customer Success — post-sale handoff recipient" }
+  ],
+  "lifecycleEvents": [
+    "qualified",
+    "discovery_complete",
+    "demo_delivered",
+    "proposal_sent",
+    "negotiation_started",
+    "verbal_commit",
+    "closed_won",
+    "closed_lost",
+    "stage_regression",
+    "champion_changed"
+  ],
+  "prioritization": {
+    "primarySignal": "arr",
+    "secondarySignal": "health",
+    "urgencyDrivers": [
+      "close_date_within_30d",
+      "deal_stage_stalled",
+      "champion_disengaged"
+    ]
+  },
+  "briefingEmphasis": "Focus on pipeline movement, stalled deals, and upcoming close dates. Prioritize high-value deals approaching deadlines. Flag stage regressions and champion disengagement.",
+  "emailPriorityKeywords": [
+    "pipeline", "forecast", "quota", "commission", "deal", "opportunity", "close", "won", "lost",
+    "demo request", "rfp", "rfi", "procurement", "purchase order", "po number"
+  ]
+}
